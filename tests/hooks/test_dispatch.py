@@ -565,6 +565,24 @@ def _forbidden(cwd: Path) -> Path | None:
     raise AssertionError(f"git was forked for {cwd}")
 
 
+def test_a_harness_registered_first_never_takes_the_root_from_claude_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The registry's order is the order `init` writes `[stayfixed] agents` in, and adding a
+    # harness ahead of Claude Code must not change which directory a Claude Code session's
+    # configuration loads from. So the canonical harness's variable is asked first, whatever the
+    # registry order, and the others' after it. Mutation (declared, on `harnesses`): the
+    # variables are asked in registry order -> the fake's root wins and this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    fake = _harness(lambda name, context: context, project_dir_env="FAKE_PROJECT_DIR")
+    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    env = {"CLAUDE_PROJECT_DIR": str(project), "FAKE_PROJECT_DIR": str(tmp_path / "elsewhere")}
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env, CLAUDE)
+    assert ev.project_root == project
+
+
 def test_the_walk_finds_the_root_through_a_git_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

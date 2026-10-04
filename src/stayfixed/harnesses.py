@@ -14,11 +14,11 @@ with that value's `render`. That is all detection decides: every payload is read
 (`hooks.dispatch.read_event`), because the harness a process detects is one a repository can
 choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` — so no value may
 change what a handler sees. The project root is read the same way under every answer: from the
-first of every registered value's `project_dir_env` that names one, in registry order. A deny
-reaches no value at all: exit 2 with the reason on stderr is the whole of a refusal for every
-harness. A new harness is a value with a positive `detects`, its project-root variable, its
-`render` and its `reach`; a harness whose payload genuinely differs is a question to answer with
-that harness's evidence when it arrives.
+first of every registered value's `project_dir_env` that names one, `CANONICAL`'s first
+(`project_root_variables`). A deny reaches no value at all: exit 2 with the reason on stderr is
+the whole of a refusal for every harness. A new harness is a value with a positive `detects`,
+its project-root variable, its `render` and its `reach`; a harness whose payload genuinely
+differs is a question to answer with that harness's evidence when it arrives.
 
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
 at which that surface holds under this harness (`Tier`), or that it does not reach the harness at
@@ -102,8 +102,8 @@ class Harness:
     # walks beside `settings` and `stayfixed assess` does not: they are this machine's.
     local_settings: tuple[str, ...]
     # The variable this harness names the project root in, if any. Every registered value's is
-    # asked, in registry order, whichever harness was detected: detection is a repository's to
-    # steer, and the root decides which configuration loads.
+    # asked, in `project_root_variables`' order, whichever harness was detected: detection is a
+    # repository's to steer, and the root decides which configuration loads.
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
     # no rendering carries a decision, because a deny travels on the exit code.
@@ -246,9 +246,24 @@ HARNESSES: tuple[Harness, ...] = (CLAUDE, CODEX)
 
 
 def registered() -> tuple[Harness, ...]:
-    """The values `detect` asks, behind one function so a test can register a value of its own
-    without editing the tuple every other reader shares."""
+    """Every value the hooks core answers through: the ones `detect` asks, in this order, and the
+    ones whose project-root variables `project_root_variables` names. Behind one function so a
+    test can register a value of its own without editing the tuple every other reader shares."""
     return HARNESSES
+
+
+def project_root_variables() -> tuple[str, ...]:
+    """The variables a hook's project root is read from, in the order they are asked.
+
+    `CANONICAL`'s first, then every other registered value's in registry order, each once. The
+    registry's order is the order `init` writes `agents` in, a choice about presentation, so it is
+    not the precedence too: a harness registered ahead of Claude Code would otherwise move every
+    Claude Code session's root to a variable of its own. Every value's is asked whichever value
+    was detected, because detection is a repository's to steer and the root decides which
+    configuration loads.
+    """
+    ordered = (CANONICAL, *(harness for harness in registered() if harness is not CANONICAL))
+    return tuple(dict.fromkeys(h.project_dir_env for h in ordered if h.project_dir_env))
 
 
 def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness:

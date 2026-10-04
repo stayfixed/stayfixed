@@ -630,10 +630,22 @@ reddens = [
 [[mutation]]
 name = "the root is read from the detected harness only"
 file = "src/stayfixed/hooks/dispatch.py"
-before = "        project_root=_named_root(env, registered()) or checkout_root(cwd),"
-after = "        project_root=_named_root(env, (harness,)) or checkout_root(cwd),"
+before = "        project_root=_named_root(env, project_root_variables()) or checkout_root(cwd),"
+after = "        project_root=_named_root(env, filter(None, (harness.project_dir_env,))) or checkout_root(cwd),"
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_detected_harness_never_moves_the_project_root",
+]
+
+# The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's
+# precedence: the canonical harness's variable is asked first, and a harness registered ahead of
+# Claude Code cannot move a Claude Code session's root to a variable of its own.
+[[mutation]]
+name = "the project-root variables are asked in registry order"
+file = "src/stayfixed/harnesses.py"
+before = "    ordered = (CANONICAL, *(harness for harness in registered() if harness is not CANONICAL))"
+after = "    ordered = registered()"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_harness_registered_first_never_takes_the_root_from_claude_code",
 ]
 
 # The CLI frame imports every area's `commands.py` to build its parser, and only a hook that runs
