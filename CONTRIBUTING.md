@@ -158,8 +158,10 @@ loaded: the core loads the private layer only when a command asks for it.
   check's or to one another area contributes. A `Contribution` may also carry `claims`, which
   answers `Claims`: the marker ids the area recorded in settings files and the commands it still
   grants there, which the core's `hook-entries` row asks with the same `Context`, so an entry the
-  area put there is told apart from a repository claiming it did. `register()` is called once per
-  report, so anything it creates for its checks — the delivery areas each create a
+  area put there is told apart from a repository claiming it did. The record may be repository
+  bytes and the grants may not, and an entry is absolved only by an area that both records its id
+  and grants its command, never by one area's record and another's grant. `register()` is called
+  once per report, so anything it creates for its checks — the delivery areas each create a
   `memory.api.Answers` for the overlay root and the note store — is fresh for every report.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/test_areas.py` holds that one.

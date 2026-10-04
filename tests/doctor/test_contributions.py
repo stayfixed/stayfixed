@@ -145,7 +145,7 @@ def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
 
 # Two entries claiming the marker, one for each of two areas, in a settings file `hook-entries`
 # walks. Each area records its own id and grants its own command, so neither answer alone vouches
-# for both entries.
+# for both entries, and an entry is absolved only by the one area that both records and grants it.
 ALPHA = "echo alpha  # stayfixed:alpha-1"
 OMEGA = "echo omega  # stayfixed:omega-1"
 # An entry claiming the marker that no area records: red whenever the records can be read, so a
@@ -184,15 +184,15 @@ def _hook_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *areas: Modul
     )
 
 
-def test_hook_entries_pools_what_every_area_claims(
+def test_hook_entries_reads_what_every_area_claims(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Each area answers for the entries it put there, so the row reads the union of the answers:
-    # alpha's entry is vouched for by alpha's record and grant, omega's by omega's, and an area
-    # that contributes a row and no claims takes no part. Mutations (oracle): `mutations/`'s
-    # "hook-entries keeps only the last area's recorded ids" and "hook-entries keeps only the
-    # last area's granted commands" -> alpha's entry is no longer vouched for and the row is red;
-    # "hook-entries ignores what the areas claim" -> neither is.
+    # Each area answers for the entries it put there, so the row asks every area: alpha's entry
+    # is vouched for by alpha's record and grant, omega's by omega's, and an area that contributes
+    # a row and no claims takes no part. Mutations (oracle): `mutations/`'s "hook-entries keeps
+    # only the last area's recorded ids" and "hook-entries keeps only the last area's granted
+    # commands" -> alpha's entry is no longer vouched for and the row is red; "hook-entries
+    # ignores what the areas claim" -> neither is.
     def answer(context: Context) -> Row:
         return Row(OK, "answered")
 
@@ -205,6 +205,46 @@ def test_hook_entries_pools_what_every_area_claims(
         _area("omega", OMEGA_CLAIMS),
     )
     assert row == Check("hook-entries", OK, "2 stayfixed entr(ies), 0 foreign; all accounted for")
+
+
+def test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A record and a grant vouch for an entry only when they are one area's: that area wrote the
+    # entry and its overlay still grants it. Pooled, alpha's record of the id and omega's grant of
+    # the command absolved an entry neither area put there whole — and a record is a file a
+    # repository can write, so the pool let one area's committable file borrow another's grant.
+    # Mutation (oracle): `mutations/`'s "hook-entries absolves an entry on one area's record and
+    # another area's grant" -> the entry is absolved and the row is green.
+    _hooked(_initialised(tmp_path), ALPHA)
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset())),
+        _area("omega", _claiming({}, frozenset({ALPHA}))),
+    )
+    assert row.status == RED, row
+    assert (
+        f"1 entr(ies) claim the stayfixed marker and are recorded in {ATTACH_LEDGER}, and the "
+        f"overlay does not grant them: {SETTINGS} entry 1 of 1"
+    ) in row.detail
+
+
+def test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The grant is compared by the marked command and not by its id: an id the area does record
+    # and grant, hung on a command it does not grant, is a repository borrowing a real id. Alpha
+    # vouches for `ALPHA`, and `STRAY` claims alpha's id with a command of its own. Mutation
+    # (oracle): `mutations/`'s "hook-entries compares a grant by its id rather than its command"
+    # -> `STRAY` is absolved with `ALPHA` and the row is green.
+    _hooked(_initialised(tmp_path), ALPHA, STRAY)
+    row = _hook_entries(tmp_path, monkeypatch, _area("alpha", ALPHA_CLAIMS))
+    assert row.status == RED, row
+    assert (
+        f"1 entr(ies) claim the stayfixed marker and are recorded in {ATTACH_LEDGER}, and the "
+        f"overlay does not grant them: {SETTINGS} entry 2 of 2"
+    ) in row.detail
 
 
 def test_an_id_an_area_records_and_nothing_grants_is_never_absolved(

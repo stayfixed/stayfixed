@@ -95,12 +95,18 @@ class Context:
 class Claims:
     """What an area put into settings files, for `hook-entries`' provenance column.
 
-    Carries every answer an area's record of what it wrote and the overlay behind it can give,
-    their `None`s included: `recorded is None` is "the record could not be read" (the row warns,
-    says so, and judges no entry), `granted is None` is "the overlay could not be asked" (the row
-    warns and withholds only the comparison with what is granted: an entry no record holds is
-    still red). `hook-entries` pools every area's answer, and a `None` from any one area is `None`
-    for the pool."""
+    `recorded` is the marker ids the area's record says it wrote, by event, and may be repository
+    bytes: `attach`'s record is a file a clone can commit. `granted` is the marked commands the area
+    grants right now, and **must come from a source the repository cannot choose** — `attach` asks
+    the overlay whose root the machine file records — because it is the half that vouches. An entry
+    is absolved only when one area both records its id and grants its command; one area's record
+    never stands on another area's grant.
+
+    Every answer the two sources can give is carried, their `None`s included: `recorded is None` is
+    "the record could not be read" (the row warns, says so, and judges no entry), `granted is None`
+    is "the overlay could not be asked" (the row warns and withholds only the comparison with what
+    is granted: an entry no record holds is still red). A `None` from any one area is `None` for
+    every area's entries, because what it would have said is not something another area can."""
 
     recorded: Mapping[str, str] | None
     granted: frozenset[str] | None

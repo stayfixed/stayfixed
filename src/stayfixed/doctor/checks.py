@@ -522,61 +522,58 @@ _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 def _claimed(
     context: Context, claims: Sequence[Callable[[Context], Claims]]
-) -> tuple[dict[str, str] | None, set[str] | None]:
-    """Every area's `Claims`, as the two answers `hook-entries` reads: the marker ids recorded,
-    and the marked commands granted.
+) -> tuple[list[Claims], bool, bool]:
+    """Every area's `Claims`, and whether every record could be read and every overlay asked.
 
     An area's own record is the only thing that can say what it put into settings files, so the
     core asks each area that has one, with this report's context and under this row's guard. The
-    answers are pooled, and a `None` from any area is `None` for the pool: an id one record could
-    not be read for, or a command one overlay could not be asked about, is not one the rest can
-    vouch for. With no area claiming anything, nothing is recorded and nothing granted, so every
-    entry claiming the marker is one no area put there.
+    answers are kept apart rather than pooled: an entry is vouched for only by the one area that
+    both records its id and grants its command, because a record is a file a repository can
+    write, and one area's record standing on another area's grant vouches for an entry neither
+    area put there whole. A `None` is still one for the whole: an id one record could not be read
+    for, or a command one overlay could not be asked about, is not one the rest can vouch for.
+    With no area claiming anything, nothing is recorded and nothing granted, so every entry
+    claiming the marker is one no area put there.
     """
-    recorded: dict[str, str] | None = {}
-    granted: set[str] | None = set()
-    for ask in claims:
-        answer = ask(context)
-        if recorded is not None:
-            recorded = None if answer.recorded is None else {**recorded, **answer.recorded}
-        if granted is not None:
-            granted = None if answer.granted is None else granted | answer.granted
-    return recorded, granted
+    answers = [ask(context) for ask in claims]
+    readable = all(answer.recorded is not None for answer in answers)
+    askable = all(answer.granted is not None for answer in answers)
+    return answers, readable, askable
 
 
 def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]] = ()) -> Row:
     """Every entry in every settings file, with provenance.
 
     Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
-    marker id is in the attach ledger *and* whose command the overlay still grants is the
-    overlay's; an entry with no marker is foreign and is left alone by every merge this project
-    ships; an entry that **claims** the marker and cannot be vouched for is a repository saying
-    it is stayfixed, which is a stronger statement than "foreign" and the one a reader needs. It
-    is reported by position — see the module docstring for why not by name.
+    marker id one area records *and* whose command that same area still grants is that area's;
+    an entry with no marker is foreign and is left alone by every merge this project ships; an
+    entry that **claims** the marker and cannot be vouched for is a repository saying it is
+    stayfixed, which is a stronger statement than "foreign" and the one a reader needs. It is
+    reported by position — see the module docstring for why not by name.
 
-    **The ledger alone may never turn an entry green.** `.stayfixed/local/attach.json` is a path a
-    clone can commit, so a repository that commits a marked hook entry *and* a ledger recording
-    that entry's id got this row to answer "all accounted for" — a committable file silencing the
-    one check whose entire purpose is that nobody's entries go unlisted. That is the defect
-    `attach.write.AttachLedger` records — `detach` taking the ledger at its word — one field
-    over, and it gets the same rule: what could `attach` possibly have written here? An id is
-    credible only if the entry it names is one the **overlay** currently grants, and the overlay
-    is trusted by construction because its root comes from the machine configuration rather than
-    from anything a repository can reach.
+    What each area recorded and what it grants are the areas' to answer, because the areas wrote
+    them: each hands its `Claims` to this row (`_claimed`), and the contract is the one `Claims`
+    states. A record may be repository bytes — `attach`'s is `.stayfixed/local/attach.json`, a
+    path a clone can commit — so **a record alone may never turn an entry green**: a repository
+    that committed a marked entry and a ledger recording its id got this row to answer "all
+    accounted for". An id is credible only beside a grant from a source the repository cannot
+    choose, and only the same area's grant, so one area's record never borrows another's. The
+    grant is the *marked command* and not the id, because an id that is granted with a different
+    command hung on it is the same attack one step down.
 
-    Which ids a ledger records and which commands an overlay grants are the areas' to answer,
-    because the areas wrote them: each hands its `Claims` to this row (`_claimed`), and `attach`'s
-    are the attach ledger and the overlay it is bound to. The overlay's answer is the *marked
-    command* and not the id, because an id the overlay
-    does grant with a different command hung on it is the same attack one step down. And where
-    the overlay cannot be asked at all, the answer is the one this check already gives a file it
-    could not parse: report it, never absolve it. That withholds the grant comparison and nothing
-    more. Whether a record holds an entry's id needs only the record, so an entry no record holds
-    is red whether or not the overlay can be asked: withholding that too let a clone that commits
-    a ledger beside its entry turn the row into a warning on any machine with no overlay.
+    Where an overlay cannot be asked, the answer is the one this check gives a file it could not
+    parse: report it, never absolve it. That withholds the grant comparison and nothing more.
+    Whether a record holds an entry's id needs only the records, so an entry no record holds is red
+    whether or not the overlay can be asked: withholding that too let a clone that commits a ledger
+    beside its entry turn the row into a warning on any machine with no overlay. Where a record
+    cannot be read, the row warns and names it and judges no entry: an unreadable record is not an
+    empty one, and judged as one it would report every entry `attach` installed as recorded nowhere,
+    with a remedy telling the owner to remove it. Reading the record is the area's, which answers
+    `None` rather than raising, so a committed file the area cannot parse costs a warning and never
+    this row's guard.
 
-    The two red lists are kept apart because their remedies differ. An entry in no ledger is one
-    to open and delete; an entry the ledger records and the overlay no longer grants is either a
+    The two red lists are kept apart because their remedies differ. An entry in no record is one
+    to open and delete; an entry a record holds and its overlay no longer grants is either a
     checkout that has drifted from the overlay or a forged ledger, and `stayfixed attach` settles
     which — it takes out every marked entry the overlay no longer grants, so anything surviving
     it was never stayfixed's.
@@ -594,16 +591,8 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
     `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
     admit it cannot account for. The report names the file and never its contents.
-
-    **And the ledger is one of those files.** `.stayfixed/local/attach.json` is a path a clone
-    can commit — `.gitignore` does not untrack a committed file — so a repository could make
-    `ledger()` raise and turn this row red through `_guarded`, with the detail "this check could
-    not run" and a remedy that cannot help: a false red, on the one check whose docstring
-    insists a file it could not read is named rather than dropped, forced by the bytes it is
-    supposed to be reporting on. It is now a `warn` that names the ledger, and the provenance
-    column is withheld rather than computed against an empty record.
     """
-    found, granted = _claimed(context, claims)
+    answers, readable, askable = _claimed(context, claims)
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
@@ -636,32 +625,35 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                 foreign += 1
                 continue
             claimed += 1
-            if found is None:
-                # An unreadable ledger is not an empty one: judged against `{}`, every entry
+            if not readable:
+                # An unreadable record is not an empty one: judged against `{}`, every entry
                 # `attach` installed would read as recorded nowhere, red, with a remedy telling the
                 # owner to remove it. So the provenance column is withheld and the file is named.
                 continue
             where = f"{label} entry {position} of {len(commands)}"
-            if entry_id not in found:
-                # Needs the record alone, so an overlay that cannot be asked does not withhold
+            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
+            if not holders:
+                # Needs the records alone, so an overlay that cannot be asked does not withhold
                 # it: a committed ledger beside a committed entry it does not record is red
                 # whether or not this machine records an overlay.
                 unrecorded.append(where)
-            elif granted is not None and command not in granted:
-                # Needs the overlay too, and absolving an entry on the record alone is what this
-                # row may never do: without a grant to compare, the entry is neither.
+            elif askable and not any(command in (answer.granted or ()) for answer in holders):
+                # Needs the overlays too, and only a holder's own grant vouches for its record:
+                # absolving an entry on a record alone, or on one area's record and another's
+                # grant, is what this row may never do. Without a grant to compare, the entry is
+                # neither absolved nor accused.
                 ungranted.append(where)
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     status: Status = OK
     remedy = ""
-    if found is None:
+    if not readable:
         status = WARN
         parts.append(
             f"{ATTACH_LEDGER} is there and cannot be read as a ledger, so which of those entries "
             f"`stayfixed attach` installed could not be established"
         )
         remedy = f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
-    elif granted is None:
+    elif not askable:
         status = WARN
         parts.append(
             "the overlay this repository is bound to could not be asked which entries it "
