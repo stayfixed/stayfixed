@@ -810,6 +810,18 @@ reddens = [
   "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
 ]
 
+# A project 0.2.0's `adopt begin` left is `adopting` with no `enforced` line, and promotion takes
+# it from there as it takes an initialised one; refused, that project could never be promoted.
+[[mutation]]
+name = "promote refuses an adopting project that enforces nothing yet"
+file = "src/stayfixed/assess/state.py"
+before = "    state = config.stayfixed.state\n    wanted = ["
+after = "    state = config.stayfixed.state\n    if state == \"adopting\" and not enforcing and configured:\n        raise Refusal(ALL_ENFORCE)\n    wanted = ["
+reddens = [
+  "tests/assess/test_state.py::test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting[adopting]",
+  "tests/assess/test_state.py::test_uninstall_after_a_promotion_takes_stayfixed_toml_back[adopting]",
+]
+
 # The two keys state one fact and the editor edits them one at a time, so its own refusal names
 # only the key it failed on: `enforced = []` alone, which beside `adopting` enforces nothing.
 [[mutation]]

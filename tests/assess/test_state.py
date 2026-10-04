@@ -22,6 +22,7 @@ from stayfixed.config.owned import OwnedKeyError
 from stayfixed.config.schema import BUILTIN_GATES, Config
 from stayfixed.errors import Refusal
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.project.api import rewrite_owned
 from stayfixed.project.templates import CONFIG_ARTIFACT
 from stayfixed.project.upgrade import upgrade
 from stayfixed.scaffold import Manifest, ManifestError, digest
@@ -56,25 +57,12 @@ def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt stayfixed")
     (root / ADOPTION).write_text(PLAN, encoding="utf-8")
-    _declare(root, "in progress")
     git(root, "add", "-A")
     code, _, err = cli(root, tmp_path, "docs", "trail")
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the stayfixed adoption plan")
     return root, git(root, "rev-parse", "HEAD~1").strip()
-
-
-TRAIL = Path(preset_defaults("widget").paths.roadmap).parent / "trail.toml"
-ROW = f"{Path(PLANS).name}/{Path(ADOPTION).name}"
-
-
-def _declare(root: Path, state: str) -> None:
-    """Give the adoption plan's trail row `state` under `[states]`."""
-    text = (root / TRAIL).read_text(encoding="utf-8")
-    text = "".join(line for line in text.splitlines(keepends=True) if not line.startswith('"'))
-    text += f'"{ROW}" = "{state}"\n'
-    (root / TRAIL).write_text(text, encoding="utf-8")
 
 
 def _config(root: Path, tmp_path: Path) -> Config:
@@ -90,6 +78,24 @@ def _set(root: Path, old: str, new: str) -> None:
     text = _document(root)
     assert text.count(old) == 1, old
     (root / CONFIG_FILE).write_text(text.replace(old, new), encoding="utf-8")
+
+
+# Where a promotion may start: a project `init` left, and one an `adopt begin` left in 0.2.0, the
+# release before promotion moved a project out of `initialised` itself. That command wrote
+# `state = "adopting"` and no `enforced` line, through the owned-key rewrite, and an upgrade
+# leaves such a document as it is.
+STARTS = pytest.mark.parametrize("start", ["initialised", "adopting"])
+
+
+def _start(root: Path, start: str) -> None:
+    """Leave the project at `start`; `adopting` is written as 0.2.0's `adopt begin` wrote it, the
+    manifest's record re-stamped with it, so `uninstall` still knows the document as its own."""
+    if start == "initialised":
+        return
+    before = _document(root)
+    rewrite_owned(root, {("stayfixed", "state"): "adopting"})
+    assert _document(root) == before.replace('state = "initialised"\n', 'state = "adopting"\n')
+    assert "\nenforced =" not in _document(root)
 
 
 def _land(root: Path, subject: str = "chore: a custom gate") -> str:
@@ -129,17 +135,23 @@ def test_a_promotion_keeps_every_other_byte_and_the_record(tmp_path: Path) -> No
     assert record.sha256 == digest(after)
 
 
-def test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting(tmp_path: Path) -> None:
+@STARTS
+def test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting(
+    tmp_path: Path, start: str
+) -> None:
     # Promotion is the one adoption step: the first promotion moves an initialised project to
-    # adopting, since the loader refuses a list under `initialised`.
+    # adopting, since the loader refuses a list under `initialised`, and a project an earlier
+    # release's `adopt begin` left adopting with no list is promoted from there the same way.
     # Mutation: `after` kept at the current state when not installing -> `enforced` is written
-    # under `initialised`, and reloading the document refuses it.
+    # under `initialised`, and reloading the document refuses it. Mutation (declared): `promote`
+    # refusing an adopting project that enforces nothing yet -> the `adopting` case reddens.
     root, base = _project(tmp_path)
+    _start(root, start)
     transition = promote(
         root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml"
     )
     assert (transition.before, transition.after, transition.promoted) == (
-        "initialised",
+        start,
         "adopting",
         ("docs",),
     )
@@ -668,12 +680,20 @@ def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
     assert planned() == before
 
 
-def test_uninstall_after_a_promotion_takes_stayfixed_toml_back(tmp_path: Path) -> None:
+@STARTS
+def test_uninstall_after_a_promotion_takes_stayfixed_toml_back(tmp_path: Path, start: str) -> None:
     # The record was re-stamped at each write, so the promoted document is still one stayfixed
-    # wrote. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
+    # wrote, from either start: the bare promotion installs the project, and `uninstall` takes
+    # the file back. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
+    # Mutation (declared): `promote` refusing an adopting project that enforces nothing yet ->
+    # the `adopting` case reddens.
     root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
-    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
+    _start(root, start)
+    first = promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
+    assert (first.after, first.promoted) == ("adopting", ("docs",))
+    last = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
+    assert (last.before, last.after) == ("adopting", "installed")
+    assert _config(root, tmp_path).stayfixed.state == "installed"
     code, _, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()
