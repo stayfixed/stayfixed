@@ -78,9 +78,11 @@ def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
 
 
 def _inside_store(root: Path, store: Store, target: str) -> bool:
+    # `RuntimeError` too: Python 3.11 and 3.12 raise it resolving a path through a symlink loop,
+    # where 3.13 answers one, and both the note's path and the loop are bytes a clone can commit.
     try:
         return (root / target).resolve().is_relative_to(store.path.resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         return False
 
 

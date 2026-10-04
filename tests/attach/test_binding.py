@@ -146,6 +146,36 @@ def test_a_store_that_is_not_this_projects_directory_is_refused(tmp_path: Path) 
         read_binding(root, store=sibling, machine=_machine(tmp_path, overlay=real.parents[2]))
 
 
+def test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `doctor` hands this function the store the attach ledger names, and the ledger is a file a
+    # clone can commit, beside a symlink loop of its own. Python 3.11 and 3.12 raise
+    # `RuntimeError` resolving a path through a loop where 3.13 answers a path, so on the two
+    # older interpreters the resolve escaped the refusal, and `doctor`'s `attached` and
+    # `hook-entries` rows read red, "this check could not run". The loop is real; the
+    # older interpreters' answer to it is stood in for, so the case holds on every interpreter.
+    #
+    # Mutation (oracle): `mutations/`'s "read_binding lets a store it cannot resolve raise" ->
+    # the `RuntimeError` escapes.
+    root, real = _project_and_store(tmp_path, recorded=None, origin="git@github.com:o/p.git")
+    (root / "loop").symlink_to("loop")
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if "loop" in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+    with pytest.raises(Refusal):
+        read_binding(
+            root,
+            store=root / "loop" / "memory",
+            machine=_machine(tmp_path, overlay=real.parents[2]),
+        )
+
+
 def test_a_first_attach_reports_unbound_rather_than_binding_silently(tmp_path: Path) -> None:
     # A first attach asks the owner to confirm the binding and records it. The asking is the
     # skill's; refusing to decide is this function's.

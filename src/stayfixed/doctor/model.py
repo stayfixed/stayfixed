@@ -122,5 +122,6 @@ class Contribution:
     """
 
     checks: tuple[tuple[str, Callable[[Context], Row]], ...]
-    # Never raises on repository bytes: an answer it cannot read is a `None` field of `Claims`.
+    # Must not raise on repository bytes: an answer it cannot read is a `None` field of `Claims`.
+    # `hook-entries` asks it under its own guard, so one that raises costs that row, red.
     claims: Callable[[Context], Claims] | None = None

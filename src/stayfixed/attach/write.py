@@ -239,7 +239,10 @@ class AttachLedger:
     removes a rule the settings file already holds, so the worst a committed `allow` achieves is
     taking a permission away. `store` is read by nothing: `detach` derives every path it
     withdraws from the configuration and the overlay root, never from this field, so it is a
-    record for a human reading the file and for `doctor`, and a committed value costs nothing.
+    record for a human reading the file and for `doctor`, and a committed value costs nothing —
+    except one holding a NUL, which no path holds and `doctor`'s `Path.resolve` meets with
+    `ValueError`, so that one is a ledger no attach wrote. So is any list field holding something
+    other than a list, which reading it would meet with `TypeError`.
 
     `entries` maps each marker id to its event, which is the shape `scaffold.owned_ids` answers
     in, so `doctor` can compare the two without a translation in between.
@@ -271,6 +274,16 @@ def _rule_is_writable(rule: str) -> bool:
     return bool(name) and "/" not in name and not name.startswith(".")
 
 
+def _listed(raw: dict[str, Any], key: str, path: Path) -> list[Any]:
+    """The ledger's `key`, which `attach` always writes as a list: absent reads as empty, and
+    anything else is a ledger no attach wrote — a `Failure`, the answer every reader of this file
+    already handles, and not the `TypeError` iterating a number would raise past them."""
+    value = raw.get(key, [])
+    if not isinstance(value, list):
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its {key!r} is not a list")
+    return value
+
+
 def _checked(
     raw: dict[str, Any], path: Path
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -279,13 +292,13 @@ def _checked(
     Counted and never quoted: these strings are repository-authored (principle 5), and a
     refusal built out of one is still one.
     """
-    rules = tuple(r for r in raw.get("rules", []) if isinstance(r, str))
-    keys = tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str))
+    rules = tuple(r for r in _listed(raw, "rules", path) if isinstance(r, str))
+    keys = tuple(k for k in _listed(raw, "settings_keys", path) if isinstance(k, str))
     # Held to the same standard as the two above rather than merely filtered at the removal
     # site, so the answer to "is this a record of an attach on this machine?" is one answer.
     # `detach` also intersects with `CREATED_DIRS` when it walks them, which is the floor under
     # this; a name outside the list is a ledger no attach wrote, and that is a refusal.
-    directories = tuple(d for d in raw.get("directories", []) if isinstance(d, str))
+    directories = tuple(d for d in _listed(raw, "directories", path) if isinstance(d, str))
     foreign = sum(1 for rule in rules if not _rule_is_writable(rule))
     foreign += sum(1 for key in keys if key != FALLBACK_KEY)
     foreign += sum(1 for name in directories if name not in CREATED_DIRS)
@@ -328,10 +341,15 @@ def ledger(root: Path) -> AttachLedger:
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
     rules, keys, directories = _checked(raw, path)
+    store = str(raw.get("store", ""))
+    if "\0" in store:
+        # `attach` records the store it was handed as a path, and no path holds a NUL; `doctor`
+        # hands this field to `Path.resolve`, which meets one with `ValueError`.
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'store' holds a NUL")
     entries = raw.get("entries")
     return AttachLedger(
-        store=str(raw.get("store", "")),
-        allow=tuple(r for r in raw.get("allow", []) if isinstance(r, str)),
+        store=store,
+        allow=tuple(r for r in _listed(raw, "allow", path) if isinstance(r, str)),
         entries=(
             # `mark`/`marker_id` and not a second copy of the marker grammar: `_write_ledger`
             # builds these keys with `marker_id`, so a key that does not round-trip through the
@@ -345,7 +363,7 @@ def ledger(root: Path) -> AttachLedger:
         rules=rules,
         settings_keys=keys,
         directories=directories,
-        memory_parents=tuple(d for d in raw.get("memory_parents", []) if isinstance(d, str)),
+        memory_parents=tuple(d for d in _listed(raw, "memory_parents", path) if isinstance(d, str)),
         memory_created=raw.get("memory_created") is True,
     )
 

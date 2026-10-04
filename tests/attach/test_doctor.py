@@ -333,6 +333,49 @@ def test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed
     assert LEDGER in row.remedy
 
 
+# Ledger fields a clone can commit in shapes `attach` never writes, each of which used to raise out
+# of the ledger's reader with something other than its refusal: a `store` holding a NUL, which
+# `Path.resolve` meets as `ValueError`, and a list field holding a number, which the reader's
+# iteration meets as `TypeError`.
+HOSTILE_FIELDS = {
+    "store-nul": ("store", "/overlay/projects/widget/memory\u0000"),
+    "allow-not-a-list": ("allow", 5),
+    "rules-not-a-list": ("rules", 5),
+    "settings-keys-not-a-list": ("settings_keys", 5),
+    "directories-not-a-list": ("directories", 5),
+    "memory-parents-not-a-list": ("memory_parents", 5),
+}
+
+
+@pytest.mark.parametrize("field", sorted(HOSTILE_FIELDS))
+def test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable(
+    tmp_path: Path, field: str
+) -> None:
+    # Each of these reached `_guarded` as an exception the area did not catch, so `attached` and
+    # `hook-entries` both read red, "this check could not run", exit 1, on a file a clone chose:
+    # the false red the ledger's three answers exist to prevent. The reader now refuses a ledger
+    # `attach` could not have written, and both rows give the unreadable-ledger warning.
+    #
+    # Mutations (oracle): `mutations/`'s "the attach ledger's reader takes a store holding a NUL"
+    # -> the `store-nul` case is red again; "the attach ledger's reader iterates a field that is
+    # not a list" -> the other cases are.
+    root = _attached(tmp_path)
+    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    key, value = HOSTILE_FIELDS[field]
+    recorded[key] = value
+    (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert not any(row.status == "red" for row in rows), [
+        (row.name, row.detail) for row in rows if row.status == "red"
+    ]
+    attached = _by_name(rows, "attached")
+    assert attached.status == WARN
+    assert f"{LEDGER} is here and cannot be read as a ledger" in attached.detail
+    entries = _by_name(rows, "hook-entries")
+    assert entries.status == WARN
+    assert f"{LEDGER} is there and cannot be read as a ledger" in entries.detail
+
+
 # --- what this area claims for `hook-entries` --------------------------------------------------
 #
 # `hook-entries` is the core's row, and the provenance it prints is this area's answer: which marker

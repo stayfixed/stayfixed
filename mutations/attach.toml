@@ -1559,3 +1559,41 @@ after = '''            f"memory.mode is overlay and {ATTACH_LEDGER} is missing, 
 reddens = [
   "tests/attach/test_doctor.py::test_an_unattached_project_reports_attached_as_it_did[overlay]",
 ]
+
+# The attach ledger is a file a clone can commit, and its readers catch the reader's own `Failure`
+# and `Refusal`. A shape `attach` never writes that raised anything else reached `doctor`'s guard,
+# and `attached` and `hook-entries` read red, "this check could not run", on a file the repository
+# chose: a `store` holding a NUL, which `Path.resolve` meets with `ValueError`, and a list field
+# holding a number, which iterating it meets with `TypeError`.
+[[mutation]]
+name = "the attach ledger's reader takes a store holding a NUL"
+file = "src/stayfixed/attach/write.py"
+before = '    if "\0" in store:'
+after = '    if False:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-nul]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader iterates a field that is not a list"
+file = "src/stayfixed/attach/write.py"
+before = '    if not isinstance(value, list):'
+after = '    if False:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[allow-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[rules-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[settings-keys-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[directories-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[memory-parents-not-a-list]",
+]
+
+# The store a ledger names reaches `read_binding` from `doctor`, and Python 3.11 and 3.12 raise
+# `RuntimeError` resolving a path through a symlink loop a clone can commit beside it.
+[[mutation]]
+name = "read_binding lets a store it cannot resolve raise"
+file = "src/stayfixed/attach/binding.py"
+before = "    except (OSError, RuntimeError):\n        # A store through a symlink loop"
+after = "    except OSError:\n        # A store through a symlink loop"
+reddens = [
+  "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
+]

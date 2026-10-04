@@ -147,6 +147,32 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
     ]
 
 
+def test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A note's backticked path and a symlink loop are both bytes a clone can commit. Asking
+    # whether the path lies inside the store resolves it, and Python 3.11 and 3.12 raise
+    # `RuntimeError` resolving a path through a loop where 3.13 answers one, so on the two older
+    # interpreters `memory refs` ended in an internal error. The loop is real; the older
+    # interpreters' answer to it is stood in for, so the case holds on every interpreter. A path
+    # that does not resolve is not inside the store, and names no file: a finding.
+    #
+    # Mutation (oracle): `mutations/`'s "refs lets a path it cannot resolve raise" -> the
+    # `RuntimeError` escapes.
+    root, config = project(tmp_path)
+    (root / "loop").symlink_to("loop")
+    note(root, "developer", "a", "see `loop/x.py`\n")
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if "loop" in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+    assert findings(root, config) == [("developer/a.md", 8, "loop/x.py", "dead-reference")]
+
+
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
     import shutil
 

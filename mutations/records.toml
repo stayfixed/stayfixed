@@ -1684,3 +1684,15 @@ after = "from typing import TYPE_CHECKING, TypeVar\n\nfrom stayfixed.errors impo
 reddens = [
   "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
+
+# A note's backticked path is resolved to ask whether it lies inside the store, and Python 3.11 and
+# 3.12 raise `RuntimeError` resolving a path through a symlink loop; the note and the loop are both
+# bytes a clone can commit, so the answer is a finding and never an internal error.
+[[mutation]]
+name = "refs lets a path it cannot resolve raise"
+file = "src/stayfixed/memory/refs.py"
+before = "    except (OSError, RuntimeError):\n        return False"
+after = "    except OSError:\n        return False"
+reddens = [
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error",
+]
