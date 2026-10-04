@@ -286,9 +286,8 @@ def origin_remote(root: Path) -> str | None:
         return out.removesuffix("\n") or None
     if code == -1 or not git_is_usable(root):
         raise GitUnavailable(
-            "`git` could not read this repository's origin remote, so the overlay binding "
-            "cannot be checked — the fault is on this machine rather than in the binding; "
-            "check that `git` runs here"
+            "`git` could not read this repository's origin remote — the fault is on this "
+            "machine rather than in the repository; check that `git` runs here"
         )
     return None
 

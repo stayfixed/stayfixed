@@ -265,9 +265,9 @@ def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_
     # could not be asked — never a warning that accuses the repository, and never the word
     # "attached".
     #
-    # Mutation (declared): `if context.overlay is None: return NO_OVERLAY` -> `if False:` ->
-    # the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the arm is gone)
-    # and this reddens on the status and the sentence.
+    # Mutation (declared): `if answers.overlay(context) is None: return NO_OVERLAY` ->
+    # `if False:` -> the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the
+    # arm is gone) and this reddens on the status and the sentence.
     root = _attached(tmp_path)
     row = _by_name(_checks(tmp_path, root, machine=_no_overlay_machine(tmp_path)), "attached")
     assert row.status == SKIP

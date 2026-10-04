@@ -30,8 +30,8 @@ import re
 # version, not an arbitrary numeral system. `tests/test_semver.py` and
 # `tests/overlay/test_requires.py` spell the digits.
 COMPONENT = r"([0-9]{1,9})"
-# A version's leading `X.Y.Z`, whatever follows it: how `later` and the overlay's floor read a
-# running version.
+# A version's leading `X.Y.Z`, whatever follows it: the triple `later` orders versions by first,
+# for any caller that compares a version by its release.
 VERSION = re.compile(rf"^{COMPONENT}\.{COMPONENT}\.{COMPONENT}")
 # A version that is exactly `X.Y.Z` and nothing after it, in the same bounded components: what a
 # caller may print back as a version when the string is otherwise repository-authored.
@@ -49,12 +49,11 @@ _PRE_RELEASE = re.compile(
 def later(version: str, than: str) -> bool | None:
     """Whether `version` is later than `than`, by the leading `X.Y.Z` and then by what follows it.
 
-    Both are read the way `satisfies` reads a running version: the leading three components,
-    compared as integer tuples, decide whenever they differ, so `1.0.0-rc1` is later than
-    `0.9.9`. `None` when either has no leading `X.Y.Z` (`v1.0.0`, an empty string): the
-    direction is unknown, and a caller that would move a value in one direction must not guess
-    it. `stayfixed upgrade` refuses such a recorded version, and `doctor`'s `versions` row says so
-    rather than sending it there.
+    Both are read by their leading three components (`VERSION`), compared as integer tuples,
+    which decide whenever they differ, so `1.0.0-rc1` is later than `0.9.9`. `None` when either
+    has no leading `X.Y.Z` (`v1.0.0`, an empty string): the direction is unknown, and a caller
+    that would move a value in one direction must not guess it. `stayfixed upgrade` refuses such
+    a recorded version, and `doctor`'s `versions` row says so rather than sending it there.
 
     **Equal triples are not equal versions.** Read by the triple alone, `later('1.0.0',
     '1.0.0rc1')` was `False`, so a pre-release build moved a project recording the release down

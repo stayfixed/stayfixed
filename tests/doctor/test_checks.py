@@ -111,13 +111,14 @@ def _checks(
     what makes forgetting impossible rather than merely discouraged.
 
     **`machine` is defaulted here for the same reason, and it was the hole that rule was written
-    to close.** `None` does not mean "no machine file" to the code under test: `_context` hands
-    it to `overlay_root`, which resolves `None` as `Path.home()/.config/stayfixed/config.toml` —
-    the *process* `HOME`, which the `env` dict above cannot reach. On any machine that has run
-    `stayfixed setup --overlay`, and this project's own developers are exactly those machines,
-    every case that omitted `machine` read the developer's real overlay: `context.overlay` was
-    their overlay root, `overlay-requires` read its real manifest, and `bundles`, `store-debris`
-    and `attached` resolved against their real note store. Those cases passed here and in CI
+    to close.** `None` does not mean "no machine file" to the code under test: the delivery
+    areas' rows hand it to `overlay_root`, which resolves `None` as
+    `Path.home()/.config/stayfixed/config.toml` — the *process* `HOME`, which the `env` dict above
+    cannot reach. On any machine that has run `stayfixed setup --overlay`, and this project's own
+    developers are exactly those machines, every case that omitted `machine` read the developer's
+    real overlay: the overlay root those rows read was theirs, `overlay-requires` read its real
+    manifest, and `bundles`, `store-debris` and `attached` resolved against their real note
+    store. Those cases passed here and in CI
     only because neither machine happens to have a machine configuration. A path under
     `tmp_path` that does not exist is what `None` was meant to mean, and now says it.
     """
@@ -1503,11 +1504,11 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     """`_checks`'s hermetic defaults, proved on the one that was missing.
 
     `machine` defaulted to `None`, and `None` is not "no machine file" to the code under test:
-    `_context` hands it to `overlay_root`, which resolves `None` as
+    the delivery areas' rows hand it to `overlay_root`, which resolves `None` as
     `Path.home()/.config/stayfixed/config.toml` — the **process** `HOME`, which the `env` dict
     this helper passes cannot reach. So on any machine that has run `stayfixed setup --overlay`,
     and this project's own intended users are exactly those machines, every case that omitted
-    `machine` read the developer's real overlay: `context.overlay` was their overlay root,
+    `machine` read the developer's real overlay: the overlay root those rows read was theirs,
     `overlay-requires` read its real manifest — the shipped template declares a floor — and
     `bundles`, `store-debris` and `attached` resolved against their real note store. Those cases
     passed here and in CI only because neither machine happens to have a machine configuration.

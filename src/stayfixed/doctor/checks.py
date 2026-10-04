@@ -16,10 +16,10 @@ defines its own record and reuses `findings.listed` for the summary line alone.
 
 **What may be printed, and what may not.** Counts, labels, statuses and stayfixed's own
 vocabulary are computed here and print freely. A repository-authored string does not: not
-`[stayfixed] version`, not `[ci] ref`, not a note's filename, not a hook command, not the reason
-`memory.store` gives for an unresolvable store. The hook sink holds its diagnostics log to that
-line in as many words — reasons, never payloads — and this module holds every other row to it,
-as each area's `doctor.py` holds the rows it contributes.
+`[stayfixed] version`, not `[ci] ref`, not a hook command. The hook sink holds its diagnostics log
+to that line in as many words — reasons, never payloads — and this module holds every other row to
+it, as each area's `doctor.py` holds the rows it contributes, where a note's filename and the
+reason a store does not resolve are repository-authored too.
 
 **No exception, and `hook-entries` is where one was nearly made.** Against a hostile clone,
 `doctor` lists every hook entry with its provenance, and the obvious way to do that is to print

@@ -133,7 +133,10 @@ that are not areas included, is the **core**, and the rule runs one way: deliver
 core, and the core may not import delivery, through an `api.py` or not, at module level or inside
 a function, so the private layer can be reworked without touching the core. The core may name
 delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
-are the core's — and may not import delivery's code or call its behaviour. One crossing still
+are the core's — and may not import delivery's code or call its behaviour except through discovery,
+which is how any area plugs into the core: the CLI frame, the hook registry and `doctor`'s report
+import an area's `commands.py`, `hooks.py` and `doctor.py` by name and call the `register()` each
+publishes, without knowing which area it is, and the bullets below are that contract. One crossing still
 exists, and it is pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to
 stay rather than be cut: `stayfixed setup --overlay` creates or records the overlay as the last
 step of machine setup, so `setup/run.py` imports the overlay area's `api.py`, inside the two
@@ -187,7 +190,7 @@ loaded: the core loads the private layer only when a command asks for it.
   and its `__all__` lists what it defines. No other area may read this as licence: a consumer
   still imports `stayfixed.hooks.api` and never `stayfixed.hooks.dispatch` or `.sink`.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
-  namespace package, so one without it is invisible to both discovery paths.
+  namespace package, so one without it is invisible to all three discovery paths.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their
