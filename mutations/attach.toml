@@ -1539,7 +1539,7 @@ reddens = [
 # The overlay is asked which commands it grants only when the ledger records something: with nothing
 # recorded nothing can be absolved, and asking would cost a `git` call to reach the same answer.
 # Asked anyway, an absent ledger names no store to ask under, so the claims say the overlay could
-# not be asked and the row warns where it owes the red of an entry no attach recorded.
+# not be asked and the row says so beside the red of an entry no attach recorded.
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"

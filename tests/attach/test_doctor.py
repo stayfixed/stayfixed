@@ -549,13 +549,18 @@ def test_an_owner_whose_overlay_cannot_be_asked_keeps_a_warning_for_what_their_l
 def test_a_marked_entry_with_no_ledger_at_all_is_still_reported(tmp_path: Path) -> None:
     # The second vacuity guard, for the arm that skips the overlay entirely. With no ledger
     # there is nothing to absolve an entry, and asking the overlay would cost a `git` call to
-    # reach the same answer — so the row must keep its original red rather than becoming the
-    # "could not be asked" warning above.
+    # reach the same answer — so the row keeps its red for the entry no attach recorded, and
+    # does not say the overlay could not be asked: with no ledger to name a store, asking it
+    # always answers that, about a question this row never needed put.
+    #
+    # Mutation (oracle): `mutations/`'s "attach asks the overlay about a ledger that records
+    # nothing" -> the row says the overlay could not be asked.
     root = _attached(tmp_path)
     (root / LEDGER).unlink()
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert check.status == "red"
     assert "are not recorded in" in check.detail
+    assert "could not be asked" not in check.detail
 
 
 def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
