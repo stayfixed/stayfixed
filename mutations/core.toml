@@ -1180,17 +1180,6 @@ reddens = [
   "tests/config/test_loader.py::test_a_built_in_gate_stayfixed_does_not_have_is_counted_and_never_quoted",
 ]
 
-# An adoption plan is an ordinary plan, directly in `[paths] plans`, where `plan check` and the
-# trail already look. The nested and spec cases are the ones only the directory comparison refuses.
-[[mutation]]
-name = "an adoption plan is recognised outside [paths] plans"
-file = "src/stayfixed/config/layout.py"
-before = "        candidate.parent == PurePosixPath(config.paths.plans)"
-after = "        True"
-reddens = [
-  "tests/config/test_layout.py::test_an_adoption_plan_is_a_plan_whose_name_says_stayfixed",
-]
-
 # `[stayfixed] profile` must name a profile this build ships.
 [[mutation]]
 name = "the engine accepts a profile this stayfixed does not ship"

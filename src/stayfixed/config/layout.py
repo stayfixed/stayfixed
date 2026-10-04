@@ -4,23 +4,13 @@
 can account for them and a reader can find them. The project's documents stay at their own
 `[paths]` keys. Every other module asks this one for a derived location rather than spelling it.
 
-An adoption document is an ordinary plan: it sits directly in `[paths] plans`, where `plan
-check` and the trail already look, and the word `stayfixed` in its file name is what marks it
-(`<date>-stayfixed-adoption.md`, `<date>-stayfixed-adoption-<slug>.md`). Nothing records one, so
-a project may carry any number of them. `is_adoption_plan` and `ADOPTION_WORD` are the one
-spelling of that rule; `stayfixed adopt begin` recognises the plan it is handed by it.
-
 A local run's default base is derived here too (`local_base`), because the three areas that
 default one cannot import each other.
 """
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
-
 from stayfixed.config.schema import Config
-
-ADOPTION_WORD = "stayfixed"
 
 
 def rules_file(config: Config, profile: str) -> str:
@@ -43,18 +33,3 @@ def local_base(config: Config) -> str:
     commits. The loader holds the branch to `BRANCH_NAME`, so the name is one git can have.
     """
     return f"refs/remotes/origin/{config.project.base_branch}"
-
-
-def is_adoption_plan(config: Config, path: str) -> bool:
-    """Whether `path`, relative to the project root, names an adoption plan.
-
-    A markdown file directly in `[paths] plans` whose name has `stayfixed` as one of its
-    hyphen-separated words. The answer is about the spelling alone: whether the file exists,
-    and whether the path stays inside the root, are the caller's to ask of `contained()`.
-    """
-    candidate = PurePosixPath(path)
-    return (
-        candidate.parent == PurePosixPath(config.paths.plans)
-        and candidate.suffix == ".md"
-        and ADOPTION_WORD in candidate.stem.split("-")
-    )

@@ -22,24 +22,21 @@ After the footprint is written:
    - which gates to enforce first;
    - which findings to fix, and which to file as ledger entries through the `file-bug` skill;
    - what the project deliberately does differently.
-3. Put the design in the `[paths] specs` directory as `<date>-stayfixed-adoption-design.md` and
-   the plan directly in `[paths] plans`, not a subdirectory, as `<date>-stayfixed-adoption.md`.
-   The word `stayfixed`, as one of the hyphen-separated words of the file name, is how the
-   adoption commands recognise the plan. A second adoption, such as a subproject's, adds a slug:
-   `<date>-stayfixed-adoption-<slug>.md`. Give the plan the `**Scope:**` line
-   `stayfixed plan check` requires, and a `**Premise:**` line if it claims to fix a ledger
-   entry. Run `stayfixed plan check <plan>` until it passes.
+3. Write the adoption down: the design in the `[paths] specs` directory as
+   `<date>-stayfixed-adoption-design.md`, and the plan directly in `[paths] plans` as
+   `<date>-stayfixed-adoption.md`; a second adoption, such as a subproject's, adds a slug:
+   `<date>-stayfixed-adoption-<slug>.md`. No command requires the plan, and it is still the
+   habit to keep: it is what the user and later sessions read to know which gate comes next.
+   Give the plan the `**Scope:**` line `stayfixed plan check` requires, and a `**Premise:**`
+   line if it claims to fix a ledger entry. Run `stayfixed plan check <plan>` until it passes.
 4. Bring the roadmap's trail up to date, or the `trail` gate fails the next check. In the
    `trail.toml` beside the roadmap, under `[states]`, give both documents a state — the key is
    the listing's row, the last segment of `[paths] specs` or `plans`, a slash and the file name
    (`specs/<file>`, not `docs/specs/<file>`), the value one line such as `in progress`:
-   unset, a new document is listed `delivered`, and the adoption command refuses the plan.
-   Stage both documents (the listing reads only
-   tracked files), run `stayfixed docs trail`, then `stayfixed docs trail --check`.
-5. Show the user the plan's path, and say that the next command rewrites stayfixed's own keys
-   in `stayfixed.toml`. Ask for an explicit yes. **Silence, a timeout or an empty answer is a
-   no.** On a yes, run `stayfixed adopt begin <plan>`.
-6. End with one message saying:
+   unset, a new document is listed `delivered` before anything was built. Stage both documents
+   (the listing reads only tracked files), run `stayfixed docs trail`, then
+   `stayfixed docs trail --check`.
+5. End with one message saying:
    - what was written, and what was skipped and why;
    - how many findings the plan covers;
    - to commit `stayfixed.toml`, `.stayfixed/manifest.json`, the footprint, the design, the plan,

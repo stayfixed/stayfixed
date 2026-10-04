@@ -386,7 +386,6 @@ stayfixed assess                                       # every gate and probe; t
 stayfixed assess --builtin                             # the same, running none of the repository's own gate commands
 stayfixed gate                                         # judge stayfixed.toml against the base, then run every configured gate
 stayfixed gate --only docs --only config               # a few of them; config is the configuration check
-stayfixed adopt begin docs/plans/2026-09-23-stayfixed-adoption.md   # check the adoption plan; the project is adopting
 stayfixed adopt promote docs                           # enforce one gate, if it passes now
 stayfixed adopt promote                                # enforce every gate that passes now; name the rest
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands

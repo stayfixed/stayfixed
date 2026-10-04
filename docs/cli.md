@@ -58,7 +58,6 @@ Three things hold everywhere:
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
 - [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
-- [`stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`](#stayfixed-adopt-begin-plan---root-path---machine-path)
 - [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`stayfixed memory refs`](#stayfixed-memory-refs)
 - [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
@@ -1155,33 +1154,13 @@ refuses the base's own load, in a message that says it is the base's, and a base
 older stayfixed that this one no longer loads fails every pull request until the owner fixes it
 on the base branch.
 
-## `stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`
-
-Starts a project's adoption with a plan. `PLAN`, read from the current directory when it is
-relative, must be a markdown file directly under `[paths] plans` with `stayfixed` as a word of its
-name — `2026-09-23-stayfixed-adoption.md`, or `2026-09-23-stayfixed-adoption-api.md` for one of
-several — spelled as the file is on disk, and it must pass `stayfixed plan check`. While the
-project runs the `trail` gate, the plan's row in the `trail.toml` beside the roadmap must declare
-a state under `[states]`, such as `in progress`: a first listing records a row with none as
-`delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past
-that keeps its state: a project may carry any number of adoption plans, nothing records which, and a
-plan is found by its name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it,
-which does not need `begin` first.
-
-**Writes** `stayfixed.toml`'s `[stayfixed] state` through the same editor as `stayfixed upgrade`, and
-the manifest's record of it when that record still describes the file. `--json` carries, on exit 0,
-`before` and `after`, the state on each side.
-
-| Exit | Meaning |
-|---|---|
-| 0 | the plan passes `plan check`; the project is `adopting`, or already was past `initialised` |
-| 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `stayfixed.toml` is missing or does not load |
-| 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `stayfixed.toml` is refused |
-
 ## `stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
-`[stayfixed] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
+`[stayfixed] enforced`. It is the one adoption command: the first gate it promotes moves an
+`initialised` project to `adopting`, and an `adopting` project with nothing enforced yet — one
+written so by hand, or left so by an earlier release — is promoted from the same way. With no
+`GATE`, it runs every configured gate that does not enforce yet,
 enforces each one that passes, names the rest with their finding counts, and exits 1 if any
 failed; the line names up to eight gates in each of its two lists and counts the rest, and
 `--json` carries every one. With names, they pass together or nothing is written, and a named
@@ -3135,12 +3114,14 @@ and `stayfixed adopt promote` never enforces it.
 
 **Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
 adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
-stayfixed's to write (`stayfixed adopt begin` and `stayfixed adopt promote`),
-and the loader holds them together: an `initialised` project lists none, and an `installed`
-one lists every gate or none. So there are three shapes and no others: `initialised` with
-an empty list (nothing has begun), `adopting` with any list of configured gates, each named
-once, the empty one included (the adoption has begun, and each gate is promoted when it
-passes), and `installed` with every gate or none. The state is kept beside the list because
+stayfixed's to write (`stayfixed adopt promote`), and the loader holds them together: an
+`initialised` project lists none, and an `installed` one lists every gate or none. So there are
+three shapes and no others: `initialised` with an empty list (nothing has begun), `adopting`
+with any list of configured gates, each named once (the adoption has begun, and each gate is
+promoted when it passes), and `installed` with every gate or none. `adopting` with the empty
+list is one of them: `stayfixed adopt promote` never writes it, since its first promotion lists
+a gate, but a person may write it by hand and an earlier release wrote it, and it loads and is
+promoted from like any other `adopting` list. The state is kept beside the list because
 `initialised` and `adopting` differ even when nothing enforces; any other combination does
 not load. A gate enforces when the base branch's list names it, when the change under review
 adds it there, or once either side's state is `installed`, so a change that moves the state to
