@@ -208,6 +208,10 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 # it, but a profile this command could not ask is not one with nothing to report. `{name}` is a
 # shipped profile's directory name, never a repository value.
 _UNLOADED = "the {name} profile's red-run hint could not be loaded"
+# And for a hint whose note is neither text nor `None`, outside its protocol: the hook drops that
+# line, and this command does not read it as nothing to report or print it as a finding.
+_WORDLESS = "the {name} profile's red-run hint answered in something other than text"
+_UNJUDGED = ", so this tree cannot be judged"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
@@ -222,23 +226,23 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     findings: list[str] = []
     if dirty:
         findings.append(f"{dirty} uncommitted change(s) in the tree")
-    # Every stack the repository is written in, and not the one `[stayfixed] profile` names: a
-    # repository in two stacks gets two entries. A profile is listed when its markers sit at the
-    # root, and also wherever they do not when it has something to say: the hook asks every hint
-    # and detects nothing, so a Python project in a subdirectory gets the stale-bytecode note
-    # after a failed run, and this command must not call the same tree clean. Unguarded, unlike
-    # the hook's: a hint whose `report` or `note` raises is an internal error here.
     hints = shipped_hints()
     unloaded = sorted(set(hint_modules()) - {name for name, _ in hints})
     if unloaded:
-        raise Refusal(
-            "; ".join(_UNLOADED.format(name=name) for name in unloaded)
-            + ", so this tree cannot be judged"
-        )
+        raise Refusal("; ".join(_UNLOADED.format(name=name) for name in unloaded) + _UNJUDGED)
+    # Every stack the repository is written in, and not the one `[stayfixed] profile` names: a
+    # repository in two stacks gets two entries. A profile is listed when its markers sit at the
+    # root, and also, whether or not they do, when it has something to say: the hook asks every
+    # hint and detects nothing, so a Python project in a subdirectory gets the stale-bytecode
+    # note after a failed run, and this command must not call the same tree clean. Unguarded,
+    # unlike the hook's: a hint whose `report` or `note` raises is an internal error here.
     reports: dict[str, dict[str, int]] = {}
     for name, hint in hints:
         report = counts(hint, root, config)
-        note = usable(hint.note(report))
+        answer = hint.note(report)
+        if not (answer is None or isinstance(answer, str)):
+            raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED)
+        note = usable(answer)
         if note is None and not detects(load_profile(name), root):
             continue
         reports[name] = report

@@ -108,7 +108,9 @@ def usable(note: object) -> str | None:
 
     The one test of a note, for the hook's notice and for `stayfixed test hygiene` alike, so
     that a note the notice drops is never a finding the command reports. A note that is not
-    text breaks the protocol; it is taken as nothing to say rather than printed.
+    text breaks the protocol: the hook takes it as nothing to say and keeps the rest of its
+    notice, and the command refuses before it asks this, because a hint it could not read is
+    not one with nothing to report.
     """
     return note if isinstance(note, str) and note else None
 

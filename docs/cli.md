@@ -483,7 +483,7 @@ followed by `; the <profile> profile has nothing to report` for each profile lis
 carries `dirty` and, under `profiles`, each listed profile's counts by its name
 (`{"python": {"stale": 0, "roots": 2}}`). Exits `1` when the tree is dirty or a profile has
 something to report, `2` when git cannot report the tree or a shipped profile's hint cannot be
-loaded.
+loaded or answers in something other than text.
 
 The `PostToolUse` `Bash` hook delivers the same note once per context after a red test run,
 chosen by the command that failed rather than by configuration: each simple command of the

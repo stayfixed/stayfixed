@@ -917,6 +917,17 @@ before = """    try:
 after = "    note = hint.note(counts(hint, root, config))"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
 
+# The hook's own use of the one predicate: a note that is not text would reach `notice`'s join,
+# after every per-hint guard has returned, and cost the whole notice.
+[[mutation]]
+name = "the hook takes a note whatever it is"
+file = "src/stayfixed/guards/hygiene.py"
+before = "    return usable(note)"
+after = "    return note"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+]
+
 [[mutation]]
 name = "a hint's recognition is asked outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
@@ -1027,16 +1038,14 @@ reddens = [
   "tests/profiles/test_hints.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[no-hint]",
 ]
 
-# The command and the hook decide what a note is through one predicate, so a note the notice drops
-# is never a finding here.
+# A note that is neither text nor `None` is outside the hint's protocol, and this command never
+# reads "I do not know" as a clean tree: it refuses, as for a hint that did not load.
 [[mutation]]
-name = "test hygiene takes a note as the hint returned it"
+name = "test hygiene takes a note that is not text as nothing to report"
 file = "src/stayfixed/guards/commands.py"
-before = "        note = usable(hint.note(report))"
-after = "        note = hint.note(report)"
-reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_takes_a_note_that_is_not_text_as_nothing_to_report",
-]
+before = "        if not (answer is None or isinstance(answer, str)):"
+after = "        if False:"
+reddens = ["tests/profiles/test_hints.py::test_test_hygiene_refuses_a_note_that_is_not_text"]
 
 [[mutation]]
 name = "test hygiene prints a report as the hint returned it"

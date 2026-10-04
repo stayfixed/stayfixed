@@ -8,4 +8,5 @@ matches their source, …`), and a clean tree reads `tree is clean; the python p
 to report`. In `--json`, the top-level `stale` and `roots` keys are gone; the counts sit under
 `profiles`, by profile name (`{"dirty": 0, "profiles": {"python": {"stale": 0, "roots": 2}}}`). A
 profile is listed when its markers sit at the repository root, and also, whether or not they do,
-when it has something to report.
+when it has something to report. `stayfixed test hygiene` refuses (exit 2), naming the profile,
+when a shipped profile's hint cannot be loaded or answers in something other than text.

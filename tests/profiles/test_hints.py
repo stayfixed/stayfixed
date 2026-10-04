@@ -388,22 +388,23 @@ def test_test_hygiene_refuses_when_a_shipped_hint_cannot_load(
 
 
 @needs_git
-def test_test_hygiene_takes_a_note_that_is_not_text_as_nothing_to_report(
+def test_test_hygiene_refuses_a_note_that_is_not_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # One predicate decides whether a note is something to report, for the hook and for this
-    # command alike: a note that is not text is dropped from the notice, so it is no finding
-    # here either, and a profile whose markers are not at the root is then not listed. Oracle:
-    # `mutations/`, "a note is usable whatever it is".
+    # The hook drops a note that is not text and keeps the rest of its notice. This command
+    # answers whether a red run can be trusted, and a hint that answered outside its protocol is
+    # "I do not know", never "tree is clean" and never a finding printed as whatever the object
+    # renders to: it refuses (exit 2) and names the profile, as for a hint that did not load.
+    # Oracle: `mutations/`, "test hygiene takes a note that is not text as nothing to report".
     ship(monkeypatch, {"alpha": WordlessHint("x", "alpha says")})
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
     monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
     root = committed_project(tmp_path)
-    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
-    assert invoke(argv) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["profiles"] == {}
-    assert out["summary"] == "tree is clean"
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint answered in something other than text" in captured.err
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
