@@ -564,6 +564,25 @@ def test_switching_ci_off_retires_the_workflow_while_its_bytes_are_stayfixeds(
 
 
 @needs_git
+def test_switching_ci_off_after_deleting_the_workflow_drops_its_record(tmp_path: Path) -> None:
+    # The workflow deleted by hand, then `[ci] mode = "none"`: the retired record whose file was
+    # already gone read as unchanged, so every `upgrade` kept it for good. It is dropped now,
+    # with nothing removed, since nothing was there.
+    # Mutation: `mutations/`'s "a retired record whose file is gone is kept for good".
+    root = _pinned(tmp_path)
+    (root / WORKFLOW).unlink()
+    config = root / CONFIG_FILE
+    text = config.read_text(encoding="utf-8")
+    config.write_text(text.replace("[ci]\n", '[ci]\nmode = "none"\n'), encoding="utf-8")
+    report = _upgrade(root, tmp_path, NO_TAG)
+    assert (Verb.REMOVE, WORKFLOW.as_posix()) in {
+        (a.verb, a.target) for a in report.footprint.actions
+    }
+    recorded = {record.target for record in Manifest.read(root).records.values()}
+    assert WORKFLOW.as_posix() not in recorded
+
+
+@needs_git
 def test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate(
     tmp_path: Path,
 ) -> None:

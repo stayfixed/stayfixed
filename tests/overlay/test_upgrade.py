@@ -593,6 +593,37 @@ def test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on(
     assert (root / "common" / "memory").is_dir()
 
 
+@pytest.mark.parametrize("directory", [True, False], ids=["directory-there", "directory-gone"])
+@pytest.mark.parametrize("command", ["init", "upgrade"])
+def test_the_record_of_a_memory_readme_already_gone_is_dropped(
+    tmp_path: Path, command: str, directory: bool
+) -> None:
+    # The old memory README recorded in the ledger and already deleted: neither command planned
+    # anything for it, so its record stayed for good, and `init` never wrote `_README.md` in its
+    # place. Both drop the record now, and `init` writes the successor as it does after a
+    # removal of its own.
+    # Mutation: `mutations/`'s "a retired record whose file is gone is kept for good".
+    root = _an_overlay(tmp_path)
+    successor = root / "common" / "memory" / "_README.md"
+    successor.unlink()
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    del document["artifacts"]["common/memory/_README.md"]
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README).unlink()
+    if not directory:
+        (root / "common" / "memory").rmdir()
+    if command == "init":
+        done = init_instance(root, "octo", runner=Recorder())
+        assert f"dropped the record of {MEMORY_README}, which was already gone" in done.notes
+        assert not any(note.startswith(f"removed {MEMORY_README}") for note in done.notes)
+        assert MEMORY_README not in done.changed
+    else:
+        upgrade(root, dry_run=False)
+    assert MEMORY_README not in json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
+    assert successor.is_file()
+
+
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
     # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
     # and its note carries the way out. Mutation: `mutations/`'s "overlay init leaves the

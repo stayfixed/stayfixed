@@ -1489,7 +1489,9 @@ and reported `unchanged` when it does not. One that is missing is created. One y
 never wrote at a path it would write (`exists and stayfixed did not write it`); forced, it is
 overwritten and recorded, and later runs judge it like any file stayfixed wrote. An artifact this
 configuration no longer produces is removed while its bytes are the ones recorded (`remove`),
-and skipped the same way when they are not.
+and skipped the same way when they are not. One whose file is already gone is listed
+`remove … (retired, already gone)`: nothing is removed, and its record is dropped, so it is not
+carried into every later run.
 
 **What is rewritten in `stayfixed.toml`, and what is not.** Only the values stayfixed owns:
 `[stayfixed] version` and, under `[ci] mode = "reusable"`, a `[ci] ref` that is a commit sha or
@@ -1889,11 +1891,12 @@ names the copy again. A retired file it cannot read or
 cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
 write is named with `overlay upgrade`, which writes it — or, when this stayfixed was installed
 without its overlay template tree, which `overlay upgrade` reads too, with a reinstall first — and
-`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the run goes on, and `.stayfixed/manifest.json` drops the
-records of the files it did remove and keeps the others, so the next run finishes the job. A
-record that names a retired file's place under `.stayfixed/local/artifacts/` where no file is
-any more is dropped, with a `dropped the record of <path>, which was already gone` line, since
-there was nothing to remove.
+`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the
+run goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
+the others, so the next run finishes the job. A record of a retired file that is already gone, at
+its own place or at its place under `.stayfixed/local/artifacts/`, is dropped with a
+`dropped the record of <path>, which was already gone` line, since there was nothing to remove;
+for `common/memory/README.md`, `_README.md` is then written in its place as after a removal.
 A path these lines name that the manifest supplied and that holds anything but a plain path is
 escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
 terminal.
@@ -1949,8 +1952,9 @@ plugin's own replaces, since it covers detaching and a moved remote as well; and
 what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
 no manifest (one generated from a template, since `publish-template` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
-other two. Any other copy may hold your own words, so it is listed as `skip_modified` with the way
-out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
+other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
+nothing is removed, and its record is dropped. Any other copy may hold your own words, so it is
+listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
 `metadata.startup`, so move your rules into such notes and delete the README. Until then each run
 lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
