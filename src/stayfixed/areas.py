@@ -36,7 +36,9 @@ Registrar = Callable[[SubParsers], None]
 # `api.py` or otherwise, and a delivery area may import the core, so the private layer can be
 # reworked without touching the core. The rule reads source, as discovery does, so a module named
 # to `importlib` is invisible to it. `tests/test_areas.py`'s `test_core_never_imports_delivery`
-# holds it, against a pinned set of the crossings that still exist.
+# holds it, against the import statements of the one crossing still pinned, and
+# `test_in_isolation_no_core_module_loads_a_delivery_area` holds that importing the core loads
+# none of the private layer.
 DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})
 
 
