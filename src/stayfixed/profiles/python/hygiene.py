@@ -20,6 +20,7 @@ and a `ledger.code_roots` entry is walked and never printed.
 from __future__ import annotations
 
 import importlib.util
+import stat
 import struct
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import pairwise
@@ -113,6 +114,13 @@ def _stale_bytecode(roots: Iterable[Path]) -> int:
             source = pyc.parent.parent / (pyc.name.split(".")[0] + ".py")
             try:
                 if not source.is_file():
+                    continue
+                # Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or
+                # a named pipe was put there by whoever wrote the tree, and opening it reads what
+                # it names, or waits on a pipe's writer for good (a link to `/dev/stdin` hangs a
+                # terminal). `lstat`, so a link is judged as itself; the source is not held to
+                # this, because the interpreter follows a symlinked source too.
+                if not stat.S_ISREG(pyc.lstat().st_mode):
                     continue
                 recorded = _recorded_source_mtime(pyc)
                 if recorded is None:

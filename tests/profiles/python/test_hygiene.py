@@ -7,6 +7,7 @@ import os
 import py_compile
 import struct
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -223,6 +224,89 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
         + struct.pack("<I", 4)
     )
     assert stale(root) == 0
+
+
+def make_stale(*modules: Path) -> None:
+    """Move each source past the mtime its bytecode recorded."""
+    future = time.time() + 60
+    for module in modules:
+        os.utime(module, (future, future))
+
+
+def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
+    """Bytecode is the interpreter's own output, a regular file. A `.pyc` that is a symlink was
+    put there by whoever wrote the tree, and following it reads what it names: a file outside
+    every code root, or `/dev/stdin`, which waits on a terminal for good. The link here names
+    real bytecode outside the tree, stale against its source, so following it counts one more.
+
+    Only the bytecode must be a regular file. A source that is a symlink is still compared,
+    because the interpreter follows it too, and its stale bytecode is counted.
+    """
+    # Oracle: `mutations/`, "a .pyc that is not a regular file is read" and "a source that is a
+    # symlink is not compared".
+    root = repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    module = root / "src" / "mod.py"
+    compile_module(module)
+    real = outside / "real.py"
+    real.write_text("w = 1\n", encoding="utf-8")
+    aliased = root / "src" / "aliased.py"
+    aliased.symlink_to(real)
+    compile_module(aliased)
+    linked = root / "src" / "linked.py"
+    linked.write_text("z = 1\n", encoding="utf-8")
+    cache = compile_module(linked)
+    target = outside / cache.name
+    cache.rename(target)
+    cache.symlink_to(target)
+    make_stale(module, real, linked)
+    assert stale(root) == 2
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes on this platform")
+def test_a_pyc_that_is_a_named_pipe_is_never_opened(tmp_path: Path) -> None:
+    """Opening a named pipe for reading waits for a writer, so a `.pyc` that is one, like a
+    committed symlink to `/dev/stdin`, hung `stayfixed test hygiene` for good. The walk must not
+    open it.
+
+    The helper thread is what turns a regression into a failure rather than a hang: while the
+    walk runs it keeps trying to open the pipe's write end without blocking, which succeeds only
+    once a reader is waiting. If it ever succeeds, the walk opened the pipe; the writer then
+    closes, the walk reads an empty header and moves on, and the test fails on `opened`. The
+    real stale `.pyc` beside the pipe is counted, so the walk demonstrably ran.
+    """
+    # Oracle: `mutations/`, "a .pyc that is not a regular file is read".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compile_module(module)
+    piped = root / "src" / "piped.py"
+    piped.write_text("p = 1\n", encoding="utf-8")
+    pipe = module.parent / "__pycache__" / f"piped.{sys.implementation.cache_tag}.pyc"
+    os.mkfifo(pipe)
+    make_stale(module, piped)
+    opened = threading.Event()
+    done = threading.Event()
+
+    def release_a_waiting_reader() -> None:
+        while not done.is_set():
+            try:
+                os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+            except OSError:
+                done.wait(0.01)
+                continue
+            opened.set()
+            return
+
+    writer = threading.Thread(target=release_a_waiting_reader, daemon=True)
+    writer.start()
+    try:
+        count = stale(root)
+    finally:
+        done.set()
+        writer.join()
+    assert not opened.is_set()
+    assert count == 1
 
 
 def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:

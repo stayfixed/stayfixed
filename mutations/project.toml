@@ -1842,3 +1842,25 @@ after = '    hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.h
 reddens = [
   "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
 ]
+
+# Only a regular `.pyc` is read. Following a symlinked one reads a file outside every code root,
+# and opening a named pipe waits for a writer for good; a link to `/dev/stdin` hung `test hygiene`
+# in a terminal. The source is not held to it: the interpreter follows a symlinked source too.
+[[mutation]]
+name = "a .pyc that is not a regular file is read"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = """                if not stat.S_ISREG(pyc.lstat().st_mode):
+                    continue
+"""
+after = ""
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed",
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_opened",
+]
+
+[[mutation]]
+name = "a source that is a symlink is not compared"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "                if not source.is_file():"
+after = "                if not source.is_file() or source.is_symlink():"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
