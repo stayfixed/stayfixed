@@ -24,7 +24,7 @@ from stayfixed.ledger.entries import (
     scalar,
 )
 from stayfixed.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
-from stayfixed.ledger.register import Register, bug_register
+from stayfixed.ledger.register import Register
 from stayfixed.ledger.scan import citation_roots, scannable
 
 if TYPE_CHECKING:
@@ -36,14 +36,7 @@ if TYPE_CHECKING:
 FETCH_TIMEOUT_SECONDS = 10
 
 _ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
-_VOID_POINTER = """---
-id: {old}
-title: {title}
-status: void
-found: {today}
-related: [{new}]
----
-
+_VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
 """
@@ -260,7 +253,25 @@ def file_entry(
     return Filed(path, identifier, allocation.warning)
 
 
-def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "") -> Renumbered:
+def _void_pointer(register: Register, *, old: str, new: str, title: str, today: str) -> str:
+    """The entry `renumber` leaves at `old`: the register's void status, the day of the move for
+    each date every entry must carry, and `new` in `related`, in the order the schema's keys
+    run. `Schema` refuses a register that requires any other key, which this could not fill."""
+    schema = register.schema
+    lines = {
+        "id": f"id: {old}",
+        "title": f"title: {quote(title)}",
+        "status": f"status: {schema.void}",
+        "related": f"related: [{new}]",
+    }
+    lines.update((key, f"{key}: {today}") for key in schema.dates if key in schema.required)
+    frontmatter = "\n".join(lines[key] for key in schema.keys if key in lines)
+    return f"---\n{frontmatter}\n---\n{_VOID_BODY.format(new=new)}"
+
+
+def renumber(
+    root: Path, config: Config, register: Register, old: str, new: str, *, today: str = ""
+) -> Renumbered:
     """Move an entry to a free identifier, taking every reference to it along.
 
     Every check that can reject the call runs before any file is touched. Both endpoints are
@@ -277,7 +288,6 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
     thing and is skipped in silence, exactly as the scan skips it: it holds no identifier to
     rewrite, and reporting one would fail this command on any repository tracking one image.
     """
-    register = bug_register(config)
     ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
         raise LedgerError(f"both identifiers must look like {ids.shape}")
@@ -319,10 +329,11 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
     fsops.write_within(
         root,
         f"{bugs}/{old}.md",
-        _VOID_POINTER.format(
+        _void_pointer(
+            register,
             old=old,
             new=new,
-            title=quote(f"renumbered to {new} — {entry.title}"),
+            title=f"renumbered to {new} — {entry.title}",
             today=today or date.today().isoformat(),
         ),
     )

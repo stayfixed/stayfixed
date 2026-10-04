@@ -1,11 +1,12 @@
 """What one ledger is, as a value the engine is handed: its paths, its identifiers, its schema.
 
-The engine — reading entries, rendering the index, filing an entry — knows no ledger by name.
-Everything that makes the bug ledger the bug ledger is here: the keys an entry carries, the
-statuses and severities it may hold, the body `bugs new` scaffolds, the index's sections, and
-where it lives. A second ledger is a second `Register`, not a second engine.
+The engine — reading entries, rendering the index, filing and moving an entry, checking the
+ledger against the tree and its base — knows no ledger by name. Everything that makes the bug
+ledger the bug ledger is here: the keys an entry carries, the statuses and severities it may hold,
+the body `bugs new` scaffolds, the index's sections, and where it lives. A second ledger is a
+second `Register`, not a second engine.
 
-A leaf of this area: `entries`, `index` and `write` import it, and it imports none of them.
+A leaf of this area: every other module of it imports this one, and it imports none of them.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from dataclasses import dataclass, replace
 from string import Formatter
 from typing import TYPE_CHECKING
 
-from stayfixed.identifiers import Identifiers
+from stayfixed.identifiers import Identifiers, identifiers
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -26,7 +27,8 @@ EVIDENCE_LABEL = "**What this evidence does not establish:**"
 # drift apart.
 EVIDENCE_PLACEHOLDER = "the reading a later plan must not inherit"
 
-# The keys the reader takes from every entry, whatever its status.
+# The keys the reader takes from every entry, whatever its status, and that `renumber`'s void
+# entry spells itself.
 _READ_KEYS = ("id", "title", "status")
 # The keys the writer spells itself rather than from a value it is handed: `id`, `title` and
 # `related` through the placeholders below, and `status` as the template's own literal.
@@ -130,6 +132,14 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
     for placeholder in sorted(_placeholders(schema.template) - set(_WRITER_FILLS)):
         if placeholder not in lines:
             yield f"the template's `{{{placeholder}}}` is not a line of a key the writer is handed"
+    # `renumber` leaves a void entry at the number it moves from, and that entry is held to
+    # `required` like any other. It knows the keys every entry is read for, the day of the move
+    # for a date, and the new number, which it names in `related`; nothing else.
+    for key in schema.required:
+        if key not in _READ_KEYS and key not in schema.dates:
+            yield f"required `{key}` is not a date, so `renumber`'s void entry cannot fill it"
+    if "related" not in keys:
+        yield "`related` is not a key, so `renumber`'s void entry cannot name the new number"
 
 
 @dataclass(frozen=True)
@@ -146,7 +156,7 @@ class Register:
     title: str  # "Bug reports": the index's heading
     directory: str
     index: str
-    ids: Identifiers  # `Identifiers(config.ledger.id_prefix)`
+    ids: Identifiers  # the bug ledger's is `identifiers(config)`
     schema: Schema
     runbook: str | None  # "<[paths] runbooks>/bug-reports.md", the index's link
     # "audits": the subdirectory of `directory` holding audit records, which the index links.
@@ -217,7 +227,7 @@ def bug_register(config: Config) -> Register:
         title="Bug reports",
         directory=paths.bugs,
         index=paths.bug_index,
-        ids=Identifiers(config.ledger.id_prefix),
+        ids=identifiers(config),
         schema=replace(
             BUG_SCHEMA, evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for)
         ),

@@ -23,7 +23,7 @@ _SECTION_COUNT = re.compile(r"\A## (.+) \(\d+\)\Z")
 # reports them, and both must describe the same file the same way (`bugs`, `index`, `count`,
 # `first` are the fields).
 ENTRIES_MISSING = (
-    "{bugs}/ does not exist, but {index} is this tool's generated index; the entry files are "
+    "{directory}/ does not exist, but {index} is this tool's generated index; the entry files are "
     "the ledger and the index carries nothing of its own, so restore them rather than "
     "regenerating over it"
 )
@@ -277,7 +277,7 @@ def refuse_index_overwrite(root: Path, register: Register, current: str) -> None
     """
     index = register.index
     if not entry_dir(root, register).is_dir() and is_generated_index(current):
-        raise Refusal(ENTRIES_MISSING.format(bugs=register.directory, index=index))
+        raise Refusal(ENTRIES_MISSING.format(directory=register.directory, index=index))
     foreign = foreign_index_lines(root, current, register)
     if foreign:
         raise Refusal(FOREIGN_CONTENT.format(index=index, count=len(foreign), first=foreign[0]))

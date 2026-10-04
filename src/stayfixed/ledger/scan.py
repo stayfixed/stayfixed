@@ -11,6 +11,9 @@ Git enumerates the candidates wherever it can — the question both readers ask 
 the commit under review", and a walk answers a different one — and the walk is the fallback for
 a root that is not the top of a checkout. Symlinks are skipped whole. A file is read once, here,
 and handed to every reader as text: the readers never open a file themselves.
+
+Where to look is the project's (`config`: the code roots and the `[paths]` values); what to look
+for is the register's — its directory, its index and its identifiers.
 """
 
 from __future__ import annotations
@@ -29,10 +32,10 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.fsops import said
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.identifiers import identifiers
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
+    from stayfixed.ledger.register import Register
 
 # The repository's own top-level files, which are under no directory and so under no root:
 # `pyproject.toml` and `.gitignore` each carried a live identifier once, invisible to the scan
@@ -219,8 +222,8 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         yield Scanned(path, relative, text, None)
 
 
-def citation_pattern(config: Config) -> re.Pattern[str]:
-    """Loose on purpose: any `…/<bugs dirname>/<PREFIX>-nnn.md`. The decision is made by
+def citation_pattern(register: Register) -> re.Pattern[str]:
+    """Loose on purpose: any `…/<ledger dirname>/<PREFIX>-nnn.md`. The decision is made by
     resolving the match (`_cited_entry`), not by the pattern.
 
     A citation names an entry's FILE, and a tree writes that path three ways, not two: rooted
@@ -231,8 +234,8 @@ def citation_pattern(config: Config) -> re.Pattern[str]:
     somewhere that is not an entry path, and it drops out for the right reason rather than by
     an exclusion.
     """
-    last = PurePosixPath(config.paths.bugs).name
-    prefix = identifiers(config).prefix
+    last = PurePosixPath(register.directory).name
+    prefix = register.ids.prefix
     return re.compile(
         rf"(?<![\w./-])((?:\.{{1,2}}/)*(?:[\w.-]+/)*{re.escape(last)}/({re.escape(prefix)}-\d+)\.md)"
     )
@@ -255,7 +258,9 @@ def _under(path: PurePosixPath, directory: PurePosixPath) -> bool:
     return path.parts[: len(directory.parts)] == directory.parts
 
 
-def entry_citations(root: Path, config: Config) -> dict[str, list[tuple[PurePosixPath, int]]]:
+def entry_citations(
+    root: Path, config: Config, register: Register
+) -> dict[str, list[tuple[PurePosixPath, int]]]:
     """Every citation of an entry's file, mapped to the (file, line) locations citing it.
 
     Two kinds of file are skipped, both because their links are not independent claims:
@@ -268,9 +273,9 @@ def entry_citations(root: Path, config: Config) -> dict[str, list[tuple[PurePosi
       reports with the command that repairs it. Reported here as well it would name a link in
       a file whose fix is never a hand edit.
     """
-    bugs = PurePosixPath(config.paths.bugs)
-    index = PurePosixPath(config.paths.bug_index)
-    pattern = citation_pattern(config)
+    bugs = PurePosixPath(register.directory)
+    index = PurePosixPath(register.index)
+    pattern = citation_pattern(register)
     found: defaultdict[str, list[tuple[PurePosixPath, int]]] = defaultdict(list)
     for item in scannable(root, citation_roots(root, config)):
         if item.text is None or item.relative == index or _under(item.relative, bugs):
@@ -288,12 +293,14 @@ def entry_citations(root: Path, config: Config) -> dict[str, list[tuple[PurePosi
     return found
 
 
-def code_mentions(root: Path, config: Config) -> dict[str, list[tuple[PurePosixPath, int]]]:
+def code_mentions(
+    root: Path, config: Config, register: Register
+) -> dict[str, list[tuple[PurePosixPath, int]]]:
     """Every identifier mentioned under the code roots, mapped to the (file, line) locations
     where it appears. Sorted traversal keeps the first location deterministic when the same
     dangling identifier is mentioned in more than one place.
     """
-    ids = identifiers(config)
+    ids = register.ids
     needle = f"{ids.prefix}-"
     found: defaultdict[str, list[tuple[PurePosixPath, int]]] = defaultdict(list)
     for item in scannable(root, mention_roots(root, config)):

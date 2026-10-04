@@ -137,6 +137,24 @@ def test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run(tmp_path:
 
 
 @needs_git
+def test_the_bugs_gate_is_the_bug_ledgers_register_gate_in_the_gates_shape(tmp_path: Path) -> None:
+    # The gate table keeps `(root, config, base)`; the bugs gate builds the bug ledger's register
+    # from that configuration, so its texts name the bug ledger's paths and command group as they
+    # always have.
+    root, config = smoke(tmp_path)
+    git(root, "rm", "-rq", config.paths.bugs, config.paths.bug_index)
+    [bugs] = results(root, config, "bugs")
+    removed = bugs.findings[0]
+    assert (removed.rule, removed.path, removed.detail) == (
+        "ledger-removed",
+        "docs/bugs",
+        "a commit this change forked from the base at carries the ledger (docs/bugs or "
+        "docs/bug-reports.md) and this tree has neither; deleting the ledger does not switch the "
+        "bugs gate off: restore it from the base",
+    )
+
+
+@needs_git
 def test_the_plan_gate_finds_a_plan_the_change_touches(tmp_path: Path) -> None:
     root, config = smoke(tmp_path)
     (root / config.paths.plans / "2026-09-20-new.md").write_text("# New\n", encoding="utf-8")

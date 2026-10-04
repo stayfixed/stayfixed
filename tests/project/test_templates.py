@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import replace
 from importlib import resources
@@ -161,6 +162,30 @@ def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     assert by_id["agents-md"].region == "harness"
     assert "docs/plan/roadmap.md" in by_id["agents-md"].render()
     assert by_id["bug-index"].render() == render_index([], bug_register(moved))
+
+
+def test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them() -> None:
+    # The index `init` writes links the runbook and the audits directory, so the two files `init`
+    # writes beside it are found where it links them, on a layout where every path moved.
+    # Mutation (oracle): the audits README written under a directory the register does not name
+    # -> its link resolves to nothing `init` wrote.
+    config = preset_defaults("widget")
+    moved = replace(
+        config,
+        paths=replace(
+            config.paths, bugs="ledger/entries", bug_index="ledger/INDEX.md", runbooks="guides"
+        ),
+    )
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    preamble = by_id["bug-index"].render().split("\n## ", 1)[0]
+    directory = posixpath.dirname(by_id["bug-index"].target)
+    linked = {
+        posixpath.normpath(f"{directory}/{link}") for link in re.findall(r"\]\(([^)]+)\)", preamble)
+    }
+    assert by_id["ledger-runbook"].target == "guides/bug-reports.md"
+    assert by_id["ledger-audits"].target == "ledger/entries/audits/README.md"
+    assert by_id["ledger-runbook"].target in linked
+    assert posixpath.dirname(by_id["ledger-audits"].target) in linked
 
 
 # The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`

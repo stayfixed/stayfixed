@@ -97,7 +97,8 @@ def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -
     ) in written
     assert EVIDENCE_LABEL in written
     assert "BR-001" in (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
-    assert [p.rule for p in problems(root, config)] == ["evidence-boundary"]  # scaffolded
+    found = problems(root, config, bug_register(config))
+    assert [p.rule for p in found] == ["evidence-boundary"]  # scaffolded
 
 
 def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
@@ -380,7 +381,7 @@ def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_poi
     )
     (root / "src" / "a.py").write_text("# BR-001 and XBR-001 stays\n", encoding="utf-8")
     (root / "docs" / "note.md").write_text("see [BR-001](bugs/BR-001.md)\n", encoding="utf-8")
-    result = renumber(root, config, "BR-001", "BR-009", today="2026-01-02")
+    result = renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
     # A frozen record, and a value: a list among its fields made `hash(result)` raise.
     # Mutation (oracle): the unswept files handed back as the list they were collected in.
     assert result.unswept == ()
@@ -397,7 +398,7 @@ def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_poi
     void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert "status: void" in void and "related: [BR-009]" in void
     assert "[BR-009](BR-009.md)" in void
-    assert problems(root, config) == []
+    assert problems(root, config, bug_register(config)) == []
 
 
 def test_renumber_refuses_an_occupied_target_and_a_missing_source(tmp_path: Path) -> None:
@@ -405,9 +406,9 @@ def test_renumber_refuses_an_occupied_target_and_a_missing_source(tmp_path: Path
     seed(root, config, 1, 2)
     entries = {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()}
     with pytest.raises(LedgerError, match="pick a free identifier"):
-        renumber(root, config, "BR-001", "BR-002")
+        renumber(root, config, bug_register(config), "BR-001", "BR-002")
     with pytest.raises(LedgerError, match="does not exist"):
-        renumber(root, config, "BR-005", "BR-006")
+        renumber(root, config, bug_register(config), "BR-005", "BR-006")
     # Neither rejection wrote: same files, none of them replaced. `renumber` overwrites its
     # source in place, so a half-run would leave BR-001.md rewritten with its name unchanged.
     assert {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()} == entries
@@ -429,7 +430,7 @@ def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
     entry_file = root / "docs" / "bugs" / "BR-001.md"
     before = entry_file.read_text(encoding="utf-8")
     with pytest.raises(Refusal):
-        renumber(root, config, "BR-001", "BR-009")
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
     assert index.read_text(encoding="utf-8") == foreign
     assert not (root / "docs" / "bugs" / "BR-009.md").exists()
     assert entry_file.read_text(encoding="utf-8") == before
@@ -450,13 +451,13 @@ def test_renumber_rejects_a_malformed_sibling_before_it_moves_anything(tmp_path:
     sibling.write_text(entry(2).replace("status: open", "status: nonsense"), encoding="utf-8")
     before = {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()}
     with pytest.raises(LedgerError, match=r"BR-002\.md"):
-        renumber(root, config, "BR-001", "BR-009")
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
     assert not (bugs / "BR-009.md").exists()
     assert {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()} == before
     # And the retry, once the sibling is repaired, completes — rather than being refused for a
     # target the failed run created on its way out.
     sibling.write_text(entry(2), encoding="utf-8")
-    renumber(root, config, "BR-001", "BR-009")
+    renumber(root, config, bug_register(config), "BR-001", "BR-009")
     assert (bugs / "BR-009.md").is_file()
 
 
@@ -467,7 +468,7 @@ def test_renumber_normalises_an_id_line_with_nonstandard_spacing(tmp_path: Path)
     path.write_text(
         path.read_text(encoding="utf-8").replace("id: BR-001", "id:   BR-001"), encoding="utf-8"
     )
-    renumber(root, config, "BR-001", "BR-009")
+    renumber(root, config, bug_register(config), "BR-001", "BR-009")
     moved = (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8")
     assert moved.startswith("---\nid: BR-009\n")
 
@@ -478,7 +479,7 @@ def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> 
     fixture = root / "tests" / "test_x.py"
     fixture.write_text(f"# {FIXTURE_MARKER}\nENTRY = 'BR-001'\n", encoding="utf-8")
     (root / "src" / "img.png").write_bytes(b"BR-001")
-    assert renumber(root, config, "BR-001", "BR-009").unswept == ()
+    assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
     assert "BR-001" in fixture.read_text(encoding="utf-8")
     assert (root / "src" / "img.png").read_bytes() == b"BR-001"
 
@@ -491,7 +492,7 @@ def test_renumber_does_not_follow_a_symlink_out_of_the_tree(tmp_path: Path) -> N
     outside = tmp_path / "outside.py"
     outside.write_text("# BR-001\n", encoding="utf-8")
     os.symlink(outside, root / "src" / "linked.py")
-    renumber(root, config, "BR-001", "BR-009")
+    renumber(root, config, bug_register(config), "BR-001", "BR-009")
     assert outside.read_text(encoding="utf-8") == "# BR-001\n"
 
 
@@ -509,7 +510,7 @@ def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(
     locked.write_text("# BR-001\n", encoding="utf-8")
     locked.chmod(0)
     try:
-        result = renumber(root, config, "BR-001", "BR-009")
+        result = renumber(root, config, bug_register(config), "BR-001", "BR-009")
     finally:
         locked.chmod(0o644)
     assert [u.path for u in result.unswept] == ["src/locked.py"]
@@ -532,7 +533,7 @@ def test_renumber_reports_a_file_it_could_not_write_back(tmp_path: Path) -> None
     (sealed / "a.py").write_text("# BR-001\n", encoding="utf-8")
     sealed.chmod(0o555)
     try:
-        result = renumber(root, config, "BR-001", "BR-009")
+        result = renumber(root, config, bug_register(config), "BR-001", "BR-009")
     finally:
         sealed.chmod(0o755)
     assert [u.path for u in result.unswept] == ["src/sealed/a.py"]
@@ -618,7 +619,7 @@ def test_renumber_rejects_an_endpoint_that_is_not_an_identifier(tmp_path: Path) 
     entry_file = root / "docs" / "bugs" / "BR-001.md"
     before = entry_file.stat().st_mtime_ns
     with pytest.raises(LedgerError, match="must look like BR-nnn"):
-        renumber(root, config, "BR-42", "BR-009")
+        renumber(root, config, bug_register(config), "BR-42", "BR-009")
     # Refused before the shape was ever resolved to a path, so nothing under the ledger moved.
     assert [p.name for p in (root / "docs" / "bugs").iterdir()] == ["BR-001.md"]
     assert entry_file.stat().st_mtime_ns == before
@@ -634,6 +635,6 @@ def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
     near = root / "src" / "near.py"
     near.write_text("# XBR-001 is a different thing\n", encoding="utf-8")
     before = near.stat().st_mtime_ns
-    assert renumber(root, config, "BR-001", "BR-009").unswept == ()
+    assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
     assert near.read_text(encoding="utf-8") == "# XBR-001 is a different thing\n"
     assert near.stat().st_mtime_ns == before

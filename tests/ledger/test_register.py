@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -18,15 +19,19 @@ from typing import Any
 import pytest
 
 from stayfixed.config.loader import load, preset_defaults
-from stayfixed.errors import StayfixedError
+from stayfixed.config.schema import Config
+from stayfixed.errors import Failure, StayfixedError
+from stayfixed.findings import Finding
 from stayfixed.identifiers import Identifiers
 from stayfixed.ledger import write
+from stayfixed.ledger.check import bugs_gate, register_gate, uninitialised
 from stayfixed.ledger.entries import LedgerError, load_entries, parse_entry
 from stayfixed.ledger.index import header, render_index
-from stayfixed.ledger.register import Register, Schema, Section, bug_register
-from stayfixed.ledger.write import Allocation, file_entry
+from stayfixed.ledger.register import EVIDENCE_LABEL, Register, Schema, Section, bug_register
+from stayfixed.ledger.write import Allocation, file_entry, renumber
 from stayfixed.project.api import project_templates
 from stayfixed.release.api import Resolution
+from tests.gitfixture import git, needs_git
 
 CONFIG = """
 [stayfixed]
@@ -440,6 +445,19 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             "the template's `{status}` is not a line of a key the writer is handed",
             id="template-placeholder-the-writer-owns",
         ),
+        pytest.param(
+            {"required": ("id", "title", "status", "found", "impact")},
+            "required `impact` is not a date, so `renumber`'s void entry cannot fill it",
+            id="required-not-a-date",
+        ),
+        pytest.param(
+            {
+                "keys": tuple(key for key in DEBT.schema.keys if key != "related"),
+                "template": DEBT_TEMPLATE.replace("{related}\n", ""),
+            },
+            "`related` is not a key, so `renumber`'s void entry cannot name the new number",
+            id="no-related-key",
+        ),
     ],
 )
 def test_a_schema_built_wrong_is_refused_at_construction(
@@ -574,3 +592,306 @@ def test_the_bug_ledgers_header_and_links_keep_their_bytes_on_every_layout(
     assert header(register) == expected_header
     assert rendered.startswith(expected_header)
     assert expected_row in rendered.splitlines()
+
+
+def regenerate(root: Path, register: Register) -> None:
+    """Write the register's index from its entry files, as `index` would."""
+    (root / register.index).write_text(
+        render_index(load_entries(root, register), register), encoding="utf-8"
+    )
+
+
+def committed_debt(tmp_path: Path) -> tuple[Path, Config, str]:
+    """A project whose one commit carries the debt register's `TD-001` and `TD-002` and their
+    index, and no bug ledger; the commit's id is the base, and the tree is left as committed."""
+    root = project(tmp_path)
+    file_debt(root)
+    file_debt(root)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    return root, load(root, machine=tmp_path / "m.toml"), git(root, "rev-parse", "HEAD").strip()
+
+
+def test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live(
+    tmp_path: Path,
+) -> None:
+    # A second register a project has not started yet must not read the bug ledger's live tree
+    # as its own. Mutation (oracle): `uninitialised` reads the bug ledger's directory whatever
+    # the register -> the debt register finds `docs/bugs/` there and is judged as a ledger whose
+    # own directory went missing.
+    root = project(tmp_path)
+    config = load(root, machine=tmp_path / "m.toml")
+    bugs = bug_register(config)
+    (root / "docs" / "bugs").mkdir(parents=True)
+    for name, text in BUG_FIXTURE.items():
+        (root / "docs" / "bugs" / name).write_text(text, encoding="utf-8")
+    assert not (root / "docs" / "debt").exists() and not (root / "docs" / "tech-debt.md").exists()
+    assert (uninitialised(root, DEBT), uninitialised(root, bugs)) == (True, False)
+    assert register_gate(root, config, DEBT) == []
+    # The bug ledger's gate runs: its two `high` entries never filled the evidence line, and its
+    # index was never written.
+    assert [(f.rule, f.path) for f in register_gate(root, config, bugs)] == [
+        ("evidence-boundary", "docs/bugs/BR-001.md"),
+        ("evidence-boundary", "docs/bugs/BR-004.md"),
+        ("stale-index", "docs/bug-reports.md"),
+    ]
+
+
+@needs_git
+def test_the_gate_judges_a_second_register_against_its_base(tmp_path: Path) -> None:
+    # Mutation (oracle): the base's entries are read with the bug ledger's identifiers ->
+    # `TD-001.md` is no entry to the base's listing, and its removal passes.
+    root, config, base = committed_debt(tmp_path)
+    (root / "docs" / "debt" / "TD-001.md").unlink()
+    regenerate(root, DEBT)
+    assert register_gate(root, config, DEBT, base) == [
+        Finding(
+            "entry-removed",
+            "docs/debt/TD-001.md",
+            None,
+            "a commit this change forked from the base at carries this entry and this tree does "
+            "not; ledger entries are never deleted: restore it from the base, and move one with "
+            f"`{DEBT_GROUP} renumber`, which leaves a `void` entry at the old number",
+        )
+    ]
+    # Without a base the tree alone is judged, and it is a consistent ledger of one entry.
+    assert register_gate(root, config, DEBT) == []
+
+
+@needs_git
+def test_a_second_registers_findings_name_its_own_paths_and_commands(tmp_path: Path) -> None:
+    # Every text the gate renders from a register names that register: its directory, its index,
+    # its command group. Mutations (oracle): the stale remedy, the removed-ledger refusal and the
+    # unread-base failure each name the bug ledger's group whatever the register -> each text
+    # below says `bugs`.
+    root, config, base = committed_debt(tmp_path)
+    directory, index = root / "docs" / "debt", root / "docs" / "tech-debt.md"
+    copied = (directory / "TD-002.md").read_text(encoding="utf-8").replace("TD-002", "TD-003")
+    (directory / "TD-003.md").write_text(copied, encoding="utf-8")
+    (root / "docs" / "plan.md").write_text("see [x](debt/TD-404.md)\n", encoding="utf-8")
+    citation = (
+        "dangling-citation",
+        "docs/plan.md",
+        "cites docs/debt/TD-404.md, which does not exist (referenced 1 time(s))",
+    )
+    live = register_gate(root, config, DEBT, base)
+    assert [(f.rule, f.path, f.detail) for f in live] == [
+        ("stale-index", "docs/tech-debt.md", f"is stale; run: {DEBT_GROUP} index"),
+        citation,
+    ]
+
+    with pytest.raises(Failure) as caught:
+        register_gate(root, config, DEBT, "refs/heads/nowhere")
+    unread = str(caught.value)
+    assert unread.replace(str(root), "<root>") == (
+        "what the commits HEAD forked from `refs/heads/nowhere` at hold of docs/debt and "
+        "docs/tech-debt.md is unknown under <root> (git exited 128), so whether this change "
+        "deleted the ledger or an entry of it is unknown and the debt gate proved nothing. Fetch "
+        "the whole history (`fetch-depth: 0` in CI), or pass a `--base` this clone holds that "
+        "shares history with HEAD"
+    )
+
+    shutil.rmtree(directory)
+    missing = register_gate(root, config, DEBT, base)
+    assert [(f.rule, f.path) for f in missing] == [
+        ("entries-missing", "docs/tech-debt.md"),
+        ("entry-removed", "docs/debt/TD-001.md"),
+        ("entry-removed", "docs/debt/TD-002.md"),
+    ]
+    assert missing[0].detail == (
+        "docs/debt/ does not exist, but docs/tech-debt.md is this tool's generated index; the "
+        "entry files are the ledger and the index carries nothing of its own, so restore them "
+        "rather than regenerating over it"
+    )
+
+    index.unlink()
+    removed = register_gate(root, config, DEBT, base)
+    assert [(f.rule, f.path, f.detail) for f in removed] == [
+        (
+            "ledger-removed",
+            "docs/debt",
+            "a commit this change forked from the base at carries the ledger (docs/debt or "
+            "docs/tech-debt.md) and this tree has neither; deleting the ledger does not switch "
+            "the debt gate off: restore it from the base",
+        ),
+        citation,
+    ]
+    for text in [unread, *(f.detail for f in (*live, *missing, *removed))]:
+        for literal in (*BUG_LITERALS, "bugs gate"):
+            assert literal not in text, (literal, text)
+
+
+@pytest.mark.parametrize(
+    ("size", "body", "rule", "detail"),
+    [
+        pytest.param(
+            "S",
+            "- **Size:** S\n",
+            "state-in-body",
+            "body restates `**Status:**`/`**Size:**`; those live in the frontmatter alone",
+            id="state-in-body",
+        ),
+        pytest.param(
+            "L",
+            "body\n",
+            "evidence-boundary",
+            f"size `L` needs a filled `{EVIDENCE_LABEL}` line — a plan built on this entry "
+            "inherits its silences as premises",
+            id="evidence-boundary",
+        ),
+    ],
+)
+def test_a_second_register_holds_its_own_level_to_the_body_rules(
+    tmp_path: Path, size: str, body: str, rule: str, detail: str
+) -> None:
+    # Mutations (oracle): the evidence rule reads `[ledger] evidence_boundary_required_for` rather
+    # than the register's own levels -> `L` is not in it and the second case passes; the body rule
+    # looks for the bug ledger's `**Severity:**` bullet -> the first case passes.
+    root = project(tmp_path)
+    config = load(root, machine=tmp_path / "m.toml")
+    register = replace(DEBT, schema=replace(DEBT.schema, evidence_boundary_for=("L",)))
+    (root / "docs" / "debt").mkdir(parents=True)
+    (root / "docs" / "debt" / "TD-001.md").write_text(
+        f"---\nid: TD-001\ntitle: t\nstatus: open\nsize: {size}\narea: a\nfound: 2026-10-04\n"
+        f"impact:\nrelated:\n---\n\n{body}",
+        encoding="utf-8",
+    )
+    regenerate(root, register)
+    found = register_gate(root, config, register)
+    assert [(f.rule, f.path, f.detail) for f in found] == [(rule, "docs/debt/TD-001.md", detail)]
+
+
+# The void entry `renumber` left at the old number, captured from the engine before it took a
+# register (`renumber(root, config, "BR-001", "BR-009", today="2026-01-02")` over an entry titled
+# `"a: title"`).
+BUG_VOID_ENTRY = (
+    '---\nid: BR-001\ntitle: "renumbered to BR-009 — a: title"\nstatus: void\n'
+    "found: 2026-01-02\nrelated: [BR-009]\n---\n\n"
+    "Renumbered to [BR-009](BR-009.md) to resolve an identifier collision. The number stays\n"
+    "occupied so a reference written before the repair still lands on an explanation.\n"
+)
+
+
+def test_renumber_leaves_the_bug_ledgers_void_entry_byte_for_byte(tmp_path: Path) -> None:
+    # No mutation entry of its own: the second register's case below carries the entry that
+    # spells the void entry from the register, and this one holds what that spelling gives the
+    # bug ledger to the bytes it always wrote.
+    root = project(tmp_path)
+    config = load(root, machine=tmp_path / "m.toml")
+    (root / "docs" / "bugs").mkdir(parents=True)
+    (root / "docs" / "bugs" / "BR-001.md").write_text(
+        '---\nid: BR-001\ntitle: "a: title"\nstatus: open\nseverity: low\narea: a\n'
+        "found: 2026-01-01\nsource:\nfixed_in:\nrelated:\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    assert (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8") == BUG_VOID_ENTRY
+
+
+def test_renumber_leaves_a_second_registers_own_void_entry(tmp_path: Path) -> None:
+    # Mutation (oracle): the void entry spells the bug ledger's `void` status and `found` date
+    # whatever the register -> the withdrawn register cannot read the entry it was left.
+    root = project(tmp_path)
+    config = load(root, machine=tmp_path / "m.toml")
+    register = withdrawn_register()
+    file_entry(
+        root,
+        register,
+        title="filed twice",
+        values={"size": "S", "area": "a", "impact": ""},
+        related=(),
+        today="2026-10-04",
+        fetch=False,
+    )
+    renumber(root, config, register, "TD-001", "TD-009", today="2026-10-05")
+    assert (root / "docs" / "debt" / "TD-001.md").read_text(encoding="utf-8") == (
+        '---\nid: TD-001\ntitle: "renumbered to TD-009 — filed twice"\nstatus: withdrawn\n'
+        "noted: 2026-10-05\nrelated: [TD-009]\n---\n\n"
+        "Renumbered to [TD-009](TD-009.md) to resolve an identifier collision. The number stays\n"
+        "occupied so a reference written before the repair still lands on an explanation.\n"
+    )
+    assert [(e.id, e.status) for e in load_entries(root, register)] == [
+        ("TD-001", "withdrawn"),
+        ("TD-009", "open"),
+    ]
+
+
+def bug_entry(number: int) -> str:
+    return (
+        f"---\nid: BR-{number:03d}\ntitle: a title\nstatus: open\nseverity: low\n"
+        f"area: an area\nfound: 2026-01-01\nsource:\nfixed_in:\nrelated: \n---\n\nbody\n"
+    )
+
+
+# The four texts a change that removes part of the bug ledger, or a stale index, is told, rendered
+# by `problems()` before it took a register. `<root>` stands for the checkout.
+BUG_REFUSALS = {
+    "ledger-removed": [
+        (
+            "ledger-removed",
+            "docs/bugs",
+            None,
+            "a commit this change forked from the base at carries the ledger (docs/bugs or "
+            "docs/bug-reports.md) and this tree has neither; deleting the ledger does not switch "
+            "the bugs gate off: restore it from the base",
+        )
+    ],
+    "entry-removed": [
+        (
+            "entry-removed",
+            "docs/bugs/BR-002.md",
+            None,
+            "a commit this change forked from the base at carries this entry and this tree does "
+            "not; ledger entries are never deleted: restore it from the base, and move one with "
+            "`stayfixed bugs renumber`, which leaves a `void` entry at the old number",
+        )
+    ],
+    "stale-index": [
+        ("stale-index", "docs/bug-reports.md", None, "is stale; run: stayfixed bugs index")
+    ],
+}
+BUG_BASE_UNREAD = (
+    "what the commits HEAD forked from `refs/heads/nowhere` at hold of docs/bugs and "
+    "docs/bug-reports.md is unknown under <root> (git exited 128), so whether this change "
+    "deleted the ledger or an entry of it is unknown and the bugs gate proved nothing. Fetch the "
+    "whole history (`fetch-depth: 0` in CI), or pass a `--base` this clone holds that shares "
+    "history with HEAD"
+)
+
+
+@needs_git
+@pytest.mark.parametrize("case", ["ledger-removed", "entry-removed", "base-unread", "stale-index"])
+def test_the_bug_ledgers_refusals_are_unchanged(tmp_path: Path, case: str) -> None:
+    # Through `bugs_gate`, the function `bugs check` and the gate run answer with. No mutation
+    # entry of its own: the second register's texts carry the entries that make these name the
+    # register, and this holds what they give the bug ledger to the bytes it always rendered.
+    root = project(tmp_path)
+    config = load(root, machine=tmp_path / "m.toml")
+    bugs = bug_register(config)
+    git(root, "init", "-q", "-b", "main")
+    (root / "docs" / "bugs").mkdir(parents=True)
+    for number in (1, 2):
+        (root / "docs" / "bugs" / f"BR-{number:03d}.md").write_text(
+            bug_entry(number), encoding="utf-8"
+        )
+    regenerate(root, bugs)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    if case == "base-unread":
+        with pytest.raises(Failure) as caught:
+            bugs_gate(root, config, "refs/heads/nowhere")
+        assert str(caught.value).replace(str(root), "<root>") == BUG_BASE_UNREAD
+        return
+    if case == "ledger-removed":
+        shutil.rmtree(root / "docs" / "bugs")
+        (root / "docs" / "bug-reports.md").unlink()
+    elif case == "entry-removed":
+        (root / "docs" / "bugs" / "BR-002.md").unlink()
+        regenerate(root, bugs)
+    else:
+        (root / "docs" / "bugs" / "BR-003.md").write_text(bug_entry(3), encoding="utf-8")
+        base = ""
+    found = bugs_gate(root, config, base)
+    assert [(f.rule, f.path, f.line, f.detail) for f in found] == BUG_REFUSALS[case]

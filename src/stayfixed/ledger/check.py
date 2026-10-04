@@ -1,4 +1,9 @@
-"""Every ledger violation under a root, most structural first, as `Finding`s."""
+"""Every violation of one register under a root, most structural first, as `Finding`s.
+
+The register is handed in: its directory, index, identifiers and schema are the register's, and
+`config` is read only for what no register owns, the roots the scan walks. Every text below
+names the register's paths and its command group, so the bug ledger's read as they always have.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,6 @@ from typing import TYPE_CHECKING
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding, listed
 from stayfixed.gitenv import ForkUnknown, fork_points, git_run
-from stayfixed.identifiers import identifiers
 from stayfixed.ledger.entries import (
     Entry,
     LedgerError,
@@ -27,7 +31,7 @@ from stayfixed.ledger.index import (
     is_generated_index,
     render_index,
 )
-from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
+from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, Register, bug_register
 from stayfixed.ledger.scan import code_mentions, entry_citations
 
 if TYPE_CHECKING:
@@ -46,22 +50,23 @@ _EVIDENCE_BOUNDARY = re.compile(
     rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*(?!{re.escape(EVIDENCE_PLACEHOLDER)})\S", re.MULTILINE
 )
 _CONFLICT_MARKER = re.compile(r"^(<{7} |={7}$|>{7} )", re.MULTILINE)
-_BODY_STATE_BULLET = re.compile(r"^- \*\*(Status|Severity):\*\*", re.MULTILINE)
+# `{name}` is the register's command group, `bugs` for the bug ledger; `{directory}` and `{index}`
+# are its paths, and `{void}` its schema's void status.
 LEDGER_REMOVED = (
-    "a commit this change forked from the base at carries the ledger ({bugs} or {index}) and "
-    "this tree has neither; deleting the ledger does not switch the bugs gate off: restore it "
-    "from the base"
+    "a commit this change forked from the base at carries the ledger ({directory} or {index}) "
+    "and this tree has neither; deleting the ledger does not switch the {name} gate off: restore "
+    "it from the base"
 )
 ENTRY_REMOVED = (
     "a commit this change forked from the base at carries this entry and this tree does not; "
     "ledger entries are never deleted: restore it from the base, and move one with `stayfixed "
-    "bugs renumber`, which leaves a `void` entry at the old number"
+    "{name} renumber`, which leaves a `{void}` entry at the old number"
 )
 _BASE_UNREAD = (
-    "what the commits HEAD forked from `{base}` at hold of {bugs} and {index} is unknown under "
-    "{root} ({cause}), so whether this change deleted the ledger or an entry of it is unknown "
-    "and the bugs gate proved nothing. Fetch the whole history (`fetch-depth: 0` in CI), or "
-    "pass a `--base` this clone holds that shares history with HEAD"
+    "what the commits HEAD forked from `{base}` at hold of {directory} and {index} is unknown "
+    "under {root} ({cause}), so whether this change deleted the ledger or an entry of it is "
+    "unknown and the {name} gate proved nothing. Fetch the whole history (`fetch-depth: 0` in "
+    "CI), or pass a `--base` this clone holds that shares history with HEAD"
 )
 
 
@@ -71,17 +76,23 @@ class _BaseLedger:
     entries: tuple[str, ...]  # the entry files directly under the directory there, by name
 
 
-def uninitialised(root: Path, config: Config) -> bool:
+def _body_state_bullet(register: Register) -> re.Pattern[str]:
+    """A body bullet restating the status or the level, which live in the frontmatter alone:
+    `**Status:**` and, for the bug ledger, `**Severity:**`."""
+    level = re.escape(register.schema.level.capitalize())
+    return re.compile(rf"^- \*\*(Status|{level}):\*\*", re.MULTILINE)
+
+
+def uninitialised(root: Path, register: Register) -> bool:
     """No ledger yet: no ledger directory *and* no index this tool generated. The second half
     is the point — the directory missing on its own also describes a ledger whose entry files
     were deleted under a generated index that still links every one of them. Only citations
     are checked here, so the gate can be registered before the first entry."""
-    register = bug_register(config)
     directory = entry_dir(root, register)
     return not directory.is_dir() and not is_generated_index(index_text(root, register))
 
 
-def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
+def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
     """What the commits HEAD forked from `base` at carry of the ledger: whether any has the
     directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
     in any of them.
@@ -107,12 +118,14 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
-    bugs, index = config.paths.bugs, config.paths.bug_index
+    bugs, index = register.directory, register.index
 
     def unread(unknown: ForkUnknown) -> Failure:
         cause = unknown.cause
         return Failure(
-            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
+            _BASE_UNREAD.format(
+                directory=bugs, index=index, name=register.name, base=base, root=root, cause=cause
+            )
         )
 
     forks = fork_points(root, base)
@@ -125,7 +138,7 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
             raise unread(ForkUnknown.of(code))
         found.update(name for name in out.split("\0") if name)
     names = sorted(found)
-    ids = identifiers(config)
+    ids = register.ids
     under = f"{bugs}/"
     entries = tuple(
         name.removeprefix(under)
@@ -137,11 +150,11 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
     return _BaseLedger(bool(names), entries)
 
 
-def _removed_entries(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
+def _removed_entries(root: Path, register: Register, base: _BaseLedger | None) -> list[Finding]:
     """Every entry file `base` carries whose exact name this tree's ledger directory does not
     hold, one finding each.
 
-    Entries are append-only: `bugs renumber` leaves a `void` entry at the number it moves from,
+    Entries are append-only: `renumber` leaves a void entry at the number it moves from,
     so no command this project ships deletes one, and a change that does is refused whatever
     still mentions the identifier. The mentions cannot decide it, and nor can the fixtures
     marker, which is an exemption a file grants itself.
@@ -154,21 +167,24 @@ def _removed_entries(root: Path, config: Config, base: _BaseLedger | None) -> li
     if base is None:
         return []
     try:
-        present = set(os.listdir(entry_dir(root, bug_register(config))))
+        present = set(os.listdir(entry_dir(root, register)))
     except OSError:
         present = set()
+    removed = ENTRY_REMOVED.format(name=register.name, void=register.schema.void)
     return [
-        Finding("entry-removed", f"{config.paths.bugs}/{name}", None, ENTRY_REMOVED)
+        Finding("entry-removed", f"{register.directory}/{name}", None, removed)
         for name in base.entries
         if name not in present
     ]
 
 
-def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Finding]:
+def _dangling_mentions(
+    root: Path, config: Config, register: Register, known: set[str]
+) -> list[Finding]:
     """Every identifier the scanned files mention that `known` does not hold, one finding per
     identifier at its first mention."""
     found: list[Finding] = []
-    for identifier, locations in sorted(code_mentions(root, config).items()):
+    for identifier, locations in sorted(code_mentions(root, config, register).items()):
         if identifier not in known:
             path_, line = locations[0]
             found.append(
@@ -183,7 +199,9 @@ def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Find
     return found
 
 
-def _unledgered(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
+def _unledgered(
+    root: Path, config: Config, register: Register, base: _BaseLedger | None
+) -> list[Finding]:
     """The findings for a tree with no ledger: the ledger the change forked with, when it
     forked with one, and every mention and citation of an entry, since with no ledger each one
     dangles.
@@ -198,20 +216,21 @@ def _unledgered(root: Path, config: Config, base: _BaseLedger | None) -> list[Fi
     """
     found: list[Finding] = []
     if base is not None and base.carried:
-        bugs, index = config.paths.bugs, config.paths.bug_index
-        found.append(
-            Finding("ledger-removed", bugs, None, LEDGER_REMOVED.format(bugs=bugs, index=index))
-        )
+        bugs, index = register.directory, register.index
+        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name=register.name)
+        found.append(Finding("ledger-removed", bugs, None, removed))
     empty: set[str] = set()
-    found.extend(_dangling_mentions(root, config, empty))
-    return found + _dangling_citations(root, config, empty)
+    found.extend(_dangling_mentions(root, config, register, empty))
+    return found + _dangling_citations(root, config, register, empty)
 
 
-def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Finding]:
+def _dangling_citations(
+    root: Path, config: Config, register: Register, known: set[str]
+) -> list[Finding]:
     """Every entry file a document or source cites that `known` does not hold, one finding per
     identifier at its first citation."""
     found: list[Finding] = []
-    for identifier, locations in sorted(entry_citations(root, config).items()):
+    for identifier, locations in sorted(entry_citations(root, config, register).items()):
         if identifier not in known:
             path_, line = locations[0]
             found.append(
@@ -219,15 +238,15 @@ def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Fin
                     "dangling-citation",
                     path_.as_posix(),
                     line,
-                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist "
+                    f"cites {register.directory}/{identifier}.md, which does not exist "
                     f"(referenced {len(locations)} time(s))",
                 )
             )
     return found
 
 
-def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
-    """Every ledger violation under `root`, most structural first.
+def problems(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
+    """Every violation of `register` under `root`, most structural first.
 
     Before the ledger directory exists *and* before this tool has written an index there is
     nothing it owns, which is what lets the check be registered in CI one change before the
@@ -239,21 +258,21 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     (`entry-removed`). Both are read at every commit HEAD forked from `base` at
     (`_base_ledger`).
     """
-    carried = _base_ledger(root, config, base) if base else None
-    if uninitialised(root, config):
-        return _unledgered(root, config, carried)
-    register = bug_register(config)
-    ids = register.ids
+    carried = _base_ledger(root, register, base) if base else None
+    if uninitialised(root, register):
+        return _unledgered(root, config, register, carried)
+    ids, schema = register.ids, register.schema
     bugs = entry_dir(root, register)
-    index_name = config.paths.bug_index
+    index_name = register.index
     # First: a deleted entry is the most structural finding a ledger can have.
-    found = _removed_entries(root, config, carried)
+    found = _removed_entries(root, register, carried)
     if not bugs.is_dir():
-        missing = ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name)
+        missing = ENTRIES_MISSING.format(directory=register.directory, index=index_name)
         return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
-    required = set(config.ledger.evidence_boundary_required_for)
+    required = set(schema.evidence_boundary_for)
+    restated = _body_state_bullet(register)
     for path in sorted(bugs.glob(f"{ids.prefix}-*.md")):
         # Parsed against the repo-relative path, which is the one every message here names:
         # these are printed by CI, where an absolute path is a runner's scratch directory.
@@ -277,24 +296,24 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
                     "id-mismatch", relative, None, f"`id` {entry.id} does not match its filename"
                 )
             )
-        if _BODY_STATE_BULLET.search(entry.body):
+        if restated.search(entry.body):
             found.append(
                 Finding(
                     "state-in-body",
                     relative,
                     None,
-                    "body restates `**Status:**`/`**Severity:**`; those live in the "
-                    "frontmatter alone",
+                    f"body restates `**Status:**`/`**{schema.level.capitalize()}:**`; those live "
+                    "in the frontmatter alone",
                 )
             )
-        level = entry.fields[register.schema.level]
+        level = entry.fields[schema.level]
         if level in required and not _EVIDENCE_BOUNDARY.search(entry.body):
             found.append(
                 Finding(
                     "evidence-boundary",
                     relative,
                     None,
-                    f"{register.schema.level} `{level}` needs a filled `{EVIDENCE_LABEL}` line — a "
+                    f"{schema.level} `{level}` needs a filled `{EVIDENCE_LABEL}` line — a "
                     "plan built on this entry inherits its silences as premises",
                 )
             )
@@ -345,24 +364,30 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        found.append(
-            Finding("stale-index", index_name, None, "is stale; run: stayfixed bugs index")
-        )
+        stale = f"is stale; run: stayfixed {register.name} index"
+        found.append(Finding("stale-index", index_name, None, stale))
 
-    found.extend(_dangling_mentions(root, config, known))
+    found.extend(_dangling_mentions(root, config, register, known))
     # Wider than the scan above, and reported separately because a citation says something a
     # bare mention does not: it names a path, so a reader who follows it gets a 404 rather than
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
     # one behind, and it lands in a docs-only commit.
-    return found + _dangling_citations(root, config, known)
+    return found + _dangling_citations(root, config, register, known)
+
+
+def register_gate(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
+    """One register's gate, whole: every violation of it, before it has a ledger every reference
+    to an entry of it, and against the base a ledger or an entry the change forked with that the
+    tree lacks. A register a project has not started — no directory, no generated index — finds
+    nothing until something refers to it."""
+    return problems(root, config, register, base)
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
-    """The `bugs` gate's whole composition: every ledger violation, before there is a ledger
-    every reference to an entry, and against the base a ledger or an entry the change forked
-    with that the tree lacks.
+    """The `bugs` gate: the bug ledger's `register_gate`, in the `(root, config, base)` shape every
+    gate of `stayfixed assess` shares.
 
     `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
     tree alone; every gate run passes the base it judges against.
     """
-    return problems(root, config, base)
+    return register_gate(root, config, bug_register(config), base)

@@ -1941,3 +1941,15 @@ after = "    report = dict(hint.report(root, config))"
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
+
+# `uninstall` builds the footprint to take it out and renders nothing, so it never needs the
+# identifiers only the bug index's render reads: a prefix the ledger refuses stops `init` and
+# `upgrade`, never the way out.
+[[mutation]]
+name = "the footprint builds the bug ledger's register before anything renders"
+file = "src/stayfixed/project/templates.py"
+before = '''        _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),'''
+after = '''        _computed("bug-index", bug_register(config).index, lambda: render_index([], bug_register(config))),'''
+reddens = [
+  "tests/project/test_uninstall.py::test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall",
+]

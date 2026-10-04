@@ -91,7 +91,7 @@ from stayfixed.docs.hygiene import read_document
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding
 from stayfixed.gitenv import NO_ANSWER, ForkUnknown, fork_points, git_run
-from stayfixed.identifiers import identifiers
+from stayfixed.ledger.api import bug_register
 from stayfixed.prose import blank_fences, path_references, resolves_within
 
 if TYPE_CHECKING:
@@ -457,7 +457,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     else:
         selected = sorted(plans_dir.glob("*.md")) if plans_dir.is_dir() else []
     findings: list[Finding] = []
-    fixes = identifiers(config).fixes
+    fixes = bug_register(config).ids.fixes
     for path in sorted(selected):
         judged = written_lines(root, base, path) if diff_scoped else None
         where = path.relative_to(root).as_posix()

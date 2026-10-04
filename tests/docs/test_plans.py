@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,16 @@ def test_a_fixes_claim_needs_a_premise_line_with_content(tmp_path: Path) -> None
         == []
     )
     assert rules(root, config, plan(root, SCOPE + "```\nFixes BR-042\n```\n")) == []
+
+
+def test_a_fixes_claim_names_the_bug_ledgers_configured_prefix(tmp_path: Path) -> None:
+    # The identifiers are the bug ledger's, as `[ledger] id_prefix` configures them. Mutation
+    # (oracle): the rule reads the default prefix whatever the project configures -> the `DF`
+    # claim needs no premise and the `BR` one does.
+    root, config = project(tmp_path)
+    config = replace(config, ledger=replace(config.ledger, id_prefix="DF"))
+    assert rules(root, config, plan(root, SCOPE + "Fixes DF-042.\n")) == ["premise-missing"]
+    assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n")) == []
 
 
 @pytest.mark.parametrize(

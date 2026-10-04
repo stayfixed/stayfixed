@@ -259,7 +259,7 @@ def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_pat
     assert len(foreign) == 1 and "the only record of this bug" in foreign[0]
     with pytest.raises(Refusal, match="recover it before regenerating"):
         refuse_index_overwrite(root, register, current)
-    rules = [f.rule for f in problems(root, config)]
+    rules = [f.rule for f in problems(root, config, bug_register(config))]
     assert "foreign-index-content" in rules and "stale-index" not in rules
 
 

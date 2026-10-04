@@ -57,7 +57,7 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     found = bugs_gate(root, config, args.base or "")
     # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
     # a finding, and there is none.
-    if not found and uninitialised(root, config):
+    if not found and uninitialised(root, bug_register(config)):
         return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
@@ -88,7 +88,7 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.write import renumber
 
     root, config = root_and_config(args)
-    result = renumber(root, config, args.old, args.new)
+    result = renumber(root, config, bug_register(config), args.old, args.new)
     void = result.void.relative_to(root).as_posix()
     # Each file as `{path, reason}`, and the line names each by its `path`: a path may hold
     # `": "`, so a `"path: reason"` string could not be split back into the two.

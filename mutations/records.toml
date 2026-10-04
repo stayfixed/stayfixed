@@ -1079,7 +1079,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return problems(root, config, base)"
+before = "    return register_gate(root, config, bug_register(config), base)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -1114,7 +1114,7 @@ reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_o
 [[mutation]]
 name = "a tree with no ledger reports no citation of an entry file"
 file = "src/stayfixed/ledger/check.py"
-before = "        return _unledgered(root, config, carried)"
+before = "        return _unledgered(root, config, register, carried)"
 after = "        return []"
 reddens = [
   "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
@@ -1310,7 +1310,7 @@ reddens = [
 [[mutation]]
 name = "with no ledger a bare mention is not a finding"
 file = "src/stayfixed/ledger/check.py"
-before = "    found.extend(_dangling_mentions(root, config, empty))"
+before = "    found.extend(_dangling_mentions(root, config, register, empty))"
 after = "    pass"
 reddens = [
   "tests/ledger/test_check.py::test_with_no_ledger_a_bare_mention_dangles_too",
