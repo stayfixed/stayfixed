@@ -682,7 +682,7 @@ def test_the_configuration_block_lists_the_built_in_gates_in_their_one_order() -
 # `plan check`'s rule count, stated in the reference and emitted by `docs/plans.py`. The
 # sentence said "Four rules" and then listed five, in one breath, for as long as the fifth rule
 # has existed. `base-unresolvable` is the refusal, not one of the rules the sentence counts.
-_PLAN_RULES_SENTENCE = re.compile(r"\. (\w+) rules, each from a\nretrospective:")
+_PLAN_RULES_SENTENCE = re.compile(r"\. (\w+) rules,\s+each\s+from\s+a\s+retrospective:")
 _PLAN_FINDING_CODE = re.compile(r'Finding\("([a-z-]+)"')
 PLAN_REFUSAL_CODE = "base-unresolvable"
 
