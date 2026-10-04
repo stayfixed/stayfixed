@@ -780,10 +780,14 @@ def test_the_release_workflow_runs_the_release_check_in_the_one_spelling() -> No
     # The fifth place: the release workflow runs the check against the tag, and it runs no
     # mypy and no oracle, so it is held to this one gate rather than to the contributor's list.
     # Its spelling had moved with the other four only because one commit moved all five.
-    # Mutation (declared): `release.yml` runs the command the CLI used to ship -> reddens.
+    # The whole command line, not a substring of it: `… check --tag "$GITHUB_REF_NAME" || true`
+    # carries the spelling and lets a failed check through, and so would a second command after
+    # a `;`. Mutation (declared): `release.yml` runs the command the CLI used to ship -> reddens;
+    # and `mutations/`'s "the release workflow lets a failed release check through" -> reddens.
     bodies = scripts(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     assert bodies, "release.yml runs no script"
-    assert [body for body in bodies if f"{RELEASE_CHECK} --tag " in body], bodies
+    checks = [body.strip() for body in bodies if RELEASE_CHECK in body]
+    assert checks == [f'{RELEASE_CHECK} --tag "$GITHUB_REF_NAME"'], checks
 
 
 @needs_release_workflow
