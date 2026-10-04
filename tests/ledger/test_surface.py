@@ -35,7 +35,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "Section",
         "bug_register",
         # the names `init` writes the bug ledger's runbook and audits README under, which its
-        # register links, and the one join of each to its directory
+        # register links, and the join of each to its root-relative directory that both share
         "BUG_RUNBOOK",
         "BUG_AUDITS",
         "ledger_path",

@@ -200,15 +200,17 @@ name what the evidence is silent about, and what would have to be observed to se
 
 # The bug ledger's runbook, a file under `[paths] runbooks`, and its audits directory, a
 # subdirectory of `[paths] bugs`. `bug_register` links both from the index and `init` writes a file
-# at each, both from these two names joined by `ledger_path`, so a link and the file it points at
-# cannot be spelled apart.
+# at each, both from these two names, so a link and the file it points at cannot be spelled apart.
 BUG_RUNBOOK = "bug-reports.md"
 BUG_AUDITS = "audits"
 
 
 def ledger_path(directory: str, name: str) -> str:
     """`name` under the root-relative `directory`: a register's runbook or audits directory, as
-    the index names it and `init` writes a file at it. The one place either is joined."""
+    the index names it and `init` writes a file at it. Only that root-relative path is joined
+    here: the index's link to the audits directory, relative to the index, is joined from the
+    same name where it is written, and so is the README `init` writes inside that directory,
+    from what this returns."""
     return f"{directory}/{name}"
 
 
