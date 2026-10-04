@@ -32,8 +32,15 @@ from stayfixed.release.hashes import (
     digests,
     read_record,
 )
-from stayfixed.release.pins import Pin, Resolution, is_released, released, resolve_pin
-from stayfixed.release.versions import PACKAGE, tag_for
+from stayfixed.release.pins import (
+    PACKAGE,
+    Pin,
+    Resolution,
+    is_released,
+    released,
+    resolve_pin,
+    tag_for,
+)
 
 __all__ = [
     "FORMAT",
