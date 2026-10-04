@@ -88,12 +88,13 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     return found[0], config
 
 
-# What the trust gate withholds, said where a person will read it: `bundles.blocks` returns `[]`
-# for repository-data notes, and `worktree.harness_link_needed` refuses the harness memory link
-# to a store whose notes or committed `MEMORY.md` the repository shipped. The failure this
-# closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`, so
-# it used to revoke the very record it depends on, and nothing in any summary said why the
-# model had stopped receiving standing rules.
+# What the trust gate withholds until there is a record, said where a person will read it:
+# `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
+# withholds the harness memory link from a store whose directory is inside the repository.
+# `_trusted` decides when this is said, and its question is narrower than the link's; its
+# docstring says how. The failure this closes was silent in both directions: `memory index`
+# rewrites every note and `MEMORY.md`, so it used to revoke the very record it depends on, and
+# nothing in any summary said why the model had stopped receiving standing rules.
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
@@ -132,19 +133,20 @@ _EXTRA_NOT_PUBLISHED = (
 
 
 def _trusted(store: Store, config: Config) -> bool:
-    """Whether the repository data this store holds, notes or index, may reach a session.
+    """Whether this store's repository data, notes or a committed index, may reach a session.
 
     `may_inject(store, config)` alone answers about the store's *notes*, through
     `inside_project`. In overlay mode that is False by design — every group resolves out into
     the overlay — while `store.path` is a real directory inside the repository, so a committed
-    `MEMORY.md` there is repository data that answer cannot see, and the harness memory link
-    `worktree.harness_link_needed` gates is withheld from it. Asked that way, this reported
-    `"trusted": true` and `_gate` said nothing. `_UNTRUSTED` exists precisely to stop that
-    silence — its own comment says "nothing in any summary said why the model had stopped
-    receiving standing rules" — and it was never appended.
+    `MEMORY.md` there is repository data that answer cannot see. Asked that way, this reported
+    `"trusted": true` and `_gate` said nothing. So the index is asked about by file, through its
+    own `in_repository`, beside the notes' `is_repository_data`.
 
-    So the index is asked about by file, through its own `in_repository`, beside the notes'
-    `is_repository_data`.
+    The harness memory link asks a wider question. `worktree.harness_link_needed` asks
+    `in_repository(store, store.path)` — whether the *directory* the link exposes is inside the
+    repository, which in overlay mode it always is. So an overlay store with no committed index
+    and no trust record reads as trusted here, with no warning, while its harness link waits for
+    a record all the same.
     """
     index = index_source(store, config)
     repository_data = trust.is_repository_data(store) or (
