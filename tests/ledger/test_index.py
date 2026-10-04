@@ -14,7 +14,7 @@ import pytest
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.ledger.check import problems
+from stayfixed.ledger.check import register_gate
 from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import (
     foreign_index_lines,
@@ -259,7 +259,7 @@ def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_pat
     assert len(foreign) == 1 and "the only record of this bug" in foreign[0]
     with pytest.raises(Refusal, match="recover it before regenerating"):
         refuse_index_overwrite(root, register, current)
-    rules = [f.rule for f in problems(root, config, bug_register(config))]
+    rules = [f.rule for f in register_gate(root, config, bug_register(config))]
     assert "foreign-index-content" in rules and "stale-index" not in rules
 
 

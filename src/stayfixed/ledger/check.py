@@ -252,8 +252,9 @@ def _dangling_citations(
     return found
 
 
-def problems(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
-    """Every violation of `register` under `root`, most structural first.
+def register_gate(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
+    """One register's gate, whole: every violation of `register` under `root`, most structural
+    first.
 
     Before the ledger directory exists *and* before this tool has written an index there is
     nothing it owns, which is what lets the check be registered in CI one change before the
@@ -380,14 +381,6 @@ def problems(root: Path, config: Config, register: Register, base: str = "") -> 
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
     # one behind, and it lands in a docs-only commit.
     return found + _dangling_citations(root, config, register, known)
-
-
-def register_gate(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
-    """One register's gate, whole: every violation of it, before it has a ledger every reference
-    to an entry of it, and against the base a ledger or an entry the change forked with that the
-    tree lacks. A register a project has not started — no directory, no generated index — finds
-    nothing until something refers to it."""
-    return problems(root, config, register, base)
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:

@@ -18,7 +18,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.gitenv import NO_ANSWER, git_run
 from stayfixed.ledger import check
-from stayfixed.ledger.check import problems, uninitialised
+from stayfixed.ledger.check import register_gate, uninitialised
 from stayfixed.ledger.entries import load_entries
 from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
@@ -68,13 +68,13 @@ def ledger(root: Path, config: Config, entries: dict[str, str]) -> None:
 
 
 def rules(root: Path, config: Config) -> list[str]:
-    return [problem.rule for problem in problems(root, config, bug_register(config))]
+    return [problem.rule for problem in register_gate(root, config, bug_register(config))]
 
 
 def test_check_is_inert_before_a_ledger_exists(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     assert uninitialised(root, bug_register(config))
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_with_no_ledger_every_citation_of_an_entry_file_dangles(tmp_path: Path) -> None:
@@ -87,7 +87,7 @@ def test_with_no_ledger_every_citation_of_an_entry_file_dangles(tmp_path: Path) 
     (root / "src" / "a.py").write_text("# see docs/bugs/BR-001.md\n", encoding="utf-8")
     (root / "docs" / "roadmap.md").write_text("see [x](bugs/BR-404.md)\n", encoding="utf-8")
     assert uninitialised(root, bug_register(config))
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     # The code's citation names the identifier too, so it is a mention as well, as it is once a
     # ledger exists; the roadmap is outside the trees swept for mentions.
     assert [(p.rule, p.path, p.line) for p in found] == [
@@ -105,9 +105,9 @@ def test_with_no_ledger_a_bare_mention_dangles_too(tmp_path: Path) -> None:
     # reported.
     root, config = project(tmp_path)
     (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
-    assert [(p.rule, p.path, p.line) for p in problems(root, config, bug_register(config))] == [
-        ("dangling-mention", "src/a.py", 1)
-    ]
+    assert [
+        (p.rule, p.path, p.line) for p in register_gate(root, config, bug_register(config))
+    ] == [("dangling-mention", "src/a.py", 1)]
 
 
 def _based(tmp_path: Path, on_base: str) -> tuple[Path, Config, str]:
@@ -143,14 +143,14 @@ def test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding(
     # ledger" -> nothing is reported.
     root, config, base = _based(tmp_path, on_base)
     assert uninitialised(root, bug_register(config))
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), base)] == [
+    assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
         ("ledger-removed", "docs/bugs")
     ]
     # Without a base the tree alone is judged, as `bugs check` without `--base` judges it.
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
     # And a mention still dangles beside it: both are the change's to answer for.
     (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
-    assert [p.rule for p in problems(root, config, bug_register(config), base)] == [
+    assert [p.rule for p in register_gate(root, config, bug_register(config), base)] == [
         "ledger-removed",
         "dangling-mention",
     ]
@@ -163,7 +163,7 @@ def test_a_base_with_no_ledger_leaves_a_project_before_its_first_entry_green(
     # The gate can be enforced before the first entry: no ledger on the base and no reference
     # in the tree is nothing to report.
     root, config, base = _based(tmp_path, "none")
-    assert problems(root, config, bug_register(config), base) == []
+    assert register_gate(root, config, bug_register(config), base) == []
 
 
 def _committed_ledger(tmp_path: Path, names: tuple[str, ...]) -> tuple[Path, Config, str]:
@@ -211,11 +211,11 @@ def test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed(
     _drop(root, config, "BR-001")
     (root / "src" / "a.py").write_text(mentions, encoding="utf-8")
     assert not uninitialised(root, bug_register(config))
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), base)] == [
+    assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
         ("entry-removed", "docs/bugs/BR-001.md")
     ]
     # Without a base the tree alone is judged, and it is a consistent, empty ledger.
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 @needs_git
@@ -223,7 +223,7 @@ def test_one_entry_removed_of_several_is_named_and_the_rest_are_not(tmp_path: Pa
     root, config, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
     _drop(root, config, "BR-002")
     (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), base)] == [
+    assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
         ("entry-removed", "docs/bugs/BR-002.md")
     ]
 
@@ -237,7 +237,7 @@ def test_a_ledger_whose_directory_went_and_index_stayed_names_each_removed_entry
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     shutil.rmtree(root / "docs" / "bugs")
     (root / "src" / "a.py").write_text("", encoding="utf-8")
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), base)] == [
+    assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
         ("entries-missing", "docs/bug-reports.md"),
         ("entry-removed", "docs/bugs/BR-001.md"),
     ]
@@ -251,7 +251,7 @@ def test_renumbering_an_entry_removes_nothing(tmp_path: Path) -> None:
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     renumber(root, config, bug_register(config), "BR-001", "BR-002", today="2026-01-02")
     assert (root / "docs" / "bugs" / "BR-001.md").is_file()
-    assert problems(root, config, bug_register(config), base) == []
+    assert register_gate(root, config, bug_register(config), base) == []
 
 
 @needs_git
@@ -281,7 +281,7 @@ def test_an_entry_renamed_only_in_case_is_entry_removed_where_the_filesystem_fol
 
     monkeypatch.setattr(os.path, "lexists", folding)
     assert os.path.lexists(bugs / "BR-001.md")
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), base)] == [
+    assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
         ("entry-removed", "docs/bugs/BR-001.md")
     ]
 
@@ -309,7 +309,7 @@ def test_deleting_what_is_not_an_entry_under_the_ledger_directory_removes_no_ent
     shutil.rmtree(bugs / "audits")
     for name in ("README.md", "BR-002.txt", "notes.md"):
         (bugs / name).unlink()
-    assert problems(root, config, bug_register(config), base) == []
+    assert register_gate(root, config, bug_register(config), base) == []
 
 
 def _forked(
@@ -337,7 +337,7 @@ def test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing(tmp_path
     # (declared): the entries listed at the base's tip -> `entry-removed` for BR-002.
     root, config, base = _forked(tmp_path, ("BR-001",), ("BR-002",))
     assert not (root / "docs" / "bugs" / "BR-002.md").exists()
-    assert problems(root, config, bug_register(config), base) == []
+    assert register_gate(root, config, bug_register(config), base) == []
 
 
 @needs_git
@@ -354,7 +354,7 @@ def test_a_branch_forked_before_the_base_had_a_ledger_deleted_none(tmp_path: Pat
     base = git(root, "rev-parse", "HEAD").strip()
     git(root, "checkout", "-q", "change")
     assert uninitialised(root, bug_register(config))
-    assert problems(root, config, bug_register(config), base) == []
+    assert register_gate(root, config, bug_register(config), base) == []
 
 
 @needs_git
@@ -371,13 +371,13 @@ def test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit(tmp_path: P
     git(root, "commit", "-q", "-m", "empty the ledger")
     expected = [("entry-removed", "docs/bugs/BR-001.md")]
     assert [
-        (p.rule, p.path) for p in problems(root, config, bug_register(config), base)
+        (p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)
     ] == expected
     git(root, "checkout", "-q", "--detach", "main~1")
     git(root, "merge", "-q", "--no-ff", "--no-edit", "change")
     assert git(root, "rev-parse", "HEAD^2").strip() == git(root, "rev-parse", "change").strip()
     assert [
-        (p.rule, p.path) for p in problems(root, config, bug_register(config), base)
+        (p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)
     ] == expected
 
 
@@ -401,13 +401,13 @@ def test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick(
     shape = criss_cross(root, lambda: ledger(root, config, {"BR-002": entry(2)}))
     git(root, "checkout", "-q", "-b", "change")
     # A branch that merged both and deleted nothing is not refused.
-    assert problems(root, config, bug_register(config), shape.base) == []
+    assert register_gate(root, config, bug_register(config), shape.base) == []
     _drop(root, config, "BR-002")
     git(root, "add", "-A")
     dated(root, 6, "commit", "-q", "-m", "delete BR-002")
-    assert [(p.rule, p.path) for p in problems(root, config, bug_register(config), shape.base)] == [
-        ("entry-removed", "docs/bugs/BR-002.md")
-    ]
+    assert [
+        (p.rule, p.path) for p in register_gate(root, config, bug_register(config), shape.base)
+    ] == [("entry-removed", "docs/bugs/BR-002.md")]
 
 
 @needs_git
@@ -422,7 +422,7 @@ def test_a_shallow_clone_is_a_failure_never_an_older_fork_point(tmp_path: Path) 
     git(tmp_path, "clone", "-q", "--depth", "1", root.as_uri(), str(shallow))
     assert git(shallow, "rev-parse", "--is-shallow-repository").strip() == "true"
     with pytest.raises(Failure) as caught:
-        problems(shallow, config, bug_register(config), "refs/remotes/origin/main")
+        register_gate(shallow, config, bug_register(config), "refs/remotes/origin/main")
     assert "shallow" in str(caught.value)
 
 
@@ -443,7 +443,7 @@ def test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone(
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     answer_shallow_check(monkeypatch, answer)
     with pytest.raises(Failure) as caught:
-        problems(root, config, bug_register(config), base)
+        register_gate(root, config, bug_register(config), base)
     assert f"({cause})" in str(caught.value)
     assert "proved nothing" in str(caught.value)
 
@@ -460,7 +460,7 @@ def test_a_base_that_shares_no_history_with_the_tree_is_a_failure(tmp_path: Path
     other = git(root, "rev-parse", "HEAD").strip()
     git(root, "checkout", "-q", "-f", "main")
     with pytest.raises(Failure) as caught:
-        problems(root, config, bug_register(config), other)
+        register_gate(root, config, bug_register(config), other)
     assert "proved nothing" in str(caught.value)
 
 
@@ -469,14 +469,14 @@ def test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger(tmp_path: P
     # A base this clone does not have is a question with no answer, and "the base had no
     # ledger" would pass exactly the change the question exists to catch: a `Failure`, which a
     # gate run reports as could not run. Mutation (oracle): "a base git cannot list reads as a
-    # base with no ledger" -> `problems` returns `[]`.
+    # base with no ledger" -> `register_gate` returns `[]`.
     root, config, _base = _based(tmp_path, "both")
     with pytest.raises(Failure) as caught:
-        problems(root, config, bug_register(config), "refs/remotes/origin/main")
+        register_gate(root, config, bug_register(config), "refs/remotes/origin/main")
     assert "proved nothing" in str(caught.value)
     # Shaped like an option, it is refused before git sees it, as `plan check` refuses it.
     with pytest.raises(Refusal):
-        problems(root, config, bug_register(config), "--output=x")
+        register_gate(root, config, bug_register(config), "--output=x")
 
 
 @needs_git
@@ -495,7 +495,7 @@ def test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledge
 
     monkeypatch.setattr(check, "git_run", refused)
     with pytest.raises(Failure, match="git exited 128") as caught:
-        problems(root, config, bug_register(config), base)
+        register_gate(root, config, bug_register(config), base)
     assert "proved nothing" in str(caught.value)
 
 
@@ -512,7 +512,7 @@ def test_a_generated_index_with_no_entries_directory_is_a_deleted_ledger(tmp_pat
 def test_check_accepts_a_clean_ledger(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_a_conflict_marker_is_reported_before_the_entry_is_parsed(tmp_path: Path) -> None:
@@ -521,7 +521,7 @@ def test_a_conflict_marker_is_reported_before_the_entry_is_parsed(tmp_path: Path
     (root / "docs" / "bugs" / "BR-001.md").write_text(
         "<<<<<<< ours\n" + entry(1) + "=======\n>>>>>>> theirs\n", encoding="utf-8"
     )
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert [p.rule for p in found] == ["conflict-marker", "stale-index"]
     assert found[0].path == "docs/bugs/BR-001.md"
 
@@ -541,7 +541,9 @@ def test_a_body_that_restates_status_or_severity_is_reported(tmp_path: Path) -> 
 def test_two_files_claiming_one_identifier_are_reported_once(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1), "BR-002": entry(1)})
-    found = [p for p in problems(root, config, bug_register(config)) if p.rule == "duplicate-id"]
+    found = [
+        p for p in register_gate(root, config, bug_register(config)) if p.rule == "duplicate-id"
+    ]
     assert len(found) == 1 and "BR-002.md" in found[0].detail
 
 
@@ -588,7 +590,7 @@ def test_a_filled_evidence_boundary_passes(tmp_path: Path) -> None:
             )
         },
     )
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_an_empty_boundary_line_is_not_rescued_by_later_body_text(tmp_path: Path) -> None:
@@ -629,7 +631,7 @@ def test_a_stale_index_is_reported_with_the_command_that_repairs_it(tmp_path: Pa
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
     (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2), encoding="utf-8")
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert [p.rule for p in found] == ["stale-index"]
     assert "stayfixed bugs index" in found[0].detail
 
@@ -639,7 +641,7 @@ def test_a_mention_with_no_entry_is_reported_at_its_first_location(tmp_path: Pat
     ledger(root, config, {"BR-001": entry(1)})
     (root / "src" / "b.py").write_text("# BR-404\n", encoding="utf-8")
     (root / "src" / "a.py").write_text("x = 1\n# BR-404 again\n", encoding="utf-8")
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert [(p.rule, p.path, p.line) for p in found] == [("dangling-mention", "src/a.py", 2)]
     assert "referenced 2 time(s)" in found[0].detail
 
@@ -649,7 +651,7 @@ def test_a_void_entry_keeps_its_number_resolvable(tmp_path: Path) -> None:
     void = "---\nid: BR-001\ntitle: renumbered\nstatus: void\nfound: 2026-01-01\n---\n\nvoid\n"
     ledger(root, config, {"BR-001": void})
     (root / "src" / "a.py").write_text("# BR-001\n", encoding="utf-8")
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_a_citation_of_an_unfiled_entry_is_reported_from_a_document(tmp_path: Path) -> None:
@@ -658,7 +660,7 @@ def test_a_citation_of_an_unfiled_entry_is_reported_from_a_document(tmp_path: Pa
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
     (root / "docs" / "roadmap.md").write_text("see [x](bugs/BR-404.md)\n", encoding="utf-8")
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert [(p.rule, p.path, p.line) for p in found] == [
         ("dangling-citation", "docs/roadmap.md", 1)
     ]
@@ -670,16 +672,16 @@ def test_a_worked_example_in_a_document_is_not_a_dangling_mention(tmp_path: Path
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
     (root / "docs" / "plan.md").write_text("imagine BR-404 here\n", encoding="utf-8")
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_every_problem_names_a_repo_relative_path(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1, related="[BR-009]")})
     (root / "docs" / "bugs" / "BR-002.md").write_text("no frontmatter\n", encoding="utf-8")
-    for problem in problems(root, config, bug_register(config)):
+    for problem in register_gate(root, config, bug_register(config)):
         assert not problem.path.startswith("/"), problem
-    labels = [p.label for p in problems(root, config, bug_register(config))]
+    labels = [p.label for p in register_gate(root, config, bug_register(config))]
     assert "docs/bugs/BR-002.md [unreadable-entry]" in labels
 
 
@@ -688,11 +690,11 @@ def test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check(
 ) -> None:
     # The `unreadable-entry` rule exists for exactly this file, and an unguarded read meant it
     # could never fire from the one path that reaches it: the `UnicodeDecodeError` escaped
-    # `problems()` and `cli.run` turned a fixable repository condition into exit 2.
+    # `register_gate()` and `cli.run` turned a fixable repository condition into exit 2.
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
     (root / "docs" / "bugs" / "BR-002.md").write_bytes(b"---\nid: BR-002\ntitle: \xff\n---\n")
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert "docs/bugs/BR-002.md [unreadable-entry]" in [p.label for p in found]
     unreadable = next(p for p in found if p.rule == "unreadable-entry")
     assert "is not valid UTF-8" in unreadable.detail
@@ -709,7 +711,7 @@ def test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files(
     root, config = project(tmp_path)
     names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
     ledger(root, config, dict.fromkeys(names, entry(1)))
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     duplicate = [p for p in found if p.rule == "duplicate-id"]
     shown = ", ".join(f"docs/bugs/{name}.md" for name in names[:LISTED_LIMIT])
     assert [p.detail for p in duplicate] == [
@@ -729,7 +731,7 @@ def test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort(
     root, config = project(tmp_path)
     names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
     ledger(root, config, dict.fromkeys(names, entry(len(names))))
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     shown = ", ".join(f"docs/bugs/{name}.md" for name in [names[-1], *names[: LISTED_LIMIT - 1]])
     assert [p.detail for p in found if p.rule == "duplicate-id"] == [
         f"{names[-1]} is claimed by more than one file: {shown}, and 3 more"

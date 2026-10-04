@@ -36,9 +36,9 @@ derives the three types from their signatures.
 refuses a surface exporting no function or record at all.
 
 **What is not here.** The rule vocabulary and the refusal messages `bugs check` reports
-(`problems` and its constants) stay in `stayfixed.ledger.check`, and the verbs that file or move an
-entry (`file_entry`, `next_identifier`, `renumber`) stay in `stayfixed.ledger.write` with their
-return types: no area outside this one files or moves an entry without the command, and a type
+(`register_gate` and its constants) stay in `stayfixed.ledger.check`, and the verbs that file or
+move an entry (`file_entry`, `next_identifier`, `renumber`) stay in `stayfixed.ledger.write` with
+their return types: no area outside this one files or moves an entry without the command, and a type
 no published signature names is a value nobody can be handed. An area that needs one grows this
 list, in a commit that says which area and why.
 
@@ -54,8 +54,7 @@ the memory graph do: the prefix is read one way, the way the ledger reads it.
 
 **`bugs_gate` is `stayfixed assess`'s.** It is `(root, config, base) -> list[Finding]`, the
 shape every gate shares, and `bugs check` answers with the same function. It builds the bug
-ledger's register and runs `register_gate`, which, with `problems`, stays behind it in
-`stayfixed.ledger.check`.
+ledger's register and runs `register_gate`, which stays behind it in `stayfixed.ledger.check`.
 """
 
 from stayfixed.ledger.check import bugs_gate

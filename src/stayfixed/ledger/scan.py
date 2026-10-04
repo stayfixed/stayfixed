@@ -271,7 +271,7 @@ def entry_citations(
       frontmatter is where a sibling claims the target is filed, checked against parsed
       entries;
     * the generated index — every one of its rows is a projection of an entry file, so a row
-      pointing at a file that is gone means the index is stale, which `problems` already
+      pointing at a file that is gone means the index is stale, which `register_gate` already
       reports with the command that repairs it. Reported here as well it would name a link in
       a file whose fix is never a hand edit.
     """

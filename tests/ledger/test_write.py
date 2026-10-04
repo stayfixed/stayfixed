@@ -17,7 +17,7 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import NO_ANSWER, git_run
-from stayfixed.ledger.check import problems
+from stayfixed.ledger.check import register_gate
 from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
@@ -97,7 +97,7 @@ def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -
     ) in written
     assert EVIDENCE_LABEL in written
     assert "BR-001" in (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
-    found = problems(root, config, bug_register(config))
+    found = register_gate(root, config, bug_register(config))
     assert [p.rule for p in found] == ["evidence-boundary"]  # scaffolded
 
 
@@ -398,7 +398,7 @@ def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_poi
     void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert "status: void" in void and "related: [BR-009]" in void
     assert "[BR-009](BR-009.md)" in void
-    assert problems(root, config, bug_register(config)) == []
+    assert register_gate(root, config, bug_register(config)) == []
 
 
 def test_renumber_refuses_an_occupied_target_and_a_missing_source(tmp_path: Path) -> None:

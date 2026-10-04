@@ -237,9 +237,9 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a refusal or an
     internal error: a repository condition reported as an internal error tells the operator the
     tool is broken rather than that their tree is, and there is nothing in that message for them
-    to act on. `check.problems` has an `unreadable-entry` rule for exactly this file and catches
-    this; `scan.scannable` records the same condition on `Scanned.error` instead of raising,
-    because it has a whole tree to get through where this has one file.
+    to act on. `check.register_gate` has an `unreadable-entry` rule for exactly this file and
+    catches this; `scan.scannable` records the same condition on `Scanned.error` instead of
+    raising, because it has a whole tree to get through where this has one file.
     """
     try:
         return path.read_text(encoding="utf-8")

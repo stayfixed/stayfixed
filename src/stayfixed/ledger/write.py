@@ -302,7 +302,7 @@ def renumber(
     own `id:` line would otherwise be corrupted by the substitution it exists to survive.
 
     A text file the sweep cannot read, or cannot write back, is not silently skipped: once the
-    void pointer exists, `check.problems`' `known` set makes a stale `old` mention in that file
+    void pointer exists, `check.register_gate`' `known` set makes a stale `old` mention in that file
     look intentional forever, and it will never be reported as dangling again. So a file the
     sweep could not touch is collected and returned, and the command fails, rather than
     claiming a rewrite it did not fully deliver. A file that is not text at all is a different
