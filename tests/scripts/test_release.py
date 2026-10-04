@@ -27,7 +27,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
 from tests.cli import subparsers
-from tests.release.test_hashes import hashed_plugin
+from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
 
@@ -698,6 +698,19 @@ def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path
     assert set(document["files"]) == set(HASHED_FILES)
     assert document["files"] == digests(root)
     assert read_record(root) == digests(root)
+
+
+def test_the_tests_record_builder_writes_what_the_release_script_writes(tmp_path: Path) -> None:
+    # The shipped reader's tests, `doctor`'s among them, build their records with
+    # `tests.release.test_hashes.recorded` rather than by loading this script, so the two are a
+    # second spelling of one format and are held to each other here, byte for byte.
+    # Mutation (declared): `mutations/`'s "the release script writes its record in another
+    # layout".
+    by_script = hashed_plugin(tmp_path / "script")
+    by_tests = hashed_plugin(tmp_path / "tests")
+    release.write_record(by_script)
+    written = recorded(by_tests).read_bytes()
+    assert (by_script / RECORD).read_bytes() == written
 
 
 def test_no_record_and_a_missing_file_are_both_drift(tmp_path: Path) -> None:

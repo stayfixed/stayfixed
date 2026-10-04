@@ -4,8 +4,8 @@
 loader: the mutation oracle's declarations (`tests/declarations.py`), the release script, the two
 smoke scripts and the artifact checker all go through it, so a change to how a script is loaded is
 made once. `release` is the release script, loaded once for every module that reads it — its own
-tests, the repository's manifest test, `doctor`'s tests that write a release record, and the two
-walks over every reader of a document that may not parse.
+tests, the repository's manifest test, and the two walks over every reader of a document that may
+not parse.
 """
 
 from __future__ import annotations

@@ -3584,6 +3584,17 @@ before = '        return sub.add_parser(name, help=sentence, description=sentenc
 after = '        return sub.add_parser(name, help=sentence, epilog=JSON_EPILOG)'
 reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]
 
+# The shipped reader's tests build their records with a fixture of their own instead of loading
+# the release script, and that fixture writes exactly what the script writes.
+[[mutation]]
+name = "the release script writes its record in another layout"
+file = "scripts/release.py"
+before = '    body = json.dumps({"format": FORMAT, "files": found}, indent=2, sort_keys=True) + "\n"'
+after = '    body = json.dumps({"format": FORMAT, "files": found}, indent=4, sort_keys=True) + "\n"'
+reddens = [
+  "tests/scripts/test_release.py::test_the_tests_record_builder_writes_what_the_release_script_writes",
+]
+
 # A command registered with neither sentence, `help=None` explicitly, has `None` for both, and an
 # equality between the two holds over nothing.
 [[mutation]]

@@ -1,14 +1,16 @@
 """The record of the three files the harness executes without Python, as an installed stayfixed
 reads it: `digests`, which hashes the files, and `read_record`, which `doctor files` compares the
 installed copy against. Writing the record and its drift belong to the repository's release
-tooling and are tested in `tests/scripts/test_release.py`; the records here are written by hand,
-so what the reader accepts is held without the writer."""
+tooling and are tested in `tests/scripts/test_release.py`; the records here are written by
+`recorded`, so what the reader accepts is held without the writer, and that file holds that the
+two write the same bytes."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -31,6 +33,18 @@ def hashed_plugin(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def recorded(root: Path, files: Mapping[str, str] | None = None) -> Path:
+    """Write `root`'s release record in the format the reader reads: `files`, or by default the
+    digests of what `root` holds now. A fixture for the tests that need a record and are not about
+    writing one, so a shipped reader's tests do not load the repository's release script to get
+    one. Unlike that script it refuses nothing, which is what lets a case record a partial tree.
+    """
+    found = digests(root) if files is None else dict(files)
+    body = json.dumps({"format": FORMAT, "files": found}, indent=2, sort_keys=True) + "\n"
+    (root / RECORD).write_text(body, encoding="utf-8")
+    return root / RECORD
+
+
 def test_each_file_is_hashed_to_its_full_sha256(tmp_path: Path) -> None:
     # Against a literal rather than against itself. Every other assertion about the record
     # compares one side of it to the other, so both move together: measured, the digest
@@ -49,17 +63,14 @@ def test_each_file_is_hashed_to_its_full_sha256(tmp_path: Path) -> None:
 
 def test_no_record_reads_as_none_and_a_record_reads_back_as_written(tmp_path: Path) -> None:
     # The two answers the callers branch on: no record is `None`, which `doctor` skips, and a
-    # record is the digests it names, keys and values as written. The record is written here by
-    # hand, in the shape the release script writes, so the reader is held without the writer.
+    # record is the digests it names, keys and values as written. The record is written by
+    # `recorded`, so the reader is held without the writer.
     # Mutation (declared): `mutations/`'s "no release record reads as a record naming nothing"
     # and "the release record reader truncates the digests it read".
     root = hashed_plugin(tmp_path)
     assert read_record(root) is None
     written = {relative: f"{index:064x}" for index, relative in enumerate(HASHED_FILES)}
-    (root / RECORD).write_text(
-        json.dumps({"format": FORMAT, "files": written}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    recorded(root, written)
     assert read_record(root) == written
 
 
