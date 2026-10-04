@@ -1212,6 +1212,82 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
     assert check == Check("diagnostics", OK, "no hook failures are recorded; 0 session(s) seen", "")
 
 
+def _past_a_name(tmp_path: Path, path: Path) -> None:
+    """Make `path` a symbolic link to a name longer than a file name may be on Linux and macOS.
+
+    A clone can commit the link, and nothing on the machine has to be wrong for it. Asked about
+    through it, `stat` raises `ENAMETOOLONG` on every supported Python; `Path.is_file()` raises it
+    on 3.11 to 3.13 and answers `False` from 3.14.
+    """
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.is_symlink() or path.exists():
+        path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(tmp_path / ("x" * 300))
+
+
+# Each committed link and the settings files it hides: one per file the walk reads in a project,
+# and the directory two of them share.
+UNCHECKABLE_SETTINGS = {
+    ".claude/settings.json": [".claude/settings.json"],
+    ".claude/settings.local.json": [".claude/settings.local.json"],
+    ".codex/hooks.json": [".codex/hooks.json"],
+    ".claude": [".claude/settings.json", ".claude/settings.local.json"],
+}
+
+
+@pytest.mark.parametrize("link", sorted(UNCHECKABLE_SETTINGS))
+def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
+    tmp_path: Path, link: str
+) -> None:
+    # `is_file()` raised `ENAMETOOLONG` on Python 3.11 to 3.13, past the walk to `_guarded`, whose
+    # warning, "this check could not read something it needed", stood in for the whole row: beside
+    # it, an entry nothing vouches for lost its red and the report its exit of 1. From 3.14 it
+    # answered `False` and the walk skipped a file that is there. Both are a file this walk cannot
+    # read, which it names. Mutation (oracle): `mutations/`'s "hook-entries skips a settings file
+    # it cannot ask about" -> the row is green.
+    root = _initialised(tmp_path)
+    _past_a_name(tmp_path, root / link)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    blinded = UNCHECKABLE_SETTINGS[link]
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; {len(blinded)} settings file(s) exist and could not be "
+        f"read as hook entries, so nothing here accounts for what is in them: {', '.join(blinded)}",
+        "check that each file named above is readable and is valid JSON",
+    )
+
+
+# Committed shapes at a settings path that name no file to read, which the walk skips as it always
+# has: there is nothing there for the harness to read either.
+NAMES_NO_SETTINGS = ("a-dangling-link", "a-link-loop", "a-directory")
+
+
+@pytest.mark.parametrize("shape", NAMES_NO_SETTINGS)
+def test_a_settings_path_that_names_no_file_is_skipped_as_before(
+    tmp_path: Path, shape: str
+) -> None:
+    # The vacuity guard for the case above: asking with `stat` must not turn every path that holds
+    # no file into one the walk is blind to. Mutations (oracle): `mutations/`'s "hook-entries is
+    # blind to a settings path that names no file" -> the dangling link and the loop are blind;
+    # "hook-entries reads a settings path that is no regular file" -> the directory is.
+    root = _initialised(tmp_path)
+    path = root / LOCAL_SETTINGS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if shape == "a-dangling-link":
+        path.symlink_to(tmp_path / "nothing-here")
+    elif shape == "a-link-loop":
+        path.symlink_to(path)
+    else:
+        path.mkdir()
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries", OK, "0 stayfixed entr(ies), 0 foreign; all accounted for", ""
+    )
+
+
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # The quietest way this installation can be broken: no plugin root found at all means no
     # hook entry on this machine reaches stayfixed, and `doctor` reports it as two `skip` rows —

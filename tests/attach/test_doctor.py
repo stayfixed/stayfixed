@@ -38,6 +38,7 @@ from tests.doctor.test_checks import (
     _machine,
     _no_overlay_machine,
     _overlay,
+    _past_a_name,
     _with_extra_entry,
 )
 from tests.floor import is_developers
@@ -920,6 +921,107 @@ def test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report(
     # By position, and not one byte of the command or of the id it forged.
     assert "evil.example" not in red[0]["detail"] + red[0]["remedy"]
     assert "forged-1" not in red[0]["detail"] + red[0]["remedy"]
+
+
+# Where a clone can put a symbolic link to a name longer than a file name may be, so that `stat`
+# cannot answer about the ledger on any supported Python: the ledger itself, and the directory that
+# holds it.
+UNCHECKABLE_LEDGERS = {"the-ledger": LEDGER, "its-directory": str(Path(LEDGER).parent)}
+
+
+@pytest.mark.parametrize("case", ["forged-overlay", "forged-no-overlay", "owner-overlay"])
+@pytest.mark.parametrize("shape", sorted(UNCHECKABLE_LEDGERS))
+def test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read(
+    tmp_path: Path, shape: str, case: str
+) -> None:
+    # `Path.is_file()` raised `ENAMETOOLONG` on Python 3.11 to 3.13, and nothing between it and
+    # `_guarded` caught it, so the whole row became that guard's warning: a forged entry beside the
+    # link warned and the report exited 0, on every machine. From 3.14 it answered `False`, which
+    # read a ledger that is there as no ledger. It is a ledger that cannot be read, so the row is
+    # the unreadable-ledger row its case gets for any other such file: red for an entry nothing on
+    # this machine grants, and a warning for the owner whose overlay grants theirs.
+    #
+    # Mutation (oracle): `mutations/`'s "a ledger doctor cannot ask about reads as no ledger" ->
+    # every case says the entries are not recorded.
+    forged, where = case.split("-", 1)
+    root = _forged_clone(tmp_path) if forged == "forged" else _attached(tmp_path)
+    _past_a_name(tmp_path, root / UNCHECKABLE_LEDGERS[shape])
+    machine = _no_overlay_machine(tmp_path) if where == "no-overlay" else _machine(tmp_path)
+    check = _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
+    assert check == UNREADABLE_TABLE[case]
+
+
+# Committed shapes at the ledger's path that name no file to read, which `hook-entries` reads as no
+# ledger, as it always has: nothing there records an entry.
+NAMES_NO_LEDGER = ("a-dangling-link", "a-link-loop", "a-directory")
+
+
+@pytest.mark.parametrize("shape", NAMES_NO_LEDGER)
+def test_a_ledger_path_that_names_no_file_is_no_ledger_as_before(
+    tmp_path: Path, shape: str
+) -> None:
+    # The vacuity guard for the case above: asking with `stat` must not turn every path that holds
+    # no ledger into one that cannot be read. Mutations (oracle): `mutations/`'s "a ledger path
+    # that names no file reads as one that cannot be read" -> the dangling link and the loop say
+    # the ledger cannot be read; "doctor reads a ledger path that is no regular file" -> the
+    # directory does.
+    root = _forged_clone(tmp_path)
+    path = root / LEDGER
+    path.unlink()
+    if shape == "a-dangling-link":
+        path.symlink_to(tmp_path / "nothing-here")
+    elif shape == "a-link-loop":
+        path.symlink_to(path)
+    else:
+        path.mkdir()
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == Check(
+        "hook-entries",
+        "red",
+        f"{ONE_ENTRY}1 entr(ies) claim the stayfixed marker and are not recorded in {LEDGER}: "
+        f"{COMMITTED} entry 1 of 1",
+        "open each entry named above and remove the ones you did not install",
+    )
+
+
+@pytest.mark.parametrize("machine", ["overlay", "no-overlay"])
+@pytest.mark.parametrize("link", [LEDGER, LOCAL_SETTINGS])
+def test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    link: str,
+    machine: str,
+) -> None:
+    # The attack whole: a clone commits a marked entry in `.claude/settings.json` and, beside it,
+    # the ledger or another settings file as a symbolic link to a name longer than a file name may
+    # be. On Python 3.11 to 3.13 `stayfixed doctor` warned, "this check could not read something
+    # it needed", and exited 0, with an overlay recorded or not. Now the row names the path it
+    # could not read and keeps the entry's red. Mutations (oracle): `mutations/`'s "a ledger doctor
+    # cannot ask about reads as no ledger" and "hook-entries skips a settings file it cannot ask
+    # about" -> the path is not named.
+    root = _forged_clone(tmp_path)
+    _past_a_name(tmp_path, root / link)
+    recorded = _machine(tmp_path) if machine == "overlay" else _no_overlay_machine(tmp_path)
+    code = _invoke_doctor(tmp_path, monkeypatch, root, recorded)
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 1, red
+    assert [row["name"] for row in red] == ["hook-entries"], red
+    if link == LEDGER:
+        expected = UNREADABLE_TABLE[f"forged-{machine}"]
+    else:
+        readable = TABLE["forged-right-store" if machine == "overlay" else "forged-no-overlay"]
+        expected = Check(
+            "hook-entries",
+            "red",
+            f"{readable.detail}; 1 settings file(s) exist and could not be read as hook entries, "
+            f"so nothing here accounts for what is in them: {LOCAL_SETTINGS}",
+            readable.remedy,
+        )
+    assert (red[0]["detail"], red[0]["remedy"]) == (expected.detail, expected.remedy)
+    # By position, and not one byte of the forged command.
+    assert "evil.example" not in red[0]["detail"] + red[0]["remedy"]
 
 
 def test_a_marked_entry_with_no_ledger_at_all_is_still_reported(tmp_path: Path) -> None:

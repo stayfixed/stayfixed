@@ -58,10 +58,12 @@ is no departure from "import an area through its published surface" left to reco
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -516,6 +518,15 @@ def _entry_commands(document: str) -> list[str]:
     return found
 
 
+# The faults of a `stat` that say its path names no file: nothing there, a component that is not
+# a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
+# faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
+# clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
+# raised, it reached `_guarded`, whose warning stood in for `hook-entries` whole, so a marked entry
+# nothing vouches for lost its red beside it; answered `False`, it skipped a file that is there. So
+# `stat` is asked, these three are no file, and any other fault is a file the walk cannot read.
+NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
 # would type. The three project-relative members of `SETTINGS_FILES` name themselves.
@@ -618,7 +629,15 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
         walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
     for base, relative, label in walked:
         path = base / relative
-        if not path.is_file():
+        # Asked with `stat`, for the reason `NAMES_NO_FILE` gives: a path this walk cannot ask
+        # about is a file it is blind to, and one that names no file is skipped as it always was.
+        try:
+            mode = path.stat().st_mode
+        except OSError as exc:
+            if exc.errno not in NAMES_NO_FILE:
+                blind.append(label)
+            continue
+        if not stat.S_ISREG(mode):
             continue
         try:
             document = path.read_text(encoding="utf-8")

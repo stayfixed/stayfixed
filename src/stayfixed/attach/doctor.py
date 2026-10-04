@@ -38,12 +38,28 @@ def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
     that reach the report's guard made a repository able to force `hook-entries` red with the
     detail "this check could not run: Failure" and a remedy that cannot help, on an installation
     with nothing wrong with it. The row reports the file instead.
+
+    **Whether it is there is asked with `stat`, and a path it cannot answer about is unreadable.**
+    `is_file()` raised past this function when a clone committed the ledger, or a directory above
+    it, as a symbolic link to a name longer than a file name may be: on Python 3.11 to 3.13 the
+    error reached `_guarded`, whose warning stood in for all of `hook-entries`, so a forged entry
+    beside the link lost its red and the report exited 0. From 3.14 `is_file()` answers `False`
+    instead, which read a file that is there as no ledger. A path that names no file — nothing
+    there, a dangling link or a loop, or something other than a regular file — is no ledger, as
+    `is_file()` always answered.
     """
+    import errno
+    import stat
+
     from stayfixed.attach.write import ledger
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.errors import Failure, Refusal
 
-    if not (root / ATTACH_LEDGER).is_file():
+    try:
+        mode = (root / ATTACH_LEDGER).stat().st_mode
+    except OSError as exc:
+        return {} if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP) else None
+    if not stat.S_ISREG(mode):
         return {}
     try:
         return dict(ledger(root).entries)
