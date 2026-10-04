@@ -204,6 +204,10 @@ VOUCHED_ELEMENTS: dict[tuple[str, str, str], str] = {
     ("src/stayfixed/docs/plans.py", "touched_plans.changed", "since"): (
         "a merge base git printed, or the base `touched_plans` refused when it starts with `-`"
     ),
+    ("src/stayfixed/docs/plans.py", "written_lines", "since"): (
+        "a merge base git printed, or the base `touched_plans` refused when it starts with `-`, "
+        "which `lint` runs before it asks for any plan's lines"
+    ),
     ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
     ("src/stayfixed/guards/attribute.py", "_extract", "str(archive)"): (
         "the value of `git archive -o` and of `tar -f`, a path under the temporary directory "
