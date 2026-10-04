@@ -1947,8 +1947,8 @@ reddens = [
 [[mutation]]
 name = "init writes the audits README under a directory the bug index does not link"
 file = "src/stayfixed/project/templates.py"
-before = '''        _template("ledger-audits", f"{paths.bugs}/{BUG_AUDITS}/README.md", "audits-readme.md"),'''
-after = '''        _template("ledger-audits", f"{paths.bugs}/audit/README.md", "audits-readme.md"),'''
+before = "    audits = ledger_path(paths.bugs, BUG_AUDITS)"
+after = '    audits = ledger_path(paths.bugs, "audit")'
 reddens = [
   "tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them",
   "tests/project/test_templates.py::test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register",
@@ -1957,8 +1957,8 @@ reddens = [
 [[mutation]]
 name = "init writes the runbook where the bug index does not link it"
 file = "src/stayfixed/project/templates.py"
-before = '''        _template("ledger-runbook", f"{paths.runbooks}/{BUG_RUNBOOK}", "bug-reports-runbook.md"),'''
-after = '''        _template("ledger-runbook", f"{paths.runbooks}/bug-report.md", "bug-reports-runbook.md"),'''
+before = "    runbook = ledger_path(paths.runbooks, BUG_RUNBOOK)"
+after = '    runbook = ledger_path(paths.runbooks, "bug-report.md")'
 reddens = [
   "tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them",
   "tests/project/test_templates.py::test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register",

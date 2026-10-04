@@ -12,7 +12,7 @@ from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.identifiers import Identifiers
 from stayfixed.ledger.entries import Entry, entry_dir, read_ledger_text
-from stayfixed.ledger.register import Register, Section
+from stayfixed.ledger.register import Register, Section, ledger_path
 
 # Structural recognition: the first paragraph opens with the marker's fixed prefix and names
 # `index` inside the backticks. This also recognises the generator this one replaced, whose
@@ -67,7 +67,7 @@ def header(register: Register) -> str:
         # directory is the index's directory that link is `.`, and its `./audits/` is what every
         # index already committed for such a layout carries.
         marker += (
-            f" Audit provenance: [{register.directory}/{register.audits}/]"
+            f" Audit provenance: [{ledger_path(register.directory, register.audits)}/]"
             f"({directory}/{register.audits}/)."
         )
     return f"# {register.title}\n\n{marker}_\n"

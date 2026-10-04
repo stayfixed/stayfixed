@@ -46,7 +46,7 @@ from stayfixed.config.schema import BRANCH_NAME, Config, Paths
 from stayfixed.docs.api import trail_target
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import path_key
-from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, ledger_path, render_index
 from stayfixed.project.layout import PROJECT_FILES
 from stayfixed.release.api import Resolution
 from stayfixed.scaffold import Kind, Style, Template, validate_sources
@@ -339,10 +339,12 @@ def _budget(config: Config, name: str) -> str:
 
 def _bug_ledger_documents(paths: Paths) -> list[Template]:
     """The bug ledger's runbook and audits README, each where its index links it: built from
-    `[paths]` and the two names `bug_register` builds those links from."""
+    `[paths]` and the two names `bug_register` builds those links from, joined as it joins them."""
+    runbook = ledger_path(paths.runbooks, BUG_RUNBOOK)
+    audits = ledger_path(paths.bugs, BUG_AUDITS)
     return [
-        _template("ledger-runbook", f"{paths.runbooks}/{BUG_RUNBOOK}", "bug-reports-runbook.md"),
-        _template("ledger-audits", f"{paths.bugs}/{BUG_AUDITS}/README.md", "audits-readme.md"),
+        _template("ledger-runbook", runbook, "bug-reports-runbook.md"),
+        _template("ledger-audits", f"{audits}/README.md", "audits-readme.md"),
     ]
 
 

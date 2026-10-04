@@ -8,11 +8,11 @@ asserts the `__init__` imports nothing at all.
 
 **Outside this area, `stayfixed.assess.gates` imports `bugs_gate`; `stayfixed.project.templates`
 (with its tests) imports `render_index` and `bug_register` to write a new project's first index,
-and `BUG_RUNBOOK` and `BUG_AUDITS` to write the runbook and audits README where that index links
-them; and `stayfixed.docs.plans` and `stayfixed.memory.graph` import `bug_register` for the bug
-ledger's identifiers — nothing else on this list**, measured over `src/`, `scripts/` and `tests/`.
-So every other name below is here on an argument rather than on a caller, and the argument is
-written beside it.
+and `BUG_RUNBOOK` and `BUG_AUDITS`, joined by `ledger_path`, to write the runbook and audits
+README where that index links them; and `stayfixed.docs.plans` and `stayfixed.memory.graph`
+import `bug_register` for the bug ledger's identifiers — nothing else on this list**, measured
+over `src/`, `scripts/` and `tests/`. So every other name below is here on an argument rather
+than on a caller, and the argument is written beside it.
 
 What is left is the two artifacts this area leaves on a project's disk, which outlive any area
 that reads them:
@@ -53,8 +53,8 @@ identifiers takes them from its register, `bug_register(config).ids`, as the `Fi
 the memory graph do: the prefix is read one way, the way the ledger reads it.
 
 **`bugs_gate` is `stayfixed assess`'s.** It is `(root, config, base) -> list[Finding]`, the
-shape every gate shares, and `bugs check` answers with the same function. It builds the bug
-ledger's register and runs `register_gate`, which stays behind it in `stayfixed.ledger.check`.
+shape every gate shares, and `bugs check` gives the same answer. It builds the bug ledger's
+register and runs `register_gate`, which stays behind it in `stayfixed.ledger.check`.
 """
 
 from stayfixed.ledger.check import bugs_gate
@@ -67,6 +67,7 @@ from stayfixed.ledger.register import (
     Schema,
     Section,
     bug_register,
+    ledger_path,
 )
 
 __all__ = [
@@ -80,6 +81,7 @@ __all__ = [
     "bug_register",
     "bugs_gate",
     "is_generated_index",
+    "ledger_path",
     "load_entries",
     "parse_entry",
     "render_index",

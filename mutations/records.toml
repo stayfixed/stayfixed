@@ -1346,8 +1346,8 @@ reddens = [
 [[mutation]]
 name = "bugs check drops its --base"
 file = "src/stayfixed/ledger/commands.py"
-before = '    found = bugs_gate(root, config, args.base or "")'
-after = "    found = bugs_gate(root, config)"
+before = '    found = register_gate(root, config, ledger, args.base or "")'
+after = "    found = register_gate(root, config, ledger)"
 reddens = [
   "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
 ]

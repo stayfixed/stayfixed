@@ -334,16 +334,17 @@ def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
     assert tmp_path.name not in out
 
 
-def test_check_answers_with_the_bugs_gate_s_own_function(
+def test_check_answers_with_the_register_gate_the_bugs_gate_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `bugs check` and the `bugs` gate are one function. Mutation
-    # (advisory): the import in `run_bugs_check` becomes `from stayfixed.ledger.check import
-    # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
+    # `bugs check` and the `bugs` gate answer through one function, `register_gate` over the bug
+    # ledger's register. Mutation (advisory): `run_bugs_check` answers with a rule of its own in
+    # place of `register_gate` (measured with the gate's no-ledger arm alone) — the patch is
+    # unseen and this reddens.
     _root, common = project(tmp_path)
     argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
     assert invoke([*argv, *common]) == 0
     assert invoke(["bugs", "check", *common]) == 0
     planted = [Finding("planted", "", None, "")]
-    monkeypatch.setattr("stayfixed.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
+    monkeypatch.setattr("stayfixed.ledger.check.register_gate", lambda *args, **kwargs: planted)
     assert invoke(["bugs", "check", *common]) == 1

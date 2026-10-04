@@ -387,7 +387,8 @@ def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     """The `bugs` gate: the bug ledger's `register_gate`, in the `(root, config, base)` shape every
     gate of `stayfixed assess` shares.
 
-    `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
-    tree alone; every gate run passes the base it judges against.
+    `bugs check` gives the same answer, with `--base` as `base` or `""`, which judges the tree
+    alone, through `register_gate` over a register it builds once; every gate run passes the base
+    it judges against.
     """
     return register_gate(root, config, bug_register(config), base)

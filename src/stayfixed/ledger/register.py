@@ -200,9 +200,17 @@ name what the evidence is silent about, and what would have to be observed to se
 
 # The bug ledger's runbook, a file under `[paths] runbooks`, and its audits directory, a
 # subdirectory of `[paths] bugs`. `bug_register` links both from the index and `init` writes a file
-# at each, both from these two names, so a link and the file it points at cannot be spelled apart.
+# at each, both from these two names joined by `ledger_path`, so a link and the file it points at
+# cannot be spelled apart.
 BUG_RUNBOOK = "bug-reports.md"
 BUG_AUDITS = "audits"
+
+
+def ledger_path(directory: str, name: str) -> str:
+    """`name` under the root-relative `directory`: a register's runbook or audits directory, as
+    the index names it and `init` writes a file at it. The one place either is joined."""
+    return f"{directory}/{name}"
+
 
 _LIVE = (
     ("ID", "id"),
@@ -245,6 +253,6 @@ def bug_register(config: Config) -> Register:
         ids=Identifiers(config.ledger.id_prefix),
         schema=BUG_SCHEMA,
         evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for),
-        runbook=f"{paths.runbooks}/{BUG_RUNBOOK}",
+        runbook=ledger_path(paths.runbooks, BUG_RUNBOOK),
         audits=BUG_AUDITS,
     )
