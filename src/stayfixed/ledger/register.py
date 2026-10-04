@@ -11,7 +11,6 @@ A leaf of this area: every other module of it imports this one, and it imports n
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from string import Formatter
@@ -32,10 +31,9 @@ EVIDENCE_PLACEHOLDER = "the reading a later plan must not inherit"
 # entry spells itself.
 _READ_KEYS = ("id", "title", "status")
 # The keys the writer spells itself rather than from a value it is handed: `id`, `title` and
-# `related` through the placeholders below, and `status` as the template's own literal.
+# `related` through the template's `{identifier}`, `{title}` and `{related}`, and `status` as the
+# template's own literal.
 _WRITER_KEYS = ("id", "title", "status", "related")
-# The placeholders the writer fills itself; every other placeholder is a key's whole line.
-_WRITER_FILLS = ("identifier", "title", "today", "related")
 
 
 @dataclass(frozen=True)
@@ -55,9 +53,11 @@ class Section:
 class Schema:
     """What an entry of one register holds, and how its index reads.
 
-    Built consistent or not at all: a key, a status or a placeholder that one part names and
-    another lacks is refused here, where the register is written, rather than as a `KeyError` on
-    the first entry that reaches it.
+    Built consistent or not at all: a key or a status that one part names and another lacks is
+    refused here, where the register is written, rather than as a `KeyError` on the first entry
+    that reaches it. The template is not read here: the entry reader owns the grammar of what it
+    writes, and a test round-trips every shipped register's scaffold and void entry through that
+    reader (`tests/ledger/test_register.py`), so a template is held to the one grammar there is.
     """
 
     keys: tuple[str, ...]  # frontmatter keys, in the order an entry writes them
@@ -93,33 +93,6 @@ class Schema:
 
 def _placeholders(template: str) -> set[str]:
     return {name for _, name, _, _ in Formatter().parse(template) if name}
-
-
-def _spelled(template: str) -> dict[str, str] | None:
-    """The `key: value` lines the template's frontmatter spells itself, each key's value as written,
-    or `None` for a template that opens with no frontmatter.
-
-    A placeholder that stands for a whole line is not among them: the writer fills it from a value
-    it is handed."""
-    lines = template.splitlines()
-    if lines[:1] != ["---"]:
-        return None
-    spelled: dict[str, str] = {}
-    for line in lines[1:]:
-        if line == "---":
-            break
-        key, colon, value = line.partition(":")
-        if colon:
-            spelled.setdefault(key, value.strip())
-    return spelled
-
-
-def _denoted(value: str) -> str:
-    """A frontmatter value as the entry reader reads it: a double-quoted one without its quotes and
-    with its `\\"` and `\\\\` escapes undone, any other as written."""
-    if len(value) >= 2 and value[0] == value[-1] == '"':
-        return re.sub(r'\\(["\\])', r"\1", value[1:-1])
-    return value
 
 
 def _inconsistencies(schema: Schema) -> Iterator[str]:
@@ -160,44 +133,9 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
                 yield (
                     f"section `{section.heading}` shows `{key}`, which is not a key a cell can show"
                 )
-    lines = keys - set(_WRITER_KEYS)
-    placeholders = _placeholders(schema.template)
-    for placeholder in sorted(placeholders - set(_WRITER_FILLS)):
-        if placeholder not in lines:
-            yield f"the template's `{{{placeholder}}}` is not a line of a key the writer is handed"
-    # What `new` writes must read back as an entry: a number, and a status the schema holds.
-    if "identifier" not in placeholders:
-        yield "the template has no `{identifier}`, so an entry it writes carries no number"
-    spelled = _spelled(schema.template)
-    if spelled is None:
-        yield (
-            "the template opens with no `---` frontmatter block, so an entry it writes cannot be "
-            "read"
-        )
-        spelled = {}
-    else:
-        written = spelled.get("status")
-        if written is None:
-            yield "the template has no `status:` line, so an entry it writes has no status"
-        elif _denoted(written) not in schema.statuses:
-            yield f"the template writes status `{written}`, which is not a status"
-    # A non-void entry must carry its level and every `required_unless_void` key. `new` writes a
-    # value it is handed only into that key's own line; a key with none is carried only when the
-    # template spells it with a value, as `found: {today}` is filled with the day of filing.
+    # A non-void entry must carry its level: `check` holds the entry's body to it.
     if schema.level not in (*schema.required, *schema.required_unless_void):
         yield f"level `{schema.level}` is neither required nor required_unless_void"
-    line_keys = schema.line_keys
-    if schema.level in keys and schema.level not in line_keys:
-        yield (
-            f"level `{schema.level}` has no line of its own in the template, so `new` cannot "
-            "write it"
-        )
-    for key in schema.required_unless_void:
-        if key in keys and key not in line_keys and not spelled.get(key):
-            yield (
-                f"required_unless_void `{key}` has neither a line of its own nor a value in the "
-                "template, so an entry `new` writes lacks it"
-            )
     # `renumber` leaves a void entry at the number it moves from, and that entry is held to
     # `required` like any other. It knows the keys every entry is read for, the day of the move
     # for a date, and the new number, which it names in `related`; nothing else.

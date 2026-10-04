@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -436,16 +437,6 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             id="column-is-related",
         ),
         pytest.param(
-            {"template": DEBT_TEMPLATE + "{owner}\n"},
-            "the template's `{owner}` is not a line of a key the writer is handed",
-            id="template-placeholder-not-a-key",
-        ),
-        pytest.param(
-            {"template": DEBT_TEMPLATE.replace("status: open", "{status}")},
-            "the template's `{status}` is not a line of a key the writer is handed",
-            id="template-placeholder-the-writer-owns",
-        ),
-        pytest.param(
             {"required": ("id", "title", "status", "found", "impact")},
             "required `impact` is not a date, so `renumber`'s void entry cannot fill it",
             id="required-not-a-date",
@@ -464,50 +455,6 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             id="key-listed-twice",
         ),
         pytest.param(
-            {"template": DEBT_TEMPLATE.replace("status: open", "status: draft")},
-            "the template writes status `draft`, which is not a status",
-            id="template-status-not-a-status",
-        ),
-        pytest.param(
-            {"template": DEBT_TEMPLATE.replace("status: open\n", "")},
-            "the template has no `status:` line, so an entry it writes has no status",
-            id="template-without-status",
-        ),
-        pytest.param(
-            {"template": DEBT_TEMPLATE.removeprefix("---\n")},
-            "the template opens with no `---` frontmatter block, so an entry it writes cannot be "
-            "read",
-            id="template-without-frontmatter",
-        ),
-        pytest.param(
-            {"template": DEBT_TEMPLATE.replace("{identifier}", "TD-000")},
-            "the template has no `{identifier}`, so an entry it writes carries no number",
-            id="template-without-identifier",
-        ),
-        pytest.param(
-            {"level": "title"},
-            "level `title` has no line of its own in the template, so `new` cannot write it",
-            id="level-without-a-line",
-        ),
-        pytest.param(
-            {
-                "required_unless_void": ("size", "area", "impact"),
-                "template": DEBT_TEMPLATE.replace("{impact}", "impact:"),
-            },
-            "required_unless_void `impact` has neither a line of its own nor a value in the "
-            "template, so an entry `new` writes lacks it",
-            id="required-unless-void-written-bare",
-        ),
-        pytest.param(
-            {
-                "required_unless_void": ("size", "area", "impact"),
-                "template": DEBT_TEMPLATE.replace("{impact}\n", ""),
-            },
-            "required_unless_void `impact` has neither a line of its own nor a value in the "
-            "template, so an entry `new` writes lacks it",
-            id="required-unless-void-not-written",
-        ),
-        pytest.param(
             {"required_unless_void": ("area",)},
             "level `size` is neither required nor required_unless_void",
             id="level-not-required",
@@ -524,46 +471,70 @@ def test_a_schema_built_wrong_is_refused_at_construction(
         replace(DEBT.schema, **changes)
 
 
-def test_a_key_the_template_writes_itself_may_be_required_of_a_non_void_entry(
-    tmp_path: Path,
+# Every register this package ships, by the function that builds it from a project's
+# configuration. A register the package adds joins this tuple, and the round trip below then holds
+# its template and its void entry to the entry reader.
+SHIPPED_REGISTERS = (bug_register,)
+
+# The configurations each shipped register is built from: the defaults, and one that moves the
+# ledger and its index and renames the identifiers' prefix.
+CONFIGURATIONS = [
+    pytest.param("", id="default"),
+    pytest.param(
+        '\n[paths]\nbugs = "ledger/entries"\nbug_index = "ledger/INDEX.md"\n'
+        '\n[ledger]\nid_prefix = "BUG"\n',
+        id="moved-and-renamed",
+    ),
+]
+
+
+@pytest.mark.parametrize("build", SHIPPED_REGISTERS, ids=lambda build: build.__name__)
+@pytest.mark.parametrize("configured", CONFIGURATIONS)
+def test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader(
+    tmp_path: Path, build: Callable[[Config], Register], configured: str
 ) -> None:
-    # `found: {today}` is a line the template writes with the day of filing, so a register may
-    # require it of every non-void entry: the schema constructs and the entry `new` files reads
-    # back. Mutation (oracle): "a key the template writes itself must still have a line of its
-    # own" -> the schema is refused at construction.
-    register = replace(
-        DEBT, schema=replace(DEBT.schema, required_unless_void=("size", "area", "found"))
-    )
-    root = project(tmp_path)
-    file_entry(
-        root,
-        register,
-        title="the scan walks the tree twice",
-        values={"size": "M", "area": "ledger"},
-        today="2026-10-04",
-        fetch=False,
-    )
-    (entry,) = load_entries(root, register)
-    assert (entry.id, entry.status, entry.fields["found"]) == ("TD-001", "open", "2026-10-04")
+    # The schema does not read its template: this round trip through the writer's own formatting
+    # and the real reader is what holds the template to the entry grammar. Mutations (oracle): the
+    # bug ledger's template loses its `found` line -> the scaffold lacks a required key; it loses
+    # its `{related}` line -> the related list written is read back empty.
+    root = tmp_path / "widget"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(CONFIG + configured, encoding="utf-8")
+    register = build(load(root, machine=tmp_path / "m.toml"))
+    schema, ids = register.schema, register.ids
+    first, second = ids.format(1), ids.format(2)
+    path = Path(register.directory, f"{first}.md")
 
+    def written(key: str) -> str:
+        """A value for a line the template leaves to `new`: one that needs quoting where any may."""
+        if key == schema.level:
+            return schema.levels[0]
+        return "2026-10-04" if key in schema.dates else f"{key}: a value"
 
-def test_a_template_may_quote_its_status_as_an_entry_may(tmp_path: Path) -> None:
-    # The reader takes `status: "open"` as `open`, so the schema reads the template's status the
-    # same way: it constructs, and the entry `new` files reads back open. Mutation (oracle): "the
-    # template's status is read quotes and all" -> the schema is refused at construction.
-    template = DEBT_TEMPLATE.replace("status: open", 'status: "open"')
-    register = replace(DEBT, schema=replace(DEBT.schema, template=template))
-    root = project(tmp_path)
-    file_entry(
-        root,
+    values = {key: written(key) for key in schema.line_keys}
+
+    scaffold = write._scaffold(
         register,
-        title="the scan walks the tree twice",
-        values={"size": "M", "area": "ledger"},
+        identifier=first,
+        title="a: title",
+        values=values,
+        related=(second,),
         today="2026-10-04",
-        fetch=False,
     )
-    (entry,) = load_entries(root, register)
-    assert (entry.id, entry.status) == ("TD-001", "open")
+    entry = parse_entry(scaffold, path=path, register=register)
+    assert (entry.id, entry.title, entry.related) == (first, "a: title", (second,))
+    assert entry.status in schema.statuses and entry.status != schema.void
+    for key in (*schema.required, *schema.required_unless_void):
+        assert entry.value(key), key
+    assert {key: entry.value(key) for key in values} == values
+
+    void = write._void_pointer(
+        register, old=first, new=second, title="renumbered", today="2026-10-05"
+    )
+    pointer = parse_entry(void, path=path, register=register)
+    assert (pointer.id, pointer.status, pointer.related) == (first, schema.void, (second,))
+    for key in schema.required:
+        assert pointer.value(key), key
 
 
 # The bug ledger's header and an entry's row on each `[paths]` layout the loader accepts, captured

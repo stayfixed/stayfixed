@@ -540,8 +540,8 @@ reddens = [
 [[mutation]]
 name = "every register files its entries from the bug ledger's template"
 file = "src/stayfixed/ledger/write.py"
-before = "    text = schema.template.format("
-after = '    text = __import__("stayfixed.ledger.register", fromlist=["BUG_SCHEMA"]).BUG_SCHEMA.template.format('
+before = "    return register.schema.template.format("
+after = '    return __import__("stayfixed.ledger.register", fromlist=["BUG_SCHEMA"]).BUG_SCHEMA.template.format('
 reddens = [
   "tests/ledger/test_register.py::test_a_second_register_renders_its_own_title_prefix_and_fields",
 ]
@@ -747,76 +747,12 @@ reddens = [
 ]
 
 [[mutation]]
-name = "a template placeholder need not be a key"
-file = "src/stayfixed/ledger/register.py"
-before = "        if placeholder not in lines:"
-after = "        if False:"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-placeholder-not-a-key]",
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-placeholder-the-writer-owns]",
-]
-
-[[mutation]]
-name = "a template placeholder may stand for a key the writer spells itself"
-file = "src/stayfixed/ledger/register.py"
-before = "    lines = keys - set(_WRITER_KEYS)"
-after = "    lines = keys"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-placeholder-the-writer-owns]",
-]
-
-[[mutation]]
 name = "a schema may list a key twice"
 file = "src/stayfixed/ledger/register.py"
 before = '    for key in duplicated:'
 after = "    for key in ():"
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[key-listed-twice]",
-]
-
-[[mutation]]
-name = "a template may write an entry with no number"
-file = "src/stayfixed/ledger/register.py"
-before = '    if "identifier" not in placeholders:'
-after = "    if False:"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-identifier]",
-]
-
-[[mutation]]
-name = "a template may write an entry with no status"
-file = "src/stayfixed/ledger/register.py"
-before = '        if written is None:'
-after = "        if False:"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-status]",
-]
-
-[[mutation]]
-name = "a template may open with no frontmatter"
-file = "src/stayfixed/ledger/register.py"
-before = '    if lines[:1] != ["---"]:'
-after = "    if False:"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-frontmatter]",
-]
-
-[[mutation]]
-name = "the template's status is read quotes and all"
-file = "src/stayfixed/ledger/register.py"
-before = '''        return re.sub(r'\\(["\\])', r"\1", value[1:-1])'''
-after = "        return value"
-reddens = [
-  "tests/ledger/test_register.py::test_a_template_may_quote_its_status_as_an_entry_may",
-]
-
-[[mutation]]
-name = "a template may write a status the schema lacks"
-file = "src/stayfixed/ledger/register.py"
-before = '        elif _denoted(written) not in schema.statuses:'
-after = "        elif False:"
-reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-status-not-a-status]",
 ]
 
 [[mutation]]
@@ -828,32 +764,31 @@ reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[level-not-required]",
 ]
 
+# The template is held to the entry grammar by a round trip through the reader, not by a second
+# reading of it: a template that leaves out a required key, or the related list, writes an entry
+# that reads back without it.
 [[mutation]]
-name = "a schema's level need not have a line new writes it into"
+name = "the bug ledger's template writes no found line"
 file = "src/stayfixed/ledger/register.py"
-before = '    if schema.level in keys and schema.level not in line_keys:'
-after = "    if False:"
+before = '''found: {{today}}
+{{source}}'''
+after = "{{source}}"
 reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[level-without-a-line]",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[moved-and-renamed-bug_register]",
 ]
 
 [[mutation]]
-name = "a key a non-void entry must carry may be one the template writes empty"
+name = "the bug ledger's template writes no related line"
 file = "src/stayfixed/ledger/register.py"
-before = '        if key in keys and key not in line_keys and not spelled.get(key):'
-after = "        if False:"
+before = '''fixed_in:
+{{related}}
+'''
+after = '''fixed_in:
+'''
 reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-written-bare]",
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-not-written]",
-]
-
-[[mutation]]
-name = "a key the template writes itself must still have a line of its own"
-file = "src/stayfixed/ledger/register.py"
-before = '        if key in keys and key not in line_keys and not spelled.get(key):'
-after = '        if key in keys and key not in line_keys:'
-reddens = [
-  "tests/ledger/test_register.py::test_a_key_the_template_writes_itself_may_be_required_of_a_non_void_entry",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[default-bug_register]",
+  "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[moved-and-renamed-bug_register]",
 ]
 
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as

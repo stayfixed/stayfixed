@@ -236,13 +236,13 @@ def file_entry(
             f"Run `stayfixed {register.name} check`: an entry file the allocator cannot account "
             "for is one this ledger is wrong about."
         )
-    lines = {key: field_line(key, values.get(key, "")) for key in schema.line_keys}
-    text = schema.template.format(
+    text = _scaffold(
+        register,
         identifier=identifier,
-        title=scalar(title),
+        title=title,
+        values=values,
+        related=related,
         today=today or date.today().isoformat(),
-        related=related_field(related),
-        **lines,
     )
     # Validated the same way any other entry file is, before it touches disk: a malformed field
     # must fail cleanly here rather than be written and then fail the index re-render below,
@@ -251,6 +251,27 @@ def file_entry(
     fsops.write_within(root, relative, text)  # creates the ledger directory on the first entry
     _write_index(root, register)
     return Filed(path, identifier, allocation.warning)
+
+
+def _scaffold(
+    register: Register,
+    *,
+    identifier: str,
+    title: str,
+    values: Mapping[str, str],
+    related: tuple[str, ...],
+    today: str,
+) -> str:
+    """The entry `new` writes: the register's template, each key `values` holds on its own line
+    (a key it leaves out written bare), and the number, title, day and related list filled in."""
+    lines = {key: field_line(key, values.get(key, "")) for key in register.schema.line_keys}
+    return register.schema.template.format(
+        identifier=identifier,
+        title=scalar(title),
+        today=today,
+        related=related_field(related),
+        **lines,
+    )
 
 
 def _void_pointer(register: Register, *, old: str, new: str, title: str, today: str) -> str:
