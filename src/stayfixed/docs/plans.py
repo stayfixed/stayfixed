@@ -2,7 +2,10 @@
 
 The first two rules come from one branch's retro. A plan contradicted itself about a test
 location and the stale pointer survived into three later tasks — so every reference must
-resolve unless the line says `(create)`. And a step phrased "confirm nothing bounds X" embeds
+resolve unless the line says `(create)`. A path the plan removes is the same claim run backwards:
+it resolves until its task lands and never after, and a finished plan is history that a later
+change may still edit, so a `Delete:` line declares its paths as `Create:` does and `(delete)`
+marks its line as `(create)` does. And a step phrased "confirm nothing bounds X" embeds
 its own expected answer: the author already doubted it enough to write the check and hid that
 doubt from whoever executes it. That one shipped an open defect. The verb is not special to
 "confirm" — "verify" and "check" hide the same doubt the same way — so all three are covered,
@@ -85,8 +88,8 @@ from stayfixed.prose import blank_fences, path_references, resolves_within
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)
-_CREATE_MARK = re.compile(r"\(create\)", re.IGNORECASE)
+_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
+_LINE_MARK = re.compile(r"\((?:create|delete)\)", re.IGNORECASE)
 # "confirm", "verify", and "check" all phrase a step as already knowing the answer it claims to
 # test. `no(?!-)` keeps a compound word like "no-op" out of the negation: a hyphen is a word
 # boundary, so plain `\bno\b` matches inside it and flags correct prose.
@@ -347,7 +350,7 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
     for line in _DECLARES.findall(prose):
         declared |= set(path_references(line))
     for number, line in enumerate(prose.splitlines(), 1):
-        if not _CREATE_MARK.search(line):
+        if not _LINE_MARK.search(line):
             for target in path_references(line):
                 # A claim that lands outside the root is not asked of the filesystem: the
                 # answer would be about this disk rather than about the repository, and a plan

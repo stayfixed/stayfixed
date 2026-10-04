@@ -388,6 +388,25 @@ before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MUL
 after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
 reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
 
+# A plan names what its tasks remove, so once they land a finished plan must not read as dead.
+[[mutation]]
+name = "a path a plan declares on a Delete line reads as a dead reference once it is gone"
+file = "src/stayfixed/docs/plans.py"
+before = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+after = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)'
+reddens = [
+  "tests/docs/test_plans.py::test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone",
+]
+
+[[mutation]]
+name = "a line a plan marks (delete) reads as a dead reference once its path is gone"
+file = "src/stayfixed/docs/plans.py"
+before = '_LINE_MARK = re.compile(r"\((?:create|delete)\)", re.IGNORECASE)'
+after = '_LINE_MARK = re.compile(r"\((?:create)\)", re.IGNORECASE)'
+reddens = [
+  "tests/docs/test_plans.py::test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone",
+]
+
 # The ignore rules cover the whole store, so a note→note reference must be settled on disk.
 [[mutation]]
 name = "a reference into the store is asked of the ignore rules and disappears"

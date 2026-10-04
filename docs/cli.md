@@ -716,8 +716,9 @@ whose copy in `HEAD` differs from `REF`'s and from that of any commit `git merge
 HEAD` names: a copy equal to every merge base's leaves the merge taking `REF`'s, and one equal to
 `REF`'s leaves it as it is. Every merge base, not the one `REF...HEAD` diffs against, which can
 already hold an old plan the change puts back. Five rules, each from a
-retrospective: every backticked path resolves unless the line says `(create)` or declares it
-on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
+retrospective: every backticked path resolves unless the line says `(create)` or `(delete)`, or
+the plan declares the path on a `Create:`, `Test:` or `Delete:` line, so a plan whose tasks have
+removed the files it lists under `Delete:` still lints clean; no step is phrased as already knowing its answer (`confirm that
 nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
 present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with content; and a
 mutation's outcome stated as fact in the present tense (`-> the test reddens`, `watch it go
