@@ -14,12 +14,6 @@
             "type": "command",
             "timeout": 10,
             "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle preset-rules --part 1"
-          },
-          {
-            "type": "command",
-            "timeout": 10,
-            "additionalContextLimit": 0,
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle standing-rules --part 1"
           },
           {
@@ -51,24 +45,6 @@
             "timeout": 10,
             "additionalContextLimit": 0,
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 3"
-          },
-          {
-            "type": "command",
-            "timeout": 10,
-            "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle index --part 1"
-          },
-          {
-            "type": "command",
-            "timeout": 10,
-            "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle index --part 2"
-          },
-          {
-            "type": "command",
-            "timeout": 10,
-            "additionalContextLimit": 0,
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle index --part 3"
           }
         ]
       }

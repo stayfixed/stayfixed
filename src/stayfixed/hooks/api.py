@@ -72,10 +72,10 @@ EVENTS = (
 def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = None) -> str:
     """Which harness this process is running under, from the environment and the stdin payload.
 
-    Here rather than in `dispatch.py` because two areas ask the question: the dispatcher stamps
-    `HookEvent.harness` with it, and `memory session-context --bundle index` injects the index only
-    on Codex, which has no native auto-memory to load it. Two spellings of this rule would be two
-    answers to "which harness", which is the drift a shared vocabulary exists to stop.
+    Here rather than in `dispatch.py`, beside the rest of the vocabulary areas share: the
+    dispatcher stamps `HookEvent.harness` with it, and a second spelling of this rule anywhere else
+    would be a second answer to "which harness", which is the drift a shared vocabulary exists to
+    stop.
 
     Measured on both harnesses in the *Codex plugin hooks* trial of the spike record
     (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): Codex sets PLUGIN_ROOT/PLUGIN_DATA and

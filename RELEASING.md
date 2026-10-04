@@ -158,7 +158,7 @@ step 7's sentence true.
    - **No internal terms without a user-facing meaning.** A reader of the changelog has not read
      the code. 0.2.0's entries name "the note reader", "a real `stayfixed.toml`" (a file that is
      not a symlink), "the session-start line" and "the `preset-rules` and `standing-rules`
-     bundle" without saying what each is to someone using the tool; say what the user would
+     bundle" (the first since removed) without saying what each is to someone using the tool; say what the user would
      see, or say the thing in the words the commands print.
 
    - **Contract changes are not fixes.** For a 0.x minor, which may break what the one before

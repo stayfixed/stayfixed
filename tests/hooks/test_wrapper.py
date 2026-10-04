@@ -518,7 +518,7 @@ def test_stayfixed_runs_from_the_project_root(tmp_path: Path) -> None:
             "memory",
             "session-context",
             "--bundle",
-            "preset-rules",
+            "standing-rules",
         ],
         capture_output=True,
         text=True,

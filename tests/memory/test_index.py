@@ -332,7 +332,7 @@ def test_a_two_line_index_entry_never_corrupts_the_note_it_names(tmp_path: Path)
 def test_index_extra_entries_that_leave_the_project_root_are_dropped(tmp_path: Path) -> None:
     # `config/paths.py` names `memory.index_extra` among the fields its own guard does not
     # cover and assigns the check to the area that consumes them. These strings land verbatim
-    # in `MEMORY.md`, which the `index` bundle injects.
+    # in `MEMORY.md`, which the harness memory link exposes.
     store, config = a_store(
         tmp_path, extra='["docs/handbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
     )
@@ -376,8 +376,8 @@ def test_a_symlinked_index_sources_nothing_when_no_overlay_is_recorded(tmp_path:
     # `overlay_root` answers None and there is no `permitted_roots` left to hold the link's
     # target to. The only safe answer is the one an ungoverned group symlink already gets.
     # Returning the target instead honours a link nothing ever validated: `worktree.link`
-    # materialises it into the worktree and `bundles._index` reads what it points at straight
-    # into the model.
+    # materialises it into the worktree, where the harness's own memory reader reads what it
+    # points at straight into the model.
     #
     # This used to be reachable the other way round too — a *caller* that did not thread the
     # machine file the store was resolved with, which `worktree.link`'s docstring warned about
@@ -537,7 +537,7 @@ def test_a_dangling_but_permitted_symlinked_index_sources_nothing_to_read(
     tmp_path: Path,
 ) -> None:
     # The read answer must stay "nothing to read": there is no content at the far end yet, and
-    # `bundles._index`, `_appended` and `worktree.link` all route through this function.
+    # `_appended` and `worktree.link` both route through this function.
     store, config, _machine_file = an_overlay_store(tmp_path)
     target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(target)

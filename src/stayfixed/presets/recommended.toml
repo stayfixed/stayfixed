@@ -3,10 +3,9 @@
 # reads [plugins] and [deny] when it installs a machine, and [defaults.personal] and
 # [defaults.stayfixed] for its own answers.
 #
-# There is deliberately no [rules] table. `stayfixed.memory` renders one through the `preset-rules`
-# bundle when a preset carries it, and this preset imposes no standing rule on anyone: a standing
-# rule is the user's own note carrying `metadata.startup` in their overlay, and the bundle is
-# silent here.
+# There is deliberately no [rules] table, and nothing reads one: this preset imposes no standing
+# rule on anyone. A standing rule is the user's own note carrying `metadata.startup` in their
+# overlay, which the `standing-rules` session-start bundle injects.
 
 [budgets]
 agents_md_lines = 300

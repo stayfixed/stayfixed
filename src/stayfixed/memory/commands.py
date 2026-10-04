@@ -16,7 +16,6 @@ pass it.
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from stayfixed.areas import SubParsers
@@ -25,7 +24,6 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
-from stayfixed.hooks.api import detect_harness
 from stayfixed.memory import trust
 from stayfixed.memory.bundles import Bundle, fit, render
 from stayfixed.memory.index import (
@@ -90,13 +88,16 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     return found[0], config
 
 
-# What `bundles.blocks` returns `[]` for, said where a person will read it. The failure this
+# What the trust gate withholds, said where a person will read it: `bundles.blocks` returns `[]`
+# for repository-data notes, and `worktree.harness_link_needed` refuses the harness memory link
+# to a store whose notes or committed `MEMORY.md` the repository shipped. The failure this
 # closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`, so
 # it used to revoke the very record it depends on, and nothing in any summary said why the
 # model had stopped receiving standing rules.
 _UNTRUSTED = (
-    "this store's notes are repository data with no trust record, so the standing-rules, "
-    "volatile-notes and index bundles are empty — run `stayfixed memory trust --in-repo-memory`"
+    "this store holds repository data with no trust record, so none of it reaches a session — "
+    "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
+    "link — run `stayfixed memory trust --in-repo-memory`"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
@@ -131,19 +132,19 @@ _EXTRA_NOT_PUBLISHED = (
 
 
 def _trusted(store: Store, config: Config) -> bool:
-    """The same question `bundles.blocks` asks, asked the same way.
+    """Whether the repository data this store holds, notes or index, may reach a session.
 
     `may_inject(store, config)` alone answers about the store's *notes*, through
     `inside_project`. In overlay mode that is False by design — every group resolves out into
     the overlay — while `store.path` is a real directory inside the repository, so a committed
-    `MEMORY.md` there makes `blocks(Bundle.INDEX, …)` return `[]` while this reported
+    `MEMORY.md` there is repository data that answer cannot see, and the harness memory link
+    `worktree.harness_link_needed` gates is withheld from it. Asked that way, this reported
     `"trusted": true` and `_gate` said nothing. `_UNTRUSTED` exists precisely to stop that
     silence — its own comment says "nothing in any summary said why the model had stopped
     receiving standing rules" — and it was never appended.
 
-    `bundles.blocks` builds the same disjunction from `is_repository_data` and the index's own
-    `in_repository`; it is rebuilt here rather than exported because the two callers want
-    different halves of it, and one of them has to answer for a bundle it is not rendering.
+    So the index is asked about by file, through its own `in_repository`, beside the notes'
+    `is_repository_data`.
     """
     index = index_source(store, config)
     repository_data = trust.is_repository_data(store) or (
@@ -309,32 +310,6 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    # On Codex the index bundle is injected too, because Codex has no native auto-memory to load the
-    # index itself. Here rather than in `bundles.render`, which is a library function with no
-    # environment to read; `detect_harness` is the hook area's own answer to the same question.
-    #
-    # **No payload is passed, so only the environment half of that answer is in play here.**
-    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*, which
-    # the dispatcher does and this call site does not: there is no stdin payload at a command
-    # invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as the spike
-    # record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
-    # hooks* trial, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing and
-    # neither "claude" nor "unknown" reaches the render.
-    #
-    # **This is the one shipped command whose output depends on the ambient environment**, and
-    # it is deliberate rather than incidental: the bundle exists for the harness that has no
-    # native auto-memory, and the only thing that knows which harness this is, is the process's
-    # own environment. The cost is that a test asserting this bundle is empty proves nothing
-    # about the gate it was written for unless it names the harness first — see
-    # `tests/memory/test_commands.py::_under_codex`, which every such case now goes through.
-    #
-    # After `_store` and not before it, so every refusal this command already makes — a store
-    # that will not resolve, a `--store` outside the overlay — is still made for this bundle on
-    # both harnesses. What the branch skips is the render, which is what it is about.
-    if bundle is Bundle.INDEX and detect_harness(os.environ) != "codex":
-        return Result(
-            summary="", data={"bundle": bundle.value, "part": args.part, "skipped": "harness"}
-        )
     text = render(bundle, store, config, part=args.part)
     return Result(text if text is not None else "")
 

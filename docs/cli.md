@@ -166,10 +166,8 @@ run it by hand except to see what a session actually receives.
 
 | Bundle | What it is |
 |---|---|
-| `preset-rules` | The `[rules]` table of the configured preset, when it has one. The shipped `recommended` preset has none, so this bundle prints nothing for it: your own standing rules are notes carrying `metadata.startup`, which `standing-rules` injects. Never repository content, so never gated. |
 | `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
 | `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
-| `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only**: Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -181,10 +179,10 @@ Output is deliberately **raw**, not JSON: the margin that keeps a bundle inside 
 is additive only because there is no envelope and no escaping. Do not pass `--json` from a hook
 entry.
 
-When the store is repository data with no trust record, every bundle but `preset-rules` is
-empty, and this command says nothing rather than explaining why — its output *is* what reaches
-the model. `stayfixed memory index` and `stayfixed memory fit` are where the explanation is
-printed, because those are the commands a person runs.
+When the store's notes are repository data with no trust record, both bundles are empty, and
+this command says nothing rather than explaining why — its output *is* what reaches the model.
+`stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
+because those are the commands a person runs.
 
 **Writes** nothing: the bundle goes to standard output and nowhere else.
 

@@ -31,8 +31,8 @@ inside this project's own share of the recorded overlay (`permitted_roots`), and
 mode refused outright, exactly as an ungoverned group symlink would be.
 
 That rule lives in `index.index_source`, not here, because linking is not its only reader:
-`bundles._index` reads the same file and injects it into the model, which is the channel that
-matters more. Two copies of one boundary rule is one copy too many.
+`memory index` writes through the same file and its `--check` compares against it, and the
+harvest reads it. Two copies of one boundary rule is one copy too many.
 
 One of the two gaps is not like the other. The links inside the worktree are read by this
 area's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
@@ -388,14 +388,15 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     directory *inside the repository*. So a clone shipping a committed index at the configured
     memory path got the harness link created for it on no trust record at all, and the harness's
     own **native** memory reader then injected the file with no delimiter, no nonce and no gate.
-    `bundles.blocks` correctly returned `[]` for the same store in the same session: this area
-    refused to inject the file through the channel it controls, and created the link to the
-    channel it does not.
+    The index bundle this area then rendered correctly returned `[]` for the same store in the
+    same session: this area refused to inject the file through the channel it controls, and
+    created the link to the channel it does not.
 
-    `bundles.blocks` already knew to ask the wider question and passes
-    `repository_data=in_repository(store, source)`. The difference here is only *what* is being
-    exposed: a link to a directory exposes every file under it, so the question is whether the
-    **directory** is repository data, not whether the notes are.
+    That bundle already knew to ask the wider question and passed
+    `repository_data=in_repository(store, source)`, as `memory.commands._trusted` still does. The
+    difference here is only *what* is being exposed: a link to a directory exposes every file
+    under it, so the question is whether the **directory** is repository data, not whether the
+    notes are.
 
     Nothing narrower than `may_inject` will do. It is already the predicate that means "these
     bytes may reach the model at all": it short-circuits to True when neither

@@ -105,11 +105,8 @@ def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> Non
 
 
 def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
-    # The vacuity guard for the test above, and the one that would have caught the first draft
-    # of this check: `parts == slots` warned on every correct installation, because
-    # `preset-rules` has one slot and a preset that carries rules fills it. The shipped preset
-    # carries none, so here `preset-rules` is an empty bundle and doctor is still green: an
-    # installation whose preset imposes no standing rule is the ordinary one.
+    # The vacuity guard for the test above: one short standing rule fits its slots and is
+    # nowhere near the platform cap, which is the ordinary installation, and the row stays green.
     root = _attached(tmp_path)
     store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
     (store / "short.md").write_text(_note("a short rule", name="short", startup=1), "utf-8")
@@ -118,24 +115,6 @@ def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
         "bundles",
     )
     assert check.status == "ok"
-
-
-def test_a_preset_whose_rules_outgrow_their_slot_is_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The `preset-rules` bundle is still measured now that the shipped preset has nothing in it:
-    # a user's own preset with a rule larger than the one slot the hooks file declares is the
-    # same condition as a standing note that does not fit, reported the same way. Without this
-    # the bundle's row in `_bundles` would be covered only by an empty bundle.
-    from stayfixed.memory import bundles as bundles_module
-
-    root = _attached(tmp_path)
-    monkeypatch.setattr(
-        bundles_module, "load_preset", lambda name: {"rules": {"huge": "word " * 3_000}}
-    )
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "bundles")
-    assert check.status == "red"
-    assert "preset-rules" in check.detail
 
 
 def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_path: Path) -> None:
