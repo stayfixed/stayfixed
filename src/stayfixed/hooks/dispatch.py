@@ -44,19 +44,16 @@ class Recorder:
 
 
 def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
-    """The one reading of a hook's stdin, whichever harness sent it, and never told which.
+    """The one reading of a hook's stdin, whichever harness sent it, and never told which
+    (`harnesses.detect` says why).
 
-    The detected harness is one a repository can choose: a committed `.claude/settings.json`
-    `env` block can set `PLUGIN_ROOT`, so an event that varied with detection would hand the
-    repository the choice of what its guards read. That holds for the project root above all,
-    since it decides which configuration loads and so whether a guard refuses: the root is the
+    The project root decides which configuration loads, and so whether a guard refuses: it is the
     first non-empty variable among every registered harness's, asked in
     `harnesses.project_root_variables`' order, and without one the checkout `cwd` sits in
     (`gitenv.checkout_root`). Codex names none (measured in the spike record,
     `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its *Codex plugin hooks* trial), so
     under Codex an inherited `CLAUDE_PROJECT_DIR` still names the root, as it names the directory
-    `hooks/run-hook.sh` enters. The detected harness contributes its `render` to the answer and
-    nothing to the event.
+    `hooks/run-hook.sh` enters.
     """
     cwd = Path(str(payload.get("cwd") or "."))
     named = first_set(env, project_root_variables())

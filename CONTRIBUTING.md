@@ -131,24 +131,13 @@ a release ships.)
 A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
 `stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
 that value's `render`, and the event a handler reads does not say which value that was. That is
-all detection decides, because the harness a process detects is one a repository can choose (a
-committed `env` block can set `PLUGIN_ROOT`): every payload is read by the one
-`hooks.dispatch.read_event`; the project root is the first variable that names one among every
-registered value's project-root variables, the canonical value's first, whichever value was
-detected, and otherwise the checkout `cwd` sits in; and a deny is exit 2 with its reason on
-stderr under every harness and never reaches a `render`. Adding a harness is adding a value — a
+all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
 positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
 the tier each enforcement surface holds at under it — and nothing that reads those needs an
 edit: `doctor` walks the settings files every value names, and the README's table of what each
-agent enforces is held equal to every value's `reach` by a test. It is not only a value: a
-harness that differs from Claude Code and Codex in any of the facts still spelled outside the
-registry is an edit there too, and the module docstring of `src/stayfixed/harnesses.py` lists
-them — the plugin manifest each harness loads and the release check that holds their versions
-together, the event names and `${CLAUDE_PLUGIN_ROOT}` command paths of `hooks/hooks.json`, the
-variable `hooks/run-hook.sh` takes its directory from and the digest recorded for it,
-`hooks.api.DATA_ROOT_VARIABLES`, `doctor`'s plugin-root variables, wrapper environment and
-`codex-trust` row, the `SessionStart` bundles `memory session-context` writes without a
-`render`, and the one hook output cap.
+agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a
+new harness still touches outside the registry is listed in the module docstring of
+`src/stayfixed/harnesses.py`.
 
 Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
 — the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in

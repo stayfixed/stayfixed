@@ -9,15 +9,9 @@ not a class: what this module states about a harness is one more value in `HARNE
 nothing that reads the registry changes. What it does not state yet is the list below.
 
 The registry is also the adapter the hooks core answers through. `stayfixed hook` asks `detect`
-which value it is running under and shapes its stdout with that value's `render`. That is all
-detection decides: every payload is read one way (`hooks.dispatch.read_event`), into an event
-that does not say which harness was detected, because the harness a process detects is one a
-repository can choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` —
-so no value may change what a handler sees. The project root is read the same way under every
-answer: from the first of every registered value's `project_dir_env` that names one,
-`CANONICAL`'s first (`project_root_variables`). A deny reaches no value at all: exit 2 with the
-reason on stderr is the whole of a refusal for every harness. A harness whose payload genuinely
-differs is a question to answer with that harness's evidence when it arrives.
+which value it is running under and shapes its stdout with that value's `render`, and nothing
+more: `detect` says why. A harness whose payload genuinely differs is a question to answer with
+that harness's evidence when it arrives.
 
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
 at which that surface holds under this harness (`Tier`), or that it does not reach the harness at
@@ -128,8 +122,7 @@ class Harness:
     # walks beside `settings` and `stayfixed assess` does not: they are this machine's.
     local_settings: tuple[str, ...]
     # The variable this harness names the project root in, if any. Every registered value's is
-    # asked, in `project_root_variables`' order, whichever harness was detected: detection is a
-    # repository's to steer, and the root decides which configuration loads.
+    # asked, in `project_root_variables`' order, whichever harness was detected (`detect`).
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
     # no rendering carries a decision, because a deny travels on the exit code.
@@ -283,8 +276,7 @@ def project_root_variables() -> tuple[str, ...]:
     registry's order is the order `init` writes `agents` in, a choice about presentation, so it is
     not the precedence too: a harness registered ahead of Claude Code would otherwise move every
     Claude Code session's root to a variable of its own. Every value's is asked whichever value
-    was detected, because detection is a repository's to steer and the root decides which
-    configuration loads.
+    was detected, as `detect` says.
     """
     ordered = (CANONICAL, *(harness for harness in HARNESSES if harness is not CANONICAL))
     return tuple(dict.fromkeys(h.project_dir_env for h in ordered if h.project_dir_env))
@@ -295,20 +287,28 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
 
     The one answer to "which harness is this process running under": the hooks core asks it
     once, in `stayfixed hook`, and hands the answer to `dispatch` and to nothing else. It always
-    answers, because a process no value claims is served the canonical shape, and what it answers
-    decides how an answer is shaped and never what a handler sees or whether a call is refused.
+    answers, because a process no value claims is served the canonical shape.
+
+    **Detection is repository-steerable, so it decides only the shape of stdout.** Neither input
+    read here is the harness's alone: a committed `.claude/settings.json` `env` block reaches the
+    environment, so it can set `PLUGIN_ROOT`, and the payload pair Codex is told by is fragile,
+    because Claude Code's `PreToolUse` stdin already carries `permission_mode` (the spike record
+    `_codex_detects` cites, in its `tool_name` trial), so a Claude Code release that adds `model`
+    there would be answered as Codex. So what this answers decides nothing a handler sees and
+    nothing about whether a call is refused: every payload is read by the one
+    `hooks.dispatch.read_event`, into an event that does not say which value was detected; the
+    project root, which decides which configuration loads, is the first variable set among every
+    registered value's, `CANONICAL`'s first, whichever value was detected
+    (`project_root_variables`); and a deny is exit 2 with its reason on stderr under every
+    harness, and never reaches a `render`.
 
     **A harness gets a `render` of its own only together with a detection signal a repository
-    cannot steer.** Neither input read here is one: a committed `.claude/settings.json` `env`
-    block reaches the environment, so it can set `PLUGIN_ROOT`, and the payload pair Codex is
-    told by is fragile, because Claude Code's `PreToolUse` stdin already carries
-    `permission_mode` (the spike record `_codex_detects` cites, in its `tool_name` trial), so a
-    Claude Code release that adds `model` there would be answered as Codex. While every value
-    renders through `CANONICAL.render`, what this answers changes no byte of stdout. A value with
-    a `render` of its own would let a repository choose the shape its harness receives, and a
-    shape the harness does not read drops every notice without a word. So a second shape waits on
-    a signal the wrapper controls, such as its argv, and never the environment or stdin;
-    `tests/test_harnesses.py` holds every registered value to the canonical `render` until then.
+    cannot steer.** While every value renders through `CANONICAL.render`, what this answers
+    changes no byte of stdout either. A value with a `render` of its own would let a repository
+    choose the shape its harness receives, and a shape the harness does not read drops every
+    notice without a word. So a second shape waits on a signal the wrapper controls, such as its
+    argv, and never the environment or stdin; `tests/test_harnesses.py` holds every registered
+    value to the canonical `render` until then.
     """
     for harness in HARNESSES:
         if harness.detects is not None and harness.detects(env, payload):

@@ -11,8 +11,7 @@ So the rule this area follows is the other half of the same rule: **a name two a
 defined here.** The four names of the sink's on-disk layout live here for exactly that reason,
 and `sink.py` imports them from here like everybody else. CONTRIBUTING records the exception.
 Which harness a hook runs under is not vocabulary of this kind, and no handler is told it:
-`stayfixed.harnesses.detect` answers it once, in `stayfixed hook`, for the shape of the answer
-alone, because a repository can steer what it answers and so it may decide nothing a handler sees.
+`stayfixed.harnesses.detect` says why.
 
 **Six names below have no importer outside this area**, and each stays for the reason beside it:
 
