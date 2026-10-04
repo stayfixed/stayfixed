@@ -15,9 +15,10 @@ from pathlib import Path
 # into `.git/hooks/`, a rule written to `.git/config`, an ignore region added to
 # `.git/info/exclude`. Everything else under `.git` — `objects/`, `logs/`, `refs/`, a fresh
 # `commit-graph`, a pack, `gc.log`, `objects/maintenance.lock` — is git's own background
-# bookkeeping. The fixtures that build these repositories pin `GIT_CONFIG_GLOBAL` and
-# `GIT_CONFIG_SYSTEM` to `os.devnull`, which leaves `gc.auto` and `maintenance.auto` at their
-# defaults, so that bookkeeping can run — and does — between two snapshots taken moments apart.
+# bookkeeping. It ran between two snapshots taken moments apart while the fixtures that build
+# these repositories left `gc.auto` and `maintenance.auto` at their defaults; they turn both off
+# now (`tests/gitfixture.py`), and the walk stays this narrow because none of those paths is one
+# that a write by `attach` or `detach` could land in.
 _STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
 
 

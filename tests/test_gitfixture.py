@@ -101,6 +101,11 @@ def test_the_sealed_environment_carries_nothing_that_could_redirect_git(
         "GIT_AUTHOR_EMAIL",
         "GIT_COMMITTER_NAME",
         "GIT_COMMITTER_EMAIL",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_KEY_0",
+        "GIT_CONFIG_VALUE_0",
+        "GIT_CONFIG_KEY_1",
+        "GIT_CONFIG_VALUE_1",
     }
     assert sealed["HOME"] == str(tmp_path)
 
@@ -117,8 +122,44 @@ def test_a_fixture_git_reads_no_configuration_file_the_machine_supplies(tmp_path
     # Mutation: `GIT_CONFIG_NOSYSTEM` dropped from `env()` -> red here with Apple's git, which
     # lists the Xcode file; with any other git it has no extra file to read, so the declared
     # entry for that line is the key set above, which reddens everywhere.
+    #
+    # What it does read is the environment's own: the two keys that turn automatic maintenance
+    # off, from `GIT_CONFIG_COUNT`, which git lists as the command line's and never as a file's.
     listed = run_git(tmp_path, "config", "--list", "--show-origin")
-    assert listed.stdout == "", listed.stdout
+    assert listed.stdout.splitlines() == [
+        "command line:\tmaintenance.auto=false",
+        "command line:\tgc.auto=0",
+    ], listed.stdout
+
+
+@needs_git
+def test_a_fixture_commit_leaves_no_maintenance_running_behind_it(tmp_path: Path) -> None:
+    # The flake this closes: from git 2.55 the maintenance a `commit` starts detaches and keeps
+    # `objects/maintenance.lock` after the commit returns, so `shutil.rmtree(root / ".git")`
+    # straight after `smoke_repo` listed the lock and then found it gone — `FileNotFoundError`
+    # on the Python 3.12 leg of CI. Read from git's own trace, which names every program it
+    # starts: a fixture commit starts no maintenance, and no `gc --auto` either.
+    #
+    # The same commit with automatic maintenance turned back on is the control, held in the
+    # foreground so it leaves nothing running: it shows the trace names the spawn when there is
+    # one, so the first assertion cannot pass because tracing stopped reaching the file.
+    #
+    # Mutation (declared): `env()` sets `GIT_CONFIG_COUNT` to "0" -> git reads none of the keys,
+    # and the commit starts `git maintenance run --auto --detach` again.
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+
+    def started(trace: Path, *config: str) -> list[str]:
+        git(root, *config, "commit", "-q", "--allow-empty", "-m", "c", GIT_TRACE=str(trace))
+        lines = trace.read_text(encoding="utf-8").splitlines()
+        return [line for line in lines if "run_command:" in line]
+
+    sealed = started(tmp_path / "sealed.trace")
+    assert not [line for line in sealed if "maintenance" in line or " gc " in line], sealed
+    in_the_foreground = ("-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false")
+    control = started(tmp_path / "control.trace", *in_the_foreground)
+    assert [line for line in control if "maintenance run --auto" in line], control
 
 
 def _git_runs(tree: ast.AST) -> list[int]:
@@ -179,7 +220,7 @@ def test_no_test_module_builds_a_git_environment_of_its_own() -> None:
     # passed to a launcher rather than to git. String constants out of the AST rather than a
     # substring search, so the prose in `tests/snapshot.py` that *describes* the precaution is
     # not mistaken for a second copy of it. This module is excluded beside `gitfixture.py` and
-    # for the same reason: the assertion above spells the nine forced names out, so that
+    # for the same reason: the assertion above spells every forced name out, so that
     # dropping one from `gitfixture.env` reddens rather than passing quietly.
     #
     # No separate mutation: the walk is the one above's, and narrowing it reddens there first.
