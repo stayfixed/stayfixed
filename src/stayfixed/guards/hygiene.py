@@ -132,15 +132,16 @@ def notice(dirty: int | None, notes: Sequence[str]) -> str | None:
     return LEAD + "\n- " + "\n- ".join(lines)
 
 
-# The two guards below are what "a hint that raises costs its own note" means. They are broad on
-# purpose, because an exception out of one stack's hint would reach the dispatcher, which under
-# `Policy.OPEN` records it and drops the handler's whole context -- the dirty-tree line and every
-# other stack's line with it. They are also silent, and that is a cost rather than a design: a
-# handler has no sink to record into, and a broken `recognises` is visible nowhere else.
-# `stayfixed test hygiene` exposes only a hint whose `report` or `note` raises, since it calls
-# both unguarded for every shipped hint, and never calls `recognises`. Recording a per-hint
-# failure in the hook's diagnostics would take a sink the handler can reach, which is a change to
-# the handler contract and not to this module.
+# The two guards below are what "a hint that raises costs its own note" means, with the one in
+# `shipped_hints`, which leaves out a profile whose module does not import or has no `HINT`, and
+# `_note`'s refusal of a note that is not text. They are broad on purpose, because an exception
+# out of one stack's hint would reach the dispatcher, which under `Policy.OPEN` records it and
+# drops the handler's whole context -- the dirty-tree line and every other stack's line with it.
+# They are also silent, and that is a cost rather than a design: a handler has no sink to record
+# into, and a broken `recognises` is visible nowhere else. `stayfixed test hygiene` exposes only a
+# hint whose `report` or `note` raises, since it calls both unguarded for every shipped hint, and
+# never calls `recognises`. Recording a per-hint failure in the hook's diagnostics would take a
+# sink the handler can reach, which is a change to the handler contract and not to this module.
 def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
     try:
         return any(hint.recognises(argv) for argv in commands)
@@ -150,9 +151,11 @@ def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:
     try:
-        return hint.note(counts(hint, root, config))
+        note = hint.note(counts(hint, root, config))
     except Exception:
         return None
+    # Text or nothing: anything else would raise in `notice`'s join, outside these guards.
+    return note if isinstance(note, str) and note else None
 
 
 def context_for(

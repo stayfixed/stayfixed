@@ -1827,3 +1827,18 @@ before = """        and not isinstance(value, bool)
     }"""
 after = "    }"
 reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# A profile whose `hygiene.py` does not import or defines no `HINT` goes quiet alone. Imported
+# unguarded, the failure reaches the hook's dispatcher ahead of every per-hint guard and costs the
+# whole notice, the dirty-tree line included.
+[[mutation]]
+name = "a hint module is imported outside its guard"
+file = "src/stayfixed/profiles/hints.py"
+before = """    try:
+        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT
+    except Exception:
+        return None"""
+after = '    hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+]

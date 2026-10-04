@@ -70,12 +70,29 @@ def hint_modules() -> tuple[str, ...]:
 
 
 def shipped_hints() -> tuple[tuple[str, RedRunHint], ...]:
-    """(profile name, its `HINT`), in name order."""
+    """(profile name, its `HINT`), in name order.
+
+    A profile whose `hygiene.py` does not import, or defines no `HINT`, is left out, and only
+    that profile goes quiet: raised from here, the failure would reach the hook's dispatcher
+    ahead of every per-hint guard and cost the whole notice, the dirty-tree line included.
+    `stayfixed test hygiene` does not list such a profile either. The guard is broad for the
+    reason the per-hint guards in `stayfixed.guards.hygiene` are: a module's import runs its
+    code, and any exception can come out of it.
+    """
     found: list[tuple[str, RedRunHint]] = []
     for name in sorted(hint_modules()):
-        module = importlib.import_module(f"{__package__}.{name}.hygiene")
-        found.append((name, module.HINT))
+        hint = _hint(name)
+        if hint is not None:
+            found.append((name, hint))
     return tuple(found)
+
+
+def _hint(name: str) -> RedRunHint | None:
+    try:
+        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT
+    except Exception:
+        return None
+    return hint
 
 
 def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:

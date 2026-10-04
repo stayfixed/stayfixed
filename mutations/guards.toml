@@ -911,11 +911,22 @@ reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"
 name = "a hint's note is computed outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
 before = """    try:
-        return hint.note(counts(hint, root, config))
+        note = hint.note(counts(hint, root, config))
     except Exception:
         return None"""
-after = "    return hint.note(counts(hint, root, config))"
+after = "    note = hint.note(counts(hint, root, config))"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
+
+# A note that is not text would raise in the notice's join, after every per-hint guard has
+# returned, and cost the whole notice.
+[[mutation]]
+name = "a hint's note is taken whatever it is"
+file = "src/stayfixed/guards/hygiene.py"
+before = "    return note if isinstance(note, str) and note else None"
+after = "    return note"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+]
 
 [[mutation]]
 name = "a hint's recognition is asked outside its guard"
@@ -958,8 +969,8 @@ reddens = [
 [[mutation]]
 name = "a hint's note is handed its report as returned"
 file = "src/stayfixed/guards/hygiene.py"
-before = "        return hint.note(counts(hint, root, config))"
-after = "        return hint.note(hint.report(root, config))"
+before = "        note = hint.note(counts(hint, root, config))"
+after = "        note = hint.note(hint.report(root, config))"
 reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
 
 # `test hygiene` must not call clean a tree the hook calls stale: the hook asks every hint and

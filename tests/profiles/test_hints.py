@@ -238,6 +238,41 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
     assert answer["additionalContext"] == f"{LEAD}\n- gamma says (1)"
 
 
+class WordlessHint(FakeHint):
+    """A hint whose note is something other than text, which the protocol does not allow."""
+
+    def note(self, counts: Mapping[str, int]) -> str | None:
+        return ["a", "list"]  # type: ignore[return-value]
+
+
+@needs_git
+def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The per-hint guards cover recognising, reporting and noting; a profile's module that does
+    # not import, one that has no `HINT`, and a note that is not text sit outside them unless
+    # they are handled on their own. Each must cost that profile's line and nothing else: the
+    # dirty-tree line and every other stack's line stay. Through the real dispatcher, so
+    # "nothing else" includes stderr. Oracle: `mutations/`, "a hint module is imported outside
+    # its guard" and "a hint's note is taken whatever it is".
+    ship(
+        monkeypatch,
+        {"delta": WordlessHint("x", "delta says"), "gamma": FakeHint("x", "gamma says")},
+    )
+    # `alpha` has no module at all, and `beta`'s module defines no `HINT`.
+    beta = types.ModuleType("stayfixed.profiles.beta.hygiene")
+    monkeypatch.setitem(sys.modules, beta.__name__, beta)
+    monkeypatch.setattr(
+        "stayfixed.profiles.hints.hint_modules", lambda: ("alpha", "beta", "delta", "gamma")
+    )
+    root = faulty_python_tree(tmp_path)
+    outcome = dispatch(red_event(root, "x"), register(), config_of(root), sink=Recorder())
+    assert outcome.exit_code == 0
+    assert outcome.stderr == ""
+    answer = json.loads(outcome.stdout)["hookSpecificOutput"]
+    assert answer["additionalContext"] == f"{LEAD}\n- {DIRTY_ONE}\n- gamma says (1)"
+
+
 class LoudHint(FakeHint):
     """A hint whose report carries more than counts, and which keeps what its note was given."""
 
