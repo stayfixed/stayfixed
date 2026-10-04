@@ -29,7 +29,13 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import OVERLAY_FILES, RETIRED_MEMORY_README, RETIRED_OVERLAY_FILES
+from stayfixed.overlay.layout import (
+    OVERLAY_FILES,
+    RETIRED_ATTACH_SKILL,
+    RETIRED_MEMORY_README,
+    RETIRED_OVERLAY_FILES,
+    RETIRED_RULES_README,
+)
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
@@ -40,11 +46,26 @@ OVERLAY = "overlay"
 # bytes are the only evidence that such an overlay's copy is stayfixed's to remove.
 SHIPPED_MEMORY_README = "407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"
 # Each retired file: the digests of what a release shipped there, and the way out for a copy
-# `overlay upgrade` keeps because it holds other bytes.
+# `overlay upgrade` keeps because it holds other bytes. The `attach` skill is the same bytes in
+# 0.1.0, 0.1.1 and 0.2.0; the rules README is one file in 0.1.x and another in 0.2.0, which said
+# that nothing read its directory. `tests/overlay/test_upgrade.py` holds each copy whole.
 _RETIRED = {
     RETIRED_MEMORY_README: (
         frozenset({SHIPPED_MEMORY_README}),
         "rename it to `_README.md`, or the note reader reads it as a note",
+    ),
+    RETIRED_ATTACH_SKILL: (
+        frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),
+        "the plugin's own `attach` skill replaces it",
+    ),
+    RETIRED_RULES_README: (
+        frozenset(
+            {
+                "926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",
+                "62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",
+            }
+        ),
+        "nothing read this directory; a standing rule is a note with `metadata.startup`",
     ),
 }
 

@@ -414,13 +414,12 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
 def _is_placeholder(relative: str) -> bool:
     """Whether this path is a directory's own documentation rather than a file in its own right.
 
-    `overlay create` drops a `README.md` into each directory the owner fills — `common/rules/`,
-    `common/memory/`, `projects/` — and a `SKILL.md` under `skills/`. The template README
-    describes those as *directories* on purpose, and naming four placeholders inside them would
-    be noise. Derived from the basename rather than listed, so a fourth such directory needs no
-    edit here. The convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is
-    also where the sentence about the root `README.md` now lives; the `/` conjunct below is
-    what excludes it.
+    `overlay create` drops a README into each directory the owner fills — `common/memory/`'s
+    `_README.md` and `projects/`'s `README.md`. The template README describes those as
+    *directories* on purpose, and naming the placeholders inside them would be noise. Derived
+    from the basename rather than listed, so a third such directory needs no edit here. The
+    convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is also where the
+    sentence about the root `README.md` now lives; the `/` conjunct below is what excludes it.
     """
     return "/" in relative and relative.rsplit("/", 1)[1] in PLACEHOLDER_NAMES
 
@@ -509,43 +508,6 @@ def test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates() -
         manifest = json.loads((root / relative).read_text(encoding="utf-8"))
         assert isinstance(manifest.get("author"), dict), relative
         assert manifest["author"].get("name"), relative
-
-
-def _paragraphs(text: str) -> list[str]:
-    """Blank-line separated blocks, and each table row on its own."""
-    found: list[str] = []
-    for block in re.split(r"\n\s*\n", text):
-        found.extend(block.splitlines() if block.lstrip().startswith("|") else [block])
-    return found
-
-
-def test_no_rendered_markdown_says_a_rules_file_is_injected(tmp_path: Path) -> None:
-    # Nothing reads `common/rules/`: the rules a session starts with are notes carrying
-    # `metadata.startup`, injected by `memory session-context --bundle standing-rules`. A
-    # directory whose README promises injection is a promise nothing keeps, so the README says
-    # what is true, and every paragraph anywhere that speaks of the directory agrees.
-    # Mutation: restore "injected at the start of every session" to the row in the overlay's
-    # README, or to `common/rules/README.md` → reddens.
-    rendered = _render_into(tmp_path)
-    rules = (rendered / "common" / "rules" / "README.md").read_text(encoding="utf-8")
-    assert "nothing reads" in rules.lower()
-    assert "metadata.startup" in rules
-    assert "common/memory" in rules
-    spoken = 0
-    for path in sorted(rendered.rglob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        for paragraph in _paragraphs(text):
-            if path.parent.name == "rules" or "common/rules" in paragraph:
-                spoken += 1
-                # Injection may be spoken of, but only of the notes that are injected (named by
-                # their `metadata.startup` or by the bundle that injects them), never of the
-                # directory's own files.
-                if "inject" in paragraph:
-                    assert "metadata.startup" in paragraph or "standing-rules" in paragraph, (
-                        path.name,
-                        paragraph,
-                    )
-    assert spoken, "no paragraph spoke of the directory, so nothing above was checked"
 
 
 def test_the_overlay_documents_its_own_install_where_a_user_reads_it() -> None:

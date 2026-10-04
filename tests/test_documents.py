@@ -604,8 +604,8 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
 # `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
-# ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
-# over still said fourteen.
+# ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
+# directory over still said fourteen.
 _DOCTOR_SECTION = re.compile(
     r"^## `stayfixed doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )

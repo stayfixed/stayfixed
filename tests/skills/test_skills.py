@@ -19,7 +19,8 @@ SKILLS = ROOT / "skills"
 # The skills that ship *into* an overlay. They moved under `src/stayfixed/templates/` with the
 # overlay template and this walk did not follow, so the one document the invocation lint exists
 # for -- that file once shipped an invocation that does not parse -- was walked by nothing while
-# a model read it in every overlay a user creates.
+# a model read it in every overlay a user creates. The template ships none today; the walks go
+# on reading the directory, so a skill added there is held to every rule below.
 TEMPLATE_SKILLS = ROOT / "src" / "stayfixed" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint: a SKILL.md is an entry point, and detail belongs in
@@ -77,7 +78,7 @@ def entry_points() -> list[Path]:
 
 
 def _id(path: Path) -> str:
-    """A case id that is unique across both trees: `attach` exists in each of them."""
+    """A case id that is unique across both trees, which may each hold a skill of one name."""
     return str(path.parent.relative_to(ROOT))
 
 
@@ -134,12 +135,17 @@ def test_the_walk_finds_the_ported_skills() -> None:
     # invocation cases with it, and so does a template tree that moves again.
     walked = documents()
     assert SKILLS / "memory-sweep" / "references" / "protocol.md" in walked
-    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in walked
     # And the same guard for the walk the three rules above parametrise over. The template tree
-    # moving again, or emptying, would otherwise silently take its cases with it -- which is
-    # exactly how that tree came to be held to one rule of the three in the first place.
-    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in entry_points()
-    assert set(skills()) < set(entry_points())
+    # moving again would otherwise silently take its cases with it -- which is exactly how that
+    # tree came to be held to one rule of the three in the first place. It ships no skill since
+    # its copy of `attach` was retired for the plugin's own, so the walks' share of it is named
+    # as the empty set: a skill added there again reddens this, and is walked by the rules.
+    # No mutation entry: what breaks this is a file added to the tree, not a line changed.
+    from stayfixed.overlay.template import template_root
+
+    assert TEMPLATE_SKILLS.parent == template_root()
+    assert [path for path in walked if TEMPLATE_SKILLS in path.parents] == []
+    assert set(entry_points()) == set(skills())
 
 
 @pytest.mark.parametrize("path", entry_points(), ids=_id)

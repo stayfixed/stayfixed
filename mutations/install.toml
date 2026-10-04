@@ -1733,6 +1733,20 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
 ]
 
+# An overlay a template generated carries no ledger, so the bytes a release shipped are the only
+# evidence that its copy of a retired file is stayfixed's, and `common/rules/README.md` was one
+# file in 0.1.x and another in 0.2.0: each copy needs its own digest. A recorded copy is removed by
+# its record, so only the unrecorded 0.2.0 cases redden.
+[[mutation]]
+name = "the rules README 0.2.0 shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '"62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",'
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.2.0-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.2.0-no-ledger]",
+]
+
 # Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may
 # rename its manifests or remove the old memory README; the report said the overlay was left alone
 # all the same.
