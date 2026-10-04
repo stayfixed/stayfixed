@@ -793,8 +793,8 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     if unchecked:
         status = RED
         parts.append(
-            f"{len(unchecked)} settings file(s) are valid JSON nested deeper than this check can "
-            f"follow, so nothing here can check the entries in them: {listed(unchecked)}"
+            f"{len(unchecked)} settings file(s) are nested deeper than this check can follow, so "
+            f"nothing here can check the entries in them: {listed(unchecked)}"
         )
         remedy = (
             "open each file named above and remove what you did not put there; stayfixed writes "

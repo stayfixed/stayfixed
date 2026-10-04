@@ -1153,8 +1153,8 @@ def _walked(tmp_path: Path, root: Path, label: str) -> Path:
 
 # What the row says of a settings file it cannot check, and what it tells the reader to do.
 UNCHECKABLE = (
-    "settings file(s) are valid JSON nested deeper than this check can follow, so nothing here can "
-    "check the entries in them"
+    "settings file(s) are nested deeper than this check can follow, so nothing here can check the "
+    "entries in them"
 )
 UNCHECKABLE_REMEDY = (
     "open each file named above and remove what you did not put there; stayfixed writes no "
