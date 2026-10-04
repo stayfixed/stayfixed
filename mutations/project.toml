@@ -1805,3 +1805,25 @@ reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
 
+# What a hint's report may carry out of it: count names in a fixed grammar, with plain integers.
+# A key is text the hint chose, and a path-shaped one would carry the walked tree's names into
+# `note` and into `stayfixed test hygiene --json`; taking a boolean for a count lets `True` through
+# as 1.
+[[mutation]]
+name = "a count keeps any string for its name"
+file = "src/stayfixed/profiles/hints.py"
+before = """        and COUNT_NAME.fullmatch(key)
+        and isinstance(value, int)"""
+after = "        and isinstance(value, int)"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else",
+  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]
+
+[[mutation]]
+name = "a count takes a boolean for a count"
+file = "src/stayfixed/profiles/hints.py"
+before = """        and not isinstance(value, bool)
+    }"""
+after = "    }"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]

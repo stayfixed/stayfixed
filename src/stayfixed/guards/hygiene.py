@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards import bashscan
+from stayfixed.profiles.hints import counts
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -82,21 +83,6 @@ def simple_commands(command: str) -> list[list[str]]:
         if words:
             found.append(words)
     return found
-
-
-def plain_counts(report: object) -> dict[str, int]:
-    """A fresh mapping of `report`'s string keys to its plain integer values, and nothing else.
-
-    `bool` is refused although it is an `int` to Python, as `red_exit` refuses it:
-    `True` is not a count. Anything that is not a mapping at all counts nothing.
-    """
-    if not isinstance(report, Mapping):
-        return {}
-    return {
-        key: value
-        for key, value in report.items()
-        if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)
-    }
 
 
 def red_exit(raw: Mapping[str, Any]) -> int | None:
@@ -164,7 +150,7 @@ def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:
     try:
-        return hint.note(plain_counts(hint.report(root, config)))
+        return hint.note(counts(hint, root, config))
     except Exception:
         return None
 

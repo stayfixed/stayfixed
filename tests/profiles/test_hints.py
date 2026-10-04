@@ -250,6 +250,7 @@ class LoudHint(FakeHint):
             "flag": True,
             "ratio": 0.5,
             7: 3,
+            str(root / "notes.txt"): 2,
         }
         return self.returned  # type: ignore[return-value]
 
@@ -262,10 +263,13 @@ def test_a_note_is_handed_counts_and_nothing_else(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The trust rule for a hint's line holds because `note` is handed counts and nothing else,
-    # so the core hands it a fresh mapping of string keys to plain integers, whatever `report`
-    # returned: a path, a boolean (an `int` to Python), a float and a non-string key are dropped
-    # before the hint renders anything, and the hint never sees the very object it returned.
-    # Oracle: `mutations/`, "a hint's note is handed its report as returned".
+    # so the core hands it a fresh mapping of count names to plain integers, whatever `report`
+    # returned: a path, a boolean (an `int` to Python), a float, a non-string key and a key shaped
+    # like a path are dropped before the hint renders anything, and the hint never sees the very
+    # object it returned. A key is text too, and one a hint built from the tree it walked would
+    # carry that tree's names into `note` and into `stayfixed test hygiene --json`. Oracle:
+    # `mutations/`, "a hint's note is handed its report as returned" and "a count keeps any
+    # string for its name".
     loud = LoudHint("x", "loud says")
     ship(monkeypatch, {"alpha": loud})
     root = a_project(tmp_path)

@@ -207,9 +207,9 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.hygiene import dirty_count, plain_counts
+    from stayfixed.guards.hygiene import dirty_count
     from stayfixed.profiles import detects, load_profile
-    from stayfixed.profiles.hints import shipped_hints
+    from stayfixed.profiles.hints import counts, shipped_hints
 
     root, config = _root_and_config(args)
     dirty = dirty_count(root)
@@ -226,16 +226,17 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     # the hook's: a hint whose `report` or `note` raises is an internal error here.
     reports: dict[str, dict[str, int]] = {}
     for name, hint in shipped_hints():
-        counts = plain_counts(hint.report(root, config))
-        note = hint.note(counts)
+        report = counts(hint, root, config)
+        note = hint.note(report)
         if note is None and not detects(load_profile(name), root):
             continue
-        reports[name] = counts
+        reports[name] = report
         if note:
             findings.append(f"{name}: {note}")
     # Counts, fixed sentences and shipped profiles' names only: a `ledger.code_roots` entry is a
     # repository-authored string and never reaches the summary. `data` is the documented
-    # exception and carries none either.
+    # exception and carries none either: each report is what `counts` kept, count names in a
+    # fixed grammar with plain integers.
     summary = "; ".join(findings) or "tree is clean" + "".join(
         f"; the {name} profile has nothing to report" for name in reports
     )

@@ -6,14 +6,16 @@ which hints speak, through `RedRunHint.recognises`, and `[stayfixed] profile` pl
 repository in several languages runs several stacks' suites, and the stack whose runner failed is
 the one whose advice applies.
 
-`note` receives counts and nothing else: the core passes every report through
-`stayfixed.guards.hygiene.plain_counts`, which keeps string keys with plain integer values and
-drops the rest, before it reaches `note` or `stayfixed test hygiene --json`. So no path, file
-name or command text a repository authored reaches a hint's line through what the hint is
-handed, and the trust rule (`CONTRIBUTING.md`, "Repository bytes are data") holds for every hint
-that renders from its argument alone, which is the contract below; a hint that kept a string
-from `report` on itself for `note` to print would break the contract, and nothing but review
-catches that.
+`note` receives counts and nothing else: both callers, the hook's notice and `stayfixed test
+hygiene`, read a report through `counts`, which keeps a key only when it is a count name
+(`COUNT_NAME`: lower-case letters, digits and underscores, at most 32 characters) and its value
+only when it is a plain integer, and drops the rest before anything reaches `note` or `--json`.
+A key is text a hint chose, and one built from the tree it walked would otherwise carry that
+tree's names out; the grammar admits no `/`, `.`, space or upper case, so no path, file name or
+command text a repository authored can pass as a count's name. So the trust rule
+(`CONTRIBUTING.md`, "Repository bytes are data") holds for every hint that renders from its
+argument alone, which is the contract below; a hint that kept a string from `report` on itself
+for `note` to print would break the contract, and nothing but review catches that.
 
 The listing goes through `importlib.resources` over this package, never over a repository path,
 so only a hint stayfixed itself ships is ever imported.
@@ -22,6 +24,7 @@ so only a hint stayfixed itself ships is ever imported.
 from __future__ import annotations
 
 import importlib
+import re
 from collections.abc import Mapping, Sequence
 from importlib import resources
 from pathlib import Path
@@ -33,6 +36,12 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
 HINT_FILE = "hygiene.py"
+# What a count may be called: a lower-case word of letters, digits and underscores, which is a
+# fixed name in a hint's code and never something read off the tree. The length is a named cap
+# (CONTRIBUTING.md#named-caps): 32 characters is room for any count's name and too little for a
+# sentence, and no shipped file changes with it (the Python profile's names are `stale` and
+# `roots`).
+COUNT_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
 
 
 class RedRunHint(Protocol):
@@ -45,7 +54,8 @@ class RedRunHint(Protocol):
         ...
 
     def report(self, root: Path, config: Config) -> Mapping[str, int]:
-        """The one walk: counts of what could have falsified the run, under `root`."""
+        """The one walk: counts of what could have falsified the run, under `root`, each under a
+        name `COUNT_NAME` matches; `counts` drops anything else."""
         ...
 
     def note(self, counts: Mapping[str, int]) -> str | None:
@@ -66,3 +76,21 @@ def shipped_hints() -> tuple[tuple[str, RedRunHint], ...]:
         module = importlib.import_module(f"{__package__}.{name}.hygiene")
         found.append((name, module.HINT))
     return tuple(found)
+
+
+def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:
+    """`hint`'s report under `root` as a fresh mapping of count names to plain integers.
+
+    A key that is not a string matching `COUNT_NAME` is dropped, and so is a value that is not
+    an `int`, or is a `bool`, which is an `int` to Python and is not a count (`red_exit` refuses
+    it for the same reason). What `report` raises reaches the caller: the hook's notice catches
+    it per hint, and `stayfixed test hygiene` reports it as an internal error.
+    """
+    return {
+        key: value
+        for key, value in hint.report(root, config).items()
+        if isinstance(key, str)
+        and COUNT_NAME.fullmatch(key)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+    }

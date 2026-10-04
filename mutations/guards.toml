@@ -911,10 +911,10 @@ reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"
 name = "a hint's note is computed outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
 before = """    try:
-        return hint.note(plain_counts(hint.report(root, config)))
+        return hint.note(counts(hint, root, config))
     except Exception:
         return None"""
-after = "    return hint.note(plain_counts(hint.report(root, config)))"
+after = "    return hint.note(counts(hint, root, config))"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
 
 [[mutation]]
@@ -952,21 +952,14 @@ reddens = [
 ]
 
 # A hint's `note` is handed counts and nothing else, which is what keeps a repository's strings out
-# of the line it renders: the report goes through `plain_counts` first, a fresh mapping of string
-# keys to plain integers. Handed as returned, a path the report carried reaches `note`; taking a
-# boolean for a count lets `True` through as 1.
+# of the line it renders: the report goes through `stayfixed.profiles.hints.counts` first, a fresh
+# mapping of count names to plain integers. Handed as returned, a path the report carried reaches
+# `note`. What `counts` keeps is held in `mutations/project.toml`, by its file.
 [[mutation]]
 name = "a hint's note is handed its report as returned"
 file = "src/stayfixed/guards/hygiene.py"
-before = "        return hint.note(plain_counts(hint.report(root, config)))"
+before = "        return hint.note(counts(hint, root, config))"
 after = "        return hint.note(hint.report(root, config))"
-reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
-
-[[mutation]]
-name = "plain counts take a boolean for a count"
-file = "src/stayfixed/guards/hygiene.py"
-before = "        if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)"
-after = "        if isinstance(key, str) and isinstance(value, int)"
 reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
 
 # `test hygiene` must not call clean a tree the hook calls stale: the hook asks every hint and
@@ -985,8 +978,8 @@ reddens = [
 [[mutation]]
 name = "test hygiene reports the first stack and stops"
 file = "src/stayfixed/guards/commands.py"
-before = "        reports[name] = counts"
-after = """        reports[name] = counts
+before = "        reports[name] = report"
+after = """        reports[name] = report
         break"""
 reddens = [
   "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
@@ -995,8 +988,8 @@ reddens = [
 [[mutation]]
 name = "test hygiene prints a report as the hint returned it"
 file = "src/stayfixed/guards/commands.py"
-before = "        counts = plain_counts(hint.report(root, config))"
-after = "        counts = dict(hint.report(root, config))"
+before = "        report = counts(hint, root, config)"
+after = "        report = dict(hint.report(root, config))"
 reddens = [
   "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
