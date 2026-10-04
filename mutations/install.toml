@@ -664,6 +664,43 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is",
 ]
 
+# An area's `register()` is its own code as its checks are, so it gets their guard: one that raises,
+# or answers something that is not a `Contribution`, costs one red row named after the area and not
+# the report, which otherwise ends in an internal error with no report at all.
+[[mutation]]
+name = "doctor calls an area's register() unguarded"
+file = "src/stayfixed/doctor/checks.py"
+before = "    except Exception as exc:  # an area's own code, guarded as its checks are"
+after = "    except OSError as exc:  # an area's own code, guarded as its checks are"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[raises]",
+]
+
+[[mutation]]
+name = "doctor takes whatever an area's register() returns"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if not _well_formed(contribution):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[none]",
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[bare-pairs]",
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[short-pair]",
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[name-not-text]",
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[check-not-callable]",
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[claims-not-callable]",
+]
+
+# The row for an area that could not register is about stayfixed's own code, so it is red in the
+# early report too, where every other check after the first skips for want of a configuration.
+[[mutation]]
+name = "the early report skips an area that could not register"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if isinstance(check, _Unregistered):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_is_red_even_with_nothing_else_to_check",
+]
+
 # The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an
 # area's contributed check gets the skip every core check after the first gets. Naming the early
 # report's rows from the core's registry alone drops every contributed row from it.

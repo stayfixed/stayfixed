@@ -64,9 +64,11 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from types import ModuleType
+from typing import TypeGuard
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
@@ -1114,13 +1116,70 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
             "check that the files and directories this check reads are readable here",
         )
     except Exception as exc:  # a broken check must cost one row, never the whole report
-        return Check(
-            name,
-            RED,
-            f"this check could not run: {type(exc).__name__}",
-            "report this, with the command you ran",
-        )
+        return Check(name, RED, f"this check could not run: {type(exc).__name__}", REPORT_THIS)
     return Check(name, row.status, row.detail, row.remedy)
+
+
+# The remedy of a row that is red because stayfixed's own code broke: nothing the reader did can
+# clear it, and the command they ran is what a fix starts from.
+REPORT_THIS = "report this, with the command you ran"
+
+
+@dataclass(frozen=True)
+class _Unregistered:
+    """The one check an area gets in place of its own when its `register()` gave none: a red row
+    saying so, named after the area and sitting where its rows would have been."""
+
+    detail: str
+
+    def __call__(self, context: Context) -> Row:
+        return Row(RED, self.detail, REPORT_THIS)
+
+
+def _well_formed(contribution: object) -> TypeGuard[Contribution]:
+    """Whether `register()` answered a `Contribution` of `(name, check)` pairs, each name text
+    and each check callable, with claims that are a function or absent.
+
+    Asked before any of it is read, because every way an area's own code can get this wrong —
+    `None`, the bare pairs, a pair without its check — otherwise fails later, inside the run,
+    where it costs the report."""
+    if not isinstance(contribution, Contribution) or not isinstance(contribution.checks, tuple):
+        return False
+    if contribution.claims is not None and not callable(contribution.claims):
+        return False
+    return all(
+        isinstance(pair, tuple)
+        and len(pair) == 2
+        and isinstance(pair[0], str)
+        and bool(pair[0])
+        and callable(pair[1])
+        for pair in contribution.checks
+    )
+
+
+def _registered(module: ModuleType) -> Contribution:
+    """`module.register()`, or one red row named after the area when it could not contribute.
+
+    `register()` is an area's code as its checks are, so it gets their guard: one that raises,
+    or answers something that is not a `Contribution`, costs that area's rows and not the report,
+    which used to end in an internal error with no report at all. The row names the exception's
+    type and never its message, for `_guarded`'s reason. The area's claims go with its rows, so
+    `hook-entries` then reads every entry that area put into settings files as one nothing
+    records, which is red: an area that cannot say what it wrote vouches for nothing.
+
+    The row's name is the area's, which is stayfixed's own package name and never
+    repository-authored, so it prints.
+    """
+    area = module.__name__.removesuffix(".doctor").rpartition(".")[2]
+    reason = f"{module.__name__} could not contribute its rows"
+    try:
+        contribution: object = module.register()
+    except Exception as exc:  # an area's own code, guarded as its checks are
+        return Contribution(checks=((area, _Unregistered(f"{reason}: {type(exc).__name__}")),))
+    if not _well_formed(contribution):
+        detail = f"{reason}: its register() did not return a Contribution of (name, check) pairs"
+        return Contribution(checks=((area, _Unregistered(detail)),))
+    return contribution
 
 
 class DuplicateCheck(Refusal):
@@ -1146,12 +1205,13 @@ def contributions() -> list[Contribution]:
     own code and never repository-authored, so the refusal prints them.
 
     Each area's `register()` is called once per call of this function, so whatever an area
-    resolves lazily for its checks is resolved afresh for each report.
+    resolves lazily for its checks is resolved afresh for each report, and through `_registered`,
+    so one that fails is one red row named after its area.
     """
     owners = dict.fromkeys((name for name, _ in CHECKS), "the core")
     found: list[Contribution] = []
     for module in discover_contributors():
-        contribution: Contribution = module.register()
+        contribution = _registered(module)
         for name, _ in contribution.checks:
             if name in owners:
                 raise DuplicateCheck(
@@ -1177,6 +1237,16 @@ def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Con
         for name, check in CHECKS
     )
     return core + tuple(check for contribution in contributed for check in contribution.checks)
+
+
+def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
+    """A row of the report that is built before any check can be asked: a skip giving `reason`,
+    because every check would be asked with no configuration to read — except an area's row for a
+    `register()` that failed, which is about stayfixed's own code, which no configuration changes,
+    and so is red here as everywhere."""
+    if isinstance(check, _Unregistered):
+        return Check(name, RED, check.detail, REPORT_THIS)
+    return Check(name, SKIP, reason, "")
 
 
 def _context(
@@ -1222,6 +1292,7 @@ def run_checks(
     # check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.
     first, *rest = [name for name, _ in registry]
+    asked = dict(registry)
     # Asked of the name before `is_file`, which follows a link: a symlinked `stayfixed.toml` goes
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
@@ -1236,7 +1307,7 @@ def run_checks(
                 "run `stayfixed init --yes`",
             ),
             *(
-                Check(name, SKIP, f"there is no {CONFIG_FILE} to check against", "")
+                _early(name, asked[name], f"there is no {CONFIG_FILE} to check against")
                 for name in rest
             ),
         ]
@@ -1262,7 +1333,7 @@ def run_checks(
                 f"configuration — {CONFIG_FILE} itself was not the problem",
                 f"run `stayfixed doctor` again after fixing {where}",
             ),
-            *(Check(name, SKIP, f"{blamed} does not load", "") for name in rest),
+            *(_early(name, asked[name], f"{blamed} does not load") for name in rest),
         ]
     except (Failure, Refusal):
         # The message is not quoted: the loader builds it out of the file's own keys and values.
@@ -1285,7 +1356,7 @@ def run_checks(
             )
         return [
             Check(first, RED, detail, remedy),
-            *(Check(name, SKIP, f"{CONFIG_FILE} does not load", "") for name in rest),
+            *(_early(name, asked[name], f"{CONFIG_FILE} does not load") for name in rest),
         ]
     context = _context(
         root,

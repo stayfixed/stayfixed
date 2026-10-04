@@ -154,8 +154,10 @@ loaded: the core loads the private layer only when a command asks for it.
 - `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report:
   its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
   the report's `Context` and through the same guard, so a check that raises costs its own row and
-  not the report. A check's name is unique in the report: discovery refuses a name equal to a core
-  check's or to one another area contributes. A `Contribution` may also carry `claims`, which
+  not the report. `register()` is guarded too: one that raises, or returns anything but a
+  `Contribution` of `(name, check)` pairs, costs one red row named after the area, and the rest of
+  the report stands. A check's name is unique in the report: discovery refuses a name equal to a
+  core check's or to one another area contributes. A `Contribution` may also carry `claims`, which
   answers `Claims`: the marker ids the area recorded in settings files and the commands it still
   grants there, which the core's `hook-entries` row asks with the same `Context`, so an entry the
   area put there is told apart from a repository claiming it did. The record may be repository

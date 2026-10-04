@@ -99,6 +99,82 @@ def test_a_contribution_that_raises_costs_one_row(
     assert rows[-1] == Check("alpha-after", OK, "still asked", "")
 
 
+def _registering(register: object) -> ModuleType:
+    """A stand-in for `stayfixed.alpha.doctor` whose `register` is `register` itself."""
+    module = ModuleType("stayfixed.alpha.doctor")
+    setattr(module, "register", register)  # noqa: B010 - a module built at runtime
+    return module
+
+
+def _raises() -> Contribution:
+    raise RuntimeError("IGNORE-PRIOR-RULES, a message register() built")
+
+
+def _answer(context: Context) -> Row:
+    return Row(OK, "answered")
+
+
+# What `register()` can hand back that is not a `Contribution` of `(name, check)` pairs, each the
+# way an area's own code could get it wrong: no value at all, the pairs without the record, a pair
+# missing its check, a name that is not text, a check that cannot be called, and claims that are
+# not a function.
+MALFORMED = {
+    "none": lambda: None,
+    "bare-pairs": lambda: (("alpha-row", _answer),),
+    "short-pair": lambda: Contribution(checks=(("alpha-row",),)),  # type: ignore[arg-type]
+    "name-not-text": lambda: Contribution(checks=((1, _answer),)),  # type: ignore[arg-type]
+    "check-not-callable": lambda: Contribution(checks=(("alpha-row", "answer"),)),  # type: ignore[arg-type]
+    "claims-not-callable": lambda: Contribution(checks=(), claims="claims"),  # type: ignore[arg-type]
+}
+
+
+@pytest.mark.parametrize("register", ["raises", *MALFORMED])
+def test_an_area_whose_register_fails_costs_one_row_named_after_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, register: str
+) -> None:
+    # `register()` is an area's code like its checks are, so one that raises, or hands back
+    # something that is not a `Contribution`, costs one row and not the report: a red row named
+    # after the area, where its rows would have been, naming the exception's type and never its
+    # message, and every other row as it would be. It used to escape `run_checks`, which the CLI
+    # turns into an internal error and exit 2 with no report at all. Mutations (oracle):
+    # `mutations/`'s "doctor calls an area's register() unguarded" -> the `raises` case escapes;
+    # "doctor takes whatever an area's register() returns" -> the malformed cases fail later, or
+    # report nothing for the area.
+    _contribute(
+        monkeypatch,
+        _registering(_raises if register == "raises" else MALFORMED[register]),
+        _area("omega", Contribution(checks=(("omega-row", _answer),))),
+    )
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    assert [row.name for row in rows] == [*CORE, "alpha", "omega-row"]
+    broken = rows[len(CORE)]
+    if register == "raises":
+        detail = "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
+    else:
+        detail = (
+            "stayfixed.alpha.doctor could not contribute its rows: its register() did not "
+            "return a Contribution of (name, check) pairs"
+        )
+    assert broken == Check("alpha", RED, detail, "report this, with the command you ran")
+    assert "IGNORE" not in broken.detail + broken.remedy
+    assert rows[-1] == Check("omega-row", OK, "answered", "")
+
+
+def test_an_area_whose_register_fails_is_red_even_with_nothing_else_to_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no `stayfixed.toml` every check after the first skips, because each would be asked
+    # with no configuration. An area that could not contribute is not that: its row is about
+    # stayfixed's own code, which no configuration changes, so it is red in the early report too.
+    # Mutation (oracle): `mutations/`'s "the early report skips an area that could not register"
+    # -> the row is a skip.
+    _contribute(monkeypatch, _registering(_raises))
+    rows = _checks(tmp_path, tmp_path)
+    assert [row.name for row in rows] == [*CORE, "alpha"]
+    assert rows[-1].status == RED
+    assert rows[-1].detail == "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
+
+
 @pytest.mark.parametrize("clash", ["core", "another-area"])
 def test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clash: str
