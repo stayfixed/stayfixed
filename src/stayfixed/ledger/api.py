@@ -7,9 +7,9 @@ it the configuration layer — into every `discover()` call. `tests/ledger/test_
 asserts the `__init__` imports nothing at all.
 
 **Outside this area, `stayfixed.assess.gates` imports `bugs_gate`, and `stayfixed.project.templates`
-(with its tests) imports `render_index` to write a new project's first index, and nothing else on
-this list**, measured over `src/`, `scripts/` and `tests/`. So every other name below is here on
-an argument rather than on a caller, and the argument is written beside it.
+(with its tests) imports `render_index` and `bug_register` to write a new project's first index,
+and nothing else on this list**, measured over `src/`, `scripts/` and `tests/`. So every other
+name below is here on an argument rather than on a caller, and the argument is written beside it.
 
 What is left is the two artifacts this area leaves on a project's disk, which outlive any area
 that reads them:
@@ -22,6 +22,11 @@ that reads them:
   `is_generated_index`, which recognises one already on disk rather than overwriting a file a
   person wrote. A tool that touches `docs/bug-reports.md` and cannot ask that question is the
   bug this pair exists to prevent.
+
+Both are read and written against a register: `Register`, with the `Schema` and the `Section`s it
+carries, and `bug_register`, which builds the bug ledger's from a project's configuration.
+`parse_entry`, `load_entries` and `render_index` each take one, so `tests/test_surfaces.py`
+derives the three types from their signatures.
 
 `Entry` is also what keeps this surface above `tests/test_surfaces.py`'s own floor, which
 refuses a surface exporting no function or record at all.
@@ -50,10 +55,15 @@ stays behind it in `stayfixed.ledger.check`.
 from stayfixed.ledger.check import bugs_gate
 from stayfixed.ledger.entries import Entry, LedgerError, load_entries, parse_entry
 from stayfixed.ledger.index import is_generated_index, render_index
+from stayfixed.ledger.register import Register, Schema, Section, bug_register
 
 __all__ = [
     "Entry",
     "LedgerError",
+    "Register",
+    "Schema",
+    "Section",
+    "bug_register",
     "bugs_gate",
     "is_generated_index",
     "load_entries",

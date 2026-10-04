@@ -16,9 +16,10 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import NO_ANSWER, git_run
-from stayfixed.ledger.check import EVIDENCE_LABEL, problems
+from stayfixed.ledger.check import problems
 from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import render_index
+from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
 from tests.gitfixture import git, plant_path, run_git
@@ -36,6 +37,9 @@ name = "widget"
 base_branch = "main"
 release_branch = "main"
 """
+
+# The values every filing below that is not about them passes.
+LOW = {"severity": "low", "area": "a"}
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -61,8 +65,9 @@ def seed(root: Path, config: Config, *numbers: int) -> None:
     for number in numbers:
         path = root / "docs" / "bugs" / f"BR-{number:03d}.md"
         path.write_text(entry(number), encoding="utf-8")
+    register = bug_register(config)
     (root / "docs" / "bug-reports.md").write_text(
-        render_index(load_entries(root, config), config), encoding="utf-8"
+        render_index(load_entries(root, register), register), encoding="utf-8"
     )
 
 
@@ -75,11 +80,9 @@ def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -
     root, config = project(tmp_path)
     filed = file_entry(
         root,
-        config,
+        bug_register(config),
         title="the reconciler collides with its own id",
-        severity="high",
-        area="delivery",
-        source="audit-2026-08-16",
+        values={"severity": "high", "area": "delivery", "source": "audit-2026-08-16"},
         today="2026-08-16",
         fetch=False,
     )
@@ -99,11 +102,15 @@ def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -
 def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     file_entry(
-        root, config, title="t", severity="low", area="a", source="#412 in the tracker", fetch=False
+        root,
+        bug_register(config),
+        title="t",
+        values={"severity": "low", "area": "a", "source": "#412 in the tracker"},
+        fetch=False,
     )
     written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert 'source: "#412 in the tracker"' in written
-    assert load_entries(root, config)[0].source == "#412 in the tracker"
+    assert load_entries(root, bug_register(config))[0].fields["source"] == "#412 in the tracker"
 
 
 def test_new_rejects_a_malformed_related_identifier_before_writing_anything(
@@ -112,7 +119,12 @@ def test_new_rejects_a_malformed_related_identifier_before_writing_anything(
     root, config = project(tmp_path)
     with pytest.raises(LedgerError):
         file_entry(
-            root, config, title="t", severity="low", area="a", related=("BR-2",), fetch=False
+            root,
+            bug_register(config),
+            title="t",
+            values={"severity": "low", "area": "a"},
+            related=("BR-2",),
+            fetch=False,
         )
     assert list((root / "docs" / "bugs").iterdir()) == []
     assert not (root / "docs" / "bug-reports.md").exists()
@@ -124,7 +136,7 @@ def test_new_refuses_over_foreign_index_content_without_writing(tmp_path: Path) 
     foreign = "# Bug reports\n\n## BR-009 — hand-written\n"
     index.write_text(foreign, encoding="utf-8")
     with pytest.raises(Refusal):
-        file_entry(root, config, title="t", severity="low", area="a", fetch=False)
+        file_entry(root, bug_register(config), title="t", values=LOW, fetch=False)
     assert list((root / "docs" / "bugs").iterdir()) == []
     # The refusal exists to stop the regeneration deleting the operator's own lines, so the
     # bytes are the assertion: an exception raised over a file already rewritten proves nothing.
@@ -145,7 +157,7 @@ def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(
     )
     before = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     with pytest.raises(LedgerError, match="already exists"):
-        file_entry(root, config, title="t", severity="low", area="a", fetch=False)
+        file_entry(root, bug_register(config), title="t", values=LOW, fetch=False)
     assert (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8") == before
 
 
@@ -158,7 +170,7 @@ def test_next_identifier_counts_void_numbers_and_a_filename_whose_id_disagrees(
     )
     # id BR-002 under filename BR-007
     (root / "docs" / "bugs" / "BR-007.md").write_text(entry(2), encoding="utf-8")
-    assert next_identifier(root, config, fetch=False).identifier == "BR-008"
+    assert next_identifier(root, bug_register(config), fetch=False).identifier == "BR-008"
 
 
 @needs_git
@@ -172,7 +184,7 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
     (root / "docs" / "bugs" / "BR-005.md").write_text(entry(5), encoding="utf-8")
     commit_all(root, "five")
     git(root, "checkout", "-q", "main")
-    assert next_identifier(root, config, fetch=False).identifier == "BR-006"
+    assert next_identifier(root, bug_register(config), fetch=False).identifier == "BR-006"
 
 
 @needs_git
@@ -196,7 +208,7 @@ def test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref(tmp_p
     plant_path(root, f"{config.paths.bugs}/caf".encode() + b"\xe9.txt")
     # Not `commit_all`: `add -A` would stage the planted name's removal, as no such file exists.
     git(root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "planted")
-    allocation = next_identifier(root, config, fetch=False)
+    allocation = next_identifier(root, bug_register(config), fetch=False)
     assert allocation.identifier == "BR-006"
     assert allocation.warning is None
 
@@ -224,7 +236,7 @@ def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(module, "git_run", failing)
-    allocation = next_identifier(root, config, fetch=False)
+    allocation = next_identifier(root, bug_register(config), fetch=False)
     assert allocation.identifier == "BR-002"
     assert allocation.warning is not None
     assert "history" in allocation.warning and "collide" in allocation.warning
@@ -244,7 +256,7 @@ def test_outside_a_repository_there_is_no_history_to_warn_about(
     root, config = project(tmp_path)
     if not git_runs:
         monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
-    assert next_identifier(root, config, fetch=False).warning is None
+    assert next_identifier(root, bug_register(config), fetch=False).warning is None
 
 
 @needs_git
@@ -282,7 +294,7 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
     )
     wrapper.chmod(0o755)
     monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
-    allocation = next_identifier(root, config, fetch=False)
+    allocation = next_identifier(root, bug_register(config), fetch=False)
     assert allocation.identifier == "BR-002"
     assert allocation.warning is not None
     assert "git log exited 128" in allocation.warning
@@ -305,7 +317,7 @@ def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path:
     (root / "docs" / "bugs" / "BR-42.md").write_text("a two-digit name\n", encoding="utf-8")
     commit_all(root, "five, and a name too short to be an identifier")
     git(root, "checkout", "-q", "main")
-    assert next_identifier(root, config, fetch=False).identifier == "BR-006"
+    assert next_identifier(root, bug_register(config), fetch=False).identifier == "BR-006"
 
 
 def test_a_failed_fetch_is_reported_not_raised(
@@ -323,7 +335,7 @@ def test_a_failed_fetch_is_reported_not_raised(
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(module, "git_run", failing)
-    allocation = next_identifier(root, config, fetch=True)
+    allocation = next_identifier(root, bug_register(config), fetch=True)
     assert allocation.identifier == "BR-001"
     assert allocation.warning is not None and "fetch" in allocation.warning
 
@@ -338,7 +350,7 @@ def test_a_fetch_that_gave_no_answer_names_every_cause_and_not_only_two(
     from stayfixed.ledger import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
-    warning = next_identifier(root, config, fetch=True).warning
+    warning = next_identifier(root, bug_register(config), fetch=True).warning
     assert warning is not None and NO_ANSWER in warning
 
 
@@ -518,7 +530,7 @@ def test_a_successful_fetch_leaves_no_warning(
     from stayfixed.ledger import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (0, ""))
-    assert next_identifier(root, config, fetch=True).warning is None
+    assert next_identifier(root, bug_register(config), fetch=True).warning is None
 
 
 @needs_git
@@ -550,7 +562,9 @@ def test_the_fetch_asks_origin_alone_and_never_a_submodules_remote(
     commit_all(upstream, "move the submodule")
     if gone:
         shutil.rmtree(sub)
-    allocation = next_identifier(root, load(root, machine=tmp_path / "m.toml"), fetch=True)
+    allocation = next_identifier(
+        root, bug_register(load(root, machine=tmp_path / "m.toml")), fetch=True
+    )
     assert allocation.identifier == "BR-001"
     assert allocation.warning is None
     assert run_git(root / "sub", "cat-file", "-e", two).returncode != 0
@@ -559,7 +573,7 @@ def test_the_fetch_asks_origin_alone_and_never_a_submodules_remote(
 def test_the_allocator_starts_at_one_before_the_ledger_directory_exists(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     (root / "docs" / "bugs").rmdir()
-    assert next_identifier(root, config, fetch=False).identifier == "BR-001"
+    assert next_identifier(root, bug_register(config), fetch=False).identifier == "BR-001"
 
 
 def test_a_severity_outside_the_vocabulary_is_rejected_before_anything_is_allocated(
@@ -569,7 +583,13 @@ def test_a_severity_outside_the_vocabulary_is_rejected_before_anything_is_alloca
     # is on the import surface and a consumer calling it directly gets no `choices=`.
     root, config = project(tmp_path)
     with pytest.raises(LedgerError, match="--severity must be one of"):
-        file_entry(root, config, title="t", severity="huge", area="a", fetch=False)
+        file_entry(
+            root,
+            bug_register(config),
+            title="t",
+            values={"severity": "huge", "area": "a"},
+            fetch=False,
+        )
     assert list((root / "docs" / "bugs").iterdir()) == []
 
 

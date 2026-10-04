@@ -32,9 +32,9 @@ rather than the fixture rebuilt.** `tests/test_fixtures.py` runs every gate over
 those five files are what the gates read — a bug index listing `BR-001`, a roadmap carrying the
 trail listing, a `trail.toml` declaring a state per document, a bug-reports runbook. A fixture
 regenerated from a clean `init` would carry the templates' empty forms instead (`render_index([],
-config)` lists no bug at all), so the gates would be checking a project with nothing in it; and
-`init` could not write a `[ci] ref` for it either, because no released tag names this version's
-commit. The honest claim is the narrow one, and it is the one asserted here.
+bug_register(config))` lists no bug at all), so the gates would be checking a project with
+nothing in it; and `init` could not write a `[ci] ref` for it either, because no released tag
+names this version's commit. The honest claim is the narrow one, and it is the one asserted here.
 """
 
 from __future__ import annotations

@@ -18,9 +18,10 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.gitenv import NO_ANSWER, git_run
 from stayfixed.ledger import check
-from stayfixed.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
+from stayfixed.ledger.check import problems, uninitialised
 from stayfixed.ledger.entries import load_entries
 from stayfixed.ledger.index import render_index
+from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
 from stayfixed.ledger.write import renumber
 from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, needs_git
 
@@ -60,8 +61,9 @@ def ledger(root: Path, config: Config, entries: dict[str, str]) -> None:
     bugs.mkdir(parents=True, exist_ok=True)
     for name, text in entries.items():
         (bugs / f"{name}.md").write_text(text, encoding="utf-8")
+    register = bug_register(config)
     (root / "docs" / "bug-reports.md").write_text(
-        render_index(load_entries(root, config), config), encoding="utf-8"
+        render_index(load_entries(root, register), register), encoding="utf-8"
     )
 
 
@@ -118,7 +120,9 @@ def _based(tmp_path: Path, on_base: str) -> tuple[Path, Config, str]:
     if on_base == "directory":
         (root / "docs" / "bug-reports.md").unlink()
     if on_base == "index":
-        (root / "docs" / "bug-reports.md").write_text(render_index([], config), encoding="utf-8")
+        (root / "docs" / "bug-reports.md").write_text(
+            render_index([], bug_register(config)), encoding="utf-8"
+        )
     (root / "README.md").write_text("widget\n", encoding="utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "base")
@@ -179,8 +183,9 @@ def _drop(root: Path, config: Config, *names: str) -> None:
     for name in names:
         (root / "docs" / "bugs" / f"{name}.md").unlink()
     (root / "docs" / "bugs" / ".gitkeep").write_text("", encoding="utf-8")
+    register = bug_register(config)
     (root / "docs" / "bug-reports.md").write_text(
-        render_index(load_entries(root, config), config), encoding="utf-8"
+        render_index(load_entries(root, register), register), encoding="utf-8"
     )
 
 
@@ -259,7 +264,9 @@ def test_an_entry_renamed_only_in_case_is_entry_removed_where_the_filesystem_fol
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     bugs = root / "docs" / "bugs"
     (bugs / "BR-001.md").rename(bugs / "br-001.md")
-    (root / "docs" / "bug-reports.md").write_text(render_index([], config), encoding="utf-8")
+    (root / "docs" / "bug-reports.md").write_text(
+        render_index([], bug_register(config)), encoding="utf-8"
+    )
     (root / "src" / "a.py").write_text("", encoding="utf-8")
     real = os.path.lexists
 
@@ -488,7 +495,9 @@ def test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledge
 def test_a_generated_index_with_no_entries_directory_is_a_deleted_ledger(tmp_path: Path) -> None:
     # Mutation: drop the `is_generated_index` conjunct from `uninitialised` — this reddens.
     root, config = project(tmp_path)
-    (root / "docs" / "bug-reports.md").write_text(render_index([], config), encoding="utf-8")
+    (root / "docs" / "bug-reports.md").write_text(
+        render_index([], bug_register(config)), encoding="utf-8"
+    )
     assert not uninitialised(root, config)
     assert rules(root, config) == ["entries-missing"]
 

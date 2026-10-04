@@ -17,9 +17,8 @@ from stayfixed.errors import Refusal
 from stayfixed.ledger.check import problems
 from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import (
-    GENERATED_BY,
-    SECTIONS,
     foreign_index_lines,
+    generated_by,
     header,
     index_path,
     index_text,
@@ -27,6 +26,7 @@ from stayfixed.ledger.index import (
     refuse_index_overwrite,
     render_index,
 )
+from stayfixed.ledger.register import BUG_SCHEMA, bug_register
 
 CONFIG = """
 [stayfixed]
@@ -79,9 +79,10 @@ def ledger(root: Path, entries: dict[int, str]) -> None:
 
 def test_the_header_is_computed_from_the_configured_paths(tmp_path: Path) -> None:
     _root, config = project(tmp_path)
-    assert header(config) == (
+    register = bug_register(config)
+    assert header(register) == (
         "# Bug reports\n\n"
-        f"{GENERATED_BY} from `bugs/BR-*.md`; edit the entry\n"
+        f"{generated_by(register)} from `bugs/BR-*.md`; edit the entry\n"
         "files, not this one. How to file, close and reference an entry:\n"
         "[runbook](runbooks/bug-reports.md). Audit provenance: "
         "[docs/bugs/audits/](bugs/audits/)._\n"
@@ -94,13 +95,15 @@ def test_the_header_follows_a_moved_ledger(tmp_path: Path) -> None:
         tmp_path,
         '\n[paths]\nbugs = "ledger/entries"\nbug_index = "ledger/INDEX.md"\nrunbooks = "guides"\n',
     )
-    text = header(config)
+    register = bug_register(config)
+    text = header(register)
     assert "from `entries/BR-*.md`" in text
     assert "[runbook](../guides/bug-reports.md)" in text
 
 
 def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -> None:
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(
         root,
         {
@@ -110,8 +113,8 @@ def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -
             4: entry(4, "partial", "high"),
         },
     )
-    text = render_index(load_entries(root, config), config)
-    assert text.startswith(header(config))
+    text = render_index(load_entries(root, register), register)
+    assert text.startswith(header(register))
     assert (
         "## Open (1)\n\n| ID | Sev | Area | Title | Found |\n|---|---|---|---|---|\n"
         "| [BR-001](bugs/BR-001.md) | low | an area | a title | 2026-01-02 |\n"
@@ -129,15 +132,16 @@ def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -
 
 
 def test_every_status_has_a_section_to_be_rendered_into() -> None:
-    from stayfixed.ledger.entries import STATUSES
-
     # Every status the reader accepts has a section to be rendered into, and no section
     # renders a status the reader would reject: a set equality, because the index's reading
     # order is not the reader's vocabulary order and never was.
-    assert {status for status, _ in SECTIONS} == set(STATUSES)
+    sections = BUG_SCHEMA.sections
+    assert {status for section in sections for status in section.statuses} == set(
+        BUG_SCHEMA.statuses
+    )
     # The reading order is load-bearing (regeneration must be byte-identical), so it is pinned
-    # here as a literal rather than derived from `STATUSES`.
-    assert [status for status, _ in SECTIONS] == [
+    # here as a literal rather than derived from the schema's statuses.
+    assert [status for section in sections for status in section.statuses] == [
         "open",
         "partial",
         "rejected",
@@ -150,10 +154,11 @@ def test_a_cell_escapes_what_would_break_out_of_its_column(tmp_path: Path) -> No
     # Backslash first: escaping only the pipe renders `\|` as an escaped backslash and a live
     # separator, and the Found date slides under the wrong heading.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1, title='"a \\\\| b"')})
     rows = [
         line
-        for line in render_index(load_entries(root, config), config).splitlines()
+        for line in render_index(load_entries(root, register), register).splitlines()
         if line.startswith("| [BR-001]")
     ]
     assert rows == ["| [BR-001](bugs/BR-001.md) | low | an area | a \\\\\\| b | 2026-01-02 |"]
@@ -162,15 +167,17 @@ def test_a_cell_escapes_what_would_break_out_of_its_column(tmp_path: Path) -> No
 
 def test_an_empty_ledger_still_renders_every_section_header(tmp_path: Path) -> None:
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {})
-    text = render_index([], config)
-    for _, heading in SECTIONS:
-        assert f"## {heading} (0)" in text
+    text = render_index([], register)
+    for section in register.schema.sections:
+        assert f"## {section.heading} (0)" in text
 
 
 def test_a_generated_index_is_recognised_by_its_first_paragraph(tmp_path: Path) -> None:
     _root, config = project(tmp_path)
-    assert is_generated_index(render_index([], config))
+    register = bug_register(config)
+    assert is_generated_index(render_index([], register))
     # The generator this one replaces wrote a different invocation into the same sentence;
     # adopting the port must not refuse to regenerate over it.
     assert is_generated_index(
@@ -182,20 +189,23 @@ def test_a_generated_index_is_recognised_by_its_first_paragraph(tmp_path: Path) 
 
 def test_a_reworded_generated_header_is_a_stale_index_not_foreign_content(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    text = render_index([], config).replace(
+    register = bug_register(config)
+    text = render_index([], register).replace(
         "edit the entry\nfiles", "edit the entry files\nand nothing else"
     )
-    assert foreign_index_lines(root, text, config) == []
+    assert foreign_index_lines(root, text, register) == []
 
 
 def test_a_paragraph_added_under_the_generated_header_is_still_foreign(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    text = render_index([], config).replace("\n## Open", "\nAn operator's note.\n\n## Open", 1)
-    assert foreign_index_lines(root, text, config) == ["An operator's note."]
+    register = bug_register(config)
+    text = render_index([], register).replace("\n## Open", "\nAn operator's note.\n\n## Open", 1)
+    assert foreign_index_lines(root, text, register) == ["An operator's note."]
 
 
 def test_every_line_the_generator_writes_is_inside_the_grammar_it_enforces(tmp_path: Path) -> None:
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(
         root,
         {
@@ -205,7 +215,10 @@ def test_every_line_the_generator_writes_is_inside_the_grammar_it_enforces(tmp_p
             4: entry(4, "rejected"),
         },
     )
-    assert foreign_index_lines(root, render_index(load_entries(root, config), config), config) == []
+    assert (
+        foreign_index_lines(root, render_index(load_entries(root, register), register), register)
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -222,10 +235,11 @@ def test_index_refuses_to_delete_any_content_it_did_not_generate(tmp_path: Path,
     # that write with no diff and exit 0. Mutation: make `foreign_index_lines` return `[]` —
     # every case reddens.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1)})
-    current = render_index(load_entries(root, config), config) + f"\n{line}\n"
+    current = render_index(load_entries(root, register), register) + f"\n{line}\n"
     with pytest.raises(Refusal, match="did not generate"):
-        refuse_index_overwrite(root, config, current)
+        refuse_index_overwrite(root, register, current)
 
 
 def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_path: Path) -> None:
@@ -236,14 +250,15 @@ def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_pat
     # exit 0. `ENTRIES_MISSING` never fires here: the ledger directory is still there.
     # Mutation: allow any `|` line in `foreign_index_lines` — every assertion reddens.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1), 2: entry(2, title="the only record of this bug")})
-    current = render_index(load_entries(root, config), config)
+    current = render_index(load_entries(root, register), register)
     (root / "docs" / "bug-reports.md").write_text(current, encoding="utf-8")
     (root / "docs" / "bugs" / "BR-002.md").unlink()
-    foreign = foreign_index_lines(root, current, config)
+    foreign = foreign_index_lines(root, current, register)
     assert len(foreign) == 1 and "the only record of this bug" in foreign[0]
     with pytest.raises(Refusal, match="recover it before regenerating"):
-        refuse_index_overwrite(root, config, current)
+        refuse_index_overwrite(root, register, current)
     rules = [f.rule for f in problems(root, config)]
     assert "foreign-index-content" in rules and "stale-index" not in rules
 
@@ -252,17 +267,18 @@ def test_an_injected_section_of_hand_written_rows_is_foreign(tmp_path: Path) -> 
     # A whole `## Open (99)` section of rows nobody generated was classified clean for the same
     # reason: every one of its lines opens with `|`. Mutation: allow any `|` line — this reddens.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1)})
     injected = (
         "| [BR-900](bugs/BR-900.md) | high | area | filed by hand | 2026-02-02 |\n"
         "| [BR-901](bugs/BR-901.md) | high | area | and another | 2026-02-02 |\n"
     )
-    current = render_index(load_entries(root, config), config).replace(
+    current = render_index(load_entries(root, register), register).replace(
         "\n## Partially fixed", f"{injected}\n## Partially fixed", 1
     )
-    assert len(foreign_index_lines(root, current, config)) == 2
+    assert len(foreign_index_lines(root, current, register)) == 2
     with pytest.raises(Refusal, match="recover it before regenerating"):
-        refuse_index_overwrite(root, config, current)
+        refuse_index_overwrite(root, register, current)
 
 
 def test_an_index_over_an_empty_entry_directory_is_refused_row_by_row(tmp_path: Path) -> None:
@@ -273,31 +289,34 @@ def test_an_index_over_an_empty_entry_directory_is_refused_row_by_row(tmp_path: 
     # fail-closed answer, and every row is foreign. Mutation: allow any `|` line in
     # `foreign_index_lines` — both assertions redden.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1), 2: entry(2)})
-    current = render_index(load_entries(root, config), config)
+    current = render_index(load_entries(root, register), register)
     for path in (root / "docs" / "bugs").iterdir():
         path.unlink()
     assert (root / "docs" / "bugs").is_dir()  # the directory survives, so ENTRIES_MISSING cannot
-    assert len(foreign_index_lines(root, current, config)) == 2
+    assert len(foreign_index_lines(root, current, register)) == 2
     with pytest.raises(Refusal, match="recover it before regenerating"):
-        refuse_index_overwrite(root, config, current)
+        refuse_index_overwrite(root, register, current)
 
 
 def test_a_generated_index_whose_entry_files_are_gone_is_refused(tmp_path: Path) -> None:
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1)})
-    current = render_index(load_entries(root, config), config)
+    current = render_index(load_entries(root, register), register)
     shutil.rmtree(root / "docs" / "bugs")
     with pytest.raises(Refusal, match="restore them rather than regenerating"):
-        refuse_index_overwrite(root, config, current)
+        refuse_index_overwrite(root, register, current)
 
 
 def test_a_stale_but_generated_index_is_not_refused(tmp_path: Path) -> None:
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1)})
-    stale = render_index([], config)
-    refuse_index_overwrite(root, config, stale)  # no raise: the remedy is regeneration
-    assert index_path(root, config) == root / "docs" / "bug-reports.md"
+    stale = render_index([], register)
+    refuse_index_overwrite(root, register, stale)  # no raise: the remedy is regeneration
+    assert index_path(root, register) == root / "docs" / "bug-reports.md"
 
 
 def test_an_index_that_cannot_be_decoded_is_a_ledger_error_not_an_empty_index(
@@ -306,17 +325,19 @@ def test_an_index_that_cannot_be_decoded_is_a_ledger_error_not_an_empty_index(
     # Answering `""` for an index that exists but cannot be read would say the ledger is
     # uninitialised and pass the check over a tree nobody has looked at.
     root, config = project(tmp_path)
+    register = bug_register(config)
     (root / "docs").mkdir(exist_ok=True)
     (root / "docs" / "bug-reports.md").write_bytes(b"# Bug reports\n\n\xff\n")
     with pytest.raises(LedgerError, match="is not valid UTF-8"):
-        index_text(root, config)
+        index_text(root, register)
 
 
 def test_load_entries_reports_an_undecodable_entry_as_a_ledger_error(tmp_path: Path) -> None:
     # The ledger's writing commands call `load_entries`; a bare `UnicodeDecodeError` out of it
     # would reach the frame as an internal error rather than as findings.
     root, config = project(tmp_path)
+    register = bug_register(config)
     ledger(root, {1: entry(1)})
     (root / "docs" / "bugs" / "BR-002.md").write_bytes(b"---\nid: BR-002\ntitle: \xff\n---\n")
     with pytest.raises(LedgerError, match="is not valid UTF-8"):
-        load_entries(root, config)
+        load_entries(root, register)

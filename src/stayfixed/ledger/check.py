@@ -15,7 +15,7 @@ from stayfixed.identifiers import identifiers
 from stayfixed.ledger.entries import (
     Entry,
     LedgerError,
-    bugs_dir,
+    entry_dir,
     parse_entry,
     read_ledger_text,
 )
@@ -27,6 +27,7 @@ from stayfixed.ledger.index import (
     is_generated_index,
     render_index,
 )
+from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
 from stayfixed.ledger.scan import code_mentions, entry_citations
 
 if TYPE_CHECKING:
@@ -35,11 +36,6 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
 
-EVIDENCE_LABEL = "**What this evidence does not establish:**"
-# The template writes this after the label; a `high` entry with the placeholder untouched has
-# not filled the line in. One constant feeds both the template and the rule so they cannot
-# drift apart.
-EVIDENCE_PLACEHOLDER = "the reading a later plan must not inherit"
 # The negative lookahead is the point: the scaffold writes this line with its own placeholder
 # text, so a bare match on the label would let every freshly filed entry satisfy the rule
 # without anyone having written a word — a placeholder that satisfies its own check is the
@@ -80,7 +76,9 @@ def uninitialised(root: Path, config: Config) -> bool:
     is the point — the directory missing on its own also describes a ledger whose entry files
     were deleted under a generated index that still links every one of them. Only citations
     are checked here, so the gate can be registered before the first entry."""
-    return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))
+    register = bug_register(config)
+    directory = entry_dir(root, register)
+    return not directory.is_dir() and not is_generated_index(index_text(root, register))
 
 
 def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
@@ -156,7 +154,7 @@ def _removed_entries(root: Path, config: Config, base: _BaseLedger | None) -> li
     if base is None:
         return []
     try:
-        present = set(os.listdir(bugs_dir(root, config)))
+        present = set(os.listdir(entry_dir(root, bug_register(config))))
     except OSError:
         present = set()
     return [
@@ -244,8 +242,9 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     carried = _base_ledger(root, config, base) if base else None
     if uninitialised(root, config):
         return _unledgered(root, config, carried)
-    ids = identifiers(config)
-    bugs = bugs_dir(root, config)
+    register = bug_register(config)
+    ids = register.ids
+    bugs = entry_dir(root, register)
     index_name = config.paths.bug_index
     # First: a deleted entry is the most structural finding a ledger can have.
     found = _removed_entries(root, config, carried)
@@ -268,7 +267,7 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
             found.append(Finding("conflict-marker", relative, None, "unresolved conflict marker"))
             continue
         try:
-            entry = parse_entry(text, path=path.relative_to(root), ids=ids)
+            entry = parse_entry(text, path=path.relative_to(root), register=register)
         except LedgerError as error:
             found.append(Finding("unreadable-entry", relative, None, str(error)))
             continue
@@ -288,13 +287,14 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
                     "frontmatter alone",
                 )
             )
-        if entry.severity in required and not _EVIDENCE_BOUNDARY.search(entry.body):
+        level = entry.fields[register.schema.level]
+        if level in required and not _EVIDENCE_BOUNDARY.search(entry.body):
             found.append(
                 Finding(
                     "evidence-boundary",
                     relative,
                     None,
-                    f"severity `{entry.severity}` needs a filled `{EVIDENCE_LABEL}` line — a "
+                    f"{register.schema.level} `{level}` needs a filled `{EVIDENCE_LABEL}` line — a "
                     "plan built on this entry inherits its silences as premises",
                 )
             )
@@ -331,8 +331,8 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
                     )
                 )
 
-    current = index_text(root, config)
-    foreign = foreign_index_lines(root, current, config)
+    current = index_text(root, register)
+    foreign = foreign_index_lines(root, current, register)
     if foreign:
         found.append(
             Finding(
@@ -344,7 +344,7 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
         )
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
-    elif current != render_index(sorted(entries, key=lambda e: e.number), config):
+    elif current != render_index(sorted(entries, key=lambda e: e.number), register):
         found.append(
             Finding("stale-index", index_name, None, "is stale; run: stayfixed bugs index")
         )

@@ -9,7 +9,7 @@ from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags, root_and_config
 from stayfixed.findings import labels, listed
-from stayfixed.ledger.entries import SEVERITIES
+from stayfixed.ledger.register import BUG_SCHEMA, bug_register
 from stayfixed.printed import printable
 from stayfixed.result import Result
 
@@ -27,11 +27,12 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.index import index_text, refuse_index_overwrite, render_index
 
     root, config = root_and_config(args)
-    current = index_text(root, config)
-    refuse_index_overwrite(root, config, current)
-    entries = load_entries(root, config)
-    rendered = render_index(entries, config)
-    index = config.paths.bug_index
+    register = bug_register(config)
+    current = index_text(root, register)
+    refuse_index_overwrite(root, register, current)
+    entries = load_entries(root, register)
+    rendered = render_index(entries, register)
+    index = register.index
     if args.check:
         if current != rendered:
             return Result(
@@ -72,11 +73,9 @@ def run_bugs_new(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     filed = file_entry(
         root,
-        config,
+        bug_register(config),
         title=args.title,
-        severity=args.severity,
-        area=args.area,
-        source=args.source,
+        values={"severity": args.severity, "area": args.area, "source": args.source},
         related=tuple(args.related),
         fetch=not args.no_fetch,
     )
@@ -116,7 +115,7 @@ def register(groups: SubParsers) -> None:
     sub = bugs.add_subparsers(dest="command", metavar="<command>")
     new = common_flags(sub.add_parser("new", help="file a new entry and regenerate the index"))
     new.add_argument("title")
-    new.add_argument("--severity", required=True, choices=SEVERITIES)
+    new.add_argument("--severity", required=True, choices=BUG_SCHEMA.levels)
     new.add_argument("--area", required=True)
     new.add_argument("--source", default="")
     new.add_argument("--related", nargs="*", default=[])

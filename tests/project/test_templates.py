@@ -15,7 +15,7 @@ from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import HARNESSES
-from stayfixed.ledger.api import render_index
+from stayfixed.ledger.api import bug_register, render_index
 from stayfixed.profiles import load_profile
 from stayfixed.project.api import PROJECT_FILES, Prepared, project_templates
 from stayfixed.project.footprint import LOCAL_PROFILE, refuse_local_profile
@@ -160,7 +160,7 @@ def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     assert by_id["gitignore"].style is Style.HASH and by_id["gitignore"].render() == IGNORE_BODY
     assert by_id["agents-md"].region == "harness"
     assert "docs/plan/roadmap.md" in by_id["agents-md"].render()
-    assert by_id["bug-index"].render() == render_index([], moved)
+    assert by_id["bug-index"].render() == render_index([], bug_register(moved))
 
 
 # The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`
