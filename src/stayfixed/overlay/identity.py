@@ -39,7 +39,7 @@ from pathlib import Path
 
 from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Refusal
-from stayfixed.overlay.layout import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.overlay.layout import CODEX_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
 # One path segment: `config.schema.PROJECT_NAME`, the one name grammar. An owner name becomes a
 # directory, half a remote path, a marketplace selector and the suffix on both manifest names, so
@@ -72,6 +72,30 @@ def _claims(value: object, expected: str) -> bool:
         return True
     suffix = value.removeprefix(f"{expected}-")
     return suffix != value and bool(SEGMENT.match(suffix))
+
+
+def owner_of(root: Path) -> str | None:
+    """The account `overlay init` named this overlay after, or `None` where it named nobody.
+
+    Read from the manifests themselves, in the order `init` writes them, and from the first that
+    carries a suffix: an `init` that could not write one of them still named the others. The
+    marketplace is matched against its own name, because `stayfixed-overlay-marketplace-<owner>`
+    also starts with the plugin's `stayfixed-overlay-`. A suffix that is not one path segment is
+    not an owner; nothing read here is quoted anywhere, it only decides a rename.
+    """
+    for relative, expected in (
+        (PLUGIN_MANIFEST, OVERLAY_PLUGIN),
+        (MARKETPLACE_MANIFEST, OVERLAY_MARKETPLACE),
+        (CODEX_PLUGIN_MANIFEST, OVERLAY_PLUGIN),
+    ):
+        try:
+            document = json.loads((root / relative).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        name = document.get("name") if isinstance(document, dict) else None
+        if isinstance(name, str) and _claims(name, expected) and name != expected:
+            return name.removeprefix(f"{expected}-")
+    return None
 
 
 def overlay_fault(root: Path) -> str | None:

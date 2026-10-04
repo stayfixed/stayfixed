@@ -1725,21 +1725,67 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
 ]
 
-# A stop after the manifests were renamed exited with their new records only in memory, so the
-# renamed manifests read as hand-edited to every later `upgrade`.
+# A manifest `init` could not write stopped it on a bare `PermissionError`, with the manifests
+# before it renamed and their new records only in memory, so every later `upgrade` read them as
+# hand-edited.
 [[mutation]]
-name = "overlay init records its renames only after the removal"
+name = "overlay init stops at a manifest it cannot write"
 file = "src/stayfixed/overlay/create.py"
-before = """    if restamped:
-        ledger.write(root)
-    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
-    if changed:
-        ledger.write(root)"""
-after = """    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
-    if changed or restamped:
-        ledger.write(root)"""
+before = """                "`stayfixed overlay init` names it once it can be"
+            )
+            continue"""
+after = """                "`stayfixed overlay init` names it once it can be"
+            )
+            raise"""
 reddens = [
-  "tests/overlay/test_upgrade.py::test_init_that_stops_part_way_keeps_the_manifests_it_renamed_recorded",
+  "tests/overlay/test_upgrade.py::test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded",
+]
+
+# `init` re-stamps the manifests it renames, so a refresh from the template as it ships read them as
+# untouched and put `stayfixed-overlay` back: the collision the owner suffix prevents.
+[[mutation]]
+name = "overlay upgrade refreshes a manifest init named back to the template's name"
+file = "src/stayfixed/overlay/upgrade.py"
+before = "    shipped = [*named_after(templates(), owner_of(root)), *retired()]"
+after = "    shipped = [*templates(), *retired()]"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
+  "tests/overlay/test_upgrade.py::test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name",
+]
+
+# An install whose template tree cannot be read stopped `init` after the old README was removed,
+# and its record stayed in the ledger for good.
+[[mutation]]
+name = "overlay init stops at a template tree it cannot read"
+file = "src/stayfixed/overlay/create.py"
+before = "    except Failure as exc:"
+after = "    except ZeroDivisionError as exc:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped",
+]
+
+# Pruning ran over the directory of a successor `init` could not write, so `common/memory/` went
+# with its only file.
+[[mutation]]
+name = "overlay init prunes the directory of a successor it could not write"
+file = "src/stayfixed/overlay/create.py"
+before = "        if SUCCESSORS.get(target) not in unwritten:"
+after = "        if True:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on",
+  "tests/overlay/test_upgrade.py::test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped",
+]
+
+# A relocation whose file was already gone printed `removed <path>` over a missing file, and
+# `cannot be removed` over a missing directory.
+[[mutation]]
+name = "overlay init says it removed a file that was already gone"
+file = "src/stayfixed/overlay/create.py"
+before = "        present = os.path.lexists(root / action.target)"
+after = "        present = True"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_does_not_say_it_removed_a_relocated_file_that_was_already_gone[directory-there]",
+  "tests/overlay/test_upgrade.py::test_init_does_not_say_it_removed_a_relocated_file_that_was_already_gone[directory-gone]",
 ]
 
 # A retired file `overlay init` could not remove stopped the run: the files already removed were
@@ -1748,9 +1794,9 @@ reddens = [
 [[mutation]]
 name = "overlay init stops at a retired file it cannot remove"
 file = "src/stayfixed/overlay/create.py"
-before = """            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
-            continue"""
-after = """            raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc"""
+before = """                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+                continue"""
+after = """                raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc"""
 reddens = [
   "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
 ]
@@ -1799,10 +1845,7 @@ reddens = [
 [[mutation]]
 name = "overlay init stops at a successor it cannot write"
 file = "src/stayfixed/overlay/create.py"
-before = """            notes.append(
-                f"{action.target} cannot be written: {fsops.said(exc)}; "
-                "`stayfixed overlay upgrade` writes it"
-            )
+before = """            unwritten.add(action.target)
             continue"""
 after = """            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc"""
 reddens = [

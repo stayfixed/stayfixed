@@ -1714,10 +1714,22 @@ reddens = [
 [[mutation]]
 name = "contained names the symlinked ancestor unescaped"
 file = "src/stayfixed/config/paths.py"
-before = "passes through a symlink at {str(ancestor)!r}"
-after = "passes through a symlink at {ancestor}"
+before = "            named = quoted(ancestor.relative_to(root).as_posix())"
+after = "            named = ancestor.relative_to(root).as_posix()"
 reddens = [
   "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
+]
+
+# The ancestor's absolute path said where this machine keeps the tree, and `overlay init` relayed
+# it on a `left` line.
+[[mutation]]
+name = "contained names the symlinked ancestor by its absolute path"
+file = "src/stayfixed/config/paths.py"
+before = "            named = quoted(ancestor.relative_to(root).as_posix())"
+after = "            named = quoted(str(ancestor))"
+reddens = [
+  "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
+  "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
 ]
 
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes

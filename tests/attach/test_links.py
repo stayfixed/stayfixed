@@ -398,7 +398,8 @@ def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Pa
     assert before
     with pytest.raises(Refusal) as refused:
         _attach(root, store, machine, home, confirmed=True)
-    assert str(home / ".claude") in str(refused.value)
+    # The symlink is named by its place under the home directory, `contained`'s root.
+    assert "passes through a symlink at .claude" in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert not (root / LEDGER).exists()
     # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a

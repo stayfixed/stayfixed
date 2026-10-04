@@ -21,6 +21,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -38,7 +39,7 @@ from stayfixed.overlay.layout import (
 from stayfixed.overlay.template import retired, templates
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
-from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
+from stayfixed.scaffold import Manifest, Template, Verb, apply, digest, plan, unlinks
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "stayfixed-overlay-template"
@@ -443,7 +444,14 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     rewrite were the recorded ones**: a manifest the owner edited is still renamed, but
     re-stamping it recorded their edit as stayfixed's, and the next `upgrade` refreshed it away.
     Its record stays, and `upgrade` goes on naming it. A `--template` clone carries no ledger at
-    all, and gets no record written for it.
+    all, and gets no record written for it. The record vouches for the owner's bytes, so what
+    `upgrade` refreshes the file with is the template named the same way (`named_after`): the
+    template's own bytes put `stayfixed-overlay` back the first time `upgrade` ran.
+
+    **A manifest it cannot write is named and passed over**, by the rule `_retire` follows for a
+    retired file: stopping on the bare `OSError` left the manifests before it renamed with their
+    new records only in memory, so every later `upgrade` read them as hand-edited. Its own record
+    stays true of the bytes still there, and the next run names it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it
@@ -474,8 +482,21 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         if body is not None:
             rewrites.append((relative, before, body))
     restamped = False
+    renamed: list[str] = []
     for relative, before, body in rewrites:
-        fsops.write_within(root, relative, body)
+        # A manifest it cannot write is named and passed over, as a retired file it cannot remove
+        # is: stopping left the ones before it renamed with their new records only in memory, and
+        # every later `upgrade` read them as hand-edited. Its own record stays as it was, true of
+        # the bytes still there.
+        try:
+            fsops.write_within(root, relative, body)
+        except OSError as exc:
+            notes.append(
+                f"{relative} cannot be written: {fsops.said(exc)}; "
+                "`stayfixed overlay init` names it once it can be"
+            )
+            continue
+        renamed.append(relative)
         record = ledger.get(relative)
         # Only a file that held what stayfixed wrote there is vouched for again. One the owner
         # edited is still renamed, and its record is left as it was, so `upgrade` goes on naming
@@ -483,17 +504,15 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         if record is not None and digest(before) == record.sha256:
             ledger = ledger.with_record(replace(record, sha256=digest(body)))
             restamped = True
-    # Written before anything is removed: a removal that fails below must not take the records of
-    # the renames with it.
-    if restamped:
-        ledger.write(root)
+    # One write, once every step has run: no step below stops `init` (a write, a removal or a
+    # template tree that fails is named and passed over), so the records of the renames cannot be
+    # lost to one. They were written ahead of the retirement while a failure there still raised.
     ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
-    if changed:
+    if changed or restamped:
         ledger.write(root)
-    renamed = [relative for relative, _, _ in rewrites]
     if renamed:
-        notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
-    else:
+        notes.insert(0, f"named this overlay after {suffix}: {', '.join(renamed)}")
+    elif not rewrites:
         notes.append(f"the manifests already name {suffix}; nothing was renamed")
     if absent:
         notes.append(
@@ -521,16 +540,19 @@ def _retire(
     template, which carries none, by the digest a release shipped (`template.retired`). Its
     verdict is acted on here rather than through `apply`, which would write a ledger into a tree
     that arrived without one. A file `plan` cannot read, one that cannot be removed and a
-    successor that cannot be written are each named and passed over, never a reason to stop
-    `init`: stopping lost the lines of the files already removed and left their records in a
-    ledger nothing then wrote, and a later run, finding the file absent, kept the record for good.
-    The ledger returned drops the records of the files actually removed, and only those.
+    successor that cannot be written — a template tree this install cannot read among the causes
+    — are each named and passed over, never a reason to stop `init`: stopping lost the lines of
+    the files already removed and left their records in a ledger nothing then wrote, and a later
+    run, finding the file absent, kept the record for good. The ledger returned drops the records
+    of the files actually removed, and of a relocated one already gone, and only those; the line
+    for the second says only its record went, since nothing was there to remove.
 
     A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
     its place: such a template carried the old name only, and a directory left empty is one git
     does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
     `developer` link to reach. Each directory above a file this run removed then goes once it is
-    empty, as `overlay upgrade` does it, and only above a file that was there to remove.
+    empty, as `overlay upgrade` does it, and only above a file that was there to remove — never
+    above one whose successor could not be written, whose directory stays for it.
 
     **A path the ledger supplied prints through `printed.quoted`.** The ledger is committed with
     the overlay, and a record whose target this release cannot produce is named at that target,
@@ -546,7 +568,6 @@ def _retire(
     notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
     changed = False
     removed: list[str] = []
-    emptied: list[str] = []
     written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
@@ -555,20 +576,37 @@ def _retire(
         if not unlinks(action):
             continue
         present = os.path.lexists(root / action.target)
-        try:
-            fsops.remove_within(root, action.target)
-        except OSError as exc:
-            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
-            continue
-        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
-        removed.append(action.target)
         if present:
-            emptied.append(action.target)
+            try:
+                fsops.remove_within(root, action.target)
+            except OSError as exc:
+                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+                continue
+            notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
+            removed.append(action.target)
+        else:
+            # A relocation whose file is already gone: there is nothing to unlink, and asking
+            # `remove_within` anyway answered `removed` over a missing file and `cannot be removed`
+            # over a missing directory. Only the record goes.
+            notes.append(f"dropped the record of {quoted(action.target)}, which was already gone")
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))
             changed = True
     successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}
-    shipped = [template for template in templates() if template.id in successors]
+    unwritten: set[str] = set()
+    try:
+        shipped = [template for template in templates() if template.id in successors]
+    except Failure as exc:
+        # An install whose template tree cannot be read cannot write a successor, and that is
+        # named and passed over like any other successor it cannot write. Raising here lost the
+        # ledger with the records of the files already removed, which a later run, finding them
+        # absent, kept for good.
+        shipped = []
+        for successor in sorted(successors):
+            notes.append(
+                f"{successor} cannot be written: {exc}; `stayfixed overlay upgrade` writes it"
+            )
+            unwritten.add(successor)
     for action in plan(root, preset_defaults(root.name), shipped).actions:
         if action.verb is not Verb.CREATE or action.payload is None:
             continue
@@ -579,6 +617,7 @@ def _retire(
                 f"{action.target} cannot be written: {fsops.said(exc)}; "
                 "`stayfixed overlay upgrade` writes it"
             )
+            unwritten.add(action.target)
             continue
         notes.append(f"wrote {action.target} in its place")
         written.append(action.target)
@@ -586,10 +625,41 @@ def _retire(
             ledger = ledger.with_record(action.record)
             changed = True
     # Last, once each successor is in place, so a directory one is written into is never emptied
-    # on the way.
-    for target in emptied:
-        fsops.rmdir_parents_within(root, target)
+    # on the way — nor one a successor that could not be written was to go into, which stays for
+    # the `upgrade` its line names.
+    for target in removed:
+        if SUCCESSORS.get(target) not in unwritten:
+            fsops.rmdir_parents_within(root, target)
     return ledger, notes, [*removed, *written], changed
+
+
+def named_after(shipped: list[Template], owner: str | None) -> list[Template]:
+    """`shipped`, with each of the three manifests rendered as `init` names it after `owner`.
+
+    What `overlay upgrade` plans with. `init` re-stamps a manifest it renames, so the ledger
+    vouches for the owner's bytes, and a refresh that wrote the template's own put
+    `stayfixed-overlay` and `your-account` back: an `upgrade` run right after `init` undid the
+    rename and brought back the collision the suffix prevents. Rendered through `_renamed`, the
+    one function `init` writes through, a manifest the template has not moved renders to the
+    bytes `init` left and reads as unchanged, and one it has moved is refreshed and stays named.
+    The shipped tree itself stays owner-free, which is what `publish-template` copies.
+
+    `owner` is `identity.owner_of`'s answer; `None`, an overlay nobody has named, gets the
+    template as it ships.
+    """
+    if owner is None:
+        return shipped
+    return [
+        replace(item, render=partial(_render_named, item.render, item.id, owner))
+        if item.id in MANIFESTS
+        else item
+        for item in shipped
+    ]
+
+
+def _render_named(render: Callable[[], str], relative: str, owner: str) -> str:
+    body = render()
+    return _renamed(body, relative, owner) or body
 
 
 def _read_manifest(root: Path, relative: str) -> str:

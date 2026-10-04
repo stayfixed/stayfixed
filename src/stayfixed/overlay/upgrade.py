@@ -47,7 +47,8 @@ from pathlib import Path
 
 from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
-from stayfixed.overlay.identity import require_overlay
+from stayfixed.overlay.create import named_after
+from stayfixed.overlay.identity import owner_of, require_overlay
 from stayfixed.overlay.layout import CAPABILITY_FILES, OVERLAY_FILES
 from stayfixed.overlay.template import retired, templates
 from stayfixed.scaffold import Plan, apply, plan, unlinks
@@ -93,6 +94,13 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     removed file is one an action unlinks that was there before `apply` and is not after it; a
     removal whose file was already gone empties nothing, and the directories above it stay.
 
+    The three manifests are planned as `overlay init` names them, after the owner
+    `identity.owner_of` reads off the manifests (`create.named_after`). `init` re-stamps their
+    records with the owner's bytes, so planned from the template as it ships, a run right after
+    `init` read them as untouched and refreshed them back to `stayfixed-overlay` and
+    `your-account`, the name two owners' overlays collide on. An overlay nobody named gets the
+    template as it ships.
+
     `decisions` is computed after `apply()` and names the two capability files unconditionally;
     it is a notice, not a gate. The module docstring says why that is safe here and what would
     make it unsafe.
@@ -102,7 +110,7 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     because a `Config` has to be complete, not because an overlay is a project.
     """
     require_overlay(root, because=NOT_AN_OVERLAY)
-    shipped = [*templates(), *retired()]
+    shipped = [*named_after(templates(), owner_of(root)), *retired()]
     planned = plan(root, preset_defaults(root.name), shipped)
     if not dry_run:
         present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]

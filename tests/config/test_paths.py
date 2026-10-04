@@ -63,12 +63,15 @@ def test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw(tmp_path: Path)
     # repository's. `relative` was quoted and the ancestor was not, so a caller that shows the
     # refusal — the memory store records it as a group's reason — printed a line break and an
     # escape sequence raw. Mutation: format `ancestor` unquoted in `contained` — this reddens.
+    # And by its place under the root, never by where this machine keeps the root: mutation
+    # (`mutations/`'s "contained names the symlinked ancestor by its absolute path").
     (tmp_path / "real").mkdir()
     (tmp_path / CRAFTED).symlink_to(tmp_path / "real", target_is_directory=True)
     with pytest.raises(PathEscape, match="passes through a symlink at") as raised:
         contained(tmp_path, f"{CRAFTED}/sub")
     assert_never_raw(str(raised.value))
-    assert repr(str(tmp_path / CRAFTED)) in str(raised.value)
+    assert str(raised.value).endswith(f"passes through a symlink at {CRAFTED!r}")
+    assert str(tmp_path) not in str(raised.value)
 
 
 def test_a_symlink_pointing_inside_the_root_is_still_refused(tmp_path: Path) -> None:
