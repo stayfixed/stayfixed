@@ -24,6 +24,7 @@ from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
 from tests.attach.test_binding import _git_that_cannot_run
+from tests.attach.test_write import NESTED
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
     OVERLAY,
@@ -366,6 +367,28 @@ def test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable(
     key, value = HOSTILE_FIELDS[field]
     recorded[key] = value
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert not any(row.status == "red" for row in rows), [
+        (row.name, row.detail) for row in rows if row.status == "red"
+    ]
+    attached = _by_name(rows, "attached")
+    assert attached.status == WARN
+    assert f"{LEDGER} is here and cannot be read as a ledger" in attached.detail
+    entries = _by_name(rows, "hook-entries")
+    assert entries.status == WARN
+    assert f"{LEDGER} is there and cannot be read as a ledger" in entries.detail
+
+
+def test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable(
+    tmp_path: Path,
+) -> None:
+    # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
+    # Python, and it reached `_guarded` from both rows that read the ledger: red, "this check
+    # could not run", on a file a clone chose. It is a ledger that cannot be read. Mutation
+    # (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" -> both
+    # rows are red again.
+    root = _attached(tmp_path)
+    (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"

@@ -338,6 +338,13 @@ def ledger(root: Path) -> AttachLedger:
         raise Failure(f"{path} is not UTF-8 text") from None
     except json.JSONDecodeError as exc:
         raise Failure(f"{path} is not valid JSON: {exc}") from exc
+    except RecursionError:
+        # Valid JSON nested past what the parser follows, which a clone can commit: unreadable,
+        # like the arms above, rather than an exception past every reader's catch.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: it is nested deeper than this "
+            f"reader follows"
+        ) from None
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
     rules, keys, directories = _checked(raw, path)

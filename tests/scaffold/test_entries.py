@@ -146,6 +146,23 @@ def test_a_malformed_document_refuses() -> None:
         apply_entries("{not json", {})
 
 
+# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
+# Python, and a settings document is a file a clone can commit.
+NESTED = "[" * 200_000 + "]" * 200_000
+
+
+def test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one() -> None:
+    # `RecursionError` used to leave the engine past every caller's catch: `doctor`'s
+    # `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a
+    # file the repository chose. Mutation (oracle): `mutations/`'s "the settings engine lets a
+    # nested document raise past its refusal" -> both raise `RecursionError`.
+    nested = '{"hooks": ' + NESTED + "}"
+    with pytest.raises(EntriesError, match="nested deeper"):
+        owned_ids(nested)
+    with pytest.raises(EntriesError, match="nested deeper"):
+        apply_entries(nested, {})
+
+
 def test_an_empty_document_gains_the_wanted_entries() -> None:
     after = apply_entries("", wanted("PreToolUse", "bg-cleanup", "new.sh"))
     assert commands_of(after, "PreToolUse") == [mark("new.sh", "bg-cleanup")]

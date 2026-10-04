@@ -88,6 +88,9 @@ def _object(text: str, label: str) -> dict[str, Any]:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise EntriesError(f"{label} is not valid JSON: {exc}") from exc
+    except RecursionError:
+        # Valid JSON nested past what the parser follows, in a file a clone may have committed.
+        raise EntriesError(f"{label} is nested deeper than this reader follows") from None
     if not isinstance(raw, dict):
         raise EntriesError(f"{label} is not a JSON object")
     return raw

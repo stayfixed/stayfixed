@@ -18,6 +18,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
+from stayfixed.attach.permissions import settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
     HARNESS_WAITS,
@@ -28,7 +29,7 @@ from stayfixed.attach.write import (
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
-from stayfixed.scaffold import Style, drop, extract, owned_ids
+from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
@@ -882,6 +883,63 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
     (root / LEDGER).write_text("{", encoding="utf-8")
     with pytest.raises(Failure):
         ledger(root)
+
+
+# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
+# Python, which no reader caught, and both files below are ones a clone can commit.
+NESTED = "[" * 200_000 + "]" * 200_000
+
+
+def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # The ledger is the unreadable ledger it is, and the attach that reads it back answers so
+    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the attach
+    # ledger's reader lets a nested ledger raise" -> both raise `RecursionError`.
+    root, store, machine = _attachable(tmp_path)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
+    with pytest.raises(Failure, match="nested deeper"):
+        ledger(root)
+    with pytest.raises(Failure, match="nested deeper"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
+def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
+    # The settings file `attach` merges into, read first by `permissions.settings_document`.
+    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a nested document raise"
+    # -> both raise `RecursionError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"hooks": ' + NESTED + "}", encoding="utf-8")
+    with pytest.raises(EntriesError, match="nested deeper"):
+        settings_document((root / SETTINGS).read_text(encoding="utf-8"))
+    with pytest.raises(Refusal, match="nested deeper"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
 
 
 def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path) -> None:

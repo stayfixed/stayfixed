@@ -1135,6 +1135,28 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     assert "could not be read as hook entries" in row.detail
 
 
+@pytest.mark.parametrize("relative", list(checks.SETTINGS_FILES))
+def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_to(
+    tmp_path: Path, relative: str
+) -> None:
+    # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
+    # Python, and it left the engine's reader past this walk's catch: the row read "this check
+    # could not run", red, on a file a clone can commit. It is a file the walk could not read.
+    # Mutation (oracle): `mutations/`'s "the settings engine lets a nested document raise past its
+    # refusal" -> the row is red.
+    root = _initialised(tmp_path)
+    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+    (root / relative).write_text('{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
+        f"hook entries, so nothing here accounts for what is in them: {relative}",
+        "check that each file named above is readable and is valid JSON",
+    )
+
+
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # The quietest way this installation can be broken: no plugin root found at all means no
     # hook entry on this machine reaches stayfixed, and `doctor` reports it as two `skip` rows —

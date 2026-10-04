@@ -1971,6 +1971,20 @@ reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
 
+# A settings document nested past what `json.loads` follows raises `RecursionError` on every
+# supported Python, and every caller of the engine catches its refusal and nothing else: `doctor`'s
+# `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a file
+# a clone can commit.
+[[mutation]]
+name = "the settings engine lets a nested document raise past its refusal"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows. A settings document"
+after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows. A settings document"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one",
+  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_to[.claude/settings.json]",
+]
+
 # stayfixed declares that it makes no network request of its own; that holds only while no module
 # imports one of the standard library's network modules.
 [[mutation]]

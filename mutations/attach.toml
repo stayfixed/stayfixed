@@ -1660,3 +1660,27 @@ after = "    except OSError:\n        # A store through a symlink loop"
 reddens = [
   "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
 ]
+
+# A committed ledger nested past what `json.loads` follows raises `RecursionError` on every
+# supported Python. Read as the unreadable ledger it is, `doctor` warns and `attach` and `detach`
+# fail before they write; let through, all three ended in an exception past every reader's catch.
+[[mutation]]
+name = "the attach ledger's reader lets a nested ledger raise"
+file = "src/stayfixed/attach/write.py"
+before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
+after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
+]
+
+# The same parse in the settings file `attach` merges into.
+[[mutation]]
+name = "attach's settings reader lets a nested document raise"
+file = "src/stayfixed/attach/permissions.py"
+before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, in a file"
+after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, in a file"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
+]

@@ -76,6 +76,11 @@ def _load(document: str) -> dict[str, Any]:
         raw = json.loads(document)
     except json.JSONDecodeError as exc:
         raise EntriesError(f"settings document is not valid JSON: {exc}") from exc
+    except RecursionError:
+        # Valid JSON nested past what the parser follows. A settings document may be one a clone
+        # committed, so it is refused like any other shape this cannot read, and never left to
+        # escape the callers that catch the refusal.
+        raise EntriesError("settings document is nested deeper than this reader follows") from None
     if not isinstance(raw, dict):
         raise EntriesError("settings document is not a JSON object")
     return raw
