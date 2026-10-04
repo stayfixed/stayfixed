@@ -27,13 +27,12 @@ EVIDENCE_LABEL = "**What this evidence does not establish:**"
 # drift apart.
 EVIDENCE_PLACEHOLDER = "the reading a later plan must not inherit"
 
-# The keys the reader takes from every entry, whatever its status, and that `renumber`'s void
-# entry spells itself.
-_READ_KEYS = ("id", "title", "status")
-# The keys the writer spells itself rather than from a value it is handed: `id`, `title` and
-# `related` through the template's `{identifier}`, `{title}` and `{related}`, and `status` as the
-# template's own literal.
-_WRITER_KEYS = ("id", "title", "status", "related")
+# The keys the engine reads and writes itself, whatever the register: every entry's `id`, `title`
+# and `status`, and the `related` list `renumber`'s void entry names the new number in. `Entry`
+# carries them as fields of its own, `new` spells them rather than take a value for them (`status`
+# as the template's own literal, the rest through `{identifier}`, `{title}` and `{related}`), and
+# the void entry fills each. Every other key is the register's.
+ENGINE_KEYS = ("id", "title", "status", "related")
 
 
 @dataclass(frozen=True)
@@ -71,7 +70,7 @@ class Schema:
     levels: tuple[str, ...]  # the values `level` may hold: the bug ledger's severities
     dates: tuple[str, ...]  # keys whose value is an ISO date
     # The file `new` writes. The writer fills `{identifier}`, `{title}`, `{today}` and
-    # `{related}`; any other placeholder names a key outside `_WRITER_KEYS` and stands for that
+    # `{related}`; any other placeholder names a key outside `ENGINE_KEYS` and stands for that
     # key's whole `key: value` line, so an absent value leaves a bare `key:` behind (the trailing
     # space of `source: ` is whitespace an editor strips on save). A key with no placeholder is
     # one the template spells itself, as the bug ledger's does `found` and `fixed_in`.
@@ -87,7 +86,7 @@ class Schema:
     def line_keys(self) -> tuple[str, ...]:
         """The keys the template leaves to a value the writer is handed, in the order of `keys`."""
         placeholders = _placeholders(self.template)
-        return tuple(key for key in self.keys if key in placeholders and key not in _WRITER_KEYS)
+        return tuple(key for key in self.keys if key in placeholders and key not in ENGINE_KEYS)
 
 
 def _placeholders(template: str) -> set[str]:
@@ -101,8 +100,9 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
     duplicated = sorted({key for key in schema.keys if schema.keys.count(key) > 1})
     for key in duplicated:
         yield f"key `{key}` is listed more than once"
-    for key in _READ_KEYS:
-        if key not in schema.required:
+    # Every entry is read for its `id`, `title` and `status`; its `related` list may be empty.
+    for key in ENGINE_KEYS:
+        if key != "related" and key not in schema.required:
             yield f"`{key}` is read from every entry, so it must be required"
     for name, named in (
         ("required", schema.required),
@@ -136,10 +136,10 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
     if schema.level not in (*schema.required, *schema.required_unless_void):
         yield f"level `{schema.level}` is neither required nor required_unless_void"
     # `renumber` leaves a void entry at the number it moves from, and that entry is held to
-    # `required` like any other. It knows the keys every entry is read for, the day of the move
-    # for a date, and the new number, which it names in `related`; nothing else.
+    # `required` like any other. It knows the engine's own keys, with the new number in `related`,
+    # and the day of the move for a date; nothing else.
     for key in schema.required:
-        if key not in _READ_KEYS and key not in schema.dates:
+        if key not in ENGINE_KEYS and key not in schema.dates:
             yield f"required `{key}` is not a date, so `renumber`'s void entry cannot fill it"
     if "related" not in keys:
         yield "`related` is not a key, so `renumber`'s void entry cannot name the new number"

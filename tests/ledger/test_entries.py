@@ -51,12 +51,12 @@ def test_parse_entry_reads_every_field() -> None:
         id="BR-042",
         title='a widget treats a "0" string target as truthy',
         status="open",
-        area="widget rendering",
         related=("BR-039",),
         body="- **Found:** 2026-07-21 (audit)\n- **Where:** `src/widget/bars.py`\n\nBody prose.\n",
         path=PATH,
         fields={
             "severity": "low",
+            "area": "widget rendering",
             "found": "2026-07-21",
             "source": "audit-2026-07-21",
             "fixed_in": "",
@@ -233,7 +233,7 @@ def test_void_entries_need_no_severity_or_area() -> None:
         "related: [BR-009]\n---\n\nbody\n"
     )
     entry = parse_entry(text, path=PATH, register=REGISTER)
-    assert (entry.status, entry.fields["severity"], entry.area) == ("void", "", "")
+    assert (entry.status, entry.fields["severity"], entry.fields["area"]) == ("void", "", "")
 
 
 def test_an_empty_optional_field_is_written_with_no_trailing_space() -> None:

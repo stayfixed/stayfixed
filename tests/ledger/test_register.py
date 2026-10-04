@@ -221,6 +221,7 @@ def test_a_second_register_renders_its_own_title_prefix_and_fields(tmp_path: Pat
     (entry,) = load_entries(root, DEBT)
     assert dict(entry.fields) == {
         "size": "M",
+        "area": "ledger",
         "found": "2026-10-04",
         "impact": "every check pays it",
     }
@@ -338,7 +339,8 @@ def test_a_second_register_names_its_own_date_key_and_void_status() -> None:
         return f"---\nid: TD-001\ntitle: filed twice\nstatus: {status}\nnoted: {noted}\n---\n\n"
 
     withdrawn = parse_entry(entry("withdrawn", "2026-10-04"), path=path, register=register)
-    assert (withdrawn.status, withdrawn.fields["size"], withdrawn.area) == ("withdrawn", "", "")
+    assert withdrawn.status == "withdrawn"
+    assert (withdrawn.fields["size"], withdrawn.fields["area"]) == ("", "")
 
     def refusal(noted: str) -> str:
         text = entry("paid", noted).replace("status: paid", "status: paid\nsize: S\narea: a")

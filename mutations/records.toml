@@ -657,7 +657,7 @@ reddens = [
 [[mutation]]
 name = "a schema need not require a key the reader takes from every entry"
 file = "src/stayfixed/ledger/register.py"
-before = "        if key not in schema.required:"
+before = '        if key != "related" and key not in schema.required:'
 after = "        if False:"
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[title-not-required]",
@@ -2114,7 +2114,7 @@ reddens = [
 [[mutation]]
 name = "a schema may require a key the void entry cannot fill"
 file = "src/stayfixed/ledger/register.py"
-before = "        if key not in _READ_KEYS and key not in schema.dates:"
+before = "        if key not in ENGINE_KEYS and key not in schema.dates:"
 after = "        if False:"
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-not-a-date]",

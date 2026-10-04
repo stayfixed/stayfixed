@@ -21,12 +21,8 @@ from pathlib import Path
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
 from stayfixed.identifiers import Identifiers
-from stayfixed.ledger.register import Register
+from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
-
-# The keys every register's entry carries as `Entry`'s own fields; a register's other keys are
-# in `Entry.fields`.
-ENTRY_KEYS = ("id", "title", "status", "area", "related")
 
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n\n?(.*)\Z", re.DOTALL)
 _KEY_VALUE = re.compile(r"\A([a-z_]+):[ \t]*(.*)\Z")
@@ -59,13 +55,12 @@ def _where(path: Path) -> str:
 
 @dataclass(frozen=True)
 class Entry:
-    """One parsed entry file. `fields` holds the register's keys outside `ENTRY_KEYS`, each one
+    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS`, each one
     the register declares, with `""` for a key the file leaves empty or out."""
 
     id: str
     title: str
     status: str
-    area: str
     related: tuple[str, ...]
     body: str
     path: Path
@@ -75,7 +70,7 @@ class Entry:
 
     def value(self, key: str) -> str:
         """The entry's value for one of its register's keys other than `related`."""
-        if key in ENTRY_KEYS and key != "related":
+        if key in ENGINE_KEYS and key != "related":
             return str(getattr(self, key))
         return self.fields[key]
 
@@ -202,8 +197,9 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         for key in schema.required_unless_void:
             if not fields.get(key):
                 raise LedgerError(f"{_where(path)}: missing required frontmatter key `{key}`")
-    # Read in the order the refusals have always come in — the level, the dates, the title, the
-    # area, then the rest — so an entry with two defects is told about the same one first.
+    # Read in the order the refusals have always come in — the level, the dates, the title, then
+    # the rest in the order of the keys, the bug ledger's `area` first among them — so an entry
+    # with two defects is told about the same one first.
     level = schema.level
     values: dict[str, str] = {}
     values[level] = _unquote(fields.get(level, ""), key=level, where=path)
@@ -218,16 +214,14 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         if values[key] or key in schema.required:
             _require_iso_date(values[key], key=key, where=path)
     title = _unquote(fields["title"], key="title", where=path)
-    area = _unquote(fields.get("area", ""), key="area", where=path)
     for key in schema.keys:
-        if key not in ENTRY_KEYS and key not in values:
+        if key not in ENGINE_KEYS and key not in values:
             values[key] = _unquote(fields.get(key, ""), key=key, where=path)
 
     return Entry(
         id=identifier,
         title=title,
         status=status,
-        area=area,
         related=_parse_related(fields.get("related", ""), where=path, ids=ids),
         body=match.group(2),
         path=path,
