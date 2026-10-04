@@ -945,6 +945,17 @@ reddens = [
   "tests/overlay/test_create.py::test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it",
 ]
 
+# The overlay's ledger is committed, so a retired file's recorded target is repository-chosen, and
+# `overlay init` names one it leaves on a line a terminal and a CI runner read.
+[[mutation]]
+name = "overlay init prints a recorded path it leaves unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '            notes.append(f"left {quoted(action.target)} ({action.reason})")'
+after = '            notes.append(f"left {action.target} ({action.reason})")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_retired_file_s_recorded_path_escaped",
+]
+
 # `PATH` is read from the context because it is repository-authored; a path component is
 # unbounded and may hold a newline. Printing the resolved value put that text into `--json`,
 # which the doctor skill relays verbatim.

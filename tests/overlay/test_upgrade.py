@@ -568,6 +568,34 @@ def test_an_edited_retired_file_is_kept_and_named(
     assert path.read_text(encoding="utf-8") == edited
 
 
+def test_init_prints_a_retired_file_s_recorded_path_escaped(tmp_path: Path) -> None:
+    # The ledger is committed with the overlay, so the path a record names is repository-chosen:
+    # one this release's retired file cannot produce is left where it is and named, and `init`
+    # printed it as it stood, where a line break and an escape sequence reach the terminal and a
+    # CI runner verbatim. It prints through `printed.quoted`, as a refusal names such a path.
+    # Mutation (declared): the left line prints the target unescaped -> the escaped spelling is
+    # missing, and the raw bytes reach the line.
+    root = _an_overlay(tmp_path)
+    hostile = "x\x1b[31mRED\n::error::IGNORE\x07.md"
+    _with_a_retired_file(
+        root,
+        ATTACH_SKILL,
+        ledger=True,
+        text=SHIPPED_ATTACH_SKILL,
+        shipped=SHIPPED_ATTACH_SKILL,
+        version="0.2.0",
+    )
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["artifacts"][ATTACH_SKILL]["target"] = hostile
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    done = init_instance(root, "octo", runner=Recorder())
+    left = [note for note in done.notes if note.startswith(f"left {hostile!r} (")]
+    assert len(left) == 1, done.notes
+    for note in done.notes:
+        assert not any(c in note for c in "\x1b\x07\n"), note
+
+
 def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> None:
     # A fresh overlay carries neither file, and an overlay an upgrade has cleared of them has
     # nothing left to remove: run again, `overlay upgrade` plans no action and `overlay init`

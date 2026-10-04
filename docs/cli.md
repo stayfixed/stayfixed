@@ -1870,6 +1870,9 @@ have no `common/memory/` for the `developer` link to reach. A copy holding anyth
 and the line says so and names the way out: rename the memory README to `_README.md`; the plugin's
 own `attach` skill replaces the template's; a standing rule is a note with `metadata.startup`. A
 retired file it cannot read is left too, with a `left <path>: <reason>` line, and is not a failure.
+A path these lines name that the manifest supplied and that holds anything but a plain path is
+escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
+terminal.
 A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
 and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
 segment, on a scaffold manifest that cannot be trusted, or on a retired file it has decided to
