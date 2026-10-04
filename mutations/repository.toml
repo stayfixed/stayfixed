@@ -778,6 +778,40 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
 ]
 
+# Each bundle gets the numbered slots `SLOTS` declares, one entry per part. Filing one part twice
+# and another not at all keeps the entry count and loses a slot's text, which the declared set
+# of parts catches; two parts swapping places keep that set too, so the order is asserted beside
+# it and only the order catches the second.
+[[mutation]]
+name = "a session-start part is filed twice and another not at all"
+file = "hooks/hooks.json"
+before = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"'''
+after = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
+]
+
+[[mutation]]
+name = "two session-start parts swap places in the hooks file"
+file = "hooks/hooks.json"
+before = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"
+          },
+          {
+            "type": "command",
+            "timeout": 10,
+            "additionalContextLimit": 0,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"'''
+after = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"
+          },
+          {
+            "type": "command",
+            "timeout": 10,
+            "additionalContextLimit": 0,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
+]
+
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
 # again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
 # stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten

@@ -79,8 +79,12 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
         (bundle.value, str(part)) for bundle, parts in SLOTS.items() for part in range(1, parts + 1)
     }
     # And in order, behind the dispatcher: each bundle's parts in sequence, standing rules before
-    # volatile notes. The set above cannot see an order, so two entries that swap their parts,
-    # or one part filed twice beside a declared one, still pass it.
+    # volatile notes. The set above cannot see an order, so two entries that swap their parts
+    # still pass it.
+    #
+    # Mutation (oracle): `mutations/`'s "a session-start part is filed twice and another not at
+    # all" reddens the set; "two session-start parts swap places in the hooks file" keeps the set
+    # and reddens the order.
     session_start = [
         entry["command"].split()[2:]
         for event, _matcher, entry in _entries()
