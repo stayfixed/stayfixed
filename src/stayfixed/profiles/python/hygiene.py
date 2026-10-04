@@ -31,6 +31,7 @@ from stayfixed.guards.api import contained_roots
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
+    from stayfixed.profiles.hints import RedRunHint
 
 PYTEST = "pytest"
 _PYTHON_ARGV0_PREFIX = "python"
@@ -166,4 +167,4 @@ class PythonHint:
         return STALE.format(count=stale)
 
 
-HINT = PythonHint()
+HINT: RedRunHint = PythonHint()
