@@ -1901,8 +1901,8 @@ reddens = [
 [[mutation]]
 name = "a retired overlay file that is absent is planned for removal"
 file = "src/stayfixed/scaffold/engine.py"
-before = "    if current is None:\n        unchanged.append(template.id)\n        return"
-after = "    if current is None:\n        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return"
+before = "            return\n        unchanged.append(template.id)\n        return\n    if location is Location.LOCAL:"
+after = "            return\n        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
 reddens = [
   "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
 ]
@@ -2164,4 +2164,32 @@ before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABL
 after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 reddens = [
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
+]
+
+# A retired artifact whose file was already gone read as unchanged and kept its record for good:
+# every later run passed over it again, and an overlay's memory README never got its successor.
+[[mutation]]
+name = "a retired record whose file is gone is kept for good"
+file = "src/stayfixed/scaffold/engine.py"
+before = """        if record is not None:
+            # The file is gone and its record is not"""
+after = """        if False:
+            # The file is gone and its record is not"""
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
+  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
+  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[upgrade-directory-there]",
+  "tests/project/test_upgrade.py::test_switching_ci_off_after_deleting_the_workflow_drops_its_record",
+]
+
+# Walking to a removal whose file was already gone failed, as a refusal, when its directory was
+# gone too, and named the file among those removed.
+[[mutation]]
+name = "apply walks to a removal whose file is already gone"
+file = "src/stayfixed/scaffold/engine.py"
+before = "                if action.payload is not None or os.path.lexists(root / action.target):"
+after = "                if True:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
+  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
 ]

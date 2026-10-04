@@ -2032,7 +2032,7 @@ reddens = [
 [[mutation]]
 name = "overlay init leaves the memory directory empty"
 file = "src/stayfixed/overlay/create.py"
-before = "    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}"
+before = "    successors = {SUCCESSORS[target] for target in (*removed, *gone) if target in SUCCESSORS}"
 after = "    successors: set[str] = set()"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[recorded]",
@@ -2301,4 +2301,16 @@ before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unr
 after = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
 reddens = [
   "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
+]
+
+# A memory README already gone leaves the same hole as one `init` removed, and `_README.md` was
+# never written in its place.
+[[mutation]]
+name = "overlay init writes no successor for a file already gone"
+file = "src/stayfixed/overlay/create.py"
+before = "    successors = {SUCCESSORS[target] for target in (*removed, *gone) if target in SUCCESSORS}"
+after = "    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-there]",
+  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-gone]",
 ]

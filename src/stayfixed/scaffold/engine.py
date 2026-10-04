@@ -32,6 +32,7 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence, Set
 from pathlib import Path
 from typing import Protocol
@@ -55,6 +56,9 @@ CHANGED_LOCALLY = "kept out of git, and changed since stayfixed wrote it"
 NOT_OURS_LOCALLY = (
     "kept out of git, with no record of what stayfixed wrote there, and not the bytes it writes now"
 )
+# The reason a retired artifact whose file is already gone is planned for removal at all: there is
+# nothing to unlink, and the action exists so that `apply` drops the record the file outlived.
+ALREADY_GONE = "retired, already gone"
 # A copy stayfixed wrote under `LOCAL_ARTIFACTS` at a place this configuration no longer gives the
 # artifact (its id left `[artifacts] local`, or its `[paths]` value moved), and whose bytes are no
 # longer the ones it wrote. `--force` with the path the report prints takes it.
@@ -563,6 +567,13 @@ def _plan_retired(
     digests: LocalDigests,
 ) -> None:
     if current is None:
+        if record is not None:
+            # The file is gone and its record is not: read as unchanged, the record outlived
+            # the file for good, since every later run found the same nothing to remove. A
+            # removal with nothing to unlink, so `apply` drops the record. `plan` has already
+            # dropped a record whose target differs, so this one names `target`.
+            actions.append(Action(Verb.REMOVE, template.id, target, None, ALREADY_GONE, record))
+            return
         unchanged.append(template.id)
         return
     if location is Location.LOCAL:
@@ -646,8 +657,12 @@ def apply(root: Path, planned: Plan) -> Applied:
             # write happens through a descriptor `open_within` walked with O_NOFOLLOW.
             contained(root, action.target, resolved_root=resolved_root)
             if action.verb is Verb.REMOVE:
-                _remove(root, action.target, action.payload)
-                removed.append(action.target)
+                # A removal whose file is already gone unlinks nothing and drops the record below.
+                # Walking to it anyway failed on a directory that is gone too, as a refusal, and
+                # `removed` would name a file this run did not remove.
+                if action.payload is not None or os.path.lexists(root / action.target):
+                    _remove(root, action.target, action.payload)
+                    removed.append(action.target)
                 # A record goes with the file it names and no other. The copy an artifact left
                 # kept out of git carries the artifact's id too, and dropping by id alone took
                 # the live record of its committed file with it: that file then read as nobody's,

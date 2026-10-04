@@ -186,6 +186,31 @@ def test_a_retired_template_is_removed_while_its_hash_matches(tmp_path: Path) ->
     ]
 
 
+@pytest.mark.parametrize("directory", [True, False], ids=["directory-there", "directory-gone"])
+def test_a_retired_record_whose_file_is_already_gone_is_dropped(
+    tmp_path: Path, directory: bool
+) -> None:
+    # A retired artifact whose file was already gone read as unchanged while its record stayed,
+    # so the record outlived the file for good: every later `upgrade` passed over it again, and
+    # in an overlay the memory README's successor was never written in its place. The removal is
+    # planned with nothing to unlink, and `apply` drops the record, with or without the
+    # directory the file was in.
+    # Mutation: `mutations/`'s "a retired record whose file is gone is kept for good".
+    target = "docs/AGENTS.md"
+    if directory:
+        (tmp_path / "docs").mkdir()
+    Manifest({}).with_record(a_record(target=target)).write(tmp_path)
+    planned = plan(tmp_path, a_config(tmp_path), [a_template(target=target, retired=True)])
+    assert [(a.verb, a.target, a.payload, a.reason) for a in planned.actions] == [
+        (Verb.REMOVE, target, None, "retired, already gone")
+    ]
+    assert planned.unchanged == ()
+    applied = apply(tmp_path, planned)
+    assert applied.removed == ()
+    assert Manifest.read(tmp_path).get("agents-md") is None
+    assert (tmp_path / "docs").is_dir() is directory
+
+
 def test_a_retired_template_edited_by_hand_is_reported_not_removed(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
     Manifest({}).with_record(a_record()).write(tmp_path)

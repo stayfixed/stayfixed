@@ -522,7 +522,7 @@ def _retire(
     — are each named and passed over, never a reason to stop `init`: stopping lost the lines of
     the files already removed and left their records in a ledger nothing then wrote, and a later
     run, finding the file absent, kept the record for good. The ledger returned drops the records
-    of the files actually removed, and of a relocated one already gone, and only those; the line
+    of the files actually removed, and of one already gone, and only those; the line
     for the second says only its record went, since nothing was there to remove.
 
     A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
@@ -546,6 +546,7 @@ def _retire(
     notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
     changed = False
     removed: list[str] = []
+    gone: list[str] = []
     written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
@@ -563,14 +564,16 @@ def _retire(
             notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
             removed.append(action.target)
         else:
-            # A relocation whose file is already gone: there is nothing to unlink, and asking
-            # `remove_within` anyway answered `removed` over a missing file and `cannot be removed`
-            # over a missing directory. Only the record goes.
+            # Already gone, whether a relocation's old place or a retired file at its own: there
+            # is nothing to unlink, and asking `remove_within` anyway answered `removed` over a
+            # missing file and `cannot be removed` over a missing directory. Only the record goes.
             notes.append(f"dropped the record of {quoted(action.target)}, which was already gone")
+            gone.append(action.target)
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))
             changed = True
-    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}
+    # A file already gone leaves the same hole as one this run removed.
+    successors = {SUCCESSORS[target] for target in (*removed, *gone) if target in SUCCESSORS}
     unwritten: set[str] = set()
     try:
         shipped = [template for template in templates() if template.id in successors]
