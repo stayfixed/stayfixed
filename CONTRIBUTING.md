@@ -12,7 +12,7 @@ uv run pytest -n auto --cov --cov-fail-under=92   # the suite across workers, at
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run python scripts/mutation_oracle.py          # every declared mutation still reddens
-uv run stayfixed release check                    # version discipline
+uv run python scripts/release.py check            # version discipline
 ```
 
 All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
@@ -111,7 +111,7 @@ name — there is no shared registry to edit. One table does name areas, `GROUP_
 until its entries outgrow the group they fall into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
-`ledger`, `memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install
+`ledger`, `memory`, `overlay`, `project` and `setup`. Three arrived with the install
 path: `overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
 of it. `project` holds the shipped project templates and `init`, the command that writes a
@@ -120,9 +120,11 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
 (`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
 outside it imports it, and tests reach its modules directly, as they do every area's.
-(`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
-`harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
-nor a `hooks.py`.)
+(`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
+areas, and `harnesses` is a module — nothing discovers them, because they carry neither a
+`commands.py` nor a `hooks.py`. `release` still publishes an `api.py`, which holds what an
+installed stayfixed reads about its own releases: the tags it pins and the record of the files
+a release ships.)
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
@@ -316,8 +318,10 @@ reference and prints it in parentheses at the end of the bullet, so the release 
 reads would carry a file-name slug that means nothing to them. Write the fragment as a release
 note someone outside the project can read — not as a note to yourself about the change.
 
-`uv run stayfixed release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
-the package, and both plugin manifests. It runs in CI; run it before you push.
+`uv run python scripts/release.py check` cross-checks the version across `pyproject.toml`,
+`uv.lock`, the package, and both plugin manifests. It runs in CI; run it before you push. It is
+this repository's own tooling and not a command stayfixed ships, as are its `notes` and `hashes`
+beside it ([RELEASING.md](RELEASING.md) says when each runs).
 
 ## Plans
 

@@ -186,9 +186,6 @@ PASS_THROUGH: dict[tuple[str, str, str], frozenset[str]] = {
     ("src/stayfixed/setup/run.py", "_install_plugins", "argv"): frozenset(
         {"claude plugin", "codex plugin"}
     ),
-    # `towncrier build --version X --yes [--draft]`, assembled before the call: it renders
-    # `changelog.d/` into `CHANGELOG.md`.
-    ("src/stayfixed/release/notes.py", "build", "argv"): NO_ROWS,
     # `git [-c core.excludesFile=…] --git-dir=… --work-tree=<empty> check-ignore --no-index
     # --stdin -z`, assembled in `asked`: the owner's own exclude files, asked about.
     ("src/stayfixed/attach/exclude.py", "unhidden_by_owner", "*asked"): NO_ROWS,

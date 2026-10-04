@@ -218,9 +218,10 @@ reach installed users. A project's reference to a shared workflow is a full-leng
 SHA written by the tool that installed it and bumped by the tool that upgrades it; a
 floating alias is a documented opt-in.
 
-**What stayfixed does.** `release check` cross-checks the version across `pyproject.toml`,
-the lockfile, the package, both plugin manifests and `CHANGELOG.md`; the marketplace
-entries carry no version because the plugin's own overrides it silently [S6]. Changelog
+**What stayfixed does.** Its repository's release check, `scripts/release.py check`,
+cross-checks the version across `pyproject.toml`, the lockfile, the package, both plugin
+manifests and `CHANGELOG.md`; the marketplace entries carry no version because the plugin's
+own overrides it silently [S6]. Changelog
 entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
 resolver at hook time [S13].
 

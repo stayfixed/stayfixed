@@ -1039,7 +1039,7 @@ reddens = [
 # The storefront — PyPI's page, the Claude Code plugin card, the marketplace row and the Codex
 # listing — is what a stranger reads before the README, and all four of its strings advertised
 # "an adoption state machine" while `stayfixed assess` did not exist and the README listed it
-# under **Not yet**. `stayfixed release check` reads versions, never descriptions, so nothing
+# under **Not yet**. The release check reads versions, never descriptions, so nothing
 # looked. This put that claim back into the widest-reach of the four until the state machine
 # shipped and left the README's list; it now puts in the memory MCP server, which has not.
 [[mutation]]
@@ -1062,12 +1062,13 @@ reddens = [
 # entry's `before` back out of its file and counting. Re-pointed again when the profile adapters
 # rewrote the sentence to eight items that each leave it in the change that ships them, and again as
 # `upgrade` and then `uninstall` shipped and left it, and again as `assess` shipped, and again as
-# the state machine shipped; the mutation cuts it back to one.
+# the state machine shipped, and again when the release commands left the sentence before it; the
+# mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form\n> of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
-after = "> discipline. **Not yet:** the memory MCP server \u2014 each leaves this"
+before = "**Not yet:** the memory MCP server,\n> a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each"
+after = "**Not yet:** the memory MCP server \u2014 each"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -1546,7 +1547,7 @@ reddens = [
 
 # `doctor` warns whenever `[stayfixed] version` is not the running version, so an example block
 # that kept the last release's number makes a copy-pasted project warn from its first run. Neither
-# document's block is one of `release check`'s six sources. The `before` stops short of the number
+# document's block is one of the release check's six sources. The `before` stops short of the number
 # on purpose: an entry that quoted `"0.2.0"` would go stale at the next release, and a mutation
 # that fails to apply is an error rather than a caught regression.
 [[mutation]]
@@ -2855,7 +2856,7 @@ reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_
 [[mutation]]
 name = "a launch the outbound walk cannot read loses its declaration"
 file = "tests/outbound/policy.py"
-before = '    ("src/stayfixed/release/notes.py", "build", "argv"): NO_ROWS,'
+before = '    ("src/stayfixed/attach/exclude.py", "unhidden_by_owner", "*asked"): NO_ROWS,'
 after = ''
 reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
 
@@ -3310,3 +3311,191 @@ after = '                if keyword.arg in OVERRIDING'
 reddens = [
   "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[keywords-spread]",
 ]
+
+# The tag is the seventh version source, and the one a release is actually created from. Accept any
+# tag and the gate that exists to say "one version everywhere" stops saying it about the only claim
+# a user ever sees.
+[[mutation]]
+name = "release check accepts a tag naming another version"
+file = "scripts/release.py"
+before = "        if tag not in tag_for(canonical):"
+after = "        if False:"
+reddens = ["tests/scripts/test_release.py::test_a_tag_that_names_another_version_is_drift"]
+
+# The other half: without `--tag` a pending fragment is why CHANGELOG.md may lag, and at a tag
+# it is why the changelog is wrong. Skip the check under a tag and a release ships a changelog
+# that does not carry the section the tag claims.
+[[mutation]]
+name = "release check tags over a pending fragment"
+file = "scripts/release.py"
+before = "        if pending_fragments(root):\n            count = sum("
+after = "        if False:\n            count = sum("
+reddens = ["tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused"]
+
+# The release script's `notes` writes CHANGELOG.md. Under a version that is not the project's it
+# writes a heading its `check` then refuses — and the fragments are consumed by then, so the fix is
+# a revert rather than a re-run.
+[[mutation]]
+name = "release notes assembles under a version that is not the project's"
+file = "scripts/release.py"
+before = "    if version != current:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
+]
+
+# `drift` walks the tree and the record and compares them. Compare the record to itself and every
+# answer is "no drift" — the shape the `files` check skipped for years rather than ship, because a
+# check that compares a file against itself is worse than none.
+[[mutation]]
+name = "the release record is compared against itself"
+file = "scripts/release.py"
+before = "    actual = digests(root)\n    problems = ["
+after = "    actual = recorded\n    problems = ["
+reddens = ["tests/scripts/test_release.py::test_a_written_record_has_no_drift_and_one_changed_byte_is_named"]
+
+# A record naming two of three files says "this is what the release shipped" while naming less
+# than it did. Refused where the tree can still be fixed, and nothing is written.
+[[mutation]]
+name = "a partial release record is written instead of refused"
+file = "scripts/release.py"
+before = "    if len(found) != len(HASHED_FILES):"
+after = "    if False:"
+reddens = ["tests/scripts/test_release.py::test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all"]
+
+# The release script's `check --root` defaults to `.` and may run in other repositories. The
+# first spelling of this guard asked whether a `hooks/` directory existed, which plenty of
+# projects have, and told them a record they never had was missing.
+[[mutation]]
+name = "release check asks for a hooks directory instead of the recorded files"
+file = "scripts/release.py"
+before = "    if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):"
+after = '    if (root / "hooks").is_dir():'
+reddens = [
+  "tests/scripts/test_release.py::test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record",
+]
+
+# The release check's `--tag` derived the drift message with `tag.split("v", 1)[-1]`, so
+# `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
+[[mutation]]
+name = "the tag drift message invents a version by splitting on the letter v"
+file = "scripts/release.py"
+before = """
+            workflow_tag, platform_tag = tag_for(canonical)
+            problems.append(
+                f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
+                f"{PYPROJECT} says {canonical!r}"
+            )"""
+after = """
+            named = tag.split("v", 1)[-1]
+            problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")"""
+reddens = [
+  "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
+]
+
+# --- Release returns its findings like every other area --------------------------------------
+# This was the one area reporting a finding by raising `Failure`, and the cost was in `--json`:
+# the frame turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
+# machine-readable object changed shape on exactly the condition a consumer runs the command to
+# detect. `{}` for the drift arm's data is precisely what raising produced.
+[[mutation]]
+name = "release check's drift arm carries no data again"
+file = "scripts/release.py"
+before = '        return Result("version drift: " + "; ".join(problems), data, exit_code=1)'
+after = '        return Result("version drift: " + "; ".join(problems), {}, exit_code=1)'
+reddens = [
+  "tests/scripts/test_release.py::test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]
+
+[[mutation]]
+name = "release hashes --check's drift arm carries no data again"
+file = "scripts/release.py"
+before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result("release record drift: " + "; ".join(problems), {}, exit_code=1)'
+reddens = [
+  "tests/scripts/test_release.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]
+
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": the release script's version check is one more such reader.
+[[mutation]]
+name = "release check meets a version source nested past the parser as an internal error"
+file = "scripts/release.py"
+before = "    except (json.JSONDecodeError, *UNPARSEABLE) as exc:"
+after = "    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-read]",
+]
+
+[[mutation]]
+name = "release check meets a pyproject.toml nested past the parser as an internal error"
+file = "scripts/release.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-pyproject]",
+]
+
+# `json` answers nesting past its depth with `RecursionError` as `tomllib` does, and the arm that
+# catches both used to be the TOML one: a deep `plugin.json` was reported as "not valid TOML".
+[[mutation]]
+name = "release check calls a malformed JSON source not valid TOML"
+file = "scripts/release.py"
+before = '    language = "JSON" if name.endswith(".json") else "TOML"'
+after = '    language = "TOML"'
+reddens = [
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.claude-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.codex-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_malformed_source_is_reported_with_its_filename[.claude-plugin/plugin.json-{not json-JSON]",
+]
+
+# A version source of the wrong shape decodes cleanly, so the decoder's catches never see it:
+# a `.get` on a list or a string was an internal error naming no file. Each reader asks the
+# shape it reads in, and the marketplace's rule stops reading a string entry with `in`.
+[[mutation]]
+name = "a manifest whose top level is not an object is read with .get"
+file = "scripts/release.py"
+before = "    if not isinstance(document, dict):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[claude-manifest-list]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-list]",
+]
+
+[[mutation]]
+name = "a pyproject.toml whose project is not a table is read with .get"
+file = "scripts/release.py"
+before = "        if not isinstance(project, dict):"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[project-not-a-table]",
+]
+
+[[mutation]]
+name = "the marketplace reads a plugins value that is not a list of objects"
+file = "scripts/release.py"
+before = "    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-entry-string]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-plugins-string]",
+]
+
+[[mutation]]
+name = "a marketplace that is not JSON ends release check as an internal error"
+file = "scripts/release.py"
+before = "    except (json.JSONDecodeError, RecursionError) as exc:"
+after = "    except ():"
+reddens = [
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
+]
+
+# The repository's own record of its shipped files is held clean by one test and shown able to fail
+# by another: a copy of it with one digest changed must exit 1, or the check that keeps it current
+# could pass anything.
+[[mutation]]
+name = "hashes --check exits clean on a drifted record"
+file = "scripts/release.py"
+before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=0)'
+reddens = ["tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check"]

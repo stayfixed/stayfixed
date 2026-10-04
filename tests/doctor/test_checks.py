@@ -50,6 +50,7 @@ from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PL
 from stayfixed.release.api import HASHED_FILES
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.release_script import release
 from tests.runners import LsRemote, Recorder
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -1761,7 +1762,7 @@ def test_a_record_naming_a_file_this_build_does_not_ship_is_red(
     # goes back to `HASHED_FILES` -> the extra name is never looked at, the row is `ok`, and
     # both assertions below redden. The detail assertion is the one that names the arm: a red
     # status alone is produced by several other arms of this row.
-    from stayfixed.release.hashes import write_record
+    write_record = release().write_record
 
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
@@ -1796,7 +1797,7 @@ def test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted(
     # becomes every changed name -> the prose lands in the detail, the count disappears, and
     # both assertions below redden. The assertions name the arm rather than the status: a red
     # row is produced by five other arms of this row, and by `_guarded` for any exception.
-    from stayfixed.release.hashes import write_record
+    write_record = release().write_record
 
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
@@ -1831,7 +1832,7 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     # `_own_root` is stood down for the reason the executable-bit case above gives: this suite
     # runs from a checkout, which *is* a plugin root and now outranks the named variable, so
     # without this the row would measure this repository instead of the planted tree.
-    from stayfixed.release.hashes import write_record
+    write_record = release().write_record
 
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
@@ -1878,14 +1879,14 @@ def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(
 ) -> None:
     # A byte-correct file, reported as "does not match the release record". `changed` is "this
     # name did not compare equal", and a name gets in for three reasons; the row had one
-    # sentence for all three. A record that names two of three is a state `release.hashes`
+    # sentence for all three. A record that names two of three is a state `scripts/release.py`
     # anticipates in as many words, and when it happens the file is the correct artifact and
     # the record is the wrong one — so sending the owner to reinstall over the file is advice
     # about the wrong half.
     #
     # Mutation (declared): `unrecorded` folds back into `modified` -> the row says "do(es) not
     # match" about a file whose bytes are exactly right, and both assertions below redden.
-    from stayfixed.release.hashes import write_record
+    write_record = release().write_record
 
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
@@ -1912,7 +1913,7 @@ def test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch(
     #
     # Mutation (declared): `absent` folds back into `modified` -> the sentence is the mismatch
     # one and both assertions below redden.
-    from stayfixed.release.hashes import write_record
+    write_record = release().write_record
 
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)

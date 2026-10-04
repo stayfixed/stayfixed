@@ -631,7 +631,7 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # `files` is not among them: the release ships `hooks/hashes.json`, and this walk runs
     # against the checkout, so the row compares the three shipped files against the record
     # committed beside them and is green. A `files` back in this list means the
-    # record went stale — `uv run stayfixed release hashes` is what refreshes it.
+    # record went stale — `uv run python scripts/release.py hashes` is what refreshes it.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []

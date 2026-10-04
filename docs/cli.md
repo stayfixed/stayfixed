@@ -38,9 +38,6 @@ Three things hold everywhere:
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
-- [`stayfixed release check [--tag TAG]`](#stayfixed-release-check---tag-tag)
-- [`stayfixed release notes --version X.Y.Z [--draft]`](#stayfixed-release-notes---version-xyz---draft)
-- [`stayfixed release hashes [--check]`](#stayfixed-release-hashes---check)
 - [`stayfixed hook <event>`](#stayfixed-hook-event)
 - [Hooks](#hooks)
 - [`stayfixed guard bg-cleanup`](#stayfixed-guard-bg-cleanup)
@@ -209,79 +206,6 @@ A bundle that fits because it is *empty* is not a bundle that fits, so the outpu
 whether the trust gate is open.
 
 **Writes** nothing.
-
-## `stayfixed release check [--tag TAG]`
-
-Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/stayfixed/__init__.py`, both
-plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
-
-The `--json` object carries `summary`, `versions` (every source and what it says) and
-`problems` (empty on a clean run), and it carries all three **whether or not there is drift** —
-the drift is in `problems`, not in the shape. A source this gate cannot parse at all is still a
-refusal and prints `error` instead, which is the difference between a finding and a failure.
-
-`--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
-shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
-`stayfixed--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
-other rule tightens: without it a pending fragment in `changelog.d/` lets `CHANGELOG.md` lag,
-because a change writes its fragment long before a release assembles it, but at a tag there is
-nothing left to assemble, so a fragment still pending means the changelog users will read is
-not the one the tag claims. That is a finding naming the count.
-
-**Writes** nothing. It reads the sources above, the fragments pending in `changelog.d/`, and
-`hooks/hashes.json` beside the three files it records.
-
-This is discipline for **the stayfixed repository itself**, not something stayfixed offers your
-project. See [RELEASING.md](../RELEASING.md).
-
-## `stayfixed release notes --version X.Y.Z [--draft]`
-
-Assemble `CHANGELOG.md` from the fragments in `changelog.d/`, through towncrier.
-
-```bash
-stayfixed release notes --version 1.2.3 --draft   # print the section; write nothing
-stayfixed release notes --version 1.2.3           # write it, and consume the fragments
-```
-
-A wrapper and nothing more: towncrier does the rendering and `[tool.towncrier]` in
-`pyproject.toml` owns the format. Two things are this command's own. A `--version` that is not
-the project's version is **refused** (`2`) before towncrier runs, because assembling under
-another number writes a `CHANGELOG.md` heading that `release check` then refuses — set the
-version in every source first, then assemble under it. And a towncrier that cannot be run is a
-finding (`1`) that names it as the development dependency it is, rather than a traceback.
-
-**Writes**, without `--draft`, `CHANGELOG.md`, and consumes the fragment files: towncrier
-removes each one from `changelog.d/` and, in a git checkout, stages both changes in the index —
-`git add` of `CHANGELOG.md`, `git rm` of each tracked fragment. When the tracked fragments were
-all that `changelog.d/` held, as they are while every file there is a `+…` fragment, `git rm`
-removes the directory itself too. With `--draft` nothing is written and the rendered section is
-printed.
-
-## `stayfixed release hashes [--check]`
-
-Record the sha256 of every file the harness executes without Python, into `hooks/hashes.json`
-beside them.
-
-```bash
-stayfixed release hashes            # write the record
-stayfixed release hashes --check    # report drift, write nothing
-```
-
-Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` —
-because those are the ones a harness runs directly; a wheel's own contents are the packaging
-tool's to attest. The record is refused rather than written when any of the three is missing: a
-record naming two of three reads as a clean comparison for the third.
-
-**Not a release-time command.** `stayfixed release check` compares the record to the tree on
-every run, so editing any of the three without re-recording fails the gate in the same commit
-rather than at a tag — which is what makes it a record somebody has watched fail. `doctor
-files` reads the installed record against the installed files, and reports post-install
-modification, a partial update or a broken checkout. An attacker who edits both the files and
-the record is not this check's threat; tag protection and the pinned SHA are.
-
-**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift. Under
-`--check --json` the object carries `summary`, `files` and `problems`, in both outcomes, for
-the reason `release check` above gives.
 
 ## `stayfixed hook <event>`
 
@@ -2938,8 +2862,8 @@ in a parser, which is the whole point of the rule.
 | `--check` | report drift instead of writing, and fail if there is any |
 
 `--check` is the CI half of `--dry-run`: both read and write nothing, and `--check` fails when
-anything differs. `stayfixed bugs index`, `stayfixed docs trail`, `stayfixed memory index` and
-`stayfixed release hashes` all take it with that meaning.
+anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
+take it with that meaning.
 
 Five commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant

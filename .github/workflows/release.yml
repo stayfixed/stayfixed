@@ -11,17 +11,17 @@ name: release
 on:
   push:
     # Semver tags only, and deliberately not `v*`: the floating `v1` alias matches `v*`, so
-    # every alias move would start a run that `release check --tag v1` fails — for the life of
-    # the project. The alias points at a release this workflow already published.
+    # every alias move would start a run that `scripts/release.py check --tag v1` fails — for
+    # the life of the project. The alias points at a release this workflow already published.
     #
     # Finals only, and the prerelease pattern that stood beside this one is gone. It admitted
     # `v0.1.0-rc1` while `gh release create` below carries no `--prerelease`, so an rc would
     # have become the repository's "Latest" Release; and it could not have got that far anyway,
-    # because `release check --tag` compares the tag to `pyproject.toml`'s literal version and
-    # `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the six-source rule then reads as
-    # two different versions. A trigger for a release this project cannot cut is a trigger that
-    # only fires by accident. RELEASING.md section 2, step 6, says the same thing to the person
-    # tagging.
+    # because `scripts/release.py check --tag` compares the tag to `pyproject.toml`'s literal
+    # version and `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the six-source rule then
+    # reads as two different versions. A trigger for a release this project cannot cut is a
+    # trigger that only fires by accident. RELEASING.md section 2, step 6, says the same thing to
+    # the person tagging.
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 permissions:
@@ -48,9 +48,10 @@ jobs:
         run: uv sync --locked
       - name: Version discipline, against the tag
         # The tag is the claim; the six sources, the changelog and the hash record are what
-        # the claim has to agree with, and `release check --tag` holds all of them. A tag that
-        # names a version no source carries is the one release mistake PyPI will not let you undo.
-        run: uv run stayfixed release check --tag "$GITHUB_REF_NAME"
+        # the claim has to agree with, and `scripts/release.py check --tag` holds all of them. A
+        # tag that names a version no source carries is the one release mistake PyPI will not let
+        # you undo.
+        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q
       - name: Build

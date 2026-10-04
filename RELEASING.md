@@ -1,11 +1,11 @@
 # Releasing stayfixed
 
-Version discipline itself is enforced — `stayfixed release check` cross-checks six sources, a
+Version discipline itself is enforced — `scripts/release.py check` cross-checks six sources, a
 tag and the record of the shipped files, and runs in CI. What was undocumented is everything
 around it: how to cut a release at all. This file is that, so the bus factor of the release
 process is not one.
 
-The sequence, once, before the detail: `release check` → towncrier assembles `CHANGELOG.md`
+The sequence, once, before the detail: `release.py check` → towncrier assembles `CHANGELOG.md`
 from the `changelog.d/` fragments → `claude plugin tag` and the `vX.Y.Z` tag, pushed without
 `main` → the PyPI upload and the GitHub Release, attached to `vX.Y.Z` only and never to the
 floating `v1`, which immutable releases would freeze → `main` moves to the release commit →
@@ -16,7 +16,7 @@ cross-repository smoke runs at the new tag.
 
 ## 1. The sources
 
-`uv run stayfixed release check` refuses unless these agree:
+`uv run python scripts/release.py check` refuses unless these agree:
 
 | Source | Where the version lives |
 |---|---|
@@ -26,14 +26,14 @@ cross-repository smoke runs at the new tag.
 | `.claude-plugin/plugin.json` | `version` |
 | `.codex-plugin/plugin.json` | `version` |
 | `CHANGELOG.md` | the first `## <version>` heading after the towncrier marker |
-| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `release check` fails while it is stale and `stayfixed release hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
+| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `release.py check` fails while it is stale and `release.py hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
 
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
 
-`stayfixed release check --tag vX.Y.Z` adds the tag as a further source and tightens one rule: a
-fragment still pending in `changelog.d/` is a finding rather than a licence for `CHANGELOG.md`
-to lag. That is the form `release.yml` runs.
+`scripts/release.py check --tag vX.Y.Z` adds the tag as a further source and tightens one rule:
+a fragment still pending in `changelog.d/` is a finding rather than a licence for `CHANGELOG.md`
+to lag. That is the form `release.yml` runs. Section 6 is the script's own reference.
 
 ## 2. Cutting a release
 
@@ -53,7 +53,7 @@ step 7's sentence true.
    uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
    uv run ruff check . && uv run ruff format --check . && uv run mypy
    uv run python scripts/mutation_oracle.py
-   uv run stayfixed release check
+   uv run python scripts/release.py check
    claude plugin validate --strict .claude-plugin/plugin.json
    claude plugin validate --strict .claude-plugin/marketplace.json
    claude plugin validate .codex-plugin/plugin.json
@@ -94,7 +94,7 @@ step 7's sentence true.
 
    ```bash
    uv sync
-   uv run stayfixed release check   # names every source that still disagrees
+   uv run python scripts/release.py check   # names every source that still disagrees
    ```
 
    That is four of the six sources; `uv.lock` is the fifth and `uv sync` above writes it.
@@ -110,7 +110,7 @@ step 7's sentence true.
 
    **And the two example configurations, which a test holds.** `README.md`'s and `docs/cli.md`'s
    example `stayfixed.toml` blocks each carry `version = "X.Y.Z"`, and a copy of a stale one
-   makes `stayfixed doctor` warn on a brand-new project. `release check` cannot see them,
+   makes `stayfixed doctor` warn on a brand-new project. `release.py check` cannot see them,
    because they are examples and not sources, so `tests/test_documents.py` holds them instead:
    it fails until both name the version the tree carries, and the release workflow runs the
    suite on the tag.
@@ -118,14 +118,14 @@ step 7's sentence true.
 4. **Assemble the changelog.**
 
    ```bash
-   uv run stayfixed release notes --version X.Y.Z --draft   # read it first; writes nothing
-   uv run stayfixed release notes --version X.Y.Z
-   uv run stayfixed release check                           # must print "one version everywhere: X.Y.Z"
+   uv run python scripts/release.py notes --version X.Y.Z --draft   # read it first; writes nothing
+   uv run python scripts/release.py notes --version X.Y.Z
+   uv run python scripts/release.py check   # must print "one version everywhere: X.Y.Z"
    ```
 
    Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
    as a release note is worth fixing now — this is the text users see. The version comes before
-   the changelog because `release notes` refuses a `--version` that is not the project's; after
+   the changelog because `release.py notes` refuses a `--version` that is not the project's; after
    this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty. Four things to look
    for, in this order:
 
@@ -141,7 +141,7 @@ step 7's sentence true.
      behaviour is not there, state the feature as what it now is and delete the fix; keep the
      ones a reader of the previous release has to act on — a grammar that refuses a
      `stayfixed.toml` which loaded before, a flag that means something narrower than it sounds.
-     `release check --tag` cannot judge this: it counts pending fragments and never reads them.
+     `release.py check --tag` cannot judge this: it counts pending fragments and never reads them.
 
      **The first release is this rule with nothing to compare against.** There is no previous
      tag, so every `Fixed` entry in 0.1.0 described a bug no user could have met, and read as a
@@ -190,7 +190,7 @@ step 7's sentence true.
    takes any git ref — while the `stayfixed--` tag is the one the tooling itself looks for.
    Neither is a substitute for the other; make both.
 
-   **No prerelease tags.** `release check --tag` compares the tag to `pyproject.toml`'s
+   **No prerelease tags.** `release.py check --tag` compares the tag to `pyproject.toml`'s
    literal version string, and `uv.lock` normalises a PEP 440 prerelease (`0.1.0-rc1` becomes
    `0.1.0rc1`), so the six-source rule cannot be satisfied by an `rc` today. `release.yml`
    triggers on finals only, deliberately.
@@ -205,7 +205,7 @@ step 7's sentence true.
    ```bash
    claude plugin tag .
    git tag vX.Y.Z
-   uv run stayfixed release check --tag vX.Y.Z
+   uv run python scripts/release.py check --tag vX.Y.Z
    git push origin vX.Y.Z stayfixed--vX.Y.Z
    ```
 
@@ -380,9 +380,51 @@ projects only.
   spent version, delete it, as step 7 says for a taken name.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
-- **`release check` fails in the workflow but passed locally.** Almost always `uv.lock`: `uv
+- **`release.py check` fails in the workflow but passed locally.** Almost always `uv.lock`: `uv
   sync` was not run after the version bump, so the lockfile still carries the old one. The
-  other candidate is `hooks/hashes.json`, if a shipped file moved without `stayfixed release
-  hashes`.
+  other candidate is `hooks/hashes.json`, if a shipped file moved without `release.py hashes`.
 - **`publish-template` pushed the wrong tree.** The next `publish-template` fixes it: it
   replaces the tree whole rather than merging into it.
+
+## 6. The release script
+
+`scripts/release.py` is this repository's own tooling, not a command stayfixed ships: it only
+ever checked the stayfixed repository itself. It runs through the same frame as the CLI, so
+`--json` is accepted anywhere on the line and prints one object, and it exits `0` on success,
+`1` on findings and `2` on a refusal.
+
+```bash
+uv run python scripts/release.py check [--tag TAG]               # one version everywhere
+uv run python scripts/release.py notes --version X.Y.Z [--draft]  # assemble CHANGELOG.md
+uv run python scripts/release.py hashes [--check]                 # the record of the shipped files
+```
+
+**`check`** cross-checks the six sources of section 1 and exits `1` naming every one that
+disagrees. Its `--json` object carries `summary`, `versions` (every source and what it says) and
+`problems` (empty on a clean run), and it carries all three whether or not there is drift — the
+drift is in `problems`, not in the shape. A source it cannot parse at all is still a failure and
+prints `error` instead. `--tag` accepts both tag shapes, `vX.Y.Z` and `stayfixed--vX.Y.Z`,
+because either may be the ref a run was created from. It writes nothing; it reads the sources,
+the fragments pending in `changelog.d/`, and `hooks/hashes.json` beside the three files it
+records.
+
+**`notes`** is a wrapper around towncrier, which does the rendering while `[tool.towncrier]` in
+`pyproject.toml` owns the format. A `--version` that is not the project's is refused (`2`) before
+towncrier runs, because assembling under another number writes a `CHANGELOG.md` heading that
+`check` then refuses; a towncrier that cannot be run is a finding (`1`) naming it as the
+development dependency it is. Without `--draft` it writes `CHANGELOG.md` and consumes the
+fragments: towncrier removes each one from `changelog.d/` and, in a git checkout, stages both
+changes — `git add` of `CHANGELOG.md`, `git rm` of each tracked fragment, which removes the
+directory itself when the tracked fragments were all it held. With `--draft` it writes nothing
+and prints the rendered section.
+
+**`hashes`** records the sha256 of the three files the harness executes without Python —
+`hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` — into `hooks/hashes.json` beside
+them; a wheel's own contents are the packaging tool's to attest. The record is refused rather
+than written when any of the three is missing: a record naming two of three reads as a clean
+comparison for the third. It is not a release-time command: `check` compares the record to the
+tree on every run, so editing any of the three without re-recording fails the gate in the same
+commit, which is what makes it a record somebody has watched fail. `stayfixed doctor`'s `files`
+row reads the installed record against the installed files. Under `--check` it writes nothing,
+exits `1` on drift, and its `--json` object carries `summary`, `files` and `problems` in both
+outcomes.

@@ -1,14 +1,29 @@
+"""`scripts/release.py`: this repository's own release discipline, driven through `main(argv)`.
+
+The three commands used to be the installed CLI's `release` group, and they only ever checked
+the stayfixed repository itself; the exit codes and the `--json` shapes are the ones that group
+had, and these tests are what holds them. The half of the release record that shipped code reads
+— `HASHED_FILES`, `read_record` and what it raises — stays in `stayfixed.release` and is tested
+in `tests/release/`. towncrier is a development dependency and is *invoked*, never imported; the
+argv is the contract, and a stub records it.
+"""
+
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from stayfixed.cli import build_parser, run
-from stayfixed.release.commands import register
-from stayfixed.release.versions import MalformedSource, check, collect, pending_fragments
+from stayfixed.errors import Failure, Refusal
+from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
+from stayfixed.runner import NOT_FOUND
+from tests.release_script import release as _script
+from tests.runners import Recorder
 
+release = _script()
 ROOT = Path(__file__).resolve().parents[2]
 
 # The fragment predicate reads the types towncrier itself is configured with, so a fixture
@@ -72,14 +87,14 @@ def test_all_equal_is_clean(tmp_path: Path) -> None:
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.1.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
-    assert check(root) == []
+    assert release.check(root) == []
 
 
 def test_each_mismatch_is_named(tmp_path: Path) -> None:
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.1.0", claude="0.1.1", codex="0.1.0", changelog="0.1.0"
     )
-    problems = check(root)
+    problems = release.check(root)
     assert len(problems) == 1
     assert ".claude-plugin/plugin.json" in problems[0]
     assert "0.1.1" in problems[0]
@@ -95,14 +110,14 @@ def test_pending_fragments_allow_the_changelog_to_lag(tmp_path: Path) -> None:
         changelog="0.1.0",
         fragments=1,
     )
-    assert check(root) == []
+    assert release.check(root) == []
 
 
 def test_without_fragments_the_changelog_must_match(tmp_path: Path) -> None:
     root = repo(
         tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0", changelog="0.1.0"
     )
-    assert any("CHANGELOG.md" in problem for problem in check(root))
+    assert any("CHANGELOG.md" in problem for problem in release.check(root))
 
 
 def test_a_versioned_marketplace_entry_is_refused(tmp_path: Path) -> None:
@@ -119,7 +134,7 @@ def test_a_versioned_marketplace_entry_is_refused(tmp_path: Path) -> None:
         changelog="0.1.0",
         marketplace=versioned,
     )
-    assert any("marketplace" in problem for problem in check(root))
+    assert any("marketplace" in problem for problem in release.check(root))
 
 
 def test_collect_reads_every_source_value(tmp_path: Path) -> None:
@@ -132,7 +147,7 @@ def test_collect_reads_every_source_value(tmp_path: Path) -> None:
         changelog="1.0.4",
         lock="1.0.5",
     )
-    assert collect(root) == {
+    assert release.collect(root) == {
         "pyproject.toml": "1.0.0",
         "uv.lock": "1.0.5",
         "src/stayfixed/__init__.py": "1.0.1",
@@ -147,7 +162,7 @@ def test_a_missing_version_key_reads_as_none(tmp_path: Path) -> None:
         tmp_path, pyproject="1.0.0", init="1.0.0", claude="1.0.0", codex="1.0.0", changelog="1.0.0"
     )
     (root / ".codex-plugin" / "plugin.json").write_text(json.dumps({"name": "stayfixed"}))
-    assert collect(root)[".codex-plugin/plugin.json"] is None
+    assert release.collect(root)[".codex-plugin/plugin.json"] is None
 
 
 def test_the_cli_command_exits_one_on_version_drift(
@@ -158,17 +173,17 @@ def test_the_cli_command_exits_one_on_version_drift(
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
-    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
-    # stdout, and that is the change rather than an accident: this area used to report a
+    assert release.main(["check", "--root", str(root)]) == 1
+    # stdout, and that is the change rather than an accident: these commands used to report a
     # finding by raising `Failure`, which the frame prints to stderr under a `stayfixed: failed:`
-    # prefix and which drops `Result.data`. Every other area returns its findings.
+    # prefix and which drops `Result.data`. Every stayfixed command returns its findings.
     assert "version drift" in capsys.readouterr().out
 
 
 def test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The whole of why this area stopped raising. A `Failure` becomes
+    # The whole of why these commands stopped raising. A `Failure` becomes
     # `{"error": "failed", "summary": "failed: ..."}` and `Result.data` never reaches the
     # output — so a consumer that read `versions` on a clean run had nothing to read on the run
     # it cared about, and the machine-readable shape flipped on exactly the condition being
@@ -193,10 +208,9 @@ def test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift(
         codex="0.1.0",
         changelog="0.1.0",
     )
-    parser = build_parser([register])
-    assert run(["release", "check", "--root", str(clean), "--json"], parser=parser) == 0
+    assert release.main(["check", "--root", str(clean), "--json"]) == 0
     on_success = json.loads(capsys.readouterr().out)
-    assert run(["release", "check", "--root", str(drifted), "--json"], parser=parser) == 1
+    assert release.main(["check", "--root", str(drifted), "--json"]) == 1
     on_drift = json.loads(capsys.readouterr().out)
 
     assert set(on_success) == set(on_drift) == {"summary", "problems", "versions"}
@@ -213,8 +227,8 @@ def test_the_cli_command_reports_the_agreed_version_on_success(
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.1.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
-    argv = ["release", "check", "--root", str(root), "--json"]
-    assert run(argv, parser=build_parser([register])) == 0
+    argv = ["check", "--root", str(root), "--json"]
+    assert release.main(argv) == 0
     assert json.loads(capsys.readouterr().out)["versions"]["pyproject.toml"] == "0.1.0"
 
 
@@ -261,15 +275,15 @@ def test_only_a_towncrier_fragment_lets_the_changelog_lag(
     # pending fragment and turn a genuine drift from exit 1 into exit 0.
     root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
     (root / "changelog.d" / entry).write_text("x\n")
-    assert pending_fragments(root) is pending
-    assert (check(root) == []) is pending
+    assert release.pending_fragments(root) is pending
+    assert (release.check(root) == []) is pending
 
 
 def test_a_stray_file_beside_a_real_fragment_does_not_hide_it(tmp_path: Path) -> None:
     root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
     (root / "changelog.d" / ".DS_Store").write_text("x\n")
     (root / "changelog.d" / "foundation.feature.md").write_text("x\n")
-    assert pending_fragments(root) is True
+    assert release.pending_fragments(root) is True
 
 
 def test_the_fragment_types_come_from_the_configuration_not_from_code(tmp_path: Path) -> None:
@@ -277,19 +291,19 @@ def test_the_fragment_types_come_from_the_configuration_not_from_code(tmp_path: 
     # blocks towncrier itself reads.
     root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
     (root / "changelog.d" / "x.removal.md").write_text("x\n")
-    assert pending_fragments(root) is False
+    assert release.pending_fragments(root) is False
     pyproject = root / "pyproject.toml"
     pyproject.write_text(
         pyproject.read_text() + '\n[[tool.towncrier.type]]\ndirectory = "removal"\n'
     )
-    assert pending_fragments(root) is True
+    assert release.pending_fragments(root) is True
 
 
 def test_a_disagreeing_lockfile_is_reported_by_name(tmp_path: Path) -> None:
     # `uv sync --locked` reds the install step on a stale lockfile with a dependency-shaped
     # message, ahead of the gate built to catch exactly this.
     root = _repo(tmp_path, lock="0.0.9")
-    problems = check(root)
+    problems = release.check(root)
     assert len(problems) == 1
     assert "uv.lock says '0.0.9'" in problems[0]
 
@@ -297,14 +311,14 @@ def test_a_disagreeing_lockfile_is_reported_by_name(tmp_path: Path) -> None:
 def test_a_missing_lockfile_reads_as_none_and_is_reported_as_drift(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     (root / "uv.lock").unlink()
-    assert collect(root)["uv.lock"] is None
-    assert any("uv.lock says None" in problem for problem in check(root))
+    assert release.collect(root)["uv.lock"] is None
+    assert any("uv.lock says None" in problem for problem in release.check(root))
 
 
 def test_a_lockfile_that_names_no_stayfixed_package_reads_as_none(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     (root / "uv.lock").write_text('[[package]]\nname = "pytest"\nversion = "8.0.0"\n')
-    assert collect(root)["uv.lock"] is None
+    assert release.collect(root)["uv.lock"] is None
 
 
 def test_the_four_root_conditions_get_four_different_messages(tmp_path: Path) -> None:
@@ -322,10 +336,10 @@ def test_the_four_root_conditions_get_four_different_messages(tmp_path: Path) ->
     no_version.mkdir()
     (no_version / "pyproject.toml").write_text('[project]\nname = "stayfixed"\n')
 
-    absent = check(missing)
-    a_file = check(not_a_directory)
-    unrelated = check(empty)
-    versionless = check(no_version)
+    absent = release.check(missing)
+    a_file = release.check(not_a_directory)
+    unrelated = release.check(empty)
+    versionless = release.check(no_version)
     assert absent == [f"{missing} does not exist; --root must name a repository root"]
     assert a_file == [f"{not_a_directory} is not a directory; --root must name a repository root"]
     assert unrelated == [f"{empty} has no pyproject.toml; --root must name a repository root"]
@@ -348,8 +362,8 @@ def test_a_malformed_source_is_reported_with_its_filename(
     # `_read` knows the filename and used to let the decoder's own error escape without it.
     root = _repo(tmp_path)
     (root / name).write_text(body)
-    with pytest.raises(MalformedSource) as raised:
-        check(root)
+    with pytest.raises(release.MalformedSource) as raised:
+        release.check(root)
     assert name in str(raised.value)
     assert kind in str(raised.value)
 
@@ -368,8 +382,8 @@ def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, n
     (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
     with pytest.raises(RecursionError):
         json.loads((root / name).read_text())
-    with pytest.raises(MalformedSource) as raised:
-        check(root)
+    with pytest.raises(release.MalformedSource) as raised:
+        release.check(root)
     assert str(raised.value).startswith(f"{name} is not valid JSON: ")
 
 
@@ -384,8 +398,8 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
     # past them, reaching the caller as an unlabelled internal error naming no file.
     root = _repo(tmp_path)
     (root / "uv.lock").write_text(body)
-    with pytest.raises(MalformedSource) as raised:
-        check(root)
+    with pytest.raises(release.MalformedSource) as raised:
+        release.check(root)
     assert "uv.lock" in str(raised.value)
 
 
@@ -421,10 +435,10 @@ def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
     # with .get" and "the marketplace reads a plugins value that is not a list of objects".
     root = _repo(tmp_path)
     (root / name).write_text(body)
-    with pytest.raises(MalformedSource) as raised:
-        check(root)
+    with pytest.raises(release.MalformedSource) as raised:
+        release.check(root)
     assert str(raised.value).startswith(name) and shape in str(raised.value), raised.value
-    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert release.main(["check", "--root", str(root)]) == 1
     assert name in capsys.readouterr().err
 
 
@@ -437,7 +451,7 @@ def test_the_cli_command_exits_one_on_a_malformed_source(
     # left every test green.
     root = _repo(tmp_path)
     (root / "uv.lock").write_text("not = = toml")
-    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert release.main(["check", "--root", str(root)]) == 1
     assert "uv.lock is not valid TOML" in capsys.readouterr().err
 
 
@@ -465,11 +479,11 @@ def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     # `stayfixed--vX.Y.Z` — because either may be the one the run was created from.
     # Mutation (declared): accept any tag -> the first assertion reddens.
     root = _at(tmp_path, "1.2.3")
-    assert check(root, tag="v1.2.4") == [
+    assert release.check(root, tag="v1.2.4") == [
         "tag v1.2.4 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
-    assert check(root, tag="v1.2.3") == []
-    assert check(root, tag="stayfixed--v1.2.3") == []
+    assert release.check(root, tag="v1.2.3") == []
+    assert release.check(root, tag="stayfixed--v1.2.3") == []
 
 
 def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version(
@@ -493,16 +507,16 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
     root = _at(tmp_path, "1.2.3")
     # A bare version, which is the tag `git tag 1.2.3` makes and the one that read as agreeing
     # with itself.
-    assert check(root, tag="1.2.3") == [
+    assert release.check(root, tag="1.2.3") == [
         "tag 1.2.3 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
     # One hyphen short of the platform's own tag.
-    assert check(root, tag="stayfixed-v1.2.3") == [
+    assert release.check(root, tag="stayfixed-v1.2.3") == [
         "tag stayfixed-v1.2.3 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
     # And a prefix carrying an earlier `v`, where the split produced `-v1.2.3` — a string that
     # is not a version at all.
-    assert check(root, tag="dev-v1.2.3") == [
+    assert release.check(root, tag="dev-v1.2.3") == [
         "tag dev-v1.2.3 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
 
@@ -514,23 +528,22 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
     root = _at(tmp_path, "1.2.3")
     (root / "changelog.d" / "late.feature.md").write_text("late\n", encoding="utf-8")
-    assert check(root) == []
-    problems = check(root, tag="v1.2.3")
+    assert release.check(root) == []
+    problems = release.check(root, tag="v1.2.3")
     assert problems == [
         "changelog.d still holds 1 fragment(s); run "
-        "`stayfixed release notes --version 1.2.3` before tagging"
+        f"`{release.COMMAND} notes --version 1.2.3` before tagging"
     ]
 
 
 def test_the_cli_passes_the_tag_through_to_the_gate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # That the flag exists is held by the README row walk, which parses every row against the
-    # real parser; that its value reaches `check` is held here and nowhere else. Mutation:
-    # `check(root, tag=args.tag)` -> `check(root)` -> exit 0 and this reddens.
+    # That the flag exists and that its value reaches `check` is held here and nowhere else.
+    # Mutation: `check(root, tag=args.tag)` -> `check(root)` -> exit 0 and this reddens.
     root = _at(tmp_path, "1.2.3")
-    argv = ["release", "check", "--root", str(root), "--tag", "v9.9.9"]
-    assert run(argv, parser=build_parser([register])) == 1
+    argv = ["check", "--root", str(root), "--tag", "v9.9.9"]
+    assert release.main(argv) == 1
     assert "tag v9.9.9 is neither v1.2.3 nor" in capsys.readouterr().out
 
 
@@ -538,12 +551,12 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
-    # so this walks the registered command end to end without shelling out, which no test does —
+    # so this walks the command end to end without shelling out, which no test does —
     # CONTRIBUTING.md's Tests section routes such calls through a stub runner, and the write
-    # path stays a unit test over the stub in `tests/release/test_notes.py`.
+    # path stays a unit test over the stub, under `notes` below.
     root = _at(tmp_path, "1.2.3")
-    argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
-    assert run(argv, parser=build_parser([register])) == 2
+    argv = ["notes", "--version", "1.3.0", "--root", str(root)]
+    assert release.main(argv) == 2
     assert "set the version everywhere first" in capsys.readouterr().err
 
 
@@ -557,7 +570,7 @@ def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_reco
     root = _repo(tmp_path)
     (root / "hooks").mkdir()
     (root / "hooks" / "hooks.json").write_text("{}\n", encoding="utf-8")
-    assert check(root) == []
+    assert release.check(root) == []
 
 
 def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
@@ -566,13 +579,11 @@ def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missin
     # The other direction, and the one the record exists for: a tree that carries the three
     # files the harness executes is a tree that owes a record of them. Without this the guard
     # above could be narrowed to `if False` and nothing would notice.
-    from stayfixed.release.hashes import HASHED_FILES, RECORD
-
     root = _repo(tmp_path)
     for relative in HASHED_FILES:
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
-    assert check(root) == [f"{RECORD} is missing; run `stayfixed release hashes`"]
+    assert release.check(root) == [f"{RECORD} is missing; run `{release.COMMAND} hashes`"]
 
 
 def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
@@ -581,4 +592,175 @@ def test_collect_still_reads_the_package_version_beside_the_repository_constants
     # `__version__` alone, so the two new lines must not change what this reads.
     from stayfixed import __version__
 
-    assert collect(ROOT)["src/stayfixed/__init__.py"] == __version__
+    assert release.collect(ROOT)["src/stayfixed/__init__.py"] == __version__
+
+
+# --- `notes`: the towncrier wrapper, driven through the runner seam ------------------------------
+
+# What the stubbed towncrier prints for a draft, and what `build` returns for one.
+NOTES = "## 1.2.3\n\n- a note\n"
+
+
+def _root(tmp_path: Path, version: str = "1.2.3") -> Path:
+    (tmp_path / "pyproject.toml").write_text(
+        f'[project]\nname = "stayfixed"\nversion = "{version}"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_the_argv_is_towncriers_build_with_the_version_and_yes(tmp_path: Path) -> None:
+    stub = Recorder(stdout=NOTES)
+    release.build(_root(tmp_path), version="1.2.3", draft=False, runner=stub)
+    assert stub.calls == [["towncrier", "build", "--version", "1.2.3", "--yes"]]
+    assert stub.cwds == [tmp_path]
+
+
+def test_a_draft_adds_the_flag_and_returns_towncriers_stdout(tmp_path: Path) -> None:
+    stub = Recorder(stdout=NOTES)
+    assert release.build(_root(tmp_path), version="1.2.3", draft=True, runner=stub) == stub.stdout
+    assert stub.calls[0][-1] == "--draft"
+
+
+def test_a_version_that_is_not_the_projects_is_refused_before_anything_runs(tmp_path: Path) -> None:
+    # `release check` requires the changelog's first heading to equal pyproject's version,
+    # so assembling under another number writes a changelog the gate then refuses. Refused
+    # here, above the write. Mutation (declared): drop the comparison -> the stub is called
+    # and the `calls == []` assertion reddens.
+    stub = Recorder(stdout=NOTES)
+    with pytest.raises(Refusal, match="set the version everywhere first"):
+        release.build(_root(tmp_path, version="1.2.3"), version="1.3.0", draft=False, runner=stub)
+    assert stub.calls == []
+
+
+def test_a_missing_towncrier_names_the_dependency_group(tmp_path: Path) -> None:
+    with pytest.raises(Failure, match="uv sync"):
+        release.build(
+            _root(tmp_path),
+            version="1.2.3",
+            draft=False,
+            runner=Recorder(code=NOT_FOUND, stderr="boom"),
+        )
+
+
+# --- The release record: writing it, and the drift between it and the tree ----------------------
+
+
+def _plugin(tmp_path: Path) -> Path:
+    for relative in HASHED_FILES:
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text(f"# {relative}\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: Path) -> None:
+    # Mutation (declared): `drift` compares the record against itself -> the second
+    # assertion reddens (no drift after the edit).
+    root = _plugin(tmp_path)
+    release.write_record(root)
+    assert release.drift(root) == []
+    (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
+    assert release.drift(root) == [
+        f"{RECORD} does not match hooks/run-hook.sh; run `{release.COMMAND} hashes`"
+    ]
+
+
+def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path) -> None:
+    root = _plugin(tmp_path)
+    release.write_record(root)
+    document = json.loads((root / RECORD).read_text(encoding="utf-8"))
+    assert document["format"] == 1
+    assert set(document["files"]) == set(HASHED_FILES)
+    assert document["files"] == digests(root)
+    assert read_record(root) == digests(root)
+    # And what `digests` computes, against a literal rather than against itself. Every other
+    # assertion about the record compares one side of it to the other, so both move together:
+    # measured, `hashlib.sha256(...).hexdigest()` truncated to `[:8]` in `release/hashes.py`
+    # left every record test passing — the algorithm and the digest length are what a
+    # downstream verifier depends on and nothing pinned either. `tests/scaffold/test_manifest.py`
+    # makes the same claim the same way.
+    #
+    # Mutation (declared): the record records a truncated digest.
+    assert digests(root)["hooks/hooks.json"] == hashlib.sha256(b"# hooks/hooks.json\n").hexdigest()
+
+
+def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:
+    root = _plugin(tmp_path)
+    assert read_record(root) is None
+    assert release.drift(root) == [f"{RECORD} is missing; run `{release.COMMAND} hashes`"]
+    release.write_record(root)
+    (root / "scripts" / "stayfixed").unlink()
+    assert release.drift(root) == [f"{RECORD} names scripts/stayfixed, which is not in the tree"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"{not json\n", b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n'],
+    ids=["not-json", "not-utf8"],
+)
+def test_a_record_that_cannot_be_read_is_drifts_failure_and_never_a_clean_tree(
+    tmp_path: Path, body: bytes
+) -> None:
+    # `drift` has no arm of its own for this: the reader's `UnreadableRecord` passes through it,
+    # and that class is a `Failure`, so the check exits 1 naming the record rather than reading
+    # a corrupt one as no drift. No mutation of its own — the raise is the reader's, and the
+    # entries on `read_record` that name `tests/release/test_hashes.py` pin it there.
+    root = _plugin(tmp_path)
+    (root / RECORD).write_bytes(body)
+    with pytest.raises(Failure, match=re.escape(RECORD)):
+        release.drift(root)
+
+
+def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The command's argv wiring: that `--check` reaches `drift` and that the bare form writes.
+    # No subprocess anywhere — this command reads and hashes files and nothing else.
+    root = _plugin(tmp_path)
+    assert release.main(["hashes", "--check", "--root", str(root)]) == 1
+    # stdout: a finding is returned, as every stayfixed command returns one.
+    assert "is missing" in capsys.readouterr().out
+    assert release.main(["hashes", "--root", str(root)]) == 0
+    assert (root / RECORD).is_file()
+    assert release.main(["hashes", "--check", "--root", str(root)]) == 0
+    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
+    assert release.main(["hashes", "--check", "--root", str(root)]) == 1
+    assert "hooks/hooks.json" in capsys.readouterr().out
+
+
+def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same invariant `check` states above, and the reason these commands stopped raising
+    # `Failure` to report a finding: the frame drops `Result.data` for a `Failure`, so the
+    # machine-readable object changed shape on exactly the condition a consumer runs this to
+    # detect.
+    #
+    # Mutation (declared): the drift arm returns `{}` for its data -> the key sets differ.
+    root = _plugin(tmp_path)
+    assert release.main(["hashes", "--root", str(root)]) == 0
+    capsys.readouterr()
+    assert release.main(["hashes", "--check", "--root", str(root), "--json"]) == 0
+    on_success = json.loads(capsys.readouterr().out)
+    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
+    assert release.main(["hashes", "--check", "--root", str(root), "--json"]) == 1
+    on_drift = json.loads(capsys.readouterr().out)
+
+    assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
+    assert on_success["problems"] == []
+    assert on_drift["problems"] == [
+        f"{RECORD} does not match hooks/hooks.json; run `{release.COMMAND} hashes`"
+    ]
+    assert on_drift["files"] == sorted(HASHED_FILES)
+
+
+def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path) -> None:
+    # A record that names two of three files is a record saying "this is what the release
+    # shipped" while naming less than it did, and every reader of it afterwards reports drift
+    # against a claim nobody meant to make. Refused at the moment of writing, where the tree
+    # can still be fixed — and nothing is written. Mutation (declared): drop the length check
+    # -> a partial record lands and both assertions redden.
+    root = _plugin(tmp_path)
+    (root / "hooks" / "hooks.json").unlink()
+    with pytest.raises(Failure, match=re.escape("hooks/hooks.json")):
+        release.write_record(root)
+    assert not (root / RECORD).exists(), "a refusal wrote a partial record anyway"
