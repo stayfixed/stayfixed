@@ -665,8 +665,8 @@ reddens = [
 [[mutation]]
 name = "the project-root variables are asked in registry order"
 file = "src/stayfixed/harnesses.py"
-before = "    ordered = (CANONICAL, *(harness for harness in registered() if harness is not CANONICAL))"
-after = "    ordered = registered()"
+before = "    ordered = (CANONICAL, *(harness for harness in HARNESSES if harness is not CANONICAL))"
+after = "    ordered = HARNESSES"
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_harness_registered_first_never_takes_the_root_from_claude_code",
 ]
@@ -1236,9 +1236,9 @@ reddens = [
 [[mutation]]
 name = "detection answers Claude Code before asking any harness"
 file = "src/stayfixed/harnesses.py"
-before = "    for harness in registered():"
+before = "    for harness in HARNESSES:"
 after = """    return CANONICAL
-    for harness in registered():"""
+    for harness in HARNESSES:"""
 reddens = [
   "tests/test_harnesses.py::test_an_environment_codex_sets_is_codex",
 ]

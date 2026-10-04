@@ -118,7 +118,7 @@ from stayfixed.setup.api import USER_SETTINGS
 # committed settings files and the ones it keeps out of git, read off the harness registry, so a
 # harness added there is walked here without an edit. The two roots are the project (all of
 # them) and `home` (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny
-# rules, and which is Claude Code's committed settings file under another root).
+# rules, and which `setup` reads off `CLAUDE.settings`: the same file under another root).
 SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )

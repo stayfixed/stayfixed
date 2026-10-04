@@ -269,13 +269,6 @@ CANONICAL = CLAUDE
 HARNESSES: tuple[Harness, ...] = (CLAUDE, CODEX)
 
 
-def registered() -> tuple[Harness, ...]:
-    """Every value the hooks core answers through: the ones `detect` asks, in this order, and the
-    ones whose project-root variables `project_root_variables` names. Behind one function so a
-    test can register a value of its own without editing the tuple every other reader shares."""
-    return HARNESSES
-
-
 def project_root_variables() -> tuple[str, ...]:
     """The variables a hook's project root is read from, in the order they are asked.
 
@@ -286,7 +279,7 @@ def project_root_variables() -> tuple[str, ...]:
     was detected, because detection is a repository's to steer and the root decides which
     configuration loads.
     """
-    ordered = (CANONICAL, *(harness for harness in registered() if harness is not CANONICAL))
+    ordered = (CANONICAL, *(harness for harness in HARNESSES if harness is not CANONICAL))
     return tuple(dict.fromkeys(h.project_dir_env for h in ordered if h.project_dir_env))
 
 
@@ -298,7 +291,7 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
     answers, because a process no value claims is served the canonical shape, and what it answers
     decides how an answer is shaped and never what a handler sees or whether a call is refused.
     """
-    for harness in registered():
+    for harness in HARNESSES:
         if harness.detects is not None and harness.detects(env, payload):
             return harness
     return CANONICAL

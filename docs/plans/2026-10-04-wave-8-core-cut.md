@@ -797,7 +797,9 @@ neither it nor the configuration layer.
   `internal error`); `test_a_clamped_answer_is_the_detected_harnesss_envelope`.
 - [ ] **Step 2: Run.** Expected: FAIL (no `detect`, no fields).
 - [ ] **Step 3: Implement.** Move the bodies; make the registry injectable for tests through one
-  function the tests replace; rewrite the three tests that read `HookEvent.harness`.
+  function the tests replace; rewrite the three tests that read `HookEvent.harness`. (As landed
+  after review: no such function. `detect` and `project_root_variables` read `HARNESSES` as every
+  other reader does, and the tests replace `stayfixed.harnesses.HARNESSES` itself.)
 - [ ] **Step 4: Run.** `uv run pytest tests/test_harnesses.py tests/hooks tests/memory tests/test_areas.py tests/project -q`. Expected: PASS.
 - [ ] **Step 5: Document and commit.** `CONTRIBUTING.md`: drop `detect_harness` from the
   `hooks.api` vocabulary; a harness is a value in `harnesses.HARNESSES`, and adding one is a value

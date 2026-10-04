@@ -546,7 +546,7 @@ def test_a_harness_registered_first_never_takes_the_root_from_claude_code(
     project = tmp_path / "project"
     project.mkdir()
     fake = _harness(lambda name, context: context, project_dir_env="FAKE_PROJECT_DIR")
-    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setattr("stayfixed.harnesses.HARNESSES", (fake, *HARNESSES))
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
     env = {"CLAUDE_PROJECT_DIR": str(project), "FAKE_PROJECT_DIR": str(tmp_path / "elsewhere")}
     ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env)
@@ -701,7 +701,7 @@ def test_a_detected_harness_renders_its_own_answer(
         detects=lambda env, payload: payload is not None and "fake_session" in payload,
         project_dir_env="FAKE_PROJECT_DIR",
     )
-    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setattr("stayfixed.harnesses.HARNESSES", (fake, *HARNESSES))
     monkeypatch.setenv("FAKE_PROJECT_DIR", str(tmp_path))
     seen: list[Path | None] = []
 
@@ -736,7 +736,7 @@ def test_a_handler_sees_one_event_whichever_harness_is_detected(
     fake = _harness(
         lambda name, context: context, detects=lambda env, payload: "FAKE_HARNESS" in env
     )
-    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setattr("stayfixed.harnesses.HARNESSES", (fake, *HARNESSES))
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
     seen: list[HookEvent] = []
     detected: list[str] = []
