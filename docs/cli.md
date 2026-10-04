@@ -469,12 +469,28 @@ hook is `stayfixed setup --git-hooks`, and removing it — restoring whatever it
 
 ## `stayfixed test hygiene`
 
-The two environment faults that make a red test run unattributable: uncommitted changes in
-the tree, and `.pyc` files whose recorded source mtime no longer matches their source. Counts
-the bytecode under `[ledger] code_roots` and the uncommitted changes across the whole
-repository — a dirty tree anywhere makes a red run unattributable — and exits `1` when either
-is present, `2` when git cannot report the tree. The `PostToolUse` `Bash` hook delivers the
-same note once per context after a red pytest run.
+The environment faults that make a red test run unattributable: uncommitted changes in the
+tree, which belong to no stack, and whatever each stack's profile knows about its own — for
+Python, `.pyc` files under `[ledger] code_roots` whose recorded source mtime no longer matches
+their source. Counts the uncommitted changes across the whole repository — a dirty tree
+anywhere makes a red run unattributable — and asks every profile that ships a `hygiene.py`
+(today, Python) for its counts. A profile is listed when its markers sit at the repository
+root, and also, whether or not they do, when it has something to report: a Python project in a
+subdirectory has no marker at the root and still gets its stale bytecode named. So a repository
+in two stacks gets two entries whatever `[stayfixed] profile` names. The summary
+names each such finding as `<profile>: <its note>`, and a clean tree reads `tree is clean`
+followed by `; the <profile> profile has nothing to report` for each profile listed. `--json`
+carries `dirty` and, under `profiles`, each listed profile's counts by its name
+(`{"python": {"stale": 0, "roots": 2}}`). Exits `1` when the tree is dirty or a profile has
+something to report, `2` when git cannot report the tree or a shipped profile's hint cannot be
+loaded, answers in something other than text or fails; a failure is named by the profile and the
+exception's type alone.
+
+The `PostToolUse` `Bash` hook delivers the same note once per context after a red test run,
+chosen by the command that failed rather than by configuration: each simple command of the
+red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
+each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
+delivered together. A red command no profile recognises gets no note.
 
 **Writes** nothing.
 

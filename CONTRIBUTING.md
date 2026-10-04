@@ -121,8 +121,10 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 (`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
 outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
-areas, and `harnesses` is a module — nothing discovers them, because they carry neither a
-`commands.py` nor a `hooks.py`. `release` still publishes an `api.py`, which holds what an
+areas, and `harnesses` is a module — area discovery does not find them, because they carry
+neither a `commands.py` nor a `hooks.py`. `profiles` has a discovery convention of its own,
+inside the package: `stayfixed.profiles.hints.hint_modules` lists each profile directory that
+ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an
 installed stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
@@ -151,6 +153,16 @@ a release ships.)
   still imports `stayfixed.hooks.api` and never `stayfixed.hooks.dispatch` or `.sink`.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
   namespace package, so one without it is invisible to both discovery paths.
+
+The core is language-neutral. A profile under `src/stayfixed/profiles/<name>/` is a directory of
+data — `profile.toml` and `rules.md` — and, optionally, a `hygiene.py` whose `HINT` is that
+stack's advice after its test runner failed (`stayfixed.profiles.hints` says what a hint
+answers, and the command that failed decides which hints speak). That is where one stack's
+runner, build artifacts and package manager belong: no module outside a profile's own directory
+names a stack — the machinery directly under `profiles/` included — except the pardons
+`tests/test_language_neutral.py` lists, each with its reason, and a new mention either moves into
+its profile or joins that list with one. None imports a profile's code either: the core finds a
+hint by discovery, and that test refuses an import of it without pardon.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their

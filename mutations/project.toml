@@ -1733,3 +1733,211 @@ after = "        names = listed(list(report.custom_gates[:5]))"
 reddens = [
   "tests/project/test_command.py::test_past_the_listed_limit_the_custom_gate_note_counts_the_rest[exactly-the-limit]",
 ]
+
+# The Python profile's red-run hint. Its bytecode reads moved here with it from the core, and the
+# entries with them.
+# The stale-bytecode predicate, both directions: `!=` against the header's recorded mtime is
+# the comparison CPython makes; a naive `pyc mtime > source mtime` reported the healthy case
+# as stale and missed the real one.
+[[mutation]]
+name = "stale bytecode is never counted"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_stale_bytecode_is_counted"]
+
+[[mutation]]
+name = "fresh bytecode is counted as stale"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if True:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
+
+# The other half of the stale-bytecode predicate, and the direction that costs a person time
+# rather than only missing a warning. PEP 552 bytes 8-12 hold the source mtime only while bit 0
+# of the flags word is clear; in a hash-based `.pyc` they hold half the source hash, and
+# comparing that fragment to an mtime reports a perfectly current cache as stale on every run.
+# `SOURCE_DATE_EPOCH` alone flips `py_compile` into that mode, so a reproducible build turns the
+# notice into a permanent false alarm and `test hygiene` into a permanent exit 1.
+[[mutation]]
+name = "a hash-based .pyc is read as if it carried an mtime"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '    if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:'
+after = '    if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_hash_based_pyc_is_not_judged"]
+
+# The third half of the stale-bytecode header read, and the same class as `mutations/`'s "a
+# hash-based .pyc is read as if it carried an mtime": PEP 552 bytes 8-12 are this interpreter's
+# recorded source mtime only when bytes 0-4 are this interpreter's magic. A `__pycache__` keeps one
+# `.pyc` per interpreter tag and nothing removes the old ones, so a `mod.cpython-311.pyc` records
+# the mtime as of a run whose bytecode will never be imported again -- and any edit since makes it
+# mismatch. Measured on a tree whose current bytecode had just been compiled and was fresh:
+# `_stale_bytecode` -> 1, so the notice fires on every red run of a healthy tree and `test hygiene`
+# exits 1 forever.
+[[mutation]]
+name = "a .pyc from another interpreter is read as this one's"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
+after = '    if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
+
+# Which hint speaks is chosen by the command that failed. A hint that answered for every command
+# would put Python's advice -- and the dirty-tree line, which only a recognised run earns -- on a
+# failed `cargo test`, and spend the once-per-context delivery a failed test run needed.
+[[mutation]]
+name = "the Python hint recognises every command"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "    def recognises(self, argv: Sequence[str]) -> bool:"
+after = """    def recognises(self, argv: Sequence[str]) -> bool:
+        return True"""
+reddens = ["tests/profiles/python/test_hygiene.py::test_no_recognising_profile_means_no_notice"]
+
+# The profiles' own machinery directly under `profiles/` is core: only a stack's directory,
+# `profiles/<name>/`, may name that stack. A runner named in `hints.py` is a mention like one in
+# any core module.
+[[mutation]]
+name = "the profiles' machinery names a stack"
+file = "src/stayfixed/profiles/hints.py"
+before = 'HINT_FILE = "hygiene.py"'
+after = """HINT_FILE = "hygiene.py"
+_RUNNER = "pytest""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+# What a hint's report may carry out of it: count names in a fixed grammar, with plain integers.
+# A key is text the hint chose, and a path-shaped one would carry the walked tree's names into
+# `note` and into `stayfixed test hygiene --json`; taking a boolean for a count lets `True` through
+# as 1.
+[[mutation]]
+name = "a count keeps any string for its name"
+file = "src/stayfixed/profiles/hints.py"
+before = """        and COUNT_NAME.fullmatch(key)
+        and type(value) is int"""
+after = "        and type(value) is int"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]
+
+# Exactly `str` and `int`: a subclass keeps its own `__str__` and `__format__` and can print as
+# text the check never saw, and `bool` is an `int` subclass that is not a count.
+[[mutation]]
+name = "a count takes an int subclass, a boolean included, for a count"
+file = "src/stayfixed/profiles/hints.py"
+before = "        and type(value) is int"
+after = "        and isinstance(value, int)"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+[[mutation]]
+name = "a count keeps a str subclass for its name"
+file = "src/stayfixed/profiles/hints.py"
+before = "        if type(key) is str"
+after = "        if isinstance(key, str)"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# A count is a non-negative number below `COUNT_LIMIT`; anything else is a defect in the hint, and
+# an unbounded one makes `json.dumps` raise in `test hygiene --json`.
+[[mutation]]
+name = "a count keeps a negative or unbounded integer"
+file = "src/stayfixed/profiles/hints.py"
+before = "        and 0 <= value < COUNT_LIMIT"
+after = "        and True"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# A profile whose `hygiene.py` does not import or defines no `HINT` goes quiet alone. Imported
+# unguarded, the failure reaches the hook's dispatcher ahead of every per-hint guard and costs the
+# whole notice, the dirty-tree line included.
+[[mutation]]
+name = "a hint module is imported outside its guard"
+file = "src/stayfixed/profiles/hints.py"
+before = """    try:
+        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT
+    except Exception:
+        return None"""
+after = '    hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+]
+
+# Only a regular `.pyc` is read, and it is judged by the descriptor that reads it. Following a
+# symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
+# waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a
+# pipe whose writer has written a header reads like bytecode. The source is not held to it: the
+# interpreter follows a symlinked source too.
+[[mutation]]
+name = "a symlinked .pyc is followed"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
+after = "_PYC_OPEN = os.O_RDONLY | os.O_NONBLOCK"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
+
+[[mutation]]
+name = "a .pyc that is a named pipe is opened waiting for a writer"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
+after = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW"
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk",
+]
+
+[[mutation]]
+name = "a .pyc that is not a regular file is read"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = """        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+"""
+after = ""
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_read"]
+
+[[mutation]]
+name = "a source that is a symlink is not compared"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "                if not source.is_file():"
+after = "                if not source.is_file() or source.is_symlink():"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
+
+# Both callers ask a hint through `answer`, so a note's shape is judged once. A note that is
+# neither text nor `None` is outside the protocol: passed on, it raises in the hook's join after
+# every per-hint guard has returned and costs the whole notice, and `test hygiene` prints it as a
+# finding where it must refuse, because a hint it could not read is not one with nothing to report.
+[[mutation]]
+name = "a note that is not text passes as one"
+file = "src/stayfixed/profiles/hints.py"
+before = "    if note is not None and not isinstance(note, str):"
+after = "    if False:"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_note_that_is_not_text",
+]
+
+# An empty note is nothing to report, as the hook reads it: a stack whose markers are not at the
+# root and whose note is "" is not listed by `test hygiene`.
+[[mutation]]
+name = "an empty note is something to report"
+file = "src/stayfixed/profiles/hints.py"
+before = "    return report, note or None"
+after = "    return report, note"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty",
+]
+
+# A hint's `note` is handed counts and nothing else, which is what keeps a repository's strings out
+# of the line it renders: the report goes through `counts` first, a fresh mapping of count names to
+# plain integers. Handed as returned, a path the report carried reaches `note`.
+[[mutation]]
+name = "a hint's note is handed its report as returned"
+file = "src/stayfixed/profiles/hints.py"
+before = "    note = hint.note(report)"
+after = "    note = hint.note(hint.report(root, config))"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# And `test hygiene --json` prints the counts `answer` returns, never the report as the hint built it.
+[[mutation]]
+name = "test hygiene prints a report as the hint returned it"
+file = "src/stayfixed/profiles/hints.py"
+before = "    report = counts(hint, root, config)"
+after = "    report = dict(hint.report(root, config))"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]

@@ -204,27 +204,60 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
 # value of this command is that it answers "can this red run be trusted", and "I do not know"
 # reported as "yes" is the one wrong answer.
 _NO_GIT = "git could not report the tree's status, so this tree cannot be judged"
+# The same answer for a profile this command could not ask, which is not one with nothing to
+# report: its hint did not load, answered outside its protocol, or raised. `{name}` is a shipped
+# profile's directory name, never a repository value, and of an exception only its type is
+# printed: its message can carry a path the hint walked, and a path is repository-authored text.
+_UNLOADED = "the {name} profile's red-run hint could not be loaded"
+_WORDLESS = "the {name} profile's red-run hint answered in something other than text"
+_FAILED = "the {name} profile's red-run hint failed: {kind}"
+_UNJUDGED = ", so this tree cannot be judged"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.hygiene import inspect
+    from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.profiles import detects, load_profile
+    from stayfixed.profiles.hints import NotText, answer, shipped_hints
 
     root, config = _root_and_config(args)
-    found = inspect(root, config)
-    if found.dirty is None:
+    dirty = dirty_count(root)
+    if dirty is None:
         raise Refusal(_NO_GIT)
     findings: list[str] = []
-    if found.dirty:
-        findings.append(f"{found.dirty} uncommitted change(s) in the tree")
-    if found.stale:
-        findings.append(f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)")
-    # Counts and labels only: a `ledger.code_roots` entry is a repository-authored string and
-    # never reaches the summary. `data` is the documented exception and carries none either.
-    summary = (
-        "; ".join(findings)
-        or f"tree is clean and bytecode under {found.roots} code root(s) is fresh"
+    if dirty:
+        findings.append(f"{dirty} uncommitted change(s) in the tree")
+    hints = shipped_hints()
+    unloaded = [name for name, hint in hints if hint is None]
+    if unloaded:
+        raise Refusal("; ".join(_UNLOADED.format(name=name) for name in unloaded) + _UNJUDGED)
+    # Every stack the repository is written in, and not the one `[stayfixed] profile` names: a
+    # repository in two stacks gets two entries. A profile is listed when its markers sit at the
+    # root, and also, whether or not they do, when it has something to say: the hook asks every
+    # hint and detects nothing, so a Python project in a subdirectory gets the stale-bytecode
+    # note after a failed run, and this command must not call the same tree clean.
+    reports: dict[str, dict[str, int]] = {}
+    for name, hint in ((name, hint) for name, hint in hints if hint is not None):
+        try:
+            report, note = answer(hint, root, config)
+        except NotText:
+            raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
+        except Exception as exc:
+            kind = type(exc).__name__
+            raise Refusal(_FAILED.format(name=name, kind=kind) + _UNJUDGED) from None
+        if note is None and not detects(load_profile(name), root):
+            continue
+        reports[name] = report
+        if note:
+            findings.append(f"{name}: {note}")
+    # Counts, fixed sentences and shipped profiles' names only: a `ledger.code_roots` entry is a
+    # repository-authored string and never reaches the summary. `data` is the documented
+    # exception and carries none either: each report is what `counts` kept, count names in a
+    # fixed grammar with plain integers.
+    clean = "tree is clean" + "".join(
+        f"; the {name} profile has nothing to report" for name in reports
     )
-    data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
+    summary = "; ".join(findings) or clean
+    data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)
 
 

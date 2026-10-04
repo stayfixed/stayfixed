@@ -19,8 +19,9 @@ and one gate:
 - `attach` and `detach` resolve the repository's `info/exclude` through the same resolver
   (`git_path`), so the block they keep there is the one file every worktree shares, found the
   way `setup --git-hooks` finds its hooks directory rather than by a second spelling.
-- `ledger.scan`, `memory.refs` and `assess`'s probes all ask which roots a configuration's paths
-  may reach (`contained_roots`), and two spellings of that would be two answers.
+- `ledger.scan`, `memory.refs`, `assess`'s probes and the Python profile's red-run hint
+  (`profiles/python/hygiene.py`) all ask which roots a configuration's paths may reach
+  (`contained_roots`), and two spellings of that would be two answers.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
 

@@ -54,6 +54,12 @@ WHEEL_MUST = (
     # `[stayfixed] profile = "python"` as unshipped on every installed stayfixed.
     "stayfixed/profiles/python/profile.toml",
     "stayfixed/profiles/python/rules.md",
+    # Its code. `stayfixed.profiles.hints` finds `hygiene.py` through `importlib.resources` and
+    # imports it, so a build that dropped it would leave every installed stayfixed without the
+    # Python note after a failed pytest run, silently. `__init__.py` with it, so the installed
+    # profile is the regular package the checkout imports.
+    "stayfixed/profiles/python/__init__.py",
+    "stayfixed/profiles/python/hygiene.py",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.
