@@ -22,6 +22,7 @@ from stayfixed.hooks.api import Handler, HookEvent
 from stayfixed.hooks.dispatch import Recorder, dispatch
 from stayfixed.profiles.python.hygiene import HINT
 from tests.gitfixture import git
+from tests.guards.test_commands import invoke
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -232,6 +233,72 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
     assert outcome.stderr == ""
     answer = json.loads(outcome.stdout)["hookSpecificOutput"]
     assert answer["additionalContext"] == f"{LEAD}\n- gamma says (1)"
+
+
+class LoudHint(FakeHint):
+    """A hint whose report carries more than counts, and which keeps what its note was given."""
+
+    def __init__(self, runner: str, note: str) -> None:
+        super().__init__(runner, note)
+        self.returned: dict[object, object] = {}
+        self.given: object = None
+
+    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+        self.returned = {
+            "found": 1,
+            "path": str(root),
+            "flag": True,
+            "ratio": 0.5,
+            7: 3,
+        }
+        return self.returned  # type: ignore[return-value]
+
+    def note(self, counts: Mapping[str, int]) -> str | None:
+        self.given = counts
+        return super().note(counts)
+
+
+def test_a_note_is_handed_counts_and_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The trust rule for a hint's line holds because `note` is handed counts and nothing else,
+    # so the core hands it a fresh mapping of string keys to plain integers, whatever `report`
+    # returned: a path, a boolean (an `int` to Python), a float and a non-string key are dropped
+    # before the hint renders anything, and the hint never sees the very object it returned.
+    # Oracle: `mutations/`, "a hint's note is handed its report as returned".
+    loud = LoudHint("x", "loud says")
+    ship(monkeypatch, {"alpha": loud})
+    root = a_project(tmp_path)
+    result = hygiene().run(red_event(root, "x"), config_of(root))
+    assert result.context == f"{LEAD}\n- loud says (1)"
+    assert loud.given == {"found": 1}
+    assert loud.given is not loud.returned
+
+
+@needs_git
+def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `[stayfixed] profile` names one stack; a repository written in two gets both stacks'
+    # counts, each under its profile's name, and only counts: the report that carried a path
+    # reaches `--json` as its integers alone. Detection is replaced so that both fake profiles
+    # sit at the root. Oracle: `mutations/`, "test hygiene reports the first stack and stops"
+    # and "test hygiene prints a report as the hint returned it".
+    ship(monkeypatch, {"alpha": LoudHint("x", "alpha says"), "beta": FakeHint("y", "beta says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: True)
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(CONFIG, encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: seed")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] == 0
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == "alpha: alpha says (1); beta: beta says (1)"
 
 
 def test_the_note_is_a_function_of_the_report() -> None:

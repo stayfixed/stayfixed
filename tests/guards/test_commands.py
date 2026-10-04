@@ -373,9 +373,9 @@ def test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuratio
     # `[stayfixed] profile` names one stack, and a repository may be written in several: the
     # report goes to every profile whose markers sit at the root. `CONFIG` names no profile, so
     # the Python entry here comes from `pyproject.toml` alone, and a repository with no marker
-    # gets no entry. Reddened by mutating `run_test_hygiene`'s
-    # `if not detects(load_profile(name), root):` to `if False:` (the second assertion);
-    # measured.
+    # gets no entry while it has nothing to say. Reddened by mutating `run_test_hygiene`'s
+    # `if note is None and not detects(load_profile(name), root):` to `if False:` (the second
+    # assertion); measured.
     root = repo(tmp_path)
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
     (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
@@ -447,6 +447,43 @@ def test_test_hygiene_names_the_stale_count_in_its_summary(
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 1
     assert "python: 1 .pyc file(s) whose recorded source mtime" in capsys.readouterr().out
+
+
+@needs_git
+def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A monorepo whose Python project lives in a subdirectory has no Python marker at its root,
+    # and the hook, which asks every hint and detects nothing, still reports its stale bytecode
+    # after a failed pytest run. Listing only the profiles detected at the root answered "tree is
+    # clean", exit 0, for the same tree: the command contradicted the notice it documents. A
+    # profile whose note is not `None` is listed wherever its markers sit, and the exit code
+    # follows. The tree is committed, with the bytecode ignored, so the only finding is the
+    # stale `.pyc`. Oracle: `mutations/`, "test hygiene hides a profile its markers do not
+    # detect at the root".
+    root = repo(tmp_path)
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    py_compile.compile(
+        str(module),
+        cfile=str(root / "src" / "__pycache__" / f"m.{sys.implementation.cache_tag}.pyc"),
+        doraise=True,
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    future = time.time() + 60
+    os.utime(module, (future, future))
+    assert not (root / "pyproject.toml").exists()
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] == 0 and out["profiles"] == {"python": {"stale": 1, "roots": 1}}
 
 
 @needs_git

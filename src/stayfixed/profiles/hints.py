@@ -6,10 +6,14 @@ which hints speak, through `RedRunHint.recognises`, and `[stayfixed] profile` pl
 repository in several languages runs several stacks' suites, and the stack whose runner failed is
 the one whose advice applies.
 
-`note` receives the counts `report` returned and nothing else, so no path, file name or command
-text a repository authored can reach the line it renders: the trust rule
-(`CONTRIBUTING.md`, "Repository bytes are data") holds by construction rather than by each
-profile's care.
+`note` receives counts and nothing else: the core passes every report through
+`stayfixed.guards.hygiene.plain_counts`, which keeps string keys with plain integer values and
+drops the rest, before it reaches `note` or `stayfixed test hygiene --json`. So no path, file
+name or command text a repository authored reaches a hint's line through what the hint is
+handed, and the trust rule (`CONTRIBUTING.md`, "Repository bytes are data") holds for every hint
+that renders from its argument alone, which is the contract below; a hint that kept a string
+from `report` on itself for `note` to print would break the contract, and nothing but review
+catches that.
 
 The listing goes through `importlib.resources` over this package, never over a repository path,
 so only a hint stayfixed itself ships is ever imported.

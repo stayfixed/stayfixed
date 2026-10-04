@@ -207,7 +207,7 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.guards.hygiene import dirty_count, plain_counts
     from stayfixed.profiles import detects, load_profile
     from stayfixed.profiles.hints import shipped_hints
 
@@ -218,17 +218,19 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     findings: list[str] = []
     if dirty:
         findings.append(f"{dirty} uncommitted change(s) in the tree")
-    # Every stack the repository is written in, by its profile's own markers, and not the one
-    # `[stayfixed] profile` names: a repository in two stacks gets two entries. Unguarded,
-    # unlike the hook's: a hint that raises is an internal error here, which is where its
-    # author finds out.
+    # Every stack the repository is written in, and not the one `[stayfixed] profile` names: a
+    # repository in two stacks gets two entries. A profile is listed when its markers sit at the
+    # root, and also wherever they do not when it has something to say: the hook asks every hint
+    # and detects nothing, so a Python project in a subdirectory gets the stale-bytecode note
+    # after a failed run, and this command must not call the same tree clean. Unguarded, unlike
+    # the hook's: a hint whose `report` or `note` raises is an internal error here.
     reports: dict[str, dict[str, int]] = {}
     for name, hint in shipped_hints():
-        if not detects(load_profile(name), root):
-            continue
-        counts = hint.report(root, config)
-        reports[name] = dict(counts)
+        counts = plain_counts(hint.report(root, config))
         note = hint.note(counts)
+        if note is None and not detects(load_profile(name), root):
+            continue
+        reports[name] = counts
         if note:
             findings.append(f"{name}: {note}")
     # Counts, fixed sentences and shipped profiles' names only: a `ledger.code_roots` entry is a

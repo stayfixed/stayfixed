@@ -911,10 +911,10 @@ reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"
 name = "a hint's note is computed outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
 before = """    try:
-        return hint.note(hint.report(root, config))
+        return hint.note(plain_counts(hint.report(root, config)))
     except Exception:
         return None"""
-after = "    return hint.note(hint.report(root, config))"
+after = "    return hint.note(plain_counts(hint.report(root, config)))"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
 
 [[mutation]]
@@ -938,3 +938,54 @@ LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"
 reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
+
+# A hint's `note` is handed counts and nothing else, which is what keeps a repository's strings out
+# of the line it renders: the report goes through `plain_counts` first, a fresh mapping of string
+# keys to plain integers. Handed as returned, a path the report carried reaches `note`; taking a
+# boolean for a count lets `True` through as 1.
+[[mutation]]
+name = "a hint's note is handed its report as returned"
+file = "src/stayfixed/guards/hygiene.py"
+before = "        return hint.note(plain_counts(hint.report(root, config)))"
+after = "        return hint.note(hint.report(root, config))"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+[[mutation]]
+name = "plain counts take a boolean for a count"
+file = "src/stayfixed/guards/hygiene.py"
+before = "        if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)"
+after = "        if isinstance(key, str) and isinstance(value, int)"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# `test hygiene` must not call clean a tree the hook calls stale: the hook asks every hint and
+# detects nothing, so a profile with something to say is listed wherever its markers sit, and a
+# Python project in a subdirectory is not hidden by the root having no marker.
+[[mutation]]
+name = "test hygiene hides a profile its markers do not detect at the root"
+file = "src/stayfixed/guards/commands.py"
+before = "        if note is None and not detects(load_profile(name), root):"
+after = "        if not detects(load_profile(name), root):"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit",
+]
+
+# A repository in two stacks gets two entries, and each carries counts only.
+[[mutation]]
+name = "test hygiene reports the first stack and stops"
+file = "src/stayfixed/guards/commands.py"
+before = "        reports[name] = counts"
+after = """        reports[name] = counts
+        break"""
+reddens = [
+  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]
+
+[[mutation]]
+name = "test hygiene prints a report as the hint returned it"
+file = "src/stayfixed/guards/commands.py"
+before = "        counts = plain_counts(hint.report(root, config))"
+after = "        counts = dict(hint.report(root, config))"
+reddens = [
+  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]
+
