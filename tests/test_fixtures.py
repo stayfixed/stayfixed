@@ -307,6 +307,13 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         # And each one is really a gate CI runs, so the block cannot drift into naming a
         # command nobody checks.
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
+    # A gate CI runs and then excuses is a gate in name only: `uv run mypy || true` carries the
+    # spelling every check above reads and lets the step pass whatever mypy found. Mutation
+    # (declared): `mutations/`'s "ci lets a failed type check through" -> reddens.
+    excused = [
+        line for line in ci.splitlines() if any(gate in line for gate in required) and "||" in line
+    ]
+    assert excused == [], excused
 
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"

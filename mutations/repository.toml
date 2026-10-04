@@ -3542,6 +3542,17 @@ reddens = [
   "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
 ]
 
+# CI's own gates are read by the spelling a contributor's block copies, and a gate followed by
+# `|| true` carries that spelling and passes whatever the gate found.
+[[mutation]]
+name = "ci lets a failed type check through"
+file = ".github/workflows/ci.yml"
+before = "        run: uv run mypy\n"
+after = "        run: uv run mypy || true\n"
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
 # The step is held to its whole command line: the spelling followed by `|| true` runs the check and
 # publishes whatever it found.
 [[mutation]]
