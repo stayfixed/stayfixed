@@ -1,15 +1,21 @@
 # tests/hooks/test_dispatch.py
 from __future__ import annotations
 
+import argparse
 import asyncio
+import io
 import json
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
+from stayfixed.gitenv import _git_toplevel
+from stayfixed.harnesses import CLAUDE, CODEX, HARNESSES, Harness
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
-from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
+from stayfixed.hooks.commands import run_hook
+from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
 from tests.gitfixture import git
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
@@ -23,7 +29,7 @@ def event(name: str = "PreToolUse", **raw: object) -> HookEvent:
         "tool_name": "Bash",
     }
     payload.update(raw)
-    return parse_event(payload, env=CLAUDE_ENV)
+    return read_event(payload, CLAUDE_ENV, CLAUDE)
 
 
 def handler(
@@ -46,7 +52,7 @@ def test_contexts_are_joined_into_the_claude_shape() -> None:
         handler("a", Policy.OPEN, HookResult(context="A")),
         handler("b", Policy.OPEN, HookResult(context="B")),
     ]
-    outcome = dispatch(event(), handlers, config=None, sink=Recorder())
+    outcome = dispatch(event(), handlers, config=None, harness=CLAUDE, sink=Recorder())
     assert outcome.exit_code == 0
     assert json.loads(outcome.stdout) == {
         "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "A\n\nB"}
@@ -62,8 +68,10 @@ def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, othe
     guard = handler(
         "g", Policy.CLOSED, HookResult(decision=Decision.DENY, reason="no"), event_name=registered
     )
-    assert dispatch(event(registered), [guard], None, sink=Recorder()).exit_code == 2
-    silent = dispatch(event(other), [guard], None, sink=Recorder())
+    assert (
+        dispatch(event(registered), [guard], None, harness=CLAUDE, sink=Recorder()).exit_code == 2
+    )
+    silent = dispatch(event(other), [guard], None, harness=CLAUDE, sink=Recorder())
     assert silent.exit_code == 0
     assert silent.stderr == ""
 
@@ -73,14 +81,16 @@ def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
     # a StrEnum, so the comparison must be by value: under identity this deny would be an
     # unrecognised verdict instead, which an OPEN handler's policy swallows.
     result = HookResult(decision=cast(Decision, "deny"))
-    outcome = dispatch(event(), [handler("a", Policy.OPEN, result)], None, sink=Recorder())
+    outcome = dispatch(
+        event(), [handler("a", Policy.OPEN, result)], None, harness=CLAUDE, sink=Recorder()
+    )
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
 
 
 def test_a_deny_from_a_handler_exits_two_with_its_reason() -> None:
     handlers = [handler("g", Policy.CLOSED, HookResult(decision=Decision.DENY, reason="no"))]
-    outcome = dispatch(event(), handlers, config=None, sink=Recorder())
+    outcome = dispatch(event(), handlers, config=None, harness=CLAUDE, sink=Recorder())
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "no" in outcome.stderr
@@ -89,7 +99,11 @@ def test_a_deny_from_a_handler_exits_two_with_its_reason() -> None:
 def test_an_open_handler_that_raises_is_swallowed_and_recorded() -> None:
     recorder = Recorder()
     outcome = dispatch(
-        event(), [handler("a", Policy.OPEN, RuntimeError("boom"))], None, sink=recorder
+        event(),
+        [handler("a", Policy.OPEN, RuntimeError("boom"))],
+        None,
+        harness=CLAUDE,
+        sink=recorder,
     )
     assert outcome.exit_code == 0
     assert "boom" in outcome.stderr
@@ -99,7 +113,11 @@ def test_an_open_handler_that_raises_is_swallowed_and_recorded() -> None:
 
 def test_a_closed_handler_that_raises_refuses() -> None:
     outcome = dispatch(
-        event(), [handler("g", Policy.CLOSED, RuntimeError("boom"))], None, sink=Recorder()
+        event(),
+        [handler("g", Policy.CLOSED, RuntimeError("boom"))],
+        None,
+        harness=CLAUDE,
+        sink=Recorder(),
     )
     assert outcome.exit_code == 2
     assert "boom" in outcome.stderr
@@ -109,12 +127,16 @@ def test_a_policy_that_arrived_as_a_plain_string_still_closes() -> None:
     # An area that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
     # cannot see that, so the cast stands in for it.
     closed = cast(Policy, "closed")
-    outcome = dispatch(event(), [handler("g", closed, RuntimeError("boom"))], None, sink=Recorder())
+    outcome = dispatch(
+        event(), [handler("g", closed, RuntimeError("boom"))], None, harness=CLAUDE, sink=Recorder()
+    )
     assert outcome.exit_code == 2
 
 
 def test_a_closed_handler_that_calls_sys_exit_refuses() -> None:
-    outcome = dispatch(event(), [handler("g", Policy.CLOSED, SystemExit(0))], None, sink=Recorder())
+    outcome = dispatch(
+        event(), [handler("g", Policy.CLOSED, SystemExit(0))], None, harness=CLAUDE, sink=Recorder()
+    )
     assert outcome.exit_code == 2
     assert "SystemExit" in outcome.stderr
 
@@ -122,7 +144,9 @@ def test_a_closed_handler_that_calls_sys_exit_refuses() -> None:
 def test_an_unrecognised_decision_under_an_open_policy_is_swallowed_with_a_reason() -> None:
     recorder = Recorder()
     result = HookResult(decision=cast(Decision, "block"))
-    outcome = dispatch(event(), [handler("a", Policy.OPEN, result)], None, sink=recorder)
+    outcome = dispatch(
+        event(), [handler("a", Policy.OPEN, result)], None, harness=CLAUDE, sink=recorder
+    )
     assert outcome.exit_code == 0
     # Production reads stderr and never reads the sink, so the reason must be on both.
     assert "unrecognised decision 'block'" in outcome.stderr
@@ -136,7 +160,9 @@ def test_an_unrecognised_decision_under_a_closed_policy_refuses(decision: object
     # malformed verdict is that handler failing, and a CLOSED handler's failure refuses.
     recorder = Recorder()
     result = HookResult(decision=cast(Decision, decision))
-    outcome = dispatch(event(), [handler("g", Policy.CLOSED, result)], None, sink=recorder)
+    outcome = dispatch(
+        event(), [handler("g", Policy.CLOSED, result)], None, harness=CLAUDE, sink=recorder
+    )
     assert outcome.exit_code == 2
     assert "unrecognised decision" in outcome.stderr
     assert recorder.records[0]["error"] == "unrecognised-decision"
@@ -149,7 +175,7 @@ def test_an_open_handlers_non_string_context_is_swallowed_and_a_later_one_lands(
     recorder = Recorder()
     broken = handler("a-broken", Policy.OPEN, HookResult(context=cast(str, 42)))
     ok = handler("b-ok", Policy.OPEN, HookResult(context="B"))
-    outcome = dispatch(event(), [broken, ok], None, sink=recorder)
+    outcome = dispatch(event(), [broken, ok], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 0
     assert "unrecognised context" in outcome.stderr
     assert recorder.records[0]["error"] == "unrecognised-context"
@@ -160,7 +186,9 @@ def test_an_open_handlers_non_string_context_is_swallowed_and_a_later_one_lands(
 def test_a_closed_handlers_non_string_context_refuses() -> None:
     recorder = Recorder()
     result = HookResult(context=cast(str, 42))
-    outcome = dispatch(event(), [handler("g", Policy.CLOSED, result)], None, sink=recorder)
+    outcome = dispatch(
+        event(), [handler("g", Policy.CLOSED, result)], None, harness=CLAUDE, sink=recorder
+    )
     assert outcome.exit_code == 2
     assert "unrecognised context" in outcome.stderr
     assert recorder.records[0]["error"] == "unrecognised-context"
@@ -182,7 +210,7 @@ def test_a_deny_carrying_a_malformed_context_still_refuses_and_records_the_failu
         reason="rm -rf / is refused",
         context=cast(str, {"n": 1}),
     )
-    outcome = dispatch(event(), [handler("g", policy, result)], None, sink=recorder)
+    outcome = dispatch(event(), [handler("g", policy, result)], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "g: rm -rf / is refused" in outcome.stderr
@@ -205,7 +233,7 @@ def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
     broken = handler(
         "b-broken", Policy.OPEN, HookResult(context=cast(str, 42)), event_name="PostToolUse"
     )
-    outcome = dispatch(event("PostToolUse"), [deny, broken], None, sink=recorder)
+    outcome = dispatch(event("PostToolUse"), [deny, broken], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "a-deny: no" in outcome.stderr
@@ -222,7 +250,7 @@ def test_a_base_exception_from_a_handler_is_judged_by_that_handlers_policy(
     # CancelledError leads: a regression on it fails one test, where KeyboardInterrupt aborts
     # the whole session and would otherwise be the only signal.
     recorder = Recorder()
-    outcome = dispatch(event(), [handler("g", policy, raised)], None, sink=recorder)
+    outcome = dispatch(event(), [handler("g", policy, raised)], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == (2 if policy == Policy.CLOSED else 0)
     assert type(raised).__name__ in outcome.stderr
     assert recorder.records[0]["error"] == type(raised).__name__
@@ -239,7 +267,7 @@ def test_an_earlier_deny_survives_a_later_handlers_malformed_return() -> None:
         event_name="PostToolUse",
     )
     broken = handler("b-broken", Policy.OPEN, cast(HookResult, None), event_name="PostToolUse")
-    outcome = dispatch(event("PostToolUse"), [deny, broken], None, sink=recorder)
+    outcome = dispatch(event("PostToolUse"), [deny, broken], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert outcome.decision == "deny"
     assert "a-deny: no" in outcome.stderr
@@ -268,7 +296,7 @@ def test_a_once_key_handler_runs_every_time_under_the_null_sink() -> None:
         name="a", event="PreToolUse", policy=Policy.OPEN, run=count, once_key="ledger-notes"
     )
     for _ in range(2):
-        dispatch(event(), [once], None, sink=NullSink())
+        dispatch(event(), [once], None, harness=CLAUDE, sink=NullSink())
     assert runs == [1, 1]
 
 
@@ -277,7 +305,7 @@ def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> 
         handler("g", Policy.CLOSED, HookResult()),
         handler("a", Policy.OPEN, RuntimeError("boom")),
     ]
-    assert dispatch(event(), handlers, None, sink=Recorder()).exit_code == 0
+    assert dispatch(event(), handlers, None, harness=CLAUDE, sink=Recorder()).exit_code == 0
 
 
 def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
@@ -285,14 +313,14 @@ def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     # longer than the cap is replaced by the platform with a preview and a file path.
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
-    outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)
+    outcome = dispatch(event(), handlers, None, harness=CLAUDE, sink=recorder, cap=20)
     assert outcome.stdout == ""
     assert recorder.records[0]["error"] == "context-truncated"
 
 
 def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> None:
     handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
-    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
+    outcome = dispatch(event(), handlers, None, harness=CLAUDE, sink=Recorder(), cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
     # search always lands exactly on the cap: what is left of it after the envelope and the mark
@@ -303,7 +331,7 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 20000))]
-    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=10000)
+    outcome = dispatch(event(), handlers, None, harness=CLAUDE, sink=Recorder(), cap=10000)
     assert len(outcome.stdout) <= 10000
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     assert context.endswith(TRUNCATION_MARK)
@@ -318,7 +346,7 @@ def test_json_escaping_is_charged_to_the_same_budget() -> None:
     handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
     shortfall = []
     for cap in (200, 201):
-        stdout = dispatch(event(), handlers, None, sink=Recorder(), cap=cap).stdout
+        stdout = dispatch(event(), handlers, None, harness=CLAUDE, sink=Recorder(), cap=cap).stdout
         context = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
         assert context.endswith(TRUNCATION_MARK)
         assert set(context.removesuffix(TRUNCATION_MARK)) == {"\n"}
@@ -329,8 +357,8 @@ def test_json_escaping_is_charged_to_the_same_budget() -> None:
 def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:
     recorder = Recorder()
     once = handler("a", Policy.OPEN, HookResult(context="A"), once_key="ledger-notes")
-    first = json.loads(dispatch(event(), [once], None, sink=recorder).stdout)
-    second = json.loads(dispatch(event(), [once], None, sink=recorder).stdout)
+    first = json.loads(dispatch(event(), [once], None, harness=CLAUDE, sink=recorder).stdout)
+    second = json.loads(dispatch(event(), [once], None, harness=CLAUDE, sink=recorder).stdout)
     assert first["hookSpecificOutput"]["additionalContext"] == "A"
     assert "additionalContext" not in second["hookSpecificOutput"]
     assert recorder.marks == {"ledger-notes"}
@@ -353,13 +381,13 @@ def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -
     recorder = Recorder()
     silent = handler("a", Policy.OPEN, HookResult(), once_key="overlay-status")
     for _ in range(3):
-        outcome = dispatch(event(), [silent], None, sink=recorder)
+        outcome = dispatch(event(), [silent], None, harness=CLAUDE, sink=recorder)
         assert "additionalContext" not in json.loads(outcome.stdout)["hookSpecificOutput"]
     assert recorder.marks == set()
     # Non-vacuous: the same handler with something to say does bank it, so this is about the
     # emptiness of the result and not about the key being ignored.
     speaking = handler("a", Policy.OPEN, HookResult(context="A"), once_key="overlay-status")
-    dispatch(event(), [speaking], None, sink=recorder)
+    dispatch(event(), [speaking], None, harness=CLAUDE, sink=recorder)
     assert recorder.marks == {"overlay-status"}
 
 
@@ -367,7 +395,7 @@ def test_a_handler_without_a_once_key_runs_every_time() -> None:
     recorder = Recorder()
     every = handler("a", Policy.OPEN, HookResult(context="A"))
     for _ in range(2):
-        outcome = dispatch(event(), [every], None, sink=recorder)
+        outcome = dispatch(event(), [every], None, harness=CLAUDE, sink=recorder)
         assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
     assert recorder.marks == set()
 
@@ -375,9 +403,9 @@ def test_a_handler_without_a_once_key_runs_every_time() -> None:
 def test_a_once_per_context_handler_that_raises_is_not_marked() -> None:
     recorder = Recorder()
     once = handler("a", Policy.OPEN, RuntimeError("boom"), once_key="ledger-notes")
-    assert "boom" in dispatch(event(), [once], None, sink=recorder).stderr
+    assert "boom" in dispatch(event(), [once], None, harness=CLAUDE, sink=recorder).stderr
     assert recorder.marks == set()
-    assert "boom" in dispatch(event(), [once], None, sink=recorder).stderr
+    assert "boom" in dispatch(event(), [once], None, harness=CLAUDE, sink=recorder).stderr
 
 
 @pytest.mark.parametrize(
@@ -414,10 +442,10 @@ def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_deliv
     once = Handler(
         name="a", event="PreToolUse", policy=Policy.OPEN, run=run, once_key="ledger-notes"
     )
-    first = dispatch(event(), [once], None, sink=recorder)
+    first = dispatch(event(), [once], None, harness=CLAUDE, sink=recorder)
     assert "unrecognised" in first.stderr, first.stderr
     assert recorder.marks == set()
-    second = dispatch(event(), [once], None, sink=recorder)
+    second = dispatch(event(), [once], None, harness=CLAUDE, sink=recorder)
     assert json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
     assert recorder.marks == {"ledger-notes"}
 
@@ -435,7 +463,7 @@ def test_a_deny_that_carries_no_context_is_still_a_delivery() -> None:
     once = handler(
         "a", Policy.OPEN, HookResult(decision=Decision.DENY, reason="no"), once_key="ledger-notes"
     )
-    outcome = dispatch(event(), [once], None, sink=recorder)
+    outcome = dispatch(event(), [once], None, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert recorder.marks == {"ledger-notes"}
 
@@ -457,12 +485,14 @@ def test_one_handler_cannot_blank_what_the_next_one_reads() -> None:
         Handler(name="a-blank", event="PreToolUse", policy=Policy.OPEN, run=blank),
         Handler(name="b-read", event="PreToolUse", policy=Policy.OPEN, run=read),
     ]
-    dispatch(event(tool_input={"command": "rm -rf /"}), handlers, None, sink=Recorder())
+    dispatch(
+        event(tool_input={"command": "rm -rf /"}), handlers, None, harness=CLAUDE, sink=Recorder()
+    )
     assert seen == ["rm -rf /", "Bash"]
 
 
-def test_a_handlers_view_keeps_tool_input_aliased_to_raw_like_parse_event_does() -> None:
-    # `parse_event` makes `ev.tool_input is ev.raw["tool_input"]` true; the per-handler view
+def test_a_handlers_view_keeps_tool_input_aliased_to_raw_like_read_event_does() -> None:
+    # `read_event` makes `ev.tool_input is ev.raw["tool_input"]` true; the per-handler view
     # must preserve that aliasing, not just isolate handlers from each other, so a handler that
     # writes through `tool_input` and reads back through `raw` sees its own write.
     seen: dict[str, object] = {}
@@ -481,12 +511,12 @@ def test_a_handlers_view_keeps_tool_input_aliased_to_raw_like_parse_event_does()
             run=write_through_tool_input_read_through_raw,
         )
     ]
-    dispatch(event(tool_input={"command": "ls"}), handlers, None, sink=Recorder())
+    dispatch(event(tool_input={"command": "ls"}), handlers, None, harness=CLAUDE, sink=Recorder())
     assert seen == {"aliased": True, "raw_command_after": "mutated"}
 
 
 def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() -> None:
-    ev = parse_event(
+    ev = read_event(
         {
             "hook_event_name": "PreToolUse",
             "cwd": "/tmp",
@@ -494,17 +524,30 @@ def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() ->
             "agent_id": ["a"],
             "tool_name": {"name": "Bash"},
         },
-        env=CLAUDE_ENV,
+        CLAUDE_ENV,
+        CLAUDE,
     )
     assert ev.session_id is None
     assert ev.agent_id is None
     assert ev.tool_name is None
 
 
-def test_project_root_prefers_the_claude_variable_over_git(tmp_path: Path) -> None:
-    ev = parse_event({"hook_event_name": "SessionStart", "cwd": str(tmp_path)}, env=CLAUDE_ENV)
-    assert ev.project_root == Path("/p")
-    assert ev.harness == "claude"
+def test_the_project_root_comes_from_the_harnesss_own_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Claude Code names the project root in `CLAUDE_PROJECT_DIR`; Codex names none, and a Codex
+    # process can inherit Claude Code's variable from the shell that started it. The variable is
+    # the harness's own datum, so under Codex it is ignored and the walk answers. Mutation
+    # (declared, on `hooks.dispatch`): `read_event` reads `CLAUDE_PROJECT_DIR` whatever the
+    # harness -> the Codex half reddens.
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    payload = {"hook_event_name": "SessionStart", "cwd": str(tmp_path)}
+    env = {"CLAUDE_PROJECT_DIR": "/p", "PLUGIN_ROOT": "/r"}
+    under_claude = read_event(payload, env, CLAUDE)
+    assert (under_claude.project_root, under_claude.harness) == (Path("/p"), "claude")
+    under_codex = read_event(payload, env, CODEX)
+    assert (under_codex.project_root, under_codex.harness) == (tmp_path.resolve(), "codex")
 
 
 def _forbidden(cwd: Path) -> Path | None:
@@ -516,8 +559,8 @@ def test_the_walk_finds_the_root_through_a_git_directory(
 ) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / "a" / "b").mkdir(parents=True)
-    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
-    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, env={})
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, {}, CLAUDE)
     assert ev.project_root == tmp_path
 
 
@@ -527,8 +570,8 @@ def test_the_walk_finds_the_root_through_a_git_file(
     # A worktree and a submodule carry `.git` as a file, so `is_dir()` would miss both.
     (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/w\n", encoding="utf-8")
     (tmp_path / "a").mkdir()
-    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
-    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, env={})
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, {}, CLAUDE)
     assert ev.project_root == tmp_path
 
 
@@ -543,8 +586,8 @@ def test_the_walk_resolves_a_symlinked_root_the_way_git_does(
     (real_repo / "sub").mkdir()
     link = tmp_path / "link"
     link.symlink_to(real_repo)
-    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
-    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, env={})
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, {}, CLAUDE)
     assert ev.project_root == real_repo.resolve()
 
 
@@ -557,38 +600,21 @@ def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
         asked.append(cwd)
         return Path("/from-git")
 
-    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", fake)
-    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env={})
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", fake)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, {}, CLAUDE)
     assert ev.project_root == Path("/from-git")
     assert asked == [tmp_path]
-
-
-def test_codex_is_detected_by_its_own_variable_even_beside_the_claude_ones() -> None:
-    env = {"PLUGIN_ROOT": "/x", "CLAUDE_PLUGIN_ROOT": "/x"}
-    ev = parse_event({"hook_event_name": "SessionStart", "cwd": "/tmp"}, env=env)
-    assert ev.harness == "codex"
-
-
-def test_codex_is_detected_by_the_stdin_fields_s1_recorded() -> None:
-    payload = {
-        "hook_event_name": "SessionStart",
-        "cwd": "/tmp",
-        "model": "m",
-        "permission_mode": "p",
-    }
-    ev = parse_event(payload, env={"CLAUDE_PLUGIN_ROOT": "/x"})
-    assert ev.harness == "codex"
 
 
 def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `memory.store._git` scrubbed and said why — "it must be a real git answer, not one an
-    # inherited `GIT_DIR` produced" — while this one passed no `env=` at all. `project_root()`
+    # inherited `GIT_DIR` produced" — while this one passed no `env=` at all. The checkout root
     # feeds *every* hook decision, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
     # handler in the process answer for a different repository than the session is in.
     #
-    # `_git_toplevel` directly, and a `cwd` with no `.git` above it: `project_root` tries
+    # `_git_toplevel` directly, and a `cwd` with no `.git` above it: `checkout_root` tries
     # `_walk_to_git_root` first and would find the answer without ever asking `git`.
     import shutil
 
@@ -604,3 +630,138 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
     monkeypatch.setenv("GIT_DIR", str(victim / ".git"))
     monkeypatch.setenv("GIT_WORK_TREE", str(victim))
     assert _git_toplevel(elsewhere) is None
+
+
+# --- the harness a hook answers through ---------------------------------------------------------
+#
+# Every harness's payload is read by `read_event`, and a harness value contributes only the name
+# of its project-root variable to that reading and the shape of its stdout to the answer. These
+# tests hold the second half: the value detection chose is the one that renders, a deny reaches
+# no value at all, and the clamp measures the envelope that is actually emitted.
+
+# Every variable either harness sets, so a test of detection is not answered by the environment
+# the suite happens to run in.
+HARNESS_VARIABLES = (
+    "PLUGIN_ROOT",
+    "PLUGIN_DATA",
+    "CLAUDE_PLUGIN_ROOT",
+    "CLAUDE_PLUGIN_DATA",
+    "CLAUDE_PROJECT_DIR",
+)
+
+
+def _harness(
+    render: Callable[[str, str], str],
+    *,
+    detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None,
+    project_dir_env: str | None = None,
+) -> Harness:
+    return Harness(
+        name="fake",
+        marker_dir=".fake",
+        settings=(),
+        project_dir_env=project_dir_env,
+        render=render,
+        detects=detects,
+    )
+
+
+def _hook(
+    monkeypatch: pytest.MonkeyPatch, event_name: str, payload: dict[str, object], probe: Handler
+) -> int:
+    """`run_hook` in this process, with `probe` as the only handler and no harness variable."""
+    for variable in HARNESS_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setattr("stayfixed.hooks.commands.discover", lambda: [probe])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    return run_hook(argparse.Namespace(event=event_name))
+
+
+def test_a_detected_harness_renders_its_own_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A harness whose output differs is a value of its own, registered beside the others, and
+    # the hook answers through the value detection chose. The handler sees the same event it
+    # would under any harness, named for the one detected, with the root that value's own
+    # variable names. Mutation (declared, on `hooks.dispatch`): `dispatch` renders with
+    # `CANONICAL` instead of the detected harness -> stdout is Claude Code's JSON and this
+    # reddens.
+    fake = _harness(
+        lambda name, context: f"fake:{name}:{context}",
+        detects=lambda env, payload: payload is not None and "fake_session" in payload,
+        project_dir_env="FAKE_PROJECT_DIR",
+    )
+    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setenv("FAKE_PROJECT_DIR", str(tmp_path))
+    seen: list[tuple[str, Path | None]] = []
+
+    def note(ev: HookEvent, config: object) -> HookResult:
+        seen.append((ev.harness, ev.project_root))
+        return HookResult(context="a note")
+
+    probe = Handler(name="probe", event="SessionStart", policy=Policy.OPEN, run=note)
+    payload: dict[str, object] = {"fake_session": "x", "cwd": str(tmp_path)}
+    assert _hook(monkeypatch, "SessionStart", payload, probe) == 0
+    assert capsys.readouterr().out == "fake:SessionStart:a note"
+    assert seen == [("fake", tmp_path)]
+
+
+def test_an_unknown_harness_renders_the_canonical_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No harness variable and no field only Codex sends: detection still answers, with Claude
+    # Code's schema, which other harnesses imitate. Pinned as the bytes a harness reads rather
+    # than compared with `CANONICAL.render`, which would agree with whatever it was changed to.
+    # Mutation (by hand): the canonical render's `hookSpecificOutput` misspelled -> reddens.
+    (tmp_path / ".git").mkdir()
+    probe = Handler(
+        name="probe",
+        event="PreToolUse",
+        policy=Policy.OPEN,
+        run=lambda ev, config: HookResult(context="a note"),
+    )
+    payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
+    assert _hook(monkeypatch, "PreToolUse", payload, probe) == 0
+    assert capsys.readouterr().out == (
+        '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "a note"}}'
+    )
+
+
+def test_a_deny_never_goes_through_render() -> None:
+    # A refusal is complete as exit 2 with its reason on stderr for every harness, and JSON is an
+    # enhancement of an answer that lets the call through. So no harness value is asked to shape
+    # a deny, and one whose rendering fails cannot cost the refusal or turn it into an internal
+    # error. Mutation (declared, on `hooks.dispatch`): the refusal's stdout rendered through
+    # `harness.render` -> the render raises out of `dispatch` and this reddens.
+    def broken(name: str, context: str) -> str:
+        raise AssertionError("a deny reached render")
+
+    handlers = [
+        handler("a-note", Policy.OPEN, HookResult(context="a note")),
+        handler("probe", Policy.OPEN, HookResult(decision=Decision.DENY, reason="rm is refused")),
+    ]
+    outcome = dispatch(
+        event(), handlers, None, harness=_harness(broken), sink=Recorder(), cap=10000
+    )
+    assert (outcome.exit_code, outcome.stdout) == (2, "")
+    assert outcome.stderr == "stayfixed: refused: probe: rm is refused\n"
+    assert "internal error" not in outcome.stderr
+
+
+def test_a_clamped_answer_is_the_detected_harnesss_envelope() -> None:
+    # The cap bounds the string the harness reads, so the largest prefix that fits is searched
+    # for in the detected harness's own envelope; one measured against Claude Code's would be the
+    # wrong width for any other. Mutation (declared, on `hooks.dispatch`): the clamp handed
+    # `CANONICAL.render` -> the clamped stdout is Claude Code's JSON and this reddens.
+    def wide(name: str, context: str) -> str:
+        return json.dumps({"an-envelope-of-another-width": {"event": name, "text": context}})
+
+    handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
+    recorder = Recorder()
+    outcome = dispatch(event(), handlers, None, harness=_harness(wide), sink=recorder, cap=200)
+    assert len(outcome.stdout) == 200
+    text = json.loads(outcome.stdout)["an-envelope-of-another-width"]["text"]
+    assert text == "y" * (len(text) - len(TRUNCATION_MARK)) + TRUNCATION_MARK
+    assert recorder.records == [
+        {"event": "PreToolUse", "handler": "*", "error": "context-truncated"}
+    ]

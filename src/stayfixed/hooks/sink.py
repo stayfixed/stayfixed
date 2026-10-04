@@ -56,7 +56,7 @@ DIAGNOSTIC_FIELD_CHARS = 2_000
 # however long a machine runs. A named cap (CONTRIBUTING.md#named-caps); no shipped file changes
 # with it.
 MARKER_SESSIONS_KEPT = 50
-# A session id the payload did not carry. `parse_event` types `session_id` as `str | None`, and
+# A session id the payload did not carry. `read_event` types `session_id` as `str | None`, and
 # every such invocation used to share one constant segment -- `sha256("")`, a hex pair anything
 # can precompute. That made the unkeyed case the one direction a *read* out of this tree could
 # be used in: a data root the environment names, plus a payload with no session id, is enough
@@ -137,7 +137,7 @@ class DataSink:
 
     def diagnostic(self, record: dict[str, object]) -> None:
         # The session is capped with everything else, and not merged in past the cap. It comes off
-        # the hook's stdin and `parse_event` type-checks it as `str` and nothing more, so it is as
+        # the hook's stdin and `read_event` type-checks it as `str` and nothing more, so it is as
         # payload-controlled as any field a handler supplies. A record holds a reason and never a
         # payload (`DIAGNOSTIC_FIELD_CHARS`), and that covers the key this record is filed under as
         # much as it covers the reason string.

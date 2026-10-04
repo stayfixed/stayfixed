@@ -480,6 +480,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     what this assertion is for.
     """
     from stayfixed.attach import hooks as attach_hooks
+    from stayfixed.harnesses import CLAUDE
     from stayfixed.hooks.dispatch import Recorder, dispatch
 
     seen: list[str] = []
@@ -491,7 +492,7 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     monkeypatch.setattr(attach_hooks, "_overlay_status", failing)
     handlers = register()
     sink = Recorder()
-    outcome = dispatch(_event(tmp_path), handlers, None, sink=sink)
+    outcome = dispatch(_event(tmp_path), handlers, None, harness=CLAUDE, sink=sink)
     assert seen == ["SessionStart"]
     assert outcome.exit_code == 0 and outcome.decision is None
     assert "overlay-status: RuntimeError" in outcome.stderr
@@ -500,5 +501,5 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     ]
     for name in (event for event in EVENTS if event != "SessionStart"):
         other = replace(_event(tmp_path), name=name)
-        assert dispatch(other, handlers, None, sink=Recorder()).exit_code == 0, name
+        assert dispatch(other, handlers, None, harness=CLAUDE, sink=Recorder()).exit_code == 0, name
     assert seen == ["SessionStart"]

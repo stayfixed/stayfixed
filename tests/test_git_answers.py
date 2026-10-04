@@ -22,11 +22,10 @@ import pytest
 
 from stayfixed.attach.write import _worktrees, attach
 from stayfixed.errors import Refusal
-from stayfixed.gitenv import GitUnavailable, origin_remote
+from stayfixed.gitenv import GitUnavailable, _git_toplevel, origin_remote
 from stayfixed.guards.commit import commits_in
 from stayfixed.guards.githooks import hooks_dir
 from stayfixed.guards.hygiene import dirty_count
-from stayfixed.hooks.dispatch import _git_toplevel
 from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
 from stayfixed.overlay.sync import overlay_sync
 from stayfixed.project.detect import NOT_DERIVABLE, detect
@@ -63,7 +62,7 @@ def _stand_in_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, printed: byte
 def test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `project_root()` feeds every hook decision, and its git fallback decoded strictly: on
+    # `checkout_root` feeds every hook decision, and its git fallback decoded strictly: on
     # Linux a checkout under a latin-1 directory made every hook an internal error, which
     # PreToolUse turns into a refusal of every tool call (reproduced in a Linux container with
     # a payload that names no `cwd`). The answer is the path on disk, byte for byte — a trailing

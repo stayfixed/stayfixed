@@ -128,6 +128,15 @@ ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an
 stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
+A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
+`stayfixed hook` asks `harnesses.detect` which value it runs under, takes the project root from
+the variable that value names, if it names one, and shapes its stdout with that value's `render`.
+Adding a harness is adding a value — a positive `detects`, its project-root variable and its
+`render` — and no edit to the hooks core. Nothing else is a harness's to choose: every payload is
+read by the one `hooks.dispatch.read_event`, because the harness a process detects is one a
+repository can choose (a committed `env` block can set `PLUGIN_ROOT`), and a deny is exit 2 with
+its reason on stderr under every harness and never reaches a `render`.
+
 Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
 — the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
 `src/stayfixed/areas.py`. Every other module under `src/stayfixed/`, `cli.py` and the subpackages
@@ -187,7 +196,7 @@ loaded: the core loads the private layer only when a command asks for it.
   rather than skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
-  `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
+  `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —
   instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
   area's `hooks.py` import *it*: a name defined in one of those modules and re-exported from
   `api.py` would be an import cycle, not a tidying. So in the one area that ships the common

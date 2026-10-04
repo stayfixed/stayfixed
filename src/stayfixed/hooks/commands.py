@@ -11,7 +11,7 @@ from stayfixed.areas import SubParsers
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
-from stayfixed.hooks.dispatch import dispatch, parse_event
+from stayfixed.hooks.dispatch import dispatch, read_event
 from stayfixed.hooks.policy import refuses_on_internal_error
 from stayfixed.hooks.registry import discover
 from stayfixed.hooks.sink import sink_for
@@ -88,7 +88,12 @@ def run_hook(args: argparse.Namespace) -> int:
             raise ValueError("hook payload is not a JSON object")
         # argv is authoritative: the wrapper controls it, while stdin is the untrusted side.
         payload["hook_event_name"] = event_name
-        event = parse_event(payload, env=os.environ)
+        # Here and not at module level: the CLI frame imports this module to build its parser,
+        # and only a hook that runs needs the registry.
+        from stayfixed.harnesses import detect
+
+        harness = detect(os.environ, payload)
+        event = read_event(payload, os.environ, harness)
         config = None
         root = event.project_root
         document = None if root is None else root / CONFIG_FILE
@@ -117,7 +122,12 @@ def run_hook(args: argparse.Namespace) -> int:
         # directory — outside a harness, or on a read-only one — because a hook runs on every
         # tool call and a sink failure must cost a marker, never the call.
         outcome = dispatch(
-            event, discover(), config, sink=sink_for(event.session_id, os.environ), cap=cap
+            event,
+            discover(),
+            config,
+            harness=harness,
+            sink=sink_for(event.session_id, os.environ),
+            cap=cap,
         )
     except BaseException as exc:  # an internal error must never read as permission
         reason = f"stayfixed: internal error: {type(exc).__name__}: {exc}"

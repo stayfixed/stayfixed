@@ -220,7 +220,7 @@ reddens = [
 # longer equalled itself, walked the disk and swept ignored files.
 [[mutation]]
 name = "the hook path strips a checkout path that ends in a space"
-file = "src/stayfixed/hooks/dispatch.py"
+file = "src/stayfixed/gitenv.py"
 before = '    top = out.removesuffix("\n")'
 after = "    top = out.strip()"
 reddens = [

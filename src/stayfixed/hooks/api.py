@@ -8,12 +8,16 @@ modules and re-exported here would be an import cycle — `sink.py` imports `Sin
 `NullSink` from this module, and this module would import the sink's layout back out of it.
 
 So the rule this area follows is the other half of the same rule: **a name two areas share is
-defined here.** `detect_harness` and the four names of the sink's on-disk layout live here for
-exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
-CONTRIBUTING records the exception.
+defined here.** The four names of the sink's on-disk layout live here for exactly that reason,
+and `sink.py` imports them from here like everybody else. CONTRIBUTING records the exception.
+Which harness a hook runs under is not vocabulary of this kind: it is answered once, by
+`stayfixed.harnesses.detect` in `stayfixed hook`, and a handler reads the answer's name off
+`HookEvent.harness`.
 
-**Three names below have no importer outside this area**, and each stays for the reason beside it:
+**Four names below have no importer outside this area**, and each stays for the reason beside it:
 
+- `EVENTS` is the list a handler's event must come from: `registry.discover` refuses any other,
+  and an area that needs a new event adds it here, beside the vocabulary its handlers use.
 - `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
   `memory/hooks.py` build, and a consumer that holds one before registering it — a table of
   handlers, a decorator, a test double — cannot annotate the callable without this name.
@@ -30,7 +34,7 @@ its definition into a private module, which is a different change with a differe
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -53,7 +57,6 @@ __all__ = [
     "NullSink",
     "Policy",
     "Sink",
-    "detect_harness",
 ]
 
 
@@ -67,28 +70,6 @@ EVENTS = (
     "PreToolUse",
     "PostToolUse",
 )
-
-
-def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = None) -> str:
-    """Which harness this process is running under, from the environment and the stdin payload.
-
-    Here rather than in `dispatch.py`, beside the rest of the vocabulary areas share: the
-    dispatcher stamps `HookEvent.harness` with it, and a second spelling of this rule anywhere else
-    would be a second answer to "which harness", which is the drift a shared vocabulary exists to
-    stop.
-
-    Measured on both harnesses in the *Codex plugin hooks* trial of the spike record
-    (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): Codex sets PLUGIN_ROOT/PLUGIN_DATA and
-    ALSO CLAUDE_PLUGIN_ROOT, so the CLAUDE_* names alone identify nothing; Codex's SessionStart
-    stdin also carries `model` and `permission_mode`, which Claude Code's does not.
-    """
-    if "PLUGIN_ROOT" in env:
-        return "codex"
-    if payload is not None and {"model", "permission_mode"} <= set(payload):
-        return "codex"
-    if "CLAUDE_PLUGIN_ROOT" in env or "CLAUDE_PROJECT_DIR" in env:
-        return "claude"
-    return "unknown"
 
 
 class Policy(StrEnum):
@@ -109,6 +90,7 @@ class HookEvent:
     tool_input: dict[str, Any]
     cwd: Path
     project_root: Path | None
+    # The name of the harness `harnesses.detect` answered; detection always answers.
     harness: str
     raw: dict[str, Any] = field(default_factory=dict, compare=False)
 

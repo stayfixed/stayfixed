@@ -157,6 +157,26 @@ def test_an_unknown_event_on_the_command_line_dispatches_to_nothing(tmp_path: Pa
     assert "additionalContext" not in output
 
 
+def test_the_harness_registry_is_imported_only_when_a_hook_runs() -> None:
+    # The CLI frame imports every area's `commands.py` to build the parser, and the hook core is
+    # what the area's handlers and the dispatcher share; neither needs the registry until a hook
+    # actually runs, so `run_hook` imports it inside its own body. Mutation (by hand): a
+    # module-level `from stayfixed.harnesses import detect` in `hooks/commands.py` -> reddens.
+    probe = (
+        "import sys, stayfixed.hooks.commands, stayfixed.hooks.dispatch, stayfixed.hooks.sink; "
+        "print('stayfixed.harnesses' in sys.modules)"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == "False\n"
+
+
 def test_a_repository_without_a_config_still_gets_the_shipped_cap() -> None:
     assert _output_cap(None) == 10000
 

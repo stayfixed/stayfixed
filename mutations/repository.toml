@@ -520,7 +520,7 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
 ]
 
-# The wrapper's other half. `hooks/dispatch._git_toplevel` scrubs this identical call one layer
+# The wrapper's other half. `gitenv._git_toplevel` scrubs this identical call one layer
 # down and names the failure verbatim; the wrapper inherited whatever the session had, so
 # `GIT_DIR`/`GIT_WORK_TREE` chose the project -- and every entry but the dispatcher's relies on
 # `--root` defaulting to `.`, so the whole hook then read another repository's configuration,

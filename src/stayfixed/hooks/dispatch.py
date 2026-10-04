@@ -3,25 +3,17 @@
 from __future__ import annotations
 
 import copy
-import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from stayfixed.gitenv import git_run
-from stayfixed.hooks.api import (
-    Decision,
-    Handler,
-    HookEvent,
-    HookResult,
-    Policy,
-    Sink,
-    detect_harness,
-)
+from stayfixed.gitenv import checkout_root
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
+    from stayfixed.harnesses import Harness
 
 TRUNCATION_MARK = "\n[stayfixed: context truncated to the platform cap]"
 
@@ -51,61 +43,25 @@ class Recorder:
         self.marks.add(key)
 
 
-def _git_toplevel(cwd: Path) -> Path | None:
-    """The checkout git names for `cwd`, as the path on disk, or `None` when git named none.
+def read_event(payload: dict[str, Any], env: Mapping[str, str], harness: Harness) -> HookEvent:
+    """The one reading of a hook's stdin, whichever harness sent it.
 
-    Through `gitenv.git_run`, which scrubs the environment for the reason `memory.store._git`
-    gives in as many words — "it must be a real git answer, not one an inherited `GIT_DIR`
-    produced" — and `project_root()` feeds *every* hook decision, so an inherited `GIT_DIR` or
-    `GIT_WORK_TREE` made every handler answer for a different repository than the session is in.
-    It also decodes the answer losslessly, so on Linux a checkout under a directory named in
-    latin-1 bytes is that directory; decoded strictly, it would make every hook an internal
-    error, which PreToolUse turns into a refusal of every tool call. The line ending alone is
-    taken off, so a path that ends in a space is still that path.
+    One reader, because the detected harness is one a repository can choose: a committed
+    `.claude/settings.json` `env` block can set `PLUGIN_ROOT`, so a harness value that changed
+    what a handler sees would hand the repository the choice of what its guards read. The one
+    datum a harness contributes is the variable it names the project root in, if any; without
+    one, or with it empty, the root is the checkout `cwd` sits in (`gitenv.checkout_root`).
+    Codex names none (measured in the spike record,
+    `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its *Codex plugin hooks* trial) and
+    can inherit Claude Code's variable from the shell that started it, which is why the variable
+    is the harness's and not read by name here.
     """
-    code, out = git_run(cwd, "rev-parse", "--show-toplevel")
-    top = out.removesuffix("\n")
-    return Path(top) if code == 0 and top else None
-
-
-def _walk_to_git_root(cwd: Path) -> Path | None:
-    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count.
-
-    `git rev-parse --show-toplevel` resolves symlinks in `cwd` before it reports the toplevel,
-    so the walk must too: otherwise the same repository reached through its real path and
-    through a symlink to it would report two different `project_root` values where git
-    collapses them into one.
-    """
-    if not cwd.is_absolute():
-        return None
-    for directory in [cwd, *cwd.parents]:
-        if (directory / ".git").exists():
-            return directory.resolve()
-    return None
-
-
-def project_root(cwd: Path, env: Mapping[str, str]) -> Path | None:
-    """`CLAUDE_PROJECT_DIR`, else a walk for `.git`, else git itself.
-
-    `stayfixed hook` runs as a subprocess on every tool call, and Codex sets `PLUGIN_ROOT`,
-    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (measured in the spike
-    record, `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its *Codex plugin hooks* trial),
-    so the fallback is the Codex hot path. `git rev-parse --show-toplevel` costs about 8 ms of a
-    33 ms invocation and the walk about 0.004 ms; git stays behind it for what a walk cannot see,
-    such as `GIT_DIR` and a bare repository.
-    """
-    root_var = env.get("CLAUDE_PROJECT_DIR")
-    if root_var:
-        return Path(root_var)
-    return _walk_to_git_root(cwd) or _git_toplevel(cwd)
-
-
-def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     cwd = Path(str(payload.get("cwd") or "."))
     tool_input = payload.get("tool_input") or {}
     session_id = payload.get("session_id")
     agent_id = payload.get("agent_id")
     tool_name = payload.get("tool_name")
+    named = env.get(harness.project_dir_env) if harness.project_dir_env else None
     return HookEvent(
         name=str(payload.get("hook_event_name") or "unknown"),
         session_id=session_id if isinstance(session_id, str) else None,
@@ -113,28 +69,21 @@ def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
         tool_name=tool_name if isinstance(tool_name, str) else None,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         cwd=cwd,
-        project_root=project_root(cwd, env),
-        harness=detect_harness(env, payload),
+        project_root=Path(named) if named else checkout_root(cwd),
+        harness=harness.name,
         raw=dict(payload),
     )
 
 
-def render(event_name: str, context: str) -> str:
-    """The whole string a hook writes to stdout; the platform caps this, not the field."""
-    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}
-    if context:
-        payload["hookSpecificOutput"]["additionalContext"] = context
-    return json.dumps(payload)
-
-
-def _clamp(event_name: str, context: str, cap: int) -> str:
+def _clamp(render: Callable[[str, str], str], event_name: str, context: str, cap: int) -> str:
     """Fit the emitted string, envelope included, inside the platform's per-hook cap.
 
     Claude Code caps each hook's output string at 10,000 characters — `additionalContext`,
     `systemMessage` and plain stdout alike — and replaces anything longer with a preview and a
     file path. A bundle truncated to the cap and then wrapped in JSON therefore gets replaced
-    while the truncation mark claims it was handled. The envelope's width depends on the event
-    name and JSON escaping widens the context itself, so the largest prefix that still fits is
+    while the truncation mark claims it was handled. The envelope's width depends on the
+    harness that renders it and on the event name, and JSON escaping widens the context itself,
+    so the largest prefix that still fits, as `render` (the detected harness's) shapes it, is
     searched for rather than computed. A cap that leaves no room even for the empty envelope
     emits nothing: an over-cap string would be replaced by a preview anyway.
     """
@@ -199,13 +148,18 @@ def dispatch(
     handlers: list[Handler],
     config: Config | None,
     *,
+    harness: Harness,
     sink: Sink,
     cap: int | None = None,
 ) -> Outcome:
     """One deny travels on one channel — the exit code — so every failure here is judged.
 
-    `sink` carries no default on purpose: a caller that has no durable sink must say so with
-    `NullSink()` and inherit its forgetfulness, rather than acquire it by omission.
+    `harness` is the value `harnesses.detect` answered, and it shapes an answer that lets the
+    call through and nothing else: a refusal is exit 2, empty stdout and the reasons on stderr
+    for every harness, and no value is asked about it, so a rendering that fails cannot cost a
+    deny. `sink` and `harness` carry no default on purpose: a caller that has no durable sink
+    must say so with `NullSink()` and inherit its forgetfulness, and one that has not asked which
+    harness it runs under must say which it means, rather than acquire either by omission.
     """
     contexts: list[str] = []
     reasons: list[str] = []
@@ -220,7 +174,7 @@ def dispatch(
             # earlier one could blank `tool_input["command"]` under a later one's guard. Each
             # handler gets its own deep copy of the mutable views instead. `raw` is copied once
             # and `tool_input` is taken from that same copy, so the view keeps the aliasing
-            # `parse_event` produces (`ev.tool_input is ev.raw["tool_input"]`) rather than
+            # `read_event` produces (`ev.tool_input is ev.raw["tool_input"]`) rather than
             # diverging under two independent deep copies.
             raw_view = copy.deepcopy(event.raw)
             raw_tool_input = raw_view.get("tool_input")
@@ -288,8 +242,8 @@ def dispatch(
         return Outcome(2, "", "stayfixed: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("stayfixed: " + "; ".join(reasons) + "\n") if reasons else ""
     context = "\n\n".join(contexts)
-    stdout = render(event.name, context)
+    stdout = harness.render(event.name, context)
     if cap is not None and len(stdout) > cap:
-        stdout = _clamp(event.name, context, cap)
+        stdout = _clamp(harness.render, event.name, context, cap)
         sink.diagnostic({"event": event.name, "handler": "*", "error": "context-truncated"})
     return Outcome(0, stdout, stderr, None)

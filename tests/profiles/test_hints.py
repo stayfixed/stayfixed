@@ -14,6 +14,7 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.guards.hooks import register
+from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.gitfixture import git, needs_git
 from tests.profiles.redrun import (
@@ -89,7 +90,9 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
         },
     )
     root = a_project(tmp_path)
-    outcome = dispatch(red_event(root, "x"), register(), config_of(root), sink=Recorder())
+    outcome = dispatch(
+        red_event(root, "x"), register(), config_of(root), harness=CLAUDE, sink=Recorder()
+    )
     assert outcome.exit_code == 0
     assert outcome.stderr == ""
     answer = json.loads(outcome.stdout)["hookSpecificOutput"]
@@ -117,7 +120,9 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
         "stayfixed.profiles.hints.hint_modules", lambda: ("alpha", "beta", "delta", "gamma")
     )
     root = a_dirty_project(tmp_path)
-    outcome = dispatch(red_event(root, "x"), register(), config_of(root), sink=Recorder())
+    outcome = dispatch(
+        red_event(root, "x"), register(), config_of(root), harness=CLAUDE, sink=Recorder()
+    )
     assert outcome.exit_code == 0
     assert outcome.stderr == ""
     answer = json.loads(outcome.stdout)["hookSpecificOutput"]
