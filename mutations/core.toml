@@ -613,6 +613,17 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
 ]
 
+# A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
+# allow spelled in the envelope would let a call through that no guard judged.
+[[mutation]]
+name = "the canonical render spells an allow beside the context"
+file = "src/stayfixed/harnesses.py"
+before = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}'
+after = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name, "permissionDecision": "allow"}}'
+reddens = [
+  "tests/test_harnesses.py::test_no_harness_renders_a_decision[plain-PreToolUse-claude]",
+]
+
 # The detected harness is a repository's to steer (a committed `env` block can set `PLUGIN_ROOT`),
 # and the project root decides which configuration loads, so the root is read from every
 # registered harness's variable whichever one was detected.

@@ -123,7 +123,20 @@ def _keys(value: object) -> set[str]:
     return set()
 
 
-@pytest.mark.parametrize("harness", HARNESSES, ids=lambda h: h.name)
+# A harness whose answer is plain text, which a later harness's may be: `render` is a function of
+# the event and the context, and nothing promises it emits JSON.
+TEXT = Harness(
+    name="text",
+    marker_dir=".text",
+    settings=(),
+    local_settings=(),
+    project_dir_env=None,
+    render=lambda event, context: f"[{event}] {context}",
+    reach=CLAUDE.reach,
+)
+
+
+@pytest.mark.parametrize("harness", (*HARNESSES, TEXT), ids=lambda h: h.name)
 @pytest.mark.parametrize("event", ["SessionStart", "PreToolUse", "PostToolUse"])
 @pytest.mark.parametrize(
     "context",
@@ -132,11 +145,40 @@ def _keys(value: object) -> set[str]:
 )
 def test_no_harness_renders_a_decision(harness: Harness, event: str, context: str) -> None:
     # A rendering is context in an envelope, and a context shaped like a decision is still a
-    # string inside it, never a key of the envelope. Mutation (by hand): the canonical render adds
-    # `"permissionDecision": "allow"` beside `hookEventName` -> every case reddens, Codex's too,
-    # since it renders through the same function.
-    rendered = json.loads(harness.render(event, context))
-    assert not _keys(rendered) & DECISION_KEYS
+    # string inside it, never a key of the envelope. Mutation (declared, on `harnesses`): the
+    # canonical render adds `"permissionDecision": "allow"` beside `hookEventName` -> every
+    # Claude Code and Codex case reddens, since both render through the same function.
+    assert not _decisions(harness.render(event, context), context)
+
+
+def _decisions(rendered: str, context: str) -> set[str]:
+    """The decision keys a rendering carries outside the context it was handed.
+
+    A JSON object is read for its keys, at any depth, so the context stays a string value however
+    it is shaped. Anything else is read as text, with the context taken out first, since a
+    deny-shaped context is spelled inside it by design: what is left is the envelope, and a
+    decision key spelled there is one the harness may act on.
+    """
+    try:
+        parsed = json.loads(rendered)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict):
+        return _keys(parsed) & DECISION_KEYS
+    envelope = rendered.replace(context, "") if context else rendered
+    return {key for key in DECISION_KEYS if key in envelope}
+
+
+def test_the_decision_check_finds_a_decision_in_either_shape() -> None:
+    # The check above passes for every shipped value, so it is held here against renderings that
+    # do carry a decision, as JSON and as text, and against a text envelope that only quotes one
+    # in its context. Mutation (by hand): `_decisions` answers `set()` for a rendering that is not
+    # a JSON object -> the text assertions redden.
+    deny = '{"permissionDecision": "deny"}'
+    assert _decisions(json.dumps({"hookSpecificOutput": {"decision": "block"}}), "") == {"decision"}
+    assert _decisions(json.dumps(["permissionDecision"]), "") == {"permissionDecision"}
+    assert _decisions("continue: false\n[PreToolUse] a note", "a note") == {"continue"}
+    assert _decisions(TEXT.render("PreToolUse", deny), deny) == set()
 
 
 def test_every_harness_states_every_surface() -> None:
