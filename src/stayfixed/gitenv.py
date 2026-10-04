@@ -259,12 +259,12 @@ def _walk_to_git_root(cwd: Path) -> Path | None:
 def checkout_root(cwd: Path) -> Path | None:
     """The checkout `cwd` sits in: a walk for `.git`, else git itself; `None` if neither names one.
 
-    The hook's project root when the harness names none in a variable of its own, which makes
-    this Codex's hot path: `stayfixed hook` runs as a subprocess on every tool call, and `git
+    The hook's project root when no registered harness's variable names one, which makes this
+    Codex's hot path: `stayfixed hook` runs as a subprocess on every tool call, and `git
     rev-parse --show-toplevel` costs about 8 ms of a 33 ms invocation where the walk costs about
     0.004 ms. git stays behind the walk for what a walk cannot see, such as `GIT_DIR` and a bare
-    repository. It reads no harness variable: which variable names the root is the harness's
-    datum (`harnesses.Harness.project_dir_env`), and `hooks.dispatch.read_event` asks it first.
+    repository. It reads no harness variable: those are the registry's
+    (`harnesses.Harness.project_dir_env`), and `hooks.dispatch.read_event` asks them first.
     """
     return _walk_to_git_root(cwd) or _git_toplevel(cwd)
 

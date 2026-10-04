@@ -9,15 +9,16 @@ not a class: adding one is one more value in `HARNESSES`, and nothing that reads
 changes.
 
 The registry is also the adapter the hooks core answers through. `stayfixed hook` asks `detect`
-which value it is running under, takes the project root from that value's `project_dir_env`
-when it names one, and shapes its stdout with that value's `render`. That is all a value
-contributes: every payload is read one way (`hooks.dispatch.read_event`), because the harness a
-process detects is one a repository can choose — a committed `.claude/settings.json` `env` block
-can set `PLUGIN_ROOT` — so no value may change what a handler sees. A deny reaches no value at
-all: exit 2 with the reason on stderr is the whole of a refusal for every harness. A new harness
-is a value with a positive `detects`, its project-root variable, its `render` and its `reach`; a
-harness whose payload genuinely differs is a question to answer with that harness's evidence when
-it arrives.
+which value it is running under, stamps that value's name on the event and shapes its stdout
+with that value's `render`. That is all detection decides: every payload is read one way
+(`hooks.dispatch.read_event`), because the harness a process detects is one a repository can
+choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` — so no value may
+change what a handler sees. The project root is read the same way under every answer: from the
+first of every registered value's `project_dir_env` that names one, in registry order. A deny
+reaches no value at all: exit 2 with the reason on stderr is the whole of a refusal for every
+harness. A new harness is a value with a positive `detects`, its project-root variable, its
+`render` and its `reach`; a harness whose payload genuinely differs is a question to answer with
+that harness's evidence when it arrives.
 
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
 at which that surface holds under this harness (`Tier`), or that it does not reach the harness at
@@ -98,8 +99,9 @@ class Harness:
     # Settings files this harness reads that a repository keeps out of git, which `doctor`
     # walks beside `settings` and `stayfixed assess` does not: they are this machine's.
     local_settings: tuple[str, ...]
-    # The variable this harness names the project root in, if any; the one datum of the
-    # payload's reading that differs between harnesses today.
+    # The variable this harness names the project root in, if any. Every registered value's is
+    # asked, in registry order, whichever harness was detected: detection is a repository's to
+    # steer, and the root decides which configuration loads.
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
     # no rendering carries a decision, because a deny travels on the exit code.
@@ -197,7 +199,8 @@ CODEX = Harness(
     marker_dir=".codex",
     settings=(".codex/hooks.json",),
     local_settings=(),
-    # Codex names no project root; the checkout `cwd` sits in is the one it answers for.
+    # Codex names the project root in no variable of its own (`read_event` still asks every
+    # registered value's, so an inherited `CLAUDE_PROJECT_DIR` names it as it does the wrapper's).
     project_dir_env=None,
     # Claude Code's shape, and unmeasured under Codex: Codex 0.160.0 ran none of the plugin's
     # hooks, with or without its hook-trust bypass flag (the delivery spike of 2026-10-02 in

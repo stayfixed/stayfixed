@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from stayfixed.gitenv import _git_toplevel
-from stayfixed.harnesses import CLAUDE, CODEX, HARNESSES, Harness
+from stayfixed.harnesses import CLAUDE, HARNESSES, Harness
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
 from stayfixed.hooks.commands import run_hook
 from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
@@ -532,22 +532,33 @@ def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() ->
     assert ev.tool_name is None
 
 
-def test_the_project_root_comes_from_the_harnesss_own_variable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("answer", ["claude", "codex", "fake"])
+def test_a_detected_harness_never_moves_the_project_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
 ) -> None:
-    # Claude Code names the project root in `CLAUDE_PROJECT_DIR`; Codex names none, and a Codex
-    # process can inherit Claude Code's variable from the shell that started it. The variable is
-    # the harness's own datum, so under Codex it is ignored and the walk answers. Mutation
-    # (declared, on `hooks.dispatch`): `read_event` reads `CLAUDE_PROJECT_DIR` whatever the
-    # harness -> the Codex half reddens.
-    (tmp_path / ".git").mkdir()
+    # The harness a process detects is one a repository can choose: a committed `env` block can
+    # set `PLUGIN_ROOT`, and the process is then Codex's. The root decides which configuration
+    # loads and so whether a guard refuses, so it is read the same under every answer `detect`
+    # gives: the first registered harness's variable that names one, else the checkout `cwd`
+    # sits in, which is another checkout here. The fake is registered last and names a variable
+    # of its own, so registry order, not detection, is what picks between two named roots.
+    # Mutation (declared, on `hooks.dispatch`): the root is read from the detected harness only
+    # -> the `codex` and `fake` cases redden.
+    project = tmp_path / "project"
+    project.mkdir()
+    other = tmp_path / "other"
+    (other / ".git").mkdir(parents=True)
+    fake = _harness(lambda name, context: context, project_dir_env="FAKE_PROJECT_DIR")
+    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (*HARNESSES, fake))
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
-    payload = {"hook_event_name": "SessionStart", "cwd": str(tmp_path)}
-    env = {"CLAUDE_PROJECT_DIR": "/p", "PLUGIN_ROOT": "/r"}
-    under_claude = read_event(payload, env, CLAUDE)
-    assert (under_claude.project_root, under_claude.harness) == (Path("/p"), "claude")
-    under_codex = read_event(payload, env, CODEX)
-    assert (under_codex.project_root, under_codex.harness) == (tmp_path.resolve(), "codex")
+    env = {
+        "CLAUDE_PROJECT_DIR": str(project),
+        "PLUGIN_ROOT": "/r",
+        "FAKE_PROJECT_DIR": str(tmp_path / "elsewhere"),
+    }
+    harness = {value.name: value for value in (*HARNESSES, fake)}[answer]
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(other)}, env, harness)
+    assert (ev.project_root, ev.harness) == (project, answer)
 
 
 def _forbidden(cwd: Path) -> Path | None:
@@ -634,10 +645,11 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
 
 # --- the harness a hook answers through ---------------------------------------------------------
 #
-# Every harness's payload is read by `read_event`, and a harness value contributes only the name
-# of its project-root variable to that reading and the shape of its stdout to the answer. These
-# tests hold the second half: the value detection chose is the one that renders, a deny reaches
-# no value at all, and the clamp measures the envelope that is actually emitted.
+# Every harness's payload is read by `read_event` the same way whichever value was detected
+# (`test_a_detected_harness_never_moves_the_project_root`), and the detected value contributes
+# its name to the event and the shape of its stdout to the answer. These tests hold the second
+# half: the value detection chose is the one that renders, a deny reaches no value at all, and the
+# clamp measures the envelope that is actually emitted.
 
 # Every variable either harness sets, so a test of detection is not answered by the environment
 # the suite happens to run in.
@@ -684,10 +696,10 @@ def test_a_detected_harness_renders_its_own_answer(
 ) -> None:
     # A harness whose output differs is a value of its own, registered beside the others, and
     # the hook answers through the value detection chose. The handler sees the same event it
-    # would under any harness, named for the one detected, with the root that value's own
-    # variable names. Mutation (declared, on `hooks.dispatch`): `dispatch` renders with
-    # `CANONICAL` instead of the detected harness -> stdout is Claude Code's JSON and this
-    # reddens.
+    # would under any harness, named for the one detected, with the root the first registered
+    # variable names, here the fake's own, the only one set. Mutation (declared, on
+    # `hooks.dispatch`): `dispatch` renders with `CANONICAL` instead of the detected harness ->
+    # stdout is Claude Code's JSON and this reddens.
     fake = _harness(
         lambda name, context: f"fake:{name}:{context}",
         detects=lambda env, payload: payload is not None and "fake_session" in payload,
