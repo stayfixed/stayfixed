@@ -27,9 +27,10 @@ equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so
 that moves a tier is one edit here.
 
 Code that needs a harness fact asks this registry. `doctor` walks every value's `settings` and
-`local_settings` for hook entries. Two modules older than it still spell their own settings
-files, `setup` and `attach`, whose paths are a machine's and the overlay's layout as much as a
-harness's.
+`local_settings` for hook entries, and `attach` merges into the one file `CLAUDE.local_settings`
+names. Two modules older than it still spell paths of their own, `setup` the machine's settings
+file and `attach` the overlay's layout under `.claude/` and `.codex/`, which are a machine's and
+the overlay's as much as a harness's.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
