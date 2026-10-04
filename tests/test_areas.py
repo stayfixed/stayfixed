@@ -381,10 +381,10 @@ def _delivery_offences(where: str, text: str, areas: frozenset[str]) -> list[tup
 
 
 def test_core_never_imports_delivery() -> None:
-    # CONTRIBUTING, "Areas": the delivery areas may import the core, and the core never imports
-    # them, through `api.py` or not, at module level or inside a function. The walk is the whole
-    # package, so the equality below also fails on a walk that stopped walking: it would find no
-    # rows, and the pinned set is never empty.
+    # CONTRIBUTING, "Areas": the delivery areas may import the core, and the core may not import
+    # them, through `api.py` or not, at module level or inside a function, but for the crossings
+    # `CORE_TO_DELIVERY` pins. The walk is the whole package, so the equality below also fails on
+    # a walk that stopped walking: it would find no rows, and the pinned set is never empty.
     source = ROOT / "src" / "stayfixed"
     rows: list[tuple[str, str]] = []
     for path in sorted(source.rglob("*.py")):

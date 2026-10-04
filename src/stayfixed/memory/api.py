@@ -34,7 +34,8 @@ is this area's own (`memory.graph`, which `memory refs` reports), so the wiki-li
 note walk and `resolved` have no reader outside it and are not here. The overlay root the
 machine file records and the checkout's `origin` are the core's to answer
 (`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
-`init` asks them too and the core never imports this area.
+`init` asks them too and the core may not import this area; the crossings still pinned are
+listed in `tests/test_areas.py`.
 
 **Nine more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:

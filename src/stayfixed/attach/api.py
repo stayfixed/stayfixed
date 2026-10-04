@@ -43,7 +43,8 @@ kept the names.
 
 The ledger's path and the `.gitignore` block `init` and `attach` both write are the core's
 (`config.layout`'s `ATTACH_LEDGER` and `IGNORE_BODY`), because `project` and `doctor` name them
-too and the core never imports this area.
+too and the core may not import this area; the crossings still pinned are listed in
+`tests/test_areas.py`.
 """
 
 from stayfixed.attach.binding import Binding, read_binding
