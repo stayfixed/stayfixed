@@ -526,6 +526,8 @@ _REACH_SECTION = re.compile(
 )
 # A cell's words where a surface does not reach an agent at all.
 NOT_REACHED = "does not run"
+# A measurement the section's prose cites, as "(<agent> <version>)".
+_MEASURED_AT = re.compile(r"\(([A-Z][A-Za-z ]* \d+(?:\.\d+)+)\)")
 
 
 def _reach_table() -> str:
@@ -553,11 +555,20 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     # drift from the one `doctor` reports. An empty table equals nothing rendered, so a section
     # that lost its table reddens too. Mutation (declared, on `harnesses`): Codex's session
     # guards stated as blocking -> this reddens.
+    from stayfixed.harnesses import HARNESSES, Surface
+
     match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
     assert match, "README.md has no ## What each agent enforces section"
     lines = match.group(1).splitlines(keepends=True)
     table = "".join(line for line in lines if line.startswith("|"))
     assert table == _reach_table(), table
+    # The prose under the table says what each agent's session guards did when they were
+    # measured, and at which version; the registry states the same measurement first in that
+    # surface's evidence, so a retaken measurement is one edit there and this reddens until the
+    # README follows it. Mutation (declared, on `harnesses`): Claude Code's guard measurement
+    # restated at another version -> this reddens.
+    measured = {harness.reach[Surface.GUARDS].evidence.partition(":")[0] for harness in HARNESSES}
+    assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 
 # A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table

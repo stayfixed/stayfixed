@@ -613,6 +613,17 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
 ]
 
+# The README's prose cites the version each agent's session guards were measured at, and the
+# registry states that measurement first in the surface's evidence; the README is held to it.
+[[mutation]]
+name = "Claude Code's guard measurement is restated at another version"
+file = "src/stayfixed/harnesses.py"
+before = "                \"Claude Code 2.1.261: a guard's exit 2 stopped the command unrun \""
+after = "                \"Claude Code 2.1.262: a guard's exit 2 stopped the command unrun \""
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
 # A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
 # allow spelled in the envelope would let a call through that no guard judged.
 [[mutation]]
