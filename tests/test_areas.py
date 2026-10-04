@@ -397,10 +397,11 @@ def test_core_never_imports_delivery() -> None:
     assert set(rows) == CORE_TO_DELIVERY, sorted(set(rows) ^ CORE_TO_DELIVERY)
 
 
-def test_the_delivery_areas_are_the_three_the_design_names() -> None:
-    # Pinned as a literal rather than read back: the crossing meant to stay exercises only
-    # `overlay`, so a change that dropped `memory` or `attach` from the constant beside a new
-    # crossing into it would otherwise keep `test_core_never_imports_delivery` green.
+def test_the_delivery_areas_are_attach_memory_and_overlay() -> None:
+    # The three areas CONTRIBUTING's "Areas" names as delivery, pinned as a literal rather than
+    # read back: the crossing meant to stay exercises only `overlay`, so a change that dropped
+    # `memory` or `attach` from the constant beside a new crossing into it would otherwise keep
+    # `test_core_never_imports_delivery` green.
     #
     # Mutation (declared): `mutations/`'s "memory stops being a delivery area".
     declared = stayfixed.areas.DELIVERY_AREAS

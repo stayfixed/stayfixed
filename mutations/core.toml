@@ -2019,7 +2019,7 @@ name = "memory stops being a delivery area"
 file = "src/stayfixed/areas.py"
 before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
-reddens = ["tests/test_areas.py::test_the_delivery_areas_are_the_three_the_design_names"]
+reddens = ["tests/test_areas.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
 
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
