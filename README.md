@@ -80,11 +80,11 @@ later package.
 ## What each agent enforces
 
 stayfixed reaches an agent in four ways, and they do not hold alike on every agent. The
-**session guards** refuse a command before it runs (`stayfixed guard bg-cleanup`, on every shell
-call); the **session notices** add context and refuse nothing (the test-hygiene note, the standing
-rules, the volatile notes); the **repository gates** — the bug, documentation, plan, commit and
-trail checks — run in CI through the reusable workflow; and the **methodology** is the skills and
-the `AGENTS.md` region. Each column is an agent under the name `[stayfixed] agents` lists it by:
+**session guards** refuse a command before it runs (the `bg-cleanup` handler, which
+`stayfixed hook PreToolUse` runs on every shell call); the **session notices** add context and
+refuse nothing (the test-hygiene note, the standing rules, the volatile notes); the **repository
+gates** — the bug, documentation, plan, commit and trail checks — run in CI through the reusable
+workflow; and the **methodology** is the skills and the `AGENTS.md` region. Each column is an agent under the name `[stayfixed] agents` lists it by:
 `claude` is Claude Code and `codex` is Codex.
 
 | Surface | `claude` | `codex` |
