@@ -2627,7 +2627,11 @@ It identifies an entry **by position** — `.claude/settings.local.json entry 3 
 what a reader needs in order to open it, survives two entries claiming one id, and reproduces
 nothing. A settings file that exists and cannot be read as hook entries is reported by path as
 `warn`, never skipped: this is the one check whose whole purpose is that nobody's entries go
-unlisted, so "all accounted for" must never mean "could not look".
+unlisted, so "all accounted for" must never mean "could not look". One that is valid JSON nested
+deeper than Python's parser follows is reported by path as `red`: a harness may still read it, as
+Claude Code does, so the hooks in it may run, and nothing here can check them. A number longer
+than Python converts to an integer is read as its text, and the entries beside it are judged as
+usual.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

@@ -48,6 +48,7 @@ from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, M
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.release.api import HASHED_FILES
+from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
 from tests.release.test_hashes import recorded
@@ -1135,25 +1136,74 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     assert "could not be read as hook entries" in row.detail
 
 
-@pytest.mark.parametrize("relative", list(checks.SETTINGS_FILES))
-def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_to(
-    tmp_path: Path, relative: str
+# Every settings file the walk reads, each with the directory it is read from: the three a project
+# keeps, and the machine's own copy under the home directory, which the row names by its `~/` label.
+WALKED = {
+    **{relative: ("root", relative) for relative in checks.SETTINGS_FILES},
+    f"~/{USER_SETTINGS}": ("home", USER_SETTINGS),
+}
+
+
+def _walked(tmp_path: Path, root: Path, label: str) -> Path:
+    base, relative = WALKED[label]
+    path = (root if base == "root" else tmp_path / "home") / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+# What the row says of a settings file it cannot check, and what it tells the reader to do.
+UNCHECKABLE = (
+    "settings file(s) are valid JSON nested deeper than this check can follow, so nothing here can "
+    "check the entries in them"
+)
+UNCHECKABLE_REMEDY = (
+    "open each file named above and remove what you did not put there; stayfixed writes no "
+    "settings file nested that deep"
+)
+
+
+@pytest.mark.parametrize("label", sorted(WALKED))
+def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check(
+    tmp_path: Path, label: str
 ) -> None:
     # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
-    # Python, and it left the engine's reader past this walk's catch: the row read "this check
-    # could not run", red, on a file a clone can commit. It is a file the walk could not read.
-    # Mutation (oracle): `mutations/`'s "the settings engine lets a nested document raise past its
-    # refusal" -> the row is red.
+    # Python, and a harness may read it (Claude Code's parser does), so the hooks in it may run.
+    # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
+    # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
+    # (oracle): `mutations/`'s "the settings engine lets a nested document raise past its refusal"
+    # -> the row reads "this check could not run"; "hook-entries reads a settings file past the
+    # parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
-    (root / relative).parent.mkdir(parents=True, exist_ok=True)
-    (root / relative).write_text('{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8")
+    _walked(tmp_path, root, label).write_text(
+        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
+    )
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
         "hook-entries",
-        WARN,
-        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
-        f"hook entries, so nothing here accounts for what is in them: {relative}",
-        "check that each file named above is readable and is valid JSON",
+        RED,
+        f"0 stayfixed entr(ies), 0 foreign; 1 {UNCHECKABLE}: {label}",
+        UNCHECKABLE_REMEDY,
+    )
+
+
+def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: Path) -> None:
+    # A file the walk is blind to warns only where nothing else has made the row red, and a file it
+    # cannot check has. Mutation (oracle): `mutations/`'s "a blind settings file softens a settings
+    # file nothing can check" -> a warning.
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text(
+        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
+    )
+    (root / LOCAL_SETTINGS).write_text("this is not json", "utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        RED,
+        f"0 stayfixed entr(ies), 0 foreign; 1 {UNCHECKABLE}: .claude/settings.json; 1 settings "
+        f"file(s) exist and could not be read as hook entries, so nothing here accounts for what "
+        f"is in them: {LOCAL_SETTINGS}",
+        UNCHECKABLE_REMEDY,
     )
 
 
@@ -1163,24 +1213,25 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_
 LONG_NUMBER = "1" * 5_000
 
 
-@pytest.mark.parametrize("relative", list(checks.SETTINGS_FILES))
-def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_one_the_walk_is_blind_to(
-    tmp_path: Path, relative: str
+@pytest.mark.parametrize("label", sorted(WALKED))
+def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries(
+    tmp_path: Path, label: str
 ) -> None:
-    # The `ValueError` left the engine's reader past this walk's catch, as `RecursionError` did:
-    # the row read "this check could not run", red, on a file a clone can commit. Mutation
-    # (oracle): `mutations/`'s "the settings engine lets a number past the parser's reach raise
-    # past its refusal" -> the row is red.
+    # A number is no part of any entry's provenance, so the walk reads one as its text and judges
+    # the entries beside it. It used to refuse the file: first as "this check could not run", then
+    # as a file it was blind to, a warning, which let a marked entry beside such a number lose its
+    # red. Mutations (oracle): `mutations/`'s "the settings engine reads a number past the parser's
+    # reach in the document doctor walks" -> the row is red, a file it cannot check; "hook-entries
+    # counts entries with the interpreter's limit on numbers" -> "this check could not run".
     root = _initialised(tmp_path)
-    (root / relative).parent.mkdir(parents=True, exist_ok=True)
-    (root / relative).write_text('{"hooks": {}, "n": ' + LONG_NUMBER + "}", "utf-8")
+    foreign = {"hooks": [{"type": "command", "command": "echo hi"}]}
+    _walked(tmp_path, root, label).write_text(
+        '{"hooks": {"PreToolUse": [' + json.dumps(foreign) + ']}, "n": ' + LONG_NUMBER + "}",
+        "utf-8",
+    )
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
-        "hook-entries",
-        WARN,
-        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
-        f"hook entries, so nothing here accounts for what is in them: {relative}",
-        "check that each file named above is readable and is valid JSON",
+        "hook-entries", OK, "0 stayfixed entr(ies), 1 foreign; all accounted for", ""
     )
 
 

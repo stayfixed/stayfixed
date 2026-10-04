@@ -1981,20 +1981,48 @@ file = "src/stayfixed/scaffold/entries.py"
 before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows. A settings document"
 after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows. A settings document"
 reddens = [
-  "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one",
-  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_to[.claude/settings.json]",
+  "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
+  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
 ]
 
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
-# raises a plain `ValueError`, which is neither of the two errors above, with the same two outcomes.
+# raises a plain `ValueError`, which is neither of the two errors above. The merge refuses it, as it
+# refuses the nesting; `owned_ids` reads the number as its text, below, so `doctor` never meets it.
 [[mutation]]
 name = "the settings engine lets a number past the parser's reach raise past its refusal"
 file = "src/stayfixed/scaffold/entries.py"
 before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
 after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
 reddens = [
-  "tests/scaffold/test_entries.py::test_a_document_holding_a_number_past_the_parsers_reach_refuses_like_a_malformed_one",
-  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_one_the_walk_is_blind_to[.claude/settings.json]",
+  "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
+]
+
+# A document past a limit of the parser is refused as its own kind of `EntriesError`, so `doctor` can
+# tell it from a malformed one by name and every caller catching `EntriesError` still catches it.
+[[mutation]]
+name = "a document past a limit of the parser is refused outside the entries refusal"
+file = "src/stayfixed/scaffold/entries.py"
+before = "class ParserLimitError(EntriesError):"
+after = "class ParserLimitError(Refusal):"
+reddens = [
+  "tests/scaffold/test_surface.py::test_a_document_past_a_limit_of_the_parser_is_an_entries_refusal_of_its_own_kind",
+]
+
+# `owned_ids` answers ids and events, which no number is part of, so it reads every integer as its
+# text. Read with the interpreter's limit, a committed settings file holding a marked entry and a
+# number past that limit was refused, and `hook-entries` read the file as one it could not judge
+# rather than judging the entry: its red turned into a warning, and the owner's own file beside such
+# a number read as one nothing could account for.
+[[mutation]]
+name = "the settings engine reads a number past the parser's reach in the document doctor walks"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    raw = _load(document, numbers=str)"
+after = "    raw = _load(document)"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
+  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[long-number-recording-it-overlay]",
+  "tests/attach/test_doctor.py::test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for",
 ]
 
 # stayfixed declares that it makes no network request of its own; that holds only while no module

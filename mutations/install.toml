@@ -679,8 +679,8 @@ reddens = [
 [[mutation]]
 name = "a blind settings file softens an entry nothing on this machine vouches for"
 file = "src/stayfixed/doctor/checks.py"
-before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
-after = "        red = (unrecorded, ungranted, unread_unvouched, unread_ungranted)"
+before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
+after = "        red = (unrecorded, ungranted, unread_unvouched, unread_ungranted, unchecked)"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
 ]
@@ -688,8 +688,8 @@ reddens = [
 [[mutation]]
 name = "a blind settings file softens an entry beside an unreadable record that nothing grants"
 file = "src/stayfixed/doctor/checks.py"
-before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
-after = "        red = (unrecorded, unvouched, ungranted)"
+before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
+after = "        red = (unrecorded, unvouched, ungranted, unchecked)"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
 ]
@@ -2199,4 +2199,56 @@ before = "        if not stat.S_ISREG(mode):\n            continue"
 after = "        if False:\n            continue"
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
+]
+
+# The walk's own reader reads integers as `owned_ids` does. With the interpreter's limit it raised
+# a plain `ValueError` on a document `owned_ids` had accepted, past the walk to `_guarded`: "this
+# check could not run".
+[[mutation]]
+name = "hook-entries counts entries with the interpreter's limit on numbers"
+file = "src/stayfixed/doctor/checks.py"
+before = "        raw = json.loads(document, parse_int=str) if document.strip() else {}"
+after = "        raw = json.loads(document) if document.strip() else {}"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[long-number-none-no-overlay]",
+  "tests/attach/test_doctor.py::test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for",
+]
+
+# Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it
+# may run. A file the walk refuses for that alone is red: read as one it is blind to, a warning,
+# it let a clone commit a marked entry beside such nesting and keep `stayfixed doctor`'s exit code
+# at 0, with or without a ledger, with an overlay recorded or not.
+[[mutation]]
+name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
+file = "src/stayfixed/doctor/checks.py"
+before = "        except ParserLimitError:\n            unchecked.append(label)"
+after = "        except ParserLimitError:\n            blind.append(label)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[nested-recording-it-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[nested-none-no-overlay]",
+]
+
+# The other half: a file this process may not read is this machine's state, which git cannot
+# commit and a harness running as the same user cannot read either, so it stays a warning.
+[[mutation]]
+name = "hook-entries reads every settings file it cannot read as one it cannot check"
+file = "src/stayfixed/doctor/checks.py"
+before = "        except (OSError, UnicodeDecodeError):\n            blind.append(label)"
+after = "        except (OSError, UnicodeDecodeError):\n            unchecked.append(label)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[recording-it-overlay]",
+  "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[none-no-overlay]",
+]
+
+# A file the walk is blind to softens a row with nothing else to say, never one a file it cannot
+# check has made red.
+[[mutation]]
+name = "a blind settings file softens a settings file nothing can check"
+file = "src/stayfixed/doctor/checks.py"
+before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
+after = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
 ]

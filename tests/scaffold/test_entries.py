@@ -6,6 +6,7 @@ import pytest
 
 from stayfixed.scaffold.entries import (
     EntriesError,
+    ParserLimitError,
     apply_entries,
     mark,
     marker_id,
@@ -151,15 +152,17 @@ def test_a_malformed_document_refuses() -> None:
 NESTED = "[" * 200_000 + "]" * 200_000
 
 
-def test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one() -> None:
+def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() -> None:
     # `RecursionError` used to leave the engine past every caller's catch: `doctor`'s
     # `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a
-    # file the repository chose. Mutation (oracle): `mutations/`'s "the settings engine lets a
-    # nested document raise past its refusal" -> both raise `RecursionError`.
+    # file the repository chose. The refusal is its own kind, because the document is valid JSON a
+    # harness may well read: `doctor` reports it red, where a malformed one is a warning.
+    # Mutation (oracle): `mutations/`'s "the settings engine lets a nested document raise past its
+    # refusal" -> both raise `RecursionError`.
     nested = '{"hooks": ' + NESTED + "}"
-    with pytest.raises(EntriesError, match="nested deeper"):
+    with pytest.raises(ParserLimitError, match="nested deeper"):
         owned_ids(nested)
-    with pytest.raises(EntriesError, match="nested deeper"):
+    with pytest.raises(ParserLimitError, match="nested deeper"):
         apply_entries(nested, {})
 
 
@@ -168,15 +171,18 @@ def test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one()
 LONG_NUMBER = "1" * 5_000
 
 
-def test_a_document_holding_a_number_past_the_parsers_reach_refuses_like_a_malformed_one() -> None:
-    # The `ValueError` left the engine past every caller's catch, as `RecursionError` did:
-    # `doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an internal
-    # error, on a file the repository chose. Mutation (oracle): `mutations/`'s "the settings engine
-    # lets a number past the parser's reach raise past its refusal" -> both raise `ValueError`.
-    long = '{"hooks": {}, "n": ' + LONG_NUMBER + "}"
-    with pytest.raises(EntriesError, match="number longer"):
-        owned_ids(long)
-    with pytest.raises(EntriesError, match="number longer"):
+def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge() -> None:
+    # `owned_ids` answers ids and events, which no number can be part of, so it reads a number as
+    # its text and answers for the entries beside one. `apply_entries` writes the document back,
+    # and a number it cannot hold it cannot write back unchanged, so it refuses. The `ValueError`
+    # used to leave the engine past every caller's catch. Mutations (oracle): `mutations/`'s "the
+    # settings engine reads a number past the parser's reach in the document doctor walks" ->
+    # `owned_ids` refuses; "the settings engine lets a number past the parser's reach raise past its
+    # refusal" -> `apply_entries` raises `ValueError`.
+    marked = json.loads(document(("PreToolUse", mark("a.sh", "bg-cleanup"))))
+    long = json.dumps(marked)[:-1] + ', "n": ' + LONG_NUMBER + "}"
+    assert owned_ids(long) == {"bg-cleanup": "PreToolUse"}
+    with pytest.raises(ParserLimitError, match="number longer"):
         apply_entries(long, {})
 
 

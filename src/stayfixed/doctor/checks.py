@@ -103,7 +103,7 @@ from stayfixed.release.api import (
     released,
 )
 from stayfixed.runner import Runner
-from stayfixed.scaffold import marker_id, owned_ids
+from stayfixed.scaffold import ParserLimitError, marker_id, owned_ids
 from stayfixed.semver import later
 from stayfixed.setup.api import USER_SETTINGS
 
@@ -500,11 +500,12 @@ def _entry_commands(document: str) -> list[str]:
     contributes `""`, which `marker_id` reads as unmarked — which it certainly is.
 
     Called only after `scaffold.owned_ids` has accepted the document, so the shapes this walk
-    tolerates are the shapes the engine already vouched for. What it must not do is *raise*:
-    `doctor` is what a user has left when everything else is broken.
+    tolerates are the shapes the engine already vouched for, and it reads integers as their text as
+    that reader does: a number past the interpreter's conversion is no part of any command. What it
+    must not do is *raise*: `doctor` is what a user has left when everything else is broken.
     """
     try:
-        raw = json.loads(document) if document.strip() else {}
+        raw = json.loads(document, parse_int=str) if document.strip() else {}
     except json.JSONDecodeError:
         return []
     hooks = raw.get("hooks") if isinstance(raw, dict) else None
@@ -614,6 +615,16 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
     `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
     admit it cannot account for. The report names the file and never its contents.
+
+    **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
+    is a warning, which is right for a file this machine will not let anything read and for one
+    that will not parse, because the harness cannot load either. Valid JSON nested deeper than the
+    parser follows is neither: a harness may read it (Claude Code's parser does), so the hooks in
+    it may run, and a warning there let a clone commit a marked entry beside such nesting and keep
+    the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may leave
+    unknown the provenance of an entry a harness may run. A number longer than the interpreter
+    converts is not refused at all: it is read as its text, by `owned_ids` and by the walk, and
+    the entries beside it are judged as they would be without it.
     """
     answers, readable, askable = _claimed(context, claims)
     claimed = 0
@@ -623,6 +634,7 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     ungranted: list[str] = []
     unread_unvouched: list[str] = []
     unread_ungranted: list[str] = []
+    unchecked: list[str] = []
     blind: list[str] = []
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
     if context.home is not None:
@@ -649,6 +661,9 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
             # is the point rather than an oversight: this is the engine's own reader, and a
             # document `apply_entries` would refuse is one this walk must not silently tolerate.
             owned_ids(document)
+        except ParserLimitError:
+            unchecked.append(label)
+            continue
         except Refusal:
             blind.append(label)
             continue
@@ -775,9 +790,19 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
         remedy = (
             f"open each entry named above and remove the ones you did not install; then {rebuild}"
         )
+    if unchecked:
+        status = RED
+        parts.append(
+            f"{len(unchecked)} settings file(s) are valid JSON nested deeper than this check can "
+            f"follow, so nothing here can check the entries in them: {listed(unchecked)}"
+        )
+        remedy = (
+            "open each file named above and remove what you did not put there; stayfixed writes "
+            "no settings file nested that deep"
+        )
     if blind:
         # A file this walk cannot read softens a row with nothing else to say, never a red one.
-        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)
+        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)
         status = RED if any(red) else WARN
         parts.append(
             f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "

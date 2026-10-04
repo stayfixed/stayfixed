@@ -31,6 +31,8 @@ from tests.attach.test_write import LONG_NUMBER, NESTED
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
     OVERLAY,
+    UNCHECKABLE,
+    UNCHECKABLE_REMEDY,
     _attached,
     _by_name,
     _checks,
@@ -1022,6 +1024,132 @@ def test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_th
     assert (red[0]["detail"], red[0]["remedy"]) == (expected.detail, expected.remedy)
     # By position, and not one byte of the forged command.
     assert "evil.example" not in red[0]["detail"] + red[0]["remedy"]
+
+
+# Valid JSON past a limit of Python's parser, put beside the forged entry in the committed settings
+# file: a number longer than the interpreter converts, and nesting deeper than the parser follows.
+# Node's `JSON.parse` reads both, so a harness may run the entry beside either.
+PADS = {"long-number": LONG_NUMBER, "nested": NESTED}
+
+
+def _padded(root: Path, settings: str, pad: str) -> None:
+    """Give the settings file at `settings` a key of its own holding `PADS[pad]`."""
+    path = root / settings
+    raw = path.read_text(encoding="utf-8").rstrip()
+    assert raw.endswith("}"), raw
+    path.write_text(raw[:-1] + ', "pad": ' + PADS[pad] + "}", encoding="utf-8")
+
+
+NOT_RECORDED = Check(
+    "hook-entries",
+    "red",
+    f"{ONE_ENTRY}1 entr(ies) claim the stayfixed marker and are not recorded in {LEDGER}: "
+    f"{COMMITTED} entry 1 of 1",
+    "open each entry named above and remove the ones you did not install",
+)
+# A settings file nothing here can check, so no entry in it is counted, named or vouched for.
+UNCHECKED = Check(
+    "hook-entries",
+    "red",
+    f"0 stayfixed entr(ies), 0 foreign; 1 {UNCHECKABLE}: {COMMITTED}",
+    UNCHECKABLE_REMEDY,
+)
+
+
+@pytest.mark.parametrize("machine", ["overlay", "no-overlay"])
+@pytest.mark.parametrize("ledger", ["recording-it", "none"])
+@pytest.mark.parametrize("pad", sorted(PADS))
+def test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pad: str,
+    ledger: str,
+    machine: str,
+) -> None:
+    # The attack whole: a clone commits a marked entry in `.claude/settings.json` and, beside it in
+    # the same file, a value Python's parser refuses and the harness's does not. The row read the
+    # file as one it was blind to, a warning, and `stayfixed doctor` exited 0 with or without a
+    # ledger, with an overlay recorded or not. A number is read as its text, so the entry is judged
+    # as it would be without one; a document nested that deep cannot be checked at all, and that is
+    # red. Only this machine's state may leave an entry's provenance unknown.
+    #
+    # Mutations (oracle): `mutations/`'s "hook-entries reads a settings file past the parser's
+    # reach as one it is blind to" -> every `nested` case exits 0; "the settings engine reads a
+    # number past the parser's reach in the document doctor walks" -> every `long-number` case
+    # reads the nested sentence.
+    root = _forged_clone(tmp_path)
+    _padded(root, COMMITTED, pad)
+    if ledger == "none":
+        (root / LEDGER).unlink()
+    recorded = _machine(tmp_path) if machine == "overlay" else _no_overlay_machine(tmp_path)
+    code = _invoke_doctor(tmp_path, monkeypatch, root, recorded)
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 1, red
+    assert [row["name"] for row in red] == ["hook-entries"], red
+    if pad == "nested":
+        expected = UNCHECKED
+    elif ledger == "none":
+        expected = NOT_RECORDED
+    else:
+        expected = TABLE["forged-right-store" if machine == "overlay" else "forged-no-overlay"]
+    assert (red[0]["detail"], red[0]["remedy"]) == (expected.detail, expected.remedy)
+    # By position, and not one byte of the command or of the id it forged.
+    assert "evil.example" not in red[0]["detail"] + red[0]["remedy"]
+    assert "forged-1" not in red[0]["detail"] + red[0]["remedy"]
+
+
+def test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for(
+    tmp_path: Path,
+) -> None:
+    # The owner the case above must not refuse: a number in their own settings file is no part of
+    # an entry's provenance, so the entries beside it read as they do without it.
+    root = _attached(tmp_path)
+    _padded(root, LOCAL_SETTINGS, "long-number")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == Check(
+        "hook-entries", OK, f"{ONE_ENTRY}all accounted for", ""
+    )
+    assert not [row.name for row in rows if row.status == "red"]
+
+
+@pytest.mark.parametrize("machine", ["overlay", "no-overlay"])
+@pytest.mark.parametrize("ledger", ["recording-it", "none"])
+def test_a_settings_file_this_machine_cannot_read_keeps_a_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ledger: str,
+    machine: str,
+) -> None:
+    # The other side of the case above: a settings file this process has no permission to read is
+    # this machine's state and never a repository's, because git records no such mode, and a
+    # harness running as the same user cannot read it either. The row names it and warns, and the
+    # report exits 0. Mutation (oracle): `mutations/`'s "hook-entries reads every settings file it
+    # cannot read as one it cannot check" -> red, exit 1.
+    if os.geteuid() == 0:
+        pytest.skip("root reads a file it has no permission for")
+    root = _forged_clone(tmp_path)
+    if ledger == "none":
+        (root / LEDGER).unlink()
+    recorded = _machine(tmp_path) if machine == "overlay" else _no_overlay_machine(tmp_path)
+    (root / COMMITTED).chmod(0)
+    try:
+        code = _invoke_doctor(tmp_path, monkeypatch, root, recorded)
+    finally:
+        (root / COMMITTED).chmod(0o644)
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 0, red
+    assert not red, red
+    row = next(row for row in report["checks"] if row["name"] == "hook-entries")
+    assert (row["status"], row["detail"], row["remedy"]) == (
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
+        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
+        "check that each file named above is readable and is valid JSON",
+    )
 
 
 def test_a_marked_entry_with_no_ledger_at_all_is_still_reported(tmp_path: Path) -> None:
