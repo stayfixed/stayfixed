@@ -29,6 +29,14 @@ A new harness is a value with a positive `detects`, its project-root variable, i
 settings files and its `reach`. What follows still lives outside the registry, spelled for
 Claude Code or Codex, and a harness that differs from both in any of it is an edit there too:
 
+- Each harness loads the plugin through a manifest of its own, `.claude-plugin/plugin.json` and
+  `.codex-plugin/plugin.json`, which `scripts/release.py check` holds to one version, so another
+  harness is another manifest and another entry in that check's sources.
+- `hooks/hooks.json` keys its entries by Claude Code's event names and spells every command as
+  `"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh"`, so a harness that names its events otherwise, or
+  does not set `CLAUDE_PLUGIN_ROOT`, is an edit there: without that variable each command
+  expands to `/hooks/run-hook.sh` and exits 127, which Claude Code reads as a non-blocking
+  error, so no guard runs and nothing says so.
 - `hooks/run-hook.sh` takes the directory it enters from `CLAUDE_PROJECT_DIR` alone, before any
   Python runs, so another root variable is an edit to its `root=` line and to the digest
   `hooks/hashes.json` records for it (`scripts/release.py hashes`).

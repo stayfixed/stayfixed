@@ -143,8 +143,10 @@ edit: `doctor` walks the settings files every value names, and the README's tabl
 agent enforces is held equal to every value's `reach` by a test. It is not only a value: a
 harness that differs from Claude Code and Codex in any of the facts still spelled outside the
 registry is an edit there too, and the module docstring of `src/stayfixed/harnesses.py` lists
-them — the variable `hooks/run-hook.sh` takes its directory from and the digest recorded for
-it, `hooks.api.DATA_ROOT_VARIABLES`, `doctor`'s plugin-root variables, wrapper environment and
+them — the plugin manifest each harness loads and the release check that holds their versions
+together, the event names and `${CLAUDE_PLUGIN_ROOT}` command paths of `hooks/hooks.json`, the
+variable `hooks/run-hook.sh` takes its directory from and the digest recorded for it,
+`hooks.api.DATA_ROOT_VARIABLES`, `doctor`'s plugin-root variables, wrapper environment and
 `codex-trust` row, the `SessionStart` bundles `memory session-context` writes without a
 `render`, and the one hook output cap.
 
