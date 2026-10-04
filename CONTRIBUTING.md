@@ -158,16 +158,19 @@ loaded: the core loads the private layer only when a command asks for it.
   its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
   the report's `Context` and through the same guard, so a check that raises costs its own row and
   not the report. `register()` is guarded too: one that raises, or returns anything but a
-  `Contribution` of `(name, check)` pairs, costs one red row named after the area, and the rest of
-  the report stands. A check's name is unique in the report: discovery refuses a name equal to a
-  core check's or to one another area contributes. A `Contribution` may also carry `claims`, which
-  answers `Claims`: the marker ids the area recorded in settings files and the commands it still
-  grants there, which the core's `hook-entries` row asks with the same `Context`, so an entry the
-  area put there is told apart from a repository claiming it did. The record may be repository
-  bytes and the grants may not, and an entry is absolved only by an area that both records its id
-  and grants its command, never by one area's record and another's grant. `register()` is called
-  once per report, so anything it creates for its checks — each delivery area creates a value that
-  resolves the overlay root and the note store at most once — is fresh for every report.
+  `Contribution` of `(name, check)` pairs, puts one red row named after the area where its rows
+  would have been, and the rest of the report stands. The area's claims (below) go with its rows,
+  so `hook-entries` reads every entry that area put into settings files as one nothing records,
+  and goes red too when there is one. A check's name is unique in the report: discovery refuses a
+  name equal to a core check's or to one another area contributes. A `Contribution` may also carry
+  `claims`, which answers `Claims`: the marker ids the area recorded in settings files and the
+  commands it still grants there, which the core's `hook-entries` row asks with the same `Context`,
+  so an entry the area put there is told apart from a repository claiming it did. The record may be
+  repository bytes and the grants may not, and an entry is absolved only by an area that both
+  records its id and grants its command, never by one area's record and another's grant.
+  `register()` is called once per report, so anything it creates for its checks — each delivery
+  area creates a value that resolves the overlay root and the note store at most once — is fresh
+  for every report.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
