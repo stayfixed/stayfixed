@@ -370,8 +370,8 @@ def _extra(config: Config, store: Store) -> list[str]:
 
     `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
     not cover, and assigns the check to "the module that first reads those fields". The
-    strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
-    bundle injects — the same channel a symlinked index reaches. `contained` is called without
+    strings are repository-controlled and land verbatim in `MEMORY.md`, the file the harness
+    memory link exposes — the same channel a symlinked index reaches. `contained` is called without
     `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in
     overlay mode, while these are pointers to documents in the repository and a link at the
     last component escaping the root is the same escape as one halfway up.
