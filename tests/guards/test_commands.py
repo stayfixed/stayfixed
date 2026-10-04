@@ -393,11 +393,18 @@ def test_test_hygiene_is_clean_on_a_committed_tree(
     # `repo()` leaves no `[ledger]` and no stack's marker, so no profile reports: this pins the
     # clean-tree path, not the walk. The walk is pinned in
     # `tests/profiles/python/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
-    # `exit_code=1 if findings else 0` to `1`; measured.
+    # `exit_code=1 if findings else 0` to `1`; measured. Then a committed `pyproject.toml`, so
+    # Python is detected with nothing to report, and the summary says so in the words a person
+    # reads. Oracle: `mutations/`, "test hygiene's clean summary names no stack".
     root = repo(tmp_path)
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
-    assert "clean" in capsys.readouterr().out
+    assert capsys.readouterr().out == "tree is clean\n"
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: python")
+    assert invoke(argv) == 0
+    assert capsys.readouterr().out == "tree is clean; the python profile has nothing to report\n"
 
 
 @needs_git

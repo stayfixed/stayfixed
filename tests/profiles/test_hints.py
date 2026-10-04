@@ -147,9 +147,10 @@ def test_no_recognising_profile_means_no_notice(tmp_path: Path) -> None:
 
 
 class FakeHint:
-    """A hint for one runner, whose report and note are fixed, and which can be told to raise."""
+    """A hint for one runner, whose report and note are fixed, and which can be told to raise.
+    A `note` of `None` is a hint with nothing to say."""
 
-    def __init__(self, runner: str, note: str, *, raises_in: str = "") -> None:
+    def __init__(self, runner: str, note: str | None, *, raises_in: str = "") -> None:
         self.runner = runner
         self.said = note
         self.raises_in = raises_in
@@ -168,6 +169,8 @@ class FakeHint:
 
     def note(self, counts: Mapping[str, int]) -> str | None:
         self._maybe_raise("note")
+        if self.said is None:
+            return None
         return f"{self.said} ({counts['found']})"
 
 
@@ -285,24 +288,57 @@ def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
 ) -> None:
     # `[stayfixed] profile` names one stack; a repository written in two gets both stacks'
     # counts, each under its profile's name, and only counts: the report that carried a path
-    # reaches `--json` as its integers alone. Detection is replaced so that both fake profiles
-    # sit at the root. Oracle: `mutations/`, "test hygiene reports the first stack and stops"
-    # and "test hygiene prints a report as the hint returned it".
-    ship(monkeypatch, {"alpha": LoudHint("x", "alpha says"), "beta": FakeHint("y", "beta says")})
+    # reaches `--json` as its integers alone. `beta` has nothing to say, so it is listed only
+    # because detection, replaced here, puts its markers at the root: its entry is the proof that
+    # detection was asked. Oracle: `mutations/`, "test hygiene reports the first stack and
+    # stops", "test hygiene prints a report as the hint returned it" and "test hygiene lists
+    # only the profiles with something to say".
+    ship(monkeypatch, {"alpha": LoudHint("x", "alpha says"), "beta": FakeHint("y", None)})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] == 0
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
+def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A clean tree in two stacks says so for each of them, in name order, and exits 0: the
+    # summary is what tells a person which stacks were looked at. Oracle: `mutations/`, "test
+    # hygiene's clean summary names only the first stack".
+    ship(monkeypatch, {"alpha": FakeHint("x", None), "beta": FakeHint("y", None)})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == (
+        "tree is clean; the alpha profile has nothing to report; "
+        "the beta profile has nothing to report"
+    )
+
+
+def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every shipped profile's markers sit at the root, whatever the tree holds."""
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
     monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: True)
+
+
+def committed_project(tmp_path: Path) -> Path:
+    """A repository whose one file, its configuration, is committed: a clean tree."""
     root = tmp_path / "repo"
     root.mkdir()
     (root / CONFIG_FILE).write_text(CONFIG, encoding="utf-8")
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "chore: seed")
-    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
-    assert invoke(argv) == 1
-    out = json.loads(capsys.readouterr().out)
-    assert out["dirty"] == 0
-    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
-    assert out["summary"] == "alpha: alpha says (1); beta: beta says (1)"
+    return root
 
 
 def test_the_note_is_a_function_of_the_report() -> None:
