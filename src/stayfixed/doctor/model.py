@@ -103,16 +103,20 @@ class Claims:
     never stands on another area's grant.
 
     Every answer the two sources can give is carried, their `None`s included: `recorded is None` is
-    "the record could not be read" (the row warns, says so, and judges no entry), `granted is None`
-    is "the overlay could not be asked" (the row warns and withholds only the comparison with what
-    is granted: an entry no record holds is still red). A `None` from any one area is `None` for
-    every area's entries, because what it would have said is not something another area can.
+    "the record could not be read" (the row warns and says so, and withholds judgement only of an
+    entry this area grants, which may be one the record holds: an entry no grant covers is still
+    red, so an area must answer `granted` whether or not its record could be read), `granted is
+    None` is "the overlay could not be asked" (the row warns and withholds only the comparison with
+    what is granted: an entry no record holds is still red). A `None` from any one area is `None`
+    for every area's entries, because what it would have said is not something another area can.
 
     **Whether `granted` is `None` is decided by this machine's state alone, never by the record.**
     A `None` turns this row's red into a warning, so a record — repository bytes — that could choose
-    it could silence the row about the very entry it records. A machine that records no source to
-    grant from is not one: there is nothing to ask, nothing grants, `granted` is empty and `sourced`
-    is `False`, which changes the row's sentence and remedy and never its verdict."""
+    it could silence the row about the very entry it records. That holds for a record that cannot
+    be read too: an unreadable record is repository bytes as well, which is why it withholds no
+    more than its own area's grant covers. A machine that records no source to grant from is not
+    one: there is nothing to ask, nothing grants, `granted` is empty and `sourced` is `False`,
+    which changes the row's sentence and remedy and never its verdict."""
 
     recorded: Mapping[str, str] | None
     granted: frozenset[str] | None

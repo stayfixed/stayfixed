@@ -39,8 +39,9 @@ import pytest
 
 import stayfixed
 from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.doctor.api import OK, RED, SKIP, run_checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, run_checks
 from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
@@ -718,6 +719,79 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     attached = next(row for row in _doctor(walk) if row["name"] == "attached")
     assert attached["status"] == RED
     assert "real directory" in attached["detail"]
+
+
+def test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says(
+    tmp_path: Path,
+) -> None:
+    # The owner `hook-entries` must not refuse once an unreadable ledger beside an entry nothing
+    # grants is red: attached, with one entry the overlay grants, and the ledger corrupted. The row
+    # warns, the report exits 0, and the remedy it prints, followed literally, ends green with the
+    # entry accounted for — so the warning is one with a way out, not a dead end. Mutations
+    # (oracle): `mutations/`'s "attach does not ask the overlay about a ledger it cannot read" ->
+    # the row is red; "an unreadable ledger is never told how to rebuild it" -> the remedy is not
+    # the one that ends green.
+    walk = _install_path(tmp_path)
+    (walk.overlay / "common" / "claude" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def attach() -> None:
+        done = _cli(
+            walk,
+            "attach",
+            "--store",
+            str(walk.store),
+            "--yes",
+            "--machine",
+            str(walk.machine),
+            tty=True,
+        )
+        assert done.returncode == 0, done.stderr
+
+    def entries() -> tuple[dict[str, str], list[str]]:
+        rows = _doctor(walk)
+        red = [row["name"] for row in rows if row["status"] == RED]
+        return next(row for row in rows if row["name"] == "hook-entries"), red
+
+    attach()
+    assert entries() == (
+        {
+            "name": "hook-entries",
+            "status": OK,
+            "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+            "remedy": "",
+        },
+        [],
+    )
+    ledger = walk.root / ATTACH_LEDGER
+    ledger.write_text("this is not json", encoding="utf-8")
+    row, red = entries()
+    assert (row["status"], red) == (WARN, [])
+    assert row["remedy"] == (
+        f"remove {ATTACH_LEDGER} and run `stayfixed attach --store "
+        f"<overlay>/projects/<project>/memory` to write a new one"
+    )
+    ledger.unlink()
+    attach()
+    assert entries() == (
+        {
+            "name": "hook-entries",
+            "status": OK,
+            "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+            "remedy": "",
+        },
+        [],
+    )
 
 
 def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:

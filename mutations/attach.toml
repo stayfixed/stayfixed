@@ -1598,18 +1598,33 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git",
 ]
 
-# The overlay is asked which commands it grants only when the ledger records something: with nothing
-# recorded nothing can be absolved, and asking would cost a `git` call to reach the same answer.
-# Asked anyway, an overlay that cannot be read right now makes the claims say it could not be asked,
-# and the row says so beside the red of an entry no attach recorded, about a question it never
-# needed put.
+# The overlay is not asked which commands it grants when the ledger is readable and records nothing:
+# then nothing can be absolved, and asking would cost a `git` call to reach the same answer. Asked
+# anyway, an overlay that cannot be read right now makes the claims say it could not be asked, and
+# the row says so beside the red of an entry no attach recorded, about a question it never needed
+# put.
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"
-before = "    granted = _granted_commands(context, answers) if found else set()"
+before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
 after = "    granted = _granted_commands(context, answers)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+# A ledger that cannot be read is not one that records nothing: the overlay's grant is what tells an
+# entry beside it that may be the owner's (a warning) from one nothing on this machine vouches for
+# (red). Not asked, an owner whose ledger got corrupted reads red for every entry their overlay
+# grants.
+[[mutation]]
+name = "attach does not ask the overlay about a ledger it cannot read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
+after = "    granted = _granted_commands(context, answers) if found else set()"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
 ]
 
 # The binding's row for a checkout that was never attached, captured from the code before the row

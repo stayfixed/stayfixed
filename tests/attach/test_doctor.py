@@ -11,14 +11,17 @@ area's own (`tests/doctor/test_checks.py`), shared rather than respelled, becaus
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
 from stayfixed.attach.api import LOCAL_SETTINGS
+from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import load
+from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, SKIP, WARN, Check
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
@@ -37,6 +40,7 @@ from tests.doctor.test_checks import (
     _overlay,
     _with_extra_entry,
 )
+from tests.floor import is_developers
 from tests.gitfixture import git as _git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -739,6 +743,160 @@ def test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warni
     # `owner-overlay-unreadable` is red; "a git that cannot run costs the hook-entries row" ->
     # `owner-git-cannot-run` is.
     assert _table_row(case, tmp_path, monkeypatch) == TABLE[case]
+
+
+# Ledgers a clone can commit that `ledger()` refuses, one per way it refuses: not JSON, a field of a
+# shape `attach` never writes, and valid JSON nested past what the parser follows.
+UNREADABLE_LEDGERS = {
+    "not-json": "this is not json",
+    "rules-not-a-list": json.dumps({"rules": 5}),
+    "nested": '{"entries": ' + NESTED + "}",
+}
+
+
+def _unreadable_row(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Check:
+    """`hook-entries` for one case of the table below, with the ledger made unreadable."""
+    machine = _machine(tmp_path)
+    forged, where = case.split("-", 1)
+    root = _forged_clone(tmp_path) if forged == "forged" else _attached(tmp_path)
+    (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    if where == "no-overlay":
+        machine = _no_overlay_machine(tmp_path)
+    elif where == "overlay-unreadable":
+        (tmp_path / "overlay" / COMMON_CLAUDE / "hooks.json").write_text(
+            json.dumps({"hooks": {"PreToolUse": "not a list"}}), encoding="utf-8"
+        )
+    elif where == "git-cannot-run":
+        _git_that_cannot_run(monkeypatch)
+    else:
+        assert where == "overlay", case
+    return _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
+
+
+UNREADABLE = (
+    f"{LEDGER} is there and cannot be read as a ledger, so which of those entries `stayfixed "
+    f"attach` installed could not be established"
+)
+# How an owner gets a ledger back: `attach` writes a new one from the overlay, and refuses to while
+# the unreadable one is there.
+REBUILD = (
+    f"remove {LEDGER} and run `stayfixed attach --store <overlay>/projects/<project>/memory` to "
+    f"write a new one"
+)
+# The remedy the row gave an unreadable ledger before it could judge any entry beside one, and still
+# gives where the overlay cannot be asked either: rebuilding needs the overlay.
+UNREADABLE_ONLY = f"check that {LEDGER} is readable and is the file your last attach wrote"
+# Every case the row has to tell apart once the ledger cannot be read, so that nobody can say which
+# entries it records. The ledger's bytes decide nothing: an entry the overlay this machine records
+# grants may be the owner's and is a warning; an entry nothing on this machine grants is red, with
+# or without an overlay recorded; and only an overlay or a `git` this machine cannot ask turns that
+# red into a warning. `forged-overlay` and `forged-no-overlay` used to read as `owner-overlay`
+# does: a warning and an exit of 0.
+UNREADABLE_TABLE = {
+    "forged-overlay": Check(
+        "hook-entries",
+        "red",
+        f"{ONE_ENTRY}{UNREADABLE}; 1 entr(ies) claim the stayfixed marker and the overlay does not "
+        f"grant them, so whatever {LEDGER} records, nothing on this machine vouches for them: "
+        f"{COMMITTED} entry 1 of 1",
+        f"open each entry named above and remove the ones you did not install; then {REBUILD}",
+    ),
+    "forged-no-overlay": Check(
+        "hook-entries",
+        "red",
+        f"{ONE_ENTRY}{UNREADABLE}; 1 entr(ies) claim the stayfixed marker and this machine records "
+        f"no overlay, so whatever {LEDGER} records, nothing on this machine vouches for them: "
+        f"{COMMITTED} entry 1 of 1",
+        "open each entry named above and remove the ones you did not install; if you did install "
+        "them, run `stayfixed setup --overlay <path>` to record the overlay that grants them; "
+        f"then {REBUILD}",
+    ),
+    # The owner whose ledger got corrupted: everything in the settings is granted, so the row warns,
+    # says the ledger could not be read, and says how to get it back.
+    "owner-overlay": Check("hook-entries", "warn", f"{ONE_ENTRY}{UNREADABLE}", REBUILD),
+    # The same bytes as `forged-no-overlay`, so the same verdict, as `owner-no-overlay` is above.
+    "owner-no-overlay": Check(
+        "hook-entries",
+        "red",
+        f"{ONE_ENTRY}{UNREADABLE}; 1 entr(ies) claim the stayfixed marker and this machine records "
+        f"no overlay, so whatever {LEDGER} records, nothing on this machine vouches for them: "
+        f"{LOCAL_SETTINGS} entry 1 of 1",
+        "open each entry named above and remove the ones you did not install; if you did install "
+        "them, run `stayfixed setup --overlay <path>` to record the overlay that grants them; "
+        f"then {REBUILD}",
+    ),
+    "owner-overlay-unreadable": Check(
+        "hook-entries", "warn", f"{ONE_ENTRY}{UNREADABLE}", UNREADABLE_ONLY
+    ),
+    "owner-git-cannot-run": Check(
+        "hook-entries", "warn", f"{ONE_ENTRY}{UNREADABLE}", UNREADABLE_ONLY
+    ),
+    # The owner boundary, seen from the other side: where this machine cannot ask its overlay, a
+    # forged entry beside an unreadable ledger is a warning, because so is the owner's.
+    "forged-overlay-unreadable": Check(
+        "hook-entries", "warn", f"{ONE_ENTRY}{UNREADABLE}", UNREADABLE_ONLY
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(UNREADABLE_TABLE))
+def test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    # The whole row, status, sentence and remedy, for each case. Mutations (oracle): `mutations/`'s
+    # "an unreadable record withholds judgement of every entry" -> both `forged-` cases with an
+    # overlay that can be asked, and `owner-no-overlay`, are warnings again; "attach does not ask
+    # the overlay about a ledger it cannot read" -> `owner-overlay` is red; "an unreadable record
+    # reads as one recording nothing" -> every red case and `owner-overlay` say "not recorded";
+    # "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside
+    # an unreadable record" -> both `-no-overlay` cases read the recorded overlay's sentence; "the
+    # rebuild remedy is offered where the overlay cannot be asked" and "an unreadable ledger is
+    # never told how to rebuild it" -> the warnings' remedies.
+    assert _unreadable_row(case, tmp_path, monkeypatch) == UNREADABLE_TABLE[case]
+
+
+def _invoke_doctor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: Path, machine: Path
+) -> int:
+    """`stayfixed doctor --json` as a user runs it, kept hermetic as `test_command.py` keeps it."""
+    for name in list(os.environ):
+        if is_developers(name):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    # The `wrapper` row executes what this answers, which is the checkout under test.
+    monkeypatch.setattr(doctor_checks, "_own_root", lambda: None)
+    argv = ["doctor", "--root", str(root), "--home", str(tmp_path / "home")]
+    return run(
+        [*argv, "--machine", str(machine), "--json"], parser=build_parser(discover_registrars())
+    )
+
+
+@pytest.mark.parametrize("machine", ["overlay", "no-overlay"])
+@pytest.mark.parametrize("shape", sorted(UNREADABLE_LEDGERS))
+def test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    shape: str,
+    machine: str,
+) -> None:
+    # The attack whole: a clone commits a marked entry in `.claude/settings.json` and a ledger
+    # `ledger()` cannot read, whatever the shape, and `stayfixed doctor` exits 1 with
+    # `hook-entries` the red row, on a machine with an overlay and on one without. It used to warn
+    # and exit 0 on both. Mutation (oracle): `mutations/`'s "an unreadable record withholds
+    # judgement of every entry" -> exit 0.
+    root = _forged_clone(tmp_path)
+    (root / LEDGER).write_text(UNREADABLE_LEDGERS[shape], encoding="utf-8")
+    recorded = _machine(tmp_path) if machine == "overlay" else _no_overlay_machine(tmp_path)
+    code = _invoke_doctor(tmp_path, monkeypatch, root, recorded)
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 1, red
+    assert [row["name"] for row in red] == ["hook-entries"], red
+    assert f"nothing on this machine vouches for them: {COMMITTED} entry 1 of 1" in red[0]["detail"]
+    # By position, and not one byte of the command or of the id it forged.
+    assert "evil.example" not in red[0]["detail"] + red[0]["remedy"]
+    assert "forged-1" not in red[0]["detail"] + red[0]["remedy"]
 
 
 def test_a_marked_entry_with_no_ledger_at_all_is_still_reported(tmp_path: Path) -> None:

@@ -358,9 +358,11 @@ def _claims(context: Context, answers: Answers) -> Claims:
 
     The ledger says which marker ids the last `attach` recorded, and the overlay says which
     marked commands it grants right now; the row needs both, because the ledger is a file a clone
-    can commit. The overlay is asked only when the ledger records something, because nothing can
-    be absolved otherwise and asking it costs a `git` call: an empty ledger keeps its old answer,
-    every entry claiming the marker is one no attach recorded.
+    can commit. The overlay is asked unless the ledger is readable and records nothing, because
+    then nothing can be absolved and asking it costs a `git` call: an empty ledger keeps its old
+    answer, every entry claiming the marker is one no attach recorded. A ledger that cannot be read
+    is not that: the grant is what decides whether an entry beside it may be the owner's (a warning)
+    or is one nothing on this machine vouches for (red), so the overlay is asked for it too.
 
     `sourced` is whether this machine records an overlay at all, read from the machine file and
     nothing else: without one the grant is empty because nothing could grant, and the row says
@@ -369,7 +371,7 @@ def _claims(context: Context, answers: Answers) -> Claims:
     from stayfixed.doctor.api import Claims
 
     found = _attach_ledger_entries(context.root)
-    granted = _granted_commands(context, answers) if found else set()
+    granted = _granted_commands(context, answers) if found is None or found else set()
     return Claims(
         found,
         None if granted is None else frozenset(granted),

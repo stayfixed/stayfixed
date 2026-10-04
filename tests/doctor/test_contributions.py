@@ -341,6 +341,13 @@ def test_an_id_an_area_records_and_nothing_grants_is_never_absolved(
     assert f"{SETTINGS} entry 1 of 1" in row.detail
 
 
+# How the row tells an owner to get an unreadable record back.
+REBUILD = (
+    f"remove {ATTACH_LEDGER} and run `stayfixed attach --store "
+    f"<overlay>/projects/<project>/memory` to write a new one"
+)
+
+
 @pytest.mark.parametrize(
     ("unknown", "where"),
     [
@@ -355,11 +362,12 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unknown: str, where: str
 ) -> None:
     # One area's `None` is an answer nobody else can stand in for: a record it could not read
-    # names ids no other record knows, an overlay it could not ask grants commands no other grant
+    # may name ids no other record knows, an overlay it could not ask grants commands no other grant
     # covers. So the pool is unknown, whichever side of a good answer the `None` falls on, and
     # the row withholds what that answer decides and says which answer is missing. The probe is
-    # the entry that answer would make red: `NOBODYS`, which no area records, for a record; and
-    # `STRAY`, which alpha records and does not grant, for a grant. Mutations (oracle):
+    # the entry that answer would make red: `NOBODYS`, which no readable record holds and the area
+    # whose record is unreadable grants, for a record; and `STRAY`, which alpha records and does
+    # not grant, for a grant. Mutations (oracle):
     # `mutations/`'s "a later area's record overwrites one an earlier area could not read" and "a
     # later area's grants overwrite an overlay an earlier area could not ask" -> the `-first`
     # cases compute the column and are red; "hook-entries judges provenance against an overlay
@@ -368,7 +376,7 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     _hooked(_initialised(tmp_path), ALPHA, probe)
     known = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
     if unknown == "recorded":
-        missing = _claiming(None, frozenset({ALPHA}))
+        missing = _claiming(None, frozenset({ALPHA, NOBODYS}))
     else:
         missing = _claiming({"alpha-1": "PreToolUse"}, None)
     first, last = (missing, known) if where == "first" else (known, missing)
@@ -379,9 +387,7 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     assert "the overlay does not grant" not in row.detail
     if unknown == "recorded":
         assert f"{ATTACH_LEDGER} is there and cannot be read as a ledger" in row.detail
-        assert row.remedy == (
-            f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
-        )
+        assert row.remedy == REBUILD
     else:
         assert "could not be asked which entries it grants" in row.detail
         assert row.remedy == (
@@ -410,6 +416,55 @@ def test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked(
     assert "could not be asked which entries it grants" in row.detail
     assert "the overlay does not grant" not in row.detail
     assert row.remedy == "open each entry named above and remove the ones you did not install"
+
+
+UNREADABLE = (
+    f"{ATTACH_LEDGER} is there and cannot be read as a ledger, so which of those entries "
+    f"`stayfixed attach` installed could not be established"
+)
+
+
+@pytest.mark.parametrize("sourced", [True, False], ids=["sourced", "unsourced"])
+def test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sourced: bool
+) -> None:
+    # An unreadable record may hold any id, so it withholds judgement of an entry only where its
+    # area's grant covers the command: that entry may be the area's, and the row warns. An entry no
+    # grant covers is red whatever the record would have said, because a record is a file a clone
+    # can commit, and an unreadable one used to turn a forged entry's red into a warning and an
+    # exit of 0. The row cannot say whether the record holds it, and does not. Mutations (oracle):
+    # `mutations/`'s "an unreadable record withholds judgement of every entry" -> the row is a
+    # warning; "an unreadable record reads as one recording nothing" -> `ALPHA` reads as not
+    # recorded; "hook-entries says the overlay does not grant what no overlay was recorded to grant,
+    # beside an unreadable record" -> `unsourced` reads the sentence for a recorded overlay.
+    _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
+    granted = frozenset({ALPHA}) if sourced else frozenset()
+    row = _hook_entries(
+        tmp_path, monkeypatch, _area("alpha", _claiming(None, granted, sourced=sourced))
+    )
+    if sourced:
+        why, where, remedy = (
+            "the overlay does not grant them",
+            f"{SETTINGS} entry 2 of 2",
+            f"open each entry named above and remove the ones you did not install; then {REBUILD}",
+        )
+    else:
+        why, where, remedy = (
+            "this machine records no overlay",
+            f"{SETTINGS} entry 1 of 2, {SETTINGS} entry 2 of 2",
+            "open each entry named above and remove the ones you did not install; if you did "
+            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
+            f"grants them; then {REBUILD}",
+        )
+    count = 1 if sourced else 2
+    assert row == Check(
+        "hook-entries",
+        RED,
+        f"2 stayfixed entr(ies), 0 foreign; {UNREADABLE}; {count} entr(ies) claim the stayfixed "
+        f"marker and {why}, so whatever {ATTACH_LEDGER} records, nothing on this machine vouches "
+        f"for them: {where}",
+        remedy,
+    )
 
 
 # What the row says of an entry a record holds where nothing could grant it, and how it ends.
@@ -444,28 +499,33 @@ def test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so(
     )
 
 
+@pytest.mark.parametrize("record", ["readable", "unreadable"])
 def test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record: str
 ) -> None:
     # A settings file the walk is blind to downgrades a row with nothing else to say to a warning,
-    # and must not downgrade one that has a red entry to report. Mutation (oracle): `mutations/`'s
-    # "a blind settings file softens an entry nothing on this machine vouches for" -> the row is a
-    # warning.
+    # and must not downgrade one that has a red entry to report, whether or not the record that
+    # might hold it could be read. Mutations (oracle): `mutations/`'s "a blind settings file softens
+    # an entry nothing on this machine vouches for" -> `readable` is a warning; "a blind settings
+    # file softens an entry beside an unreadable record that nothing grants" -> `unreadable` is.
     root = _initialised(tmp_path)
     _hooked(root, ALPHA)
     (root / ".codex").mkdir()
     (root / ".codex" / "hooks.json").write_text("{", encoding="utf-8")
+    recorded = {"alpha-1": "PreToolUse"} if record == "readable" else None
     row = _hook_entries(
-        tmp_path,
-        monkeypatch,
-        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset(), sourced=False)),
+        tmp_path, monkeypatch, _area("alpha", _claiming(recorded, frozenset(), sourced=False))
     )
     assert row.status == RED, row
-    assert UNSOURCED in row.detail
+    if record == "readable":
+        assert UNSOURCED in row.detail
+        assert row.remedy == RECORD_A_SOURCE
+    else:
+        assert "this machine records no overlay, so whatever" in row.detail
+        assert row.remedy.endswith(REBUILD)
     assert "could not be read as hook entries, so nothing here accounts for what is in them: " in (
         row.detail
     )
-    assert row.remedy == RECORD_A_SOURCE
 
 
 def test_claims_that_raise_cost_the_hook_entries_row_alone(

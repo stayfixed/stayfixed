@@ -571,19 +571,24 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     machine that records no overlay at all is not one whose overlay could not be asked: there is
     nothing to ask and nothing vouches, so an entry a record holds is red there too. A warning there
     let a clone whose committed ledger records its own entry keep the exit code at 0. Where a record
-    cannot be read, the row warns and names it and judges no entry: an unreadable record is not an
+    cannot be read, the row warns and names it, and withholds judgement only of an entry that
+    record's own area grants: that entry may be one the record holds. An unreadable record is not an
     empty one, and judged as one it would report every entry `attach` installed as recorded nowhere,
-    with a remedy telling the owner to remove it. Reading the record is the area's, which answers
-    `None` rather than raising, so a committed file the area cannot parse costs a warning and never
-    this row's guard.
+    with a remedy telling the owner to remove it. But it is not a vouching one either: an entry no
+    grant covers is red whatever the record would have said, because a clone can commit a ledger
+    that will not parse as easily as one that does, and withholding the verdict there turned a
+    forged entry's red into a warning on every machine. Reading the record is the area's, which
+    answers `None` rather than raising, so a committed file the area cannot parse never costs this
+    row's guard.
 
-    The three red lists are kept apart because their remedies differ. An entry in no record is one
-    to open and delete; an entry a record holds and its overlay no longer grants is either a
-    checkout that has drifted from the overlay or a forged ledger, and `stayfixed attach` settles
-    which — it takes out every marked entry the overlay no longer grants, so anything surviving
-    it was never stayfixed's; and an entry a record holds on a machine that records no overlay is
-    either the owner's checkout on a machine `setup --overlay` has not reached or a forged ledger,
-    and recording the overlay and then attaching settles which.
+    The red lists are kept apart because their remedies differ. An entry in no record is one to
+    open and delete; an entry a record holds and its overlay no longer grants is either a checkout
+    that has drifted from the overlay or a forged ledger, and `stayfixed attach` settles which — it
+    takes out every marked entry the overlay no longer grants, so anything surviving it was never
+    stayfixed's; an entry a record holds on a machine that records no overlay is either the owner's
+    checkout on a machine `setup --overlay` has not reached or a forged ledger, and recording the
+    overlay and then attaching settles which; and the last two again, for an entry only an
+    unreadable record could hold, whose way out also writes the record anew.
 
     **Entries are counted, never keys.** `owned_ids` answers a `dict[str, str]`, so N
     entries sharing one id yield one key and the same id under two events keeps only the last —
@@ -605,6 +610,8 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     unrecorded: list[str] = []
     unvouched: list[str] = []
     ungranted: list[str] = []
+    unread_unvouched: list[str] = []
+    unread_ungranted: list[str] = []
     blind: list[str] = []
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
     if context.home is not None:
@@ -633,14 +640,14 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                 foreign += 1
                 continue
             claimed += 1
-            if not readable:
-                # An unreadable record is not an empty one: judged against `{}`, every entry
-                # `attach` installed would read as recorded nowhere, red, with a remedy telling the
-                # owner to remove it. So the provenance column is withheld and the file is named.
-                continue
             where = f"{label} entry {position} of {len(commands)}"
             holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
-            if not holders:
+            # An area whose record could not be read may hold this id or may not, and nothing
+            # here can say which. It is not an empty record: judged as one, every entry `attach`
+            # installed would read as recorded nowhere, red, with a remedy telling the owner to
+            # remove it.
+            unread = [answer for answer in answers if answer.recorded is None]
+            if not holders and not unread:
                 # Needs the records alone, so an overlay that cannot be asked does not withhold
                 # it: a committed ledger beside a committed entry it does not record is red
                 # whether or not this machine records an overlay.
@@ -650,7 +657,19 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                 # absolving an entry on a record alone, or on one area's record and another's
                 # grant, is what this row may never do. Without a grant to compare, the entry is
                 # neither absolved nor accused.
-                if any(answer.sourced for answer in holders):
+                if any(command in (answer.granted or ()) for answer in unread):
+                    # An area whose record is unreadable grants it, so it may be that area's: the
+                    # record that would say is the one missing, and the row warns that it is.
+                    continue
+                if not holders:
+                    # Only an unreadable record could hold it and no grant covers it, so whatever
+                    # that record says, nothing vouches: red, and said without claiming to know
+                    # whether the record holds it. A record is a file a clone can commit, and an
+                    # unreadable one withholding this verdict turned a forged entry's red into a
+                    # warning and an exit of 0.
+                    sourced = any(answer.sourced for answer in unread)
+                    (unread_ungranted if sourced else unread_unvouched).append(where)
+                elif any(answer.sourced for answer in holders):
                     ungranted.append(where)
                 else:
                     # No holder's machine records a source to grant from, so nothing could vouch
@@ -660,13 +679,25 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     status: Status = OK
     remedy = ""
+    # How an owner gets an unreadable record back: `attach` refuses to write over a ledger it
+    # cannot read, and writes a new one from the overlay once it is gone.
+    rebuild = (
+        f"remove {ATTACH_LEDGER} and run `stayfixed attach --store "
+        f"<overlay>/projects/<project>/memory` to write a new one"
+    )
     if not readable:
         status = WARN
         parts.append(
             f"{ATTACH_LEDGER} is there and cannot be read as a ledger, so which of those entries "
             f"`stayfixed attach` installed could not be established"
         )
-        remedy = f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
+        # Rebuilding needs the overlay `attach` installs from, so where it cannot be asked the
+        # remedy stays with the file.
+        remedy = (
+            rebuild
+            if askable
+            else f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
+        )
     elif not askable:
         status = WARN
         parts.append(
@@ -703,8 +734,32 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
             "run `stayfixed attach --store <overlay>/projects/<project>/memory`, which takes out "
             "every marked entry the overlay no longer grants; open any that survive it"
         )
+    if unread_unvouched:
+        status = RED
+        parts.append(
+            f"{len(unread_unvouched)} entr(ies) claim the stayfixed marker and this machine "
+            f"records no overlay, so whatever {ATTACH_LEDGER} records, nothing on this machine "
+            f"vouches for them: {listed(unread_unvouched)}"
+        )
+        remedy = (
+            "open each entry named above and remove the ones you did not install; if you did "
+            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
+            f"grants them; then {rebuild}"
+        )
+    if unread_ungranted:
+        status = RED
+        parts.append(
+            f"{len(unread_ungranted)} entr(ies) claim the stayfixed marker and the overlay does "
+            f"not grant them, so whatever {ATTACH_LEDGER} records, nothing on this machine "
+            f"vouches for them: {listed(unread_ungranted)}"
+        )
+        remedy = (
+            f"open each entry named above and remove the ones you did not install; then {rebuild}"
+        )
     if blind:
-        status = RED if (unrecorded or unvouched or ungranted) else WARN
+        # A file this walk cannot read softens a row with nothing else to say, never a red one.
+        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)
+        status = RED if any(red) else WARN
         parts.append(
             f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "
             f"nothing here accounts for what is in them: {listed(blind)}"
