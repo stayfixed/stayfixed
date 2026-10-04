@@ -598,7 +598,7 @@ def test_init_names_the_owner_and_the_author_the_harness_asks_for(tmp_path: Path
     # A marketplace with no `owner` fails `claude plugin validate`, and a plugin manifest with no
     # `author` draws a warning on every install. The template ships a neutral placeholder for
     # both and `init` is where the account it belongs to goes in. Mutation: drop the owner/author
-    # branch of `_renamed` → the placeholder is still there after init and this reddens.
+    # branch of `naming.renamed` → the placeholder is still there after init and this reddens.
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
     init_instance(created.root, "OctoCat", runner=Recorder())
     market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
@@ -656,7 +656,7 @@ def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> No
     # collision the suffix exists to prevent still happened on Codex.
     #
     # Mutation (`mutations/`, "overlay init leaves the Codex manifest unsuffixed"):
-    # `CODEX_PLUGIN_MANIFEST` is dropped from `MANIFESTS` → this reddens on the third name.
+    # the Codex row is dropped from `naming.NAMED` → this reddens on the third name.
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
     init_instance(created.root, "OctoCat", runner=Recorder())
     names = {

@@ -27,12 +27,10 @@ from typing import Literal
 from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.errors import Failure, Refusal
+from stayfixed.overlay import naming
 from stayfixed.overlay.identity import require_overlay, segment
 from stayfixed.overlay.layout import (
-    CODEX_PLUGIN_MANIFEST,
-    MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
-    PLUGIN_MANIFEST,
     SUCCESSORS,
 )
 from stayfixed.overlay.template import retired, templates
@@ -86,25 +84,6 @@ TEMPLATE_PRECONDITION = (
 # shorter "Could not resolve", which `Could not resolve host` shares. A named string, not a cap:
 # it bounds nothing and no shipped file changes with it.
 NOT_FOUND_ANSWER = "Could not resolve to a Repository"
-# The three manifests `init_instance` names after the owner. The Codex one was left out of the
-# first draft, so the collision the suffix exists to prevent still happened on Codex: two
-# owners' overlays under one Codex configuration were one plugin fighting itself, which is the
-# exact wording `init_instance`'s own docstring gives as the rationale.
-MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
-# What the template carries where an account goes, and what `init_instance` replaces with the
-# owner's. A marketplace has to name an `owner` for `claude plugin validate` to accept it, and a
-# plugin manifest an `author` for it to stop warning; neither can be the owner's before there is
-# an owner, so the shipped file holds this neutral stand-in. `templates/overlay/` carries the same
-# string, and `tests/overlay/test_create.py`'s
-# `test_init_names_the_owner_and_the_author_the_harness_asks_for` renders the template and fails
-# when the two drift apart.
-PLACEHOLDER_ACCOUNT = "your-account"
-# Which key of each manifest names the account: the marketplace's owner, the plugins' author.
-ACCOUNT_KEYS = {
-    PLUGIN_MANIFEST: "author",
-    MARKETPLACE_MANIFEST: "owner",
-    CODEX_PLUGIN_MANIFEST: "author",
-}
 
 
 @dataclass(frozen=True)
@@ -406,12 +385,12 @@ def _from_template(
     )
 
 
-def _suffixed(value: object, suffix: str) -> str | None:
-    """The renamed value, or `None` when it is already suffixed or not a name at all."""
-    if not isinstance(value, str) or not value or value.endswith(f"-{suffix}"):
-        return None
-    return f"{value}-{suffix}"
-
+# Why a successor cannot be written when `template.templates()` refuses, and the one remedy that
+# works: `overlay upgrade` reads the same tree.
+NO_TEMPLATE_TREE = (
+    "this stayfixed install carries no overlay template tree; reinstall stayfixed, then run "
+    "`stayfixed overlay upgrade`"
+)
 
 NOT_AN_OVERLAY = (
     "`stayfixed overlay init --root` must name an overlay. It rewrites the tree's plugin "
@@ -436,14 +415,23 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` and never
     refreshed it again — for the one file carrying `stayfixed.requires`, the
     version-compatibility declaration the README advertises, and attributing to the owner an
-    edit stayfixed itself made. Re-stamping is the narrow answer of the two the review offered;
-    rendering the suffix through the `Template` instead would put an owner-dependent value into
-    the shipped tree, which every *other* consumer of that tree (`upgrade`'s hash rule, `overlay
-    publish-template`) would then have to know about. **Only a file whose bytes before the
-    rewrite were the recorded ones**: a manifest the owner edited is still renamed, but
-    re-stamping it recorded their edit as stayfixed's, and the next `upgrade` refreshed it away.
-    Its record stays, and `upgrade` goes on naming it. A `--template` clone carries no ledger at
-    all, and gets no record written for it.
+    edit stayfixed itself made. **Only a file whose bytes before the rewrite were the recorded
+    ones**: a manifest the owner edited is still renamed, but re-stamping it recorded their edit
+    as stayfixed's, and the next `upgrade` refreshed it away. Its record stays, and `upgrade` goes
+    on naming it. A `--template` clone carries no ledger at all, and gets no record written for it.
+
+    **Both halves are needed, and neither puts the owner into the shipped tree.** Re-stamping makes
+    the renamed bytes stayfixed's, so `upgrade` may refresh the file; `naming.named_after` renders
+    what `upgrade` refreshes it with as this function names it, so the refresh matches those bytes
+    instead of putting the template's `stayfixed-overlay` back. The tree `publish-template` copies
+    stays owner-free.
+
+    **A manifest it cannot write is named and passed over**, by the rule `_retire` follows for a
+    retired file: stopping on the bare `OSError` left the manifests before it renamed with their
+    new records only in memory, so every later `upgrade` read them as hand-edited. Its own record
+    stays true of the bytes still there, and the next run names it. When every rewrite fails, no
+    summary line is printed — neither "named" nor "already name" is true — and the failure lines
+    say what happened.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it
@@ -465,17 +453,27 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     rewrites: list[tuple[str, str, str]] = []
     absent: list[str] = []
     notes: list[str] = []
-    for relative in MANIFESTS:
+    for relative in naming.MANIFESTS:
         if not (root / relative).is_file():
             absent.append(relative)
             continue
         before = _read_manifest(root, relative)
-        body = _renamed(before, relative, suffix)
+        body = naming.renamed(before, relative, suffix)
         if body is not None:
             rewrites.append((relative, before, body))
     restamped = False
+    renamed: list[str] = []
+    unwritable: list[str] = []
     for relative, before, body in rewrites:
-        fsops.write_within(root, relative, body)
+        try:
+            fsops.write_within(root, relative, body)
+        except OSError as exc:  # named and passed over; see the docstring
+            unwritable.append(
+                f"{relative} cannot be written: {fsops.said(exc)}; "
+                "`stayfixed overlay init` names it once it can be"
+            )
+            continue
+        renamed.append(relative)
         record = ledger.get(relative)
         # Only a file that held what stayfixed wrote there is vouched for again. One the owner
         # edited is still renamed, and its record is left as it was, so `upgrade` goes on naming
@@ -483,18 +481,17 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         if record is not None and digest(before) == record.sha256:
             ledger = ledger.with_record(replace(record, sha256=digest(body)))
             restamped = True
-    # Written before anything is removed: a removal that fails below must not take the records of
-    # the renames with it.
-    if restamped:
-        ledger.write(root)
+    # One write, once every step has run: no step below stops `init` (a write, a removal or a
+    # template tree that fails is named and passed over), so the records of the renames cannot be
+    # lost to one. They were written ahead of the retirement while a failure there still raised.
     ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
-    if changed:
+    if changed or restamped:
         ledger.write(root)
-    renamed = [relative for relative, _, _ in rewrites]
     if renamed:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
-    else:
+    elif not rewrites:
         notes.append(f"the manifests already name {suffix}; nothing was renamed")
+    notes += unwritable
     if absent:
         notes.append(
             f"this overlay carries no {', '.join(absent)}, so there was nothing to name there; "
@@ -521,16 +518,19 @@ def _retire(
     template, which carries none, by the digest a release shipped (`template.retired`). Its
     verdict is acted on here rather than through `apply`, which would write a ledger into a tree
     that arrived without one. A file `plan` cannot read, one that cannot be removed and a
-    successor that cannot be written are each named and passed over, never a reason to stop
-    `init`: stopping lost the lines of the files already removed and left their records in a
-    ledger nothing then wrote, and a later run, finding the file absent, kept the record for good.
-    The ledger returned drops the records of the files actually removed, and only those.
+    successor that cannot be written — a template tree this install cannot read among the causes
+    — are each named and passed over, never a reason to stop `init`: stopping lost the lines of
+    the files already removed and left their records in a ledger nothing then wrote, and a later
+    run, finding the file absent, kept the record for good. The ledger returned drops the records
+    of the files actually removed, and of a relocated one already gone, and only those; the line
+    for the second says only its record went, since nothing was there to remove.
 
     A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
     its place: such a template carried the old name only, and a directory left empty is one git
     does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
     `developer` link to reach. Each directory above a file this run removed then goes once it is
-    empty, as `overlay upgrade` does it, and only above a file that was there to remove.
+    empty, as `overlay upgrade` does it, and only above a file that was there to remove — never
+    above one whose successor could not be written, whose directory stays for it.
 
     **A path the ledger supplied prints through `printed.quoted`.** The ledger is committed with
     the overlay, and a record whose target this release cannot produce is named at that target,
@@ -546,7 +546,6 @@ def _retire(
     notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
     changed = False
     removed: list[str] = []
-    emptied: list[str] = []
     written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
@@ -555,20 +554,37 @@ def _retire(
         if not unlinks(action):
             continue
         present = os.path.lexists(root / action.target)
-        try:
-            fsops.remove_within(root, action.target)
-        except OSError as exc:
-            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
-            continue
-        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
-        removed.append(action.target)
         if present:
-            emptied.append(action.target)
+            try:
+                fsops.remove_within(root, action.target)
+            except OSError as exc:
+                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+                continue
+            notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
+            removed.append(action.target)
+        else:
+            # A relocation whose file is already gone: there is nothing to unlink, and asking
+            # `remove_within` anyway answered `removed` over a missing file and `cannot be removed`
+            # over a missing directory. Only the record goes.
+            notes.append(f"dropped the record of {quoted(action.target)}, which was already gone")
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))
             changed = True
     successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}
-    shipped = [template for template in templates() if template.id in successors]
+    unwritten: set[str] = set()
+    try:
+        shipped = [template for template in templates() if template.id in successors]
+    except Failure:
+        # An install whose template tree cannot be read cannot write a successor, and that is
+        # named and passed over like any other successor it cannot write. Raising here lost the
+        # ledger with the records of the files already removed, which a later run, finding them
+        # absent, kept for good. The line is this module's own and not the `Failure`'s, which is
+        # about `--local`, carries the install's absolute path, and would be followed by a pointer
+        # to `overlay upgrade`, which reads the same tree and fails the same way.
+        shipped = []
+        for successor in sorted(successors):
+            notes.append(f"{successor} cannot be written: {NO_TEMPLATE_TREE}")
+            unwritten.add(successor)
     for action in plan(root, preset_defaults(root.name), shipped).actions:
         if action.verb is not Verb.CREATE or action.payload is None:
             continue
@@ -579,6 +595,7 @@ def _retire(
                 f"{action.target} cannot be written: {fsops.said(exc)}; "
                 "`stayfixed overlay upgrade` writes it"
             )
+            unwritten.add(action.target)
             continue
         notes.append(f"wrote {action.target} in its place")
         written.append(action.target)
@@ -586,9 +603,11 @@ def _retire(
             ledger = ledger.with_record(action.record)
             changed = True
     # Last, once each successor is in place, so a directory one is written into is never emptied
-    # on the way.
-    for target in emptied:
-        fsops.rmdir_parents_within(root, target)
+    # on the way — nor one a successor that could not be written was to go into, which stays for
+    # the `upgrade` its line names.
+    for target in removed:
+        if SUCCESSORS.get(target) not in unwritten:
+            fsops.rmdir_parents_within(root, target)
     return ledger, notes, [*removed, *written], changed
 
 
@@ -599,61 +618,6 @@ def _read_manifest(root: Path, relative: str) -> str:
         raise Failure(f"{relative} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{relative} is not UTF-8 text") from None
-
-
-def _renamed(text: str, relative: str, suffix: str) -> str | None:
-    """The manifest named after the owner, or `None` when it already named them.
-
-    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
-    what goes to disk — reading the file back to hash it would hash whatever is there then.
-    Nothing is written here: every manifest is decided before any is written.
-    """
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{relative} is not valid JSON: {exc}") from exc
-    if not isinstance(document, dict):
-        raise Failure(f"{relative} is not a JSON object")
-    changed = False
-    if (renamed := _suffixed(document.get("name"), suffix)) is not None:
-        document["name"] = renamed
-        changed = True
-    if _named_for(document, ACCOUNT_KEYS[relative], suffix):
-        changed = True
-    # The marketplace's entries name the plugin they publish, so an entry left unsuffixed would
-    # advertise a plugin whose manifest no longer answers to that name.
-    entries = document.get("plugins")
-    if isinstance(entries, list):
-        for entry in entries:
-            if isinstance(entry, dict) and (name := _suffixed(entry.get("name"), suffix)):
-                entry["name"] = name
-                changed = True
-    if not changed:
-        return None
-    return json.dumps(document, indent=2) + "\n"
-
-
-def _named_for(document: dict[str, object], key: str, account: str) -> bool:
-    """Put `account` under `document[key]["name"]` where nobody has put a name; whether it changed.
-
-    "Where nobody has": the key is absent (an overlay generated from a template that predates it,
-    which is exactly what an owner's own published copy can be), or its name is the template's
-    `PLACEHOLDER_ACCOUNT`. A name the owner wrote, and any other field beside it (an email, a
-    URL), stay: `init` is run more than once and by people who edited the file first, and an
-    account name that overwrote a person's own would be a rewrite of something stayfixed does not
-    own. A value of another shape (`"author": "a string"`) is left alone for the same reason.
-    """
-    current = document.get(key)
-    if current is None:
-        document[key] = {"name": account}
-        return True
-    if (
-        isinstance(current, dict)
-        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT
-    ):
-        current["name"] = account
-        return True
-    return False
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:

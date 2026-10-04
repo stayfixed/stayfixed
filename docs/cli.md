@@ -1840,7 +1840,9 @@ that, the file carrying `stayfixed.requires` read as hand-edited from the moment
 no release could ever refresh it again. A manifest you edited is renamed all the same, but its
 record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
 refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
-read stops `init` with none of them changed.
+read stops `init` with none of them changed. One it reads and then cannot write is named with a
+`<path> cannot be written: <reason>` line and left as it was, record included; the others are
+renamed and recorded all the same, and the next run names the one left.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
 template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
@@ -1868,17 +1870,21 @@ have no `common/memory/` for the `developer` link to reach. A copy holding anyth
 and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
 names the copy again. A retired file it cannot read or
 cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
-write is named with `overlay upgrade`, which writes it. None of the three is a failure: the run
-goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
-the others, so the next run finishes the job.
+write is named with `overlay upgrade`, which writes it — or, when this stayfixed was installed
+without its overlay template tree, which `overlay upgrade` reads too, with a reinstall first — and
+`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the run goes on, and `.stayfixed/manifest.json` drops the
+records of the files it did remove and keeps the others, so the next run finishes the job. A
+record that names a retired file's place under `.stayfixed/local/artifacts/` where no file is
+any more is dropped, with a `dropped the record of <path>, which was already gone` line, since
+there was nothing to remove.
 A path these lines name that the manifest supplied and that holds anything but a plain path is
 escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
 terminal.
 A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
 and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
-segment or on a scaffold manifest that cannot be trusted. The records of the manifests it
-re-stamped are written before it retires anything, so a run that stops after the renames still
-leaves them read as stayfixed's by a later `overlay upgrade`.
+segment or on a scaffold manifest that cannot be trusted. A manifest it cannot write is not a
+failure either: once every manifest has been read, nothing stops the run, and
+`.stayfixed/manifest.json` is written once, at the end, with the records of what it did.
 
 ---
 
@@ -1897,6 +1903,13 @@ and not a second copy of it: a skeleton file you have not touched is refreshed, 
 edited is skipped and named, and the oracle is the digest `.stayfixed/manifest.json` recorded when
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
 destroy the only copy of something.
+
+**The three manifests keep the names `overlay init` gave them.** What a refresh writes there is
+the template named after the account the manifests already carry, exactly as `init` names it, so
+running `upgrade` right after `init` changes none of them, and a release that moves a manifest
+refreshes it under your name rather than back to `stayfixed-overlay` — the name two owners'
+overlays would collide on. A manifest the overlay lacks is written under that name too. An overlay
+`init` has not named gets the template as it ships.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries

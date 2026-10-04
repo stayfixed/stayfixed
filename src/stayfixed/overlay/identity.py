@@ -37,20 +37,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Refusal
-from stayfixed.overlay.layout import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
-
-# One path segment: `config.schema.PROJECT_NAME`, the one name grammar. An owner name becomes a
-# directory, half a remote path, a marketplace selector and the suffix on both manifest names, so
-# it is checked once here rather than at each of those; the leading class is what keeps a value
-# shaped like an option (`-flag`) out of an option's position in an argv. It is checked in this
-# module rather than in `create` because the suffix grammar and the manifest-name grammar are the
-# same grammar.
-SEGMENT = PROJECT_NAME
-# What the shipped template calls itself, and what `init_instance` suffixes.
-OVERLAY_PLUGIN = "stayfixed-overlay"
-OVERLAY_MARKETPLACE = "stayfixed-overlay-marketplace"
+from stayfixed.overlay.naming import NAMED, SEGMENT, claims
 
 
 def segment(label: str, value: str) -> str:
@@ -64,39 +52,28 @@ def segment(label: str, value: str) -> str:
     return value
 
 
-def _claims(value: object, expected: str) -> bool:
-    """Whether a manifest's `name` is `expected`, or `expected-<owner>` after `overlay init`."""
-    if not isinstance(value, str):
-        return False
-    if value == expected:
-        return True
-    suffix = value.removeprefix(f"{expected}-")
-    return suffix != value and bool(SEGMENT.match(suffix))
-
-
 def overlay_fault(root: Path) -> str | None:
     """Why `root` is not an overlay root, or `None` when it is one.
 
     Every string this returns is this function's own or a path the caller typed. A manifest's
-    own bytes never reach it.
+    own bytes never reach it. The manifests asked are `naming.NAMED`'s probed rows.
     """
     if not root.is_dir():
         return f"{root} is not a directory"
-    for relative, expected in (
-        (PLUGIN_MANIFEST, OVERLAY_PLUGIN),
-        (MARKETPLACE_MANIFEST, OVERLAY_MARKETPLACE),
-    ):
-        path = root / relative
+    for row in NAMED:
+        if not row.probed:
+            continue
+        path = root / row.path
         if not path.is_file():
-            return f"{root} does not carry the overlay layout ({relative} is missing)"
+            return f"{root} does not carry the overlay layout ({row.path} is missing)"
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            return f"{root} carries a {relative} that cannot be read as JSON"
-        if not isinstance(document, dict) or not _claims(document.get("name"), expected):
+            return f"{root} carries a {row.path} that cannot be read as JSON"
+        if not isinstance(document, dict) or not claims(document.get("name"), row.name):
             return (
-                f"{root} carries a {relative} that does not name a stayfixed overlay; its `name` "
-                f"has to be {expected}, or {expected}-<owner> after `stayfixed overlay init`"
+                f"{root} carries a {row.path} that does not name a stayfixed overlay; its `name` "
+                f"has to be {row.name}, or {row.name}-<owner> after `stayfixed overlay init`"
             )
     return None
 
