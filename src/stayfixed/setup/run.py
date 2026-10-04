@@ -789,13 +789,13 @@ def _requested_overlay(
     is behind `setup.api`, which `doctor` imports, and the core loads the private layer only when
     `--overlay` asks for it (CONTRIBUTING.md, "Areas").
     """
-    from stayfixed.overlay.api import require_overlay, target_root
-
     if overlay is None:
         # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
         # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None
+    from stayfixed.overlay.api import require_overlay, target_root
+
     if overlay.startswith("create:"):
         if not yes:
             raise Refusal(
