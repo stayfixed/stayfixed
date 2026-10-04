@@ -25,7 +25,8 @@ from tests.doctor.test_checks import _attached, _by_name, _checks, _initialised,
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 # A local-only project whose one group leaves the store, with the store's directory in place so
-# the resolver reaches the group and refuses it rather than stopping at a missing directory.
+# the resolver reaches the group rather than stopping at a missing directory, and answers no store
+# for it.
 OUTSIDE = """
 [stayfixed]
 version = "{version}"
@@ -40,7 +41,7 @@ groups = ["../outside"]
 """
 
 
-@pytest.mark.parametrize("how", ["refused-group", "resolver-raises"])
+@pytest.mark.parametrize("how", ["group-outside-the-store", "resolver-raises"])
 def test_a_store_that_refuses_skips_the_store_checks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: str
 ) -> None:
@@ -49,11 +50,11 @@ def test_a_store_that_refuses_skips_the_store_checks(
     # when the core resolved the store for them; neither may turn red, because red gates the exit
     # code and a check that "could not run" is not something the repository did wrong.
     #
-    # Two ways to refuse, because the resolver has two. Asked about a group that leaves the
-    # store, it answers no store, which is what every `memory.groups` value measured here gets
-    # from it. The second case is the resolver raising `Refusal` instead, which is what the
-    # lazy value's `except` exists for and what no `memory.groups` reaches today, so it is
-    # stood in for by replacing the resolver.
+    # Two cases, because the resolver has two ways of not handing a store over. Asked about a
+    # group that leaves the store, it answers no store at all rather than refusing, which is what
+    # every `memory.groups` value measured here gets from it. The second case is the resolver
+    # raising `Refusal` instead, which is what the lazy value's `except` exists for and what no
+    # `memory.groups` reaches today, so it is stood in for by replacing the resolver.
     #
     # Mutation (oracle): `mutations/`'s "the delivery rows let a refusing store escape" -> the
     # `Refusal` reaches the guard and both rows are red, "this check could not run: Refusal".

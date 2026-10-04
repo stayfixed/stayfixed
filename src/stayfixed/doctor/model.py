@@ -30,24 +30,24 @@ class Check:
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
     an empty remedy merely for being a skip: seven of the report's sixteen skip arms carry one,
-    counting `overlay.doctor._overlay_absent`'s two once for each of the two rows that reach them.
+    counting the two arms `pre-commit` and `overlay-requires` share once for each of those rows.
     The line is not "always" versus "on a state" — eight state arms over seven rows are empty
     (`checks._files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
     `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is changed by
-    the very command `attach.doctor._uncorroborated` names. It is whether **the skip is itself
-    worth acting on**: the two rows that report a plugin root nothing can find, which is every hook
-    entry on this machine silent; `wrapper`'s row for a root it will read and never execute; the two
-    ways a ledger's recorded attach cannot be corroborated; and the two rows that report an
-    overlay root this machine records and cannot find, which is the store broken as well as them.
+    the very command `attached` names when it skips for a machine that records no overlay. It is
+    whether **the skip is itself worth acting on**: the two rows that report a plugin root nothing
+    can find, which is every hook entry on this machine silent; `wrapper`'s row for a root it will
+    read and never execute; the two ways a ledger's recorded attach cannot be corroborated; and
+    the two rows that report an overlay root this machine records and cannot find, which is the
+    store broken as well as them.
     Those seven say what to do. The other nine report a measurement that is simply not available —
     no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
     record in this build, no way to ask Codex — and no command in that row's gift changes it. A
     reader is never handed a command that would not help, and never denied one that would.
 
-    The two overlay rows have *both* kinds of arm, which is what `overlay.doctor._overlay_absent` is
-    for: the empty one is the machine that never recorded an overlay, and the one with a remedy is
-    the machine that recorded one and moved it. They used to be one arm with one sentence, and the
-    sentence was the first one.
+    The two overlay rows have *both* kinds of arm, and share both: the empty one is the machine
+    that never recorded an overlay, and the one with a remedy is the machine that recorded one and
+    moved it. They used to be one arm with one sentence, and the sentence was the first one.
     """
 
     name: str
@@ -95,10 +95,11 @@ class Context:
 class Claims:
     """What an area put into settings files, for `hook-entries`' provenance column.
 
-    Carries every answer `attach.doctor`'s `_attach_ledger_entries` and `_granted_commands` give,
+    Carries every answer an area's record of what it wrote and the overlay behind it can give,
     their `None`s included: `recorded is None` is "the record could not be read" (the row warns and
     says so), `granted is None` is "the overlay could not be asked" (the row withholds the
-    overlay's provenance rather than calling its entries foreign)."""
+    overlay's provenance rather than calling its entries foreign). `hook-entries` pools every
+    area's answer, and a `None` from any one area is `None` for the pool."""
 
     recorded: Mapping[str, str] | None
     granted: frozenset[str] | None

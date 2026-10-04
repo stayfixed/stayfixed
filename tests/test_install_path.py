@@ -702,8 +702,8 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
     # And they are the five the paragraph names, not five of something else: one wrapper probe,
-    # and four `git` questions. Asserted by shape rather than by full argv, because two of the
-    # three carry a temporary path.
+    # and four `git` questions. Asserted by shape rather than by full argv, because each of the
+    # four `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
     assert sum(1 for argv in launched if argv[0] == "git") == 4
 

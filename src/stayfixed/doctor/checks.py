@@ -140,7 +140,7 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # but this row reads one tag listing, and `init` recording a ref is what made a five-minute block
 # reachable from a command documented as a one-line diagnostic. The number is the wrapper probe's
 # above, deliberately: both bound one bounded question that a hung peer must not turn into a hung
-# `doctor`, and the module's other `git` calls go through `gitenv`'s five seconds. The shipped
+# `doctor`, and the report's other `git` calls go through `gitenv`'s five seconds. The shipped
 # file that must change with it: none — nothing about it is a project's to tune.
 CI_REF_TIMEOUT_SECONDS = 30
 # Said by `files` about a wrapper it measured under a root the environment named, so nobody
