@@ -68,7 +68,10 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     # is not this shape — `main()` runs `discover_registrars()` first, which already imports
     # every area's `commands` submodule before `hook` ever reaches this probe — but the helper's
     # own behaviour still holds here: given a clean interpreter, `area_modules` imports only the
-    # areas that actually carry the requested submodule.
+    # areas that actually carry the requested submodule. So hook discovery imports neither the
+    # harness registry nor the configuration layer, which a real hook process loads anyway when
+    # the CLI frame builds its parser. Mutation (declared, on `hooks.api`): the handler
+    # vocabulary imports the harness registry -> this reddens.
     completed = subprocess.run(
         [sys.executable, "-c", LIST_IMPORTS],
         capture_output=True,

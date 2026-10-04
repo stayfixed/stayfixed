@@ -11,6 +11,7 @@ from stayfixed.areas import SubParsers
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
+from stayfixed.harnesses import detect
 from stayfixed.hooks.dispatch import dispatch, read_event
 from stayfixed.hooks.policy import refuses_on_internal_error
 from stayfixed.hooks.registry import discover
@@ -88,10 +89,6 @@ def run_hook(args: argparse.Namespace) -> int:
             raise ValueError("hook payload is not a JSON object")
         # argv is authoritative: the wrapper controls it, while stdin is the untrusted side.
         payload["hook_event_name"] = event_name
-        # Here and not at module level: the CLI frame imports this module to build its parser,
-        # and only a hook that runs needs the registry.
-        from stayfixed.harnesses import detect
-
         harness = detect(os.environ, payload)
         event = read_event(payload, os.environ)
         config = None

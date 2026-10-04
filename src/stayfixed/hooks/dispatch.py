@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import checkout_root
+from stayfixed.harnesses import Harness, project_root_variables
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink, first_set
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
-    from stayfixed.harnesses import Harness
 
 TRUNCATION_MARK = "\n[stayfixed: context truncated to the platform cap]"
 
@@ -58,10 +58,6 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     `hooks/run-hook.sh` enters. The detected harness contributes its `render` to the answer and
     nothing to the event.
     """
-    # Inside the body, as in `run_hook`: the CLI frame imports this module, through
-    # `hooks.commands`, to build its parser, and only a hook that runs needs the registry.
-    from stayfixed.harnesses import project_root_variables
-
     cwd = Path(str(payload.get("cwd") or "."))
     named = first_set(env, project_root_variables())
     tool_input = payload.get("tool_input") or {}

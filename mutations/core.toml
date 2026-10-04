@@ -689,16 +689,19 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_harness_registered_first_never_takes_the_root_from_claude_code",
 ]
 
-# The CLI frame imports every area's `commands.py` to build its parser, and only a hook that runs
-# needs the harness registry, so `run_hook` imports it inside its own body.
+# Hook discovery imports the handler vocabulary and the areas that ship a `hooks.py`, and neither
+# the harness registry nor the configuration layer. That holds for discovery alone: the CLI frame
+# imports the registry when it builds its parser, before any hook runs.
 [[mutation]]
-name = "the hook command loads the harness registry with the parser"
-file = "src/stayfixed/hooks/commands.py"
-before = "from stayfixed.hooks.dispatch import dispatch, read_event"
-after = """from stayfixed.hooks.dispatch import dispatch, read_event
-from stayfixed.harnesses import detect as _detect"""
+name = "the handler vocabulary imports the harness registry"
+file = "src/stayfixed/hooks/api.py"
+before = "from typing import TYPE_CHECKING, Any, Protocol\n"
+after = """from typing import TYPE_CHECKING, Any, Protocol
+
+from stayfixed.harnesses import project_root_variables
+"""
 reddens = [
-  "tests/hooks/test_hook_command.py::test_the_harness_registry_is_imported_only_when_a_hook_runs",
+  "tests/test_areas.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
 ]
 
 # One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
