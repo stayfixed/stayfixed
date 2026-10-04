@@ -58,10 +58,12 @@ import subprocess
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
+from types import ModuleType
+from typing import Final
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
+from stayfixed.areas import area_modules
 from stayfixed.attach.api import (
     Binding,
     ledger,
@@ -73,6 +75,8 @@ from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
+from stayfixed.doctor import model
+from stayfixed.doctor.model import OK, RED, SKIP, WARN, Check, Contribution, Row, Status
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
 from stayfixed.gitenv import GitUnavailable
@@ -107,13 +111,6 @@ from stayfixed.runner import Runner
 from stayfixed.scaffold import marker_id, owned_ids
 from stayfixed.semver import later
 from stayfixed.setup.api import USER_SETTINGS
-
-OK: Final = "ok"
-WARN: Final = "warn"
-RED: Final = "red"
-SKIP: Final = "skip"
-Status = Literal["ok", "warn", "red", "skip"]
-STATUSES: tuple[Status, ...] = (OK, WARN, RED, SKIP)
 
 # Every file a hook entry can be installed into, as a path relative to a root. The set is
 # load-bearing twice — `setup` writes `USER_SETTINGS` and this check reads all three — so
@@ -213,70 +210,17 @@ DIAGNOSTICS_REMEDY = (
 )
 
 
-@dataclass(frozen=True)
-class Check:
-    """One row of the report: what was asked, what the answer was, and what to do about it.
-
-    `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: seven of this module's sixteen skip arms carry one,
-    counting `_overlay_absent`'s two once for each of the two rows that reach them.
-    The line is not "always" versus "on a state" — eight state arms over seven rows are empty
-    (`_files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
-    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is
-    changed by the very command `_uncorroborated` names. It is whether **the skip is itself worth
-    acting on**: the two rows that report a plugin root nothing can find, which is every hook entry
-    on this machine silent; `wrapper`'s row for a root it will read and never execute; the two
-    ways a ledger's recorded attach cannot be corroborated; and the two rows that report an
-    overlay root this machine records and cannot find, which is the store broken as well as them.
-    Those seven say what to do. The other nine report a measurement that is simply not available —
-    no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
-    record in this build, no way to ask Codex — and no command in that row's gift changes it. A
-    reader is never handed a command that would not help, and never denied one that would.
-
-    The two overlay rows have *both* kinds of arm, which is what `_overlay_absent` is for: the
-    empty one is the machine that never recorded an overlay, and the one with a remedy is the
-    machine that recorded one and moved it. They used to be one arm with one sentence, and the
-    sentence was the first one.
-    """
-
-    name: str
-    status: Status
-    detail: str
-    remedy: str = ""
-
-
-@dataclass(frozen=True)
-class Row:
-    """What one check answers. The name is the registry's, stamped by `_guarded`."""
-
-    status: Status
-    detail: str
-    remedy: str = ""
-
-
 @dataclass
-class Context:
-    """Everything the sixteen checks read, resolved once.
+class Context(model.Context):
+    """The core's `model.Context`, and the two answers the overlay and store rows below read.
 
-    Built by `run_checks` after `not-initialised` has passed, so `config` is never `None` here:
-    a repository whose configuration does not load has nothing else worth asking about, and the
-    first check says so and the rest skip.
+    The overlay root this machine records and the note store this project resolves are the
+    delivery areas' to answer, so the core context carries neither and a check an area contributes
+    cannot reach them through it. The rows here that still read them get them from this
+    subclass, which `_context` builds with both resolved.
     """
 
-    root: Path
-    home: Path | None
-    machine: Path | None
-    runner: Runner
-    env: Mapping[str, str]
-    config: Config
     store: Store | None = None
-    store_refusal: str | None = None
-    plugin_root: Path | None = None
-    # The plugin root this process can vouch for, which is the only one anything here executes.
-    # `plugin_root` may be a root the environment named; this is `None` unless self-derivation
-    # answered. Two fields and not a flag, because the check that runs the wrapper should not be
-    # able to reach the other answer at all.
-    own_root: Path | None = None
     overlay: Path | None = None
 
 
@@ -1629,9 +1573,10 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The sixteen, in the order the `doctor` table in `docs/cli.md` lists them. The list is the report's
-# order and the only registry there is: a check added here needs no other edit, and a check
-# missing from it is a check nothing runs.
+# The core's sixteen, in the order the `doctor` table in `docs/cli.md` lists them. The list is the
+# report's order and the core's only registry: a check added here needs no other edit, and a check
+# missing from it is a check nothing runs. An area adds rows after these through its own
+# `doctor.py` (`contributions`), never by an edit here.
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("not-initialised", _not_initialised),
     ("versions", _versions),
@@ -1690,6 +1635,46 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     return Check(name, row.status, row.detail, row.remedy)
 
 
+class DuplicateCheck(Refusal):
+    """A check whose name another check already has, so the report would print two rows a reader
+    could not tell apart."""
+
+
+def discover_contributors() -> list[ModuleType]:
+    """Every `stayfixed.<area>.doctor`, in area-name order, with no shared registry.
+
+    The seam the report's discovery reads, and the one a test replaces to inject an area, as
+    `cli.discover_registrars` is for commands.
+    """
+    return area_modules("doctor")
+
+
+def contributions() -> list[Contribution]:
+    """What each area's `doctor.py` contributes, refused when a name would repeat in the report.
+
+    A row's name is its only identity — the summary line, `--json` and the skill that relays the
+    report all key on it — so a contributed name equal to a core check's, or to one another area
+    already contributed, is refused here, before any check is asked. The names are stayfixed's
+    own code and never repository-authored, so the refusal prints them.
+
+    Each area's `register()` is called once per call of this function, so whatever an area
+    resolves lazily for its checks is resolved afresh for each report.
+    """
+    owners = dict.fromkeys((name for name, _ in CHECKS), "the core")
+    found: list[Contribution] = []
+    for module in discover_contributors():
+        contribution: Contribution = module.register()
+        for name, _ in contribution.checks:
+            if name in owners:
+                raise DuplicateCheck(
+                    f"{module.__name__} contributes the doctor check {name!r}, which "
+                    f"{owners[name]} already reports; a check's name is unique in the report"
+                )
+            owners[name] = module.__name__
+        found.append(contribution)
+    return found
+
+
 def _context(
     root: Path,
     *,
@@ -1721,7 +1706,7 @@ def run_checks(
     runner: Runner,
     env: Mapping[str, str] | None = None,
 ) -> list[Check]:
-    """The sixteen rows, always sixteen, whatever state the machine is in.
+    """One row per check, the core's and every area's, whatever state the machine is in.
 
     Four keyword parameters, which is the published signature. A fifth,
     `candidates`, used to thread `STAYFIXED_PYTHON_CANDIDATES` into the `wrapper` check's
@@ -1734,10 +1719,15 @@ def run_checks(
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
     """
     env = os.environ if env is None else env
+    # Discovered before anything is read, so the early reports below have a row for every check
+    # an area contributes too, and a name that repeats is refused whatever the repository holds.
+    registry: tuple[tuple[str, Callable[[Context], Row]], ...] = CHECKS + tuple(
+        check for contribution in contributions() for check in contribution.checks
+    )
     # The registry is the only place a name is spelled, and these two rows are built before a
     # check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.
-    first, *rest = [name for name, _ in CHECKS]
+    first, *rest = [name for name, _ in registry]
     # Asked of the name before `is_file`, which follows a link: a symlinked `stayfixed.toml` goes
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
@@ -1811,4 +1801,4 @@ def run_checks(
         env=env,
         config=config,
     )
-    return [_guarded(name, check, context) for name, check in CHECKS]
+    return [_guarded(name, check, context) for name, check in registry]

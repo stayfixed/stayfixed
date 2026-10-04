@@ -92,13 +92,19 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
 SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})
 
 
+# The submodules discovery imports by name, one per reader: the CLI frame, the hook registry and
+# the doctor report.
+DISCOVERED_SUBMODULES = ("commands.py", "hooks.py", "doctor.py")
+
+
 def _area_names(source: Path) -> list[str]:
-    """CONTRIBUTING's definition, read off the tree: a subpackage carrying `commands.py` or
-    `hooks.py`. Derived rather than listed, so a new area is covered the day it arrives."""
+    """CONTRIBUTING's definition, read off the tree: a subpackage carrying `commands.py`,
+    `hooks.py` or `doctor.py`. Derived rather than listed, so a new area is covered the day it
+    arrives."""
     return sorted(
         path.name
         for path in source.iterdir()
-        if path.is_dir() and ((path / "commands.py").exists() or (path / "hooks.py").exists())
+        if path.is_dir() and any((path / submodule).exists() for submodule in DISCOVERED_SUBMODULES)
     )
 
 

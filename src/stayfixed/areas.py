@@ -1,4 +1,9 @@
-"""Areas discovered by name: the half `stayfixed.cli` and `stayfixed.hooks.registry` share.
+"""Areas discovered by name: the half `stayfixed.cli`, `stayfixed.hooks.registry` and
+`stayfixed.doctor.checks` share.
+
+Three submodules are discovered, each by the module that reads it: an area's `commands.py` gives
+it a CLI group, its `hooks.py` hook handlers, and its `doctor.py` rows in `stayfixed doctor`'s
+report.
 
 A leaf module on purpose. `cli.py` imports every area through this discovery, so an area that
 imported back into `cli.py` would constrain what the frame may ever import; the aliases and

@@ -32,7 +32,7 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.doctor import checks
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Row, run_checks
 from stayfixed.doctor.checks import (
     SETTINGS_FILES,
     VERSION_AHEAD,
@@ -57,7 +57,7 @@ from tests.runners import LsRemote, Recorder
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
-def module_checks() -> tuple[tuple[str, Callable[[checks.Context], checks.Row]], ...]:
+def module_checks() -> tuple[tuple[str, Callable[[checks.Context], Row]], ...]:
     """`checks.CHECKS`, reachable from a test whose own local `checks` shadows the module."""
     return checks.CHECKS
 
@@ -1379,10 +1379,10 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # Mutation: `mutations/`'s "doctor renders an unreadable file as a broken check".
     context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
 
-    def cannot_read(_: checks.Context) -> checks.Row:
+    def cannot_read(_: checks.Context) -> Row:
         raise PermissionError(13, "Permission denied")
 
-    def is_broken(_: checks.Context) -> checks.Row:
+    def is_broken(_: checks.Context) -> Row:
         raise ValueError("this check has a bug in it")
 
     warned = checks._guarded("files", cannot_read, context)
@@ -1420,7 +1420,7 @@ def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
     assert context.plugin_root is None and context.own_root is None
     for check in (checks._files(context), checks._wrapper(context)):
-        assert check.status == checks.SKIP, check
+        assert check.status == SKIP, check
         assert check.remedy == checks.PLUGIN_ROOT_REMEDY, check
     assert checks.PLUGIN_ROOT_REMEDY.strip(), "an empty constant satisfies the equality above"
 

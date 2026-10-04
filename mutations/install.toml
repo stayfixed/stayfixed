@@ -545,6 +545,43 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red",
 ]
 
+# An area adds rows to the report through its own `doctor.py`. A discovery that found the areas
+# and never asked their checks would leave every contributed row out of the report with nothing
+# red to say so.
+[[mutation]]
+name = "doctor drops the checks an area contributes"
+file = "src/stayfixed/doctor/checks.py"
+before = "        check for contribution in contributions() for check in contribution.checks"
+after = "        check for contribution in contributions() for check in ()"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_contributed_check_runs_after_the_core_checks",
+]
+
+# A contributed check is asked through `_guarded` as the core's are, so one that raises costs its
+# own row and never the report. The core's checks and the contributed ones share one call site, so
+# the mutation asks every check without the guard, and a contributed check's `RuntimeError` is
+# what escapes.
+[[mutation]]
+name = "doctor asks its checks without the guard"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return [_guarded(name, check, context) for name, check in registry]"
+after = "    return [Check(name, **vars(check(context))) for name, check in registry]"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_contribution_that_raises_costs_one_row",
+]
+
+# A row's name is its only identity in the summary line, `--json` and the skill's relay, so a
+# contributed name that repeats a core check's or another area's is refused at discovery.
+[[mutation]]
+name = "doctor lets two checks share one name"
+file = "src/stayfixed/doctor/checks.py"
+before = "            if name in owners:"
+after = "            if False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name[core]",
+  "tests/doctor/test_contributions.py::test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name[another-area]",
+]
+
 # The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
 # field over. `.stayfixed/local/attach.json` is a path a clone can commit, so a repository that
 # commits a marked hook entry *and* a ledger recording that entry's id got `hook-entries` to answer

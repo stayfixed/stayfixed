@@ -30,5 +30,12 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the report and the row it is made of
         "run_checks",
         "Check",
+        # what an area's own `doctor.py` speaks: its `register()` returns a `Contribution`, whose
+        # checks take the `Context` and answer a `Row`, and whose `Claims` say what the area put
+        # into settings files
+        "Row",
+        "Context",
+        "Claims",
+        "Contribution",
     }
     assert required == set(doctor.__all__)

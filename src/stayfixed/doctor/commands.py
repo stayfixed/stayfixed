@@ -54,7 +54,8 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, common_flags
-from stayfixed.doctor.checks import CI_REF_TIMEOUT_SECONDS, RED, SKIP, WARN, Check, run_checks
+from stayfixed.doctor.checks import CI_REF_TIMEOUT_SECONDS, run_checks
+from stayfixed.doctor.model import RED, SKIP, WARN, Check
 from stayfixed.findings import listed
 from stayfixed.result import Result
 

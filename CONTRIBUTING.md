@@ -104,8 +104,8 @@ it finishes is outside the rule: nothing but that command ever wrote into it.
 
 ## Areas
 
-An area is a subpackage of `src/stayfixed/` that the CLI frame and the hook registry discover by
-name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
+An area is a subpackage of `src/stayfixed/` that the CLI frame, the hook registry and `doctor`'s
+report discover by name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
 `scripts/mutation_oracle.py`, and it is a deliberate exception kept for a reason outside the code
 ("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there
 until its entries outgrow the group they fall into.
@@ -121,9 +121,9 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 (`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
 outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
-areas, and `harnesses` is a module — nothing discovers them, because they carry neither a
-`commands.py` nor a `hooks.py`. `release` still publishes an `api.py`, which holds what an
-installed stayfixed reads about its own releases: the tags it pins and the record of the files
+areas, and `harnesses` is a module — nothing discovers them, because they carry none of
+`commands.py`, `hooks.py` and `doctor.py`. `release` still publishes an `api.py`, which holds what
+an installed stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
 Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
@@ -147,6 +147,12 @@ alike. The rule reads source, as discovery does, so a module named to
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
   interpreter imports neither the configuration layer nor the presets.
+- `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report:
+  its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
+  the report's `Context` and through the same guard, so a check that raises costs its own row and
+  not the report. A check's name is unique in the report: discovery refuses a name equal to a core
+  check's or to one another area contributes. `Contribution`, `Context` and `Row` come from
+  `stayfixed.doctor.api`, and, as in a `hooks.py`, every import sits inside a function body.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
