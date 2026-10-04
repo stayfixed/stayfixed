@@ -9,10 +9,10 @@ asserts the `__init__` imports nothing at all.
 **Outside this area, `stayfixed.assess.gates` imports `bugs_gate`; `stayfixed.project.templates`
 (with its tests) imports `render_index` and `bug_register` to write a new project's first index,
 and `BUG_RUNBOOK` and `BUG_AUDITS` to write the runbook and audits README where that index links
-them; and `stayfixed.docs.plans` and
-`stayfixed.memory.graph` import `bug_register` for the bug ledger's identifiers — nothing else on
-this list**, measured over `src/`, `scripts/` and `tests/`. So every other name below is here on
-an argument rather than on a caller, and the argument is written beside it.
+them; and `stayfixed.docs.plans` and `stayfixed.memory.graph` import `bug_register` for the bug
+ledger's identifiers — nothing else on this list**, measured over `src/`, `scripts/` and `tests/`.
+So every other name below is here on an argument rather than on a caller, and the argument is
+written beside it.
 
 What is left is the two artifacts this area leaves on a project's disk, which outlive any area
 that reads them:

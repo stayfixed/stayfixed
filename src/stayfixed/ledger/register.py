@@ -229,8 +229,9 @@ class Register:
     index: str
     ids: Identifiers  # the bug ledger's is built from `[ledger] id_prefix`
     schema: Schema
-    runbook: str | None  # "<[paths] runbooks>/bug-reports.md", the index's link
-    # "audits": the subdirectory of `directory` holding audit records, which the index links.
+    runbook: str | None  # the bug ledger's "<[paths] runbooks>/<BUG_RUNBOOK>", the index's link
+    # the bug ledger's `BUG_AUDITS`: the subdirectory of `directory` holding audit records, which
+    # the index links.
     audits: str | None
 
 
