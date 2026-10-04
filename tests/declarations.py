@@ -1,6 +1,6 @@
 """The mutation oracle, loaded for the tests that read what `mutations/` declares.
 
-The script is loaded by path, through `tests.script.load`. Here rather than in each test that
+The script is loaded by path, through `tests.scriptload.load`. Here rather than in each test that
 counts or walks the entries, so that every one of them reads the declarations the one way the
 oracle does — `declared()`, over `group_files()` — and the directory's glob is spelled once, in the
 script. `tests/scripts/test_mutation_oracle.py` loads fresh copies of `SCRIPT` for the tests that
@@ -16,7 +16,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from tests.script import SCRIPTS, load
+from tests.scriptload import SCRIPTS, load
 
 SCRIPT = SCRIPTS / "mutation_oracle.py"
 # How a comment cites an entry (CONTRIBUTING.md, "Tests"): the set, then the entry's quoted name.

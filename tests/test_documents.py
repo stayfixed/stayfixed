@@ -17,7 +17,6 @@ belongs.
 
 from __future__ import annotations
 
-import argparse
 import inspect
 import io
 import re
@@ -29,6 +28,7 @@ import pytest
 
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
+from tests.cli import subparsers
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
@@ -282,17 +282,15 @@ def readme_invocations() -> list[str]:
 def registered_commands() -> set[str]:
     """`group command` for every subcommand the real parser registers; a group with no
     subcommands (`hook <event>`) counts as its bare name."""
-    parser = build_parser(discover_registrars())
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
     found: set[str] = set()
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for group, sub in action.choices.items():
-            inner = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
-            if not inner:
-                found.add(group)
-            for nested in inner:
-                found.update(f"{group} {command}" for command in nested.choices)
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        if nested is None:
+            found.add(group)
+        else:
+            found.update(f"{group} {command}" for command in nested.choices)
     return found
 
 
@@ -349,22 +347,20 @@ _FINDINGS_SENTENCE = re.compile(
 
 def command_functions() -> dict[str, object]:
     """`group command` -> the `run_*` callable the real parser dispatches to."""
-    parser = build_parser(discover_registrars())
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
     found: dict[str, object] = {}
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for group, sub in action.choices.items():
-            inner = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
-            if not inner:
-                func = sub.get_default("func")
-                if func is not None:
-                    found[group] = func
-            for nested in inner:
-                for command, leaf in nested.choices.items():
-                    func = leaf.get_default("func")
-                    if func is not None:
-                        found[f"{group} {command}"] = func
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        leaves = (
+            {group: sub}
+            if nested is None
+            else {f"{group} {command}": leaf for command, leaf in nested.choices.items()}
+        )
+        for name, leaf in leaves.items():
+            func = leaf.get_default("func")
+            if func is not None:
+                found[name] = func
     return found
 
 

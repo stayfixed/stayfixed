@@ -51,7 +51,7 @@ from stayfixed.release.api import HASHED_FILES
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
 from tests.runners import LsRemote, Recorder
-from tests.script import release
+from tests.scriptload import release
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 

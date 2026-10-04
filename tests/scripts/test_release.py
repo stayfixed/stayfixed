@@ -17,7 +17,6 @@ and a script telling its reader to run a command that no longer exists stayed gr
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from pathlib import Path
@@ -27,9 +26,10 @@ import pytest
 from stayfixed.errors import Failure, Refusal
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
+from tests.cli import subparsers
 from tests.release.test_hashes import hashed_plugin
 from tests.runners import Recorder
-from tests.script import release as _script
+from tests.scriptload import release as _script
 
 release = _script()
 ROOT = Path(__file__).resolve().parents[2]
@@ -549,11 +549,11 @@ def test_every_command_opens_its_own_help_with_what_it_does() -> None:
     # has its own parser and no frame, so `hashes --help` opened with `usage:` and went straight
     # to the options. Mutation (declared): a command registered without `description=` ->
     # reddens naming it.
-    top = release.parser()
-    groups = next(a for a in top._actions if isinstance(a, argparse._SubParsersAction))
+    groups = subparsers(release.parser())
+    assert groups is not None
     listed = {action.dest: action.help for action in groups._choices_actions}
-    assert sorted(groups._name_parser_map) == ["check", "hashes", "notes"]
-    for name, sub in groups._name_parser_map.items():
+    assert sorted(groups.choices) == ["check", "hashes", "notes"]
+    for name, sub in groups.choices.items():
         assert sub.description == listed[name], name
         assert "--json" in sub.format_help(), name
 

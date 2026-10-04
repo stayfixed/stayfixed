@@ -15,7 +15,7 @@ import pytest
 from stayfixed.overlay.api import OVERLAY_FILES
 from stayfixed.project.api import PROJECT_FILES
 from stayfixed.scaffold import MANIFEST_PATH
-from tests.script import SCRIPTS, load
+from tests.scriptload import SCRIPTS, load
 
 WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
 

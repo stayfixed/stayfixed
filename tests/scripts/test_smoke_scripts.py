@@ -16,7 +16,7 @@ import pytest
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 from tests.gitfixture import needs_git
-from tests.script import SCRIPTS, load
+from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
 

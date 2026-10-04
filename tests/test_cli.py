@@ -17,6 +17,7 @@ from stayfixed import __version__
 from stayfixed.cli import Registrar, SubParsers, build_parser, discover_registrars, main, run
 from stayfixed.errors import Failure, Refusal
 from stayfixed.result import Result
+from tests.cli import subparsers
 
 
 def test_version_flag_prints_the_package_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -143,18 +144,18 @@ def test_every_command_describes_itself_and_names_json_in_its_own_help() -> None
     parser = build_parser(discover_registrars())
     top = parser.format_help()
     assert "--json" in top
-    groups = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    groups = subparsers(parser)
+    assert groups is not None
     listed = [action.dest for action in groups._choices_actions]
     assert listed == sorted(listed)
-    for name, sub in groups._name_parser_map.items():
+    for name, sub in groups.choices.items():
         text = sub.format_help()
         assert sub.description, f"`stayfixed {name}` has no description"
         assert "--json" in text, f"`stayfixed {name} --help` never mentions --json"
-        for action in sub._actions:
-            if isinstance(action, argparse._SubParsersAction):
-                for leaf_name, leaf in action._name_parser_map.items():
-                    assert leaf.description, f"`stayfixed {name} {leaf_name}` has no description"
-                    assert "--json" in leaf.format_help()
+        nested = subparsers(sub)
+        for leaf_name, leaf in (nested.choices if nested is not None else {}).items():
+            assert leaf.description, f"`stayfixed {name} {leaf_name}` has no description"
+            assert "--json" in leaf.format_help()
 
 
 def test_areas_are_discovered_from_the_package() -> None:
@@ -164,11 +165,10 @@ def test_areas_are_discovered_from_the_package() -> None:
 
 def _subcommands(group: str) -> set[str]:
     """The commands the real parser registers under `stayfixed <group>`."""
-    parser = build_parser(discover_registrars())
-    groups = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
-    nested = next(
-        a for a in groups.choices[group]._actions if isinstance(a, argparse._SubParsersAction)
-    )
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
+    nested = subparsers(groups.choices[group])
+    assert nested is not None
     return set(nested.choices)
 
 

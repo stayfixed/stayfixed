@@ -44,7 +44,7 @@ from stayfixed.setup.run import _read_document
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
-from tests.script import release
+from tests.scriptload import release
 
 # The repository's release script, whose version check is one more reader below.
 script = release()

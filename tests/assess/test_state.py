@@ -254,21 +254,19 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
     assert "enforced = []" in _document(root)
 
 
-@pytest.mark.parametrize("begun", [False, True], ids=["initialised", "adopting"])
+@STARTS
 def test_a_project_with_no_gate_is_refused_rather_than_installed(
-    tmp_path: Path, begun: bool
+    tmp_path: Path, start: str
 ) -> None:
     # With nothing configured nothing is wanted, and the completion that is right for an
     # adopting project whose every gate enforces would install one that never earned a gate,
-    # adopting or not. `adopting` with an empty `enforced` is written by hand here, as a person
-    # or an earlier release left it. Mutation (declared): the refusal's condition made
-    # `if False:` -> the project is written `installed`.
+    # adopting or not. Mutation (declared): the refusal's condition made `if False:` -> the
+    # project is written `installed`.
     root, base = _project(tmp_path)
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write("\n[gates]\nbuiltin = []\n")
-    if begun:
-        _set(root, 'state = "initialised"\n', 'state = "adopting"\n')
-        assert _config(root, tmp_path).stayfixed.state == "adopting"
+    _start(root, start)
+    assert _config(root, tmp_path).stayfixed.state == start
     before = _document(root)
     with pytest.raises(Refusal, match="configures no gate"):
         promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")

@@ -22,7 +22,7 @@ from stayfixed.errors import Failure
 from stayfixed.memory import store
 from stayfixed.project import init
 from stayfixed.setup.machine import read_machine
-from tests.script import release
+from tests.scriptload import release
 
 # The repository's release script, whose version check is one more reader below.
 script = release()

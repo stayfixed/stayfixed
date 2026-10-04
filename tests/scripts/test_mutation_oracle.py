@@ -26,14 +26,14 @@ from tests import gitfixture
 from tests.declarations import ANCHOR, SCRIPT, cited_names, declared
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git
-from tests.script import load
+from tests.scriptload import load
 from tests.test_payload import FILE_MAX_BYTES
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def oracle(root: Path | None = None) -> ModuleType:
-    """A fresh copy of the script, loaded by path through `tests.script.load`.
+    """A fresh copy of the script, loaded by path through `tests.scriptload.load`.
 
     `root` redirects the module's `ROOT`, which is where it runs pytest and asks `git` about
     the tree, and `DECLARATIONS`, the `mutations/` directory beneath it. Every test below points
