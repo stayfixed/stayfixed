@@ -929,3 +929,12 @@ after = "        if False:"
 reddens = [
   "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
 ]
+
+# The test group holds what explains a red run and what attributes a failure; an audit that read
+# one stack's test files and that no gate ran was removed from it, and stays out.
+[[mutation]]
+name = "the test group registers a command besides hygiene and attribute"
+file = "src/stayfixed/guards/commands.py"
+before = "    hygiene = common_flags("
+after = '    test_sub.add_parser("audit-entrypoints"); hygiene = common_flags('
+reddens = ["tests/test_cli.py::test_the_test_group_has_hygiene_and_attribute"]
