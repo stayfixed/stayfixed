@@ -22,9 +22,11 @@ NAME = "release_script_under_test"
 def release() -> ModuleType:
     """The script as a module, loaded once.
 
-    Registered in `sys.modules` before it is executed: `@dataclass` and the type hints a test
-    resolves look the module up there by name, and under `from __future__ import annotations`
-    a module absent from it cannot be resolved at all.
+    Registered in `sys.modules` before it is executed, as the oracle's loader is. The script
+    loads without it today, because it defines no dataclass; but it is written under
+    `from __future__ import annotations`, so every annotation is a string, and the first
+    `@dataclass` it grows would resolve its field annotations through `sys.modules` by the
+    module's name — absent from it, executing the script raises before any test runs.
     """
     spec = importlib.util.spec_from_file_location(NAME, SCRIPT)
     assert spec is not None and spec.loader is not None

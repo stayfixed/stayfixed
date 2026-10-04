@@ -3408,9 +3408,10 @@ reddens = [
   "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
 ]
 
-# --- Release returns its findings like every other area --------------------------------------
-# This was the one area reporting a finding by raising `Failure`, and the cost was in `--json`:
-# the frame turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
+# --- The release script returns its findings as every command does ---------------------------
+# While these were the installed CLI's `release` group, it was the one area reporting a finding
+# by raising `Failure`, and the cost was in `--json`: the frame (which the script still runs
+# through) turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
 # machine-readable object changed shape on exactly the condition a consumer runs the command to
 # detect. `{}` for the drift arm's data is precisely what raising produced.
 [[mutation]]
@@ -3540,3 +3541,13 @@ after = '        run: uv run stayfixed release check --tag "$GITHUB_REF_NAME"'
 reddens = [
   "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
 ]
+
+# The installed CLI's frame gives every command its `help=` sentence as its description; the
+# release script has its own parser and no frame, and each command's `--help` opened with
+# `usage:` and went straight to the options.
+[[mutation]]
+name = "the release script's commands open their help with no description again"
+file = "scripts/release.py"
+before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
+after = '        return sub.add_parser(name, help=sentence, epilog=JSON_EPILOG)'
+reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]

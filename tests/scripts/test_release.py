@@ -15,6 +15,7 @@ and a script telling its reader to run a command that no longer exists stayed gr
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
@@ -541,6 +542,20 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
     ]
 
 
+def test_every_command_opens_its_own_help_with_what_it_does() -> None:
+    # The installed CLI's frame copies each command's `help=` into its description; this script
+    # has its own parser and no frame, so `hashes --help` opened with `usage:` and went straight
+    # to the options. Mutation (declared): a command registered without `description=` ->
+    # reddens naming it.
+    top = release.parser()
+    groups = next(a for a in top._actions if isinstance(a, argparse._SubParsersAction))
+    listed = {action.dest: action.help for action in groups._choices_actions}
+    assert sorted(groups._name_parser_map) == ["check", "hashes", "notes"]
+    for name, sub in groups._name_parser_map.items():
+        assert sub.description == listed[name], name
+        assert "--json" in sub.format_help(), name
+
+
 def test_the_cli_passes_the_tag_through_to_the_gate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -708,7 +723,7 @@ def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> 
     [b"{not json\n", b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n'],
     ids=["not-json", "not-utf8"],
 )
-def test_a_record_that_cannot_be_read_is_drifts_failure_and_never_a_clean_tree(
+def test_a_record_that_cannot_be_read_fails_the_drift_check_and_never_reads_clean(
     tmp_path: Path, body: bytes
 ) -> None:
     # `drift` has no arm of its own for this: the reader's `UnreadableRecord` passes through it,
