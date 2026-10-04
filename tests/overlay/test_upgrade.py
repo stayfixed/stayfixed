@@ -188,6 +188,29 @@ def test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name(
     assert codex["author"] == {"name": "acme"}
 
 
+def test_upgrade_leaves_the_named_manifests_of_an_overlay_with_no_ledger_unlisted(
+    tmp_path: Path,
+) -> None:
+    # A `--template` clone carries no ledger. Planned from the template as it ships, its named
+    # manifests were listed `skip_modified` on every `upgrade`, though `init` wrote exactly them;
+    # planned as `init` names them they equal the render and are not listed. Nothing is adopted
+    # silently: no record is written for them, so a later template change makes them
+    # `skip_modified` again.
+    # Mutation: `mutations/`'s "overlay upgrade refreshes a manifest init named back to the
+    # template's name".
+    root = _an_overlay(tmp_path)
+    (root / MANIFEST_PATH).unlink()
+    init_instance(root, "acme", runner=Recorder())
+    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=False).plan.actions}
+    for manifest in MANIFESTS:
+        assert manifest not in verbs, (manifest, verbs.get(manifest))
+    ledger = root / MANIFEST_PATH
+    recorded = (
+        json.loads(ledger.read_text(encoding="utf-8"))["artifacts"] if ledger.exists() else {}
+    )
+    assert not set(MANIFESTS) & set(recorded)
+
+
 def test_upgrade_refreshes_an_overlay_nobody_named_with_the_template_as_it_ships(
     tmp_path: Path,
 ) -> None:
@@ -456,23 +479,27 @@ def test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_recor
     # as unchanged. A tree it cannot read is a successor it cannot write, named and passed over
     # like one, and the ledger drops the record of the file that is gone and keeps the renames.
     #
+    # The line is `init`'s own: the `Failure` the tree raises is about `--local` and carries the
+    # install's absolute path, and `overlay upgrade`, which a successor's line otherwise points
+    # at, reads the same tree and fails the same way. So the tree is made unreadable for real,
+    # and the line must point at a reinstall and name no path of this machine.
+    #
     # Mutation: `mutations/`'s "overlay init stops at a template tree it cannot read".
-    from stayfixed.overlay import create as module
-
-    def unreadable() -> list[object]:
-        raise Failure("the overlay template tree is not readable")
+    from stayfixed.overlay import template
 
     root = _an_overlay(tmp_path)
     (root / "common" / "memory" / "_README.md").unlink()
     path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
-    monkeypatch.setattr(module, "templates", unreadable)
+    missing = tmp_path / "an-install-without-the-tree"
+    monkeypatch.setattr(template, "template_root", lambda: missing)
     done = init_instance(root, "acme", runner=Recorder())
     monkeypatch.undo()
     assert not path.exists()
     assert (
-        "common/memory/_README.md cannot be written: the overlay template tree is not readable; "
-        "`stayfixed overlay upgrade` writes it"
+        "common/memory/_README.md cannot be written: this stayfixed install carries no overlay "
+        "template tree; reinstall stayfixed, then run `stayfixed overlay upgrade`"
     ) in done.notes, done.notes
+    assert str(missing) not in "\n".join(done.notes)
     assert any("pre-commit" in note for note in done.notes), done.notes
     recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
     assert MEMORY_README not in recorded
@@ -877,9 +904,8 @@ def test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay(
     (root / "skills").symlink_to(real, target_is_directory=True)
     done = init_instance(root, "octo", runner=Recorder())
     left = [note for note in done.notes if note.startswith(f"left {ATTACH_SKILL}")]
-    assert left == [f"left {ATTACH_SKILL}: {ATTACH_SKILL!r} passes through a symlink at skills"], (
-        done.notes
-    )
+    expected = f"left {ATTACH_SKILL}: {ATTACH_SKILL!r} passes through a symlink at 'skills'"
+    assert left == [expected], done.notes
     assert str(tmp_path) not in "\n".join(done.notes)
 
 

@@ -500,7 +500,7 @@ def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
     with pytest.raises(Refusal) as refused:
         _detach(root, machine, home)
     # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at .claude" in str(refused.value)
+    assert "passes through a symlink at '.claude'" in str(refused.value)
     # Nothing was withdrawn, so the repository is still the one the attach left and a second
     # `detach` — against a home whose `.claude` is a real directory — still has everything to
     # withdraw.

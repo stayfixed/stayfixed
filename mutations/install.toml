@@ -215,11 +215,8 @@ reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_r
 [[mutation]]
 name = "the overlay probe stops looking for the manifests at all"
 file = "src/stayfixed/overlay/identity.py"
-before = """    for relative, expected in (
-        (PLUGIN_MANIFEST, OVERLAY_PLUGIN),
-        (MARKETPLACE_MANIFEST, OVERLAY_MARKETPLACE),
-    ):"""
-after = "    for relative, expected in ():"
+before = "    for row in NAMED:"
+after = "    for row in ():"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused",
   "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
@@ -232,7 +229,7 @@ reddens = [
 [[mutation]]
 name = "the overlay probe stops reading what the manifests name"
 file = "src/stayfixed/overlay/identity.py"
-before = "        if not isinstance(document, dict) or not _claims(document.get(\"name\"), expected):"
+before = "        if not isinstance(document, dict) or not claims(document.get(\"name\"), row.name):"
 after = "        if not isinstance(document, dict):"
 reddens = [
   "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
@@ -791,8 +788,8 @@ reddens = [
 # with no `owner`, and `init` is what puts the account in.
 [[mutation]]
 name = "overlay init leaves the template's owner and author placeholders"
-file = "src/stayfixed/overlay/create.py"
-before = "    if _named_for(document, ACCOUNT_KEYS[relative], suffix):"
+file = "src/stayfixed/overlay/naming.py"
+before = "    if _named_for(document, _ROW[relative].account_key, suffix):"
 after = "    if False:"
 reddens = [
   "tests/overlay/test_create.py::test_init_names_the_owner_and_the_author_the_harness_asks_for",
@@ -805,9 +802,9 @@ reddens = [
 # else.
 [[mutation]]
 name = "overlay init leaves the Codex manifest unsuffixed"
-file = "src/stayfixed/overlay/create.py"
-before = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)"
-after = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)"
+file = "src/stayfixed/overlay/naming.py"
+before = '    Named(CODEX_PLUGIN_MANIFEST, OVERLAY_PLUGIN, "author", probed=False),'
+after = ""
 reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_after_the_owner_too"]
 
 # A write behind the scaffold ledger makes the file read as hand-edited for ever after. The file
@@ -1751,6 +1748,7 @@ after = "    shipped = [*templates(), *retired()]"
 reddens = [
   "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
   "tests/overlay/test_upgrade.py::test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name",
+  "tests/overlay/test_upgrade.py::test_upgrade_leaves_the_named_manifests_of_an_overlay_with_no_ledger_unlisted",
 ]
 
 # An install whose template tree cannot be read stopped `init` after the old README was removed,
@@ -1758,8 +1756,8 @@ reddens = [
 [[mutation]]
 name = "overlay init stops at a template tree it cannot read"
 file = "src/stayfixed/overlay/create.py"
-before = "    except Failure as exc:"
-after = "    except ZeroDivisionError as exc:"
+before = "    except Failure:"
+after = "    except ZeroDivisionError:"
 reddens = [
   "tests/overlay/test_upgrade.py::test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped",
 ]
@@ -1938,7 +1936,7 @@ reddens = [
 # `overlay init` fills in the template's placeholder author and keeps an author the owner wrote.
 [[mutation]]
 name = "overlay init replaces an author the owner wrote"
-file = "src/stayfixed/overlay/create.py"
+file = "src/stayfixed/overlay/naming.py"
 before = '        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT'
 after = "        and True"
 reddens = [

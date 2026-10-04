@@ -12,5 +12,5 @@ hand-edited. When it replaces `common/memory/README.md` with `_README.md` and ca
 file, or cannot read the template it comes from, it says so and keeps `common/memory/` instead of
 removing it as empty, and the old file's record no longer stays behind. It no longer says it
 removed a file that was already gone. A refusal over a symlinked directory now names that
-directory by its place in the repository (`passes through a symlink at skills`) rather than by
-its absolute path on your machine, in every command that reports one.
+directory by its place under the directory being checked (`passes through a symlink at 'skills'`)
+rather than by its absolute path on your machine, in every command that reports one.

@@ -1132,7 +1132,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: 
     with pytest.raises(Refusal) as creating:
         link(tree, store, config, home=home)
     # The symlink is named by its place under the home directory, `contained`'s root.
-    assert "passes through a symlink at .claude" in str(creating.value)
+    assert "passes through a symlink at '.claude'" in str(creating.value)
     # The way out is named, because a refusal a dotfiles user cannot act on is the shape
     # `setup`'s own settings refusal was rewritten to stop being.
     assert "real directory" in str(creating.value)
@@ -1215,7 +1215,7 @@ def test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all(
     assert before
     with pytest.raises(Refusal) as refused:
         link(tree, store, config, home=home)
-    assert "passes through a symlink at .claude" in str(refused.value)
+    assert "passes through a symlink at '.claude'" in str(refused.value)
     # `snapshot` reaches the index link, which resolves to a file; it does not descend a
     # symlink to a directory, so the group links are asserted by the base directory the first
     # of them would have created.

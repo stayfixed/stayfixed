@@ -1870,9 +1870,9 @@ have no `common/memory/` for the `developer` link to reach. A copy holding anyth
 and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
 names the copy again. A retired file it cannot read or
 cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
-write — this install's template tree being unreadable among the reasons — is named with
-`overlay upgrade`, which writes it, and `common/memory/` is kept for it rather than removed as
-empty. None of the three is a failure: the run goes on, and `.stayfixed/manifest.json` drops the
+write is named with `overlay upgrade`, which writes it — or, when this stayfixed was installed
+without its overlay template tree, which `overlay upgrade` reads too, with a reinstall first — and
+`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the run goes on, and `.stayfixed/manifest.json` drops the
 records of the files it did remove and keeps the others, so the next run finishes the job. A
 record that names a retired file's place under `.stayfixed/local/artifacts/` where no file is
 any more is dropped, with a `dropped the record of <path>, which was already gone` line, since
