@@ -407,6 +407,27 @@ reddens = [
   "tests/docs/test_plans.py::test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone",
 ]
 
+# A change editing one line of a delivered plan answered for every stale path in it, and the only
+# way through was to rewrite history.
+[[mutation]]
+name = "plan check judges an edited plan's untouched lines"
+file = "src/stayfixed/docs/plans.py"
+before = "        if not _LINE_MARK.search(line) and (judged is None or number in judged):"
+after = "        if not _LINE_MARK.search(line):"
+reddens = [
+  "tests/docs/test_plans.py::test_an_edit_to_a_plan_is_held_to_the_references_on_the_lines_it_writes",
+]
+
+# Against the base alone, a line the base rewrote since the fork reads as the change's own.
+[[mutation]]
+name = "plan check reads the lines a change wrote against the base alone"
+file = "src/stayfixed/docs/plans.py"
+before = "    for since in (*_forks(root, base), base):"
+after = "    for since in (base,):"
+reddens = [
+  "tests/docs/test_plans.py::test_a_line_the_base_rewrote_since_the_fork_is_not_the_change_s_to_answer_for",
+]
+
 # The ignore rules cover the whole store, so a note→note reference must be settled on disk.
 [[mutation]]
 name = "a reference into the store is asked of the ignore rules and disappears"
@@ -1419,10 +1440,8 @@ reddens = [
 [[mutation]]
 name = "plan diffs against the one merge base git would pick"
 file = "src/stayfixed/docs/plans.py"
-before = """    for fork in forks:
-        found |= changed(fork)"""
-after = """    for fork in forks[:1]:
-        found |= changed(fork)"""
+before = "    for fork in _forks(root, base):"
+after = "    for fork in _forks(root, base)[:1]:"
 reddens = [
   "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
 ]
@@ -1443,10 +1462,10 @@ reddens = [
 [[mutation]]
 name = "plan reads a diff git did not answer as no plan changed"
 file = "src/stayfixed/docs/plans.py"
-before = """        if code != 0:
-            raise _unresolved(ForkUnknown.of(code), base, root)"""
-after = """        if False:
-            raise _unresolved(ForkUnknown.of(code), base, root)"""
+before = """    if code != 0:
+        raise _unresolved(ForkUnknown.of(code), base, root)"""
+after = """    if False:
+        raise _unresolved(ForkUnknown.of(code), base, root)"""
 reddens = [
   "tests/docs/test_plans.py::test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout",
 ]
