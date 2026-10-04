@@ -1818,3 +1818,30 @@ after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST
 reddens = [
   "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
 ]
+
+# A committed ledger holding an integer literal longer than the interpreter converts makes
+# `json.loads` raise a plain `ValueError`, which no reader of the ledger caught: `doctor` read red,
+# "this check could not run", in the `attached` and `hook-entries` rows, and `attach` and `detach`
+# ended in an internal error. Read as the unreadable ledger it is, all four answer as they do for a
+# ledger that does not parse.
+[[mutation]]
+name = "the attach ledger's reader lets a number past the parser's reach raise"
+file = "src/stayfixed/attach/write.py"
+before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
+after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
+  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+]
+
+# The same number in the settings file `attach` merges into.
+[[mutation]]
+name = "attach's settings reader lets a number past the parser's reach raise"
+file = "src/stayfixed/attach/permissions.py"
+before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
+after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+]

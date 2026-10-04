@@ -81,6 +81,14 @@ def _load(document: str) -> dict[str, Any]:
         # committed, so it is refused like any other shape this cannot read, and never left to
         # escape the callers that catch the refusal.
         raise EntriesError("settings document is nested deeper than this reader follows") from None
+    except ValueError:
+        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits
+        # by default), which `json.loads` meets with a plain `ValueError`. Refused for the reason
+        # the arm above gives; the message is not the interpreter's, which tells the reader to
+        # raise a limit.
+        raise EntriesError(
+            "settings document holds a number longer than this reader converts"
+        ) from None
     if not isinstance(raw, dict):
         raise EntriesError("settings document is not a JSON object")
     return raw

@@ -1049,11 +1049,14 @@ def _is_record(line: bytes) -> bool:
 
     Bytes and not text: the file may be anything, and `json.loads` raising `UnicodeDecodeError`
     on a line that is not UTF-8 is the same answer as raising `JSONDecodeError` on one that is
-    not JSON — this is not a record.
+    not JSON — this is not a record. So is a line the parser cannot read although it is valid
+    JSON: an integer literal longer than the interpreter converts raises a plain `ValueError`, and
+    nesting past what the parser follows raises `RecursionError`. The log is wherever a committed
+    `env` block points, and either one let through ended this row in `_guarded`'s red.
     """
     try:
         record = json.loads(line)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, RecursionError):
         return False
     return isinstance(record, dict)
 

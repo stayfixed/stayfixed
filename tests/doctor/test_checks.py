@@ -1157,6 +1157,61 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_
     )
 
 
+# An integer literal longer than the interpreter converts to an `int`, 4,300 digits by default on
+# every supported Python. `json.loads` meets it with a plain `ValueError`, which is not the
+# `JSONDecodeError` a reader of malformed JSON catches.
+LONG_NUMBER = "1" * 5_000
+
+
+@pytest.mark.parametrize("relative", list(checks.SETTINGS_FILES))
+def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_one_the_walk_is_blind_to(
+    tmp_path: Path, relative: str
+) -> None:
+    # The `ValueError` left the engine's reader past this walk's catch, as `RecursionError` did:
+    # the row read "this check could not run", red, on a file a clone can commit. Mutation
+    # (oracle): `mutations/`'s "the settings engine lets a number past the parser's reach raise
+    # past its refusal" -> the row is red.
+    root = _initialised(tmp_path)
+    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+    (root / relative).write_text('{"hooks": {}, "n": ' + LONG_NUMBER + "}", "utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
+        f"hook entries, so nothing here accounts for what is in them: {relative}",
+        "check that each file named above is readable and is valid JSON",
+    )
+
+
+@pytest.mark.parametrize("line", ["long-number", "nested"])
+def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
+    tmp_path: Path, line: str
+) -> None:
+    # The log is wherever `${CLAUDE_PLUGIN_DATA}` points, which a committed `env` block chooses, and
+    # `_is_record` caught the decoder's error and not the two a valid line can raise: a number
+    # longer than the interpreter converts (`ValueError`) and nesting past what the parser follows
+    # (`RecursionError`). Either reached `_guarded`: `diagnostics` red, "this check could not run",
+    # and an exit of 1. A line the parser cannot read is not a record. Mutation (oracle):
+    # `mutations/`'s "doctor's hook sink reader lets a line past the parser's reach raise" -> red.
+    text = (
+        '{"error": ' + LONG_NUMBER + "}" if line == "long-number" else "[" * 100_000 + "]" * 100_000
+    )
+    data = tmp_path / "data"
+    (data / DIRECTORY).mkdir(parents=True)
+    (data / DIRECTORY / DIAGNOSTICS).write_text(text + "\n", encoding="utf-8")
+    check = _by_name(
+        _checks(
+            tmp_path,
+            _initialised(tmp_path),
+            machine=_machine(tmp_path),
+            env=_env(tmp_path, CLAUDE_PLUGIN_DATA=str(data)),
+        ),
+        "diagnostics",
+    )
+    assert check == Check("diagnostics", OK, "no hook failures are recorded; 0 session(s) seen", "")
+
+
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # The quietest way this installation can be broken: no plugin root found at all means no
     # hook entry on this machine reaches stayfixed, and `doctor` reports it as two `skip` rows —

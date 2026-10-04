@@ -24,7 +24,7 @@ from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, 
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
-from tests.attach.test_write import NESTED, SETTINGS
+from tests.attach.test_write import LONG_NUMBER, NESTED, SETTINGS
 from tests.gitfixture import git
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -255,6 +255,23 @@ def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) 
     before = snapshot(root)
     assert before
     with pytest.raises(Failure, match="nested deeper"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
+    # A committed ledger holding an integer literal longer than the interpreter converts ended
+    # `detach` in an internal error, `ValueError`. It is a ledger that cannot be read, so the run
+    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the attach ledger's
+    # reader lets a number past the parser's reach raise" -> `ValueError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match="number longer"):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
 

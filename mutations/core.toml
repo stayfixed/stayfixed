@@ -1985,6 +1985,18 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_is_blind_to[.claude/settings.json]",
 ]
 
+# The same document holding an integer literal longer than the interpreter converts: `json.loads`
+# raises a plain `ValueError`, which is neither of the two errors above, with the same two outcomes.
+[[mutation]]
+name = "the settings engine lets a number past the parser's reach raise past its refusal"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
+after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_document_holding_a_number_past_the_parsers_reach_refuses_like_a_malformed_one",
+  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_one_the_walk_is_blind_to[.claude/settings.json]",
+]
+
 # stayfixed declares that it makes no network request of its own; that holds only while no module
 # imports one of the standard library's network modules.
 [[mutation]]

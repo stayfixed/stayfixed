@@ -163,6 +163,23 @@ def test_a_document_nested_past_the_parsers_reach_refuses_like_a_malformed_one()
         apply_entries(nested, {})
 
 
+# An integer literal longer than the interpreter converts, 4,300 digits by default on every
+# supported Python: `json.loads` raises a plain `ValueError` for it, not a `JSONDecodeError`.
+LONG_NUMBER = "1" * 5_000
+
+
+def test_a_document_holding_a_number_past_the_parsers_reach_refuses_like_a_malformed_one() -> None:
+    # The `ValueError` left the engine past every caller's catch, as `RecursionError` did:
+    # `doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an internal
+    # error, on a file the repository chose. Mutation (oracle): `mutations/`'s "the settings engine
+    # lets a number past the parser's reach raise past its refusal" -> both raise `ValueError`.
+    long = '{"hooks": {}, "n": ' + LONG_NUMBER + "}"
+    with pytest.raises(EntriesError, match="number longer"):
+        owned_ids(long)
+    with pytest.raises(EntriesError, match="number longer"):
+        apply_entries(long, {})
+
+
 def test_an_empty_document_gains_the_wanted_entries() -> None:
     after = apply_entries("", wanted("PreToolUse", "bg-cleanup", "new.sh"))
     assert commands_of(after, "PreToolUse") == [mark("new.sh", "bg-cleanup")]

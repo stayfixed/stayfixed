@@ -93,6 +93,10 @@ def _object(text: str, label: str) -> dict[str, Any]:
     except RecursionError:
         # Valid JSON nested past what the parser follows, in a file a clone may have committed.
         raise EntriesError(f"{label} is nested deeper than this reader follows") from None
+    except ValueError:
+        # Valid JSON holding an integer literal longer than the interpreter converts, which
+        # `json.loads` meets with a plain `ValueError`, in a file a clone may have committed.
+        raise EntriesError(f"{label} holds a number longer than this reader converts") from None
     if not isinstance(raw, dict):
         raise EntriesError(f"{label} is not a JSON object")
     return raw

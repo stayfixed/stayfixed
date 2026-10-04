@@ -943,6 +943,63 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path
         )
 
 
+# An integer literal longer than the interpreter converts, 4,300 digits by default on every
+# supported Python: `json.loads` raises a plain `ValueError` for it, which is neither the
+# `JSONDecodeError` nor the `RecursionError` a reader catches, and both files below are ones a
+# clone can commit.
+LONG_NUMBER = "1" * 5_000
+
+
+def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the parser's
+    # reach raise" -> both raise `ValueError`.
+    root, store, machine = _attachable(tmp_path)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    with pytest.raises(Failure, match="number longer"):
+        ledger(root)
+    with pytest.raises(Failure, match="number longer"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
+def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a number past the parser's
+    # reach raise" -> both raise `ValueError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"hooks": {}, "n": ' + LONG_NUMBER + "}", encoding="utf-8")
+    with pytest.raises(EntriesError, match="number longer"):
+        settings_document((root / SETTINGS).read_text(encoding="utf-8"))
+    with pytest.raises(Refusal, match="number longer"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
 def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path)
     overlay = store.parents[2]

@@ -27,7 +27,7 @@ from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
 from tests.attach.test_binding import _git_that_cannot_run
-from tests.attach.test_write import NESTED
+from tests.attach.test_write import LONG_NUMBER, NESTED
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
     OVERLAY,
@@ -405,6 +405,27 @@ def test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable(
     assert f"{LEDGER} is there and cannot be read as a ledger" in entries.detail
 
 
+def test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable(
+    tmp_path: Path,
+) -> None:
+    # An integer literal longer than the interpreter converts makes `json.loads` raise a plain
+    # `ValueError`, which reached `_guarded` from both rows that read the ledger: red, "this check
+    # could not run", exit 1, on a file a clone chose and with nothing wrong on the machine. The
+    # owner's checkout, whose overlay grants every entry, reads as the unreadable ledger it is.
+    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the
+    # parser's reach raise" -> both rows are red again.
+    root = _attached(tmp_path)
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert not any(row.status == "red" for row in rows), [
+        (row.name, row.detail) for row in rows if row.status == "red"
+    ]
+    attached = _by_name(rows, "attached")
+    assert attached.status == WARN
+    assert f"{LEDGER} is here and cannot be read as a ledger" in attached.detail
+    assert _by_name(rows, "hook-entries") == UNREADABLE_TABLE["owner-overlay"]
+
+
 # --- what this area claims for `hook-entries` --------------------------------------------------
 #
 # `hook-entries` is the core's row, and the provenance it prints is this area's answer: which marker
@@ -746,11 +767,13 @@ def test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warni
 
 
 # Ledgers a clone can commit that `ledger()` refuses, one per way it refuses: not JSON, a field of a
-# shape `attach` never writes, and valid JSON nested past what the parser follows.
+# shape `attach` never writes, valid JSON nested past what the parser follows, and valid JSON
+# holding a number longer than the interpreter converts.
 UNREADABLE_LEDGERS = {
     "not-json": "this is not json",
     "rules-not-a-list": json.dumps({"rules": 5}),
     "nested": '{"entries": ' + NESTED + "}",
+    "long-number": '{"entries": {"forged-1": ' + LONG_NUMBER + "}}",
 }
 
 

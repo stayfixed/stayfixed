@@ -346,6 +346,14 @@ def ledger(root: Path) -> AttachLedger:
             f"{path} is not a ledger `stayfixed attach` wrote: it is nested deeper than this "
             f"reader follows"
         ) from None
+    except ValueError:
+        # Valid JSON holding an integer literal longer than the interpreter converts, which
+        # `json.loads` meets with a plain `ValueError`: unreadable, for the reason the arm above
+        # gives. `UnicodeDecodeError` and `JSONDecodeError` are `ValueError`s too, caught above.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: it holds a number longer than "
+            f"this reader converts"
+        ) from None
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
     rules, keys, directories = _checked(raw, path)

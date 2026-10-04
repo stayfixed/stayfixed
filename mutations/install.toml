@@ -2149,3 +2149,17 @@ after = "    from stayfixed.overlay.api import require_overlay, target_root\n   
 reddens = [
   "tests/test_areas.py::test_core_never_imports_delivery",
 ]
+
+# `${CLAUDE_PLUGIN_DATA}` is a variable a committed `env` block can set, so the hook sink's log is a
+# file a clone can choose. A line of valid JSON the parser still cannot read -- an integer literal
+# longer than the interpreter converts, nesting past what it follows -- raised past `_is_record`'s
+# catch, and `diagnostics` read red, "this check could not run".
+[[mutation]]
+name = "doctor's hook sink reader lets a line past the parser's reach raise"
+file = "src/stayfixed/doctor/checks.py"
+before = "    except (ValueError, RecursionError):\n        return False\n    return isinstance(record, dict)"
+after = "    except (json.JSONDecodeError, UnicodeDecodeError):\n        return False\n    return isinstance(record, dict)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[long-number]",
+  "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[nested]",
+]
