@@ -848,6 +848,9 @@ neither it nor the configuration layer.
       tier: Tier | None                # None: this surface does not reach that agent at all
       evidence: str                    # where the claim was measured, or "unmeasured"
   ```
+  (As landed after review: `Reach` also carries `measured_on: str | None`, the agent and version
+  the observation was made on, which the README test reads instead of parsing the evidence's
+  prose.)
   `Harness` gains `reach: Mapping[Surface, Reach]` and `local_settings: tuple[str, ...]` (Claude
   Code: *.claude/settings.local.json*, the file `attach` merges the overlay's entries into).
   `CLAUDE`: guards `BLOCKS` (the P0 spike's S8), notices `CONTEXT`, gates `CI`, method

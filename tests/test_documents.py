@@ -563,11 +563,11 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     table = "".join(line for line in lines if line.startswith("|"))
     assert table == _reach_table(), table
     # The prose under the table says what each agent's session guards did when they were
-    # measured, and at which version; the registry states the same measurement first in that
-    # surface's evidence, so a retaken measurement is one edit there and this reddens until the
-    # README follows it. Mutation (declared, on `harnesses`): Claude Code's guard measurement
-    # restated at another version -> this reddens.
-    measured = {harness.reach[Surface.GUARDS].evidence.partition(":")[0] for harness in HARNESSES}
+    # measured, and at which version; the registry records the agent and version that surface was
+    # measured on, so a retaken measurement is one edit there and this reddens until the README
+    # follows it. Mutation (declared, on `harnesses`): Claude Code's guard measurement restated
+    # at another version -> this reddens.
+    measured = {harness.reach[Surface.GUARDS].measured_on for harness in HARNESSES}
     assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 

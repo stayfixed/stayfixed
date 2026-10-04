@@ -617,12 +617,14 @@ reddens = [
 ]
 
 # The README's prose cites the version each agent's session guards were measured at, and the
-# registry states that measurement first in the surface's evidence; the README is held to it.
+# registry records it beside that surface's evidence; the README is held to it.
 [[mutation]]
 name = "Claude Code's guard measurement is restated at another version"
 file = "src/stayfixed/harnesses.py"
-before = "                \"Claude Code 2.1.261: a guard's exit 2 stopped the command unrun \""
-after = "                \"Claude Code 2.1.262: a guard's exit 2 stopped the command unrun \""
+before = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.261","""
+after = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.262","""
 reddens = [
   "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
 ]
@@ -1264,8 +1266,8 @@ reddens = [
 [[mutation]]
 name = "Codex's session guards are stated as blocking"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.GUARDS: Reach(None, _NO_CODEX_HOOK),"
-after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK),"
+before = "            Surface.GUARDS: _NO_CODEX_HOOK,"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK.evidence, _NO_CODEX_HOOK.measured_on),"
 reddens = [
   "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
 ]
@@ -1274,7 +1276,7 @@ reddens = [
 [[mutation]]
 name = "Codex's reach leaves out the session notices"
 file = "src/stayfixed/harnesses.py"
-before = "            Surface.NOTICES: Reach(None, _NO_CODEX_HOOK),\n"
+before = "            Surface.NOTICES: _NO_CODEX_HOOK,\n"
 after = ""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_states_every_surface",

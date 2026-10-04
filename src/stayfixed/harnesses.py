@@ -112,9 +112,11 @@ class Reach:
 
     # `None`: the surface does not reach this harness at all.
     tier: Tier | None
-    # The observation the tier rests on, with the harness's version and the public record that
-    # holds it, or "unmeasured".
+    # The observation the tier rests on and the public record that holds it, or "unmeasured".
     evidence: str
+    # The agent and its version the observation was made on, as the README cites it, or `None`
+    # where no agent takes part.
+    measured_on: str | None = None
 
 
 @dataclass(frozen=True)
@@ -198,9 +200,10 @@ _IN_CI = Reach(
 _P0_SPIKES = "`docs/plans/2026-09-05-agent-harness-p0-spikes.md`"
 _DELIVERY_SPIKE = "the delivery spike of 2026-10-02 in `docs/plans/`"
 # What was measured of Codex's plugin hooks, which both hook surfaces rest on.
-_NO_CODEX_HOOK = (
-    "Codex 0.160.0: no plugin hook ran, with or without its hook-trust bypass flag "
-    f"({_DELIVERY_SPIKE})"
+_NO_CODEX_HOOK = Reach(
+    None,
+    f"no plugin hook ran, with or without its hook-trust bypass flag ({_DELIVERY_SPIKE})",
+    measured_on="Codex 0.160.0",
 )
 
 CLAUDE = Harness(
@@ -215,18 +218,21 @@ CLAUDE = Harness(
         {
             Surface.GUARDS: Reach(
                 Tier.BLOCKS,
-                "Claude Code 2.1.261: a guard's exit 2 stopped the command unrun "
+                "a guard's exit 2 stopped the command unrun "
                 f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.261",
             ),
             Surface.NOTICES: Reach(
                 Tier.CONTEXT,
-                "Claude Code 2.1.261: a SessionStart hook's output arrived as context "
+                "a SessionStart hook's output arrived as context "
                 f"({_P0_SPIKES}, the hook output cap trial)",
+                measured_on="Claude Code 2.1.261",
             ),
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(
                 Tier.INSTRUCTIONS,
-                f"Claude Code 2.1.285: the plugin's skills were listed ({_DELIVERY_SPIKE})",
+                f"the plugin's skills were listed ({_DELIVERY_SPIKE})",
+                measured_on="Claude Code 2.1.285",
             ),
         }
     ),
@@ -250,13 +256,14 @@ CODEX = Harness(
     render=hook_specific_output,
     reach=MappingProxyType(
         {
-            Surface.GUARDS: Reach(None, _NO_CODEX_HOOK),
-            Surface.NOTICES: Reach(None, _NO_CODEX_HOOK),
+            Surface.GUARDS: _NO_CODEX_HOOK,
+            Surface.NOTICES: _NO_CODEX_HOOK,
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(
                 Tier.INSTRUCTIONS,
-                "Codex 0.160.0: the plugin's skills arrived, and instructions through AGENTS.md "
+                "the plugin's skills arrived, and instructions through AGENTS.md "
                 f"({_DELIVERY_SPIKE})",
+                measured_on="Codex 0.160.0",
             ),
         }
     ),
