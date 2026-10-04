@@ -1460,3 +1460,22 @@ core module with named pardons; core's licence to name delivery's paths and keys
 `_clamp` takes the harness's `render`; the tiers gained a runtime reader in `doctor`; waves run in
 lettered order; the ledger's write side branches from Wave 0. One suggestion was declined: renaming
 the residual `release` package, whose remaining code is still about stayfixed's releases.
+
+### The fix lane folded into the boundary PR (2026-10-04)
+
+About fifteen commits of the pull request that carries Lane 1 fix behaviour that shipped in 0.2.0:
+committed ledger and settings-file shapes that turned `hook-entries` or `attached` into "this check
+could not run", or turned a marked entry's red into a warning and an exit of 0. The Scope above
+sends the migration journal's defects to a separate fix lane, and Task 5 says that what each moved
+check says and when it is red do not change; both were set aside for these fixes, deliberately.
+The reason is `Claims`. Its record/grant split — an area may record from repository bytes, may
+grant only from this machine's state, and only the same area's record and grant together absolve
+an entry — was shaped by those fixes, and so were the `None` answers it carries. A boundary change
+without them would have shipped a `Claims` protocol already known to be wrong, to be reworked by
+the fix lane right after.
+
+One consequence stays open. `Claims` is area-neutral, while `hook-entries` still words its
+sentences and remedies in `attach`'s vocabulary: `.stayfixed/local/attach.json`,
+`stayfixed attach --store …` and `stayfixed setup --overlay`. The owner deferred that to a
+separate change before Task 8, which gives `Claims` a printable vocabulary of its own so the core
+composes neutral sentences.
