@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from string import Formatter
 from typing import TYPE_CHECKING
 
-from stayfixed.identifiers import Identifiers, identifiers
+from stayfixed.identifiers import Identifiers
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -156,7 +156,7 @@ class Register:
     title: str  # "Bug reports": the index's heading
     directory: str
     index: str
-    ids: Identifiers  # the bug ledger's is `identifiers(config)`
+    ids: Identifiers  # the bug ledger's is built from `[ledger] id_prefix`
     schema: Schema
     runbook: str | None  # "<[paths] runbooks>/bug-reports.md", the index's link
     # "audits": the subdirectory of `directory` holding audit records, which the index links.
@@ -227,7 +227,7 @@ def bug_register(config: Config) -> Register:
         title="Bug reports",
         directory=paths.bugs,
         index=paths.bug_index,
-        ids=identifiers(config),
+        ids=Identifiers(config.ledger.id_prefix),
         schema=replace(
             BUG_SCHEMA, evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for)
         ),

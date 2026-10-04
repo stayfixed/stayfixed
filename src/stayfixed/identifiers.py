@@ -16,12 +16,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING
 
 from stayfixed.errors import Refusal
-
-if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
 
 # Upper-case letters and digits, one to eight characters, letter first. Not a budget but a named cap
 # (CONTRIBUTING.md#named-caps) on what may be interpolated into a regular expression and a filename,
@@ -75,7 +71,3 @@ class Identifiers:
     def shape(self) -> str:
         """How a message spells the contract: `BR-nnn`."""
         return f"{self.prefix}-nnn"
-
-
-def identifiers(config: Config) -> Identifiers:
-    return Identifiers(config.ledger.id_prefix)
