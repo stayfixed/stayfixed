@@ -786,17 +786,35 @@ reddens = [
 [[mutation]]
 name = "a template may write an entry with no status"
 file = "src/stayfixed/ledger/register.py"
-before = '    if written is None:'
-after = "    if False:"
+before = '        if written is None:'
+after = "        if False:"
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-status]",
 ]
 
 [[mutation]]
+name = "a template may open with no frontmatter"
+file = "src/stayfixed/ledger/register.py"
+before = '    if lines[:1] != ["---"]:'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-frontmatter]",
+]
+
+[[mutation]]
+name = "the template's status is read quotes and all"
+file = "src/stayfixed/ledger/register.py"
+before = '''        return re.sub(r'\\(["\\])', r"\1", value[1:-1])'''
+after = "        return value"
+reddens = [
+  "tests/ledger/test_register.py::test_a_template_may_quote_its_status_as_an_entry_may",
+]
+
+[[mutation]]
 name = "a template may write a status the schema lacks"
 file = "src/stayfixed/ledger/register.py"
-before = '    elif written not in schema.statuses:'
-after = "    elif False:"
+before = '        elif _denoted(written) not in schema.statuses:'
+after = "        elif False:"
 reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-status-not-a-status]",
 ]

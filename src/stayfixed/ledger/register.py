@@ -11,6 +11,7 @@ A leaf of this area: every other module of it imports this one, and it imports n
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from string import Formatter
@@ -94,14 +95,15 @@ def _placeholders(template: str) -> set[str]:
     return {name for _, name, _, _ in Formatter().parse(template) if name}
 
 
-def _spelled(template: str) -> dict[str, str]:
-    """The `key: value` lines the template's frontmatter spells itself, each key's value as written.
+def _spelled(template: str) -> dict[str, str] | None:
+    """The `key: value` lines the template's frontmatter spells itself, each key's value as written,
+    or `None` for a template that opens with no frontmatter.
 
     A placeholder that stands for a whole line is not among them: the writer fills it from a value
-    it is handed. A template that opens with no frontmatter spells none."""
+    it is handed."""
     lines = template.splitlines()
     if lines[:1] != ["---"]:
-        return {}
+        return None
     spelled: dict[str, str] = {}
     for line in lines[1:]:
         if line == "---":
@@ -110,6 +112,14 @@ def _spelled(template: str) -> dict[str, str]:
         if colon:
             spelled.setdefault(key, value.strip())
     return spelled
+
+
+def _denoted(value: str) -> str:
+    """A frontmatter value as the entry reader reads it: a double-quoted one without its quotes and
+    with its `\\"` and `\\\\` escapes undone, any other as written."""
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return re.sub(r'\\(["\\])', r"\1", value[1:-1])
+    return value
 
 
 def _inconsistencies(schema: Schema) -> Iterator[str]:
@@ -159,11 +169,18 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
     if "identifier" not in placeholders:
         yield "the template has no `{identifier}`, so an entry it writes carries no number"
     spelled = _spelled(schema.template)
-    written = spelled.get("status")
-    if written is None:
-        yield "the template has no `status:` line, so an entry it writes has no status"
-    elif written not in schema.statuses:
-        yield f"the template writes status `{written}`, which is not a status"
+    if spelled is None:
+        yield (
+            "the template opens with no `---` frontmatter block, so an entry it writes cannot be "
+            "read"
+        )
+        spelled = {}
+    else:
+        written = spelled.get("status")
+        if written is None:
+            yield "the template has no `status:` line, so an entry it writes has no status"
+        elif _denoted(written) not in schema.statuses:
+            yield f"the template writes status `{written}`, which is not a status"
     # A non-void entry must carry its level and every `required_unless_void` key. `new` writes a
     # value it is handed only into that key's own line; a key with none is carried only when the
     # template spells it with a value, as `found: {today}` is filled with the day of filing.

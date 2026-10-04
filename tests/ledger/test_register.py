@@ -474,6 +474,12 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             id="template-without-status",
         ),
         pytest.param(
+            {"template": DEBT_TEMPLATE.removeprefix("---\n")},
+            "the template opens with no `---` frontmatter block, so an entry it writes cannot be "
+            "read",
+            id="template-without-frontmatter",
+        ),
+        pytest.param(
             {"template": DEBT_TEMPLATE.replace("{identifier}", "TD-000")},
             "the template has no `{identifier}`, so an entry it writes carries no number",
             id="template-without-identifier",
@@ -539,6 +545,25 @@ def test_a_key_the_template_writes_itself_may_be_required_of_a_non_void_entry(
     )
     (entry,) = load_entries(root, register)
     assert (entry.id, entry.status, entry.fields["found"]) == ("TD-001", "open", "2026-10-04")
+
+
+def test_a_template_may_quote_its_status_as_an_entry_may(tmp_path: Path) -> None:
+    # The reader takes `status: "open"` as `open`, so the schema reads the template's status the
+    # same way: it constructs, and the entry `new` files reads back open. Mutation (oracle): "the
+    # template's status is read quotes and all" -> the schema is refused at construction.
+    template = DEBT_TEMPLATE.replace("status: open", 'status: "open"')
+    register = replace(DEBT, schema=replace(DEBT.schema, template=template))
+    root = project(tmp_path)
+    file_entry(
+        root,
+        register,
+        title="the scan walks the tree twice",
+        values={"size": "M", "area": "ledger"},
+        today="2026-10-04",
+        fetch=False,
+    )
+    (entry,) = load_entries(root, register)
+    assert (entry.id, entry.status) == ("TD-001", "open")
 
 
 # The bug ledger's header and an entry's row on each `[paths]` layout the loader accepts, captured
