@@ -10,8 +10,9 @@ Three things hold everywhere:
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
   Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
-  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s advisory `notices`, `docs trail`'s `undeclared`,
-  and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
+  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s
+  advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
+  not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
@@ -1124,22 +1125,22 @@ Runs gates strictly on the tree as it is, and enforces those that pass by adding
 `[stayfixed] enforced`. It is the one adoption command: the first gate it promotes moves an
 `initialised` project to `adopting`, and an `adopting` project with nothing enforced yet — one
 written so by hand, or left so by an earlier release — is promoted from the same way. With no
-`GATE`, it runs every configured gate that does not enforce yet,
-enforces each one that passes, names the rest with their finding counts, and exits 1 if any
-failed; the line names up to eight gates in each of its two lists and counts the rest, and
-`--json` carries every one. With names, they pass together or nothing is written, and a named
-gate that already enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
-`installed` and `enforced` is emptied: under `installed` an empty list means every configured
-gate, so a gate the project adds later enforces from its first run — for a custom gate, the
-first run after it lands on the base branch, since `stayfixed gate` runs none before. An
-`adopting` project whose every configured gate already enforces — one that removed the last gate
-it had not promoted — is moved to `installed` with no gate run; a project that configures no
-gate is refused, since it has none to have earned. The state never moves back. A name, a gate
-already enforcing, nothing left to promote, a `stayfixed.toml` the editor cannot rewrite in place
-and a manifest it cannot read are each refused before the first gate runs; a refusal from the
-editor names `state` and `enforced` together, one line each: as they stand when the check before
-the gates finds it, and as the command would write them when the write itself refuses, so
-following it either leaves the project as it was or makes the transition whole.
+`GATE`, it runs every configured gate that does not enforce yet, enforces each one that passes,
+names the rest with their finding counts, and exits 1 if any failed; the line names up to eight
+gates in each of its two lists and counts the rest, and `--json` carries every one. With names,
+they pass together or nothing is written, and a named gate that already enforces is refused
+rather than skipped. Once every configured gate enforces, the state becomes `installed` and
+`enforced` is emptied: under `installed` an empty list means every configured gate, so a gate
+the project adds later enforces from its first run — for a custom gate, the first run after it
+lands on the base branch, since `stayfixed gate` runs none before. An `adopting` project whose
+every configured gate already enforces — one that removed the last gate it had not promoted — is
+moved to `installed` with no gate run; a project that configures no gate is refused, since it
+has none to have earned. The state never moves back. A name, a gate already enforcing, nothing
+left to promote, a `stayfixed.toml` the editor cannot rewrite in place and a manifest it cannot
+read are each refused before the first gate runs; a refusal from the editor names `state` and
+`enforced` together, one line each: as they stand when the check before the gates finds it, and
+as the command would write them when the write itself refuses, so following it either leaves the
+project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
 with where `HEAD` forked from it, as for `stayfixed gate`: a 40-hex commit or a `refs/…` name,

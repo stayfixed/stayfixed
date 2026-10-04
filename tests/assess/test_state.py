@@ -69,12 +69,11 @@ TRAIL = Path(preset_defaults("widget").paths.roadmap).parent / "trail.toml"
 ROW = f"{Path(PLANS).name}/{Path(ADOPTION).name}"
 
 
-def _declare(root: Path, state: str | None) -> None:
-    """Give the adoption plan's trail row `state` under `[states]`, or none."""
+def _declare(root: Path, state: str) -> None:
+    """Give the adoption plan's trail row `state` under `[states]`."""
     text = (root / TRAIL).read_text(encoding="utf-8")
     text = "".join(line for line in text.splitlines(keepends=True) if not line.startswith('"'))
-    if state is not None:
-        text += f'"{ROW}" = "{state}"\n'
+    text += f'"{ROW}" = "{state}"\n'
     (root / TRAIL).write_text(text, encoding="utf-8")
 
 
