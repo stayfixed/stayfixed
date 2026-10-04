@@ -8,14 +8,16 @@ here as "exactly two" and that was wrong: besides stayfixed's own hook wrapper w
 and `git ls-remote --exit-code` over the public repository's tags, which is how `[ci] ref` is
 judged, `pre-commit` asks
 `guards.api.hooks_dir` where the overlay keeps its hooks, `attached` reaches `read_binding`,
-which asks `git` for `origin`, and resolving the note store in overlay mode asks again.
+which asks `git` for `origin`, and resolving the note store in overlay mode asks again — once for
+`attached` and once for the store's own two rows, because each delivery area resolves the store for
+its own rows.
 
-**Four launches on the green end-to-end fixture, measured — and the fifth is the one that
-leaves.** The four are the wrapper probe and three `git` questions;
+**Five launches on the green end-to-end fixture, measured — and the sixth is the one that
+leaves.** The five are the wrapper probe and four `git` questions;
 `tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does`
 counts them through a patched `Popen` and answers `ci-ref` through the `Runner` seam instead, so
 the number it pins is the number a run makes *besides* that row. On a repository that records a
-`[ci] ref` the real count is five. What is true of all of them is the part that matters: none
+`[ci] ref` the real count is six. What is true of all of them is the part that matters: none
 writes, and only one, the `ci-ref` row's `git ls-remote`, leaves this machine.
 
 **Two of them read something the environment named, and neither trusts it.** `wrapper`

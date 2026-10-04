@@ -40,8 +40,7 @@ from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
 import stayfixed
-from stayfixed.attach.api import IGNORE_BODY, IGNORE_REGION
-from stayfixed.config.layout import rules_file
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION, rules_file
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.docs.api import trail_target

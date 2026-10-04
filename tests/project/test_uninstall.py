@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.attach.api import LEDGER
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
 from stayfixed.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
@@ -174,8 +173,11 @@ def test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_regi
 @needs_git
 def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) -> None:
     root = initialised(tmp_path)
-    (root / LEDGER).parent.mkdir(parents=True, exist_ok=True)
-    (root / LEDGER).write_text("{}", encoding="utf-8")
+    # The ledger's path spelled out rather than read from the constant the refusal reads, so a
+    # change to where `attach` keeps its ledger is a change this test sees.
+    ledger = root / ".stayfixed" / "local" / "attach.json"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{}", encoding="utf-8")
     # The ledger lives under `.stayfixed/local/`, so without this refusal the count of files kept
     # out of git would still stop the real run, with a remedy that is not the one. The dry run
     # tells them apart: it reports that count, and it refuses an attached repository. Exactly

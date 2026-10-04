@@ -14,8 +14,9 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from stayfixed.attach.api import LEDGER
-from stayfixed.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
+from stayfixed.attach.write import GITIGNORE, Detached, detach
+from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
@@ -23,7 +24,7 @@ from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, 
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
-from tests.attach.test_write import SETTINGS
+from tests.attach.test_write import LONG_NUMBER, NESTED, SETTINGS
 from tests.gitfixture import git
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -241,6 +242,40 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     assert workflow.is_file()
 
 
+def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
+    # A committed ledger nested deeper than `json.loads` follows ended `detach` in an internal
+    # error. It is a ledger that cannot be read, so the run fails before it withdraws anything.
+    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" ->
+    # `RecursionError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match="nested deeper"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
+    # A committed ledger holding an integer literal longer than the interpreter converts ended
+    # `detach` in an internal error, `ValueError`. It is a ledger that cannot be read, so the run
+    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the attach ledger's
+    # reader lets a number past the parser's reach raise" -> `ValueError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match="number longer"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
 def test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules(
     tmp_path: Path,
 ) -> None:
@@ -293,7 +328,8 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
 
 
 def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at the seam `memory.store` runs it through.
+    """A `git` that cannot be launched at all, at both seams the store runs it through: its own
+    `git_run`, and `gitenv`'s, which `origin_remote` calls.
 
     The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
     Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
@@ -304,6 +340,7 @@ def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
     monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(

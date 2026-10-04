@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -26,13 +25,6 @@ agents = ["claude"]
 name = "widget"
 base_branch = "main"
 release_branch = "main"
-
-[paths]
-memory = "notes"
-
-[memory]
-mode = "in-repo"
-groups = ["developer"]
 """
 AGENTS = "# A\n\n## Current status\n\n- x\n\n- [guide](docs/guide.md)\n"
 
@@ -43,20 +35,13 @@ def invoke(argv: list[str]) -> int:
 
 def project(tmp_path: Path) -> tuple[Path, list[str]]:
     root = tmp_path / "widget"
-    for name in ("docs/specs", "docs/plans", "notes/developer"):
+    for name in ("docs/specs", "docs/plans"):
         (root / name).mkdir(parents=True)
     (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     (root / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
     (root / "docs" / "guide.md").write_text("g\n", encoding="utf-8")
     (root / "docs" / "roadmap.md").write_text(f"# R\n\n{MARKER}\n{END_MARKER}\n", encoding="utf-8")
     return root, ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
-
-
-def a_note(root: Path, body: str) -> None:
-    (root / "notes" / "developer" / "a.md").write_text(
-        f"---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}",
-        encoding="utf-8",
-    )
 
 
 def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
@@ -67,16 +52,16 @@ def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
     assert capsys.readouterr().out == "OK: documentation budgets and link targets\n"
 
 
-def test_docs_check_does_not_resolve_the_store_unless_asked(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The default is exactly the enforced set the success line names; the memory link graph is
-    # advisory and runs only when asked. Mutation: run the graph when no flag is given — this
-    # reddens on the NOTE count.
+def test_docs_check_takes_no_store(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # `--store` named the note store whose link graph `docs check` used to report, and that graph
+    # is `memory refs`'s now. Accepted and never read, the option would answer a person who passes
+    # it exactly as if it had done something, so it is a usage error instead. Mutation (declared):
+    # `mutations/`'s "docs check accepts a store it never reads".
     root, common = project(tmp_path)
-    a_note(root, "[[gone]]\n")
-    assert invoke(["docs", "check", "--json", *common]) == 0
-    assert json.loads(capsys.readouterr().out)["notices"] == []
+    with pytest.raises(SystemExit) as excinfo:
+        invoke(["docs", "check", "--store", str(root / "notes"), *common])
+    assert excinfo.value.code == 2
+    assert "--store" in capsys.readouterr().err
 
 
 def test_docs_check_reports_a_budget_finding_on_one_line(
@@ -89,77 +74,11 @@ def test_docs_check_reports_a_budget_finding_on_one_line(
         "FAIL: 1 documentation problem(s): AGENTS.md [status-missing]\n"
     )
     # The enforced findings ride under `findings`, the one key every command that returns a
-    # list of `Finding` uses — `notices` beside it is a different list, not a second spelling.
-    # Mutation: spell the key `problems` in `run_docs_check` — this reddens.
+    # list of `Finding` uses. Mutation: spell the key `problems` in `run_docs_check` — this
+    # reddens.
     assert invoke(["docs", "check", "--budgets", "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)
     assert data["findings"][0]["rule"] == "status-missing"
-
-
-def test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Mutation: give a graph finding `exit_code=1` — this reddens.
-    root, common = project(tmp_path)
-    a_note(root, "[[gone]]\n")
-    assert invoke(["docs", "check", "--memory-graph", "--json", *common]) == 0
-    data = json.loads(capsys.readouterr().out)
-    assert data["notices"][0]["rule"] == "dead-wiki-link"
-    assert "1 advisory NOTE(s)" in data["summary"]
-    assert "does not vouch for the memory store" in data["summary"]
-
-
-def _no_store_directory(root: Path) -> None:
-    (root / "stayfixed.toml").write_text(
-        CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
-    )
-
-
-def _no_group_resolves(root: Path) -> None:
-    (root / "notes" / "developer").rmdir()
-
-
-@pytest.mark.parametrize(
-    ("arrange", "said", "withheld"),
-    [
-        pytest.param(
-            _no_store_directory,
-            "the memory store's directory does not exist",
-            ".stayfixed",
-            id="no-directory",
-        ),
-        pytest.param(
-            _no_group_resolves,
-            "none of the 1 configured group(s) resolved",
-            "developer",
-            id="no-group",
-        ),
-    ],
-)
-def test_docs_check_says_why_the_graph_had_no_store_to_check(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    arrange: Callable[[Path], None],
-    said: str,
-    withheld: str,
-) -> None:
-    # A store that does not resolve made `--memory-graph` silent, which reads exactly like a
-    # graph with nothing wrong in it. It is a notice now, naming why in stayfixed's own words for
-    # each cause — never the resolver's detail, which carries the store's path or a group's
-    # name — and the exit code is the one an advisory check always has.
-    #
-    # Mutation: `mutations/`'s "a missing store directory is reported with no reason of its
-    # own" (the no-directory case).
-    root, common = project(tmp_path)
-    arrange(root)
-    assert invoke(["docs", "check", "--memory-graph", *common]) == 0
-    line = capsys.readouterr().out
-    assert f"the memory graph was not checked: {said}" in line
-    assert invoke(["docs", "check", "--memory-graph", "--json", *common]) == 0
-    notices = json.loads(capsys.readouterr().out)["notices"]
-    assert [notice["rule"] for notice in notices] == ["memory-store-unresolved"]
-    assert notices[0]["detail"].startswith(said)
-    assert withheld not in notices[0]["detail"]
 
 
 def test_docs_trail_writes_the_listing_and_check_reports_staleness(

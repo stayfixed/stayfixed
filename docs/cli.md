@@ -10,7 +10,7 @@ Three things hold everywhere:
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
   Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
-  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s
+  command's keys are its own and are listed with it below — `doctor`'s `checks`, `memory refs`'s
   advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
   not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
@@ -23,8 +23,7 @@ Three things hold everywhere:
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
-  takes `--store` as well.
+  command, and `assess`, `gate` and `adopt`, takes them with the same meaning.
 
 | Option | Meaning |
 |---|---|
@@ -49,7 +48,7 @@ Three things hold everywhere:
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
 - [`stayfixed bugs renumber OLD NEW`](#stayfixed-bugs-renumber-old-new)
-- [`stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#stayfixed-docs-check---budgets---links---memory-graph---store-path)
+- [`stayfixed docs check [--budgets] [--links]`](#stayfixed-docs-check---budgets---links)
 - [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
@@ -659,10 +658,9 @@ own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
-## `stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
+## `stayfixed docs check [--budgets] [--links]`
 
-Two kinds of check, and the difference is the whole design; no flag runs the enforced
-two, and `--memory-graph` is opt-in. **Enforced** (exit `1`, `FAIL:`):
+Two checks, both enforced, and no flag runs both (exit `1`, `FAIL:`):
 the always-loaded document at `[paths] agents_md` exists, is within `agents_md_lines` and
 `agents_md_words`, and has a `## Current status` section within `status_lines`; the roadmap at
 `[paths] roadmap`, up to the line `## Design and plan trail`, is within `roadmap_prose_lines`
@@ -671,14 +669,8 @@ finding); every relative local link in the agents file resolves to a file — re
 document's own directory, and only when it lands inside the project root, since a link that
 walks out through `..` would be settled against the machine rather than the repository (an
 absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
-effective ones — the preset's, lowered by `[budgets]` if the project chose to. **Advisory**
-(`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
-names a document in the store, no link is immediately repeated, and no ledger identifier is
-bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
-the store. Where no store resolves, the line says the graph was not checked and why — in
-stayfixed's own words for the cause (the store's directory does not exist, none of the configured
-groups resolved, the overlay binding does not hold, …), never the store's path or a group's name —
-and `--json` carries one `memory-store-unresolved` notice; the exit code is still `0`.
+effective ones — the preset's, lowered by `[budgets]` if the project chose to. The memory
+store's link graph is `stayfixed memory refs`'s, as advice.
 
 **Writes** nothing.
 
@@ -1157,7 +1149,12 @@ itself, which those rules cover wholesale and which is settled on disk. Fenced c
 filenames are skipped. In an overlay store, a note in a cross-project group that `[[links]]`
 into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
 targets are in `--json`. A note that exists and would not parse is counted on the line and
-named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
+named in `--json`, and is exit `1` too: an unread note is not a clean note. Beside those, the
+store's link graph is reported as advice: every `[[wiki-link]]` names a document in the store,
+no link is immediately repeated, and no ledger identifier is bracketed. Each miss is a notice,
+counted on the line and listed under `notices` in `--json`, and never changes the exit code: the
+store is shared by every session on the machine, so a link a sibling session left dangling is a
+hint, while a stale path is a finding. Refuses (`2`) when a
 configured group could not be resolved, counting them on a line that names none, then naming
 every group with the resolver's own reason for it, one per line, inside the delimited region that
 marks repository-authored text as data — the one list of names not capped at eight, since the
@@ -2033,7 +2030,10 @@ root itself is **not** taken from that path — it comes from the `[overlay] roo
 configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
 including a directory elsewhere under the same overlay: the session-start path holds every linked
 group to this project's own share, so attaching to a sibling would produce a store every session
-then refuses.
+then refuses. A `[project] name` no directory can carry there — the name of a file the overlay
+keeps under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name
+longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
+well, and the refusal names the shape of the path and never the name.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
@@ -2525,15 +2525,21 @@ one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
 Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
+The rows come in a fixed order: the installation's own eleven first, then the five about the
+private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
+private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
+position.
+
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
-resolves to. Four of those are measured on a green attached installation — the wrapper probe and
-three `git` questions — and not one of the four leaves this machine. The `ci-ref` row's
-`git ls-remote` is a fifth on a repository that records a `[ci] ref` at all, and it is the only
-one that does leave: it goes through the `Runner` seam, which is what lets the case that pins the
-four answer it in process instead of launching it. That one is bounded at **30 seconds**, and not
+resolves to, which the binding's row and the note store's rows each ask for themselves. Five of
+those are measured on a green attached installation — the wrapper probe and four `git`
+questions — and not one of the five leaves this machine. The `ci-ref` row's `git ls-remote` is a
+sixth on a repository that records a `[ci] ref` at all, and it is the only one that does leave:
+it goes through the `Runner` seam, which is what lets the case that pins the five answer it in
+process instead of launching it. That one is bounded at **30 seconds**, and not
 at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
 clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
 five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
@@ -2560,18 +2566,18 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex | — |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
-| `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
-| `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
-| `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
+| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
+| `store-debris` | files in the note store that are not notes | the note store |
+| `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
+| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
 **Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
@@ -2637,7 +2643,11 @@ It identifies an entry **by position** — `.claude/settings.local.json entry 3 
 what a reader needs in order to open it, survives two entries claiming one id, and reproduces
 nothing. A settings file that exists and cannot be read as hook entries is reported by path as
 `warn`, never skipped: this is the one check whose whole purpose is that nobody's entries go
-unlisted, so "all accounted for" must never mean "could not look".
+unlisted, so "all accounted for" must never mean "could not look". One that is valid JSON nested
+deeper than Python's parser follows is reported by path as `red`: a harness may still read it, as
+Claude Code does, so the hooks in it may run, and nothing here can check them. A number longer
+than Python converts to an integer is read as its text, and the entries beside it are judged as
+usual.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

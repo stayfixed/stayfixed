@@ -701,8 +701,9 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
 
 # The `doctor` check table: sixteen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
-# bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
-# `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
+# bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside* the module
+# that registers it — `checks.py` or an area's `doctor.py` — so the document's copy is a *second*
+# spelling of each of the sixteen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
 # ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
 # directory over still said fourteen.
@@ -716,8 +717,8 @@ _CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
 def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # Mutation: rename one check in `docs/cli.md`'s table -> reddens naming the row. In order
     # and not as a set, because the table's order is the report's order and the document says
-    # so.
-    from stayfixed.doctor.checks import CHECKS
+    # so: the core's checks, then each area's contribution in area-name order.
+    from stayfixed.doctor.checks import CHECKS, contributions
 
     section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
@@ -725,8 +726,9 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # The walk's floor before anything is compared, for the reason the Shared flags test gives:
     # a regex that matched nothing would make the comparison below vacuously true, and a
     # section that lost its table would look exactly like one that never had it.
-    assert len(rows) == len(CHECKS), rows
     expected = [name for name, _ in CHECKS]
+    expected += [name for contribution in contributions() for name, _ in contribution.checks]
+    assert len(rows) == len(expected), rows
     assert rows == expected, [
         (row, name) for row, name in zip(rows, expected, strict=True) if row != name
     ]

@@ -11,16 +11,16 @@ whole area — and with it the configuration layer — into every `discover()` c
 paragraph), and `stayfixed.assess.gates` records what the `docs` and `trail` gates read by path
 through `docs_reads` and `trail_reads`; nothing imports any other name on this list**, measured
 over `src/`, `scripts/` and `tests/`: this area's own tests reach `stayfixed.docs.plans`,
-`stayfixed.docs.hygiene`, `stayfixed.docs.graph` and `stayfixed.docs.trail` directly, and every
-other area runs the commands.
+`stayfixed.docs.hygiene` and `stayfixed.docs.trail` directly, and every other area runs the
+commands.
 So every other name below is here on an argument rather than on a caller, and the argument is
 written beside it — a surface that survives a trim with no explanation is what made the trim
 necessary.
 
-The three besides `trail_target`, the gate functions and what two of them read are checks this
-area *is*, one call each: `check_budgets`, `check_links` and `check_memory_graph` each answer one
-question about the documentation tree and return `Finding`s from `stayfixed.findings`, the leaf
-three areas share — a consumer imports the finding shape from there, not from here.
+The two besides `trail_target`, the gate functions and what two of them read are checks this
+area *is*, one call each: `check_budgets` and `check_links` each answer one question about the
+documentation tree and return `Finding`s from `stayfixed.findings`, the leaf three areas share —
+a consumer imports the finding shape from there, not from here.
 
 `lint` and the `Lint` it returns are **not** here: `plan check` and the `plan` gate are this
 area's own, and `plan_gate` is the one call a consumer runs.
@@ -34,7 +34,7 @@ them from there.
 other area reads them, and an area that needs one grows this list, in a commit that says which
 area and why.
 
-The three checks above have no importer; they stay on an argument about shape — one call per
+The two checks above have no importer; they stay on an argument about shape — one call per
 check rather than the machinery behind it — and on `tests/test_surfaces.py`'s floor, which
 refuses a surface exporting no function or record at all. Whether this area publishes at all
 is a structural decision and the owner's; `ledger/api.py` records the same finding about its
@@ -60,7 +60,6 @@ functions (`docs check` with no flag, `docs trail --check`) or with the one call
 wraps (`plan check` calls `lint`), so a command and its gate cannot drift apart.
 """
 
-from stayfixed.docs.graph import check_memory_graph
 from stayfixed.docs.hygiene import check_budgets, check_links, docs_gate, docs_reads
 from stayfixed.docs.plans import plan_gate
 from stayfixed.docs.trail import trail_gate, trail_reads, trail_target
@@ -68,7 +67,6 @@ from stayfixed.docs.trail import trail_gate, trail_reads, trail_target
 __all__ = [
     "check_budgets",
     "check_links",
-    "check_memory_graph",
     "docs_gate",
     "docs_reads",
     "plan_gate",

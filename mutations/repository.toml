@@ -825,6 +825,50 @@ reddens = [
   "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
+# The delivery rule holds the core to never importing `attach`, `memory` or `overlay`. The tree
+# walk shows it only for the imports the tree makes, so each half of the judgement is broken
+# against the synthetic modules that exercise it: the imported module stops counting as delivery,
+# and every importer starts counting as core.
+[[mutation]]
+name = "the delivery rule stops recognising a delivery module"
+file = "tests/test_areas.py"
+before = '            delivery = bits[0] == "stayfixed" and len(bits) > 1 and bits[1] in areas'
+after = "            delivery = False"
+reddens = [
+  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+]
+
+[[mutation]]
+name = "the delivery rule holds a delivery module to the core's rule"
+file = "tests/test_areas.py"
+before = "    core = parts[0] not in areas"
+after = "    core = True"
+reddens = [
+  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+]
+
+# A pardon is for one statement and the names it takes, so the rule records the names: without
+# them two statements naming one module, or one that takes one more name, read as the row pinned.
+[[mutation]]
+name = "the delivery rule forgets which names a statement takes"
+file = "tests/test_areas.py"
+before = "            taken = [(module, frozenset(alias.name for alias in node.names))]"
+after = "            taken = [(module, frozenset[str]())]"
+reddens = [
+  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+]
+
+# `from stayfixed import memory` names the area in an alias and the package as its module, so a
+# rule keyed on the module alone would read it as importing nothing from an area.
+[[mutation]]
+name = "the delivery rule reads `from stayfixed import memory` as importing nothing"
+file = "tests/test_areas.py"
+before = '            if module == "stayfixed":'
+after = "            if False:"
+reddens = [
+  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+]
+
 # The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
 # `mutations/`'s "the scratch checkout's src no longer precedes the editable install" and "the
 # dirty-tree sweep forgets the tests every entry names" — so a regression to in-place mutation, or a

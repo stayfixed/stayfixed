@@ -95,7 +95,7 @@ from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from stayfixed.attach.api import LEDGER
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.paths import STAYFIXED_DIRECTORY, contained
 from stayfixed.errors import Refusal
@@ -314,7 +314,7 @@ def uninstall(
 ) -> UninstallReport:
     if not (root / MANIFEST_PATH).is_file():
         raise Refusal(NOTHING)
-    if (root / LEDGER).is_file():
+    if (root / ATTACH_LEDGER).is_file():
         raise Refusal(ATTACHED)
     manifest = Manifest.read(root)
     document = read_document(root)

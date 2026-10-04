@@ -24,17 +24,12 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
     # re-exporting `permissions.check` reddens this test and this test alone.
     required = {
-        # the ledger, the binding and the overlay's granted entries, for doctor
-        "LEDGER",
+        # the ledger and the binding, which the suite reads from outside this area; the ledger's
+        # path and the `.gitignore` block are `config.layout`'s, since the core names them too
         "ledger",
-        "AttachLedger",  # what `ledger` returns; doctor cannot annotate it otherwise
+        "AttachLedger",  # what `ledger` returns; a consumer cannot annotate it otherwise
         "read_binding",
         "Binding",
-        "overlay_entries",
-        "LOCAL_SETTINGS",  # the file those entries live in
-        # the `.gitignore` region's name and body, for `init`, which records the same region as
-        # its own: one spelling
-        "IGNORE_REGION",
-        "IGNORE_BODY",
+        "LOCAL_SETTINGS",  # the file the overlay's granted hook entries live in
     }
     assert required == set(attach.__all__)

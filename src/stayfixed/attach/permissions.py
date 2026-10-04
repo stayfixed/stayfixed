@@ -26,14 +26,17 @@ subtract with them, and `check` reports only how many there were.
 from __future__ import annotations
 
 import json
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from stayfixed.attach.binding import (
     Binding,
+    cannot_exist,
     not_overlay,
     read_binding,
+    refuse_unless_share_can_exist,
     unlinked_groups,
 )
 from stayfixed.config.loader import load
@@ -88,6 +91,13 @@ def _object(text: str, label: str) -> dict[str, Any]:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise EntriesError(f"{label} is not valid JSON: {exc}") from exc
+    except RecursionError:
+        # Valid JSON nested past what the parser follows, in a file a clone may have committed.
+        raise EntriesError(f"{label} is nested deeper than this reader follows") from None
+    except ValueError:
+        # Valid JSON holding an integer literal longer than the interpreter converts, which
+        # `json.loads` meets with a plain `ValueError`, in a file a clone may have committed.
+        raise EntriesError(f"{label} holds a number longer than this reader converts") from None
     if not isinstance(raw, dict):
         raise EntriesError(f"{label} is not a JSON object")
     return raw
@@ -104,18 +114,66 @@ def settings_document(text: str) -> dict[str, Any]:
     return _object(text, LOCAL_SETTINGS)
 
 
-def _read(path: Path) -> str:
+def _read(path: Path, *, share: Path | None = None) -> str:
+    """A file's text, or an empty string when there is no such file.
+
+    `share` is for the overlay's sources under `projects/<name>/` and nothing else, and names that
+    directory: a path its spelling rules out (`binding.cannot_exist`) is a file the overlay does not
+    have when `project.name` picks out no directory there (`_names_no_directory`), because the one
+    free part of that spelling is the name and a repository chooses it. Every other fault is the
+    overlay failing to answer and stays a `Failure`, which `doctor` reports as a warning: no
+    permission, a directory where the file goes, and a path ruled out *below* a directory the name
+    does pick out -- the name holds no `/`, so a file where `claude/` goes is the owner's own
+    state, and read as absent it granted nothing: the owner's entries read red and `attach`
+    stripped them. So is any fault under `common/`, whose spelling the overlay alone chooses. The
+    project's own `.claude/` is never read this way: a `.claude` that is a file has to stop
+    `attach` before it writes, and read as an empty settings file it would stop only at the write
+    of that file.
+    """
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
     except OSError as exc:
+        if share is not None and cannot_exist(exc) and _names_no_directory(share):
+            return ""
         raise Failure(f"{path} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
 
 
-def _allow_rules(path: Path) -> tuple[str, ...]:
+def _names_no_directory(share: Path) -> bool:
+    """Whether `share`, the overlay's `projects/<name>`, is no directory, so nothing below it is
+    the owner's and a path through it that cannot exist is one the overlay has no file at.
+
+    Asked of the share itself because `cannot_exist` says only that *some* component of a path is
+    not a directory or is too long, never which. Only the share's own answer is about the name:
+    absent, a file that holds it, or a name the filesystem rules out. A `projects/` that is there
+    and is not a directory is the overlay's own state, and so is any component below a share that
+    is one. Whatever is absent counts, `projects/` or the share: nothing is below a directory that
+    is not there, so nothing there is the owner's. An overlay need not keep `projects/` at all, and
+    a long name under a long overlay root can put a file under an absent share past the longest
+    path while the share itself is not.
+    """
+    try:
+        if not stat.S_ISDIR(share.parent.stat().st_mode):
+            return False
+    except FileNotFoundError:
+        # No `projects/`: the overlay keeps no project here at all.
+        return True
+    except OSError:
+        return False
+    try:
+        mode = share.stat().st_mode
+    except FileNotFoundError:
+        # No share: the overlay has no directory for this project yet.
+        return True
+    except OSError as exc:
+        return cannot_exist(exc)
+    return not stat.S_ISDIR(mode)
+
+
+def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     """The `permissions.allow` list of one settings-shaped document, or nothing.
 
     A shape this cannot read is a refusal and never a filter, for the same reason
@@ -125,7 +183,7 @@ def _allow_rules(path: Path) -> tuple[str, ...]:
     file the real run then refused.
     """
     label = str(path)
-    permissions = _object(_read(path), label).get("permissions")
+    permissions = _object(document, label).get("permissions")
     if permissions is None:
         return ()
     if not isinstance(permissions, dict):
@@ -138,14 +196,14 @@ def _allow_rules(path: Path) -> tuple[str, ...]:
     return tuple(allow)
 
 
-def _hook_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
+def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, Any]]]:
     """`event -> groups` out of a `hooks.json`-shaped document, refusing a shape it cannot read.
 
     A shape this cannot read is a refusal and never a filter, for `scaffold.entries`' own
     reason: what is dropped silently here is an entry the owner put in their overlay on
-    purpose, and nothing would say it never arrived.
+    purpose, and nothing would say it never arrived. `share` is `_read`'s.
     """
-    hooks = _object(_read(path), str(path)).get("hooks", {})
+    hooks = _object(_read(path, share=share), str(path)).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{path}: 'hooks' is not an object")
     found: dict[str, list[dict[str, Any]]] = {}
@@ -187,11 +245,15 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     return tuple(found.items())
 
 
-def _claude_sources(binding: Binding, name: str) -> tuple[Path, Path]:
-    """The two per-harness files this diff reads, common first, this project's second."""
+def _claude_sources(
+    binding: Binding, name: str
+) -> tuple[tuple[Path, Path | None], tuple[Path, Path | None]]:
+    """The two per-harness files this diff reads, common first, this project's second, each with
+    the directory `project.name` picks for it, when it has one (`_read`'s `share`)."""
+    share = binding.overlay / PROJECTS / binding.project
     return (
-        binding.overlay / COMMON_CLAUDE / name,
-        binding.overlay / PROJECTS / binding.project / PROJECT_CLAUDE / name,
+        (binding.overlay / COMMON_CLAUDE / name, None),
+        (share / PROJECT_CLAUDE / name, share),
     )
 
 
@@ -205,8 +267,8 @@ def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
     """
     wanted: dict[str, list[dict[str, Any]]] = {}
     seen: dict[str, int] = {}
-    for source in _claude_sources(binding, HOOKS_FILE):
-        for event, groups in _hook_groups(source).items():
+    for source, share in _claude_sources(binding, HOOKS_FILE):
+        for event, groups in _hook_groups(source, share=share).items():
             for group in groups:
                 entries = group.get("hooks") or []
                 if not isinstance(entries, list):
@@ -247,13 +309,16 @@ def _commands(document: str, label: str) -> set[str]:
 
 def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     """What attaching `binding` would add to `root`, without writing a byte."""
-    overlay_common, overlay_project = _claude_sources(binding, PERMISSIONS_FILE)
     # This line is the whole of the committed-settings rule in the module docstring:
     # `.claude/settings.json` sits one name away from both sources and is not on it.
-    sources = (overlay_common, overlay_project)
-    granted = [rule for source in sources for rule in _allow_rules(source)]
+    sources = _claude_sources(binding, PERMISSIONS_FILE)
+    granted = [
+        rule
+        for source, share in sources
+        for rule in _allow_rules(_read(source, share=share), source)
+    ]
     document = local_document(root)
-    held = set(_allow_rules(root / LOCAL_SETTINGS))
+    held = set(_allow_rules(document, root / LOCAL_SETTINGS))
     present = _commands(document, LOCAL_SETTINGS)
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))
@@ -301,6 +366,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
+    refuse_unless_share_can_exist(binding)
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the

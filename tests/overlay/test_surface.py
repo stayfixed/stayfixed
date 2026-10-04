@@ -4,9 +4,9 @@ CONTRIBUTING states it once for all of them: "`api.py` is the area's import surf
 areas import from it and from nothing else, and its `__all__` must equal exactly what it
 imports — a test parses the file and checks."
 
-This area shipped with the install path and without the test, and it is the new surface with
-the most consumers — `attach`, `doctor` and `setup` all import from it — so it is the one whose
-contract went unasserted longest.
+This area shipped with the install path and without the test, and it was the new surface with
+the most consumers — `attach`, `doctor` and `setup` all imported from it, and `attach` and `setup`
+still do — so it is the one whose contract went unasserted longest.
 """
 
 from __future__ import annotations
@@ -43,15 +43,10 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
         # outside `src/`, which a walk of `src/` alone does not see
         "OVERLAY_FILES",
-        # the floor an overlay declares and whether a running stayfixed meets it, for `doctor`'s
-        # `overlay-requires` row
+        # the floor an overlay declares and whether a running stayfixed meets it, for the
+        # `attach` area's session-start handler
         "requires_of",
         "satisfies",
-        # the same reader over two versions, for `upgrade`'s never-backward refusal and
-        # `doctor`'s `versions` remedy, so the two agree on direction
-        "later",
-        # that reader's whole `X.Y.Z` grammar, for `upgrade`'s printing of a recorded version
-        "RELEASE",
         # the overlay repository's own sync state, for the `attach` area's session-start
         # handler
         "Sync",

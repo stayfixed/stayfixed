@@ -1,5 +1,5 @@
-"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the one
-grammar for a wiki-link.
+"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the link
+graph's advice beside them, over one walk of the store.
 
 Notes are read as authoritative and they age silently: nothing in the tree points back at
 them, so a module they name can be deleted without anything going red, and the next session
@@ -18,23 +18,21 @@ record.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
+from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
 from stayfixed.memory.notes import Note, Walk, walk
-from stayfixed.memory.store import Store, overlay_root, permitted_roots
+from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
 from stayfixed.prose import blank_fences, path_references
 
-# `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
-# grammar; the docs area's graph check imports it from `memory/api.py` rather than respelling it.
-WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")
 # Deliberate placeholders a note may write without claiming a file. Not a config key.
 _PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
 DEAD_REFERENCE = "dead-reference"
@@ -46,6 +44,7 @@ class RefsReport:
     findings: list[Finding]
     unavailable: dict[str, str]  # group -> the resolver's reason (`Store.unavailable`)
     unreadable: list[tuple[Path, str]]  # `Walk.unreadable`: notes that exist and would not parse
+    notices: list[Finding]  # the link graph's advice (`memory.graph`), which never gates
 
 
 def source_roots(root: Path, config: Config) -> tuple[str, ...]:
@@ -76,9 +75,11 @@ def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
 
 
 def _inside_store(root: Path, store: Store, target: str) -> bool:
+    # `RuntimeError` too: Python 3.11 and 3.12 raise it resolving a path through a symlink loop,
+    # where 3.13 answers one, and both the note's path and the loop are bytes a clone can commit.
     try:
         return (root / target).resolve().is_relative_to(store.path.resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         return False
 
 
@@ -165,9 +166,12 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
 
 
 def check_refs(root: Path, config: Config, store: Store) -> RefsReport:
+    # One walk for every report below: the link graph reads the notes this walk found, rather
+    # than walking the store again for the same groups.
     walked = walk(store.path, [g for g in config.memory.groups if g in store.groups])
     return RefsReport(
         unresolved(root, config, store, walked) + audience_violations(store, config, walked),
         dict(store.unavailable),
         list(walked.unreadable),
+        check_memory_graph(store, config, walked),
     )

@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -75,7 +76,6 @@ from stayfixed.memory.store import (
     in_repository,
     main_checkout,
     overlay_group_target,
-    overlay_root,
     permitted_roots,
     resolve,
 )

@@ -12,7 +12,8 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
-from stayfixed.memory.api import resolve, walk
+from stayfixed.memory.api import DELIMITER, resolve
+from stayfixed.memory.notes import walk
 from stayfixed.memory.refs import (
     _ignored,
     audience_violations,
@@ -146,6 +147,32 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
     ]
 
 
+def test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A note's backticked path and a symlink loop are both bytes a clone can commit. Asking
+    # whether the path lies inside the store resolves it, and Python 3.11 and 3.12 raise
+    # `RuntimeError` resolving a path through a loop where 3.13 answers one, so on the two older
+    # interpreters `memory refs` ended in an internal error. The loop is real; the older
+    # interpreters' answer to it is stood in for, so the case holds on every interpreter. A path
+    # that does not resolve is not inside the store, and names no file: a finding.
+    #
+    # Mutation (oracle): `mutations/`'s "refs lets a path it cannot resolve raise" -> the
+    # `RuntimeError` escapes.
+    root, config = project(tmp_path)
+    (root / "loop").symlink_to("loop")
+    note(root, "developer", "a", "see `loop/x.py`\n")
+    resolve = Path.resolve
+
+    def resolve_as_older_pythons_do(self: Path, strict: bool = False) -> Path:
+        if "loop" in self.parts:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+        return resolve(self, strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
+    assert findings(root, config) == [("developer/a.md", 8, "loop/x.py", "dead-reference")]
+
+
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
     import shutil
 
@@ -241,6 +268,28 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
     data = json.loads(capsys.readouterr().out)
     assert data["summary"] == "1 stale reference(s): developer/a.md:8 [dead-reference]"
     assert data["findings"][0]["detail"] == "src/gone.py"
+
+
+def test_a_missing_store_directory_is_said_in_the_resolvers_own_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A store with no directory is the commonest reason there is nothing to walk, and it had no
+    # sentence of its own: the line fell back to a pointer that named no reason at all. The
+    # reason is stayfixed's text and prints; the store's path is the repository's and stays inside
+    # the data region. Mutations (declared): `mutations/`'s "a missing store directory is reported
+    # with no reason of its own", and "a store refusal prints its repository-authored detail
+    # before the data region", which reddens the split below.
+    root, _config = project(tmp_path)
+    (root / "stayfixed.toml").write_text(
+        CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    lead, opened, region = capsys.readouterr().err.partition(DELIMITER)
+    assert "the memory store's directory does not exist" in lead
+    # The path is kept, because a person needs it, and it is never printed ahead of the marker
+    # that says it is data.
+    assert opened and ".stayfixed" in region
+    assert ".stayfixed" not in lead
 
 
 def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(

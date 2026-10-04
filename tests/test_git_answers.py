@@ -15,18 +15,19 @@ runs where the disk cannot hold such a name (APFS refuses one).
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from stayfixed.attach.write import _worktrees, attach
 from stayfixed.errors import Refusal
+from stayfixed.gitenv import GitUnavailable, origin_remote
 from stayfixed.guards.commit import commits_in
 from stayfixed.guards.githooks import hooks_dir
 from stayfixed.guards.hygiene import dirty_count
 from stayfixed.hooks.dispatch import _git_toplevel
 from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
-from stayfixed.memory.store import origin_remote
 from stayfixed.overlay.sync import overlay_sync
 from stayfixed.project.detect import NOT_DERIVABLE, detect
 from stayfixed.setup.run import _repository
@@ -93,6 +94,28 @@ def test_an_origin_url_that_is_not_utf_8_is_answered_as_itself(tmp_path: Path) -
     with pytest.raises(Refusal) as refused:
         detect(root)
     assert "caf" not in str(refused.value)
+
+
+@needs_git
+def test_a_git_that_fails_everything_is_not_a_repository_without_an_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both answers off one checkout with no `origin`: git that runs says "no such remote" with a
+    # non-zero exit, which is `None`, and a git that exits non-zero for everything — the Xcode
+    # shim with an unaccepted licence — must not read the same way, or the user is sent to
+    # `stayfixed attach` about their own `git`. Mutation (declared): `mutations/`'s "a broken git
+    # reads as a repository with no origin remote".
+    root = tmp_path / "project"
+    root.mkdir()
+    git(root, "init", "-q")
+    assert origin_remote(root) is None
+
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
+    with pytest.raises(GitUnavailable):
+        origin_remote(root)
 
 
 @needs_git

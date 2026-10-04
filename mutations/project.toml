@@ -865,7 +865,7 @@ reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if (root / LEDGER).is_file():"
+before = "    if (root / ATTACH_LEDGER).is_file():"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
 

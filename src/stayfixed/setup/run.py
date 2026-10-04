@@ -113,13 +113,6 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
-from stayfixed.overlay.api import (
-    create,
-    init_instance,
-    overlay_fault,
-    require_overlay,
-    target_root,
-)
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
@@ -791,12 +784,18 @@ def _requested_overlay(
     command, run from wherever the owner happened to be sitting, and a created overlay must not
     depend on that. Measured while that was written: `root=Path.cwd()` created a real
     `stayfixed-private/` inside this very checkout the first time a test exercised the branch.
+
+    The overlay area is imported here and in `_apply_overlay`, never at module level: this module
+    is behind `setup.api`, which `doctor` imports, and the core loads the private layer only when
+    `--overlay` asks for it (CONTRIBUTING.md, "Areas").
     """
     if overlay is None:
         # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
         # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None
+    from stayfixed.overlay.api import require_overlay, target_root
+
     if overlay.startswith("create:"):
         if not yes:
             raise Refusal(
@@ -840,6 +839,8 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     private repository on GitHub that this run made, and the report is discarded on a refusal,
     so nothing else would ever tell them.
     """
+    from stayfixed.overlay.api import create, init_instance, overlay_fault, require_overlay
+
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
         _outside_the_project(planned.root, project_root=project_root)

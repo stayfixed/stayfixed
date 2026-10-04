@@ -21,7 +21,7 @@ from stayfixed.assess.assessment import (
     write,
 )
 from stayfixed.assess.gates import BUILTIN, GateResult
-from stayfixed.attach.api import IGNORE_BODY
+from stayfixed.config.layout import IGNORE_BODY
 from stayfixed.findings import LISTED_LIMIT, Finding
 from stayfixed.project.api import ASSESSMENT
 from tests.assess.smoke import BASE, smoke_repo
@@ -66,7 +66,7 @@ def test_the_inventory_records_its_base_and_lands_where_git_ignores_it(tmp_path:
 
 
 def test_the_ignore_region_keeps_the_inventory_out_of_git() -> None:
-    # Mutation: drop the inventory's entry from `attach.write.IGNORED` -> reddens.
+    # Mutation: drop the inventory's entry from `config.layout.LOCAL_STATE_PATHS` -> reddens.
     assert ASSESSMENT in IGNORE_BODY.splitlines()
 
 

@@ -331,7 +331,7 @@ stayfixed memory trust --in-repo-memory                # approve the notes insid
 stayfixed memory inventory                             # what a memory sweep reads
 stayfixed memory fit                                   # whether each injection bundle fits its hook slots
 stayfixed memory session-context --bundle standing-rules --part 1
-stayfixed memory refs                                  # backticked paths in notes that no longer resolve
+stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
 
 # The bug ledger
 stayfixed bugs new "A title" --severity high --area cli   # file an entry at the next free identifier
@@ -343,7 +343,6 @@ stayfixed bugs renumber BR-001 BR-002                  # move an entry; rewrite 
 
 # Documentation and plans
 stayfixed docs check                                   # budgets and link targets
-stayfixed docs check --memory-graph                    # also the store's link graph, as advice
 stayfixed docs trail                                   # regenerate the design-and-plan trail
 stayfixed docs trail --check
 stayfixed plan check                                   # lint the plans a change touches
@@ -397,7 +396,7 @@ stayfixed hook SessionStart                            # dispatch one harness ho
 
 Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
 `--root` (default: the current directory) and `--machine` (read a machine configuration file
-other than the default); `memory` commands and `docs check` take `--store` as well.
+other than the default); `memory` commands take `--store` as well.
 `stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
 or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
 anywhere and prints one machine-readable object instead of one line.

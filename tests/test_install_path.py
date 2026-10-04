@@ -39,8 +39,9 @@ import pytest
 
 import stayfixed
 from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.doctor.api import OK, RED, SKIP, run_checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, run_checks
 from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
@@ -643,12 +644,17 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 
 
 # What `stayfixed.doctor` says it launches, in `__init__`'s own paragraph and again in
-# `docs/cli.md`: four subprocesses on a green attached installation *besides* the `ci-ref` row,
-# which the stub runner below answers in process rather than launching — so four here and five
+# `docs/cli.md`: five subprocesses on a green attached installation *besides* the `ci-ref` row,
+# which the stub runner below answers in process rather than launching — so five here and six
 # in production on a repository that records a `[ci] ref`, which is what both documents now say.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
-DOCTOR_LAUNCHES = 4
+#
+# Five and not four since the binding's and the note store's rows moved into their own areas:
+# each area resolves the note store for its own rows, once per report, and in overlay mode a
+# resolution asks `git` for the checkout's `origin`. So `attached` and the store's two rows ask
+# it once each, where one shared context used to ask it once for all three.
+DOCTOR_LAUNCHES = 5
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -670,7 +676,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # **The one test here that keeps the library seam**, and the reason is the measurement
     # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
-    # run as a subprocess launches its four in a process no patch of ours can see. Everything
+    # run as a subprocess launches its five in a process no patch of ours can see. Everything
     # else in this module runs the launcher; this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
@@ -696,11 +702,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # The report is green first, so a count taken from a run that fell over early cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the four the paragraph names, not four of something else: one wrapper probe,
-    # and three `git` questions. Asserted by shape rather than by full argv, because two of the
-    # three carry a temporary path.
+    # And they are the five the paragraph names, not five of something else: one wrapper probe,
+    # and four `git` questions. Asserted by shape rather than by full argv, because each of the
+    # four `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 3
+    assert sum(1 for argv in launched if argv[0] == "git") == 4
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
@@ -713,6 +719,79 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     attached = next(row for row in _doctor(walk) if row["name"] == "attached")
     assert attached["status"] == RED
     assert "real directory" in attached["detail"]
+
+
+def test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says(
+    tmp_path: Path,
+) -> None:
+    # The owner `hook-entries` must not refuse once an unreadable ledger beside an entry nothing
+    # grants is red: attached, with one entry the overlay grants, and the ledger corrupted. The row
+    # warns, the report exits 0, and the remedy it prints, followed literally, ends green with the
+    # entry accounted for — so the warning is one with a way out, not a dead end. Mutations
+    # (oracle): `mutations/`'s "attach does not ask the overlay about a ledger it cannot read" ->
+    # the row is red; "an unreadable ledger is never told how to rebuild it" -> the remedy is not
+    # the one that ends green.
+    walk = _install_path(tmp_path)
+    (walk.overlay / "common" / "claude" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def attach() -> None:
+        done = _cli(
+            walk,
+            "attach",
+            "--store",
+            str(walk.store),
+            "--yes",
+            "--machine",
+            str(walk.machine),
+            tty=True,
+        )
+        assert done.returncode == 0, done.stderr
+
+    def entries() -> tuple[dict[str, str], list[str]]:
+        rows = _doctor(walk)
+        red = [row["name"] for row in rows if row["status"] == RED]
+        return next(row for row in rows if row["name"] == "hook-entries"), red
+
+    attach()
+    assert entries() == (
+        {
+            "name": "hook-entries",
+            "status": OK,
+            "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+            "remedy": "",
+        },
+        [],
+    )
+    ledger = walk.root / ATTACH_LEDGER
+    ledger.write_text("this is not json", encoding="utf-8")
+    row, red = entries()
+    assert (row["status"], red) == (WARN, [])
+    assert row["remedy"] == (
+        f"remove {ATTACH_LEDGER} and run `stayfixed attach --store "
+        f"<overlay>/projects/<project>/memory` to write a new one"
+    )
+    ledger.unlink()
+    attach()
+    assert entries() == (
+        {
+            "name": "hook-entries",
+            "status": OK,
+            "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+            "remedy": "",
+        },
+        [],
+    )
 
 
 def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:

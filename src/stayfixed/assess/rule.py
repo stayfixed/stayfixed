@@ -57,7 +57,7 @@ from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
-from stayfixed.overlay.api import later
+from stayfixed.semver import later
 
 # Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
 BASE_UNREADABLE = (

@@ -63,8 +63,8 @@ BRANCH_PATTERN = ecma(BRANCH_NAME)
 def _overlay_recorded(machine: Path | None) -> bool:
     """Whether the machine file records an overlay; one that cannot be read or parsed reads as
     not recorded, because it only changes a title and `init` reports it when it loads it."""
+    from stayfixed.config.overlay import overlay_root
     from stayfixed.errors import Failure
-    from stayfixed.memory.api import overlay_root
 
     try:
         return overlay_root(machine) is not None

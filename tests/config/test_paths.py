@@ -354,7 +354,7 @@ def test_every_file_stayfixed_keeps_in_its_own_directory_is_under_the_reserved_n
     # `config` spells `.stayfixed` because it imports no area; the areas that keep files there
     # spell their own paths. This holds each of them under the reserved name, so a rename on
     # either side reddens here instead of leaving an area's state unprotected.
-    from stayfixed.attach.api import LEDGER
+    from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
     from stayfixed.memory.store import LOCAL_STORE
     from stayfixed.project.uninstall import ASSESSMENT, LEDGER_DIRS
     from stayfixed.scaffold import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, MANIFEST_PATH

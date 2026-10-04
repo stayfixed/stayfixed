@@ -104,8 +104,8 @@ it finishes is outside the rule: nothing but that command ever wrote into it.
 
 ## Areas
 
-An area is a subpackage of `src/stayfixed/` that the CLI frame and the hook registry discover by
-name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
+An area is a subpackage of `src/stayfixed/` that the CLI frame, the hook registry and `doctor`'s
+report discover by name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
 `scripts/mutation_oracle.py`, and it is a deliberate exception kept for a reason outside the code
 ("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there
 until its entries outgrow the group they fall into.
@@ -121,17 +121,60 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 (`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
 outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
-areas, and `harnesses` is a module — area discovery does not find them, because they carry
-neither a `commands.py` nor a `hooks.py`. `profiles` has a discovery convention of its own,
+areas, and `harnesses` is a module — area discovery does not find them, because they carry none
+of `commands.py`, `hooks.py` and `doctor.py`. `profiles` has a discovery convention of its own,
 inside the package: `stayfixed.profiles.hints.hint_modules` lists each profile directory that
-ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an
-installed stayfixed reads about its own releases: the tags it pins and the record of the files
+ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an installed
+stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
+
+Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
+— the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
+`src/stayfixed/areas.py`. Every other module under `src/stayfixed/`, `cli.py` and the subpackages
+that are not areas included, is the **core**, and the rule runs one way: delivery may import the
+core, and the core may not import delivery, through an `api.py` or not, at module level or inside
+a function, so the private layer can be reworked without touching the core. The core may name
+delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
+are the core's — and may not import delivery's code or call its behaviour except through discovery,
+which is how any area plugs into the core: the CLI frame, the hook registry and `doctor`'s report
+import an area's `commands.py`, `hooks.py` and `doctor.py` by name and call the `register()` each
+publishes, without knowing which area it is, and the bullets below are that contract. One crossing still
+exists, and it is pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to
+stay rather than be cut: `stayfixed setup --overlay` creates or records the overlay as the last
+step of machine setup, so `setup/run.py` imports the overlay area's `api.py`, inside the two
+functions that use it, and those rows stay until the step leaves `setup`. A row is one import
+statement and the names it takes, held as a multiset in both directions, so
+`test_core_never_imports_delivery` refuses a new crossing, a second statement beside a pinned one,
+a pinned statement that takes one more name and a pinned row whose import has gone alike. The rule
+reads source, as discovery does, so a module named to `importlib.import_module` is invisible to
+it; `scripts/` is repository tooling and stays under the `api.py` rule alone. What source cannot
+show is when a pardoned statement runs, so `test_in_isolation_no_core_module_loads_a_delivery_area`
+imports every core module in a clean interpreter and refuses any delivery module among what it
+loaded: the core loads the private layer only when a command asks for it.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
   interpreter imports neither the configuration layer nor the presets.
+- `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report:
+  its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
+  the report's `Context` and through the same guard, so a check that raises costs its own row and
+  not the report. `register()` is guarded too: one that raises, or returns anything but a
+  `Contribution` of `(name, check)` pairs, puts one red row named after the area where its rows
+  would have been, and the rest of the report stands. The area's claims (below) go with its rows,
+  so `hook-entries` reads every entry that area put into settings files as one nothing records,
+  and goes red too when there is one. A check's name is unique in the report: discovery refuses a
+  name equal to a core check's or to one another area contributes. A `Contribution` may also carry
+  `claims`, which answers `Claims`: the marker ids the area recorded in settings files and the
+  commands it still grants there, which the core's `hook-entries` row asks with the same `Context`,
+  so an entry the area put there is told apart from a repository claiming it did. The record may be
+  repository bytes and the grants may not, and an entry is absolved only by an area that both
+  records its id and grants its command, never by one area's record and another's grant.
+  `register()` is called once per report, so anything it creates for its checks — each delivery
+  area creates a value that resolves the overlay root and the note store at most once — is fresh
+  for every report.
+  `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
+  every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
@@ -152,7 +195,7 @@ a release ships.)
   and its `__all__` lists what it defines. No other area may read this as licence: a consumer
   still imports `stayfixed.hooks.api` and never `stayfixed.hooks.dispatch` or `.sink`.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
-  namespace package, so one without it is invisible to both discovery paths.
+  namespace package, so one without it is invisible to all three discovery paths.
 
 The core is language-neutral. A profile under `src/stayfixed/profiles/<name>/` is a directory of
 data — `profile.toml` and `rules.md` — and, optionally, a `hygiene.py` whose `HINT` is that

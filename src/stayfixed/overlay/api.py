@@ -36,17 +36,14 @@ published against a sentence predicting that the `release` package would need it
 which nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what
 this docstring asks of every other area.
 
-`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
-`overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar
-and two readers, and the overlay's sync state is the overlay's question, asked where the overlay
-is owned.
+`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for the `attach` area's
+session-start handler. The floor is one grammar and two readers, and the other is this area's own
+`overlay-requires` row in `stayfixed doctor` (`overlay/doctor.py`); the overlay's sync state is the
+overlay's question, asked where the overlay is owned.
 
-`later` is the same reader asked of two versions, for the `project` area's `upgrade`, which refuses
-to move a project backward, `doctor`'s `versions` row, which points by direction, and the rule
-`stayfixed gate` judges an upgrade by, which admits a version only where `upgrade` would move to it:
-one comparison, so the three cannot disagree about which way a recorded version lies. `RELEASE` is
-that reader's `X.Y.Z` grammar whole, for `upgrade`, which prints a recorded version back only when
-it is one: a second spelling of the grammar would bound its components differently.
+`later` and `RELEASE`, the order of two versions and the `X.Y.Z` grammar whole, are the core's
+`stayfixed.semver`, which the floor's reader builds on; `upgrade`, `doctor` and `stayfixed gate`
+import them from there.
 """
 
 from stayfixed.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -60,7 +57,7 @@ from stayfixed.overlay.layout import (
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
-from stayfixed.overlay.requires import RELEASE, later, requires_of, satisfies
+from stayfixed.overlay.requires import requires_of, satisfies
 from stayfixed.overlay.sync import Sync, overlay_sync
 
 __all__ = [
@@ -71,13 +68,11 @@ __all__ = [
     "MARKETPLACE_MANIFEST",
     "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
-    "RELEASE",
     "Created",
     "Initialised",
     "Sync",
     "create",
     "init_instance",
-    "later",
     "overlay_fault",
     "overlay_sync",
     "require_overlay",

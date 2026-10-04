@@ -26,6 +26,7 @@ import pytest
 
 from stayfixed.attach import binding, permissions, write
 from stayfixed.attach.binding import Binding
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import (
     CONFIG_FILE,
     ConfigError,
@@ -33,6 +34,7 @@ from stayfixed.config.loader import (
     load,
     read_document,
 )
+from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory import bundles, index, store, trust
 from stayfixed.overlay import create, identity
@@ -85,8 +87,8 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the machine file, for its overlay root",
-        lambda t: lambda: store.overlay_root(_plant(t / "machine.toml")),
-        Failure,
+        lambda t: lambda: overlay_root(_plant(t / "machine.toml")),
+        MachineConfigError,
     ),
     (
         "the machine file, under setup",
@@ -113,7 +115,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the attach ledger",
-        lambda t: (_plant(t / write.LEDGER), lambda: write.ledger(t))[1],
+        lambda t: (_plant(t / ATTACH_LEDGER), lambda: write.ledger(t))[1],
         Failure,
     ),
     (
@@ -292,21 +294,28 @@ def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_pat
         read_document(tmp_path)
 
 
-@pytest.mark.parametrize("which", ["machine", CONFIG_FILE])
+@pytest.mark.parametrize("which", ["machine", "overlay-root", CONFIG_FILE])
 def test_a_file_without_read_permission_cannot_be_read_and_says_so(
     tmp_path: Path, which: str
 ) -> None:
+    # `overlay-root` is the machine file again, through the one reader of its `[overlay] root`
+    # key. Its `PermissionError` escaped as itself, past the `Failure` every caller of the overlay
+    # root catches — the memory hooks among them. Mutation (oracle): `mutations/`'s "the overlay
+    # root's reader lets a machine file it cannot read raise past its callers".
     if os.geteuid() == 0:
         pytest.skip("root reads everything")
     (tmp_path / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("[personal]\n", encoding="utf-8")
-    locked = machine if which == "machine" else tmp_path / CONFIG_FILE
+    locked = tmp_path / CONFIG_FILE if which == CONFIG_FILE else machine
     locked.chmod(0)
     try:
         if which == "machine":
             with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
                 load(tmp_path, machine=machine)
+        elif which == "overlay-root":
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+                overlay_root(machine)
         else:
             with pytest.raises(Failure, match=r"cannot be read \(PermissionError\)"):
                 _existing(tmp_path)

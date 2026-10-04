@@ -169,10 +169,10 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/memory/store.py"
-before = '        return GitAnswer(None, ran=_git_is_usable(root))'
+before = '        return GitAnswer(None, ran=git_is_usable(root))'
 after = '        return GitAnswer(None)'
 reddens = [
-  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
 # A note whose body did not change is written back byte for byte, never renormalised.
@@ -380,6 +380,16 @@ before = "    except BaseUnresolvable as exc:"
 after = "    except ():"
 reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok"]
 
+# `docs check` reads no note store since the link graph moved to `memory refs`, so a `--store` it
+# accepted would be read by nothing: a person who passed it would get the answer they got without
+# it and no word that the option had done nothing.
+[[mutation]]
+name = "docs check accepts a store it never reads"
+file = "src/stayfixed/docs/commands.py"
+before = '    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"))'
+after = '    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"), store=True)'
+reddens = ["tests/docs/test_commands.py::test_docs_check_takes_no_store"]
+
 # `\s*` crosses newlines under MULTILINE, so an empty marker would be satisfied by any later text.
 [[mutation]]
 name = "an empty Premise marker is satisfied by text anywhere later in the plan"
@@ -415,15 +425,15 @@ before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _insi
 after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
 reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]
 
-# Advice must never gate. `--memory-graph` is opt-in precisely because the store is shared by
+# Advice must never gate. The link graph is reported as notices because the store is shared by
 # every session on the machine, so a sibling's half-finished sweep is not this tree's fault to
 # fail on — and an exit code is the one part of that promise a caller acts on silently.
 [[mutation]]
-name = "an advisory memory-graph finding gates the exit code"
-file = "src/stayfixed/docs/commands.py"
-before = '    return Result(verdict, data)'
-after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
-reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]
+name = "an advisory memory-graph notice gates the exit code"
+file = "src/stayfixed/memory/commands.py"
+before = "    if report.findings:"
+after = "    if report.findings or report.notices:"
+reddens = ["tests/memory/test_graph.py::test_refs_reports_graph_notices_without_changing_its_exit"]
 
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
@@ -894,15 +904,6 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
-]
-
-[[mutation]]
-name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/memory/store.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[store-overlay-root]",
 ]
 
 [[mutation]]
@@ -1557,16 +1558,28 @@ reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
 ]
 
-# `docs check --memory-graph` names why it checked nothing from the resolver's own sentence, and a
-# missing store directory -- the commonest cause -- had none, so the notice fell back to a pointer
-# that named no reason at all.
+# A command with no store to walk says why in the resolver's own sentence, and a missing store
+# directory -- the commonest cause -- had none, so the line fell back to a pointer that named no
+# reason at all.
 [[mutation]]
 name = "a missing store directory is reported with no reason of its own"
 file = "src/stayfixed/memory/store.py"
 before = "        return None, Unresolved(said, str(base))"
 after = '        return None, Unresolved("", str(base))'
 reddens = [
-  "tests/docs/test_commands.py::test_docs_check_says_why_the_graph_had_no_store_to_check[no-directory]",
+  "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
+]
+
+# The resolver's detail carries the store's path, `paths.memory` or a group's name, all of them the
+# repository's, so a refusal prints stayfixed's sentence first and the detail only inside the
+# region `trust.wrap` marks as data. Joined into the lead, the detail prints ahead of the marker.
+[[mutation]]
+name = "a store refusal prints its repository-authored detail before the data region"
+file = "src/stayfixed/memory/commands.py"
+before = "    lead = _SAID.format(said=reason.said)"
+after = "    lead = _SAID.format(said=str(reason))"
+reddens = [
+  "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
 ]
 
 # A machine record naming an overlay root that is no longer there read as "no record of this
@@ -1645,4 +1658,40 @@ after = '        "--recurse-submodules=on-demand",'
 reddens = [
   "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[reachable]",
   "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[gone]",
+]
+
+# The overlay root and the note store a delivery row reads are resolved by one helper, and a
+# resolution that refuses is the row's skip. A `Refusal` that escaped it would reach the report's
+# guard and turn both store rows red, "this check could not run", for a `stayfixed.toml` the
+# repository is entitled to write.
+[[mutation]]
+name = "the delivery rows let a refusing store escape"
+file = "src/stayfixed/memory/answers.py"
+before = "    except (Failure, Refusal, OSError):"
+after = "    except (Failure, OSError):"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
+]
+
+# An area's `doctor.py` is imported by discovery and imports nothing of stayfixed at module level,
+# as CONTRIBUTING's "Areas" says. The mutation adds one module-level import to one of them.
+[[mutation]]
+name = "an area's doctor.py imports stayfixed at module level"
+file = "src/stayfixed/memory/doctor.py"
+before = "from typing import TYPE_CHECKING\n"
+after = "from typing import TYPE_CHECKING\n\nfrom stayfixed.errors import Failure\n"
+reddens = [
+  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
+# A note's backticked path is resolved to ask whether it lies inside the store, and Python 3.11 and
+# 3.12 raise `RuntimeError` resolving a path through a symlink loop; the note and the loop are both
+# bytes a clone can commit, so the answer is a finding and never an internal error.
+[[mutation]]
+name = "refs lets a path it cannot resolve raise"
+file = "src/stayfixed/memory/refs.py"
+before = "    except (OSError, RuntimeError):\n        return False"
+after = "    except OSError:\n        return False"
+reddens = [
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error",
 ]

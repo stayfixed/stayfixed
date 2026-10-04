@@ -18,6 +18,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
+from stayfixed.attach.permissions import check, settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
     HARNESS_WAITS,
@@ -25,14 +26,15 @@ from stayfixed.attach.write import (
     Attached,
     attach,
 )
+from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
-from stayfixed.scaffold import Style, drop, extract, owned_ids
+from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
+from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 from tests.runners import Recorder
@@ -882,6 +884,120 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
     (root / LEDGER).write_text("{", encoding="utf-8")
     with pytest.raises(Failure):
         ledger(root)
+
+
+# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
+# Python, which no reader caught, and both files below are ones a clone can commit.
+NESTED = "[" * 200_000 + "]" * 200_000
+
+
+def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # The ledger is the unreadable ledger it is, and the attach that reads it back answers so
+    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the attach
+    # ledger's reader lets a nested ledger raise" -> both raise `RecursionError`.
+    root, store, machine = _attachable(tmp_path)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
+    with pytest.raises(Failure, match="nested deeper"):
+        ledger(root)
+    with pytest.raises(Failure, match="nested deeper"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
+def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
+    # The settings file `attach` merges into, read first by `permissions.settings_document`.
+    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a nested document raise"
+    # -> both raise `RecursionError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"hooks": ' + NESTED + "}", encoding="utf-8")
+    with pytest.raises(EntriesError, match="nested deeper"):
+        settings_document((root / SETTINGS).read_text(encoding="utf-8"))
+    with pytest.raises(Refusal, match="nested deeper"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
+# An integer literal longer than the interpreter converts, 4,300 digits by default on every
+# supported Python: `json.loads` raises a plain `ValueError` for it, which is neither the
+# `JSONDecodeError` nor the `RecursionError` a reader catches, and both files below are ones a
+# clone can commit.
+LONG_NUMBER = "1" * 5_000
+
+
+def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the parser's
+    # reach raise" -> both raise `ValueError`.
+    root, store, machine = _attachable(tmp_path)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=Recorder(),
+        home=tmp_path / "home",
+    )
+    (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
+    with pytest.raises(Failure, match="number longer"):
+        ledger(root)
+    with pytest.raises(Failure, match="number longer"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+
+
+def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
+    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a number past the parser's
+    # reach raise" -> both raise `ValueError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"hooks": {}, "n": ' + LONG_NUMBER + "}", encoding="utf-8")
+    with pytest.raises(EntriesError, match="number longer"):
+        settings_document((root / SETTINGS).read_text(encoding="utf-8"))
+    with pytest.raises(Refusal, match="number longer"):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
 
 
 def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path) -> None:
@@ -1995,3 +2111,136 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     said = " ".join(attached.notes)
     assert "forged" in said
     assert "\n::error::" not in said and "\x1b" not in said
+
+
+# Names a clone can commit that no directory under the overlay's `projects/` can carry: one a file
+# there already holds, and one longer than a file name may be on Linux and macOS alike.
+UNSHARED = {"a-file-holds-it": "collides", "longer-than-a-file-name": "a" * 300}
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("case", sorted(UNSHARED))
+def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write(
+    tmp_path: Path, case: str, command: str
+) -> None:
+    # `attach` records the binding and keeps the notes under `projects/<name>/`, so a name that
+    # directory cannot exist for has nowhere to go. Reading the overlay's sources for such a name as
+    # absent is what `doctor` needs; here it must not let the run reach its writes, which a record
+    # it cannot place would stop half way through. `--check` refuses it too, as the run it
+    # previews would. The name is never quoted back: it is the repository's.
+    #
+    # Mutations (oracle): `mutations/`'s "attach writes for a project name the overlay has no
+    # directory for" and "attach --check previews a project name the overlay has no directory
+    # for"; "a name longer than the filesystem allows is an overlay that cannot be asked" and "a
+    # binding record the project's name rules out cannot be read" -> the long name fails rather
+    # than refusing.
+    name = UNSHARED[case]
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    overlay = store.parents[2]
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    if case == "a-file-holds-it":
+        (overlay / "projects" / name).write_text("notes\n", encoding="utf-8")
+    store = overlay / "projects" / name / "memory"
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert str(refused.value) == (
+        f"{overlay}/projects/<this project's name> cannot be a directory on this machine -- a "
+        f"file already holds that name, or the name is longer than the filesystem allows -- so "
+        f"there is nowhere to record this binding or keep this project's notes; choose another "
+        f"`name` under [project] in stayfixed.toml"
+    )
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
+    tmp_path: Path, command: str
+) -> None:
+    # The other side of the overlay's leniency: a path the project's own `.claude` makes impossible
+    # is not a settings file that is absent, because `attach` writes `.claude/settings.local.json`
+    # and a run that read it as empty would refuse only at that write, after the ones before it.
+    #
+    # Mutation (oracle): `mutations/`'s "the project's own settings file is read as leniently as an
+    # overlay source".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    (root / ".claude").write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes(
+    tmp_path: Path, command: str
+) -> None:
+    # The overlay's leniency is for the path a repository's `project.name` spells, and
+    # `common/claude/` is spelled by the overlay alone: a file there is the overlay failing to
+    # answer, and `attach` stops before it writes, as it does for a source it cannot read. Read
+    # as absent, it attached with nothing `common/` grants and said nothing. Mutation (oracle):
+    # `mutations/`'s "a common source the overlay cannot hold reads as no source".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    common = store.parents[2] / COMMON_CLAUDE
+    shutil.rmtree(common)
+    common.write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"common/claude/permissions\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes(
+    tmp_path: Path, command: str
+) -> None:
+    # The leniency a `project.name` earns is for a name no directory under `projects/` can carry.
+    # Here the name picks out the owner's own directory and a file sits below it, where `claude/`
+    # goes: `project.name` holds no `/`, so that is the overlay's state, and `attach` stops before
+    # it writes as it does for a source it cannot read. Read as absent, the second attach found
+    # nothing to grant and stripped the owner's entry from their settings. Mutation (oracle):
+    # `mutations/`'s "a fault below the project's own directory reads as no source".
+    root, store, machine = _attachable(tmp_path)
+    own = store.parent / "claude"
+    own.mkdir()
+    (own / "hooks.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [ENTRY]}]}}),
+        encoding="utf-8",
+    )
+    _attach_it(root, store, machine, tmp_path / "home")
+    settings = (root / SETTINGS).read_bytes()
+    # Non-vacuous: the owner's entry, out of the project's own hook file, is in their settings.
+    assert set(owned_ids(settings.decode("utf-8"))) == {"overlay-PreToolUse-1"}
+    shutil.rmtree(own)
+    own.write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"/claude/permissions\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert (root / SETTINGS).read_bytes() == settings
+    assert _everything(tmp_path) == before
+
+
+def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one(
+    tmp_path: Path,
+) -> None:
+    # The other side of the refusal above: a name the overlay has no directory for *yet* is the
+    # ordinary first attach of a new project, and `attach` creates the directory. Mutation
+    # (oracle): `mutations/`'s "attach refuses a project the overlay has no directory for yet".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    shutil.rmtree(store.parent)
+    assert check(root, store=store, machine=machine).exit_code == 0
+    _attach_it(root, store, machine, tmp_path / "home")
+    assert (store.parent / PROJECT_RECORD).is_file()
+    assert store.is_dir()

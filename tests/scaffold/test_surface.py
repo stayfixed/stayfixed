@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from stayfixed import scaffold
 from stayfixed.errors import Refusal
-from stayfixed.scaffold import EntriesError, ManifestError, RegionError
+from stayfixed.scaffold import EntriesError, ManifestError, ParserLimitError, RegionError
 
 EXPORTED = [
     "FORMAT",
@@ -20,6 +20,7 @@ EXPORTED = [
     "Location",
     "Manifest",
     "ManifestError",
+    "ParserLimitError",
     "Plan",
     "Record",
     "Refused",
@@ -60,6 +61,14 @@ def test_the_three_refusals_a_consumer_catches_by_name_are_exported() -> None:
     assert issubclass(ManifestError, Refusal)
     assert issubclass(RegionError, Refusal)
     assert issubclass(EntriesError, Refusal)
+
+
+def test_a_document_past_a_limit_of_the_parser_is_an_entries_refusal_of_its_own_kind() -> None:
+    # `owned_ids` and `apply_entries` raise `ParserLimitError` for valid JSON past a limit of the
+    # parser. `doctor` tells it from a malformed document by name, and every caller that catches
+    # `EntriesError` still catches it.
+    assert "ParserLimitError" in scaffold.__all__
+    assert issubclass(ParserLimitError, EntriesError)
 
 
 def test_the_published_list_is_exactly_this_and_every_name_resolves() -> None:

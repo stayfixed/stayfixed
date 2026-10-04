@@ -5,12 +5,27 @@ can account for them and a reader can find them. The project's documents stay at
 `[paths]` keys. Every other module asks this one for a derived location rather than spelling it.
 
 A local run's default base is derived here too (`local_base`), because the three areas that
-default one cannot import each other.
+default one cannot import each other, and so is the `.gitignore` block both `init` and `attach`
+write, with the attach ledger's path under it: the paths are the core's to name, and the core
+may not import `attach`; the crossings still pinned are listed in `tests/test_areas.py`.
 """
 
 from __future__ import annotations
 
 from stayfixed.config.schema import Config
+
+# Where `attach` records what it added to a project, under the local state the ignore block keeps
+# out of git. The core names the path and never reads the ledger: `uninstall` refuses an attached
+# repository by the file's presence, and `doctor` reports on it.
+ATTACH_LEDGER = ".stayfixed/local/attach.json"
+# The `.gitignore` block `init` writes as a scaffold artifact and `attach` merges into the file,
+# spelled once, or each would report the other's region as hand-edited. Its region name, the
+# paths it keeps out of git — the local state, and the inventory `stayfixed assess` writes — and
+# the note above them.
+IGNORE_REGION = "ignore"
+LOCAL_STATE_PATHS = (".stayfixed/local/", ".stayfixed/assessment.json")
+IGNORE_NOTE = "# stayfixed's local state: yours, never a collaborator's."
+IGNORE_BODY = "\n".join((IGNORE_NOTE, *LOCAL_STATE_PATHS))
 
 
 def rules_file(config: Config, profile: str) -> str:

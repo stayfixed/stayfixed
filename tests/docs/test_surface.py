@@ -17,10 +17,9 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # the three gate functions and what the docs and trail gates read by path; the other names
     # below have no importer and stay on the argument written beside them in `api.py`.
     required = {
-        # three checks this area is, one call each
+        # two checks this area is, one call each
         "check_budgets",
         "check_links",
-        "check_memory_graph",
         # the install path: `project` ships `trail.toml`
         # beside the roadmap and must put it where `docs trail` reads it, a location only
         "trail_target",

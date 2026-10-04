@@ -24,16 +24,16 @@ with no overlay root recorded — and again, each, with a root recorded that is 
 `store-debris` with a store that does not resolve, `diagnostics` with no harness data root,
 `ci-ref` with no `[ci] ref` recorded — and
 `run_checks` skips fifteen at once when `stayfixed.toml` is missing or will not load. Sixteen skip
-arms in all, counting `checks._overlay_absent`'s two once for each of the two rows that reach
-them, and **seven of them carry a remedy** — but not because they skip on a state: eight state
-arms over seven rows carry nothing (`files` on a build with no release record, `bundles`,
+arms in all, counting the two arms `pre-commit` and `overlay-requires` share once for each of
+those rows, and **seven of them carry a remedy** — but not because they skip on a state: eight
+state arms over seven rows carry nothing (`files` on a build with no release record, `bundles`,
 `store-debris`, `diagnostics`, `ci-ref`, `overlay-requires` twice — no root recorded, and no
 requirement declared — and `pre-commit` with no root recorded), and `pre-commit`'s state is
-changed by the very command `checks._uncorroborated` names. The line is
-whether the skip is **itself worth acting on**, and `checks.Check`'s docstring is where that rule
-is stated. The plugin-root pair is the case that makes it: it is the state in which every hook
-entry on the machine is silent, nothing else in the report says so, and it reports as two quiet
-`skip` rows — so both carry `checks.PLUGIN_ROOT_REMEDY`.
+changed by the very command `attached` names when it skips for a machine that records no
+overlay. The line is whether the skip is **itself worth acting on**, and `model.Check`'s
+docstring is where that rule is stated. The plugin-root pair is the case that makes it: it is the
+state in which every hook entry on the machine is silent, nothing else in the report says so,
+and it reports as two quiet `skip` rows — so both carry `checks.PLUGIN_ROOT_REMEDY`.
 
 **The remedies live in `--json` and never in the summary.** Every command's summary is one
 line, and sixteen remedies do not fit in one; the skill relays each remedy verbatim from the
@@ -54,7 +54,8 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, common_flags
-from stayfixed.doctor.checks import CI_REF_TIMEOUT_SECONDS, RED, SKIP, WARN, Check, run_checks
+from stayfixed.doctor.checks import CI_REF_TIMEOUT_SECONDS, run_checks
+from stayfixed.doctor.model import RED, SKIP, WARN, Check
 from stayfixed.findings import listed
 from stayfixed.result import Result
 

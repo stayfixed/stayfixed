@@ -56,8 +56,8 @@ reddens = [
 [[mutation]]
 name = "the permission diff starts reading the committed settings file"
 file = "src/stayfixed/attach/permissions.py"
-before = '    sources = (overlay_common, overlay_project)'
-after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
+before = '    sources = _claude_sources(binding, PERMISSIONS_FILE)'
+after = '    sources = (*_claude_sources(binding, PERMISSIONS_FILE), (root / ".claude" / "settings.json", None))'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
 
 # A refusal something downstream reads as permission is a defect this oracle must name outright, and
@@ -842,7 +842,7 @@ reddens = [
 [[mutation]]
 name = "attach stops holding the ledger's path to the project"
 file = "src/stayfixed/attach/write.py"
-before = "    contained(root, LEDGER)"
+before = "    contained(root, ATTACH_LEDGER)"
 after = "    pass"
 reddens = [
   "tests/attach/test_write.py::test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written",
@@ -1336,7 +1336,10 @@ reddens = [
 name = "detach walks to the ledger only when it removes it"
 file = "src/stayfixed/attach/write.py"
 before = """    _walked(
-        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+        root,
+        ATTACH_LEDGER,
+        what=f"the ledger, `{ATTACH_LEDGER}`",
+        where="`.stayfixed` or `.stayfixed/local`",
     )"""
 after = ""
 reddens = [
@@ -1417,4 +1420,580 @@ after = "        raise"
 reddens = [
   "tests/attach/test_write.py::test_a_doubled_gitignore_region_is_refused_naming_the_file",
   "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
+]
+
+# A named failure mode, and the shape one existing checkout already had: a **real directory** at
+# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of it
+# and reports no fault, so the installation looks attached and behaves like nothing. The row was
+# declared load-bearing and had a test, and nothing made the test prove it. The mutation asks the
+# path a question a real directory answers "no" to, which is the narrowest way to stop the
+# discriminator discriminating: every other shape this row reads reaches the same arm it did before,
+# so the one test that reddens is the one named for this state.
+[[mutation]]
+name = "doctor stops telling a real directory from a link at the harness memory path"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if harness.is_dir() and not harness.is_symlink():"
+after = "    if harness.is_dir() and not harness.exists():"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
+]
+
+# The harness memory path is the one channel attached memory uses to reach the model, and this row
+# is the only thing that reports on it. The shape was computed into `detail` and then discarded for
+# the status, and the link's target was never compared — so "the harness memory path is a link to
+# the store" was printed, in green, for a dangling link and for a link to anybody's directory.
+[[mutation]]
+name = "doctor stops asking what the harness memory path points at"
+file = "src/stayfixed/attach/doctor.py"
+before = '        if harness.resolve() == store.path.resolve():'
+after = '        if True:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
+  "tests/attach/test_doctor.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
+# raised, `_guarded` rendered it red, and the remedy was "report this". Reading it as an empty
+# ledger instead is the other wrong answer — every entry `attach` installed would then be
+# reported as one it did not, which is a red row with actively wrong advice.
+[[mutation]]
+name = "doctor reports an unreadable attach ledger as an empty one"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return None if state == UNREADABLE_LEDGER else {}"
+after = "        return {}"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+]
+
+# The overlay that `hook-entries` asks, beside the ledger, which commands it grants — in the arm
+# where it cannot be asked at all. Falling back to the ledger there would hand a repository the
+# answer by breaking the overlay instead of by forging the record: the honest answer is the one
+# that row already gives a settings file it could not parse — report it, never absolve it.
+[[mutation]]
+name = "an unreadable overlay falls back to trusting the ledger"
+file = "src/stayfixed/attach/doctor.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {
+        entry["command"]'''
+after = '''    except (Failure, Refusal, OSError):
+        return set()
+    return {
+        entry["command"]'''
+reddens = [
+  "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-overlay-unreadable]",
+]
+
+# The same arm for a `git` that cannot run, which `binding_for` meets as `GitUnavailable`: a fault
+# on this machine, so the row warns, rather than one that costs `hook-entries` its guard.
+[[mutation]]
+name = "a git that cannot run costs the hook-entries row"
+file = "src/stayfixed/attach/doctor.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {'''
+after = '''    except (Refusal, OSError):
+        return None
+    return {'''
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-git-cannot-run]",
+]
+
+# A machine that records no overlay is not one whose overlay could not be asked: nothing on it can
+# grant. Answered as "could not be asked", a clone whose committed ledger records its own forged
+# entry turned `hook-entries`' red into a warning and an exit of 0 on every such machine.
+[[mutation]]
+name = "a machine with no overlay reads as one whose overlay could not be asked"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if answers.overlay(context) is None:\n        return set()"
+after = "    if answers.overlay(context) is None:\n        return None"
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is",
+]
+
+# The grant is asked of the binding the machine derives, never of the store the ledger names: asked
+# through that store, one that is not this project's answered "could not be asked", and the ledger
+# chose the warning.
+[[mutation]]
+name = "attach asks the overlay about the store the ledger names"
+file = "src/stayfixed/attach/doctor.py"
+before = "        binding = binding_for(context.root, context.config, machine=context.machine)"
+after = '''        from pathlib import Path
+
+        from stayfixed.attach.binding import read_binding
+        from stayfixed.attach.write import ledger
+
+        store = Path(ledger(context.root).store)
+        binding = read_binding(context.root, store=store, machine=context.machine)'''
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-foreign-store]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-moved-store]",
+]
+
+# Whether a source is recorded is the machine file's answer, and the row's sentence and remedy
+# follow it: "the overlay does not grant them" where no overlay is recorded sends the reader to an
+# `attach` that cannot run.
+[[mutation]]
+name = "attach says an overlay is recorded where none is"
+file = "src/stayfixed/attach/doctor.py"
+before = "        sourced=answers.overlay(context) is not None,"
+after = "        sourced=True,"
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+]
+
+# `.stayfixed/local/attach.json` is a file a clone can commit, so the row asks the overlay — the
+# trusted side — whether a binding stands behind it.
+[[mutation]]
+name = "a committed ledger counts as an attach again"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if state == UNBOUND:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
+]
+
+# `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
+# three used to collapse into one `None` that the `attached` row read as "attached". Two entries
+# prove the three are told apart: `mutations/`'s "a ledger naming a store the overlay does not
+# permit is excused as our own input" turns the repository's own doing into a skip nobody acts on,
+# and `mutations/`'s "a machine with no overlay recorded is blamed on the repository" turns a
+# missing overlay into an accusation against the repository.
+[[mutation]]
+name = "a ledger naming a store the overlay does not permit is excused as our own input"
+file = "src/stayfixed/attach/doctor.py"
+before = """    except Refusal:
+        return UNRESOLVED"""
+after = """    except Refusal:
+        return UNASKABLE"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning",
+]
+
+[[mutation]]
+name = "a machine with no overlay recorded is blamed on the repository"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if answers.overlay(context) is None:\n        return NO_OVERLAY"
+after = "    if False:\n        return NO_OVERLAY"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
+]
+
+# A ledger that will not parse is the repository's doing, and answering it as an overlay that
+# could not be asked makes the `attached` row a `skip` that blames `git`. `skip` never reaches the
+# exit code, so this is not only a wrong sentence: a clone's own committed, malformed ledger was
+# silent as well as misattributed.
+[[mutation]]
+name = "doctor blames git for a ledger the repository committed"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if isinstance(recorded, str):\n        return UNREADABLE_LEDGER"
+after = "    if isinstance(recorded, str):\n        return UNASKABLE"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git",
+]
+
+# The overlay is not asked which commands it grants when the ledger is readable and records nothing:
+# then nothing can be absolved, and asking would cost a `git` call to reach the same answer. Asked
+# anyway, an overlay that cannot be read right now makes the claims say it could not be asked, and
+# the row says so beside the red of an entry no attach recorded, about a question it never needed
+# put.
+[[mutation]]
+name = "attach asks the overlay about a ledger that records nothing"
+file = "src/stayfixed/attach/doctor.py"
+before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
+after = "    granted = _granted_commands(context, answers)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+# A ledger that cannot be read is not one that records nothing: the overlay's grant is what tells an
+# entry beside it that may be the owner's (a warning) from one nothing on this machine vouches for
+# (red). Not asked, an owner whose ledger got corrupted reads red for every entry their overlay
+# grants.
+[[mutation]]
+name = "attach does not ask the overlay about a ledger it cannot read"
+file = "src/stayfixed/attach/doctor.py"
+before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
+after = "    granted = _granted_commands(context, answers) if found else set()"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
+]
+
+# The binding's row for a checkout that was never attached, captured from the code before the row
+# moved into this area: a reworded sentence is a change every reader of the report sees.
+[[mutation]]
+name = "the unattached row's sentence is reworded"
+file = "src/stayfixed/attach/doctor.py"
+before = '''            f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "'''
+after = '''            f"memory.mode is overlay and {ATTACH_LEDGER} is missing, so nothing records an "'''
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unattached_project_reports_attached_as_it_did[overlay]",
+]
+
+# The attach ledger is a file a clone can commit, and its readers catch the reader's own `Failure`
+# and `Refusal`. A shape `attach` never writes that raised anything else reached `doctor`'s guard,
+# and `attached` and `hook-entries` read red, "this check could not run", on a file the repository
+# chose: a `store` holding a NUL, which `Path.resolve` meets with `ValueError`, one holding a
+# character no path can spell, which it meets with `UnicodeEncodeError`, and a list field holding a
+# number, which iterating it meets with `TypeError`.
+[[mutation]]
+name = "the attach ledger's reader takes a store holding a NUL"
+file = "src/stayfixed/attach/write.py"
+before = '    if "\0" in store:'
+after = '    if False:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-nul]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader takes a store no path can spell"
+file = "src/stayfixed/attach/write.py"
+before = "        os.fsencode(store)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-unencodable]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader iterates a field that is not a list"
+file = "src/stayfixed/attach/write.py"
+before = '    if not isinstance(value, list):'
+after = '    if False:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[allow-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[rules-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[settings-keys-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[directories-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[memory-parents-not-a-list]",
+]
+
+# The two fields the reader used to pass through `str()`: `{"store": 5}` read as the store `5`, and
+# on Python 3.14, whose parser follows deeper nesting than `str()` does, a deeply nested value raised
+# `RecursionError` past every reader's catch. The oracle runs on 3.13, where the nested cases skip,
+# so the entries name the cases that run there; the nested ones were measured by hand on 3.14.
+[[mutation]]
+name = "the attach ledger's reader reads a store that is not text"
+file = "src/stayfixed/attach/write.py"
+before = "    if not isinstance(store, str):\n"
+after = "    store = str(store)\n    if not isinstance(store, str):\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-not-text]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader reads an entry's event that is not text"
+file = "src/stayfixed/attach/write.py"
+before = "    if isinstance(entries, dict) and not all(isinstance(v, str) for v in entries.values()):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[entry-event-not-text]",
+]
+
+# The store a ledger names reaches `read_binding` from `doctor`, and Python 3.11 and 3.12 raise
+# `RuntimeError` resolving a path through a symlink loop a clone can commit beside it.
+[[mutation]]
+name = "read_binding lets a store it cannot resolve raise"
+file = "src/stayfixed/attach/binding.py"
+before = "    except (OSError, RuntimeError):\n        # A store through a symlink loop"
+after = "    except OSError:\n        # A store through a symlink loop"
+reddens = [
+  "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
+]
+
+# A committed ledger nested past what `json.loads` follows raises `RecursionError` on every
+# supported Python. Read as the unreadable ledger it is, `doctor` warns and `attach` and `detach`
+# fail before they write; let through, all three ended in an exception past every reader's catch.
+[[mutation]]
+name = "the attach ledger's reader lets a nested ledger raise"
+file = "src/stayfixed/attach/write.py"
+before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
+after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
+]
+
+# The same parse in the settings file `attach` merges into.
+[[mutation]]
+name = "attach's settings reader lets a nested document raise"
+file = "src/stayfixed/attach/permissions.py"
+before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, in a file"
+after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, in a file"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
+]
+
+# `project.name` is committed and spells the one free part of the paths the grant question reads
+# under the overlay, `projects/<name>/claude/`. A name that path cannot exist for is an overlay with
+# no source for that project; read as a failure, it turned `hook-entries`' red into a warning on a
+# machine with nothing broken.
+[[mutation]]
+name = "a source the project's name rules out is an overlay that cannot be asked"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-unreadable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
+]
+
+[[mutation]]
+name = "a name longer than the filesystem allows is an overlay that cannot be asked"
+file = "src/stayfixed/attach/binding.py"
+before = "    return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG"
+after = "    return isinstance(exc, NotADirectoryError)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
+]
+
+[[mutation]]
+name = "a file where the project's directory would be is an overlay that cannot be asked"
+file = "src/stayfixed/attach/binding.py"
+before = "    return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG"
+after = "    return exc.errno == errno.ENAMETOOLONG"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
+]
+
+# The binding record is read on the way to what the overlay grants, and `Path.is_file()` raises for
+# a name longer than the filesystem allows on Python 3.11 to 3.13: the record such a name rules out
+# is one the overlay does not have, on every interpreter.
+[[mutation]]
+name = "a binding record the project's name rules out cannot be read"
+file = "src/stayfixed/attach/binding.py"
+before = "        if cannot_exist(exc):\n            return None"
+after = "        if False:\n            return None"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
+]
+
+# The owner boundary of the leniency above: only a path the name rules out reads as no source. A
+# hook file the owner's overlay keeps and this machine cannot read is the overlay failing to answer,
+# and the row warns.
+[[mutation]]
+name = "every fault reading the overlay's sources reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
+after = "        if share is not None:"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-unreadable]",
+]
+
+# Nor does a path the name rules out reach past the name's own directory. `project.name` holds no
+# `/`, so below a directory it picks out it chooses nothing: a file where `claude/` goes is the
+# owner's overlay failing to answer. Read as no source, the owner's own entries read red and a
+# second `attach` stripped them from their settings.
+[[mutation]]
+name = "a fault below the project's own directory reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
+after = "        if share is not None and cannot_exist(exc):"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[claude-is-a-file-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[claude-is-a-file-unreadable]",
+  "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[attach]",
+  "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[check]",
+]
+
+# An overlay need not keep `projects/` at all, and nothing is below a directory that is not there:
+# read as the overlay failing to answer, a name past the longest path turned `hook-entries`' red
+# into a warning and the report's exit into 0.
+[[mutation]]
+name = "an overlay with no projects/ directory cannot be asked about a name past the longest path"
+file = "src/stayfixed/attach/permissions.py"
+before = "        # No `projects/`: the overlay keeps no project here at all.\n        return True"
+after = "        # No `projects/`: the overlay keeps no project here at all.\n        return False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[unreadable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report",
+]
+
+# Nor above it: `projects/` is spelled by the overlay alone, and one that is a file is the
+# overlay's own state, though the path through it is ruled out as one under a file holding the
+# name is.
+[[mutation]]
+name = "a projects/ that is a file is a name the overlay has no directory for"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if not stat.S_ISDIR(share.parent.stat().st_mode):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-unreadable]",
+]
+
+# A directory the overlay has none of yet is no directory of the owner's either: nothing is below
+# it, so a hook file under it that is past the longest path is one the overlay has no file at.
+[[mutation]]
+name = "a source past the longest path under a project the overlay has no directory for cannot be asked"
+file = "src/stayfixed/attach/permissions.py"
+before = "        # No share: the overlay has no directory for this project yet.\n        return True"
+after = "        # No share: the overlay has no directory for this project yet.\n        return False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[unreadable]",
+]
+
+# Nor does it reach `common/`, whose spelling the overlay alone chooses. A `common/claude` that is a
+# file is the overlay failing to answer: read as no source, it granted nothing, the owner's own
+# entries read red, and `attach` went on without what `common/` grants.
+[[mutation]]
+name = "a common source the overlay cannot hold reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        (binding.overlay / COMMON_CLAUDE / name, None),"
+after = "        (binding.overlay / COMMON_CLAUDE / name, binding.overlay / COMMON_CLAUDE),"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[unreadable]",
+  "tests/attach/test_write.py::test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes[attach]",
+  "tests/attach/test_write.py::test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes[check]",
+]
+
+# The leniency stops at the overlay. The project's own `.claude` that is a file has to stop
+# `attach` before it writes; read as an empty settings file it stopped only at that file's write.
+[[mutation]]
+name = "the project's own settings file is read as leniently as an overlay source"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return _read(root / LOCAL_SETTINGS)"
+after = "    return _read(root / LOCAL_SETTINGS, share=root / \".claude\")"
+reddens = [
+  "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[attach]",
+  "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[check]",
+]
+
+# Reading such a name's sources as absent is what `doctor` needs, and it takes away the failed read
+# that used to stop `attach` before it wrote: the binding record's write, after four others, would
+# be the first thing to find out. So the run refuses the name above every write, and `--check`
+# refuses it as the run it previews would.
+[[mutation]]
+name = "attach writes for a project name the overlay has no directory for"
+file = "src/stayfixed/attach/write.py"
+before = "    refuse_unless_share_can_exist(binding)\n"
+after = ""
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
+]
+
+[[mutation]]
+name = "attach --check previews a project name the overlay has no directory for"
+file = "src/stayfixed/attach/permissions.py"
+before = "    refuse_unless_share_can_exist(binding)\n"
+after = ""
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
+]
+
+[[mutation]]
+name = "a file where the project's directory would be is no reason to refuse attach"
+file = "src/stayfixed/attach/binding.py"
+before = "    if not stat.S_ISDIR(mode):"
+after = "    if mode == 0:"
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
+]
+
+# A share that is absent is a project the overlay has never seen, and its first attach creates it.
+[[mutation]]
+name = "attach refuses a project the overlay has no directory for yet"
+file = "src/stayfixed/attach/binding.py"
+before = "    except FileNotFoundError:\n        return\n"
+after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))\n"
+reddens = [
+  "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
+]
+
+# A committed ledger holding an integer literal longer than the interpreter converts makes
+# `json.loads` raise a plain `ValueError`, which no reader of the ledger caught: `doctor` read red,
+# "this check could not run", in the `attached` and `hook-entries` rows, and `attach` and `detach`
+# ended in an internal error. Read as the unreadable ledger it is, all four answer as they do for a
+# ledger that does not parse.
+[[mutation]]
+name = "the attach ledger's reader lets a number past the parser's reach raise"
+file = "src/stayfixed/attach/write.py"
+before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
+after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
+  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+]
+
+# The same number in the settings file `attach` merges into.
+[[mutation]]
+name = "attach's settings reader lets a number past the parser's reach raise"
+file = "src/stayfixed/attach/permissions.py"
+before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
+after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+]
+
+# A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file
+# name may be. `Path.is_file()` raised `ENAMETOOLONG` there on Python 3.11 to 3.13, past every catch
+# to `_guarded`, whose warning stood in for all of `hook-entries`: a forged entry beside the link lost
+# its red and the report exited 0. `stat` raises it on every interpreter, and the ledger reads as one
+# that cannot be read.
+[[mutation]]
+name = "a ledger doctor cannot ask about reads as no ledger"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
+after = "        return NO_LEDGER"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[the-ledger-forged-overlay]",
+  "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[its-directory-forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.stayfixed/local/attach.json-overlay]",
+]
+
+# The other half: a path that names no file is no ledger, as `is_file()` always answered, and an
+# entry beside it is one no record holds.
+[[mutation]]
+name = "a ledger path that names no file reads as one that cannot be read"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
+after = "        return UNREADABLE_LEDGER"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+[[mutation]]
+name = "doctor reads a ledger path that is no regular file"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if not stat.S_ISREG(mode):\n        return NO_LEDGER\n    try:\n        return ledger(root)"
+after = "    if False:\n        return NO_LEDGER\n    try:\n        return ledger(root)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
+]
+
+# `attached` asks whether there is a ledger the way `hook-entries` does, through the one reading
+# `register()` shares between them. Asked with `is_file()`, a ledger behind a link to a name longer
+# than a file name may be raised on Python 3.11 to 3.13, and `_guarded`'s warning stood in for the
+# row; on 3.14 the row said the ledger does not exist.
+[[mutation]]
+name = "attached asks is_file() of the ledger again"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if ledger.state(context.root) == NO_LEDGER:"
+after = "    if not (context.root / ATTACH_LEDGER).is_file():"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[the-ledger-nothing-there]",
+  "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[its-directory-nothing-there]",
 ]

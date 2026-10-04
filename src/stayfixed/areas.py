@@ -1,4 +1,9 @@
-"""Areas discovered by name: the half `stayfixed.cli` and `stayfixed.hooks.registry` share.
+"""Areas discovered by name: the half `stayfixed.cli`, `stayfixed.hooks.registry` and
+`stayfixed.doctor.checks` share.
+
+Three submodules are discovered, each by the module that reads it: an area's `commands.py` gives
+it a CLI group, its `hooks.py` hook handlers, and its `doctor.py` rows in `stayfixed doctor`'s
+report.
 
 A leaf module on purpose. `cli.py` imports every area through this discovery, so an area that
 imported back into `cli.py` would constrain what the frame may ever import; the aliases and
@@ -24,6 +29,17 @@ else:
     SubParsers = argparse._SubParsersAction
 
 Registrar = Callable[[SubParsers], None]
+
+# The areas that make up the private layer: `overlay` renders and upgrades the overlay, `attach`
+# binds a repository to it and unbinds it, and `memory` keeps the note store. Every other module
+# under `src/stayfixed/` is the core. The core may not import a delivery area, through its
+# `api.py` or otherwise, and a delivery area may import the core, so the private layer can be
+# reworked without touching the core. The rule reads source, as discovery does, so a module named
+# to `importlib` is invisible to it. `tests/test_areas.py`'s `test_core_never_imports_delivery`
+# holds it, against the import statements of the one crossing still pinned, and
+# `test_in_isolation_no_core_module_loads_a_delivery_area` holds that importing the core loads
+# none of the private layer.
+DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})
 
 
 def _has_submodule(area: str, submodule: str) -> bool:

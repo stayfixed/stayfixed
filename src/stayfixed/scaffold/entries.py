@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 from stayfixed.errors import Refusal
@@ -30,6 +31,15 @@ _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
 
 class EntriesError(Refusal):
     """A settings document the engine cannot rewrite without guessing."""
+
+
+class ParserLimitError(EntriesError):
+    """A settings document that is valid JSON and passes a limit of this interpreter's parser.
+
+    Its own kind, because it is not malformed: a harness whose parser has no such limit reads it,
+    and may run the hooks in it. A reader that reports on such a file cannot say "it would not
+    load anyway", which it may say of one that does not parse.
+    """
 
 
 def marker_id(command: str) -> str | None:
@@ -69,13 +79,29 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
     return found
 
 
-def _load(document: str) -> dict[str, Any]:
+def _load(document: str, *, numbers: Callable[[str], object] = int) -> dict[str, Any]:
+    """The document as an object, with each integer literal handed to `numbers`."""
     if not document.strip():
         return {}
     try:
-        raw = json.loads(document)
+        raw = json.loads(document, parse_int=numbers)
     except json.JSONDecodeError as exc:
         raise EntriesError(f"settings document is not valid JSON: {exc}") from exc
+    except RecursionError:
+        # Valid JSON nested past what the parser follows. A settings document may be one a clone
+        # committed, so it is refused rather than left to escape the callers that catch the
+        # refusal, and refused as a limit and not as a shape: see `ParserLimitError`.
+        raise ParserLimitError(
+            "settings document is nested deeper than this reader follows"
+        ) from None
+    except ValueError:
+        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits
+        # by default), which `json.loads` meets with a plain `ValueError`. Refused for the reason
+        # the arm above gives; the message is not the interpreter's, which tells the reader to
+        # raise a limit.
+        raise ParserLimitError(
+            "settings document holds a number longer than this reader converts"
+        ) from None
     if not isinstance(raw, dict):
         raise EntriesError("settings document is not a JSON object")
     return raw
@@ -128,8 +154,13 @@ def _without_marked(group: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def owned_ids(document: str) -> dict[str, str]:
-    """Every id stayfixed claims in this document, mapped to its event — `doctor`'s provenance."""
-    raw = _load(document)
+    """Every id stayfixed claims in this document, mapped to its event — `doctor`'s provenance.
+
+    Integers are read as their text: an id and an event are strings, so no number is part of the
+    answer, and one longer than the interpreter converts must not keep a reader from the entries
+    beside it. A settings file is one a clone can commit, and the harness reads such a number.
+    """
+    raw = _load(document, numbers=str)
     return {
         claimed: event
         for event in _hooks_table(raw)
