@@ -9,7 +9,8 @@ name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
 
 The overlay root and the note store come from the `Answers` this module's `register()` creates,
 one per report, so the binding the row reads and the claims `hook-entries` reads ask the overlay
-root once between them.
+root once between them. The attach ledger comes from the `_Ledger` created beside it, so both read
+the file once between them, and both read it the same way.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -24,29 +25,38 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from stayfixed.attach.binding import Binding
+    from stayfixed.attach.write import AttachLedger
     from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status
     from stayfixed.memory.api import Answers
 
 
-def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
-    """The marker ids this repository's last `attach` claims, `{}` when it never ran, `None`
-    when the file is there and cannot be read as a ledger.
+# What `_ledger_state` answers beside a ledger: no file at the ledger's path, and a file there that
+# cannot be read as one. Not statuses and not sentences: each reader decides both.
+NO_LEDGER: Final = "no-ledger"
+# Also the fourth of `_binding_answer`'s reasons, below: the same fact, and it is about the
+# repository rather than about this machine.
+UNREADABLE_LEDGER: Final = "unreadable-ledger"
+
+
+def _ledger_state(root: Path) -> AttachLedger | str:
+    """This repository's attach ledger, `NO_LEDGER` when the path names no file, or
+    `UNREADABLE_LEDGER` when the file is there and cannot be read as a ledger.
 
     Three answers and not two. `ledger()` raises on a file that is not JSON, is not an object,
     or names something `attach` could not have written — and `.stayfixed/local/attach.json` is a
     path a clone can commit, because `.gitignore` does not untrack a committed file. Letting
-    that reach the report's guard made a repository able to force `hook-entries` red with the
-    detail "this check could not run: Failure" and a remedy that cannot help, on an installation
-    with nothing wrong with it. The row reports the file instead.
+    that reach the report's guard made a repository able to force a row red with the detail
+    "this check could not run: Failure" and a remedy that cannot help, on an installation with
+    nothing wrong with it. The rows report the file instead.
 
     **Whether it is there is asked with `stat`, and a path it cannot answer about is unreadable.**
-    `is_file()` raised past this function when a clone committed the ledger, or a directory above
-    it, as a symbolic link to a name longer than a file name may be: on Python 3.11 to 3.13 the
-    error reached `_guarded`, whose warning stood in for all of `hook-entries`, so a forged entry
-    beside the link lost its red and the report exited 0. From 3.14 `is_file()` answers `False`
-    instead, which read a file that is there as no ledger. A path that names no file — nothing
-    there, a dangling link or a loop, or something other than a regular file — is no ledger, as
-    `is_file()` always answered.
+    A clone can commit the ledger, or a directory above it, as a symbolic link to a name longer
+    than a file name may be. `is_file()` raises there on Python 3.11 to 3.13, and the error reached
+    `_guarded`, whose warning stood in for the whole row: a forged entry beside the link lost its
+    red in `hook-entries`, and a real directory at the harness memory path lost its red in
+    `attached`. From 3.14 `is_file()` answers `False`, which reads a file that is there as no
+    ledger. A path that names no file — nothing there, a dangling link or a loop, or something
+    other than a regular file — is no ledger, as `is_file()` always answered.
     """
     import errno
     import stat
@@ -58,16 +68,42 @@ def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
     try:
         mode = (root / ATTACH_LEDGER).stat().st_mode
     except OSError as exc:
-        return {} if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP) else None
+        names_no_file = exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER
     if not stat.S_ISREG(mode):
-        return {}
+        return NO_LEDGER
     try:
-        return dict(ledger(root).entries)
+        return ledger(root)
     except (Failure, Refusal):
-        return None
+        return UNREADABLE_LEDGER
 
 
-def _attached(context: Context, answers: Answers) -> Row:
+class _Ledger:
+    """`_ledger_state` for one report, read on first use and never again.
+
+    Created by `register()` beside the report's `Answers`, so `attached` and the claims
+    `hook-entries` reads ask one question of the file and get one answer: no row can read the
+    ledger as there while another reads it as absent or unreadable.
+    """
+
+    def __init__(self) -> None:
+        self._state: tuple[AttachLedger | str] | None = None
+
+    def state(self, root: Path) -> AttachLedger | str:
+        if self._state is None:
+            self._state = (_ledger_state(root),)
+        return self._state[0]
+
+
+def _attach_ledger_entries(state: AttachLedger | str) -> dict[str, str] | None:
+    """The marker ids this repository's last `attach` claims, `{}` when it never ran, `None`
+    when the file is there and cannot be read as a ledger."""
+    if isinstance(state, str):
+        return None if state == UNREADABLE_LEDGER else {}
+    return dict(state.entries)
+
+
+def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     """Attach state, and the shape of the harness memory path.
 
     `attach` prefers a symlink at `~/.claude/projects/<slug>/memory`, because a settings-file
@@ -110,7 +146,6 @@ def _attached(context: Context, answers: Answers) -> Row:
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # stayfixed's own labels rather than a string a clone chose.
         return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
-    recorded = (context.root / ATTACH_LEDGER).is_file()
     harness = harness_memory_path(context.root, context.home)
     if harness.is_dir() and not harness.is_symlink():
         return Row(
@@ -122,14 +157,14 @@ def _attached(context: Context, answers: Answers) -> Row:
             f"remove {harness} and run "
             f"`stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`",
         )
-    if not recorded:
+    if ledger.state(context.root) == NO_LEDGER:
         return Row(
             WARN,
             f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
             f"attach",
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
         )
-    answer = _binding_answer(context, answers)
+    answer = _binding_answer(context, answers, ledger)
     # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
     # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
     # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
@@ -166,12 +201,12 @@ def _attached(context: Context, answers: Answers) -> Row:
 UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
-# The fourth, and it is about the repository rather than about this machine. A ledger that is
-# there and will not parse used to answer `UNASKABLE` with the other two, so the row said
-# "no `git`, or a record this process could not read" and the remedy said "run `stayfixed doctor`
-# again where `git` runs" — about a file in the checkout the reader is standing in. `skip` never
-# reaches the exit code, so a repository's own committed, malformed ledger was also silent.
-UNREADABLE_LEDGER: Final = "unreadable-ledger"
+# The fourth is `UNREADABLE_LEDGER`, above, and it is about the repository rather than about this
+# machine. A ledger that is there and will not parse used to answer `UNASKABLE` with the other two,
+# so the row said "no `git`, or a record this process could not read" and the remedy said "run
+# `stayfixed doctor` again where `git` runs" — about a file in the checkout the reader is standing
+# in. `skip` never reaches the exit code, so a repository's own committed, malformed ledger was
+# also silent.
 _RE_ATTACH = (
     "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
     "checkout was never attached on this machine, remove the ledger"
@@ -280,7 +315,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     return OK, "not in place, which is what this store's trust record asks for", ""
 
 
-def _binding_answer(context: Context, answers: Answers) -> Binding | str:
+def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Binding | str:
     """The overlay binding this repository would attach under, or the label of why there is none.
 
     Three different situations used to collapse into one `None` — a ledger naming a store the
@@ -302,21 +337,23 @@ def _binding_answer(context: Context, answers: Answers) -> Binding | str:
     from pathlib import Path
 
     from stayfixed.attach.binding import read_binding
-    from stayfixed.attach.write import ledger
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import GitUnavailable
 
     if answers.overlay(context) is None:
         return NO_OVERLAY
-    try:
-        store = Path(ledger(context.root).store)
-    except (Failure, Refusal):
-        # This one is the repository's file and not our inputs, so it does not join the other
-        # two: a clone can commit `.stayfixed/local/attach.json`, and a file that will not parse
-        # is a fact about the checkout the reader is standing in.
+    recorded = ledger.state(context.root)
+    # This one is the repository's file and not our inputs, so it does not join the other two: a
+    # clone can commit `.stayfixed/local/attach.json`, and a file that will not parse is a fact
+    # about the checkout the reader is standing in. `NO_LEDGER` never reaches here: `_attached`
+    # answers it before asking.
+    if isinstance(recorded, str):
         return UNREADABLE_LEDGER
     try:
-        return read_binding(context.root, store=store, machine=context.machine)
+        # The report's own `Config`, which `read_binding` would otherwise load a second time.
+        return read_binding(
+            context.root, store=Path(recorded.store), machine=context.machine, config=context.config
+        )
     except Refusal:
         return UNRESOLVED
     except (Failure, GitUnavailable):
@@ -378,7 +415,7 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     }
 
 
-def _claims(context: Context, answers: Answers) -> Claims:
+def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
     """What `attach` put into settings files, for `hook-entries`' provenance column.
 
     The ledger says which marker ids the last `attach` recorded, and the overlay says which
@@ -395,7 +432,7 @@ def _claims(context: Context, answers: Answers) -> Claims:
     """
     from stayfixed.doctor.api import Claims
 
-    found = _attach_ledger_entries(context.root)
+    found = _attach_ledger_entries(ledger.state(context.root))
     granted = _granted_commands(context, answers) if found is None or found else set()
     return Claims(
         found,
@@ -405,12 +442,14 @@ def _claims(context: Context, answers: Answers) -> Claims:
 
 
 def register() -> Contribution:
-    """The `attached` row and this area's claims, sharing one `Answers` for the report."""
+    """The `attached` row and this area's claims, sharing one `Answers` and one `_Ledger` for the
+    report."""
     from stayfixed.doctor.api import Contribution
     from stayfixed.memory.api import Answers
 
     answers = Answers()
+    ledger = _Ledger()
     return Contribution(
-        checks=(("attached", lambda context: _attached(context, answers)),),
-        claims=lambda context: _claims(context, answers),
+        checks=(("attached", lambda context: _attached(context, answers, ledger)),),
+        claims=lambda context: _claims(context, answers, ledger),
     )

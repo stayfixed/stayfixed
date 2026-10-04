@@ -16,4 +16,8 @@ either kind. A line of that kind in the hook sink's log no longer turns `stayfix
 `diagnostics` row red either: it is not counted as a recorded failure. On Python 3.11 and 3.12, a
 ledger `store` or a note's backticked path that runs through a symbolic link loop no longer ends
 `stayfixed doctor` in the same red row or `stayfixed memory refs` in an internal error: the store is
-not this project's, and the path is reported as one that does not resolve.
+not this project's, and the path is reported as one that does not resolve. On Python 3.11 to 3.13, a
+ledger committed as a symbolic link to a name longer than the filesystem allows no longer turns
+`attached` into a warning that it could not read something it needed, which hid the row's red for a
+real directory at the harness memory path; with nothing at that path the row names the ledger as one
+that cannot be read, where Python 3.14 said it did not exist.

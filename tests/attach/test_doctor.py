@@ -480,6 +480,42 @@ def test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unr
     assert _by_name(rows, "hook-entries") == UNREADABLE_TABLE["owner-overlay"]
 
 
+def test_one_report_reads_the_ledger_once_and_the_configuration_not_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attached` and the claims `hook-entries` reads both need the ledger, and the row needs the
+    # binding behind it. The ledger had three readers that asked three ways — one of them the
+    # `is_file()` that a link to an over-long name defeats — and parsed the file twice, and the
+    # binding was read through `read_binding` without the report's `Config`, so `stayfixed.toml`
+    # and the machine file were loaded a second time. Measured by hand: `_Ledger.state` asking
+    # `_ledger_state` every time -> three ledger reads; `read_binding` without `config=` -> one
+    # load.
+    from stayfixed.attach import binding, write
+
+    reads: list[Path] = []
+    loads: list[Path] = []
+    real_ledger = write.ledger
+
+    def counted_ledger(root: Path) -> object:
+        reads.append(root)
+        return real_ledger(root)
+
+    def counted_load(root: Path, *, machine: Path | None) -> object:
+        # `load` is the loader's own, which `binding` imports by name; only `read_binding` calls it
+        # through that module.
+        loads.append(root)
+        return load(root, machine=machine)
+
+    monkeypatch.setattr(write, "ledger", counted_ledger)
+    monkeypatch.setattr(binding, "load", counted_load)
+    root = _attached(tmp_path)
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    # Non-vacuous: both readers asked, and the binding was read behind the ledger.
+    assert _by_name(rows, "attached").detail.startswith("attached;")
+    assert _by_name(rows, "hook-entries").status == OK
+    assert (len(reads), len(loads)) == (1, 0)
+
+
 # --- what this area claims for `hook-entries` --------------------------------------------------
 #
 # `hook-entries` is the core's row, and the provenance it prints is this area's answer: which marker
@@ -1002,6 +1038,59 @@ def test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read(
     machine = _no_overlay_machine(tmp_path) if where == "no-overlay" else _machine(tmp_path)
     check = _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
     assert check == UNREADABLE_TABLE[case]
+
+
+# The `attached` row beside a ledger `stat` cannot answer about, by what is at the harness memory
+# path, pasted rather than read back from the code under test. `{harness}` is that path. A real
+# directory there is the row's own red whatever the ledger is; with nothing there, the ledger is
+# one that cannot be read, never one that is not there.
+ATTACHED_PAST_A_NAME = {
+    "real-directory": Check(
+        "attached",
+        "red",
+        "the harness memory path is a real directory rather than a link to the store, so this "
+        "checkout looks attached and behaves like nothing",
+        "remove {harness} and run `stayfixed attach --store <overlay>/projects/<project>/memory`",
+    ),
+    "nothing-there": Check(
+        "attached",
+        "warn",
+        f"{LEDGER} is here and cannot be read as a ledger, so nothing in it can be corroborated "
+        f"and this checkout's attach state is unknown — a clone can commit {LEDGER}, so on its own "
+        f"it is not evidence of an attach",
+        f"remove {LEDGER}, then run `stayfixed attach --store <overlay>/projects/<project>/memory "
+        f"--check`",
+    ),
+}
+
+
+@pytest.mark.parametrize("harness_shape", sorted(ATTACHED_PAST_A_NAME))
+@pytest.mark.parametrize("shape", sorted(UNCHECKABLE_LEDGERS))
+def test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer(
+    tmp_path: Path, shape: str, harness_shape: str
+) -> None:
+    # `attached` asked `is_file()` of the ledger, which raised `ENAMETOOLONG` on Python 3.11 to
+    # 3.13 and reached `_guarded`: the row became that guard's warning, so a real directory at the
+    # harness memory path, which looks attached and behaves like nothing, lost its red and the
+    # report exited 0. On 3.14 `is_file()` answered `False`, and with nothing at the harness path
+    # the row said the ledger does not exist. The row now reads the ledger the way `hook-entries`
+    # does. Mutation (oracle): `mutations/`'s "attached asks is_file() of the ledger again" -> the
+    # `nothing-there` cases are the guard's warning on 3.11 to 3.13 and say the ledger does not
+    # exist on 3.14. The `real-directory` cases were measured by hand against the row as it stood,
+    # `is_file()` asked above the harness path: the guard's warning on 3.11 and 3.13.
+    root = _attached(tmp_path)
+    _past_a_name(tmp_path, root / UNCHECKABLE_LEDGERS[shape])
+    harness = _harness(tmp_path, root)
+    if harness_shape == "real-directory":
+        harness.mkdir()
+    rows = _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path))
+    expected = ATTACHED_PAST_A_NAME[harness_shape]
+    assert _by_name(rows, "attached") == Check(
+        expected.name,
+        expected.status,
+        expected.detail,
+        expected.remedy.replace("{harness}", str(harness)),
+    )
 
 
 # Committed shapes at the ledger's path that name no file to read, which `hook-entries` reads as no
