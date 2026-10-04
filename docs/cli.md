@@ -730,7 +730,11 @@ on a `Create:`, `Test:` or `Delete:` line; no step is phrased as already knowing
 with content is present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with
 content; and a mutation's outcome stated as fact in the present tense (`-> the test reddens`,
 `watch it go red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an
-expectation.
+expectation. Without `PATH`, the first rule reads only the lines the change wrote — those that
+differ from every merge base's copy and from `REF`'s — so a change editing a delivered plan, an
+`Interfaces:` block say, is held to its own lines and never to paths the tree has moved since the
+plan was written; a new plan is all such lines. Naming a plan as `PATH` settles every reference in
+it.
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
 an absolute one, or one that walks out through `..` — which is never settled against the
 filesystem, because that answer would be about the machine rather than about the repository. A

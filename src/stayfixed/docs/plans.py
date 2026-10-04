@@ -64,6 +64,13 @@ at the file on disk, not at a commit that does not exist yet; the plans the work
 beyond the diff are reported as `unlinted` rather than linted silently, so the remedy is to name
 the file.
 
+The same holds within a plan. A delivered plan's `Interfaces:` blocks are kept current, so a later
+change edits plans whose other lines name paths the tree has since moved or removed, and holding
+it to those made the only way through a rewrite of history. In the diff-scoped mode a reference
+is therefore settled only on a line the change wrote (`written_lines`): a new plan is all such
+lines, and an edit is held to its own. Every other rule still reads the whole plan, and naming a
+plan as `PATH` still settles every reference in it.
+
 A repository whose BASE will not resolve is a finding and not an OK. Printing a note and exiting
 0 is how a gate like this one runs green for its whole life without ever having linted anything:
 a CI checkout made at the default depth of 1 holds no base ref, so the diff cannot be taken and
@@ -129,6 +136,9 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 # A sentence boundary: terminal punctuation, any closing bracket or quote, then whitespace.
 # The dot inside `src/widget/thing.py` is followed by a letter, so a path is not a boundary.
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
+# A unified-diff hunk header's new-side range, `+start[,count]`: the lines of the file as it is now
+# that the hunk holds. A missing count is one line, and a count of 0 a hunk that only removed.
+_HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 
 _BASE_UNRESOLVABLE = (
     "which plans HEAD changes against `{base}` is unknown under {root} ({cause}), so NOTHING "
@@ -228,21 +238,34 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
-    forks = fork_points(root, base)
-    if isinstance(forks, ForkUnknown):
-        raise _unresolved(forks, base, root)
 
     def changed(since: str) -> set[str]:
-        code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
-        if code != 0:
-            raise _unresolved(ForkUnknown.of(code), base, root)
+        out = _diff(root, base, "--name-only", "-z", since, "HEAD", "--", relative)
         return {name for name in out.split("\0") if name.endswith(".md")}
 
     found: set[str] = set()
-    for fork in forks:
+    for fork in _forks(root, base):
         found |= changed(fork)
     found &= changed(base)
     return [root / name for name in sorted(found)]
+
+
+def _forks(root: Path, base: str) -> tuple[str, ...]:
+    """`gitenv.fork_points`, or the failure that says why they are not known. One spelling for
+    `touched_plans` and `written_lines`, which ask the same question of the same base."""
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise _unresolved(forks, base, root)
+    return tuple(forks)
+
+
+def _diff(root: Path, base: str, *args: str) -> str:
+    """What `git diff args` printed, or the failure that says why git gave no diff. A diff git
+    did not answer is never an empty one: read as one, it is a change that touched nothing."""
+    code, out = git_run(root, "diff", *args)
+    if code != 0:
+        raise _unresolved(ForkUnknown.of(code), base, root)
+    return out
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
@@ -288,6 +311,31 @@ def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
         if path.endswith(".md"):
             found.append(root / path)
     return found
+
+
+def written_lines(root: Path, base: str, plan: Path) -> set[int]:
+    """The lines of `plan`, as the working tree holds it, that this change wrote.
+
+    A line the change wrote is one that differs from every fork point's copy and from the
+    base's, for the reason `touched_plans` reads a plan as touched only against all of them: a
+    line the base changed since the fork reads as added against the base alone, and one an old
+    fork point lacks reads as added against that fork point alone. Diffed against the working
+    tree, the file `lint` reads, so the numbers are the ones its findings carry. `--no-textconv`
+    and `--no-ext-diff`, so the numbers are of the file's own lines and not of a filter's output.
+    `base` has been through `touched_plans`, which refuses one shaped like an option.
+    """
+    relative = plan.relative_to(root).as_posix()
+    written: set[int] | None = None
+    for since in (*_forks(root, base), base):
+        out = _diff(
+            root, base, "-U0", "--no-color", "--no-ext-diff", "--no-textconv", since, "--", relative
+        )
+        lines: set[int] = set()
+        for hunk in _HUNK.finditer(out):
+            start = int(hunk.group(1))
+            lines.update(range(start, start + int(hunk.group(2) or 1)))
+        written = lines if written is None else written & lines
+    return written or set()
 
 
 def logical_blocks(prose: str) -> list[tuple[str, list[int]]]:
@@ -338,8 +386,14 @@ def asserted_outcomes(prose: str) -> list[int]:
     return sorted(found)
 
 
-def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> list[Finding]:
-    """Every finding one plan carries, with the line numbers of the file as it is on disk."""
+def _lint_one(
+    path: Path, where: str, root: Path, *, fixes: re.Pattern[str], judged: set[int] | None = None
+) -> list[Finding]:
+    """Every finding one plan carries, with the line numbers of the file as it is on disk.
+
+    `judged`, when given, is the lines whose references are settled against the tree: the ones
+    the change wrote (`written_lines`). Every other rule reads the whole plan either way.
+    """
     # Fenced code is not plan prose: its fixtures name deliberately fake paths.
     prose = blank_fences(read_document(path, where))
     found: list[Finding] = []
@@ -352,7 +406,7 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
     for line in _DECLARES.findall(prose):
         declared |= set(path_references(line))
     for number, line in enumerate(prose.splitlines(), 1):
-        if not _LINE_MARK.search(line):
+        if not _LINE_MARK.search(line) and (judged is None or number in judged):
             for target in path_references(line):
                 # A claim that lands outside the root is not asked of the filesystem: the
                 # answer would be about this disk rather than about the repository, and a plan
@@ -373,6 +427,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     plans_dir = contained(root, config.paths.plans)
     base = base or local_base(config)
     unlinted: list[Path] = []
+    diff_scoped = False
     if plans:
         missing = [p for p in plans if not p.is_file()]
         if missing:
@@ -389,6 +444,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
             )
         selected = list(plans)
     elif _is_git_repo(root):
+        diff_scoped = True
         touched = touched_plans(root, base, plans_dir)
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
@@ -403,7 +459,9 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     findings: list[Finding] = []
     fixes = identifiers(config).fixes
     for path in sorted(selected):
-        findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=fixes))
+        judged = written_lines(root, base, path) if diff_scoped else None
+        where = path.relative_to(root).as_posix()
+        findings.extend(_lint_one(path, where, root, fixes=fixes, judged=judged))
     return Lint(findings, sorted(selected), sorted(unlinted))
 
 

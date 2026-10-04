@@ -215,6 +215,77 @@ def test_without_paths_only_the_plans_the_diff_touches_are_linted(tmp_path: Path
 
 
 @needs_git
+def test_an_edit_to_a_plan_is_held_to_the_references_on_the_lines_it_writes(
+    tmp_path: Path,
+) -> None:
+    # A delivered plan is a record, and the paths it names go stale as the tree moves on. The
+    # diff-scoped check read every line of every plan a change touched, so a change editing one
+    # line of an old plan (an `Interfaces:` block, which is kept current) failed on every stale
+    # reference in it, and the only way through was to rewrite history. Without `PATH`
+    # arguments a reference is now judged only on a line the change adds or rewrites; naming the
+    # plan still lints all of it.
+    # Mutation: `mutations/`'s "plan check judges an edited plan's untouched lines".
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(
+        root,
+        SCOPE + "- Modify: `src/gone.py`\n- Modify: `src/also_gone.py`\nthe end\n",
+        "2026-01-01-old.md",
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-qb", "feature")
+    old.write_text(
+        SCOPE + "- Modify: `src/gone.py`\n- Modify: `src/also_gone.py` (reworded)\nthe end\n"
+        "- Modify: `src/new_and_gone.py`\n",
+        encoding="utf-8",
+    )
+    git(root, "commit", "-qam", "edit the old plan")
+    result = lint(root, config, plans=[])
+    assert result.linted == [old]
+    assert [(f.rule, f.line, f.detail) for f in result.findings] == [
+        ("dead-reference", 4, "src/also_gone.py"),
+        ("dead-reference", 6, "src/new_and_gone.py"),
+    ]
+    named = lint(root, config, plans=[old]).findings
+    assert [(f.line, f.detail) for f in named] == [
+        (3, "src/gone.py"),
+        (4, "src/also_gone.py"),
+        (6, "src/new_and_gone.py"),
+    ]
+
+
+@needs_git
+def test_a_line_the_base_rewrote_since_the_fork_is_not_the_change_s_to_answer_for(
+    tmp_path: Path,
+) -> None:
+    # Against the base alone, a line the base rewrote after the change forked reads as written
+    # by the change (it holds the old text the base no longer has), so the change would answer
+    # for a stale path it never touched. A line is the change's only when it differs from every
+    # fork point's copy as well as the base's.
+    # Mutation: `mutations/`'s "plan check reads the lines a change wrote against the base alone".
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(root, SCOPE + "- Modify: `src/gone.py`\nthe middle\nthe end\n", "2026-01-01-old.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "checkout", "-qb", "feature")
+    old.write_text(
+        SCOPE + "- Modify: `src/gone.py`\nthe middle\nthe end, edited\n", encoding="utf-8"
+    )
+    git(root, "commit", "-qam", "edit the old plan's last line")
+    git(root, "checkout", "-q", "main")
+    old.write_text(SCOPE + "- Modify: `src/elsewhere.py`\nthe middle\nthe end\n", encoding="utf-8")
+    git(root, "commit", "-qam", "the base rewrites its first entry")
+    git(root, "checkout", "-q", "feature")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    assert lint(root, config, plans=[]).findings == []
+
+
+@needs_git
 def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base(
     tmp_path: Path,
 ) -> None:
