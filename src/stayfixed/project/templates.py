@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING
 import stayfixed
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION, rules_file
 from stayfixed.config.loader import CONFIG_FILE
-from stayfixed.config.schema import BRANCH_NAME, Config
+from stayfixed.config.schema import BRANCH_NAME, Config, Paths
 from stayfixed.docs.api import trail_target
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import path_key
@@ -337,6 +337,14 @@ def _budget(config: Config, name: str) -> str:
     return format(config.budgets.effective(name), ",")
 
 
+def _bug_ledger_documents(paths: Paths) -> list[Template]:
+    """The bug ledger's runbook and audits README, each where its index links it."""
+    return [
+        _template("ledger-runbook", f"{paths.runbooks}/bug-reports.md", "bug-reports-runbook.md"),
+        _template("ledger-audits", f"{paths.bugs}/audits/README.md", "audits-readme.md"),
+    ]
+
+
 def _template(
     artifact_id: str,
     target: str,
@@ -569,8 +577,7 @@ def project_templates(
     footprint: list[Template] = [
         _template("documentation-policy", f"{p.architecture}/documentation.md", "documentation.md"),
         _template("adr-template", f"{p.adr}/0000-template.md", "adr-template.md"),
-        _template("ledger-runbook", f"{p.runbooks}/bug-reports.md", "bug-reports-runbook.md"),
-        _template("ledger-audits", f"{p.bugs}/audits/README.md", "audits-readme.md"),
+        *_bug_ledger_documents(p),
         _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),

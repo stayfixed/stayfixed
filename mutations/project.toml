@@ -1946,8 +1946,8 @@ reddens = [
 [[mutation]]
 name = "init writes the audits README under a directory the bug index does not link"
 file = "src/stayfixed/project/templates.py"
-before = '''        _template("ledger-audits", f"{p.bugs}/audits/README.md", "audits-readme.md"),'''
-after = '''        _template("ledger-audits", f"{p.bugs}/audit/README.md", "audits-readme.md"),'''
+before = '''        _template("ledger-audits", f"{paths.bugs}/audits/README.md", "audits-readme.md"),'''
+after = '''        _template("ledger-audits", f"{paths.bugs}/audit/README.md", "audits-readme.md"),'''
 reddens = [
   "tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them",
 ]
