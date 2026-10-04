@@ -254,7 +254,7 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     # they are handled on their own. Each must cost that profile's line and nothing else: the
     # dirty-tree line and every other stack's line stay. Through the real dispatcher, so
     # "nothing else" includes stderr. Oracle: `mutations/`, "a hint module is imported outside
-    # its guard" and "a note is usable whatever it is".
+    # its guard", "a note is usable whatever it is" and "the hook takes a note whatever it is".
     ship(
         monkeypatch,
         {"delta": WordlessHint("x", "delta says"), "gamma": FakeHint("x", "gamma says")},
@@ -271,6 +271,13 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     assert outcome.stderr == ""
     answer = json.loads(outcome.stdout)["hookSpecificOutput"]
     assert answer["additionalContext"] == f"{LEAD}\n- {DIRTY_ONE}\n- gamma says (1)"
+
+
+class EmptyHint(FakeHint):
+    """A hint whose note is the empty string: text, with nothing in it."""
+
+    def note(self, counts: Mapping[str, int]) -> str | None:
+        return ""
 
 
 class LoudHint(FakeHint):
@@ -405,6 +412,25 @@ def test_test_hygiene_refuses_a_note_that_is_not_text(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "the alpha profile's red-run hint answered in something other than text" in captured.err
+
+
+@needs_git
+def test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An empty note is text with nothing in it: nothing to report, the same answer the hook
+    # gives by leaving the line out. So a stack whose markers are not at the root and whose note
+    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`, "test hygiene takes an
+    # empty note for something to report".
+    ship(monkeypatch, {"alpha": EmptyHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {}
+    assert out["summary"] == "tree is clean"
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -54,10 +54,10 @@ _MENTION = re.compile(
 
 # How many core modules the walk read when the pardons below were last measured: 138 on
 # 2026-10-04, one fewer than before because `release/versions.py` was folded into the module
-# that looks a release's pin up, `release/pins.py`. A floor and
-# not an equality, so a new core module does not redden this test; it exists so that a walk that
-# read nothing -- a moved package, a wrong root -- cannot pass by finding no mention. A removed
-# module lowers it, in the same commit.
+# that looks a release's pin up, `release/pins.py`. A floor and not an equality, so a new core
+# module does not redden this test; it exists so that a walk that read nothing -- a moved
+# package, a wrong root -- cannot pass by finding no mention. A removed module lowers it, in the
+# same commit.
 CORE_MODULES_AT_LEAST = 138
 
 STACK_NAMED = {

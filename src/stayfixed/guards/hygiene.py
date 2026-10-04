@@ -139,10 +139,11 @@ def notice(dirty: int | None, notes: Sequence[str]) -> str | None:
 # `Policy.OPEN` records it and drops the handler's whole context -- the dirty-tree line and every
 # other stack's line with it. They are also silent, and that is a cost rather than a design: a
 # handler has no sink to record into, and a broken `recognises` is visible nowhere else.
-# `stayfixed test hygiene` exposes a hint that did not load, which it refuses over, and one whose
-# `report` or `note` raises, since it calls both unguarded for every shipped hint; it never calls
-# `recognises`. Recording a per-hint failure in the hook's diagnostics would take a
-# sink the handler can reach, which is a change to the handler contract and not to this module.
+# `stayfixed test hygiene` exposes a hint that did not load and one whose note is not text, both
+# of which it refuses over, and one whose `report` or `note` raises, since it calls both unguarded
+# for every shipped hint; it never calls `recognises`. Recording a per-hint failure in the hook's
+# diagnostics would take a sink the handler can reach, which is a change to the handler contract
+# and not to this module.
 def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
     try:
         return any(hint.recognises(argv) for argv in commands)

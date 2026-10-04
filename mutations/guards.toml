@@ -1047,6 +1047,17 @@ before = "        if not (answer is None or isinstance(answer, str)):"
 after = "        if False:"
 reddens = ["tests/profiles/test_hints.py::test_test_hygiene_refuses_a_note_that_is_not_text"]
 
+# An empty note is nothing to report, as the hook reads it: a stack whose markers are not at the
+# root and whose note is "" is not listed.
+[[mutation]]
+name = "test hygiene takes an empty note for something to report"
+file = "src/stayfixed/guards/commands.py"
+before = "        note = usable(answer)"
+after = "        note = answer"
+reddens = [
+  "tests/profiles/test_hints.py::test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty",
+]
+
 [[mutation]]
 name = "test hygiene prints a report as the hint returned it"
 file = "src/stayfixed/guards/commands.py"
