@@ -21,7 +21,7 @@ Three things hold everywhere:
   commands whose exits mean something else: `stayfixed hook` refuses only on `PreToolUse` and
   continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
-- **Every `memory` command takes the same three options**, described once here rather than five
+- **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
   command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
   takes `--store` as well.
