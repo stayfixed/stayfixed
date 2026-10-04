@@ -354,7 +354,9 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     one longer than the filesystem allows, used to make the read fail and so answer `None`, which
     let a clone turn this row's red into a warning with nothing on the machine broken.
     `binding.cannot_exist` reads such a path as one the overlay has no file at, so the answer is
-    what `common/` grants, the same as for a name the overlay has no project for.
+    what `common/` grants, the same as for a name the overlay has no project for. Only where the
+    name picks out no directory: below one it does, the name chooses nothing, and a file where
+    `claude/` goes is the owner's overlay failing to answer, `None` like any other.
     """
     from stayfixed.attach.binding import binding_for
     from stayfixed.attach.permissions import overlay_entries

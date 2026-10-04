@@ -57,7 +57,7 @@ reddens = [
 name = "the permission diff starts reading the committed settings file"
 file = "src/stayfixed/attach/permissions.py"
 before = '    sources = _claude_sources(binding, PERMISSIONS_FILE)'
-after = '    sources = (*_claude_sources(binding, PERMISSIONS_FILE), (root / ".claude" / "settings.json", False))'
+after = '    sources = (*_claude_sources(binding, PERMISSIONS_FILE), (root / ".claude" / "settings.json", None))'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
 
 # A refusal something downstream reads as permission is a defect this oracle must name outright, and
@@ -1707,7 +1707,7 @@ reddens = [
 [[mutation]]
 name = "a source the project's name rules out is an overlay that cannot be asked"
 file = "src/stayfixed/attach/permissions.py"
-before = "        if named and cannot_exist(exc):"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
 after = "        if False:"
 reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
@@ -1756,11 +1756,52 @@ reddens = [
 [[mutation]]
 name = "every fault reading the overlay's sources reads as no source"
 file = "src/stayfixed/attach/permissions.py"
-before = "        if named and cannot_exist(exc):"
-after = "        if named:"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
+after = "        if share is not None:"
 reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-readable]",
   "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-unreadable]",
+]
+
+# Nor does a path the name rules out reach past the name's own directory. `project.name` holds no
+# `/`, so below a directory it picks out it chooses nothing: a file where `claude/` goes is the
+# owner's overlay failing to answer. Read as no source, the owner's own entries read red and a
+# second `attach` stripped them from their settings.
+[[mutation]]
+name = "a fault below the project's own directory reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
+after = "        if share is not None and cannot_exist(exc):"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[claude-is-a-file-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[claude-is-a-file-unreadable]",
+  "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[attach]",
+  "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[check]",
+]
+
+# Nor above it: `projects/` is spelled by the overlay alone, and one that is a file is the
+# overlay's own state, though the path through it is ruled out as one under a file holding the
+# name is.
+[[mutation]]
+name = "a projects/ that is a file is a name the overlay has no directory for"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if not stat.S_ISDIR(share.parent.stat().st_mode):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-unreadable]",
+]
+
+# A directory the overlay has none of yet is no directory of the owner's either: nothing is below
+# it, so a hook file under it that is past the longest path is one the overlay has no file at.
+[[mutation]]
+name = "a source past the longest path under a project the overlay has no directory for cannot be asked"
+file = "src/stayfixed/attach/permissions.py"
+before = "    except FileNotFoundError:\n        return True"
+after = "    except FileNotFoundError:\n        return False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[unreadable]",
 ]
 
 # Nor does it reach `common/`, whose spelling the overlay alone chooses. A `common/claude` that is a
@@ -1769,8 +1810,8 @@ reddens = [
 [[mutation]]
 name = "a common source the overlay cannot hold reads as no source"
 file = "src/stayfixed/attach/permissions.py"
-before = "        (binding.overlay / COMMON_CLAUDE / name, False),"
-after = "        (binding.overlay / COMMON_CLAUDE / name, True),"
+before = "        (binding.overlay / COMMON_CLAUDE / name, None),"
+after = "        (binding.overlay / COMMON_CLAUDE / name, binding.overlay / COMMON_CLAUDE),"
 reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[readable]",
   "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[unreadable]",
@@ -1784,7 +1825,7 @@ reddens = [
 name = "the project's own settings file is read as leniently as an overlay source"
 file = "src/stayfixed/attach/permissions.py"
 before = "    return _read(root / LOCAL_SETTINGS)"
-after = "    return _read(root / LOCAL_SETTINGS, named=True)"
+after = "    return _read(root / LOCAL_SETTINGS, share=root / \".claude\")"
 reddens = [
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[attach]",
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[check]",

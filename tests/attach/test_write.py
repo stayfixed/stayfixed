@@ -2199,6 +2199,39 @@ def test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes(
     assert _everything(tmp_path) == before
 
 
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes(
+    tmp_path: Path, command: str
+) -> None:
+    # The leniency a `project.name` earns is for a name no directory under `projects/` can carry.
+    # Here the name picks out the owner's own directory and a file sits below it, where `claude/`
+    # goes: `project.name` holds no `/`, so that is the overlay's state, and `attach` stops before
+    # it writes as it does for a source it cannot read. Read as absent, the second attach found
+    # nothing to grant and stripped the owner's entry from their settings. Mutation (oracle):
+    # `mutations/`'s "a fault below the project's own directory reads as no source".
+    root, store, machine = _attachable(tmp_path)
+    own = store.parent / "claude"
+    own.mkdir()
+    (own / "hooks.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [ENTRY]}]}}),
+        encoding="utf-8",
+    )
+    _attach_it(root, store, machine, tmp_path / "home")
+    settings = (root / SETTINGS).read_bytes()
+    # Non-vacuous: the owner's entry, out of the project's own hook file, is in their settings.
+    assert set(owned_ids(settings.decode("utf-8"))) == {"overlay-PreToolUse-1"}
+    shutil.rmtree(own)
+    own.write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"/claude/permissions\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert (root / SETTINGS).read_bytes() == settings
+    assert _everything(tmp_path) == before
+
+
 def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one(
     tmp_path: Path,
 ) -> None:

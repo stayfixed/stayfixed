@@ -1267,6 +1267,38 @@ def test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_
     assert "evil.example" not in printed and "forged-1" not in printed
 
 
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+def test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants(
+    tmp_path: Path, ledger: str
+) -> None:
+    # The third spelling the name rules a source out by: a directory the overlay has none of yet,
+    # whose path fits while the hook file under it is longer than a path may be. Nothing is under
+    # an absent directory, so the answer is the one an absent hook file gives -- even though the
+    # fault is a path too long, which below a directory the owner made would be theirs. Mutation
+    # (oracle): `mutations/`'s "a source past the longest path under a project the overlay has no
+    # directory for cannot be asked" -> a warning.
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Room under the longest path for the fixture's own files, overlay and checkout alike, with
+    # the project's directory 10 characters short of it and its name a file name that may be.
+    while len(str(deep)) < longest - 250:
+        deep = deep / ("d" * min(200, longest - 250 - len(str(deep))))
+    projects = deep / "overlay" / PROJECTS
+    name = "n" * (longest - 10 - len(str(projects)) - 1)
+    assert len(name) < 255
+    assert len(str(projects / name)) == longest - 10
+    assert len(str(projects / name / "claude" / "hooks.json")) > longest
+    root = _forged_clone(deep)
+    _named(root, name)
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    check = _by_name(_checks(deep, root, machine=_machine(deep)), "hook-entries")
+    expected = (
+        TABLE["forged-right-store"] if ledger == "readable" else UNREADABLE_TABLE["forged-overlay"]
+    )
+    assert check == expected
+
+
 def _case_folds(tmp_path: Path) -> bool:
     probe = tmp_path / "case-probe"
     probe.write_text("", encoding="utf-8")
@@ -1316,10 +1348,18 @@ def test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning(
 
 
 # The owner's own `projects/p/claude/` in a state this machine cannot read: no permission to enter
-# it, and a hook file that is a directory. Both are the overlay failing to answer, which is this
-# machine's state and never a repository's, so the row warns as it does for a hook file that will
-# not parse.
-OWN_SOURCES_UNREADABLE = ("no-permission", "hook-file-is-a-directory")
+# it, a hook file that is a directory, a file where the `claude` directory goes, and a file where
+# `projects/` itself goes. Each is the overlay failing to answer, which is this machine's state and
+# never a repository's, so the row warns as it does for a hook file that will not parse. The last
+# two are paths that cannot exist, as one under a name a file in `projects/` holds is, but the
+# component that is not a directory is not the name's: `project.name` holds no `/`, so it chooses
+# nothing below its own directory, and `projects/` is spelled by the overlay alone.
+OWN_SOURCES_UNREADABLE = (
+    "no-permission",
+    "hook-file-is-a-directory",
+    "claude-is-a-file",
+    "projects-is-a-file",
+)
 
 
 @pytest.mark.parametrize("ledger", ["readable", "unreadable"])
@@ -1327,8 +1367,12 @@ OWN_SOURCES_UNREADABLE = ("no-permission", "hook-file-is-a-directory")
 def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
     tmp_path: Path, fault: str, ledger: str
 ) -> None:
-    # Mutation (oracle): `mutations/`'s "every fault reading the overlay's sources reads as no
-    # source" -> both cases are green or red rather than a warning.
+    # Mutations (oracle): `mutations/`'s "every fault reading the overlay's sources reads as no
+    # source" -> every case is green or red rather than a warning; "a fault below the
+    # project's own directory reads as no source" -> `claude-is-a-file` is red: the grant was in the
+    # file the fault hides, and read as absent the owner's own entry was one nothing grants; "a
+    # projects/ that is a file is a name the overlay has no directory for" -> `projects-is-a-file`
+    # is green, out of what `common/` grants.
     if fault == "no-permission" and os.geteuid() == 0:
         pytest.skip("root enters a directory it has no permission for")
     root = _attached(tmp_path)
@@ -1338,12 +1382,32 @@ def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
     if fault == "no-permission":
         own.mkdir()
         own.chmod(0)
-    else:
+    elif fault == "hook-file-is-a-directory":
         (own / "hooks.json").mkdir(parents=True)
+    elif fault == "projects-is-a-file":
+        projects = tmp_path / "overlay" / PROJECTS
+        shutil.rmtree(projects)
+        projects.write_text("not a directory\n", encoding="utf-8")
+    else:
+        # The grant moves from `common/` to the project's own hook file, which is where an owner
+        # keeps an entry for one project. Non-vacuous: with it readable the entry is accounted for.
+        common = tmp_path / "overlay" / COMMON_CLAUDE / "hooks.json"
+        own.mkdir()
+        (own / "hooks.json").write_text(common.read_text(encoding="utf-8"), encoding="utf-8")
+        common.write_text(json.dumps({"hooks": {}}), encoding="utf-8")
+        granted = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+        assert granted == (
+            Check("hook-entries", "ok", f"{ONE_ENTRY}all accounted for", "")
+            if ledger == "readable"
+            else UNREADABLE_TABLE["owner-overlay"]
+        )
+        shutil.rmtree(own)
+        own.write_text("not a directory\n", encoding="utf-8")
     try:
         rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     finally:
-        own.chmod(0o755)
+        if fault == "no-permission":
+            own.chmod(0o755)
     expected = (
         TABLE["owner-overlay-unreadable"]
         if ledger == "readable"
