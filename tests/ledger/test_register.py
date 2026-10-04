@@ -484,10 +484,22 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             id="level-without-a-line",
         ),
         pytest.param(
-            {"required_unless_void": ("size", "area", "found")},
-            "required_unless_void `found` has no line of its own in the template, so `new` "
-            "cannot write it",
-            id="required-unless-void-without-a-line",
+            {
+                "required_unless_void": ("size", "area", "impact"),
+                "template": DEBT_TEMPLATE.replace("{impact}", "impact:"),
+            },
+            "required_unless_void `impact` has neither a line of its own nor a value in the "
+            "template, so an entry `new` writes lacks it",
+            id="required-unless-void-written-bare",
+        ),
+        pytest.param(
+            {
+                "required_unless_void": ("size", "area", "impact"),
+                "template": DEBT_TEMPLATE.replace("{impact}\n", ""),
+            },
+            "required_unless_void `impact` has neither a line of its own nor a value in the "
+            "template, so an entry `new` writes lacks it",
+            id="required-unless-void-not-written",
         ),
         pytest.param(
             {"required_unless_void": ("area",)},
@@ -504,6 +516,29 @@ def test_a_schema_built_wrong_is_refused_at_construction(
     # per rule, each dropping its check -> its case constructs.
     with pytest.raises(ValueError, match=re.escape(problem)):
         replace(DEBT.schema, **changes)
+
+
+def test_a_key_the_template_writes_itself_may_be_required_of_a_non_void_entry(
+    tmp_path: Path,
+) -> None:
+    # `found: {today}` is a line the template writes with the day of filing, so a register may
+    # require it of every non-void entry: the schema constructs and the entry `new` files reads
+    # back. Mutation (oracle): "a key the template writes itself must still have a line of its
+    # own" -> the schema is refused at construction.
+    register = replace(
+        DEBT, schema=replace(DEBT.schema, required_unless_void=("size", "area", "found"))
+    )
+    root = project(tmp_path)
+    file_entry(
+        root,
+        register,
+        title="the scan walks the tree twice",
+        values={"size": "M", "area": "ledger"},
+        today="2026-10-04",
+        fetch=False,
+    )
+    (entry,) = load_entries(root, register)
+    assert (entry.id, entry.status, entry.fields["found"]) == ("TD-001", "open", "2026-10-04")
 
 
 # The bug ledger's header and an entry's row on each `[paths]` layout the loader accepts, captured

@@ -820,12 +820,22 @@ reddens = [
 ]
 
 [[mutation]]
-name = "a key a non-void entry must carry need not have a line new writes it into"
+name = "a key a non-void entry must carry may be one the template writes empty"
 file = "src/stayfixed/ledger/register.py"
-before = '        if key in keys and key not in line_keys:'
+before = '        if key in keys and key not in line_keys and not spelled.get(key):'
 after = "        if False:"
 reddens = [
-  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-without-a-line]",
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-written-bare]",
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-not-written]",
+]
+
+[[mutation]]
+name = "a key the template writes itself must still have a line of its own"
+file = "src/stayfixed/ledger/register.py"
+before = '        if key in keys and key not in line_keys and not spelled.get(key):'
+after = '        if key in keys and key not in line_keys:'
+reddens = [
+  "tests/ledger/test_register.py::test_a_key_the_template_writes_itself_may_be_required_of_a_non_void_entry",
 ]
 
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
