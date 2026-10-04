@@ -3542,6 +3542,17 @@ reddens = [
   "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
 ]
 
+# The step is held to its whole command line: the spelling followed by `|| true` runs the check and
+# publishes whatever it found.
+[[mutation]]
+name = "the release workflow lets a failed release check through"
+file = ".github/workflows/release.yml"
+before = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"'
+after = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME" || true'
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]
+
 # The installed CLI's frame gives every command its `help=` sentence as its description; the
 # release script has its own parser and no frame, and each command's `--help` opened with
 # `usage:` and went straight to the options.
