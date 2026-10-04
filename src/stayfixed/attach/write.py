@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -357,12 +358,33 @@ def ledger(root: Path) -> AttachLedger:
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
     rules, keys, directories = _checked(raw, path)
-    store = str(raw.get("store", ""))
+    store = raw.get("store", "")
+    if not isinstance(store, str):
+        # `attach` writes the store as a string. Anything else is refused rather than passed
+        # through `str()`: `{"store": 5}` would read as the store `5`, and from Python 3.14, whose
+        # parser follows deeper nesting than `str()` does, a deeply nested value raised
+        # `RecursionError` past every reader's catch.
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'store' is not text")
     if "\0" in store:
         # `attach` records the store it was handed as a path, and no path holds a NUL; `doctor`
         # hands this field to `Path.resolve`, which meets one with `ValueError`.
         raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'store' holds a NUL")
+    try:
+        os.fsencode(store)
+    except UnicodeEncodeError:
+        # The same reason as the NUL: a lone surrogate (`"\ud800"` in the JSON) is no path this
+        # system can name, and `Path.resolve` meets one with `UnicodeEncodeError`.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: its 'store' is not a path this "
+            f"system can encode"
+        ) from None
     entries = raw.get("entries")
+    if isinstance(entries, dict) and not all(isinstance(v, str) for v in entries.values()):
+        # `attach` records each entry's event as a string; refused for the reason `store` is.
+        raise Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: its 'entries' hold a value that "
+            f"is not text"
+        )
     return AttachLedger(
         store=store,
         allow=tuple(r for r in _listed(raw, "allow", path) if isinstance(r, str)),
@@ -372,7 +394,7 @@ def ledger(root: Path) -> AttachLedger:
             # engine's own pair is one no attach could have recorded. Dropped rather than
             # refused, because a key names nothing to destroy: what it costs is a provenance
             # row, and `doctor` reporting an entry as unrecorded is the conservative answer.
-            {k: str(v) for k, v in entries.items() if marker_id(mark("", k)) == k}
+            {k: v for k, v in entries.items() if marker_id(mark("", k)) == k}
             if isinstance(entries, dict)
             else {}
         ),

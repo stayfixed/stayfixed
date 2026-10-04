@@ -1641,8 +1641,9 @@ reddens = [
 # The attach ledger is a file a clone can commit, and its readers catch the reader's own `Failure`
 # and `Refusal`. A shape `attach` never writes that raised anything else reached `doctor`'s guard,
 # and `attached` and `hook-entries` read red, "this check could not run", on a file the repository
-# chose: a `store` holding a NUL, which `Path.resolve` meets with `ValueError`, and a list field
-# holding a number, which iterating it meets with `TypeError`.
+# chose: a `store` holding a NUL, which `Path.resolve` meets with `ValueError`, one holding a
+# character no path can spell, which it meets with `UnicodeEncodeError`, and a list field holding a
+# number, which iterating it meets with `TypeError`.
 [[mutation]]
 name = "the attach ledger's reader takes a store holding a NUL"
 file = "src/stayfixed/attach/write.py"
@@ -1650,6 +1651,15 @@ before = '    if "\0" in store:'
 after = '    if False:'
 reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-nul]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader takes a store no path can spell"
+file = "src/stayfixed/attach/write.py"
+before = "        os.fsencode(store)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-unencodable]",
 ]
 
 [[mutation]]
@@ -1663,6 +1673,28 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[settings-keys-not-a-list]",
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[directories-not-a-list]",
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[memory-parents-not-a-list]",
+]
+
+# The two fields the reader used to pass through `str()`: `{"store": 5}` read as the store `5`, and
+# on Python 3.14, whose parser follows deeper nesting than `str()` does, a deeply nested value raised
+# `RecursionError` past every reader's catch. The oracle runs on 3.13, where the nested cases skip,
+# so the entries name the cases that run there; the nested ones were measured by hand on 3.14.
+[[mutation]]
+name = "the attach ledger's reader reads a store that is not text"
+file = "src/stayfixed/attach/write.py"
+before = "    if not isinstance(store, str):\n"
+after = "    store = str(store)\n    if not isinstance(store, str):\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[store-not-text]",
+]
+
+[[mutation]]
+name = "the attach ledger's reader reads an entry's event that is not text"
+file = "src/stayfixed/attach/write.py"
+before = "    if isinstance(entries, dict) and not all(isinstance(v, str) for v in entries.values()):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[entry-event-not-text]",
 ]
 
 # The store a ledger names reaches `read_binding` from `doctor`, and Python 3.11 and 3.12 raise

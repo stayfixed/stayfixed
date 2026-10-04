@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -344,11 +345,16 @@ def test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed
 
 
 # Ledger fields a clone can commit in shapes `attach` never writes, each of which used to raise out
-# of the ledger's reader with something other than its refusal: a `store` holding a NUL, which
-# `Path.resolve` meets as `ValueError`, and a list field holding a number, which the reader's
-# iteration meets as `TypeError`.
+# of the ledger's reader with something other than its refusal, or to be read as something it is
+# not: a `store` holding a NUL, which `Path.resolve` meets as `ValueError`, and one holding a lone
+# surrogate, which it meets as `UnicodeEncodeError`; a `store` or an entry's event that is not text,
+# which the reader passed through `str()`, so `5` read as the store `5`; and a list field holding a
+# number, which the reader's iteration meets as `TypeError`.
 HOSTILE_FIELDS = {
     "store-nul": ("store", "/overlay/projects/widget/memory\u0000"),
+    "store-unencodable": ("store", "/overlay/projects/widget/memory\ud800"),
+    "store-not-text": ("store", 5),
+    "entry-event-not-text": ("entries", {"x": 5}),
     "allow-not-a-list": ("allow", 5),
     "rules-not-a-list": ("rules", 5),
     "settings-keys-not-a-list": ("settings_keys", 5),
@@ -367,13 +373,58 @@ def test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable(
     # `attach` could not have written, and both rows give the unreadable-ledger warning.
     #
     # Mutations (oracle): `mutations/`'s "the attach ledger's reader takes a store holding a NUL"
-    # -> the `store-nul` case is red again; "the attach ledger's reader iterates a field that is
-    # not a list" -> the other cases are.
+    # -> the `store-nul` case is red again; "the attach ledger's reader takes a store no path can
+    # spell" -> `store-unencodable` is; "the attach ledger's reader reads a store that is not
+    # text" and "the attach ledger's reader reads an entry's event that is not text" -> the
+    # `-not-text` cases read the ledger as one it could read; "the attach ledger's reader iterates
+    # a field that is not a list" -> the list cases are red again.
     root = _attached(tmp_path)
     recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
     key, value = HOSTILE_FIELDS[field]
     recorded[key] = value
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert not any(row.status == "red" for row in rows), [
+        (row.name, row.detail) for row in rows if row.status == "red"
+    ]
+    attached = _by_name(rows, "attached")
+    assert attached.status == WARN
+    assert f"{LEDGER} is here and cannot be read as a ledger" in attached.detail
+    entries = _by_name(rows, "hook-entries")
+    assert entries.status == WARN
+    assert f"{LEDGER} is there and cannot be read as a ledger" in entries.detail
+
+
+# Deeper than `str()` follows a nested list, and no deeper than Python 3.14's parser does, so the
+# parser reads the ledger and `str()` is what overflows: measured on 3.14.7, the parser's reach ends
+# between 50,000 and 60,000 levels and `str()`'s between 30,000 and 40,000. Below 3.14 the parser
+# refuses this depth itself, which the case above holds.
+PAST_STR = 45_000
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="below 3.14 the parser stops first")
+@pytest.mark.parametrize("field", ["store", "entries"])
+def test_a_committed_ledger_field_nested_past_what_str_follows_reads_as_unreadable(
+    tmp_path: Path, field: str
+) -> None:
+    # The reader passed `store` and each entry's event through `str()`, and on Python 3.14 a value
+    # nested this deep parses and then overflows `str()`: `RecursionError` reached `_guarded` from
+    # both rows, red, "this check could not run", exit 1, on a file a clone chose. A value that is
+    # not text is a ledger `attach` never wrote. The entry's key is one `attach` recorded, because
+    # the reader only ever converted the event under a key that round-trips through the marker.
+    # Mutations (oracle, which runs on 3.13, where this skips; measured by hand on 3.14.7):
+    # `mutations/`'s "the attach ledger's reader reads a store that is not text" -> the `store`
+    # case is red again in both rows; "the attach ledger's reader reads an entry's event that is
+    # not text" -> the `entries` case reads as a ledger that could be read.
+    root = _attached(tmp_path)
+    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    if field == "store":
+        recorded["store"] = "@deep@"
+    else:
+        assert recorded["entries"], "the fixture must record an entry for this to be a probe"
+        recorded["entries"][next(iter(recorded["entries"]))] = "@deep@"
+    deep = "[" * PAST_STR + "]" * PAST_STR
+    (root / LEDGER).write_text(json.dumps(recorded).replace('"@deep@"', deep), encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"
