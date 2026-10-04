@@ -82,9 +82,10 @@ def shipped_hints() -> tuple[tuple[str, RedRunHint], ...]:
     A profile whose `hygiene.py` does not import, or defines no `HINT`, is left out, and only
     that profile goes quiet: raised from here, the failure would reach the hook's dispatcher
     ahead of every per-hint guard and cost the whole notice, the dirty-tree line included.
-    `stayfixed test hygiene` does not list such a profile either. The guard is broad for the
-    reason the per-hint guards in `stayfixed.guards.hygiene` are: a module's import runs its
-    code, and any exception can come out of it.
+    `stayfixed test hygiene` compares this with `hint_modules()` and refuses when a profile is
+    missing, because a profile it could not ask is not one with nothing to report. The guard is
+    broad for the reason the per-hint guards in `stayfixed.guards.hygiene` are: a module's
+    import runs its code, and any exception can come out of it.
     """
     found: list[tuple[str, RedRunHint]] = []
     for name in sorted(hint_modules()):
@@ -100,6 +101,16 @@ def _hint(name: str) -> RedRunHint | None:
     except Exception:
         return None
     return hint
+
+
+def usable(note: object) -> str | None:
+    """`note` when it is something to report, which is non-empty text, and `None` otherwise.
+
+    The one test of a note, for the hook's notice and for `stayfixed test hygiene` alike, so
+    that a note the notice drops is never a finding the command reports. A note that is not
+    text breaks the protocol; it is taken as nothing to say rather than printed.
+    """
+    return note if isinstance(note, str) and note else None
 
 
 def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:

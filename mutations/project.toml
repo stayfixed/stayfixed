@@ -1864,3 +1864,16 @@ file = "src/stayfixed/profiles/python/hygiene.py"
 before = "                if not source.is_file():"
 after = "                if not source.is_file() or source.is_symlink():"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
+
+# A note is something to report only when it is non-empty text, one predicate for the hook and
+# `test hygiene`. Anything else raises in the notice's join, after every per-hint guard has
+# returned, and costs the whole notice; in the command it would be printed as a finding.
+[[mutation]]
+name = "a note is usable whatever it is"
+file = "src/stayfixed/profiles/hints.py"
+before = "    return note if isinstance(note, str) and note else None"
+after = "    return note"
+reddens = [
+  "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
+  "tests/profiles/test_hints.py::test_test_hygiene_takes_a_note_that_is_not_text_as_nothing_to_report",
+]

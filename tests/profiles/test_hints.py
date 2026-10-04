@@ -254,7 +254,7 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     # they are handled on their own. Each must cost that profile's line and nothing else: the
     # dirty-tree line and every other stack's line stay. Through the real dispatcher, so
     # "nothing else" includes stderr. Oracle: `mutations/`, "a hint module is imported outside
-    # its guard" and "a hint's note is taken whatever it is".
+    # its guard" and "a note is usable whatever it is".
     ship(
         monkeypatch,
         {"delta": WordlessHint("x", "delta says"), "gamma": FakeHint("x", "gamma says")},
@@ -357,6 +357,53 @@ def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
         "tree is clean; the alpha profile has nothing to report; "
         "the beta profile has nothing to report"
     )
+
+
+@needs_git
+@pytest.mark.parametrize("broken", ["absent", "no-hint"])
+def test_test_hygiene_refuses_when_a_shipped_hint_cannot_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    broken: str,
+) -> None:
+    # The hook leaves out a profile whose `hygiene.py` does not import or has no `HINT`, so one
+    # stack's broken module costs only its own line. This command answers whether a red run can
+    # be trusted, and a profile it could not ask is "I do not know", never "tree is clean": it
+    # refuses (exit 2) and names the profile, a shipped name. `gamma` loads and has nothing to
+    # say, so without the refusal the answer would be clean. Oracle: `mutations/`, "test hygiene
+    # calls a tree clean without a hint it could not load".
+    ship(monkeypatch, {"gamma": FakeHint("x", None)})
+    if broken == "no-hint":
+        alpha = types.ModuleType("stayfixed.profiles.alpha.hygiene")
+        monkeypatch.setitem(sys.modules, alpha.__name__, alpha)
+    monkeypatch.setattr("stayfixed.profiles.hints.hint_modules", lambda: ("alpha", "gamma"))
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint could not be loaded" in captured.err
+
+
+@needs_git
+def test_test_hygiene_takes_a_note_that_is_not_text_as_nothing_to_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One predicate decides whether a note is something to report, for the hook and for this
+    # command alike: a note that is not text is dropped from the notice, so it is no finding
+    # here either, and a profile whose markers are not at the root is then not listed. Oracle:
+    # `mutations/`, "a note is usable whatever it is".
+    ship(monkeypatch, {"alpha": WordlessHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {}
+    assert out["summary"] == "tree is clean"
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
