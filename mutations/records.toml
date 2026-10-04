@@ -2047,7 +2047,7 @@ reddens = [
 [[mutation]]
 name = "the evidence line is required of the bug ledger's configured levels whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "    required = set(schema.evidence_boundary_for)"
+before = "    required = set(register.evidence_boundary_for)"
 after = "    required = set(config.ledger.evidence_boundary_required_for)"
 reddens = [
   "tests/ledger/test_register.py::test_a_second_register_holds_its_own_level_to_the_body_rules[evidence-boundary]",

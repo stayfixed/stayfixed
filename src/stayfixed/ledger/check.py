@@ -278,7 +278,7 @@ def problems(root: Path, config: Config, register: Register, base: str = "") -> 
         return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
-    required = set(schema.evidence_boundary_for)
+    required = set(register.evidence_boundary_for)
     restated = _body_state_bullet(register)
     for path in sorted(directory.glob(f"{ids.prefix}-*.md")):
         # Parsed against the repo-relative path, which is the one every message here names:

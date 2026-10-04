@@ -12,7 +12,7 @@ A leaf of this area: every other module of it imports this one, and it imports n
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from string import Formatter
 from typing import TYPE_CHECKING
 
@@ -69,7 +69,6 @@ class Schema:
     void: str  # the status of a number that never carried an entry
     level: str  # the key whose value is one of `levels`
     levels: tuple[str, ...]  # the values `level` may hold: the bug ledger's severities
-    evidence_boundary_for: tuple[str, ...]  # levels whose entries need the evidence line
     dates: tuple[str, ...]  # keys whose value is an ISO date
     # The file `new` writes. The writer fills `{identifier}`, `{title}`, `{today}` and
     # `{related}`; any other placeholder names a key outside `_WRITER_KEYS` and stands for that
@@ -167,6 +166,9 @@ class Register:
     index: str
     ids: Identifiers  # the bug ledger's is built from `[ledger] id_prefix`
     schema: Schema
+    # The levels whose entries need a filled evidence line: the bug ledger's are `[ledger]
+    # evidence_boundary_required_for`.
+    evidence_boundary_for: tuple[str, ...]
     runbook: str | None  # the bug ledger's "<[paths] runbooks>/<BUG_RUNBOOK>", the index's link
     # the bug ledger's `BUG_AUDITS`: the subdirectory of `directory` holding audit records, which
     # the index links.
@@ -210,11 +212,6 @@ _LIVE = (
     ("Found", "found"),
 )
 
-# The bug ledger's schema less the one part a project configures, so a partial value: its
-# `evidence_boundary_for` is empty here, and only `bug_register` fills it in, from `[ledger]
-# evidence_boundary_required_for`. Read from it only what no project changes (the keys, statuses,
-# levels, sections and template), as the `bugs new` parser does for `--severity`; whatever holds
-# an entry to the ledger's rules takes `bug_register(config).schema`.
 BUG_SCHEMA = Schema(
     keys=("id", "title", "status", "severity", "area", "found", "source", "fixed_in", "related"),
     required=("id", "title", "status", "found"),
@@ -223,7 +220,6 @@ BUG_SCHEMA = Schema(
     void="void",
     level="severity",
     levels=("high", "medium", "low"),
-    evidence_boundary_for=(),
     dates=("found",),
     template=_BUG_TEMPLATE,
     # `Schema` refuses a status no section gathers; the reading order is pinned as a literal by
@@ -247,9 +243,8 @@ def bug_register(config: Config) -> Register:
         directory=paths.bugs,
         index=paths.bug_index,
         ids=Identifiers(config.ledger.id_prefix),
-        schema=replace(
-            BUG_SCHEMA, evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for)
-        ),
+        schema=BUG_SCHEMA,
+        evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for),
         runbook=f"{paths.runbooks}/{BUG_RUNBOOK}",
         audits=BUG_AUDITS,
     )

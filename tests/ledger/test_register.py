@@ -140,7 +140,6 @@ DEBT = Register(
         void="void",
         level="size",
         levels=("XS", "S", "M", "L", "XL"),
-        evidence_boundary_for=(),
         dates=("found",),
         template=DEBT_TEMPLATE,
         sections=(
@@ -149,6 +148,7 @@ DEBT = Register(
             Section("Void identifiers", ("void",), (("ID", "id"), ("Why", "title"))),
         ),
     ),
+    evidence_boundary_for=(),
     runbook=None,
     audits=None,
 )
@@ -827,7 +827,7 @@ def test_a_second_register_holds_its_own_level_to_the_body_rules(
     # looks for the bug ledger's `**Severity:**` bullet -> the first case passes.
     root = project(tmp_path)
     config = load(root, machine=tmp_path / "m.toml")
-    register = replace(DEBT, schema=replace(DEBT.schema, evidence_boundary_for=("L",)))
+    register = replace(DEBT, evidence_boundary_for=("L",))
     (root / "docs" / "debt").mkdir(parents=True)
     (root / "docs" / "debt" / "TD-001.md").write_text(
         f"---\nid: TD-001\ntitle: t\nstatus: open\nsize: {size}\narea: a\nfound: 2026-10-04\n"
