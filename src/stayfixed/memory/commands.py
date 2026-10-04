@@ -497,6 +497,10 @@ def register(groups: SubParsers) -> None:
     fitting.set_defaults(func=run_doctor_bundles)
 
     refs = common_flags(
-        sub.add_parser("refs", help="backticked paths in notes that no longer resolve"), store=True
+        sub.add_parser(
+            "refs",
+            help="backticked paths in notes that no longer resolve, and the link graph as advice",
+        ),
+        store=True,
     )
     refs.set_defaults(func=run_refs)
