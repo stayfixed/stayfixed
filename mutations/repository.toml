@@ -3514,3 +3514,29 @@ file = "scripts/release.py"
 before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
 after = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=0)'
 reddens = ["tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check"]
+
+# Every message that sends the reader back to the release script names the command to run. The
+# tests used to build the expected text from the script's own `COMMAND`, so the script could tell
+# its reader to run a command that no longer exists and every assertion agreed with it; they now
+# spell the command out.
+[[mutation]]
+name = "the release script tells its reader to run the command the CLI no longer ships"
+file = "scripts/release.py"
+before = 'COMMAND = "uv run python scripts/release.py"'
+after = 'COMMAND = "uv run stayfixed release"'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused",
+  "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
+  "tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check",
+]
+
+# The fifth place the release check is spelled, and the one run last before a tag: the other four
+# are held by the block test, which this workflow cannot join because it runs no mypy and no oracle.
+[[mutation]]
+name = "the release workflow runs the release check the CLI no longer ships"
+file = ".github/workflows/release.yml"
+before = '        run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"'
+after = '        run: uv run stayfixed release check --tag "$GITHUB_REF_NAME"'
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]

@@ -87,7 +87,7 @@ def test_a_drifted_record_fails_the_hashes_check(
     assert release().main(["hashes", "--check", "--root", str(tmp_path), "--json"]) == 1
     problems = json.loads(capsys.readouterr().out)["problems"]
     assert problems == [
-        f"{RECORD} does not match hooks/hooks.json; run `{release().COMMAND} hashes`"
+        f"{RECORD} does not match hooks/hooks.json; run `uv run python scripts/release.py hashes`"
     ]
 
 
