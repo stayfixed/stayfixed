@@ -194,9 +194,9 @@ def test_init_renders_the_empty_index_with_the_same_digest() -> None:
 
 
 def test_a_second_register_renders_its_own_title_prefix_and_fields(tmp_path: Path) -> None:
-    # Mutation (oracle): `new` writes the bug ledger's template whatever the register -> the
-    # entry is a bug report with a `severity:` the debt register cannot read, and `file_entry`
-    # refuses it before writing.
+    # Mutation (oracle): `new` writes the bug ledger's template whatever the register -> that
+    # template names keys the debt register does not have (`severity` first), and the filing
+    # fails before anything reaches disk.
     root = project(tmp_path)
     filed = file_debt(root)
     assert filed.identifier == "TD-001"

@@ -525,6 +525,36 @@ reddens = [
   "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
 ]
 
+# The ledger engine serves any register, and the bug ledger is one value of it. A literal the bug
+# ledger owns, reached by another register, is a second register inheriting the first one's
+# output; the bug ledger's own index, changed by one byte, is every project's index gone stale.
+[[mutation]]
+name = "every register's index is headed with the bug ledger's title"
+file = "src/stayfixed/ledger/index.py"
+before = '    return f"# {register.title}\n\n{marker}_\n"'
+after = '    return f"# Bug reports\n\n{marker}_\n"'
+reddens = [
+  "tests/ledger/test_register.py::test_no_bug_literal_reaches_a_second_registers_output",
+]
+
+[[mutation]]
+name = "every register files its entries from the bug ledger's template"
+file = "src/stayfixed/ledger/write.py"
+before = "    text = schema.template.format("
+after = '    text = __import__("stayfixed.ledger.register", fromlist=["BUG_SCHEMA"]).BUG_SCHEMA.template.format('
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_register_renders_its_own_title_prefix_and_fields",
+]
+
+[[mutation]]
+name = "one heading of the bug ledger's index sections changes"
+file = "src/stayfixed/ledger/register.py"
+before = '        Section("Partially fixed", ("partial",), _LIVE),'
+after = '        Section("Partly fixed", ("partial",), _LIVE),'
+reddens = [
+  "tests/ledger/test_register.py::test_the_bug_register_renders_the_index_byte_for_byte",
+]
+
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
 # permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
 # as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
