@@ -1,12 +1,10 @@
 """Name what could have falsified a red test run, before the diff is blamed.
 
-Two environment faults produce a red run that no baseline A/B can attribute, because both
-halves of the A/B run inside the same fault: uncommitted work in the tree (the measurement
-describes a tree nobody is merging) and, in a stack that compiles ahead of the run, a build
-older than its source. The first belongs to no stack and is named here; the second is a stack's
-own knowledge and its profile names it (`stayfixed.profiles.hints`). Both have cost real time:
-the first twice in one branch's retro, the second a high-severity ledger entry rejected as a
-stale cache.
+Uncommitted work in the tree produces a red run that no baseline A/B can attribute, because both
+halves of the A/B run inside it: the measurement describes a tree nobody is merging. It has cost
+real time, twice in one branch's retro. It belongs to no stack and is named here; a fault that
+is one stack's own, such as Python's stale bytecode, is named by that stack's profile
+(`stayfixed.profiles.hints`).
 
 Warn-only by construction: the tool has already run, and the verdict this guards is the
 human's next sentence, not the command. Once per context, which the dispatcher's `once_key`
@@ -14,12 +12,12 @@ owns (see `hooks.py`, and `stayfixed.hooks.dispatch`, which decides and banks th
 what that currently means).
 
 Which hints speak is decided by the command that failed, never by configuration: the command is
-split into simple commands with the shared scanner's tokens and segments, each unwrapped past a
-leading shell assignment (`FOO=1 cmd`) and the scanner's small, exact wrapper set, and every
-shipped hint is asked whether it recognises one of them. When none does, nothing is said, the
-dirty-tree line included: the core cannot tell a failed test run from a failed `grep`, and the
-one delivery per context belongs to the first failed test run. A command the scanner cannot
-read is recognised by nobody, which under-reports rather than misleads.
+split into simple commands with the shared scanner's tokens and segments, each unwrapped as
+`RedRunHint.recognises` describes, and every shipped hint is asked whether it recognises one of
+them. When none does, nothing is said, the dirty-tree line included: the core cannot tell a
+failed test run from a failed `grep`, and the one delivery per context belongs to the first
+failed test run. A command the scanner cannot read is recognised by nobody
+(`simple_commands`).
 
 Which harness field says a run was red is read from the documentation, not guessed: the Claude
 Code hooks reference gives the Bash `tool_response` as `stdout`, `stderr`, `interrupted` and
@@ -137,10 +135,9 @@ def notice(dirty: int | None, notes: Sequence[str]) -> str | None:
 # exception out of one stack's hint would reach the dispatcher, which under `Policy.OPEN` records
 # it and drops the handler's whole context -- the dirty-tree line and every other stack's line
 # with it. They are also silent, and that is a cost rather than a design: a handler has no sink
-# to record into. `stayfixed test hygiene` refuses over every such failure but a broken
-# `recognises`, which it never calls and which is visible nowhere else; recording one in the
-# hook's diagnostics would take a sink the handler can reach, a change to the handler contract
-# and not to this module.
+# to record into, and `stayfixed test hygiene`, which exposes the rest, never calls `recognises`,
+# so a broken one is visible nowhere. Recording it in the hook's diagnostics would take a sink the
+# handler can reach, a change to the handler contract and not to this module.
 def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
     try:
         return any(hint.recognises(argv) for argv in commands)

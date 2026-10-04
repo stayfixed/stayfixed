@@ -8,10 +8,9 @@ stale cache. The other fault, uncommitted work in the tree, belongs to no stack,
 names it (`stayfixed.guards.hygiene`).
 
 Matching an actual pytest invocation, not the six letters "pytest" appearing anywhere in the
-command text: the core has already split the command into simple commands and unwrapped each one
-past a leading shell assignment (`FOO=1 pytest`) and its small, exact wrapper set (`env cmd`,
-`uv run cmd`), so `recognises` reads one argv and anchors on its first word. Under-reporting an
-unrecognised launcher is the safe direction for a warn-only note.
+command text: `recognises` reads one simple command, unwrapped as `RedRunHint.recognises`
+describes, and anchors on its first word. Under-reporting an unrecognised launcher is the safe
+direction for a warn-only note.
 
 Nothing a repository authored leaves this module: `note` renders a fixed sentence from a count,
 and a `ledger.code_roots` entry is walked and never printed.
