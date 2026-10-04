@@ -625,16 +625,37 @@ reddens = [
 
 # The release record's tests compared `write_record`, `read_record` and `drift` against
 # `digests` — both sides of every assertion moving together, and nothing anywhere pinning what
-# `digests` computes. Measured: the digest truncated to its first eight characters left
-# `tests/release/` at 56 passed, which is the algorithm and the length a downstream verifier
-# depends on going unchecked.
+# `digests` computes. Measured: the digest truncated to its first eight characters left every
+# record test passing, which is the algorithm and the length a downstream verifier depends on
+# going unchecked.
 [[mutation]]
 name = "the release record records a truncated digest"
 file = "src/stayfixed/release/hashes.py"
 before = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()"
 after = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]"
 reddens = [
-  "tests/scripts/test_release.py::test_the_record_is_json_with_a_format_and_one_digest_per_file",
+  "tests/release/test_hashes.py::test_each_file_is_hashed_to_its_full_sha256",
+]
+
+# No record and a record naming nothing are different answers: `doctor` skips the first and
+# reports every shipped file unrecorded on the second.
+[[mutation]]
+name = "no release record reads as a record naming nothing"
+file = "src/stayfixed/release/hashes.py"
+before = "    if not path.is_file():\n        return None"
+after = "    if not path.is_file():\n        return {}"
+reddens = [
+  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
+]
+
+# A record is read back as written: the digests `doctor` compares are the ones the record names.
+[[mutation]]
+name = "the release record reader truncates the digests it read"
+file = "src/stayfixed/release/hashes.py"
+before = "    return {str(key): str(value) for key, value in files.items()}"
+after = "    return {str(key): str(value)[:8] for key, value in files.items()}"
+reddens = [
+  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
 ]
 
 # A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every caller and

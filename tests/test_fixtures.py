@@ -20,13 +20,12 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from tests.declarations import declared
-from tests.gitfixture import git
+from tests.gitfixture import git, needs_git
 from tests.workflow_yaml import load, runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
 HOSTILE = ROOT / "tests" / "fixtures" / "hostile-project"
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 
 

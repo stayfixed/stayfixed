@@ -3,9 +3,11 @@
 The three commands used to be the installed CLI's `release` group, and they only ever checked
 the stayfixed repository itself; the exit codes and the `--json` shapes are the ones that group
 had, and these tests are what holds them. The half of the release record that shipped code reads
-— `HASHED_FILES`, `read_record` and what it raises — stays in `stayfixed.release` and is tested
-in `tests/release/`. towncrier is a development dependency and is *invoked*, never imported; the
-argv is the contract, and a stub records it.
+— `HASHED_FILES`, `digests`, `read_record` and what it raises — stays in `stayfixed.release`,
+and `tests/release/test_hashes.py` holds it, its happy path included: what `digests` computes,
+and that no record reads as `None` and a record as the digests it names. What is here is the
+writer and the drift check. towncrier is a development dependency and is *invoked*, never
+imported; the argv is the contract, and a stub records it.
 
 Every message that tells the reader which command to run again is asserted against the command
 written out, `uv run python scripts/release.py …`, and never through the script's own
@@ -16,7 +18,6 @@ and a script telling its reader to run a command that no longer exists stayed gr
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -26,8 +27,9 @@ import pytest
 from stayfixed.errors import Failure, Refusal
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
-from tests.release_script import release as _script
+from tests.release.test_hashes import hashed_plugin
 from tests.runners import Recorder
+from tests.script import release as _script
 
 release = _script()
 ROOT = Path(__file__).resolve().parents[2]
@@ -669,17 +671,10 @@ def test_a_missing_towncrier_names_the_dependency_group(tmp_path: Path) -> None:
 # --- The release record: writing it, and the drift between it and the tree ----------------------
 
 
-def _plugin(tmp_path: Path) -> Path:
-    for relative in HASHED_FILES:
-        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / relative).write_text(f"# {relative}\n", encoding="utf-8")
-    return tmp_path
-
-
 def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: Path) -> None:
     # Mutation (declared): `drift` compares the record against itself -> the second
     # assertion reddens (no drift after the edit).
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     release.write_record(root)
     assert release.drift(root) == []
     (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
@@ -689,27 +684,20 @@ def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: P
 
 
 def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path) -> None:
-    root = _plugin(tmp_path)
+    # What the record holds is `digests`, which `tests/release/test_hashes.py` pins to the full
+    # sha256 of each file; this holds that the writer records it, in the shape the shipped reader
+    # reads back.
+    root = hashed_plugin(tmp_path)
     release.write_record(root)
     document = json.loads((root / RECORD).read_text(encoding="utf-8"))
     assert document["format"] == 1
     assert set(document["files"]) == set(HASHED_FILES)
     assert document["files"] == digests(root)
     assert read_record(root) == digests(root)
-    # And what `digests` computes, against a literal rather than against itself. Every other
-    # assertion about the record compares one side of it to the other, so both move together:
-    # measured, `hashlib.sha256(...).hexdigest()` truncated to `[:8]` in `release/hashes.py`
-    # left every record test passing — the algorithm and the digest length are what a
-    # downstream verifier depends on and nothing pinned either. `tests/scaffold/test_manifest.py`
-    # makes the same claim the same way.
-    #
-    # Mutation (declared): the record records a truncated digest.
-    assert digests(root)["hooks/hooks.json"] == hashlib.sha256(b"# hooks/hooks.json\n").hexdigest()
 
 
-def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:
-    root = _plugin(tmp_path)
-    assert read_record(root) is None
+def test_no_record_and_a_missing_file_are_both_drift(tmp_path: Path) -> None:
+    root = hashed_plugin(tmp_path)
     assert release.drift(root) == [
         f"{RECORD} is missing; run `uv run python scripts/release.py hashes`"
     ]
@@ -730,7 +718,7 @@ def test_a_record_that_cannot_be_read_fails_the_drift_check_and_never_reads_clea
     # and that class is a `Failure`, so the check exits 1 naming the record rather than reading
     # a corrupt one as no drift. No mutation of its own — the raise is the reader's, and the
     # entries on `read_record` that name `tests/release/test_hashes.py` pin it there.
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     (root / RECORD).write_bytes(body)
     with pytest.raises(Failure, match=re.escape(RECORD)):
         release.drift(root)
@@ -741,7 +729,7 @@ def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
 ) -> None:
     # The command's argv wiring: that `--check` reaches `drift` and that the bare form writes.
     # No subprocess anywhere — this command reads and hashes files and nothing else.
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     assert release.main(["hashes", "--check", "--root", str(root)]) == 1
     # stdout: a finding is returned, as every stayfixed command returns one.
     assert "is missing" in capsys.readouterr().out
@@ -762,7 +750,7 @@ def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
     # detect.
     #
     # Mutation (declared): the drift arm returns `{}` for its data -> the key sets differ.
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     assert release.main(["hashes", "--root", str(root)]) == 0
     capsys.readouterr()
     assert release.main(["hashes", "--check", "--root", str(root), "--json"]) == 0
@@ -785,7 +773,7 @@ def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path)
     # against a claim nobody meant to make. Refused at the moment of writing, where the tree
     # can still be fixed — and nothing is written. Mutation (declared): drop the length check
     # -> a partial record lands and both assertions redden.
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     (root / "hooks" / "hooks.json").unlink()
     with pytest.raises(Failure, match=re.escape("hooks/hooks.json")):
         release.write_record(root)
