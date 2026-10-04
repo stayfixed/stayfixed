@@ -3583,3 +3583,12 @@ file = "scripts/release.py"
 before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
 after = '        return sub.add_parser(name, help=sentence, epilog=JSON_EPILOG)'
 reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]
+
+# A command registered with neither sentence, `help=None` explicitly, has `None` for both, and an
+# equality between the two holds over nothing.
+[[mutation]]
+name = "the release script registers a command with no sentence at all"
+file = "scripts/release.py"
+before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
+after = '        return sub.add_parser(name, help=None, epilog=JSON_EPILOG)'
+reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]

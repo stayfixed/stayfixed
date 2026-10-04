@@ -554,6 +554,10 @@ def test_every_command_opens_its_own_help_with_what_it_does() -> None:
     listed = {action.dest: action.help for action in groups._choices_actions}
     assert sorted(groups.choices) == ["check", "hashes", "notes"]
     for name, sub in groups.choices.items():
+        # Not vacuous: a command registered with neither sentence has `None` for both, and the
+        # equality below holds. Mutation (declared): `mutations/`'s "the release script
+        # registers a command with no sentence at all".
+        assert listed[name], name
         assert sub.description == listed[name], name
         assert "--json" in sub.format_help(), name
 
