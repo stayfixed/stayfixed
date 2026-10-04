@@ -41,14 +41,16 @@ template being inert, and not on the order of the two statements below.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.overlay.identity import require_overlay
 from stayfixed.overlay.layout import CAPABILITY_FILES, OVERLAY_FILES
 from stayfixed.overlay.template import retired, templates
-from stayfixed.scaffold import Plan, apply, plan
+from stayfixed.scaffold import Plan, apply, plan, unlinks
 
 # What `--root` has to name, said once. `--root` defaults to `.`, so the directory this command
 # is pointed at is ordinarily the one the agent happens to be sitting in.
@@ -85,7 +87,11 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
 
     The files a release no longer ships (`template.retired`) are planned beside the shipped
     ones, so a copy that still holds what stayfixed wrote there is removed, and any other copy is
-    kept and named.
+    kept and named. Each directory above a file the run removed then goes once it is empty
+    (`fsops.rmdir_parents_within`), whether or not `apply` finished: a later run cannot tell a
+    directory this one emptied from one a person left empty, so it would never remove one. A
+    removed file is one an action unlinks that was there before `apply` and is not after it; a
+    removal whose file was already gone empties nothing, and the directories above it stay.
 
     `decisions` is computed after `apply()` and names the two capability files unconditionally;
     it is a notice, not a gate. The module docstring says why that is safe here and what would
@@ -99,6 +105,16 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     shipped = [*templates(), *retired()]
     planned = plan(root, preset_defaults(root.name), shipped)
     if not dry_run:
-        apply(root, planned)
+        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]
+        try:
+            apply(root, planned)
+        finally:
+            for target in present:
+                if not _exists(root, target):
+                    fsops.rmdir_parents_within(root, target)
     decisions = tuple(item.id for item in shipped if item.id in CAPABILITY_FILES)
     return OverlayUpgrade(planned, decisions)
+
+
+def _exists(root: Path, target: str) -> bool:
+    return os.path.lexists(root / target)

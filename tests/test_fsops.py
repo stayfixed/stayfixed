@@ -18,6 +18,7 @@ from stayfixed.fsops import (
     open_within,
     readlink_within,
     remove_within,
+    rmdir_parents_within,
     rmdir_within,
     symlink_within,
     unlink_within,
@@ -343,6 +344,71 @@ def test_rmdir_within_refuses_an_escaping_target(tmp_path: Path) -> None:
     (outside / "victim").mkdir(parents=True)
     with pytest.raises(UnsafePath):
         rmdir_within(tmp_path / "root", "../outside/victim")
+    assert (outside / "victim").is_dir()
+
+
+def test_rmdir_parents_within_removes_each_empty_parent_and_never_the_root(tmp_path: Path) -> None:
+    # A file a run removed can leave the directories above it empty, and git keeps no empty
+    # directory, so they are noise in the tree and nothing else. The walk goes up from the file's
+    # own directory and stops below the root: an empty root is the caller's, and what is above it
+    # is nobody's business here, which no line of the walk could reach: `checked_components`
+    # refuses the empty path the root would be.
+    # Mutation (declared): the walk never starts -> the empty parents stay.
+    outer = tmp_path / "outer"
+    root = outer / "root"
+    (root / "a" / "b" / "c").mkdir(parents=True)
+    rmdir_parents_within(root, "a/b/c/gone.md")
+    assert not (root / "a").exists()
+    assert root.is_dir() and list(root.iterdir()) == []
+    assert outer.is_dir()
+
+
+def test_rmdir_parents_within_stops_at_the_first_directory_holding_anything(
+    tmp_path: Path,
+) -> None:
+    # `rmdir` refuses a directory with anything in it, which is the whole safety of the walk: the
+    # owner's file beside the one removed keeps its directory and every directory above it.
+    # No mutation: what holds this is the kernel's refusal, not a line of the walk.
+    (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+    (tmp_path / "a" / "b" / "mine.md").write_text("mine\n", encoding="utf-8")
+    rmdir_parents_within(tmp_path, "a/b/c/gone.md")
+    assert not (tmp_path / "a" / "b" / "c").exists()
+    assert (tmp_path / "a" / "b" / "mine.md").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_rmdir_parents_within_leaves_a_symlinked_directory_and_what_it_points_at(
+    tmp_path: Path,
+) -> None:
+    # A component that is a symlink, at the end of the walk or inside it, is never followed: a
+    # link swapped in for a directory after its file was removed is left, and so is the empty
+    # directory outside the root it points at.
+    # Mutation (declared): the walk opens directories without `O_NOFOLLOW` -> the link inside it
+    # is followed and the directory outside the root is removed. A link at the end of the walk is
+    # refused by `rmdir` itself, which no line here can change.
+    outside = tmp_path / "outside"
+    (outside / "b").mkdir(parents=True)
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "b").symlink_to(outside / "b", target_is_directory=True)
+    rmdir_parents_within(root, "a/b/gone.md")
+    assert (root / "a" / "b").is_symlink()
+    assert (outside / "b").is_dir()
+    # And a link inside the walk: the walk to `a/b` refuses at `a`, so nothing past it is asked.
+    (root / "a" / "b").unlink()
+    (root / "a").rmdir()
+    (root / "a").symlink_to(outside, target_is_directory=True)
+    rmdir_parents_within(root, "a/b/gone.md")
+    assert (root / "a").is_symlink()
+    assert (outside / "b").is_dir()
+
+
+def test_rmdir_parents_within_refuses_an_escaping_target(tmp_path: Path) -> None:
+    # The target's own spelling is held to the walk's containment, as every name here is.
+    # No mutation: the refusal is `checked_components`', held by that function's own entries.
+    outside = tmp_path / "outside"
+    (outside / "victim").mkdir(parents=True)
+    with pytest.raises(UnsafePath):
+        rmdir_parents_within(tmp_path / "root", "../outside/victim/gone.md")
     assert (outside / "victim").is_dir()
 
 

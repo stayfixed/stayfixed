@@ -1855,22 +1855,17 @@ once more, to add them.
 under its `owner` or `author` and, where the overlay carries one that records a manifest it
 rewrote or a file below, `.stayfixed/manifest.json` — through the same contained walk every other
 write in this project goes through; and, through the `pre-commit install` it runs in the overlay,
-the overlay's `pre-commit` git hook. It also **removes** the three files an earlier release
-shipped and this one does not, exactly as `overlay upgrade` does below: `common/memory/README.md`,
-which 0.1.0 and 0.1.1 shipped where `_README.md` is now; `skills/attach/SKILL.md`, the template's
-own copy of the `attach` skill, which the plugin's own replaces; and `common/rules/README.md`, the
-README of a directory nothing read. Each goes only when it holds what stayfixed wrote there, the
-digest `.stayfixed/manifest.json` records or, in an overlay generated from a template, which
-carries no manifest, a file a release shipped there. `init` is the step every generated overlay
-runs, and a template published at an earlier release still ships those files.
+the overlay's `pre-commit` git hook. It also **removes** the files an earlier release shipped and
+this one does not, by the rule and from the list
+[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run) gives below, and each directory
+above one of them that this leaves empty: `init` is the step every generated overlay runs, and a
+template published at an earlier release still ships those files.
 When it removes `common/memory/README.md` and `common/memory/_README.md` is not there, it
 **writes** the shipped `_README.md` in its place: a template from 0.1.x carries only the old name,
 and a directory left empty is one git does not keep, so a clone of the overlay elsewhere would
 have no `common/memory/` for the `developer` link to reach. A copy holding anything else is left,
-and the line says so and names the way out: rename the memory README to `_README.md`; the plugin's
-own `attach` skill replaces the template's, so delete your copy once you no longer need your
-edits; a standing rule is a note with `metadata.startup`, so move your rules into such notes and
-delete the README. Until then each run names the copy again. A retired file it cannot read or
+and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
+names the copy again. A retired file it cannot read or
 cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
 write is named with `overlay upgrade`, which writes it. None of the three is a failure: the run
 goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
@@ -1927,7 +1922,10 @@ other two. Any other copy may hold your own words, so it is listed as `skip_modi
 out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
 `metadata.startup`, so move your rules into such notes and delete the README. Until then each run
-lists the copy again. Exits `0`; `1` when the report
+lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
+up to the first that still holds anything and never the overlay root: `skills/attach/` and
+`skills/`, and `common/rules/`. A directory that is a symbolic link is left, and so is one above a
+file that was already gone when the run began. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
 by the containment walk.

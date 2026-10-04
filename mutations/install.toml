@@ -1755,6 +1755,46 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
 ]
 
+# Retiring the template's `attach` skill and the rules README left `skills/attach/`, `skills/` and
+# `common/rules/` behind, empty.
+[[mutation]]
+name = "overlay upgrade leaves the directories a retirement empties"
+file = "src/stayfixed/overlay/upgrade.py"
+before = "                    fsops.rmdir_parents_within(root, target)"
+after = "                    pass"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[upgrade]",
+]
+
+[[mutation]]
+name = "overlay init leaves the directories a retirement empties"
+file = "src/stayfixed/overlay/create.py"
+before = "        fsops.rmdir_parents_within(root, target)"
+after = "        pass"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[init]",
+]
+
+# A removal whose file was already gone unlinks nothing, and the directories above it held no file
+# of stayfixed's: a person may have made them, so they are not this run's to empty.
+[[mutation]]
+name = "overlay upgrade prunes above a file that was not there"
+file = "src/stayfixed/overlay/upgrade.py"
+before = "        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]"
+after = "        present = [a.target for a in planned.actions if unlinks(a)]"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[upgrade]",
+]
+
+[[mutation]]
+name = "overlay init prunes above a file that was not there"
+file = "src/stayfixed/overlay/create.py"
+before = "        if present:"
+after = "        if True:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[init]",
+]
+
 # The same stop one step later, at the `_README.md` written where the old memory README was.
 [[mutation]]
 name = "overlay init stops at a successor it cannot write"

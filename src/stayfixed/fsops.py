@@ -404,6 +404,26 @@ def rmdir_within(root: Path, target: str) -> None:
         os.rmdir(name, dir_fd=dir_fd)
 
 
+def rmdir_parents_within(root: Path, target: str) -> None:
+    """After `root/target` was removed, remove each directory above it that is now empty, deepest
+    first, and stop at the first that is not.
+
+    Only `target`'s own directories, named by its spelling and never found by listing one, so
+    this is the "directory above a file the same run removed" of the enumerated-writes rule
+    (CONTRIBUTING.md#enumerated-writes), and never `root` or anything above it. Each is one
+    `rmdir_within`: the same contained walk, `rmdir`'s own refusal of a directory with anything in
+    it, and no symlink followed — one at the end of the walk is refused as not a directory, one
+    inside it by the walk — so whatever stops one stops the rest, which hold it. `UnsafePath` for
+    a spelling that could leave the root, before anything is asked.
+    """
+    parts = checked_components(target)
+    for depth in range(len(parts) - 1, 0, -1):
+        try:
+            rmdir_within(root, "/".join(parts[:depth]))
+        except OSError:
+            return
+
+
 class NotASymlink(OSError):
     """A real file or directory was found where a symlink was asked about; it is left alone."""
 

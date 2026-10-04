@@ -17,6 +17,7 @@ ordinary case rather than the exception.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -528,7 +529,8 @@ def _retire(
     A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
     its place: such a template carried the old name only, and a directory left empty is one git
     does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
-    `developer` link to reach.
+    `developer` link to reach. Each directory above a file this run removed then goes once it is
+    empty, as `overlay upgrade` does it, and only above a file that was there to remove.
 
     **A path the ledger supplied prints through `printed.quoted`.** The ledger is committed with
     the overlay, and a record whose target this release cannot produce is named at that target,
@@ -544,6 +546,7 @@ def _retire(
     notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
     changed = False
     removed: list[str] = []
+    emptied: list[str] = []
     written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
@@ -551,6 +554,7 @@ def _retire(
             continue
         if not unlinks(action):
             continue
+        present = os.path.lexists(root / action.target)
         try:
             fsops.remove_within(root, action.target)
         except OSError as exc:
@@ -558,6 +562,8 @@ def _retire(
             continue
         notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
         removed.append(action.target)
+        if present:
+            emptied.append(action.target)
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))
             changed = True
@@ -579,6 +585,10 @@ def _retire(
         if ledgered and action.record is not None:
             ledger = ledger.with_record(action.record)
             changed = True
+    # Last, once each successor is in place, so a directory one is written into is never emptied
+    # on the way.
+    for target in emptied:
+        fsops.rmdir_parents_within(root, target)
     return ledger, notes, [*removed, *written], changed
 
 

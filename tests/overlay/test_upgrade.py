@@ -713,13 +713,96 @@ def test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped(
     try:
         done = init_instance(root, "octo", runner=Recorder())
     finally:
-        copy.parent.chmod(0o755)
+        if not removable:
+            copy.parent.chmod(0o755)
     if removable:
         assert f"removed {variant!r}, which this release no longer ships" in done.notes
         assert not copy.exists()
     else:
         assert f"left {variant!r}: cannot be removed: Permission denied" in done.notes
         assert copy.is_file()
+
+
+def _retire_by(command: str, root: Path) -> None:
+    if command == "upgrade":
+        upgrade(root, dry_run=False)
+    else:
+        init_instance(root, "octo", runner=Recorder())
+
+
+@pytest.mark.parametrize("command", ["upgrade", "init"])
+def test_retiring_a_file_removes_the_directories_it_leaves_empty(
+    tmp_path: Path, command: str
+) -> None:
+    # Removing the template's `attach` skill and the rules README left `skills/attach/`,
+    # `skills/` and `common/rules/` behind, empty: git keeps no empty directory, so a clone never
+    # saw them, but a plugin added from the overlay's own path did. Each directory above a file the
+    # run removed goes once it is empty, up to the first that is not, which here is `common/`.
+    # Mutation (declared): `mutations/`'s "overlay upgrade leaves the directories a retirement
+    # empties" and "overlay init leaves the directories a retirement empties".
+    root = _an_overlay(tmp_path)
+    for relative, text in (
+        (ATTACH_SKILL, SHIPPED_ATTACH_SKILL),
+        (RULES_README, SHIPPED_RULES_README_0_2),
+    ):
+        _with_a_retired_file(root, relative, ledger=True, text=text, shipped=text, version="0.2.0")
+    _retire_by(command, root)
+    assert not (root / ATTACH_SKILL).exists() and not (root / RULES_README).exists()
+    assert not (root / "skills").exists()
+    assert not (root / "common" / "rules").exists()
+    assert (root / "common" / "memory" / "_README.md").is_file()
+    assert root.is_dir()
+
+
+@pytest.mark.parametrize("command", ["upgrade", "init"])
+def test_a_directory_holding_the_owner_s_own_file_is_left(tmp_path: Path, command: str) -> None:
+    # `rmdir` refuses a directory with anything in it, which is the whole safety of the walk: a
+    # file of the owner's beside the retired one keeps its directory and every one above it.
+    # No mutation: what holds this is the kernel's refusal, not a line of the walk.
+    root = _an_overlay(tmp_path)
+    _with_a_retired_file(
+        root,
+        ATTACH_SKILL,
+        ledger=True,
+        text=SHIPPED_ATTACH_SKILL,
+        shipped=SHIPPED_ATTACH_SKILL,
+        version="0.2.0",
+    )
+    mine = root / "skills" / "attach" / "notes.md"
+    mine.write_text("mine\n", encoding="utf-8")
+    _retire_by(command, root)
+    assert not (root / ATTACH_SKILL).exists()
+    assert mine.read_text(encoding="utf-8") == "mine\n"
+
+
+@pytest.mark.parametrize("command", ["upgrade", "init"])
+def test_an_empty_directory_no_file_was_removed_from_is_left(tmp_path: Path, command: str) -> None:
+    # A record whose file is already gone is still a removal the engine plans, one that unlinks
+    # nothing. The directories above it held no file of stayfixed's when the run began, so
+    # emptying them is not this run's doing: a person may have made them, and they stay.
+    # Mutation (declared): `mutations/`'s "overlay upgrade prunes above a file that was not there"
+    # and "overlay init prunes above a file that was not there".
+    root = _an_overlay(tmp_path)
+    old = ".stayfixed/local/artifacts/skills/attach/SKILL.md"
+    _with_a_retired_file(
+        root,
+        ATTACH_SKILL,
+        ledger=True,
+        text=SHIPPED_ATTACH_SKILL,
+        shipped=SHIPPED_ATTACH_SKILL,
+        version="0.2.0",
+    )
+    (root / ATTACH_SKILL).unlink()
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["artifacts"][ATTACH_SKILL]["target"] = old
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    made = (root / old).parent
+    made.mkdir(parents=True)
+    planned = upgrade(root, dry_run=True).plan
+    assert [a.target for a in planned.actions if a.verb is Verb.REMOVE] == [old]
+    _retire_by(command, root)
+    assert made.is_dir()
 
 
 def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> None:
