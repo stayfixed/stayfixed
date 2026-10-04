@@ -2,15 +2,17 @@
 
 The first two rules come from one branch's retro. A plan contradicted itself about a test
 location and the stale pointer survived into three later tasks — so every reference must
-resolve unless the line says `(create)`. A path the plan removes is the same claim run backwards:
-it resolves until its task lands and never after, and a finished plan is history that a later
-change may still edit, so a `Delete:` line declares its paths as `Create:` does and `(delete)`
-marks its line as `(create)` does. And a step phrased "confirm nothing bounds X" embeds
+resolve unless the line says `(create)`. And a step phrased "confirm nothing bounds X" embeds
 its own expected answer: the author already doubted it enough to write the check and hid that
 doubt from whoever executes it. That one shipped an open defect. The verb is not special to
 "confirm" — "verify" and "check" hide the same doubt the same way — so all three are covered,
 guarded against the compound-word false positive a bare `no` produces (`no-op` is not the
 negation `no`).
+
+A path the plan removes is the first rule's claim run backwards: it resolves until its task lands
+and never after, and a finished plan is history that a later change may still edit. So a
+`Delete:` line declares its paths as `Create:` does, and `(delete)` marks its line as `(create)`
+does.
 
 The `Scope:` and `Premise:` rules come from the same retro: an unrelated change rode a bugfix
 plan because nothing on the plan named what belonged to it, and a fix's own discriminator

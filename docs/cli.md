@@ -715,14 +715,14 @@ and `stayfixed gate`, so a tag called `origin/<branch>` cannot stand in for it. 
 whose copy in `HEAD` differs from `REF`'s and from that of any commit `git merge-base --all REF
 HEAD` names: a copy equal to every merge base's leaves the merge taking `REF`'s, and one equal to
 `REF`'s leaves it as it is. Every merge base, not the one `REF...HEAD` diffs against, which can
-already hold an old plan the change puts back. Five rules, each from a
-retrospective: every backticked path resolves unless the line says `(create)` or `(delete)`, or
-the plan declares the path on a `Create:`, `Test:` or `Delete:` line, so a plan whose tasks have
-removed the files it lists under `Delete:` still lints clean; no step is phrased as already knowing its answer (`confirm that
-nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
-present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with content; and a
-mutation's outcome stated as fact in the present tense (`-> the test reddens`, `watch it go
-red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an expectation.
+already hold an old plan the change puts back. Five rules, each from a retrospective: every
+backticked path resolves unless the line says `(create)` or `(delete)`, or the plan declares it
+on a `Create:`, `Test:` or `Delete:` line; no step is phrased as already knowing its answer
+(`confirm that nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line
+with content is present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with
+content; and a mutation's outcome stated as fact in the present tense (`-> the test reddens`,
+`watch it go red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an
+expectation.
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
 an absolute one, or one that walks out through `..` — which is never settled against the
 filesystem, because that answer would be about the machine rather than about the repository. A
