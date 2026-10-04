@@ -43,6 +43,11 @@ HINT_FILE = "hygiene.py"
 # sentence, and no shipped file changes with it (the Python profile's names are `stale` and
 # `roots`).
 COUNT_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
+# How large a count may be, exclusive: a named cap too. A count is a number of files or roots,
+# which no tree comes near, so past the signed 64-bit range an integer is a defect in the hint
+# rather than a count, and an unbounded one makes `json.dumps` raise past 4300 digits. No shipped
+# file changes with it.
+COUNT_LIMIT = 2**63
 
 
 class RedRunHint(Protocol):
@@ -116,15 +121,16 @@ def answer(hint: RedRunHint, root: Path, config: Config) -> tuple[dict[str, int]
 def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:
     """`hint`'s report under `root` as a fresh mapping of count names to plain integers.
 
-    A key that is not a string matching `COUNT_NAME` is dropped, and so is a value that is not
-    an `int`, or is a `bool`, which is an `int` to Python and is not a count (`red_exit` refuses
-    it for the same reason). What `report` raises reaches the caller.
+    A key is kept only when it is a `str` matching `COUNT_NAME`, and a value only when it is an
+    `int` from 0 up to `COUNT_LIMIT`. Exactly those types, and no subclass: a subclass keeps its
+    own `__str__` and `__format__`, so it can print as text the check never saw, and `bool` is one
+    (`red_exit` refuses it for the same reason). What `report` raises reaches the caller.
     """
     return {
         key: value
         for key, value in hint.report(root, config).items()
-        if isinstance(key, str)
+        if type(key) is str
         and COUNT_NAME.fullmatch(key)
-        and isinstance(value, int)
-        and not isinstance(value, bool)
+        and type(value) is int
+        and 0 <= value < COUNT_LIMIT
     }

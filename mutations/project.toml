@@ -1813,19 +1813,36 @@ reddens = [
 name = "a count keeps any string for its name"
 file = "src/stayfixed/profiles/hints.py"
 before = """        and COUNT_NAME.fullmatch(key)
-        and isinstance(value, int)"""
-after = "        and isinstance(value, int)"
+        and type(value) is int"""
+after = "        and type(value) is int"
 reddens = [
   "tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else",
   "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
 
+# Exactly `str` and `int`: a subclass keeps its own `__str__` and `__format__` and can print as
+# text the check never saw, and `bool` is an `int` subclass that is not a count.
 [[mutation]]
-name = "a count takes a boolean for a count"
+name = "a count takes an int subclass, a boolean included, for a count"
 file = "src/stayfixed/profiles/hints.py"
-before = """        and not isinstance(value, bool)
-    }"""
-after = "    }"
+before = "        and type(value) is int"
+after = "        and isinstance(value, int)"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+[[mutation]]
+name = "a count keeps a str subclass for its name"
+file = "src/stayfixed/profiles/hints.py"
+before = "        if type(key) is str"
+after = "        if isinstance(key, str)"
+reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
+
+# A count is a non-negative number below `COUNT_LIMIT`; anything else is a defect in the hint, and
+# an unbounded one makes `json.dumps` raise in `test hygiene --json`.
+[[mutation]]
+name = "a count keeps a negative or unbounded integer"
+file = "src/stayfixed/profiles/hints.py"
+before = "        and 0 <= value < COUNT_LIMIT"
+after = "        and True"
 reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
 
 # A profile whose `hygiene.py` does not import or defines no `HINT` goes quiet alone. Imported

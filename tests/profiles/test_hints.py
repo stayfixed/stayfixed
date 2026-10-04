@@ -20,6 +20,7 @@ from stayfixed.config.schema import Config
 from stayfixed.guards.hooks import register
 from stayfixed.hooks.api import Handler, HookEvent
 from stayfixed.hooks.dispatch import Recorder, dispatch
+from stayfixed.profiles.hints import COUNT_LIMIT
 from stayfixed.profiles.python.hygiene import HINT
 from tests.gitfixture import git
 from tests.guards.test_commands import invoke
@@ -280,6 +281,20 @@ class EmptyHint(FakeHint):
         return ""
 
 
+class Word(str):
+    """A key that passes the count-name grammar and prints as something else."""
+
+    def __str__(self) -> str:
+        return "/etc/passwd"
+
+
+class Count(int):
+    """A value that is an `int` and formats as something else."""
+
+    def __format__(self, spec: str) -> str:
+        return "/etc/passwd"
+
+
 class LoudHint(FakeHint):
     """A hint whose report carries more than counts, and which keeps what its note was given."""
 
@@ -294,6 +309,10 @@ class LoudHint(FakeHint):
             "path": str(root),
             "flag": True,
             "ratio": 0.5,
+            "below": -1,
+            "beyond": COUNT_LIMIT,
+            "subclassed": Count(4),
+            Word("worded"): 5,
             7: 3,
             str(root / "notes.txt"): 2,
         }
@@ -309,12 +328,14 @@ def test_a_note_is_handed_counts_and_nothing_else(
 ) -> None:
     # The trust rule for a hint's line holds because `note` is handed counts and nothing else,
     # so the core hands it a fresh mapping of count names to plain integers, whatever `report`
-    # returned: a path, a boolean (an `int` to Python), a float, a non-string key and a key shaped
-    # like a path are dropped before the hint renders anything, and the hint never sees the very
-    # object it returned. A key is text too, and one a hint built from the tree it walked would
-    # carry that tree's names into `note` and into `stayfixed test hygiene --json`. Oracle:
-    # `mutations/`, "a hint's note is handed its report as returned" and "a count keeps any
-    # string for its name".
+    # returned: a path, a boolean (an `int` to Python), a float, a negative and an unbounded
+    # integer, an `int` or `str` subclass that prints as something else, a non-string key and a
+    # key shaped like a path are dropped before the hint renders anything, and the hint never sees
+    # the very object it returned. A key is text too, and one a hint built from the tree it walked
+    # would carry that tree's names into `note` and into `stayfixed test hygiene --json`. Oracle:
+    # `mutations/`, "a hint's note is handed its report as returned", "a count keeps any string
+    # for its name", "a count takes an int subclass, a boolean included, for a count", "a count
+    # keeps a str subclass for its name" and "a count keeps a negative or unbounded integer".
     loud = LoudHint("x", "loud says")
     ship(monkeypatch, {"alpha": loud})
     root = a_project(tmp_path)
