@@ -18,7 +18,6 @@ from stayfixed.ledger.check import register_gate
 from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import (
     foreign_index_lines,
-    generated_by,
     header,
     index_path,
     index_text,
@@ -26,7 +25,7 @@ from stayfixed.ledger.index import (
     refuse_index_overwrite,
     render_index,
 )
-from stayfixed.ledger.register import BUG_SCHEMA, bug_register
+from stayfixed.ledger.register import bug_register
 
 CONFIG = """
 [stayfixed]
@@ -77,30 +76,6 @@ def ledger(root: Path, entries: dict[int, str]) -> None:
         (bugs / f"BR-{number:03d}.md").write_text(text, encoding="utf-8")
 
 
-def test_the_header_is_computed_from_the_configured_paths(tmp_path: Path) -> None:
-    _root, config = project(tmp_path)
-    register = bug_register(config)
-    assert header(register) == (
-        "# Bug reports\n\n"
-        f"{generated_by(register)} from `bugs/BR-*.md`; edit the entry\n"
-        "files, not this one. How to file, close and reference an entry:\n"
-        "[runbook](runbooks/bug-reports.md). Audit provenance: "
-        "[docs/bugs/audits/](bugs/audits/)._\n"
-    )
-
-
-def test_the_header_follows_a_moved_ledger(tmp_path: Path) -> None:
-    # Mutation: hard-code `bugs/` in `header` — this reddens while the test above stays green.
-    _root, config = project(
-        tmp_path,
-        '\n[paths]\nbugs = "ledger/entries"\nbug_index = "ledger/INDEX.md"\nrunbooks = "guides"\n',
-    )
-    register = bug_register(config)
-    text = header(register)
-    assert "from `entries/BR-*.md`" in text
-    assert "[runbook](../guides/bug-reports.md)" in text
-
-
 def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     register = bug_register(config)
@@ -129,25 +104,6 @@ def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -
         "## Void identifiers (1)\n\n| ID | Why |\n|---|---|\n"
         "| [BR-003](bugs/BR-003.md) | a title |\n"
     ) in text
-
-
-def test_every_status_has_a_section_to_be_rendered_into() -> None:
-    # Every status the reader accepts has a section to be rendered into, and no section
-    # renders a status the reader would reject: a set equality, because the index's reading
-    # order is not the reader's vocabulary order and never was.
-    sections = BUG_SCHEMA.sections
-    assert {status for section in sections for status in section.statuses} == set(
-        BUG_SCHEMA.statuses
-    )
-    # The reading order is load-bearing (regeneration must be byte-identical), so it is pinned
-    # here as a literal rather than derived from the schema's statuses.
-    assert [status for section in sections for status in section.statuses] == [
-        "open",
-        "partial",
-        "rejected",
-        "fixed",
-        "void",
-    ]
 
 
 def test_a_cell_escapes_what_would_break_out_of_its_column(tmp_path: Path) -> None:

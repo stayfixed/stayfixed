@@ -222,8 +222,8 @@ BUG_SCHEMA = Schema(
     levels=("high", "medium", "low"),
     dates=("found",),
     template=_BUG_TEMPLATE,
-    # `Schema` refuses a status no section gathers; the reading order is pinned as a literal by
-    # `test_every_status_has_a_section_to_be_rendered_into`.
+    # `Schema` refuses a status no section gathers; the reading order is pinned with every other
+    # byte of the index by `test_the_bug_register_renders_the_index_byte_for_byte`.
     sections=(
         Section("Open", ("open",), _LIVE),
         Section("Partially fixed", ("partial",), _LIVE),
