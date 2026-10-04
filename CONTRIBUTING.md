@@ -118,9 +118,8 @@ of it. `project` holds the shipped project templates and `init`, the command tha
 repository's footprint from them, and `assess` runs the gates and the inventory over a
 repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
 (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
-(`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing
-under `src/` or `scripts/` outside it imports it, and tests reach its modules directly, as they
-do every area's.
+(`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
+outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
 `harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
 nor a `hooks.py`.)
