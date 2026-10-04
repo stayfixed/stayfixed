@@ -635,6 +635,18 @@ reddens = [
   "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
 ]
 
+# The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an
+# area's contributed check gets the skip every core check after the first gets. Naming the early
+# report's rows from the core's registry alone drops every contributed row from it.
+[[mutation]]
+name = "the early report names the core's checks alone"
+file = "src/stayfixed/doctor/checks.py"
+before = "    first, *rest = [name for name, _ in registry]"
+after = "    first, *rest = [name for name, _ in CHECKS]"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
+]
+
 # Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
 # it stayed a claim rather than a fact. The `STAYFIXED_*` strip two lines above is what closes the
 # seam; this flag is the second, independent guard, so that a later edit narrowing the strip, or a

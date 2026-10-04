@@ -1548,3 +1548,14 @@ after = "    granted = _granted_commands(context, answers)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
+
+# The binding's row for a checkout that was never attached, captured from the code before the row
+# moved into this area: a reworded sentence is a change every reader of the report sees.
+[[mutation]]
+name = "the unattached row's sentence is reworded"
+file = "src/stayfixed/attach/doctor.py"
+before = '''            f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "'''
+after = '''            f"memory.mode is overlay and {ATTACH_LEDGER} is missing, so nothing records an "'''
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unattached_project_reports_attached_as_it_did[overlay]",
+]

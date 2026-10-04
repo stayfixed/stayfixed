@@ -62,8 +62,8 @@ def test_an_unattached_project_reports_attached_as_it_did(tmp_path: Path, mode: 
     # A checkout with a `stayfixed.toml` and a git repository and nothing `attach` wrote: the
     # state `detach` leaves, and the state of a fresh clone. The whole row is compared, status,
     # sentence and remedy, because a move that reworded any of them is a change a reader of the
-    # report sees. Mutation (measured by hand): "does not exist" reworded to "is missing" in the
-    # row's sentence -> the `overlay` case reddens.
+    # report sees. Mutation (oracle): `mutations/`'s "the unattached row's sentence is reworded"
+    # -> the `overlay` case reddens.
     template = OVERLAY if mode == "overlay" else LOCAL_ONLY
     root = _initialised(tmp_path, template=template)
     _git(root, "init", "-q", "-b", "main")

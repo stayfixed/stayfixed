@@ -130,9 +130,8 @@ def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
 ) -> None:
     # The report has one row per check whatever state the repository is in, so with no
     # `stayfixed.toml` a contributed check gets the skip every core check after the first gets,
-    # and is never asked: it would be asked with no configuration to read. No oracle entry:
-    # measured by hand — taking the early report's names from `CHECKS` alone drops the row and
-    # this reddens.
+    # and is never asked: it would be asked with no configuration to read. Mutation (oracle):
+    # `mutations/`'s "the early report names the core's checks alone" -> the row is missing.
     def unreachable(context: Context) -> Row:
         raise AssertionError("asked with no configuration")
 
