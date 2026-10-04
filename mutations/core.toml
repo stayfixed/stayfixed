@@ -2025,13 +2025,17 @@ reddens = ["tests/test_areas.py::test_the_delivery_areas_are_the_three_the_desig
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
 # could not run" and the session handler's backstop swallows along with every other line of the
 # same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
-# floor written in Eastern Arabic-Indic numerals validate and print back verbatim.
+# floor written in Eastern Arabic-Indic numerals validate and print back verbatim. The core's own
+# reader is named first: `later` is what `upgrade`, `doctor` and `stayfixed gate` call, so the
+# bound is held by a test of the core and not only by the overlay's and `attach`'s.
 [[mutation]]
 name = "the version grammar stops bounding its components"
 file = "src/stayfixed/semver.py"
 before = 'COMPONENT = r"([0-9]{1,9})"'
 after = 'COMPONENT = r"(\d+)"'
 reddens = [
+  "tests/test_semver.py::test_a_component_past_nine_digits_is_no_version_and_never_an_exception",
+  "tests/test_semver.py::test_a_version_in_digits_that_are_not_ascii_is_no_version",
   "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
   "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
   "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",

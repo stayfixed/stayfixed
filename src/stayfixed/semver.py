@@ -27,7 +27,8 @@ import re
 # them, so a floor spelled in Eastern Arabic-Indic numerals validated, compared as `>=1.0.0`,
 # and printed back verbatim into a session line and a `doctor` row — `requires_of` returns the
 # overlay's own bytes, and "the one owner-authored string that prints" is meant to be a
-# version, not an arbitrary numeral system. `tests/overlay/test_requires.py` spells the digits.
+# version, not an arbitrary numeral system. `tests/test_semver.py` and
+# `tests/overlay/test_requires.py` spell the digits.
 COMPONENT = r"([0-9]{1,9})"
 # A version's leading `X.Y.Z`, whatever follows it: how `later` and the overlay's floor read a
 # running version.
