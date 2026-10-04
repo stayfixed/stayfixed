@@ -1,34 +1,23 @@
-"""The note store's rows in `stayfixed doctor`, and the two answers every delivery row reads.
+"""The note store's rows in `stayfixed doctor`: `bundles` and `store-debris`.
 
-`bundles` and `store-debris` are this area's: both measure the note store, and the store is this
-area's to resolve. `doctor`'s core discovers this module by name and asks its rows after its own
-(CONTRIBUTING.md, "Areas"), so the core resolves neither the store nor the overlay root, and
-nothing about either lives in the report's `Context`.
-
-`Answers` is what each delivery area's `register()` creates for its rows: the overlay root this
-machine records and the note store this project resolves, each asked at most once and only when a
-row reads it. A fresh one per `register()` call is a fresh one per report, so nothing one run
-resolved reaches the next — the suite runs many reports in one process. `attach` and `overlay`
-create their own through this area's `api.py`; each area resolving the overlay root for itself
-is one small file read.
+Both measure the note store, and the store is this area's to resolve. `doctor`'s core discovers
+this module by name and asks its rows after its own (CONTRIBUTING.md, "Areas"), so the core
+resolves neither the store nor the overlay root, and nothing about either lives in the report's
+`Context`. The store comes from the `Answers` (`memory.answers`) this module's `register()`
+creates, one per report, so both rows read one answer.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
-discovery, and by `memory/api.py` for `Answers`, which every area that imports this area's surface
-loads.
+discovery, and a module-level import here would be one more thing every `doctor` run loads before
+it has asked anything.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from pathlib import Path
-
     from stayfixed.doctor.api import Context, Contribution, Row
-    from stayfixed.memory.store import Store
-
-_T = TypeVar("_T")
+    from stayfixed.memory.answers import Answers
 
 # When a bundle's largest part counts as "reaching the cap", as a fraction of
 # `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
@@ -40,54 +29,6 @@ _T = TypeVar("_T")
 # `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
 # right.
 NEARLY_FULL = 0.9
-
-
-def _answered(ask: Callable[[], _T]) -> _T | None:
-    """`ask()`, or `None` when it fails the way a resolution may: a `Failure`, a `Refusal` or an
-    `OSError`.
-
-    One rule for both answers, and the one the core's context applied before the rows moved here:
-    a `stayfixed.toml` that makes the store refuse, or a machine file that names an overlay
-    nothing can read, is a row's skip — never "this check could not run", which is red and gates
-    the exit code for something the repository did not do wrong.
-    """
-    from stayfixed.errors import Failure, Refusal
-
-    try:
-        return ask()
-    except (Failure, Refusal, OSError):
-        return None
-
-
-class Answers:
-    """The overlay root this machine records and the note store this project resolves, for one
-    report, each resolved on first use and never again.
-
-    A one-element tuple is an answer, `None` is "not asked yet", so an answer that is itself
-    `None` — no overlay recorded, no store — is remembered rather than asked again.
-    """
-
-    def __init__(self) -> None:
-        self._overlay: tuple[Path | None] | None = None
-        self._store: tuple[Store | None] | None = None
-
-    def overlay(self, context: Context) -> Path | None:
-        """The overlay root the machine file records, whether or not anything is there."""
-        if self._overlay is None:
-            from stayfixed.config.overlay import overlay_root
-
-            self._overlay = (_answered(lambda: overlay_root(context.machine)),)
-        return self._overlay[0]
-
-    def store(self, context: Context) -> Store | None:
-        """The note store this project resolves to, or `None` when it does not resolve."""
-        if self._store is None:
-            from stayfixed.memory.store import resolve
-
-            self._store = (
-                _answered(lambda: resolve(context.root, context.config, machine=context.machine)),
-            )
-        return self._store[0]
 
 
 def _bundles(context: Context, answers: Answers) -> Row:
@@ -161,6 +102,7 @@ def _store_debris(context: Context, answers: Answers) -> Row:
 def register() -> Contribution:
     """This area's two rows, sharing one `Answers`, so the store resolves once for both."""
     from stayfixed.doctor.api import Contribution
+    from stayfixed.memory.answers import Answers
 
     answers = Answers()
     return Contribution(

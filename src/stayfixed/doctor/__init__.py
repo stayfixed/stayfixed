@@ -9,8 +9,8 @@ and `git ls-remote --exit-code` over the public repository's tags, which is how 
 judged, `pre-commit` asks
 `guards.api.hooks_dir` where the overlay keeps its hooks, `attached` reaches `read_binding`,
 which asks `git` for `origin`, and resolving the note store in overlay mode asks again — once for
-`attached` and once for the store's own two rows, because each area resolves the store for its own
-rows (`memory.api.Answers`).
+`attached` and once for the store's own two rows, because each delivery area resolves the store for
+its own rows.
 
 **Five launches on the green end-to-end fixture, measured — and the sixth is the one that
 leaves.** The five are the wrapper probe and four `git` questions;

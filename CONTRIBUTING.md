@@ -163,8 +163,8 @@ loaded: the core loads the private layer only when a command asks for it.
   area put there is told apart from a repository claiming it did. The record may be repository
   bytes and the grants may not, and an entry is absolved only by an area that both records its id
   and grants its command, never by one area's record and another's grant. `register()` is called
-  once per report, so anything it creates for its checks — the delivery areas each create a
-  `memory.api.Answers` for the overlay root and the note store — is fresh for every report.
+  once per report, so anything it creates for its checks — each delivery area creates a value that
+  resolves the overlay root and the note store at most once — is fresh for every report.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and

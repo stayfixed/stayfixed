@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
+import stayfixed.memory.answers as answers_module
 from stayfixed.config.loader import load
 from stayfixed.doctor.api import RED, SKIP
 from stayfixed.errors import Refusal
-from stayfixed.memory import store as store_module
 from stayfixed.memory.api import PROJECTS
 from stayfixed.memory.doctor import NEARLY_FULL
 from tests.doctor.test_checks import _attached, _by_name, _checks, _initialised, _machine
@@ -54,7 +54,8 @@ def test_a_store_that_refuses_skips_the_store_checks(
     # group that leaves the store, it answers no store at all rather than refusing, which is what
     # every `memory.groups` value measured here gets from it. The second case is the resolver
     # raising `Refusal` instead, which is what the lazy value's `except` exists for and what no
-    # `memory.groups` reaches today, so it is stood in for by replacing the resolver.
+    # `memory.groups` reaches today, so it is stood in for by replacing the resolver where the lazy
+    # value calls it, in `memory.answers`.
     #
     # Mutation (oracle): `mutations/`'s "the delivery rows let a refusing store escape" -> the
     # `Refusal` reaches the guard and both rows are red, "this check could not run: Refusal".
@@ -65,7 +66,7 @@ def test_a_store_that_refuses_skips_the_store_checks(
         def refuses(*args: object, **kwargs: object) -> None:
             raise Refusal("the store refused")
 
-        monkeypatch.setattr(store_module, "resolve", refuses)
+        monkeypatch.setattr(answers_module, "resolve", refuses)
     rows = {row.name: row for row in _checks(tmp_path, root)}
     for name in ("bundles", "store-debris"):
         assert rows[name].status == SKIP, rows[name]

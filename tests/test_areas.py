@@ -488,11 +488,10 @@ def test_in_isolation_no_core_module_loads_a_delivery_area() -> None:
 
 def test_an_areas_doctor_module_imports_only_inside_its_functions() -> None:
     # CONTRIBUTING, "Areas": in an area's `doctor.py`, as in a `hooks.py`, every import sits
-    # inside a function body. The module is imported by discovery, and `memory`'s by that area's
-    # `api.py` too, which every area importing the note store's surface loads, so a module-level
-    # import there is paid by every one of them. Only `typing` and what `TYPE_CHECKING` guards
-    # stand at module level. Mutation (oracle): `mutations/`'s "an area's doctor.py imports
-    # stayfixed at module level".
+    # inside a function body. The module is imported by discovery, for every `doctor` run, so a
+    # module-level import there is paid before the report has asked anything. Only `typing` and
+    # what `TYPE_CHECKING` guards stand at module level. Mutation (oracle): `mutations/`'s "an
+    # area's doctor.py imports stayfixed at module level".
     source = ROOT / "src" / "stayfixed"
     found = sorted(source.glob("*/doctor.py"))
     # The three delivery areas carry one each, and the walk says so before it judges them.

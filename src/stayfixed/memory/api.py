@@ -14,9 +14,9 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-one names are imported from outside this area today, and the areas that reach for them
-are `attach` and `overlay`: the resolver and its store (`resolve`, `Store`, `permitted_roots` and
-`main_checkout`), the overlay layout `attach` writes and `overlay` renders (`PROJECTS`,
+Twenty-nine names are imported from outside this area today, by the `attach` and `overlay` areas
+and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
+the overlay layout `attach` writes and `overlay` renders (`PROJECTS`,
 `PROJECT_RECORD`, `COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
 `harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
@@ -24,8 +24,8 @@ every name the tree holds from git), whether the machine records any approval fo
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
-binding's one classifier and its vocabulary (`binding_state`, `BINDING_STATES` and its four
-members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
+binding's one classifier and the states and causes it answers in (`binding_state`, `UNBOUND`,
+`MISMATCH`, `NO_ORIGIN`, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
 `DIFFERENT_REMOTE`), which `attach` answers the binding question with instead of a second
 classifier of its own, the bundle slots `tests/hooks/test_hooks_json.py` holds the hooks file to
 (`SLOTS`), the overlay root and the note store a `doctor` row reads, resolved once per report
@@ -38,8 +38,14 @@ overlay root the machine file records and the checkout's `origin` are the core's
 `init` asks them too and the core may not import this area; the crossings still pinned are
 listed in `tests/test_areas.py`.
 
-**Seven more have no importer and stay, each for a reason written here**, because a name
+**Ten more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
+
+- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and
+  a return type absent from a surface is a value a consumer can hold and cannot declare, which
+  `tests/test_surfaces.py` derives rather than restates. `BINDING_STATES` and `BOUND` complete the
+  closed vocabulary `binding_state` answers in, beside the three states that have a caller, for the
+  reason the trust region's bullet below gives.
 
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
@@ -100,8 +106,8 @@ predicted. `Links` stays for the same reason and is the one name on this list an
 `mutations/`'s "a type the surface names in a signature drops off the surface".
 """
 
+from stayfixed.memory.answers import Answers
 from stayfixed.memory.bundles import SLOTS
-from stayfixed.memory.doctor import Answers
 from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
