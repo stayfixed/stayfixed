@@ -244,23 +244,6 @@ reddens = [
   "tests/guards/test_githooks.py::test_the_hook_says_nothing_when_there_was_nothing_to_strip",
 ]
 
-# The stale-bytecode predicate, both directions: `!=` against the header's recorded mtime is
-# the comparison CPython makes; a naive `pyc mtime > source mtime` reported the healthy case
-# as stale and missed the real one.
-[[mutation]]
-name = "stale bytecode is never counted"
-file = "src/stayfixed/guards/hygiene.py"
-before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
-after = '                if False:'
-reddens = ["tests/guards/test_hygiene.py::test_stale_bytecode_is_counted"]
-
-[[mutation]]
-name = "fresh bytecode is counted as stale"
-file = "src/stayfixed/guards/hygiene.py"
-before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
-after = '                if True:'
-reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
-
 # The containment check on `ledger.code_roots`. `config.paths` guards `[paths]` and leaves this
 # field to whoever consumes it, so this call is the only thing between a committed
 # `code_roots = ["../.."]` and a walk of the tree above the project root. Declared rather than
@@ -274,20 +257,7 @@ before = '''            candidate = contained(
                 root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
             )'''
 after = '            candidate = root / entry'
-reddens = ["tests/guards/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
-
-# The other half of the stale-bytecode predicate, and the direction that costs a person time
-# rather than only missing a warning. PEP 552 bytes 8-12 hold the source mtime only while bit 0
-# of the flags word is clear; in a hash-based `.pyc` they hold half the source hash, and
-# comparing that fragment to an mtime reports a perfectly current cache as stale on every run.
-# `SOURCE_DATE_EPOCH` alone flips `py_compile` into that mode, so a reproducible build turns the
-# notice into a permanent false alarm and `test hygiene` into a permanent exit 1.
-[[mutation]]
-name = "a hash-based .pyc is read as if it carried an mtime"
-file = "src/stayfixed/guards/hygiene.py"
-before = '    if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:'
-after = '    if False:'
-reddens = ["tests/guards/test_hygiene.py::test_a_hash_based_pyc_is_not_judged"]
+reddens = ["tests/profiles/python/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
 
 # The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
 # than a wider net. The canonical harness attribution is a `Generated with` footer, a blank
@@ -396,21 +366,6 @@ reddens = [
   "tests/guards/test_bgcleanup.py::test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak",
 ]
 
-# The third half of the stale-bytecode header read, and the same class as `mutations/`'s "a
-# hash-based .pyc is read as if it carried an mtime": PEP 552 bytes 8-12 are this interpreter's
-# recorded source mtime only when bytes 0-4 are this interpreter's magic. A `__pycache__` keeps one
-# `.pyc` per interpreter tag and nothing removes the old ones, so a `mod.cpython-311.pyc` records
-# the mtime as of a run whose bytecode will never be imported again -- and any edit since makes it
-# mismatch. Measured on a tree whose current bytecode had just been compiled and was fresh:
-# `_stale_bytecode` -> 1, so the notice fires on every red run of a healthy tree and `test hygiene`
-# exits 1 forever.
-[[mutation]]
-name = "a .pyc from another interpreter is read as this one's"
-file = "src/stayfixed/guards/hygiene.py"
-before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
-after = '    if False:'
-reddens = ["tests/guards/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
-
 # `contained_roots` is what every consumer of `ledger.code_roots` walks, one `rglob` per entry
 # with the results added up, so a repeated or nested entry multiplies a count rather than
 # widening a scan. Measured with `code_roots = ["src", "src", "src/pkg"]` over two stale `.pyc`
@@ -422,7 +377,7 @@ file = "src/stayfixed/guards/roots.py"
 before = '        if any(_covers(kept, candidate) for kept in found):'
 after = '        if False:'
 reddens = [
-  "tests/guards/test_hygiene.py::test_a_repeated_or_nested_code_root_is_walked_once",
+  "tests/profiles/python/test_hygiene.py::test_a_repeated_or_nested_code_root_is_walked_once",
 ]
 
 # ---------------------------------------------------------------------------------------------
@@ -539,7 +494,7 @@ reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it
 name = "a tree git cannot report on is reported as clean"
 file = "src/stayfixed/guards/commands.py"
 before = '        raise Refusal(_NO_GIT)'
-after = '        found = found._replace(dirty=0)'
+after = '        dirty = 0'
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_git_cannot_report_on",
 ]
@@ -938,3 +893,147 @@ file = "src/stayfixed/guards/commands.py"
 before = "    hygiene = common_flags("
 after = '    test_sub.add_parser("audit-entrypoints"); hygiene = common_flags('
 reddens = ["tests/test_cli.py::test_the_test_group_has_hygiene_and_attribute"]
+
+# The red-run hint is chosen by the command that failed, so a repository in two stacks that runs
+# both suites in one command gets both stacks' advice. Keeping only the first recognising hint is
+# the shape a "the profile" design would have, and it silently drops the second stack's line.
+[[mutation]]
+name = "only the first recognising hint speaks"
+file = "src/stayfixed/guards/hygiene.py"
+before = "    speaking = [hint for _, hint in hints if hint is not None and _recognises(hint, commands)]"
+after = "    speaking = [hint for _, hint in hints if hint is not None and _recognises(hint, commands)][:1]"
+reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"]
+
+# A hint that raises costs its own line and nothing else. Unguarded, the exception reaches the
+# dispatcher, which under `Policy.OPEN` records it and drops the handler's whole context: the
+# dirty-tree line and every other stack's line go with the broken one.
+[[mutation]]
+name = "a hint's note is computed outside its guard"
+file = "src/stayfixed/guards/hygiene.py"
+before = """    try:
+        return answer(hint, root, config)[1]
+    except Exception:
+        return None"""
+after = "    return answer(hint, root, config)[1]"
+reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
+
+[[mutation]]
+name = "a hint's recognition is asked outside its guard"
+file = "src/stayfixed/guards/hygiene.py"
+before = """    try:
+        return any(hint.recognises(argv) for argv in commands)
+    except Exception:
+        return False"""
+after = "    return any(hint.recognises(argv) for argv in commands)"
+reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
+
+# The core names no stack: one stack's runner, artifacts or package manager live in its profile,
+# and a mention in a core module is either moved there or pardoned with its reason.
+[[mutation]]
+name = "the core names pytest again"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """PYTEST = "pytest"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+# The words miss the core importing a stack's own code, since a module path holds no listed word;
+# the import walk is what catches it.
+[[mutation]]
+name = "the core imports the Python profile's hint"
+file = "src/stayfixed/guards/hygiene.py"
+before = "from stayfixed.profiles.hints import answer, shipped_hints"
+after = """from stayfixed.profiles.hints import answer, shipped_hints
+from stayfixed.profiles.python.hygiene import PythonHint"""
+reddens = ["tests/test_language_neutral.py::test_no_core_module_imports_a_stack_profiles_code"]
+
+# A bytes literal is code too: the walk reads it as Latin-1, so a stack's word spelled as bytes
+# in a core module is a mention like any string.
+[[mutation]]
+name = "the core names a stack in a bytes literal"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """_VENDORED = b"node_modules"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+# `test hygiene` must not call clean a tree the hook calls stale: the hook asks every hint and
+# detects nothing, so a profile with something to say is listed whether or not its markers sit at
+# the root, and a Python project in a subdirectory is not hidden by the root having no marker.
+[[mutation]]
+name = "test hygiene hides a profile its markers do not detect at the root"
+file = "src/stayfixed/guards/commands.py"
+before = "        if note is None and not detects(load_profile(name), root):"
+after = "        if not detects(load_profile(name), root):"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit",
+]
+
+# A failing hint is "I do not know", refused like the rest, and named by its type alone: the
+# exception's message can carry a path the hint walked, which a repository chose.
+[[mutation]]
+name = "test hygiene prints a failing hint's own message"
+file = "src/stayfixed/guards/commands.py"
+before = "            kind = type(exc).__name__"
+after = '            kind = f"{type(exc).__name__}: {exc}"'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_failing_hint_without_printing_its_message[False]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_failing_hint_without_printing_its_message[True]",
+]
+
+# A repository in two stacks gets two entries, and each carries counts only.
+[[mutation]]
+name = "test hygiene reports the first stack and stops"
+file = "src/stayfixed/guards/commands.py"
+before = "        reports[name] = report"
+after = """        reports[name] = report
+        break"""
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+]
+
+# A profile with nothing to say is listed while its markers sit at the root, so the clean summary
+# names the stacks that were looked at.
+[[mutation]]
+name = "test hygiene lists only the profiles with something to say"
+file = "src/stayfixed/guards/commands.py"
+before = "        if note is None and not detects(load_profile(name), root):"
+after = "        if note is None:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuration",
+]
+
+[[mutation]]
+name = "test hygiene's clean summary names no stack"
+file = "src/stayfixed/guards/commands.py"
+before = "    summary = \"; \".join(findings) or clean"
+after = '    summary = "; ".join(findings) or "tree is clean"'
+reddens = ["tests/guards/test_commands.py::test_test_hygiene_is_clean_on_a_committed_tree"]
+
+[[mutation]]
+name = "test hygiene's clean summary names only the first stack"
+file = "src/stayfixed/guards/commands.py"
+before = '        f"; the {name} profile has nothing to report" for name in reports'
+after = '        f"; the {name} profile has nothing to report" for name in list(reports)[:1]'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report",
+]
+
+# A shipped profile whose hint did not load is "I do not know", which this command never reports
+# as a clean tree; the hook goes on without that profile, this command refuses.
+[[mutation]]
+name = "test hygiene calls a tree clean without a hint it could not load"
+file = "src/stayfixed/guards/commands.py"
+before = "    if unloaded:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[absent]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[no-hint]",
+]
+
+

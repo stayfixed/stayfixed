@@ -13,8 +13,8 @@ command.
 
 Nothing a repository controls is put into `HookResult.context`. The restore hint is built from
 the command's own text — model- or user-authored, never repository bytes — and the hygiene
-notice carries counts this module computed and fixed sentences, never a path from
-`stayfixed.toml`.
+notice carries counts and fixed sentences, its own and those a shipped profile's hint renders
+from its counts, never a path from `stayfixed.toml`.
 
 Both handlers are silent without a configuration: with no `stayfixed.toml`, no hook handler says
 anything. For the guard that is a design decision, not a degradation: a repository that has not run
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 BASH = "Bash"
 
 # The dispatcher owns the once-per-context bookkeeping, so the handler declares the key
-# and stays pure. A red pytest over a dirty tree is the normal state of TDD — every "run it to
+# and stays pure. A red test run over a dirty tree is the normal state of TDD — every "run it to
 # watch it fail" step would otherwise carry the same paragraph — so the note is worth one
 # appearance and no more.
 ONCE_TEST_HYGIENE = "test-hygiene"
@@ -75,8 +75,9 @@ def _bg_cleanup(event: HookEvent, config: Config | None) -> HookResult:
 
 
 def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
-    """Name what could have falsified a red pytest run. Never a decision: the tool has already
-    run, and `Policy.OPEN` means a failure here costs the note and not the call."""
+    """Name what could have falsified a red test run, in the words of the profile whose runner
+    failed. Never a decision: the tool has already run, and `Policy.OPEN` means a failure here
+    costs the note and not the call."""
     if config is None or event.project_root is None:
         return HookResult()
     command = bash_command(event)

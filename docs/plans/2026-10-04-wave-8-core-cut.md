@@ -194,7 +194,7 @@ names the test or step that covers it, or "—" when the change cannot reach the
 | `doctor` (Tasks 4–5) | Task 5 `test_every_check_has_one_row_in_one_report` | — (doctor reads the tree as it is; no state differs by version) | Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` | Task 4 `test_a_contribution_that_raises_costs_one_row` | Task 5 `test_an_unattached_project_reports_attached_as_it_did` |
 | `memory refs` (Task 3) | Task 3 `test_refs_reports_graph_notices_without_changing_its_exit` | — | — (refs already refuses an unresolved store: `tests/memory/test_refs.py`) | — | — |
 | `hook <event>` (Tasks 6, 7, 13) | Task 7 `test_a_detected_harness_renders_its_own_answer` | — (`hooks/hooks.json` and the code ship in one plugin version, and the hook launcher runs the plugin's own `src`) | Task 7 `test_an_unknown_harness_renders_the_canonical_shape` | Task 7 `test_a_deny_never_goes_through_render` | — |
-| `test hygiene` and the `PostToolUse` notice (Task 13) | Task 13 `test_a_red_pytest_run_gets_the_python_profiles_note` | — | Task 13 `test_no_recognising_profile_means_no_notice` | Task 13 `test_a_hint_that_raises_costs_its_note_not_the_dispatch` | — |
+| `test hygiene` and the `PostToolUse` notice (Task 13) | Task 13 `test_a_red_pytest_run_gets_the_python_profiles_note` | — | Task 13 `test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit`, `test_only_contained_code_roots_are_scanned` | Task 13 `test_a_hint_that_raises_costs_its_note_not_the_dispatch` | — |
 | `bugs new|index|check|renumber` (Tasks 14, 15) | Task 14 `test_the_bug_register_renders_the_index_byte_for_byte` | Task 14 `test_init_renders_the_empty_index_with_the_same_digest` | Task 15 `test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live` | — | — |
 | `init`, `upgrade`, `uninstall` (Task 2) | Task 2 `test_the_ignore_block_init_writes_is_the_block_attach_writes` | Task 2 same (the block's bytes pinned as at `aed27b6`, so `upgrade` sees no change) | Task 2 `test_an_attached_repository_is_refused_and_told_to_detach` (kept, pinned to the literal path) | — | Task 2 same |
 | `overlay upgrade`, `overlay init` (Task 12) | Task 12 `test_an_overlay_without_the_retired_files_plans_nothing` | Task 12 `test_each_released_copy_of_a_retired_file_is_removed` | Task 12 `test_an_edited_retired_file_is_kept_and_named` | — | — |
@@ -1156,8 +1156,8 @@ gets no Python note, which under-reports rather than misleads, and the commit sa
 
 - [ ] **Step 1: Write the failing tests.** `tests/profiles/test_hints.py`:
   `test_a_red_pytest_run_gets_the_python_profiles_note` (through the handler, a stale `.pyc`
-  fixture); `test_no_recognising_profile_means_no_notice` (a red `cargo test`: the dirty-tree line
-  only, or nothing on a clean tree); `test_two_recognising_hints_both_speak` (two fake hint modules
+  fixture); `test_no_recognising_profile_means_no_notice` (a red `cargo test`: no notice, the
+  dirty-tree line included, since that line comes only with a recognised run); `test_two_recognising_hints_both_speak` (two fake hint modules
   injected through `hint_modules`, a command each recognises);
   `test_a_hint_that_raises_costs_its_note_not_the_dispatch`;
   `test_the_note_is_a_function_of_the_report` (the Python hint's `note` over a fixed counts
