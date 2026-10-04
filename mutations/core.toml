@@ -664,6 +664,19 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
 ]
 
+# Two values that claim one input would leave the registry's order to decide which harness a
+# session gets, so detection claims only what is its own.
+[[mutation]]
+name = "Codex's detection claims every input"
+file = "src/stayfixed/harnesses.py"
+before = """    if "PLUGIN_ROOT" in env:
+        return True"""
+after = """    if True:
+        return True"""
+reddens = [
+  "tests/test_harnesses.py::test_no_input_is_claimed_by_two_harnesses",
+]
+
 # Detection reads inputs a repository can steer, so no harness renders apart from the canonical
 # one until it is detected by a signal the wrapper controls.
 [[mutation]]

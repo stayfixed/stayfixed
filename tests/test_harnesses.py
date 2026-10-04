@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 
 import pytest
@@ -76,6 +77,22 @@ PAYLOADS: tuple[dict[str, object] | None, ...] = (
     {"permission_mode": "p"},
     {"model": "m", "permission_mode": "p"},
 )
+# A harness no release serves, told by a variable of its own, and the inputs it sends. Its
+# variable is in none of the inputs above, as a new harness's would be in neither of theirs.
+OTHER = Harness(
+    name="other",
+    marker_dir=".other",
+    settings=(),
+    local_settings=(),
+    project_dir_env=None,
+    render=CANONICAL.render,
+    reach=CLAUDE.reach,
+    detects=lambda env, payload: "OTHER_HARNESS" in env,
+)
+OTHER_INPUTS: tuple[tuple[dict[str, str], dict[str, object] | None], ...] = (
+    ({"OTHER_HARNESS": "1"}, None),
+    ({"OTHER_HARNESS": "1", "CLAUDE_PROJECT_DIR": "/p"}, {"hook_event_name": "SessionStart"}),
+)
 
 
 def test_an_environment_codex_sets_is_codex() -> None:
@@ -90,15 +107,19 @@ def test_an_environment_codex_sets_is_codex() -> None:
 
 def test_no_input_is_claimed_by_two_harnesses() -> None:
     # Detection answers the first value that claims an input, so two values claiming one would
-    # make the registry's order decide which harness a session gets. Mutation (by hand): give
-    # `CLAUDE` a `detects` that answers `CLAUDE_PLUGIN_ROOT` -> the Codex environment, which
-    # carries that name too, is claimed twice and this reddens.
-    positive = [harness for harness in HARNESSES if harness.detects is not None]
-    assert positive, "no value detects anything, so this table proves nothing"
-    for env in ENVIRONMENTS:
-        for payload in PAYLOADS:
-            claims = [h.name for h in positive if h.detects is not None and h.detects(env, payload)]
-            assert len(claims) <= 1, (env, payload, claims)
+    # make the registry's order decide which harness a session gets. Only Codex detects anything
+    # today, and one detecting value cannot claim an input twice, so a second one stands beside
+    # it here, with the inputs it sends. Mutation (declared, on `harnesses`): Codex's detection
+    # claims every input -> the other value's inputs are claimed twice and this reddens.
+    positive = [harness for harness in (*HARNESSES, OTHER) if harness.detects is not None]
+    assert len(positive) >= 2, "fewer than two values detect anything, so none can collide"
+    claimed: set[str] = set()
+    for env, payload in (*itertools.product(ENVIRONMENTS, PAYLOADS), *OTHER_INPUTS):
+        claims = [h.name for h in positive if h.detects is not None and h.detects(env, payload)]
+        assert len(claims) <= 1, (env, payload, claims)
+        claimed.update(claims)
+    # A value the walk never asks about anything it claims could collide with nothing.
+    assert claimed == {harness.name for harness in positive}
 
 
 def test_an_input_no_harness_claims_is_the_canonical_harness() -> None:
