@@ -52,10 +52,12 @@ _MENTION = re.compile(
     r"(?<![a-z0-9])(" + "|".join(re.escape(word) for word in STACK_WORDS) + r")(?![a-z0-9])"
 )
 
-# How many core modules the walk read when the pardons below were measured. A floor and not an
-# equality, so a new core module does not redden this test; it exists so that a walk that read
-# nothing -- a moved package, a wrong root -- cannot pass by finding no mention.
-CORE_MODULES_AT_LEAST = 139
+# How many core modules the walk read when the pardons below were last measured: 138 on
+# 2026-10-04, once the release tooling and the test-file audit had left the package. A floor and
+# not an equality, so a new core module does not redden this test; it exists so that a walk that
+# read nothing -- a moved package, a wrong root -- cannot pass by finding no mention. A removed
+# module lowers it, in the same commit.
+CORE_MODULES_AT_LEAST = 138
 
 STACK_NAMED = {
     # The ledger scan's exclusions. `EXCLUDED_DIRNAMES` (`node_modules`, `.git`, `.venv`, `dist`,
