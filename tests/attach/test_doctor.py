@@ -964,7 +964,8 @@ def test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_ove
     # "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside
     # an unreadable record" -> both `-no-overlay` cases read the recorded overlay's sentence; "the
     # rebuild remedy is offered where the overlay cannot be asked" and "an unreadable ledger is
-    # never told how to rebuild it" -> the warnings' remedies.
+    # never told how to rebuild it" -> the warnings' remedies; "an unreadable record withholds
+    # judgement of nothing its area grants" -> `owner-overlay` is red.
     assert _unreadable_row(case, tmp_path, monkeypatch) == UNREADABLE_TABLE[case]
 
 

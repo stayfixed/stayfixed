@@ -717,6 +717,20 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[nested-no-overlay]",
 ]
 
+# The other side of the same arm: an entry the unreadable record's own area grants may be one that
+# record holds, so the row warns rather than accuse it. Withholding nothing, an owner whose ledger
+# got corrupted reads red for every entry their overlay grants, told to remove what they installed.
+[[mutation]]
+name = "an unreadable record withholds judgement of nothing its area grants"
+file = "src/stayfixed/doctor/checks.py"
+before = "                if any(command in (answer.granted or ()) for answer in unread):"
+after = "                if False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
+]
+
 # And no less: an unreadable record is not an empty one. Judged as one, every entry `attach`
 # installed reads as recorded nowhere, red, with a remedy telling the owner to remove it.
 [[mutation]]
