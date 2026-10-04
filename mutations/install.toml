@@ -397,10 +397,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/stayfixed/doctor/checks.py"
-before = """            if entry_id not in recorded:
-                unrecorded.append(where)"""
-after = """            if False:
-                unrecorded.append(where)"""
+before = "            if entry_id not in found:"
+after = "            if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
 ]
@@ -549,10 +547,8 @@ reddens = [
 [[mutation]]
 name = "the attach ledger vouches for a hook entry on its own"
 file = "src/stayfixed/doctor/checks.py"
-before = '''            elif command not in granted:
-                ungranted.append(where)'''
-after = '''            elif False:
-                ungranted.append(where)'''
+before = "            elif granted is not None and command not in granted:"
+after = "            elif False:"
 reddens = [
   "tests/doctor/test_contributions.py::test_an_id_an_area_records_and_nothing_grants_is_never_absolved",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
@@ -622,17 +618,30 @@ reddens = [
   "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
 ]
 
-# Where the overlay could not be asked, the provenance column is withheld rather than computed:
-# every entry claiming the marker would otherwise be judged against grants nobody could read, and
+# Where the overlay could not be asked, the grant comparison is withheld rather than computed:
+# every entry a record holds would otherwise be judged against grants nobody could read, and
 # reported red with a remedy telling the owner to remove what was installed.
 [[mutation]]
 name = "hook-entries judges provenance against an overlay that could not be asked"
 file = "src/stayfixed/doctor/checks.py"
-before = "            if found is None or granted is None:"
-after = "            if found is None:"
+before = "            elif granted is not None and command not in granted:"
+after = "            elif command not in (granted or set()):"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
   "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
+]
+
+# And only the grant comparison: whether a record holds an entry's id needs the record alone, so a
+# committed ledger beside a committed entry it does not record is red on a machine with no overlay.
+# Withholding the whole column there turned that red into a warning and an exit of 0.
+[[mutation]]
+name = "an overlay that cannot be asked silences an entry no record holds"
+file = "src/stayfixed/doctor/checks.py"
+before = "            if found is None:\n                # An unreadable ledger is not an empty one"
+after = "            if found is None or granted is None:\n                # An unreadable ledger is not an empty one"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is",
 ]
 
 # The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an

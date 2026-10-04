@@ -570,7 +570,10 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     command* and not the id, because an id the overlay
     does grant with a different command hung on it is the same attack one step down. And where
     the overlay cannot be asked at all, the answer is the one this check already gives a file it
-    could not parse: report it, never absolve it.
+    could not parse: report it, never absolve it. That withholds the grant comparison and nothing
+    more. Whether a record holds an entry's id needs only the record, so an entry no record holds
+    is red whether or not the overlay can be asked: withholding that too let a clone that commits
+    a ledger beside its entry turn the row into a warning on any machine with no overlay.
 
     The two red lists are kept apart because their remedies differ. An entry in no ledger is one
     to open and delete; an entry the ledger records and the overlay no longer grants is either a
@@ -601,11 +604,6 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     column is withheld rather than computed against an empty record.
     """
     found, granted = _claimed(context, claims)
-    # An unreadable ledger is not an empty one. With `{}` every entry claiming the marker would
-    # be reported as recorded nowhere — a red row with a remedy telling the owner to remove the
-    # entries stayfixed installed — so the provenance column is not computed at all and the file
-    # is named instead.
-    recorded = {} if found is None else found
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
@@ -638,14 +636,20 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                 foreign += 1
                 continue
             claimed += 1
-            if found is None or granted is None:
-                # The provenance column is withheld rather than guessed. Absolving an entry on
-                # either source alone is what this row may never do.
+            if found is None:
+                # An unreadable ledger is not an empty one: judged against `{}`, every entry
+                # `attach` installed would read as recorded nowhere, red, with a remedy telling the
+                # owner to remove it. So the provenance column is withheld and the file is named.
                 continue
             where = f"{label} entry {position} of {len(commands)}"
-            if entry_id not in recorded:
+            if entry_id not in found:
+                # Needs the record alone, so an overlay that cannot be asked does not withhold
+                # it: a committed ledger beside a committed entry it does not record is red
+                # whether or not this machine records an overlay.
                 unrecorded.append(where)
-            elif command not in granted:
+            elif granted is not None and command not in granted:
+                # Needs the overlay too, and absolving an entry on the record alone is what this
+                # row may never do: without a grant to compare, the entry is neither.
                 ungranted.append(where)
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     status: Status = OK

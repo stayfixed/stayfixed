@@ -148,9 +148,12 @@ def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
 # for both entries.
 ALPHA = "echo alpha  # stayfixed:alpha-1"
 OMEGA = "echo omega  # stayfixed:omega-1"
-# An entry claiming the marker that no area records: red whenever the provenance column is
-# computed, so a row that is not red with it in the file is a row that withheld the column.
+# An entry claiming the marker that no area records: red whenever the records can be read, so a
+# row that is not red with it in the file is a row that withheld the column.
 NOBODYS = "echo nobody  # stayfixed:nobody-1"
+# An entry claiming an id alpha records, with a command alpha does not grant: red whenever the
+# grants can be read, so a row that is not red with it in the file withheld the grant comparison.
+STRAY = "echo stray  # stayfixed:alpha-1"
 SETTINGS = ".claude/settings.json"
 
 
@@ -235,13 +238,15 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     # One area's `None` is an answer nobody else can stand in for: a record it could not read
     # names ids no other record knows, an overlay it could not ask grants commands no other grant
     # covers. So the pool is unknown, whichever side of a good answer the `None` falls on, and
-    # the row withholds the provenance column — `NOBODYS`, which no area records, would make it
-    # red — and says which answer is missing. Mutations (oracle): `mutations/`'s "a later area's
-    # record overwrites one an earlier area could not read" and "a later area's grants overwrite
-    # an overlay an earlier area could not ask" -> the `-first` cases compute the column and are
-    # red; "hook-entries judges provenance against an overlay that could not be asked" -> the
-    # `granted` cases are.
-    _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
+    # the row withholds what that answer decides and says which answer is missing. The probe is
+    # the entry that answer would make red: `NOBODYS`, which no area records, for a record; and
+    # `STRAY`, which alpha records and does not grant, for a grant. Mutations (oracle):
+    # `mutations/`'s "a later area's record overwrites one an earlier area could not read" and "a
+    # later area's grants overwrite an overlay an earlier area could not ask" -> the `-first`
+    # cases compute the column and are red; "hook-entries judges provenance against an overlay
+    # that could not be asked" -> the `granted` cases are.
+    probe = NOBODYS if unknown == "recorded" else STRAY
+    _hooked(_initialised(tmp_path), ALPHA, probe)
     known = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
     if unknown == "recorded":
         missing = _claiming(None, frozenset({ALPHA}))
@@ -252,6 +257,7 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     assert row.status == WARN, row
     assert "all accounted for" not in row.detail
     assert "are not recorded in" not in row.detail
+    assert "the overlay does not grant" not in row.detail
     if unknown == "recorded":
         assert f"{ATTACH_LEDGER} is there and cannot be read as a ledger" in row.detail
         assert row.remedy == (
@@ -262,6 +268,29 @@ def test_a_none_from_any_area_is_none_for_the_pool(
         assert row.remedy == (
             "run `stayfixed attach --check`, which reports why the overlay cannot be read"
         )
+
+
+def test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Whether any record holds an entry's id needs only the records, so an overlay nobody could
+    # ask withholds the grant comparison and nothing else: a committed ledger beside a committed
+    # entry it does not record is red on a machine with no overlay, where it used to be a
+    # warning and an exit of 0. The entry alpha does record is not judged, and the row says why.
+    # Mutation (oracle): `mutations/`'s "an overlay that cannot be asked silences an entry no
+    # record holds" -> the row is a warning again.
+    _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
+    row = _hook_entries(
+        tmp_path, monkeypatch, _area("alpha", _claiming({"alpha-1": "PreToolUse"}, None))
+    )
+    assert row.status == RED, row
+    assert (
+        f"1 entr(ies) claim the stayfixed marker and are not recorded in {ATTACH_LEDGER}: "
+        f"{SETTINGS} entry 2 of 2"
+    ) in row.detail
+    assert "could not be asked which entries it grants" in row.detail
+    assert "the overlay does not grant" not in row.detail
+    assert row.remedy == "open each entry named above and remove the ones you did not install"
 
 
 def test_claims_that_raise_cost_the_hook_entries_row_alone(
