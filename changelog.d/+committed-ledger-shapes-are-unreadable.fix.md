@@ -8,9 +8,9 @@ and `stayfixed detach` say the file is not a ledger. A settings file holding suc
 longer stops `hook-entries` either: the number is read as its text, and the hook entries beside it
 are judged as they would be without it. A settings file nested that deeply turns `hook-entries` red
 naming the file, because nothing can check the entries in it and a harness may still read it, as
-Claude Code does; it used to read red, "this check could not run". `stayfixed attach` refuses to merge into a settings
-file of either kind. A line of that kind in the hook sink's log no longer turns `stayfixed
-doctor`'s `diagnostics` row red either: it is not counted as a recorded failure.
+Claude Code does; it used to read red, "this check could not run". `stayfixed attach` refuses
+to merge into a settings file of either kind. A line of that kind in the hook sink's log no longer
+turns `stayfixed doctor`'s `diagnostics` row red either: it is not counted as a recorded failure.
 On Python 3.11 and 3.12, a ledger `store` or a note's backticked path that runs through a symbolic
 link loop no longer ends `stayfixed doctor` in the same red row or `stayfixed memory refs` in an
 internal error: the store is not this project's, and the path is reported as one that does not
