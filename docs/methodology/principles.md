@@ -168,9 +168,9 @@ where it would pass, and only then enforce — and the decision to enforce shoul
 the base branch, never from the change under review.
 
 **What stayfixed does today.** The state machine ships per gate. `stayfixed assess` inventories
-what stands between a repository and enforcement. `stayfixed adopt begin` starts an adoption
-with a plan, and `stayfixed adopt promote` enforces every gate that passes now and names the
-rest, or enforces the gates it is given only if all of them pass. The gate a pull request faces
+what stands between a repository and enforcement, and `stayfixed adopt promote` enforces every
+gate that passes now and names the rest, or enforces the gates it is given only if all of them
+pass; its first promotion is what starts the adoption. The gate a pull request faces
 reads the base branch's configuration and admits only a change that tightens it, under the
 repository settings `docs/cli.md` names. What it does not do yet is hold the line inside a gate
 — fail new findings while grandfathering old ones — which current linters do [S33] and which is

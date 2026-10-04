@@ -1,5 +1,5 @@
-"""One invariant for `init`, `upgrade`, `uninstall`, `assess`, `adopt begin` and `adopt promote`,
-asked of every hostile input at once.
+"""One invariant for `init`, `upgrade`, `uninstall`, `assess` and `adopt promote`, asked of every
+hostile input at once.
 
 A write or removal must never land on a file whose bytes the committer does not control and git
 does not show. The inputs that could aim one are repository-authored: the committed
@@ -36,11 +36,11 @@ in a clone, a committed symlink or directory there, which `tests/assess/test_com
 Its I2 and I3 lines have no mutation of their own: `assess` has no guard whose removal makes it
 raise a refusal or plan work for `upgrade`.
 
-**`adopt begin` and `adopt promote` write one place, `stayfixed.toml`,** through the editor
-`upgrade` uses, with the manifest's record of it re-stamped beside it. No repository value aims
-that write, and neither verb asks the ignore guard, which exempts the fixed names so that a
-person may keep `stayfixed.toml` out of git: the legitimate rows run both verbs to the end, once
-with the file in the clone's excludes. What can aim it is the file's own shape, a committed
+**`adopt promote` writes one place, `stayfixed.toml`,** through the editor `upgrade` uses, with
+the manifest's record of it re-stamped beside it. No repository value aims that write, and it
+does not ask the ignore guard, which exempts the fixed names so that a person may keep
+`stayfixed.toml` out of git: the legitimate rows run it to the end, once with the file in the
+clone's excludes. What can aim it is the file's own shape, a committed
 `stayfixed.toml` that is a symlink to a hidden file, which the one hostile row holds.
 
 What this module does not cover: guards that decide nothing about a hidden file's bytes, such
@@ -53,18 +53,17 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 import pytest
 
 from stayfixed.assess.assessment import assess, write
-from stayfixed.assess.state import begin, promote
+from stayfixed.assess.state import promote
 from stayfixed.attach.write import LEDGER as ATTACH_LEDGER
 from stayfixed.config.layout import local_base
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import STAYFIXED_DIRECTORY
-from stayfixed.docs.api import trail_target
 from stayfixed.errors import Refusal
 from stayfixed.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
 from stayfixed.project.templates import LOCAL_ELIGIBLE
@@ -76,7 +75,7 @@ from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
 from tests.runners import LsRemote
 
-Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-begin", "adopt-promote"]
+Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-promote"]
 Report = InitReport | UpgradeReport | UninstallReport
 
 # Bytes no stayfixed build renders: a person's file, or a tool's.
@@ -84,13 +83,6 @@ FOREIGN = "bytes a person or another tool wrote\n"
 HOOK = "#!/bin/sh\n# the clone's own pre-commit hook\n"
 CLAUDE_COPY = f"{LOCAL_ARTIFACTS}/CLAUDE.md"
 CLAUDE_COPY_FOLDED = f"{LOCAL_ARTIFACTS}/claude.md"
-# The adoption plan the `adopt` rows hand to `begin`: setup, written when absent, not the command.
-ADOPTION_PLAN = "2026-09-25-stayfixed-adoption.md"
-# What the setup edits by hand as a person adopting would: the adoption plan's state goes into
-# `trail.toml`, which its own header says is maintained by hand, and `adopt begin` refuses a plan
-# whose row declares none. `upgrade` keeps that edit and says so, which is not work left.
-HAND_EDITED = {("trail", "skip_modified")}
-PLAN_TEXT = "# Adoption\n\n**Scope:** adoption.\n\n**Premise:** none.\n"
 
 
 def _forge_roadmap_at(target: str, text: str) -> Callable[[Path], None]:
@@ -263,7 +255,7 @@ HOSTILE = (
     # line reddens this row: it pins that the two never go at once.
     Case(
         "config-a-symlink-to-a-hidden-file",
-        ("adopt-begin", "adopt-promote"),
+        ("adopt-promote",),
         plant={".git/stayfixed.toml": DOCUMENT},
         forge=_config_through_a_symlink,
     ),
@@ -318,13 +310,13 @@ LEGITIMATE = (
     ),
     Case(
         "an-adopted-project",
-        ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
+        ("init", "adopt-promote", "upgrade", "uninstall"),
     ),
     # The user the ignore guard exempts on purpose: `adopt` writes `stayfixed.toml` without asking
     # it, so a person who keeps the file out of git is not refused.
     Case(
         "an-adopted-project-with-its-config-in-the-clone-s-excludes",
-        ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
+        ("init", "adopt-promote", "upgrade", "uninstall"),
         exclude=(CONFIG_FILE,),
     ),
     # Every answer given, on a clone with no `stayfixed.toml`: the document `init` writes from
@@ -388,21 +380,9 @@ def _refusals(report: Report) -> list[str]:
     return [f"{r.artifact_id} {r.target}: {r.reason}" for p in plans for r in p.refusals]
 
 
-def _adopt(command: Literal["adopt-begin", "adopt-promote"], root: Path, tmp_path: Path) -> None:
-    """`begin` over the adoption plan, written first when absent with its trail row's state, or
-    `promote` of `docs`."""
+def _promote(root: Path, tmp_path: Path) -> None:
+    """`promote` of `docs`, straight from the state `init` left."""
     config = load(root, machine=tmp_path / "absent.toml")
-    if command == "adopt-begin":
-        plan = root / config.paths.plans / ADOPTION_PLAN
-        if not plan.exists():
-            plan.parent.mkdir(parents=True, exist_ok=True)
-            plan.write_text(PLAN_TEXT, encoding="utf-8")
-            trail = root / trail_target(config)
-            row = f"{PurePosixPath(config.paths.plans).name}/{ADOPTION_PLAN}"
-            with trail.open("a", encoding="utf-8") as stream:
-                stream.write(f'"{row}" = "in progress"\n')
-        begin(root, config, plan)
-        return
     base = local_base(config)
     transition = promote(root, config, ["docs"], base=base, machine=tmp_path / "absent.toml")
     # The row's non-vacuity: a promotion that wrote nothing never reached the write path.
@@ -417,8 +397,8 @@ def _outcome(
         if command == "assess":
             write(root, assess(root, machine=tmp_path / "absent.toml", base=None))
             return None
-        if command == "adopt-begin" or command == "adopt-promote":
-            _adopt(command, root, tmp_path)
+        if command == "adopt-promote":
+            _promote(root, tmp_path)
             return None
         report = _run(command, root, tmp_path, given=given)
     except Refusal as refused:
@@ -504,11 +484,7 @@ def _assert_invariant(
             )
         except Refusal as refused:
             pytest.fail(f"I3: a dry-run upgrade after a finished {finished} refused: {refused}")
-        planned = [
-            (a.artifact_id, str(a.verb), a.target)
-            for a in report.footprint.actions
-            if (a.artifact_id, str(a.verb)) not in HAND_EDITED
-        ]
+        planned = [(a.artifact_id, str(a.verb), a.target) for a in report.footprint.actions]
         assert planned == [], f"I3: a finished {finished} left work for the next upgrade: {planned}"
         assert _refusals(report) == [], f"I3: after a finished {finished}: {_refusals(report)}"
 

@@ -162,6 +162,23 @@ def test_areas_are_discovered_from_the_package() -> None:
     assert "stayfixed.release.commands" in names
 
 
+def _subcommands(group: str) -> set[str]:
+    """The commands the real parser registers under `stayfixed <group>`."""
+    parser = build_parser(discover_registrars())
+    groups = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    nested = next(
+        a for a in groups.choices[group]._actions if isinstance(a, argparse._SubParsersAction)
+    )
+    return set(nested.choices)
+
+
+def test_adopt_has_promote_and_nothing_else() -> None:
+    # `adopt promote` moves a project out of `initialised` itself, so a second adoption command
+    # would be a ritual step every project pays for. Mutation: registering a `begin` parser in
+    # the adopt group reddens this.
+    assert _subcommands("adopt") == {"promote"}
+
+
 def _exploding(args: argparse.Namespace) -> Result:
     raise KeyError("no such key")
 

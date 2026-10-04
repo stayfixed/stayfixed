@@ -13,19 +13,14 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # substituted line. Measured by hand instead — re-exporting `trail.TRAIL_FILE` reddens this
     # test and this test alone.
     #
-    # Outside this area, `project` imports `trail_target`, `stayfixed.assess.gates` imports the
-    # three gate functions and what the docs and trail gates read by path, and
-    # `stayfixed.assess.state` imports `lint` and `declared_state`; the other names below have no
-    # importer and stay on the argument written beside them in `api.py`.
+    # Outside this area, `project` imports `trail_target`, and `stayfixed.assess.gates` imports
+    # the three gate functions and what the docs and trail gates read by path; the other names
+    # below have no importer and stay on the argument written beside them in `api.py`.
     required = {
-        # the four checks this area is, one call each
+        # three checks this area is, one call each
         "check_budgets",
         "check_links",
         "check_memory_graph",
-        "lint",
-        # what `lint` returns: a value a consumer can hold and cannot declare is the one thing
-        # a surface exists to prevent
-        "Lint",
         # the install path: `project` ships `trail.toml`
         # beside the roadmap and must put it where `docs trail` reads it, a location only
         "trail_target",
@@ -33,8 +28,6 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "docs_gate",
         "plan_gate",
         "trail_gate",
-        # `adopt begin` asks the trail whether an adoption plan's row declares a state
-        "declared_state",
         # `assess` and `adopt promote` ask git whether each file the docs and trail gates read
         # by path is tracked, the link targets among them, as this area's link reader finds them
         "docs_reads",
