@@ -9,9 +9,8 @@ Three things hold everywhere:
   It is not declared per command — the frame strips it from `argv` before parsing. A command
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
-  Five commands do: `bugs check`, `docs check`, `memory refs`, `plan check` and
-  `test audit-entrypoints`. Every other command's keys are its own and are listed with it
-  below — `doctor`'s `checks`, `docs check`'s advisory `notices`, `docs trail`'s `undeclared`,
+  Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
+  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s advisory `notices`, `docs trail`'s `undeclared`,
   and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
@@ -47,7 +46,6 @@ Three things hold everywhere:
 - [`stayfixed commit check --range RANGE`](#stayfixed-commit-check---range-range)
 - [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
 - [`stayfixed test hygiene`](#stayfixed-test-hygiene)
-- [`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints)
 - [`stayfixed test attribute --command CMD [--base REF]`](#stayfixed-test-attribute---command-cmd---base-ref)
 - [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
@@ -555,39 +553,6 @@ same note once per context after a red pytest run.
 
 **Writes** nothing.
 
-## `stayfixed test audit-entrypoints`
-
-Tests that never exercise what they name, in two shapes: an assertion whose value is produced
-by invoking a test double, and a test whose name states an entry point it imports but never
-mentions again, in its own body or in the local helpers it reaches. Scans every `test_*.py`
-under `[ledger] code_roots`, treating the packages and modules found directly under those
-roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
-`--json`, **with findings and no way to fail on them** — that is deliberate, not an oversight,
-and nothing here gates. Run over a repository's own suite the scanner names name-collision
-candidates that are not defects, so an exit `1` would be red from the first run, and the
-configuration has no per-command switch to turn it off with. Gating waits until the candidates
-have been triaged to zero, and they have not been. Refuses (`2`) if its own self-test no longer
-discriminates.
-
-**Writes** nothing.
-
-A double, for the first shape, is a `Mock`-family object, a `patch(...)`, or an instance of a
-class whose name starts `Fake`, `Stub`, `Dummy`, `Spy`, `Recording` or `Scripted`, reaching the
-test in one of three ways: bound in the test, by assignment or `with ... as`; bound at module
-scope, inside a top-level compound statement too; or as a parameter named `mock_*`, `stub_*`,
-`fake_*`, `dummy_*`, `*_mock`, `*_stub` or `*_fake`, which is how a fixture delivers one. A name
-assigned from a double's attribute is one as well. A binding replaces what the name held: from
-the point a test binds it to anything else it is not a double, and a double another test binds
-is that test's own.
-
-The `--json` object carries `summary` (the line the command would have printed), `files` (how
-many test files were scanned), `import_roots` (the
-top-level names treated as the code under test) and `findings`, sorted by path then line. Each
-finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-on-double` or
-`names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
-`detail` are repository-authored strings, which is why they are in `--json` and not in the
-summary line.
-
 ## `stayfixed test attribute --command CMD [--base REF]`
 
 Run one failing command three times and say what the three exit codes mean. The three trees:
@@ -939,9 +904,8 @@ A row names no finding: `assess` lists them as items.
 A probe that could not look — a git query that failed or timed out, a settings file stayfixed
 cannot read, a path through a symlink — reports a `could-not-look` warning naming where, and
 never reads as "nothing found". Two things are deliberately not inventoried: another tool's
-design-document directories, because stayfixed names no other tool's convention; and
-[`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints), which stays its own
-advisory command until its candidates are triaged.
+design-document directories, because stayfixed names no other tool's convention; and whether a
+test exercises what its name says, which only reading one stack's test files could judge.
 
 **Writes** `.stayfixed/assessment.json`, which the `stayfixed:ignore` region keeps out of git,
 overwritten on every run that gets that far and never read back: format `1`, with `format`,

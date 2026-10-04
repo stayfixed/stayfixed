@@ -371,7 +371,8 @@ def command_functions() -> dict[str, object]:
 def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
     # Mutation: drop `memory refs` from the README sentence -> reddens naming it.
     # The floor first: a walk that resolved no functions would make the comparison below
-    # vacuously true, and a regex that stopped matching would look the same.
+    # vacuously true, and a regex that stopped matching would look the same. Four emit the key
+    # today: `bugs check`, `docs check`, `memory refs` and `plan check`.
     functions = command_functions()
     assert len(functions) >= REGISTERED_COMMANDS_FLOOR, sorted(functions)
     emitting = {
@@ -379,7 +380,7 @@ def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
         for name, func in functions.items()
         if '"findings":' in inspect.getsource(func)  # type: ignore[arg-type]
     }
-    assert len(emitting) >= 5, sorted(emitting)
+    assert len(emitting) >= 4, sorted(emitting)
     match = _FINDINGS_SENTENCE.search(README.read_text(encoding="utf-8"))
     assert match is not None, "README's --json paragraph no longer names the findings commands"
     named = set(re.findall(r"`([^`]+)`", match.group(1)))
@@ -670,12 +671,12 @@ def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
     # section added without its Contents line, or a heading renamed under a stale link, is
     # a reference a reader cannot navigate. The floor is today's count of sections after the
-    # Contents, 43, so a walk that found nothing, or half, cannot pass.
+    # Contents, 42, so a walk that found nothing, or half, cannot pass.
     # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
     text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
     _, _, after = text.partition("## Contents\n")
     contents, _, rest = after.partition("\n## ")
     listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
-    assert len(headings) >= 43, len(headings)
+    assert len(headings) >= 42, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]

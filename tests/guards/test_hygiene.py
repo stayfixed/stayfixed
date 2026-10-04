@@ -211,8 +211,8 @@ def test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked(
     `contained()` took on the write's component rule, which refuses a trailing `/`, a doubled
     `/` and a leading `./` because the engine cannot write through them. A code root is only
     walked, and `contained_roots` caught the refusal and moved on — so both entries left the
-    hygiene counts, the audit and the citation roots with nothing saying so. They are folded
-    before the question now.
+    hygiene counts and the citation roots with nothing saying so. They are folded before the
+    question now.
 
     Oracle: `mutations/`, "a code root spelled with a slash is dropped again".
     """

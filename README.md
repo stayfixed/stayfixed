@@ -356,7 +356,6 @@ stayfixed guard bg-cleanup                             # judge one Bash call, re
 stayfixed commit check --range origin/main..HEAD       # attribution lines in commit messages
 stayfixed commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 stayfixed test hygiene                                 # the faults that make a red run unattributable
-stayfixed test audit-entrypoints                       # tests that never exercise what they name
 stayfixed test attribute --command "uv sync --locked && uv run --locked pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
@@ -410,15 +409,13 @@ other than the default); `memory` commands and `docs check` take `--store` as we
 or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
 anywhere and prints one machine-readable object instead of one line.
 The commands that report a list of
-findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
+findings — `bugs check`, `docs check`, `memory refs`, `plan check` —
 all spell it `findings`, whatever their summary line calls them; every other command's keys
 are its own and are listed with it in [docs/cli.md](docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
-internal error. A caller must never read 2 as permission. Two commands are deliberately
-outside that rule. `stayfixed test audit-entrypoints` exits **0** even when it has findings,
-and lists them under `--json`, because its candidates are for triage and gating on them
-is not shipped yet. And `stayfixed hook` refuses with **2** on an internal
+internal error. A caller must never read 2 as permission. One command is deliberately
+outside that rule: `stayfixed hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
