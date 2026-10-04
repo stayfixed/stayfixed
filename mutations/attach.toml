@@ -1808,3 +1808,13 @@ reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
 ]
+
+# A share that is absent is a project the overlay has never seen, and its first attach creates it.
+[[mutation]]
+name = "attach refuses a project the overlay has no directory for yet"
+file = "src/stayfixed/attach/binding.py"
+before = "    except FileNotFoundError:\n        return\n"
+after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))\n"
+reddens = [
+  "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
+]

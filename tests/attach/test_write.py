@@ -2118,3 +2118,17 @@ def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
         else:
             check(root, store=store, machine=machine)
     assert _everything(tmp_path) == before
+
+
+def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one(
+    tmp_path: Path,
+) -> None:
+    # The other side of the refusal above: a name the overlay has no directory for *yet* is the
+    # ordinary first attach of a new project, and `attach` creates the directory. Mutation
+    # (oracle): `mutations/`'s "attach refuses a project the overlay has no directory for yet".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    shutil.rmtree(store.parent)
+    assert check(root, store=store, machine=machine).exit_code == 0
+    _attach_it(root, store, machine, tmp_path / "home")
+    assert (store.parent / PROJECT_RECORD).is_file()
+    assert store.is_dir()
