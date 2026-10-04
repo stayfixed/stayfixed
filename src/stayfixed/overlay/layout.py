@@ -44,22 +44,20 @@ CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks
 # A directory's own documentation rather than a file in its own right: `overlay create`
 # drops one of these into each directory the owner fills, and the template README describes
 # those as directories on purpose. `tests/overlay/test_template.py` accounts for the tree
-# by this rule; a fourth such directory needs no edit there. The root `README.md` is not a
+# by this rule; a third such directory needs no edit there. The root `README.md` is not a
 # placeholder — the rule applies to a basename BELOW a directory, never to the root.
 #
 # `_README.md` is the spelling for a directory the note reader walks: `memory.notes.walk` reads
 # every `*.md` in a note store as a note and skips a name that starts with `_`, so a `README.md`
 # there is a note with no frontmatter and `memory index --check` fails on it in every project
 # attached to the overlay. `common/memory/` is that directory.
-PLACEHOLDER_NAMES = ("README.md", "_README.md", "SKILL.md")
+PLACEHOLDER_NAMES = ("README.md", "_README.md")
 
 OVERLAY_FILES = (
     PLUGIN_MANIFEST,
     MARKETPLACE_MANIFEST,
     CODEX_PLUGIN_MANIFEST,
     "hooks/hooks.json",
-    "skills/attach/SKILL.md",
-    f"{COMMON_RULES}/README.md",
     f"{COMMON_MEMORY}/_README.md",
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
@@ -75,10 +73,14 @@ CAPABILITY_FILES = CAPABILITY_NAMES
 
 # Files an earlier release shipped and this one does not, which `overlay upgrade` removes where
 # they still hold what stayfixed wrote (`overlay.template.retired`). `common/memory/README.md` is
-# `_README.md` now, for the reason `PLACEHOLDER_NAMES` gives. None of them is ever a member of
-# `OVERLAY_FILES`: `tests/overlay/test_template.py` holds that.
+# `_README.md` now, for the reason `PLACEHOLDER_NAMES` gives. The template's own `attach` skill was
+# a subset of the plugin's, which also covers detaching and a moved remote, and `common/rules/` was
+# a directory nothing read. None of them is ever a member of `OVERLAY_FILES`:
+# `tests/overlay/test_template.py` holds that.
 RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
-RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README,)
+RETIRED_ATTACH_SKILL = "skills/attach/SKILL.md"
+RETIRED_RULES_README = f"{COMMON_RULES}/README.md"
+RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README, RETIRED_ATTACH_SKILL, RETIRED_RULES_README)
 # The shipped file that took each retired one's place, which `overlay init` writes when it removes
 # the old name and the new one is not there (`overlay.create._retire` says why).
 SUCCESSORS = {RETIRED_MEMORY_README: f"{COMMON_MEMORY}/_README.md"}
