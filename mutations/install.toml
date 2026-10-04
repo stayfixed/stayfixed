@@ -2320,8 +2320,20 @@ reddens = [
 [[mutation]]
 name = "the codex-trust row lists no surface that does not run on Codex"
 file = "src/stayfixed/doctor/checks.py"
-before = "    absent = [str(surface) for surface, reach in harness.reach.items() if reach.tier is None]"
-after = "    absent: list[str] = []"
+before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
+after = "        absent: list[str] = []"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
+]
+
+# And it names only those: a row that told a Codex user the gates and the methodology do not run
+# either would be a false measurement, which a test deriving its expectation as the row does
+# cannot see.
+[[mutation]]
+name = "the codex-trust row says no surface runs on Codex"
+file = "src/stayfixed/doctor/checks.py"
+before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
+after = "        absent = [str(surface) for surface, reach in CODEX.reach.items()]"
 reddens = [
   "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
 ]

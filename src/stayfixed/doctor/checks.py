@@ -93,7 +93,7 @@ from stayfixed.doctor.model import (
 )
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.harnesses import CODEX, HARNESSES, Harness, Tier
+from stayfixed.harnesses import CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -833,18 +833,6 @@ def _joined(words: Sequence[str]) -> str:
     return " and ".join(filter(None, (", ".join(words[:-1]), *words[-1:])))
 
 
-def _reach(harness: Harness) -> str:
-    """What the registry says does not reach `harness` in a session, and what holds in CI."""
-    absent = [str(surface) for surface, reach in harness.reach.items() if reach.tier is None]
-    in_ci = [str(surface) for surface, reach in harness.reach.items() if reach.tier is Tier.CI]
-    clauses = []
-    if absent:
-        clauses.append(f"the {_joined(absent)} do not run")
-    if in_ci:
-        clauses.append(f"the {_joined(in_ci)} hold in CI")
-    return "; ".join(clauses)
-
-
 def _codex_trust(context: Context) -> Row:
     # Red is owed while any stayfixed hook is untrusted on Codex, and the hash Codex keys hook
     # trust on is one no spike has measured. A check that returned green because it could not
@@ -856,9 +844,13 @@ def _codex_trust(context: Context) -> Row:
     )
     # What was measured is what a Codex user needs when they look, and it is the registry's to
     # say: Codex ran none of the plugin's hooks, so the surfaces that ride on them do not run
-    # there. Still a skip, since nothing measured of Codex makes this row red.
-    if CODEX.name in context.config.stayfixed.agents and (reach := _reach(CODEX)):
-        detail += f"; on Codex {reach}"
+    # there. Still a skip, since nothing measured of Codex makes this row red. Codex's reach has
+    # surfaces in both lists, and the row's text is pinned by its test, so a measurement that
+    # empties one is an edit here.
+    if CODEX.name in context.config.stayfixed.agents:
+        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
+        in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
+        detail += f"; on Codex the {_joined(absent)} do not run; the {_joined(in_ci)} hold in CI"
     return Row(SKIP, detail, "")
 
 
