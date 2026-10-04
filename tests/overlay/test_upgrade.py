@@ -533,13 +533,15 @@ def test_each_released_copy_of_a_retired_file_is_removed(
         pytest.param(
             ATTACH_SKILL,
             SHIPPED_ATTACH_SKILL,
-            "the plugin's own `attach` skill replaces it",
+            "the plugin's own `attach` skill replaces it; delete this copy once you no longer "
+            "need your edits",
             id="attach-skill",
         ),
         pytest.param(
             RULES_README,
             SHIPPED_RULES_README_0_2,
-            "a standing rule is a note with `metadata.startup`",
+            "a standing rule is a note with `metadata.startup`, so move your rules into such "
+            "notes and delete this copy",
             id="rules-readme",
         ),
     ],
