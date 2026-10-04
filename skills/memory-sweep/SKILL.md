@@ -22,9 +22,10 @@ description: Sweep the working-memory store — inventory by size, verify anchor
    the exit code, every `[[link]]` resolves, no link is immediately repeated, no identifier is
    bracketed — advice, not a gate, since the store is shared by every session on the machine.
    Only exit 0 is a pass. Exit 2 means a configured group could not be resolved, so the walk
-   covered a subset; fix that before an exit 0 means anything. Exit 1 is either stale paths — fix them, or rewrite in *italics* the ones where a
-   note deliberately records a file that is gone — or no store resolving at all, which is a
-   sweep that covered nothing. The summary line says which; the number alone does not.
+   covered a subset; fix that before an exit 0 means anything. Exit 1 is either stale paths —
+   fix them, or rewrite in *italics* the ones where a note deliberately records a file that is
+   gone — or no store resolving at all, which is a sweep that covered nothing. The summary line
+   says which; the number alone does not.
 6. **Regenerate the index.** Run `stayfixed memory index`, then `stayfixed memory index --check`.
 
 Conventions for what a note is and how the index routes: [references/protocol.md](references/protocol.md).
