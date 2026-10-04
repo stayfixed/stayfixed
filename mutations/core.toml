@@ -2011,3 +2011,12 @@ after = "and not through `git_run`, on purpose: `stayfixed overlay publish`, a m
 reddens = [
   "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
 ]
+
+# The delivery areas are pinned as a literal, because the one crossing meant to stay exercises only
+# `overlay`: a constant that lost `memory` would let a new crossing into it through.
+[[mutation]]
+name = "memory stops being a delivery area"
+file = "src/stayfixed/areas.py"
+before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
+after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
+reddens = ["tests/test_areas.py::test_the_delivery_areas_are_the_three_the_design_names"]

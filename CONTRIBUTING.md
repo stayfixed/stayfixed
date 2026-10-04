@@ -126,6 +126,22 @@ areas, and `harnesses` is a module — nothing discovers them, because they carr
 installed stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
+Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
+— the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
+`src/stayfixed/areas.py`. Every other module under `src/stayfixed/`, `cli.py` and the subpackages
+that are not areas included, is the **core**, and the rule runs one way: delivery may import the
+core, and the core never imports delivery, through an `api.py` or not, at module level or inside
+a function, so the private layer can be reworked without touching the core. The core may name
+delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
+are the core's — and never imports delivery's code or calls its behaviour. One crossing is pinned
+rather than cut: `stayfixed setup --overlay` creates or records the overlay as the last step of
+machine setup, so `setup/run.py` imports the overlay area's `api.py`, and that row stays until the
+step leaves `setup`. `tests/test_areas.py` holds the crossings that exist to a pinned set in both
+directions, so `test_core_never_imports_delivery` refuses a new crossing and a pinned row whose
+import has gone alike. The rule reads source, as discovery does, so a module named to
+`importlib.import_module` is invisible to it; `scripts/` is repository tooling and stays under the
+`api.py` rule alone.
+
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean

@@ -8,6 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import stayfixed.areas
 from stayfixed.areas import area_modules
 from stayfixed.cli import discover_registrars
 
@@ -323,3 +324,115 @@ def test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area(
         "scripts/release.py -> stayfixed.release.api.digests",
     ]
     assert not offences
+
+
+# Every import by which a core module reaches a delivery area today, one row per import statement:
+# the importing file relative to `src/stayfixed/`, and the module it names cut to three dotted
+# parts. Held by equality in both directions, so a new crossing reddens the test and so does a row
+# whose import has gone: the set never carries a pardon for an import that no longer exists, and
+# cutting a crossing is deleting its row in the same commit.
+#
+# One crossing is meant to outlive the rest. `stayfixed setup --overlay` creates or records the
+# private overlay as the last step of machine setup, so `setup/run.py` calls into the overlay area
+# by design, and the row stays until that step leaves `setup`.
+CORE_TO_DELIVERY = frozenset(
+    {
+        ("assess/rule.py", "stayfixed.overlay.api"),
+        ("docs/commands.py", "stayfixed.memory.api"),
+        ("docs/graph.py", "stayfixed.memory.api"),
+        ("doctor/checks.py", "stayfixed.attach.api"),
+        ("doctor/checks.py", "stayfixed.memory.api"),
+        ("doctor/checks.py", "stayfixed.overlay.api"),
+        ("project/detect.py", "stayfixed.memory.api"),
+        ("project/questions.py", "stayfixed.memory.api"),
+        ("project/templates.py", "stayfixed.attach.api"),
+        ("project/uninstall.py", "stayfixed.attach.api"),
+        ("project/upgrade.py", "stayfixed.overlay.api"),
+        ("setup/run.py", "stayfixed.overlay.api"),
+    }
+)
+
+
+def _delivery_offences(where: str, text: str, areas: frozenset[str]) -> list[tuple[str, str]]:
+    """The delivery rule, for one file: every import by which a core module reaches a delivery
+    area, as `(where, module)` with the module cut to three dotted parts.
+
+    One row per import statement, keyed on the module the statement names and never on its
+    aliases: `_imported_modules` also yields `stayfixed.memory.api.WIKI_LINK` for every name a
+    `from` imports, which would turn one import of sixteen names into sixteen rows. The one
+    spelling whose aliases are the modules is `from stayfixed import memory`, and it is read as
+    such. A module is core when the first part of its path is not a delivery area, so `cli.py`,
+    `config/` and every other subpackage that is not an area are core too. Delivery importing
+    core, or delivery importing delivery, is not this rule's business.
+    """
+    parts = Path(where).parts
+    core = parts[0] not in areas
+    rows: list[tuple[str, str]] = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            # `_imported_modules` yields the statement's own module first, resolved when the
+            # import is relative, and then one name per alias.
+            module = _imported_modules(node, ("stayfixed", *parts[:-1]))[0][1]
+            modules = [module]
+            if module == "stayfixed":
+                modules = [f"{module}.{alias.name}" for alias in node.names]
+        else:
+            continue
+        for module in modules:
+            bits = module.split(".")
+            delivery = bits[0] == "stayfixed" and len(bits) > 1 and bits[1] in areas
+            if core and delivery:
+                rows.append((where, ".".join(bits[:3])))
+    return rows
+
+
+def test_core_never_imports_delivery() -> None:
+    # CONTRIBUTING, "Areas": the delivery areas may import the core, and the core never imports
+    # them, through `api.py` or not, at module level or inside a function. The walk is the whole
+    # package, so the equality below also fails on a walk that stopped walking: it would find no
+    # rows, and the pinned set is never empty.
+    source = ROOT / "src" / "stayfixed"
+    rows: list[tuple[str, str]] = []
+    for path in sorted(source.rglob("*.py")):
+        rows += _delivery_offences(
+            path.relative_to(source).as_posix(),
+            path.read_text(encoding="utf-8"),
+            stayfixed.areas.DELIVERY_AREAS,
+        )
+    assert len(CORE_TO_DELIVERY) == 12
+    assert set(rows) == CORE_TO_DELIVERY, sorted(set(rows) ^ CORE_TO_DELIVERY)
+
+
+def test_the_delivery_areas_are_the_three_the_design_names() -> None:
+    # Pinned as a literal rather than read back: the crossing meant to stay exercises only
+    # `overlay`, so a change that dropped `memory` or `attach` from the constant beside a new
+    # crossing into it would otherwise keep `test_core_never_imports_delivery` green.
+    #
+    # Mutation (declared): `mutations/`'s "memory stops being a delivery area".
+    declared = stayfixed.areas.DELIVERY_AREAS
+    assert declared == frozenset({"attach", "memory", "overlay"})
+
+
+def test_the_delivery_rule_judges_the_importer_and_the_imported() -> None:
+    # The walk above can only show the rule holding for the imports the tree happens to make, so
+    # the rule is put in front of spellings the tree does not carry. A core module reaching a
+    # delivery area relatively and from inside a function is an offence, named exactly; a
+    # delivery module reaching another delivery area is not, because only the core is held.
+    #
+    # Mutations (declared): `mutations/`'s "the delivery rule stops recognising a delivery
+    # module", which reddens the first arm, and "the delivery rule holds a delivery module to the
+    # core's rule", which reddens the second.
+    delivery = frozenset({"attach", "memory", "overlay"})
+    assert _delivery_offences(
+        "docs/commands.py", "def check():\n    from ..memory import api\n", delivery
+    ) == [("docs/commands.py", "stayfixed.memory")]
+    assert _delivery_offences("memory/x.py", "import stayfixed.overlay.api\n", delivery) == []
+
+    # The one spelling whose module is the package itself, so the area is in an alias: read by
+    # alias, and only for that spelling. Mutation (declared): `mutations/`'s "the delivery rule
+    # reads `from stayfixed import memory` as importing nothing".
+    assert _delivery_offences("cli.py", "from stayfixed import ledger, memory\n", delivery) == [
+        ("cli.py", "stayfixed.memory")
+    ]
