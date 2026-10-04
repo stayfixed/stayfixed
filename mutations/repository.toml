@@ -810,6 +810,21 @@ reddens = [
   "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
 ]
 
+# The rule is about `api.py`, and it was keyed on discovery: `release` publishes a surface and
+# carries no `commands.py`, so once it stopped being an area a reach past its `api.py` — from
+# `doctor` or from `scripts/release.py` — was not even counted as a crossing. Keyed on discovery
+# again, the probe of exactly those two imports finds no offence, and the pin of which packages
+# are held without being discovered comes back empty.
+[[mutation]]
+name = "the boundary rule holds only discovered areas to their api.py again"
+file = "tests/test_areas.py"
+before = '    return sorted(set(_area_names(source)) | surfaces)'
+after = '    return _area_names(source)'
+reddens = [
+  "tests/test_areas.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
 # The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
 # `mutations/`'s "the scratch checkout's src no longer precedes the editable install" and "the
 # dirty-tree sweep forgets the tests every entry names" — so a regression to in-place mutation, or a

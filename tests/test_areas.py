@@ -101,6 +101,17 @@ def _area_names(source: Path) -> list[str]:
     )
 
 
+def _ruled_packages(source: Path) -> list[str]:
+    """Every subpackage the import rule holds: each area, and each package that publishes an
+    `api.py` whether or not anything discovers it.
+
+    Discovery is how the CLI finds a command; the rule is about the surface. A package with an
+    `api.py` and no `commands.py` (`release`) is held to that surface all the same, and an area
+    with no `api.py` (`assess`) publishes nothing, so no import from outside may reach it."""
+    surfaces = {path.parent.name for path in source.glob("*/api.py")}
+    return sorted(set(_area_names(source)) | surfaces)
+
+
 def _imported_modules(tree: ast.AST, package: tuple[str, ...]) -> list[tuple[int, str]]:
     """Every module name this file imports, as an absolute dotted name.
 
@@ -177,6 +188,7 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # walk has none to find.
     source = ROOT / "src" / "stayfixed"
     areas = _area_names(source)
+    ruled = _ruled_packages(source)
     files = sorted(source.rglob("*.py"))
     # `scripts/` is walked too, and the reason is the violation that merged green under a walk
     # that was not: `scripts/check_artifacts.py` imported `stayfixed.overlay.layout` for the very
@@ -190,23 +202,27 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     offences: list[str] = []
     for path in files:
         found, broken = _boundary_offences(
-            str(path.relative_to(source)), path.read_text(encoding="utf-8"), areas
+            str(path.relative_to(source)), path.read_text(encoding="utf-8"), ruled
         )
         crossings += found
         offences += broken
     for path in scripts:
         found, broken = _boundary_offences(
-            str(path.relative_to(ROOT)), path.read_text(encoding="utf-8"), areas
+            str(path.relative_to(ROOT)), path.read_text(encoding="utf-8"), ruled
         )
         crossings += found
         offences += broken
     # The walk is asserted before anything is asserted about it. Both floors are well under
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
-    # current. Re-measured 2026-09-26, by running this module's own `_area_names` and
-    # `_boundary_offences` over the same two globs in an interpreter: 138 files, 12 areas, 4
-    # scripts and 179 crossings, with a walk narrowed to `commands.py` alone counting 11 under
-    # `src/` and 18 with the scripts — which is what the crossings floor of 60 has to be below.
+    # current. Re-measured 2026-10-04, by running this module's own `_ruled_packages` and
+    # `_boundary_offences` over the same two globs in an interpreter: 138 files, 11 areas and
+    # one further package with an `api.py`, 5 scripts and 209 crossings, with a walk narrowed to
+    # `commands.py` alone counting 11 under `src/` and 25 with the scripts — which is what the
+    # crossings floor of 60 has to be below.
     assert len(areas) == 11, areas
+    # The packages held to a surface without being discovered, pinned by name for the reason
+    # `tests/test_surfaces.py` pins its list: gaining or losing one is a decision.
+    assert sorted(set(ruled) - set(areas)) == ["release"], ruled
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing
@@ -267,3 +283,40 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
         "doctor/checks.py", "from .checks import OK\nfrom . import commands\n", areas
     )
     assert (crossings, offences) == ([], [])
+
+
+def test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area() -> None:
+    # An area is how the CLI and the hook registry find code; the surface rule is about
+    # `api.py`. `release` publishes one and carries neither `commands.py` nor `hooks.py`, so
+    # while the rule was keyed on discovery alone, a reach past its surface — from a module
+    # under `src/` or from a script — was not even a crossing. Read off the tree rather than
+    # with a hand-picked list, so the probe is of the set the walk above actually uses.
+    source = ROOT / "src" / "stayfixed"
+    assert "release" not in _area_names(source)
+    ruled = _ruled_packages(source)
+
+    crossings, offences = _boundary_offences(
+        "doctor/checks.py", "from stayfixed.release.hashes import digests\n", ruled
+    )
+    assert offences == [
+        "doctor/checks.py:1 imports stayfixed.release.hashes",
+        "doctor/checks.py:1 imports stayfixed.release.hashes.digests",
+    ]
+    crossings, offences = _boundary_offences(
+        "scripts/release.py", "from stayfixed.release.hashes import write_record\n", ruled
+    )
+    assert offences == [
+        "scripts/release.py:1 imports stayfixed.release.hashes",
+        "scripts/release.py:1 imports stayfixed.release.hashes.write_record",
+    ]
+
+    # The published spelling is a crossing and not an offence: the arm that fails if the
+    # package is refused outright instead of being held to its surface.
+    crossings, offences = _boundary_offences(
+        "scripts/release.py", "from stayfixed.release.api import digests\n", ruled
+    )
+    assert crossings == [
+        "scripts/release.py -> stayfixed.release.api",
+        "scripts/release.py -> stayfixed.release.api.digests",
+    ]
+    assert not offences
