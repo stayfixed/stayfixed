@@ -2099,3 +2099,15 @@ after = "    if code == -1:"
 reddens = [
   "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
 ]
+
+# A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
+# loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
+# `PermissionError`.
+[[mutation]]
+name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
+file = "src/stayfixed/config/overlay.py"
+before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
+after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
+reddens = [
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
+]
