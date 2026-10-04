@@ -712,7 +712,7 @@ def test_an_unknown_harness_renders_the_canonical_shape(
     # No harness variable and no field only Codex sends: detection still answers, with Claude
     # Code's schema, which other harnesses imitate. Pinned as the bytes a harness reads rather
     # than compared with `CANONICAL.render`, which would agree with whatever it was changed to.
-    # Mutation (by hand): the canonical render's `hookSpecificOutput` misspelled -> reddens.
+    # Mutation (by hand): the canonical render's `additionalContext` misspelled -> reddens.
     (tmp_path / ".git").mkdir()
     probe = Handler(
         name="probe",

@@ -570,6 +570,62 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
 ]
 
+# The hook answers through the harness value detection chose: a value whose output differs
+# renders its own answer, and the clamp searches that value's own envelope for the prefix that
+# fits, since one measured against Claude Code's is the wrong width for any other.
+[[mutation]]
+name = "the dispatcher renders every answer in Claude Code's shape"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    stdout = harness.render(event.name, context)"
+after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
+]
+
+[[mutation]]
+name = "the clamp measures Claude Code's envelope whatever the harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = _clamp(harness.render, event.name, context, cap)"
+after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, cap)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
+]
+
+# A refusal is exit 2, an empty stdout and the reasons on stderr under every harness, and no
+# harness value is asked to shape one, so a rendering that fails cannot cost a deny.
+[[mutation]]
+name = "a deny is rendered through the detected harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = '        return Outcome(2, "", "stayfixed: refused: "'
+after = '        return Outcome(2, harness.render(event.name, ""), "stayfixed: refused: "'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
+]
+
+# The variable a project root is named in is the detected harness's own datum. Codex names none
+# and can inherit Claude Code's from the shell that started it, so under Codex the checkout `cwd`
+# sits in answers.
+[[mutation]]
+name = "the hook reads Claude Code's root variable under every harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    named = env.get(harness.project_dir_env) if harness.project_dir_env else None"
+after = '    named = env.get("CLAUDE_PROJECT_DIR")'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_the_project_root_comes_from_the_harnesss_own_variable",
+]
+
+# The CLI frame imports every area's `commands.py` to build its parser, and only a hook that runs
+# needs the harness registry, so `run_hook` imports it inside its own body.
+[[mutation]]
+name = "the hook command loads the harness registry with the parser"
+file = "src/stayfixed/hooks/commands.py"
+before = "from stayfixed.hooks.dispatch import dispatch, read_event"
+after = """from stayfixed.hooks.dispatch import dispatch, read_event
+from stayfixed.harnesses import detect as _detect"""
+reddens = [
+  "tests/hooks/test_hook_command.py::test_the_harness_registry_is_imported_only_when_a_hook_runs",
+]
+
 # One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
 # convention. The mutation drifts `common_flags`' own `--machine` sentence, which is what every
 # `--machine` but `setup`'s inherits.
@@ -1116,6 +1172,18 @@ after = "    chosen = HARNESSES"
 reddens = [
   "tests/project/test_templates.py::test_a_harness_not_listed_gets_no_file_of_its_own",
   "tests/test_harnesses.py::test_select_answers_the_listed_harnesses_and_counts_the_rest",
+]
+
+# Detection asks every value that detects before it falls back to Claude Code's schema: Codex
+# mirrors its own root variable under Claude Code's name, so only a positive answer tells it apart.
+[[mutation]]
+name = "detection answers Claude Code before asking any harness"
+file = "src/stayfixed/harnesses.py"
+before = "    for harness in registered():"
+after = """    return CANONICAL
+    for harness in registered():"""
+reddens = [
+  "tests/test_harnesses.py::test_an_environment_codex_sets_is_codex",
 ]
 
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit
