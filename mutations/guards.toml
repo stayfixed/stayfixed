@@ -974,8 +974,8 @@ after = "        note = hint.note(hint.report(root, config))"
 reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else"]
 
 # `test hygiene` must not call clean a tree the hook calls stale: the hook asks every hint and
-# detects nothing, so a profile with something to say is listed wherever its markers sit, and a
-# Python project in a subdirectory is not hidden by the root having no marker.
+# detects nothing, so a profile with something to say is listed whether or not its markers sit at
+# the root, and a Python project in a subdirectory is not hidden by the root having no marker.
 [[mutation]]
 name = "test hygiene hides a profile its markers do not detect at the root"
 file = "src/stayfixed/guards/commands.py"

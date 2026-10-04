@@ -58,19 +58,23 @@ _MENTION = re.compile(
 CORE_MODULES_AT_LEAST = 139
 
 STACK_NAMED = {
-    # The ledger scan's generic exclusions: `EXCLUDED_DIRNAMES` (`node_modules`, `.git`, `.venv`,
-    # `dist`, `build`, `__pycache__`) and `BINARY_SUFFIXES` (images, a PDF, audio, web fonts, `.zip`
-    # and `.pyc`). Today the stack-specific entries are Python's and Node's generated trees and
-    # Python's bytecode suffix, and no other stack's; what the lists do is skip files the mention
-    # scan and the sweep could never read an identifier out of, which changes no stack's
-    # behaviour and asks nothing of any stack's runner.
+    # The ledger scan's exclusions. `EXCLUDED_DIRNAMES` (`node_modules`, `.git`, `.venv`, `dist`,
+    # `build`, `__pycache__`) are directories neither the mention scan nor the sweep walks into,
+    # because they hold vendored, installed or generated trees in which nobody filed a reference;
+    # `BINARY_SUFFIXES` (images, a PDF, audio, web fonts, `.zip` and `.pyc`) are files no
+    # identifier can be read out of. The lists are not even-handed across stacks: they name
+    # Python's and Node's trees and Python's bytecode suffix, and no other stack's (no `target/`,
+    # no `vendor/`), so another stack's generated tree is scanned where these are skipped. What
+    # they decide is which files the ledger reads, never which stack's runner is asked or advised.
     ("src/stayfixed/ledger/scan.py", "node_modules"),
     ("src/stayfixed/ledger/scan.py", "venv"),
     ("src/stayfixed/ledger/scan.py", "pycache"),
     ("src/stayfixed/ledger/scan.py", "pyc"),
-    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, the shape CI writes its commands
-    # in, as it unwraps `env <cmd>`: what it hands on is the command itself, so the unwrapping
-    # is neutral in effect and every profile's recognition reads through it.
+    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, as it unwraps `env <cmd>`. `uv run`
+    # is a Python launcher, and it stays in the shared scanner rather than in the Python profile
+    # because more than the profiles read commands through that unwrapping: the background-
+    # cleanup guard (`guards/bgcleanup.py`) judges the command `uv run` launches, as every
+    # profile's `recognises` does.
     ("src/stayfixed/guards/bashscan.py", "uv"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
     # (`cli-path`, `overlay-requires`) and in `setup`'s pinned install command: the tool

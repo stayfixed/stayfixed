@@ -5,6 +5,11 @@ beside it. `shipped()` is the listing `scaffold.validate_sources` checks `[stayf
 against, and `load_profile` is the one reader. A name outside the listing is refused with fixed
 text: the name arrives from a repository's `stayfixed.toml`, so it is never printed.
 
+A profile may also carry code: an optional `hygiene.py` whose `HINT` is the stack's advice after
+its test runner failed. `stayfixed.profiles.hints` says what a hint answers and lists the
+profiles that ship one; the command that failed decides which of them speak, and
+`[stayfixed] profile` plays no part.
+
 `detects` is what `init` asks: which profile a repository looks like. `evaluate` and the
 `Outcome` it returns run a profile's checks against a repository; `stayfixed assess` calls them
 and reports each failed check as one item of its inventory. They live here rather than in

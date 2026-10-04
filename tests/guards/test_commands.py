@@ -464,10 +464,10 @@ def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_marke
     # and the hook, which asks every hint and detects nothing, still reports its stale bytecode
     # after a failed pytest run. Listing only the profiles detected at the root answered "tree is
     # clean", exit 0, for the same tree: the command contradicted the notice it documents. A
-    # profile whose note is not `None` is listed wherever its markers sit, and the exit code
-    # follows. The tree is committed, with the bytecode ignored, so the only finding is the
-    # stale `.pyc`. Oracle: `mutations/`, "test hygiene hides a profile its markers do not
-    # detect at the root".
+    # profile whose note is not `None` is listed whether or not its markers sit at the root, and
+    # the exit code follows. The tree is committed, with the bytecode ignored, so the only
+    # finding is the stale `.pyc`. Oracle: `mutations/`, "test hygiene hides a profile its
+    # markers do not detect at the root".
     root = repo(tmp_path)
     (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     (root / "src").mkdir()

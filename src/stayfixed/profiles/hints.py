@@ -49,8 +49,15 @@ class RedRunHint(Protocol):
     `hygiene.py`; the profile's name is its directory's, never a second attribute."""
 
     def recognises(self, argv: Sequence[str]) -> bool:
-        """Whether this simple command, already unwrapped of assignments and launchers, runs
-        this stack's tests."""
+        """Whether this simple command runs this stack's tests.
+
+        `argv` is one simple command with exactly this removed from its front, as often as it
+        recurs: a shell assignment (`FOO=1`), `env`, and `uv` followed by the word `run`, the
+        program named by its path or its bare name (`/usr/bin/env` too). Everything else
+        arrives as written: any other launcher (`poetry run`, `npx`, `sudo`, `time`), a flag
+        after `uv run` (`uv run --locked pytest` arrives as `--locked pytest`), and the `(`
+        that opens a subshell or the `{` that opens a group, which stays the first word.
+        """
         ...
 
     def report(self, root: Path, config: Config) -> Mapping[str, int]:
