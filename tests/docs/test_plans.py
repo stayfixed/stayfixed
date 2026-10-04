@@ -79,6 +79,26 @@ def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, "src/gone.py")]
 
 
+def test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone(
+    tmp_path: Path,
+) -> None:
+    # A plan lists the files its tasks remove under `- Delete:`, so once those tasks land every
+    # mention of them read as dead, and any later change editing that finished plan failed the
+    # diff-scoped `plan check`. A `Delete:` line declares its paths as `Create:` does, for the
+    # whole plan, and `(delete)` exempts its own line as `(create)` does. The path named nowhere
+    # as deleted still fails, so the rule did not stop reading references.
+    root, config = project(tmp_path)
+    path = plan(
+        root,
+        SCOPE + "- Delete: `src/old.py`, `tests/test_old.py`\n"
+        "A later step removes `src/old.py` and its test.\n"
+        "the module `src/retired.py` goes too (delete)\n"
+        "- Modify: `src/gone.py`\n",
+    )
+    found = lint(root, config, plans=[path]).findings
+    assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 6, "src/gone.py")]
+
+
 def test_a_reference_inside_a_fence_is_fixture_text(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     path = plan(root, SCOPE + "```\n`src/gone.py`\n```\n")
