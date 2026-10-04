@@ -26,7 +26,6 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the store and why there is none, for `docs check --memory-graph`'s notice
         "resolved",
         "Unresolved",  # what `resolved` answers when there is no store
-        "overlay_root",
         "permitted_roots",
         "main_checkout",
         # the overlay's per-project layout: attach writes it, overlay renders it
@@ -55,9 +54,6 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "Walk",  # what `walk` returns
         "Note",  # what a `Walk` carries
         "Provenance",  # what a `Note` carries
-        # the binding's git answer: "git said no" told from "git could not be asked"
-        "origin_remote",
-        "GitUnavailable",
         # the trust region, whole. Reading one needs `markers` and `DELIMITER`, which
         # tests/test_install_path.py already imports; producing one needs `wrap` and a nonce,
         # and a forged marker raises `UnsafeNote`. Half a closed vocabulary cannot be used by

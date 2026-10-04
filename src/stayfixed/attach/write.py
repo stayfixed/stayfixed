@@ -67,6 +67,12 @@ from stayfixed.attach.permissions import (
     overlay_entries,
     settings_document,
 )
+from stayfixed.config.layout import (
+    ATTACH_LEDGER,
+    IGNORE_BODY,
+    IGNORE_REGION,
+    LOCAL_STATE_PATHS,
+)
 from stayfixed.config.loader import UNPARSEABLE, load
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
@@ -111,18 +117,8 @@ from stayfixed.scaffold import (
     upsert,
 )
 
-LEDGER = ".stayfixed/local/attach.json"
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
-IGNORE_REGION = "ignore"
-# Both paths the ignore region keeps out of git: the ledger's directory, and the inventory
-# `stayfixed assess` writes.
-IGNORED = (".stayfixed/local/", ".stayfixed/assessment.json")
-IGNORE_NOTE = "# stayfixed's local state: yours, never a collaborator's."
-# The region body, spelled once. `init` (the `project` area) records this same region as a
-# scaffold artifact, and a second spelling would let `init` and `attach` each report the other's
-# region as hand-edited.
-IGNORE_BODY = "\n".join((IGNORE_NOTE, *IGNORED))
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 # The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
 # overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is a
@@ -172,7 +168,7 @@ _INSIDE = ".keep"
 # deepest first — which is also the order `detach` has to remove them in.
 #
 # There are exactly three writes that create a directory here, and each one's parents are on
-# this list: `LEDGER` under `.stayfixed/local/`, the rule copies under `.codex/rules/`, and
+# this list: `ATTACH_LEDGER` under `.stayfixed/local/`, the rule copies under `.codex/rules/`, and
 # `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, wherever the
 # project configures it) is deliberately **not** here: it is repository-configured, so it cannot
 # be a member of a closed list. The ledger's `memory_parents` records the directories above it
@@ -315,13 +311,13 @@ def ledger(root: Path) -> AttachLedger:
     ledger keep the members it is entitled to and lose only the hostile ones, which is a partial
     defence reported as a success.
     """
-    path = root / LEDGER
+    path = root / ATTACH_LEDGER
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise Failure(
-            f"{LEDGER} is not there, so nothing records what `stayfixed attach` added to this "
-            f"repository; there is no safe way to guess it from the settings file"
+            f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added to "
+            f"this repository; there is no safe way to guess it from the settings file"
         ) from exc
     except OSError as exc:
         raise Failure(f"{path} cannot be read: {exc}") from exc
@@ -356,7 +352,7 @@ def ledger(root: Path) -> AttachLedger:
 
 def _existing_ledger(root: Path) -> AttachLedger | None:
     """The ledger, or `None` when there is none — the one caller that may carry on without it."""
-    if not (root / LEDGER).is_file():
+    if not (root / ATTACH_LEDGER).is_file():
         return None
     return ledger(root)
 
@@ -368,7 +364,8 @@ def _planned_ignore_region(root: Path) -> str | None:
     One `scaffold.upsert` with the `stayfixed:ignore` marker: everything outside the region comes
     back out as it went in, which is the whole point of a managed region and the reason this
     does not need the scaffold engine's manifest. Asked while the run is planned, and only when
-    git does not already ignore both `IGNORED` paths; `_write_ignore_region` writes the answer.
+    git does not already ignore both `LOCAL_STATE_PATHS`; `_write_ignore_region` writes the
+    answer.
     """
     path = root / GITIGNORE
     try:
@@ -710,7 +707,7 @@ def _write_ledger(root: Path, planned: AttachPlan, settings_keys: tuple[str, ...
         "memory_created": planned.memory_created
         or (previous is not None and previous.memory_created),
     }
-    fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
+    fsops.write_within(root, ATTACH_LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
 def _group_directories(binding: Binding, config: Config) -> list[str]:
@@ -1206,7 +1203,7 @@ def _plan(
     # the one path this run writes inside the project that no candidate below names, so a
     # `.stayfixed` committed as a link is refused here by name rather than by the walk that
     # writes the ledger, after every write before it.
-    contained(root, LEDGER)
+    contained(root, ATTACH_LEDGER)
     previous = _existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -1233,7 +1230,7 @@ def _plan(
     # link is missing and how to get it.
     fallback = possible and _settings_containable(root)
     settings = written or fallback or _settings_placed(previous, document)
-    ignore = _planned_ignore_region(root) if exclude.unignored(root, IGNORED) else None
+    ignore = _planned_ignore_region(root) if exclude.unignored(root, LOCAL_STATE_PATHS) else None
     hidden = exclude.planned_block(root, _placed(binding, config, settings=settings))
     # The three reads the writes below used to make for themselves, each of which could refuse
     # after the first write: the overlay's rule sources (a file that is not UTF-8), the checkouts
@@ -1642,7 +1639,10 @@ def _refuse_unwithdrawable(
                     where="`paths.memory` or a directory above it",
                 )
     _walked(
-        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+        root,
+        ATTACH_LEDGER,
+        what=f"the ledger, `{ATTACH_LEDGER}`",
+        where="`.stayfixed` or `.stayfixed/local`",
     )
 
 
@@ -1657,9 +1657,9 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
     """
     own = root.resolve()
     for tree in checkouts:
-        if tree == own or not (tree / LEDGER).is_file():
+        if tree == own or not (tree / ATTACH_LEDGER).is_file():
             continue
-        code, tracked = git_run(tree, "ls-files", "-z", "--", LEDGER)
+        code, tracked = git_run(tree, "ls-files", "-z", "--", ATTACH_LEDGER)
         if code == 0 and tracked:
             continue
         try:
@@ -1751,7 +1751,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     if hidden is not None:
         exclude.write(hidden)
     memory = _withdraw_memory_directories(root, checkouts, config, recorded)
-    fsops.remove_within(root, LEDGER)
+    fsops.remove_within(root, ATTACH_LEDGER)
     # Last, because the ledger lives in one of them.
     directories = _withdraw_directories(root, recorded)
     return Detached(

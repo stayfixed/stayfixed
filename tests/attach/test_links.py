@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from stayfixed import fsops
-from stayfixed.attach.api import LEDGER
 from stayfixed.attach.write import Attached, attach
+from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal

@@ -16,6 +16,7 @@ import pytest
 
 from stayfixed.attach import binding, write
 from stayfixed.config.loader import TOO_DEEP, ConfigError, MachineConfigError, loads
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.owned import UnparsedDocument, rewrite
 from stayfixed.docs.trail import read_trail
 from stayfixed.errors import Failure
@@ -76,9 +77,7 @@ Case = Callable[[Path], object]
             lambda t: binding._recorded(_record(t).parents[2], "widget"), Failure, id="binding"
         ),
         pytest.param(
-            lambda t: store.overlay_root(_file(t, "machine.toml")),
-            store.MachineConfigError,
-            id="store-overlay-root",
+            lambda t: overlay_root(_file(t, "machine.toml")), MachineConfigError, id="overlay-root"
         ),
         pytest.param(
             lambda t: script._read(_file(t, "pyproject.toml").parent, script.PYPROJECT),

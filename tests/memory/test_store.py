@@ -8,13 +8,11 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
+from stayfixed.gitenv import GitUnavailable
 from stayfixed.memory.store import (
-    GitUnavailable,
-    MachineConfigError,
     Store,
     inside_project,
     main_checkout,
-    overlay_root,
     refusal_reason,
     resolve,
 )
@@ -336,14 +334,6 @@ def test_a_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
     assert store.path.resolve() == (root / "docs" / "memory").resolve()
 
 
-def test_overlay_root_reads_the_machine_file(tmp_path: Path) -> None:
-    overlay = tmp_path / "o"
-    overlay.mkdir()
-    assert overlay_root(a_machine_file(tmp_path, overlay)) == overlay
-    assert overlay_root(a_machine_file(tmp_path, None)) is None
-    assert overlay_root(tmp_path / "absent.toml") is None
-
-
 # --- the layout git's own documentation uses: a worktree beside the checkout, not under it ---
 
 
@@ -534,10 +524,15 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both seams the store reaches `git` through: its own `_git`, which binds `git_run` in, and
+    `gitenv.origin_remote`, which calls it inside `gitenv`. Patching one would leave the other
+    asking a working `git`."""
+
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
     monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
@@ -584,25 +579,6 @@ def test_an_empty_git_answer_is_still_an_answer(tmp_path: Path) -> None:
     assert reason is not None and "stayfixed attach" in reason
 
 
-def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(
-    tmp_path: Path,
-) -> None:
-    # `config.loader._personal` raises `ConfigError` for this very file and this very syntax
-    # error. This reader answered `None`, which `_resolve_at` renders as "no overlay root is
-    # recorded … run `stayfixed setup`" — wrong advice for a file that is already there.
-    broken = tmp_path / "machine.toml"
-    broken.write_text("[overlay\nroot = 'x'\n", encoding="utf-8")
-    with pytest.raises(MachineConfigError):
-        overlay_root(broken)
-
-
-def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) -> None:
-    blank = tmp_path / "machine.toml"
-    blank.write_text("[personal]\n", encoding="utf-8")
-    assert overlay_root(blank) is None
-    assert overlay_root(tmp_path / "absent.toml") is None
-
-
 def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -626,3 +602,22 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     with pytest.raises(GitUnavailable):
         resolve(root, config, machine=machine)
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", real)
+
+
+def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same broken `git`, asked the store's own question rather than the origin remote, which
+    # `gitenv` answers with a discriminator of its own: `main_checkout` reads git through the
+    # store's `_git`, and a broken `git` read as one that answered nothing made it answer `root`,
+    # the silent no-op `worktree.link` turns that into. Mutation (declared): `mutations/`'s "a
+    # broken git reads as a repository that answered".
+    root = tmp_path / "project"
+    a_repo(root)
+
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
+    with pytest.raises(GitUnavailable):
+        main_checkout(root)

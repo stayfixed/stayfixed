@@ -12,8 +12,8 @@ import pytest
 
 from stayfixed import gitenv
 from stayfixed.attach.api import read_binding
+from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory.api import overlay_root
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.presets import load_preset
 from stayfixed.runner import Completed

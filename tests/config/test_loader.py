@@ -192,14 +192,14 @@ def test_load_can_be_told_it_is_not_interactive(
 def test_one_command_reads_one_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `load` resolved the machine file with the `isatty` sniff while `store.overlay_root` and
+    # `load` resolved the machine file with the `isatty` sniff while `overlay_root` and
     # `trust._trust_file` always resolved it with `interactive=False`. On an interactive run
     # with `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
     # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
     # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
     # configuration; run `stayfixed setup`" about the file it had just read successfully.
     from stayfixed.config.machine import machine_config_path
-    from stayfixed.memory.store import overlay_root
+    from stayfixed.config.overlay import overlay_root
     from stayfixed.memory.trust import _trust_file
 
     class ATty:
@@ -238,7 +238,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
     # chose, so it stays honoured — and by all three readers, which is what makes it the
     # supported way to put the machine file somewhere else. A gate that left no such way would
     # be a regression rather than a fix.
-    from stayfixed.memory.store import overlay_root
+    from stayfixed.config.overlay import overlay_root
     from stayfixed.memory.trust import _trust_file
 
     mine = tmp_path / "mine" / "config.toml"

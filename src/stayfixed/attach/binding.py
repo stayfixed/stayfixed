@@ -30,15 +30,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
     binding_state,
-    origin_remote,
-    overlay_root,
     permitted_roots,
 )
 

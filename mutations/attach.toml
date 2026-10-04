@@ -842,7 +842,7 @@ reddens = [
 [[mutation]]
 name = "attach stops holding the ledger's path to the project"
 file = "src/stayfixed/attach/write.py"
-before = "    contained(root, LEDGER)"
+before = "    contained(root, ATTACH_LEDGER)"
 after = "    pass"
 reddens = [
   "tests/attach/test_write.py::test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written",
@@ -1336,7 +1336,10 @@ reddens = [
 name = "detach walks to the ledger only when it removes it"
 file = "src/stayfixed/attach/write.py"
 before = """    _walked(
-        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+        root,
+        ATTACH_LEDGER,
+        what=f"the ledger, `{ATTACH_LEDGER}`",
+        where="`.stayfixed` or `.stayfixed/local`",
     )"""
 after = ""
 reddens = [

@@ -1,7 +1,7 @@
 """Write the machine configuration file, the one both existing readers already read.
 
 **This module invents no schema.** `config.loader._personal` reads `[personal]` and
-`memory.store.overlay_root` reads `[overlay] root`, both with `interactive=False`, and neither
+`config.overlay.overlay_root` reads `[overlay] root`, both with `interactive=False`, and neither
 changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
 can check it later — and nothing else. A caller that wants a fourth table is asking for a third
 reader of this file, which the same rule keeps out.
@@ -14,7 +14,7 @@ written over and survives in the table it was spread onto. The three tests this 
 satisfy are the
 three ways that can go wrong: nothing recorded stays nothing recorded, a value nobody touched
 survives a rewrite that touched something else, and one table's `root` never collapses into a
-fourth state (see `memory.store.overlay_root`'s own docstring on that).
+fourth state (see `config.overlay.overlay_root`'s own docstring on that).
 
 The docstring used to say "table by table" while the merge covered exactly three hard-coded
 names and then replaced the whole file, so a `[trust]` table or a key at the top level was gone

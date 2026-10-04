@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.attach.api import IGNORE_REGION
+from stayfixed.config.layout import IGNORE_REGION
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
 from stayfixed.config.owned import OWNED, OwnedKeyError
 from stayfixed.errors import Failure, Refusal

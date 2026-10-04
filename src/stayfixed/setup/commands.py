@@ -91,7 +91,7 @@ def run_setup(args: argparse.Namespace) -> Result:
     from stayfixed.setup.run import setup
 
     # `interactive=False`, like every *reader* of this file (`config.loader.load`,
-    # `memory.store.overlay_root`, `config.loader._trust_file`) — and unlike this command until
+    # `config.overlay.overlay_root`, `config.loader._trust_file`) — and unlike this command until
     # now, which was the one `machine_config_path()` call in the tree taking the `isatty` sniff.
     # With `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own shell wrote
     # `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay root is

@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.api import IGNORE_BODY, IGNORE_REGION
+from stayfixed.attach.write import _planned_ignore_region
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.errors import Failure, Refusal
@@ -37,7 +38,7 @@ from stayfixed.project.templates import (
     read,
 )
 from stayfixed.release.api import Pin, Resolution
-from stayfixed.scaffold import Kind, Style
+from stayfixed.scaffold import Kind, Style, upsert
 from stayfixed.templates import tree
 from tests.gitfixture import needs_git, run_git
 from tests.workflow_yaml import load
@@ -160,6 +161,30 @@ def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     assert by_id["agents-md"].region == "harness"
     assert "docs/plan/roadmap.md" in by_id["agents-md"].render()
     assert by_id["bug-index"].render() == render_index([], moved)
+
+
+# The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`
+# and never read back from the code that writes it: `init` records the region in the manifest by
+# its digest, so a change to these bytes is a change every `upgrade` reports as drift.
+IGNORE_BLOCK = (
+    "# stayfixed:ignore:begin\n"
+    "# stayfixed's local state: yours, never a collaborator's.\n"
+    ".stayfixed/local/\n"
+    ".stayfixed/assessment.json\n"
+    "# stayfixed:ignore:end\n"
+)
+
+
+def test_the_ignore_block_init_writes_is_the_block_attach_writes(tmp_path: Path) -> None:
+    # Two areas write one region into one file: `init` as a scaffold artifact, `attach` by
+    # merging it into whatever `.gitignore` holds. Each reporting the other's region as
+    # hand-edited is what a second spelling of the block would cost, so both are held to the
+    # same bytes, into an empty file. Mutation (declared): `mutations/`'s "the ignore block's
+    # note changes under both of its writers".
+    template = {t.id: t for t in _prepared(preset_defaults("widget")).footprint}[IGNORE_ARTIFACT]
+    assert template.region is not None
+    assert upsert("", template.region, template.render(), template.style) == IGNORE_BLOCK
+    assert _planned_ignore_region(tmp_path) == IGNORE_BLOCK
 
 
 def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise() -> None:

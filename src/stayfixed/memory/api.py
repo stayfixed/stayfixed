@@ -14,9 +14,9 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-eight names are imported from outside this area today, and the areas that reach for them
+Twenty-five names are imported from outside this area today, and the areas that reach for them
 are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
-`overlay_root`, `permitted_roots`, `main_checkout`, and `resolved`, which `docs check
+`permitted_roots`, `main_checkout`, and `resolved`, which `docs check
 --memory-graph` reads so that a store that does not resolve is said rather than skipped), the
 overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `COMMON_GROUP`), the link tree
@@ -31,14 +31,16 @@ members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
 `DIFFERENT_REMOTE`), which `attach` and `doctor` answer the binding question with instead of a
 second classifier of their own,
 the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
-walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`,
-`GitUnavailable`), and the trust region `tests/test_install_path.py` asserts end to end
-(`DELIMITER`, `markers`).
+walk the graph check reads (`WIKI_LINK`, `walk`), and the trust region
+`tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The overlay root the
+machine file records and the checkout's `origin` are the core's to answer
+(`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
+`init` asks them too and the core never imports this area.
 
 **Thirteen more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-eight name in their signatures**: `Bundle` and `Fit` (`fit`,
+- **The types those twenty-five name in their signatures**: `Bundle` and `Fit` (`fit`,
   `render`), `Unresolved` (`resolved`), `Walk` (`walk`), and `Note` with the `Provenance` inside
   it, which `Walk` names in turn. `tests/test_surfaces.py` derives this rather than restating
   it, and a return type absent from a surface is a value a consumer can hold and cannot
@@ -115,13 +117,10 @@ from stayfixed.memory.store import (
     PROJECT_RECORD,
     PROJECTS,
     UNBOUND,
-    GitUnavailable,
     Store,
     Unresolved,
     binding_state,
     main_checkout,
-    origin_remote,
-    overlay_root,
     permitted_roots,
     resolve,
     resolved,
@@ -169,7 +168,6 @@ __all__ = [
     "WIKI_LINK",
     "Bundle",
     "Fit",
-    "GitUnavailable",
     "Links",
     "Note",
     "PartialLink",
@@ -195,8 +193,6 @@ __all__ = [
     "markers",
     "may_inject",
     "new_nonce",
-    "origin_remote",
-    "overlay_root",
     "permitted_roots",
     "render",
     "require_readable_record",

@@ -53,12 +53,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed.config.loader import UNPARSEABLE
-from stayfixed.config.machine import machine_config_path
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
-from stayfixed.errors import Failure
 from stayfixed.findings import listed
-from stayfixed.gitenv import git_run
+from stayfixed.gitenv import GitUnavailable, git_run, origin_remote
 from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
@@ -117,18 +116,6 @@ class Unresolved:
 
     def __str__(self) -> str:
         return ": ".join(part for part in (self.said, self.detail) if part)
-
-
-class GitUnavailable(Failure):
-    """`git` could not be run at all, or answered with an error.
-
-    Distinct from "git ran and said no", and the distinction is the whole point of the class.
-    `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
-    every caller read "could not ask" as "the answer is nothing" — and the user was told to run
-    `stayfixed attach` when the real fault was their `git`. This review machine hit exactly that
-    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `GIT_ENV_KEEP` scrubs
-    `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
-    """
 
 
 @dataclass(frozen=True)
@@ -263,79 +250,6 @@ def _registered_worktree(root: Path) -> Path | None:
         return None
     owner = common_dir.parent
     return None if owner == root.resolve() else owner
-
-
-class MachineConfigError(Failure):
-    """The machine configuration file exists and cannot be read as TOML.
-
-    `config.loader._personal` already raised `ConfigError` for exactly this file and exactly
-    this syntax error, while this reader answered `None` — so the two readers of one file
-    disagreed about whether it was broken, and the user of the second one was told to run
-    `stayfixed setup` for a file that was already there.
-    """
-
-
-def overlay_root(machine: Path | None) -> Path | None:
-    """The overlay root this machine records, or `None` when it records none.
-
-    `None` means **not recorded**, and nothing else. It used to mean six things — an absent
-    file, an `OSError`, a TOML syntax error, a missing `[overlay]`, a non-dict `[overlay]` and
-    a bad `root` — all collapsed into the one message `_resolve_at` prints for it: "no overlay
-    root is recorded in the machine configuration; run `stayfixed setup`". Three of those six
-    are a broken file, and for a broken file that message is wrong advice.
-
-    So a file that cannot be read or parsed raises, and the three shapes that genuinely record
-    no overlay keep answering `None`: an absent file (the ordinary state before `setup` has
-    run), no `[overlay]` table, and a table with no usable `root`.
-    """
-    path = machine_config_path(interactive=False) if machine is None else machine
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise MachineConfigError(f"{path} cannot be read: {exc}") from exc
-    except UnicodeDecodeError:
-        raise MachineConfigError(f"{path} is not UTF-8 text") from None
-    try:
-        raw = tomllib.loads(text)
-    except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{path} is not valid TOML: {exc}") from exc
-    section = raw.get("overlay")
-    if not isinstance(section, dict):
-        return None
-    value = section.get("root")
-    return Path(str(value)).expanduser() if isinstance(value, str) and value else None
-
-
-def origin_remote(root: Path) -> str | None:
-    """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
-
-    Public because `attach` compares it against the overlay's record and must not reach for a
-    `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
-    one would make the comparison answer for a different repository than the session is in.
-    Two areas asking one question two ways is how they stop agreeing.
-
-    A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
-    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
-    repository's, and `attach`, which would write it into one, refuses it by name.
-
-    Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
-    The distinction is the whole of `GitAnswer`: "no origin remote" is a fact about the
-    repository and reads as *not this one*, while "could not ask" is a fault on this machine,
-    and collapsing them tells the user to run `stayfixed attach` about their own `git`.
-
-    The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
-    that shows it wraps it first.
-    """
-    origin = _git(root, "remote", "get-url", "origin")
-    if origin.unavailable:
-        raise GitUnavailable(
-            "`git` could not read this repository's origin remote, so the overlay binding "
-            "cannot be checked — the fault is on this machine rather than in the binding; "
-            "check that `git` runs here"
-        )
-    return origin.value
 
 
 # The one answer to "does the overlay's record bind this checkout's `origin`", which `memory`

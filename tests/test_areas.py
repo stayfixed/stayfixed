@@ -337,17 +337,11 @@ def test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area(
 # by design, and the row stays until that step leaves `setup`.
 CORE_TO_DELIVERY = frozenset(
     {
-        ("assess/rule.py", "stayfixed.overlay.api"),
         ("docs/commands.py", "stayfixed.memory.api"),
         ("docs/graph.py", "stayfixed.memory.api"),
         ("doctor/checks.py", "stayfixed.attach.api"),
         ("doctor/checks.py", "stayfixed.memory.api"),
         ("doctor/checks.py", "stayfixed.overlay.api"),
-        ("project/detect.py", "stayfixed.memory.api"),
-        ("project/questions.py", "stayfixed.memory.api"),
-        ("project/templates.py", "stayfixed.attach.api"),
-        ("project/uninstall.py", "stayfixed.attach.api"),
-        ("project/upgrade.py", "stayfixed.overlay.api"),
         ("setup/run.py", "stayfixed.overlay.api"),
     }
 )
@@ -401,7 +395,7 @@ def test_core_never_imports_delivery() -> None:
             path.read_text(encoding="utf-8"),
             stayfixed.areas.DELIVERY_AREAS,
         )
-    assert len(CORE_TO_DELIVERY) == 12
+    assert len(CORE_TO_DELIVERY) == 6
     assert set(rows) == CORE_TO_DELIVERY, sorted(set(rows) ^ CORE_TO_DELIVERY)
 
 

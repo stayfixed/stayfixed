@@ -56,13 +56,13 @@ from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owned import Value, rewrite
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.overlay.api import RELEASE, later
 from stayfixed.project.footprint import Passes, prepare
 from stayfixed.project.rewrite import NO_DOCUMENT, rewrite_owned
 from stayfixed.project.templates import CI_ARTIFACT, CI_REF
 from stayfixed.release.api import Resolution, resolve_pin
 from stayfixed.runner import Runner
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply
+from stayfixed.semver import RELEASE, later
 
 NOT_INITIALISED = (
     f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; "

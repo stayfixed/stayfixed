@@ -438,14 +438,14 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     stdin is a pipe, which means the gate held by circumstance rather than by construction.
 
     **It defaults to `False`, so that one command reads one machine file.** The sniff was the
-    default, and `store.overlay_root` and `trust._trust_file` — the two anchors that locating the
-    note store and trusting in-repo notes rest on — resolve that same file with `interactive=False`
-    always. On an interactive run with `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` set, the two
-    disagreed: `[personal]` came from the owner's chosen file while `[overlay] root` and
-    `trust.json` came from `~/.config/stayfixed/`, so an XDG-honouring owner who wrote one file with
-    both tables got `[personal]` honoured and the overlay silently unrecorded — `stayfixed memory
-    index` refusing with "no overlay root is recorded in the machine configuration; run `stayfixed
-    setup`" about a file it had just read successfully.
+    default, and `config.overlay.overlay_root` and `trust._trust_file` — the two anchors that
+    locating the note store and trusting in-repo notes rest on — resolve that same file with
+    `interactive=False` always. On an interactive run with `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG`
+    set, the two disagreed: `[personal]` came from the owner's chosen file while `[overlay] root`
+    and `trust.json` came from `~/.config/stayfixed/`, so an XDG-honouring owner who wrote one file
+    with both tables got `[personal]` honoured and the overlay silently unrecorded — `stayfixed
+    memory index` refusing with "no overlay root is recorded in the machine configuration; run
+    `stayfixed setup`" about a file it had just read successfully.
 
     Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a
     pair. So the whole file follows the stricter of the two rules, and `--machine` stays the

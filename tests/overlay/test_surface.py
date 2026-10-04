@@ -47,11 +47,6 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # `overlay-requires` row
         "requires_of",
         "satisfies",
-        # the same reader over two versions, for `upgrade`'s never-backward refusal and
-        # `doctor`'s `versions` remedy, so the two agree on direction
-        "later",
-        # that reader's whole `X.Y.Z` grammar, for `upgrade`'s printing of a recorded version
-        "RELEASE",
         # the overlay repository's own sync state, for the `attach` area's session-start
         # handler
         "Sync",

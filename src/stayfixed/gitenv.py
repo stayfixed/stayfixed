@@ -7,8 +7,9 @@ no `env=` at all and inherited whatever the session had. That one feeds `project
 every hook decision is derived from, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
 handler in the process answer for a different repository than the one the user is sitting in.
 
-A leaf module: it imports nothing from `stayfixed`, so the hook path pays no area import to
-reach it, and neither caller has to import the other's area to share the constant.
+A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed`, so the hook path
+pays no area import to reach it, and neither caller has to import the other's area to share the
+constant.
 
 **`PATH` is here on purpose, and it is the one entry with a cost.** `git` is resolved through it
 rather than pinned to `/usr/bin/git`, because the machine owner's `git` is the one that must
@@ -37,6 +38,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from stayfixed.errors import Failure
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
@@ -218,6 +221,54 @@ def git_run(
         return -1, ""
     answer = completed.stdout.decode(codec, "surrogateescape")
     return completed.returncode, answer
+
+
+class GitUnavailable(Failure):
+    """`git` could not be run at all, or answered with an error.
+
+    Distinct from "git ran and said no", and the distinction is the whole point of the class.
+    `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
+    every caller read "could not ask" as "the answer is nothing" — and the user was told to run
+    `stayfixed attach` when the real fault was their `git`. This review machine hit exactly that
+    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `GIT_ENV_KEEP` scrubs
+    `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
+    """
+
+
+def origin_remote(root: Path) -> str | None:
+    """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
+
+    Public because `attach` compares it against the overlay's record and `init` derives a name
+    from it, and neither may reach for a `subprocess.run` of its own: `git_run` scrubs `GIT_DIR`
+    and `GIT_WORK_TREE`, and an inherited one would make the answer one about a different
+    repository than the session is in. Two areas asking one question two ways is how they stop
+    agreeing.
+
+    A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
+    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
+    repository's, and `attach`, which would write it into one, refuses it by name. The answer is
+    what git printed less its line ending alone, never `strip()`, for `answer_lines`'s reason.
+
+    Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
+    "No origin remote" is a fact about the repository and reads as *not this one*, while "could
+    not ask" is a fault on this machine, and collapsing them tells the user to run `stayfixed
+    attach` about their own `git`. A non-zero exit is either, so a second question that needs no
+    repository, `git --version` asked from the same `root`, tells them apart: git answers "no
+    such remote" with an exit of its own, and a broken install exits non-zero for everything.
+
+    The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
+    that shows it wraps it first.
+    """
+    code, out = git_run(root, "remote", "get-url", "origin")
+    if code == 0:
+        return out.removesuffix("\n") or None
+    if code == -1 or git_run(root, "--version")[0] != 0:
+        raise GitUnavailable(
+            "`git` could not read this repository's origin remote, so the overlay binding "
+            "cannot be checked — the fault is on this machine rather than in the binding; "
+            "check that `git` runs here"
+        )
+    return None
 
 
 SHALLOW = (

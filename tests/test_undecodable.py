@@ -26,6 +26,7 @@ import pytest
 
 from stayfixed.attach import binding, permissions, write
 from stayfixed.attach.binding import Binding
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import (
     CONFIG_FILE,
     ConfigError,
@@ -33,6 +34,7 @@ from stayfixed.config.loader import (
     load,
     read_document,
 )
+from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory import bundles, index, store, trust
 from stayfixed.overlay import create, identity
@@ -85,8 +87,8 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the machine file, for its overlay root",
-        lambda t: lambda: store.overlay_root(_plant(t / "machine.toml")),
-        Failure,
+        lambda t: lambda: overlay_root(_plant(t / "machine.toml")),
+        MachineConfigError,
     ),
     (
         "the machine file, under setup",
@@ -113,7 +115,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the attach ledger",
-        lambda t: (_plant(t / write.LEDGER), lambda: write.ledger(t))[1],
+        lambda t: (_plant(t / ATTACH_LEDGER), lambda: write.ledger(t))[1],
         Failure,
     ),
     (

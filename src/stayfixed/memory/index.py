@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -30,7 +31,7 @@ from stayfixed.memory.notes import (
     with_index,
     write_note,
 )
-from stayfixed.memory.store import Store, in_repository, overlay_root, permitted_roots
+from stayfixed.memory.store import Store, in_repository, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"

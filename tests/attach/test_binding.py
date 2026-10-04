@@ -58,7 +58,8 @@ index_extra = []
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """A `git` that cannot be launched at all, which is what `GitUnavailable` is about.
 
-    The same helper `tests/memory/test_store.py` carries, and patched at the same seam. A
+    The same helper `tests/memory/test_store.py` carries, and patched at the same two seams:
+    `memory.store`'s own `git_run`, and `gitenv`'s, which `origin_remote` calls. A
     repository with *no* `origin` remote is a different state — `git` ran and answered
     nothing — and it is the ordinary "not bound" one rather than a machine fault.
     """
@@ -67,6 +68,7 @@ def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
     monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
 def _project_and_store(
@@ -189,7 +191,7 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
     # caller "became a silent no-op … while every memory bundle was empty and nothing reported
     # a failure". An unreadable remote must not read as "never bound", which is the state that
     # invites a rebind.
-    from stayfixed.memory.api import GitUnavailable
+    from stayfixed.gitenv import GitUnavailable
 
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
     machine = _machine(tmp_path, overlay=store.parents[2])

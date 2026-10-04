@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.loader import load
+from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Refusal
-from stayfixed.memory.api import overlay_root
 from stayfixed.presets import load_preset
 from stayfixed.setup.machine import read_machine, write_machine
 

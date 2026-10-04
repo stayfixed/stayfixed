@@ -9,7 +9,7 @@ this area.
 `doctor` is the one consuming area, and it is the whole of what any module outside this area
 imports from here:
 
-- the ledger (`ledger`, `LEDGER`) and `AttachLedger`, because `ledger` returns it: a return
+- the ledger (`ledger`) and `AttachLedger`, because `ledger` returns it: a return
   type absent from this list is a value `doctor` can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it;
 - the binding (`read_binding`, `Binding`). `Binding.state` is one of `memory.api`'s
@@ -41,19 +41,16 @@ argued from prose is a surface nobody measured: the first count of this list's i
 covered `src/`, `scripts/` and `tests/` and never read the sentence, and the sentence is what
 kept the names.
 
-`IGNORE_REGION` and `IGNORE_BODY` are published for the `project` area, whose `init` records
-the same region as a scaffold artifact; one spelling, or `init` and `attach` would each report
-the other's region as hand-edited.
+The ledger's path and the `.gitignore` block `init` and `attach` both write are the core's
+(`config.layout`'s `ATTACH_LEDGER` and `IGNORE_BODY`), because `project` and `doctor` name them
+too and the core never imports this area.
 """
 
 from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import LOCAL_SETTINGS, overlay_entries
-from stayfixed.attach.write import IGNORE_BODY, IGNORE_REGION, LEDGER, AttachLedger, ledger
+from stayfixed.attach.write import AttachLedger, ledger
 
 __all__ = [
-    "IGNORE_BODY",
-    "IGNORE_REGION",
-    "LEDGER",
     "LOCAL_SETTINGS",
     "AttachLedger",
     "Binding",

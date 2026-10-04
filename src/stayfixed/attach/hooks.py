@@ -173,9 +173,10 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
     try:
         import stayfixed
         from stayfixed.attach.binding import binding_for, unlinked_groups
+        from stayfixed.config.overlay import overlay_root
         from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
-        from stayfixed.memory.api import MISMATCH, UNBOUND, overlay_root
+        from stayfixed.memory.api import MISMATCH, UNBOUND
         from stayfixed.memory.api import NO_ORIGIN as NO_ORIGIN_STATE
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
 

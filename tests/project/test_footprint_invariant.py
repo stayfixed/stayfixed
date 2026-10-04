@@ -60,8 +60,7 @@ import pytest
 
 from stayfixed.assess.assessment import assess, write
 from stayfixed.assess.state import promote
-from stayfixed.attach.write import LEDGER as ATTACH_LEDGER
-from stayfixed.config.layout import local_base
+from stayfixed.config.layout import ATTACH_LEDGER, local_base
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import STAYFIXED_DIRECTORY
 from stayfixed.errors import Refusal

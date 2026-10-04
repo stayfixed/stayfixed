@@ -26,8 +26,10 @@ import pytest
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
-from stayfixed.attach.api import LEDGER, LOCAL_SETTINGS
+from stayfixed.attach.api import LOCAL_SETTINGS
+from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.doctor import checks
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
@@ -44,7 +46,6 @@ from stayfixed.doctor.checks import (
 )
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
-from stayfixed.memory.store import overlay_root
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
 from stayfixed.release.api import HASHED_FILES

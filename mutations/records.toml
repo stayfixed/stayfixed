@@ -172,7 +172,7 @@ file = "src/stayfixed/memory/store.py"
 before = '        return GitAnswer(None, ran=_git_is_usable(root))'
 after = '        return GitAnswer(None)'
 reddens = [
-  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
 # A note whose body did not change is written back byte for byte, never renormalised.
@@ -894,15 +894,6 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
-]
-
-[[mutation]]
-name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/memory/store.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[store-overlay-root]",
 ]
 
 [[mutation]]

@@ -229,7 +229,9 @@ def test_a_command_with_no_machine_flag_is_unaffected_by_the_gate(
     # not by a successful attach, which would need the developer's own file.
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    monkeypatch.setattr("stayfixed.memory.store.machine_config_path", lambda **_: tmp_path / "none")
+    monkeypatch.setattr(
+        "stayfixed.config.overlay.machine_config_path", lambda **_: tmp_path / "none"
+    )
     assert invoke(["attach", "--check", "--root", str(root), "--store", str(store)]) == 2
 
 
@@ -273,7 +275,7 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     # allow rule is less bounded than that, not more, so counts here or the three disagree.
     #
     # Mutation: `mutations/`'s "detach prints the ledger's own strings".
-    from stayfixed.attach.api import LEDGER as LEDGER_PATH
+    from stayfixed.config.layout import ATTACH_LEDGER as LEDGER_PATH
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store, allow=(HOSTILE_RULE,))

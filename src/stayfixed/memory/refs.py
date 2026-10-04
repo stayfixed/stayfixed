@@ -22,13 +22,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
 from stayfixed.memory.notes import Note, Walk, walk
-from stayfixed.memory.store import Store, overlay_root, permitted_roots
+from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
 from stayfixed.prose import blank_fences, path_references
 

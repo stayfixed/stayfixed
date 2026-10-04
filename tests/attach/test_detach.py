@@ -14,8 +14,9 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from stayfixed.attach.api import LEDGER
-from stayfixed.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
+from stayfixed.attach.write import GITIGNORE, Detached, detach
+from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
+from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
@@ -293,7 +294,8 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
 
 
 def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at the seam `memory.store` runs it through.
+    """A `git` that cannot be launched at all, at both seams the store runs it through: its own
+    `git_run`, and `gitenv`'s, which `origin_remote` calls.
 
     The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
     Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
@@ -304,6 +306,7 @@ def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
     monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(

@@ -63,17 +63,19 @@ from typing import Final, Literal
 import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.attach.api import (
-    LEDGER,
     Binding,
     ledger,
     overlay_entries,
     read_binding,
 )
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
+from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
+from stayfixed.gitenv import GitUnavailable
 from stayfixed.guards.api import hooks_dir
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import (
@@ -85,16 +87,14 @@ from stayfixed.memory.api import (
     PROJECTS,
     SLOTS,
     UNBOUND,
-    GitUnavailable,
     Store,
     fit,
     harness_link_needed,
     harness_memory_path,
-    overlay_root,
     render,
     resolve,
 )
-from stayfixed.overlay.api import PLUGIN_MANIFEST, later, requires_of, satisfies
+from stayfixed.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -105,6 +105,7 @@ from stayfixed.release.api import (
 )
 from stayfixed.runner import Runner
 from stayfixed.scaffold import marker_id, owned_ids
+from stayfixed.semver import later
 from stayfixed.setup.api import USER_SETTINGS
 
 OK: Final = "ok"
@@ -181,7 +182,7 @@ NAMED_ROOT_CAVEAT = (
 # `or not overlay.is_dir()` included -- and the copy carried the defect with it.
 #
 # The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
-# sentence. `memory.store.overlay_root` answers `None` for "this machine records no overlay",
+# sentence. `config.overlay.overlay_root` answers `None` for "this machine records no overlay",
 # which is the ordinary state before `stayfixed setup` has run and which nothing can be done
 # about from here; it answers a `Path` for a recorded root whether or not anything is there.
 # So a machine that recorded an overlay and then moved it -- the owner reorganising their own
@@ -601,7 +602,7 @@ def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
     "this check could not run: Failure" and a remedy that cannot help, on an installation with
     nothing wrong with it. The caller reports the file instead.
     """
-    if not (root / LEDGER).is_file():
+    if not (root / ATTACH_LEDGER).is_file():
         return {}
     try:
         return dict(ledger(root).entries)
@@ -639,7 +640,7 @@ def _attached(context: Context) -> Row:
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # stayfixed's own labels rather than a string a clone chose.
         return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
-    recorded = (context.root / LEDGER).is_file()
+    recorded = (context.root / ATTACH_LEDGER).is_file()
     harness = harness_memory_path(context.root, context.home)
     if harness.is_dir() and not harness.is_symlink():
         return Row(
@@ -654,7 +655,8 @@ def _attached(context: Context) -> Row:
     if not recorded:
         return Row(
             WARN,
-            f"memory.mode is overlay and {LEDGER} does not exist, so nothing records an attach",
+            f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
+            f"attach",
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
         )
     answer = _binding_answer(context)
@@ -668,9 +670,9 @@ def _attached(context: Context) -> Row:
     if state == UNBOUND:
         return Row(
             WARN,
-            f"{LEDGER} records an attach, but the overlay this machine records has no binding "
-            f"for this project — a clone can commit that file, so it is not evidence of an "
-            f"attach",
+            f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
+            f"binding for this project — a clone can commit that file, so it is not evidence of "
+            f"an attach",
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
             "checkout was never attached on this machine, remove the ledger",
         )
@@ -707,7 +709,7 @@ UNASKABLE: Final = "unaskable"
 UNREADABLE_LEDGER: Final = "unreadable-ledger"
 # Said by every row that meets a ledger the overlay has not confirmed, because it is the whole
 # reason those rows exist: the consent record lives in the overlay, and this file does not.
-_NOT_EVIDENCE = f"a clone can commit {LEDGER}, so on its own it is not evidence of an attach"
+_NOT_EVIDENCE = f"a clone can commit {ATTACH_LEDGER}, so on its own it is not evidence of an attach"
 _RE_ATTACH = (
     "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
     "checkout was never attached on this machine, remove the ledger"
@@ -730,22 +732,22 @@ def _uncorroborated(reason: str) -> Row:
     if reason == UNRESOLVED:
         return Row(
             WARN,
-            f"{LEDGER} records an attach, and the store it names is not this project's "
+            f"{ATTACH_LEDGER} records an attach, and the store it names is not this project's "
             f"directory inside the overlay this machine records — {_NOT_EVIDENCE}",
             _RE_ATTACH,
         )
     if reason == UNREADABLE_LEDGER:
         return Row(
             WARN,
-            f"{LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
+            f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {_NOT_EVIDENCE}",
-            f"remove {LEDGER}, then run `stayfixed attach --store "
+            f"remove {ATTACH_LEDGER}, then run `stayfixed attach --store "
             f"<overlay>/projects/<project>/memory --check`",
         )
     if reason == NO_OVERLAY:
         return Row(
             SKIP,
-            f"{LEDGER} records an attach and this machine records no overlay to check it "
+            f"{ATTACH_LEDGER} records an attach and this machine records no overlay to check it "
             f"against, so whether this checkout is attached could not be answered here — "
             f"{_NOT_EVIDENCE}",
             "run `stayfixed setup --overlay <path>` to record the overlay, then `stayfixed "
@@ -753,7 +755,7 @@ def _uncorroborated(reason: str) -> Row:
         )
     return Row(
         SKIP,
-        f"{LEDGER} records an attach and the overlay could not be asked about it here — no "
+        f"{ATTACH_LEDGER} records an attach and the overlay could not be asked about it here — no "
         f"`git`, or an overlay record this process could not read — so whether this checkout "
         f"is attached could not be answered; {_NOT_EVIDENCE}",
         "run `stayfixed doctor` again where `git` runs and the overlay is readable",
@@ -1022,10 +1024,10 @@ def _hook_entries(context: Context) -> Row:
     if found is None:
         status = WARN
         parts.append(
-            f"{LEDGER} is there and cannot be read as a ledger, so which of those entries "
+            f"{ATTACH_LEDGER} is there and cannot be read as a ledger, so which of those entries "
             f"`stayfixed attach` installed could not be established"
         )
-        remedy = f"check that {LEDGER} is readable and is the file your last attach wrote"
+        remedy = f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
     elif granted is None:
         status = WARN
         parts.append(
@@ -1037,14 +1039,14 @@ def _hook_entries(context: Context) -> Row:
         status = RED
         parts.append(
             f"{len(unrecorded)} entr(ies) claim the stayfixed marker and are not recorded in "
-            f"{LEDGER}: {listed(unrecorded)}"
+            f"{ATTACH_LEDGER}: {listed(unrecorded)}"
         )
         remedy = "open each entry named above and remove the ones you did not install"
     if ungranted:
         status = RED
         parts.append(
             f"{len(ungranted)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{LEDGER}, and the overlay does not grant them: {listed(ungranted)}"
+            f"{ATTACH_LEDGER}, and the overlay does not grant them: {listed(ungranted)}"
         )
         remedy = (
             "run `stayfixed attach --store <overlay>/projects/<project>/memory`, which takes out "

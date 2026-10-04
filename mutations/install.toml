@@ -1442,22 +1442,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green",
 ]
 
-# One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
-# the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
-# could not run" and the session handler's backstop swallows along with every other line of the
-# same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
-# floor written in Eastern Arabic-Indic numerals validate and print back verbatim.
-[[mutation]]
-name = "the version grammar stops bounding its components"
-file = "src/stayfixed/overlay/requires.py"
-before = '_COMPONENT = r"([0-9]{1,9})"'
-after = '_COMPONENT = r"(\d+)"'
-reddens = [
-  "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
-  "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
-  "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
-]
-
 # Spelled once. `overlay-requires`' remedy a few rows below reads `REPOSITORY_URL`, while
 # `cli-path`'s carried the address written out -- two places to change when the repository moves, in
 # the command whose whole job is finding the two halves of something that has stopped agreeing. The
@@ -1568,18 +1552,6 @@ before = '    data = load_preset(preset, key="--preset")'
 after = "    data = load_preset(preset)"
 reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
-]
-
-# Read by the triple alone, a release and its own pre-release were one version, so a pre-release
-# build moved a project recording the release down to itself and re-pinned it.
-[[mutation]]
-name = "a release reads as older than its own pre-release"
-file = "src/stayfixed/overlay/requires.py"
-before = "    if not suffix and _PRE_RELEASE.match(other):\n        return True"
-after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
-reddens = [
-  "tests/overlay/test_requires.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
-  "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
 ]
 
 # In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as

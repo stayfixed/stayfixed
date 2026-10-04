@@ -2020,3 +2020,78 @@ file = "src/stayfixed/areas.py"
 before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
 reddens = ["tests/test_areas.py::test_the_delivery_areas_are_the_three_the_design_names"]
+
+# One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
+# the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
+# could not run" and the session handler's backstop swallows along with every other line of the
+# same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
+# floor written in Eastern Arabic-Indic numerals validate and print back verbatim.
+[[mutation]]
+name = "the version grammar stops bounding its components"
+file = "src/stayfixed/semver.py"
+before = 'COMPONENT = r"([0-9]{1,9})"'
+after = 'COMPONENT = r"(\d+)"'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
+  "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
+  "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
+]
+
+# Read by the triple alone, a release and its own pre-release were one version, so a pre-release
+# build moved a project recording the release down to itself and re-pinned it.
+[[mutation]]
+name = "a release reads as older than its own pre-release"
+file = "src/stayfixed/semver.py"
+before = "    if not suffix and _PRE_RELEASE.match(other):\n        return True"
+after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
+reddens = [
+  "tests/test_semver.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
+  "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
+]
+
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
+[[mutation]]
+name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
+file = "src/stayfixed/config/overlay.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
+]
+
+# The overlay root anchors where the note store may resolve, so with no file named it is read from
+# the one path no variable can move, even from a terminal.
+[[mutation]]
+name = "the overlay root reads the machine file a variable names"
+file = "src/stayfixed/config/overlay.py"
+before = "    path = machine_config_path(interactive=False) if machine is None else machine"
+after = "    path = machine_config_path(interactive=True) if machine is None else machine"
+reddens = [
+  "tests/config/test_overlay_root.py::test_the_overlay_root_never_asks_where_the_machine_file_is",
+]
+
+# `init` writes the `.gitignore` block as a scaffold artifact and `attach` merges it into the file;
+# both are held to the bytes a project already carries, so changing the one spelling of the block
+# changes what both write.
+[[mutation]]
+name = "the ignore block's note changes under both of its writers"
+file = "src/stayfixed/config/layout.py"
+before = """IGNORE_NOTE = "# stayfixed's local state: yours, never a collaborator's.""""
+after = """IGNORE_NOTE = "# stayfixed's local state.""""
+reddens = [
+  "tests/project/test_templates.py::test_the_ignore_block_init_writes_is_the_block_attach_writes",
+]
+
+# A git that fails at everything is unavailable, never a repository with no `origin` remote: the
+# exit code alone cannot tell the two apart, so the origin's reader asks a second question that
+# needs no repository.
+[[mutation]]
+name = "a broken git reads as a repository with no origin remote"
+file = "src/stayfixed/gitenv.py"
+before = '    if code == -1 or git_run(root, "--version")[0] != 0:'
+after = "    if code == -1:"
+reddens = [
+  "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
+]
