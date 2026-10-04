@@ -56,7 +56,8 @@ _RETIRED = {
     ),
     RETIRED_ATTACH_SKILL: (
         frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),
-        "the plugin's own `attach` skill replaces it",
+        "the plugin's own `attach` skill replaces it; delete this copy once you no longer need "
+        "your edits",
     ),
     RETIRED_RULES_README: (
         frozenset(
@@ -65,7 +66,8 @@ _RETIRED = {
                 "62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",
             }
         ),
-        "nothing read this directory; a standing rule is a note with `metadata.startup`",
+        "nothing read this directory; a standing rule is a note with `metadata.startup`, so move "
+        "your rules into such notes and delete this copy",
     ),
 }
 

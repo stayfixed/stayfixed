@@ -1868,8 +1868,9 @@ When it removes `common/memory/README.md` and `common/memory/_README.md` is not 
 and a directory left empty is one git does not keep, so a clone of the overlay elsewhere would
 have no `common/memory/` for the `developer` link to reach. A copy holding anything else is left,
 and the line says so and names the way out: rename the memory README to `_README.md`; the plugin's
-own `attach` skill replaces the template's; a standing rule is a note with `metadata.startup`. A
-retired file it cannot read is left too, with a `left <path>: <reason>` line, and is not a failure.
+own `attach` skill replaces the template's, so delete your copy once you no longer need your
+edits; a standing rule is a note with `metadata.startup`, so move your rules into such notes and
+delete the README. Until then each run names the copy again. A retired file it cannot read is left too, with a `left <path>: <reason>` line, and is not a failure.
 A path these lines name that the manifest supplied and that holds anything but a plain path is
 escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
 terminal.
@@ -1921,7 +1922,9 @@ no manifest (one generated from a template, since `publish-template` leaves it o
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
 other two. Any other copy may hold your own words, so it is listed as `skip_modified` with the way
 out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
-template's; a standing rule is a note with `metadata.startup`. Exits `0`; `1` when the report
+template's, so delete your copy once you no longer need your edits; a standing rule is a note with
+`metadata.startup`, so move your rules into such notes and delete the README. Until then each run
+lists the copy again. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
 by the containment walk.
