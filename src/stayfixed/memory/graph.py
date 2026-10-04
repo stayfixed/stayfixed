@@ -1,10 +1,10 @@
 """The advisory memory link graph: every `[[link]]` resolves to a document in the store, no link is
 immediately repeated, no ledger identifier is bracketed. Advice, never a verdict: the store is
-shared by every session on the machine.
+shared by every session on the machine, so `memory refs` reports these as notices that never
+change its exit code.
 
-Nothing here is a grammar of its own: the wiki-link pattern is the memory area's (`WIKI_LINK` on its
-import surface, `memory/api.py`), the identifier grammar is `stayfixed.identifiers`, and what counts
-as prose is `stayfixed.prose`'s.
+Nothing here is a grammar of its own: the wiki-link pattern is `memory.refs`'s `WIKI_LINK`, the
+identifier grammar is `stayfixed.identifiers`, and what counts as prose is `stayfixed.prose`'s.
 """
 
 from __future__ import annotations
@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING
 
 from stayfixed.findings import Finding
 from stayfixed.identifiers import identifiers
-from stayfixed.memory.api import WIKI_LINK, Store, walk
+from stayfixed.memory.notes import walk
+from stayfixed.memory.refs import WIKI_LINK
+from stayfixed.memory.store import Store
 from stayfixed.prose import blank_code_spans, blank_fences
 
 if TYPE_CHECKING:

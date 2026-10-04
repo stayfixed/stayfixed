@@ -1,15 +1,20 @@
 """The advisory memory link graph: every `[[link]]` resolves, no link is immediately repeated, no
-ledger identifier is bracketed. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
+ledger identifier is bracketed. `memory refs` reports it as notices, beside the stale paths it
+finds. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
+from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
-from stayfixed.docs.graph import check_memory_graph
-from stayfixed.memory.api import resolve
+from stayfixed.memory.graph import check_memory_graph
+from stayfixed.memory.store import resolve
 
 CONFIG = """
 [stayfixed]
@@ -91,3 +96,23 @@ def test_every_adjacent_repeat_form_is_noted(tmp_path: Path) -> None:
     assert [f for f in graph(root, config) if f[0] == "repeated-link"] == [
         ("repeated-link", "developer/a.md", "b")
     ] * 3
+
+
+def test_refs_reports_graph_notices_without_changing_its_exit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The graph is advice: the store is shared by every session on the machine, so a sibling's
+    # half-finished sweep is not this tree's fault to fail on, and the exit code is the one part
+    # of that promise a caller acts on without reading. A dangling `[[link]]` is a notice, counted
+    # on the line and listed in `--json`; only a stale path is a finding. Mutation (declared):
+    # `mutations/`'s "an advisory memory-graph notice gates the exit code".
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see [[gone]]\n")
+    argv = ["memory", "refs", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert run([*argv, "--json"], parser=build_parser(discover_registrars())) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["findings"] == []
+    assert [(n["rule"], n["path"], n["detail"]) for n in data["notices"]] == [
+        ("dead-wiki-link", "developer/a.md", "gone")
+    ]
+    assert "1 advisory link-graph notice(s)" in data["summary"]

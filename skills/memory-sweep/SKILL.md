@@ -17,15 +17,14 @@ description: Sweep the working-memory store — inventory by size, verify anchor
    identifier for the evidence. History belongs to the ledger, the roadmap or the retro.
 4. **Merge on close coupling.** Two notes firing on the same trigger, or each needing the
    other to be usable, are one note. A fact mechanized elsewhere is deleted, not kept.
-5. **Check the graph.** Run `stayfixed docs check --memory-graph`: every `[[link]]` resolves,
-   no link is immediately repeated, no identifier is bracketed. Advice, not a gate — the
-   store is shared by every session on the machine.
-6. **Check the pointers out of the store.** Run `stayfixed memory refs`: every backticked
-   repository path a note names still exists. Only exit 0 is a pass. Exit 2 means a configured
-   group could not be resolved, so the walk covered a subset; fix that before an exit 0 means
-   anything. Exit 1 is either stale paths — fix them, or rewrite in *italics* the ones where a
+5. **Check the graph and the pointers out of the store.** Run `stayfixed memory refs`: every
+   backticked repository path a note names still exists, and, as notices that never change
+   the exit code, every `[[link]]` resolves, no link is immediately repeated, no identifier is
+   bracketed — advice, not a gate, since the store is shared by every session on the machine.
+   Only exit 0 is a pass. Exit 2 means a configured group could not be resolved, so the walk
+   covered a subset; fix that before an exit 0 means anything. Exit 1 is either stale paths — fix them, or rewrite in *italics* the ones where a
    note deliberately records a file that is gone — or no store resolving at all, which is a
    sweep that covered nothing. The summary line says which; the number alone does not.
-7. **Regenerate the index.** Run `stayfixed memory index`, then `stayfixed memory index --check`.
+6. **Regenerate the index.** Run `stayfixed memory index`, then `stayfixed memory index --check`.
 
 Conventions for what a note is and how the index routes: [references/protocol.md](references/protocol.md).

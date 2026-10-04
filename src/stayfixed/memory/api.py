@@ -14,12 +14,10 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-five names are imported from outside this area today, and the areas that reach for them
-are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
-`permitted_roots`, `main_checkout`, and `resolved`, which `docs check
---memory-graph` reads so that a store that does not resolve is said rather than skipped), the
-overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
-`COMMON_GROUP`), the link tree
+Twenty-two names are imported from outside this area today, and the areas that reach for them
+are `attach` and `doctor`: the resolver and its store (`resolve`, `Store`, `permitted_roots` and
+`main_checkout`), the overlay layout `attach` writes and `overlay` renders (`PROJECTS`,
+`PROJECT_RECORD`, `COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
 `harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
 every name the tree holds from git), whether the machine records any approval for a store that
@@ -30,19 +28,19 @@ binding's one classifier and its vocabulary (`binding_state`, `BINDING_STATES` a
 members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
 `DIFFERENT_REMOTE`), which `attach` and `doctor` answer the binding question with instead of a
 second classifier of their own,
-the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
-walk the graph check reads (`WIKI_LINK`, `walk`), and the trust region
-`tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The overlay root the
+the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), and the trust region
+`tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The link graph's check
+is this area's own (`memory.graph`, which `memory refs` reports), so the wiki-link grammar, the
+note walk and `resolved` have no reader outside it and are not here. The overlay root the
 machine file records and the checkout's `origin` are the core's to answer
 (`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
 `init` asks them too and the core never imports this area.
 
-**Thirteen more have no importer and stay, each for a reason written here**, because a name
+**Nine more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-five name in their signatures**: `Bundle` and `Fit` (`fit`,
-  `render`), `Unresolved` (`resolved`), `Walk` (`walk`), and `Note` with the `Provenance` inside
-  it, which `Walk` names in turn. `tests/test_surfaces.py` derives this rather than restating
+- **The types those twenty-two name in their signatures**: `Bundle` and `Fit` (`fit`,
+  `render`). `tests/test_surfaces.py` derives this rather than restating
   it, and a return type absent from a surface is a value a consumer can hold and cannot
   declare — the one thing a surface exists to prevent.
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
@@ -80,14 +78,13 @@ What went is the claim that another area reads it.
   dance a caller of the exported `write_note` must perform, and with `write_note` gone there is
   no caller on this surface to perform it. That argument comes back with the verb if an area
   ever needs the verb.
-- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`.
-  `docs` is a real consumer of this surface; it imports `WIKI_LINK`, `Store` and `walk`, and
-  none of these four. The paragraph that said this debt was paid was measuring the wrong thing:
-  an area existing is not the same as an area importing.
+- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`. The
+  paragraph that said this debt was paid was measuring the wrong thing: an area existing is not
+  the same as an area importing.
 - **The inventory group** — `inventory`, `totals`, `Entry` — published for a skills consumer,
   and nothing outside this area imports them.
 - **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
-  `overlay_group_target` (and `resolved`, until `docs` needed it). `in_repository` was published
+  `overlay_group_target` and `resolved`. `in_repository` was published
   "because `inside_project` hands the reader to it in as many words", which is this surface
   citing itself; `refusal_reason` was
   published for an overlay hook that does not exist; `overlay_group_target` is read by
@@ -102,8 +99,6 @@ predicted. `Links` stays for the same reason and is the one name on this list an
 """
 
 from stayfixed.memory.bundles import SLOTS, Bundle, Fit, fit, render
-from stayfixed.memory.notes import Note, Provenance, Walk, walk
-from stayfixed.memory.refs import WIKI_LINK
 from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
@@ -118,12 +113,10 @@ from stayfixed.memory.store import (
     PROJECTS,
     UNBOUND,
     Store,
-    Unresolved,
     binding_state,
     main_checkout,
     permitted_roots,
     resolve,
-    resolved,
 )
 from stayfixed.memory.trust import (
     DELIMITER,
@@ -165,19 +158,14 @@ __all__ = [
     "PROJECT_RECORD",
     "SLOTS",
     "UNBOUND",
-    "WIKI_LINK",
     "Bundle",
     "Fit",
     "Links",
-    "Note",
     "PartialLink",
-    "Provenance",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
-    "Unresolved",
     "UnsafeNote",
-    "Walk",
     "approval_recorded",
     "attach_main",
     "binding_state",
@@ -197,7 +185,5 @@ __all__ = [
     "render",
     "require_readable_record",
     "resolve",
-    "resolved",
-    "walk",
     "wrap",
 ]

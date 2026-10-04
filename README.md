@@ -331,7 +331,7 @@ stayfixed memory trust --in-repo-memory                # approve the notes insid
 stayfixed memory inventory                             # what a memory sweep reads
 stayfixed memory fit                                   # whether each injection bundle fits its hook slots
 stayfixed memory session-context --bundle standing-rules --part 1
-stayfixed memory refs                                  # backticked paths in notes that no longer resolve
+stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
 
 # The bug ledger
 stayfixed bugs new "A title" --severity high --area cli   # file an entry at the next free identifier
@@ -343,7 +343,6 @@ stayfixed bugs renumber BR-001 BR-002                  # move an entry; rewrite 
 
 # Documentation and plans
 stayfixed docs check                                   # budgets and link targets
-stayfixed docs check --memory-graph                    # also the store's link graph, as advice
 stayfixed docs trail                                   # regenerate the design-and-plan trail
 stayfixed docs trail --check
 stayfixed plan check                                   # lint the plans a change touches

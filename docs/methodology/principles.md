@@ -66,7 +66,7 @@ renders `MEMORY.md` from them under a declared section order and harvests back a
 second writer appended, so the harness's own memory writer and stayfixed share one directory
 without either rewriting the other's keys. `memory inventory` reports each note's size and
 whether its line is curated, harvested or provisional; `memory refs` checks that every path a
-note names still exists; `docs check --memory-graph` checks the link graph.
+note names still exists, and reports the link graph beside it as advice.
 
 **Why.** The harness loads the first 200 lines or 25 KB of the index into every session
 [S5], so the index is a budget and every word in it is paid on every turn [S17]. There is no

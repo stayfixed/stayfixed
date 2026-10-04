@@ -12,7 +12,8 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
-from stayfixed.memory.api import resolve, walk
+from stayfixed.memory.api import resolve
+from stayfixed.memory.notes import walk
 from stayfixed.memory.refs import (
     _ignored,
     audience_violations,
@@ -241,6 +242,22 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
     data = json.loads(capsys.readouterr().out)
     assert data["summary"] == "1 stale reference(s): developer/a.md:8 [dead-reference]"
     assert data["findings"][0]["detail"] == "src/gone.py"
+
+
+def test_a_missing_store_directory_is_said_in_the_resolvers_own_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A store with no directory is the commonest reason there is nothing to walk, and it had no
+    # sentence of its own: the line fell back to a pointer that named no reason at all. The
+    # reason is stayfixed's text and prints; the store's path is the repository's and stays inside
+    # the data region. Mutation (declared): `mutations/`'s "a missing store directory is reported
+    # with no reason of its own".
+    root, _config = project(tmp_path)
+    (root / "stayfixed.toml").write_text(
+        CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    assert "the memory store's directory does not exist" in capsys.readouterr().err
 
 
 def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(

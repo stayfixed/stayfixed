@@ -429,15 +429,24 @@ def run_refs(args: argparse.Namespace) -> Result:
     data = {
         "findings": [asdict(f) for f in report.findings],
         "unreadable": [str(path.relative_to(store.path)) for path, _ in report.unreadable],
+        "notices": [asdict(n) for n in report.notices],
     }
+    # The link graph is advice: counted on the line and listed in `--json`, never in the exit
+    # code, because the store is shared by every session on the machine and a sibling's
+    # half-finished sweep is not this tree's fault to fail on.
+    advice = (
+        [f"{len(report.notices)} advisory link-graph notice(s), which do not gate"]
+        if report.notices
+        else []
+    )
     parts: list[str] = []
     if report.findings:
         parts.append(f"{len(report.findings)} stale reference(s): {labels(report.findings)}")
     if report.unreadable:
         parts.append(f"{len(report.unreadable)} note(s) could not be parsed and were not read")
     if not parts:
-        return Result("every backticked path in the store resolves", data)
-    return Result("; ".join(parts), data, exit_code=1)
+        return Result("; ".join(["every backticked path in the store resolves", *advice]), data)
+    return Result("; ".join([*parts, *advice]), data, exit_code=1)
 
 
 def register(groups: SubParsers) -> None:

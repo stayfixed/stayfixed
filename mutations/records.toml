@@ -415,15 +415,15 @@ before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _insi
 after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
 reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]
 
-# Advice must never gate. `--memory-graph` is opt-in precisely because the store is shared by
+# Advice must never gate. The link graph is reported as notices because the store is shared by
 # every session on the machine, so a sibling's half-finished sweep is not this tree's fault to
 # fail on — and an exit code is the one part of that promise a caller acts on silently.
 [[mutation]]
-name = "an advisory memory-graph finding gates the exit code"
-file = "src/stayfixed/docs/commands.py"
-before = '    return Result(verdict, data)'
-after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
-reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]
+name = "an advisory memory-graph notice gates the exit code"
+file = "src/stayfixed/memory/commands.py"
+before = "    if report.findings:"
+after = "    if report.findings or report.notices:"
+reddens = ["tests/memory/test_graph.py::test_refs_reports_graph_notices_without_changing_its_exit"]
 
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
@@ -1548,16 +1548,16 @@ reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
 ]
 
-# `docs check --memory-graph` names why it checked nothing from the resolver's own sentence, and a
-# missing store directory -- the commonest cause -- had none, so the notice fell back to a pointer
-# that named no reason at all.
+# A command with no store to walk says why in the resolver's own sentence, and a missing store
+# directory -- the commonest cause -- had none, so the line fell back to a pointer that named no
+# reason at all.
 [[mutation]]
 name = "a missing store directory is reported with no reason of its own"
 file = "src/stayfixed/memory/store.py"
 before = "        return None, Unresolved(said, str(base))"
 after = '        return None, Unresolved("", str(base))'
 reddens = [
-  "tests/docs/test_commands.py::test_docs_check_says_why_the_graph_had_no_store_to_check[no-directory]",
+  "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
 ]
 
 # A machine record naming an overlay root that is no longer there read as "no record of this

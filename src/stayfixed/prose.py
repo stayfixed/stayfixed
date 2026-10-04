@@ -22,7 +22,7 @@ Four rules live here, and each is a decision rather than a default:
   A shared grammar with an unshared resolution rule is the same drift in slower motion:
   `resolves_within` is where that rule is written down.
 
-A leaf module: `docs.plans`, `docs.graph`, `docs.hygiene` and `memory.refs` import it, and
+A leaf module: `docs.plans`, `docs.hygiene`, `memory.graph` and `memory.refs` import it, and
 none may import another's area.
 """
 

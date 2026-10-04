@@ -15,7 +15,7 @@ from stayfixed.printed import printable
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
+    pass
 
 _OK = "OK: documentation budgets and link targets"
 _PLAN_OK = (
@@ -24,31 +24,12 @@ _PLAN_OK = (
 )
 
 
-# Said when `--memory-graph` had no store to walk, which used to be silence: a line with no NOTE
-# read exactly like a graph with nothing wrong in it. The reason is the resolver's own sentence,
-# which every cause it refuses on now carries — stayfixed's text, which prints — and never its
-# detail, which carries `memory.groups` and `paths.memory`, both the repository's.
-NO_STORE = "memory-store-unresolved"
-
-
-def _graph_notices(args: argparse.Namespace, root: Path, config: Config) -> list[Finding]:
-    from stayfixed.docs.graph import check_memory_graph
-    from stayfixed.memory.api import resolved
-
-    machine = Path(args.machine) if args.machine else None
-    found = resolved(root, config, override=args.store, machine=machine)
-    if found[0] is None:
-        return [Finding(NO_STORE, "", None, found[1].said)]
-    return check_memory_graph(found[0], config)
-
-
 def run_docs_check(args: argparse.Namespace) -> Result:
     from stayfixed.docs.hygiene import check_budgets, check_links, docs_gate
 
     root, config = root_and_config(args)
     # No flag runs exactly the enforced set the success line names, which is the `docs` gate
-    # itself; the memory store is resolved only on `--memory-graph`, because advice this
-    # command does not gate on is not fetched by default.
+    # itself.
     problems: list[Finding] = []
     if not (args.budgets or args.links):
         problems = docs_gate(root, config)
@@ -56,26 +37,14 @@ def run_docs_check(args: argparse.Namespace) -> Result:
         problems.extend(check_budgets(root, config))
     if args.links:
         problems.extend(check_links(root, config))
-    notices = _graph_notices(args, root, config) if args.memory_graph else []
-    data = {"findings": [asdict(p) for p in problems], "notices": [asdict(n) for n in notices]}
+    data = {"findings": [asdict(p) for p in problems]}
     if problems:
         return Result(
             f"FAIL: {len(problems)} documentation problem(s): {labels(problems)}",
             data,
             exit_code=1,
         )
-    # The success line names the enforced set alone. Naming the graph here once made an exit-0
-    # line vouch for a graph the run had just reported broken.
-    verdict = _OK
-    unchecked = [n for n in notices if n.rule == NO_STORE]
-    if unchecked:
-        verdict += f" — the memory graph was not checked: {unchecked[0].detail}"
-    elif notices:
-        verdict += (
-            f" — {len(notices)} advisory NOTE(s) are unresolved and do not gate; this line does "
-            "not vouch for the memory store"
-        )
-    return Result(verdict, data)
+    return Result(_OK, data)
 
 
 def run_docs_trail(args: argparse.Namespace) -> Result:
@@ -165,15 +134,9 @@ def run_plan_check(args: argparse.Namespace) -> Result:
 def register(groups: SubParsers) -> None:
     docs = groups.add_parser("docs", help="documentation budgets, links and the design trail")
     docs_sub = docs.add_subparsers(dest="command", metavar="<command>")
-    check = common_flags(
-        docs_sub.add_parser("check", help="budgets and link targets; the memory graph as advice"),
-        store=True,
-    )
+    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"), store=True)
     check.add_argument("--budgets", action="store_true")
     check.add_argument("--links", action="store_true")
-    check.add_argument(
-        "--memory-graph", action="store_true", help="also report the store's link graph (advisory)"
-    )
     check.set_defaults(func=run_docs_check)
     trail = common_flags(
         docs_sub.add_parser("trail", help="regenerate the design-and-plan trail in the roadmap")

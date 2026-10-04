@@ -20,12 +20,9 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
     # `store.refusal_reason` reddens this test and this test alone, and under the old
     # `required <= set(...)` it reddened nothing at all.
     required = {
-        # the resolver and the store it yields, for attach, doctor and docs
+        # the resolver and the store it yields, for attach and doctor
         "resolve",
         "Store",
-        # the store and why there is none, for `docs check --memory-graph`'s notice
-        "resolved",
-        "Unresolved",  # what `resolved` answers when there is no store
         "permitted_roots",
         "main_checkout",
         # the overlay's per-project layout: attach writes it, overlay renders it
@@ -48,12 +45,6 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "SLOTS",
         "Bundle",
         "Fit",
-        # the wiki-link grammar and the note walk the graph check reads
-        "WIKI_LINK",
-        "walk",
-        "Walk",  # what `walk` returns
-        "Note",  # what a `Walk` carries
-        "Provenance",  # what a `Note` carries
         # the trust region, whole. Reading one needs `markers` and `DELIMITER`, which
         # tests/test_install_path.py already imports; producing one needs `wrap` and a nonce,
         # and a forged marker raises `UnsafeNote`. Half a closed vocabulary cannot be used by

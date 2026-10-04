@@ -10,7 +10,7 @@ Three things hold everywhere:
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
   Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
-  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s
+  command's keys are its own and are listed with it below — `doctor`'s `checks`, `memory refs`'s
   advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
   not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
@@ -49,7 +49,7 @@ Three things hold everywhere:
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
 - [`stayfixed bugs renumber OLD NEW`](#stayfixed-bugs-renumber-old-new)
-- [`stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#stayfixed-docs-check---budgets---links---memory-graph---store-path)
+- [`stayfixed docs check [--budgets] [--links] [--store PATH]`](#stayfixed-docs-check---budgets---links---store-path)
 - [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
@@ -643,10 +643,9 @@ own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
-## `stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
+## `stayfixed docs check [--budgets] [--links] [--store PATH]`
 
-Two kinds of check, and the difference is the whole design; no flag runs the enforced
-two, and `--memory-graph` is opt-in. **Enforced** (exit `1`, `FAIL:`):
+Two checks, both enforced, and no flag runs both (exit `1`, `FAIL:`):
 the always-loaded document at `[paths] agents_md` exists, is within `agents_md_lines` and
 `agents_md_words`, and has a `## Current status` section within `status_lines`; the roadmap at
 `[paths] roadmap`, up to the line `## Design and plan trail`, is within `roadmap_prose_lines`
@@ -655,14 +654,8 @@ finding); every relative local link in the agents file resolves to a file — re
 document's own directory, and only when it lands inside the project root, since a link that
 walks out through `..` would be settled against the machine rather than the repository (an
 absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
-effective ones — the preset's, lowered by `[budgets]` if the project chose to. **Advisory**
-(`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
-names a document in the store, no link is immediately repeated, and no ledger identifier is
-bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
-the store. Where no store resolves, the line says the graph was not checked and why — in
-stayfixed's own words for the cause (the store's directory does not exist, none of the configured
-groups resolved, the overlay binding does not hold, …), never the store's path or a group's name —
-and `--json` carries one `memory-store-unresolved` notice; the exit code is still `0`.
+effective ones — the preset's, lowered by `[budgets]` if the project chose to. The memory
+store's link graph is `stayfixed memory refs`'s, as advice.
 
 **Writes** nothing.
 
@@ -1141,7 +1134,12 @@ itself, which those rules cover wholesale and which is settled on disk. Fenced c
 filenames are skipped. In an overlay store, a note in a cross-project group that `[[links]]`
 into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
 targets are in `--json`. A note that exists and would not parse is counted on the line and
-named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
+named in `--json`, and is exit `1` too: an unread note is not a clean note. Beside those, the
+store's link graph is reported as advice: every `[[wiki-link]]` names a document in the store,
+no link is immediately repeated, and no ledger identifier is bracketed. Each miss is a notice,
+counted on the line and listed under `notices` in `--json`, and never changes the exit code: the
+store is shared by every session on the machine, so a link a sibling session left dangling is a
+hint, while a stale path is a finding. Refuses (`2`) when a
 configured group could not be resolved, counting them on a line that names none, then naming
 every group with the resolver's own reason for it, one per line, inside the delimited region that
 marks repository-authored text as data — the one list of names not capped at eight, since the
