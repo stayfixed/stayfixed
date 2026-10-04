@@ -18,7 +18,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
-from stayfixed.attach.permissions import settings_document
+from stayfixed.attach.permissions import check, settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
     HARNESS_WAITS,
@@ -26,6 +26,7 @@ from stayfixed.attach.write import (
     Attached,
     attach,
 )
+from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -33,7 +34,7 @@ from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
+from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 from tests.runners import Recorder
@@ -2053,3 +2054,67 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     said = " ".join(attached.notes)
     assert "forged" in said
     assert "\n::error::" not in said and "\x1b" not in said
+
+
+# Names a clone can commit that no directory under the overlay's `projects/` can carry: one a file
+# there already holds, and one longer than a file name may be on Linux and macOS alike.
+UNSHARED = {"a-file-holds-it": "collides", "longer-than-a-file-name": "a" * 300}
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("case", sorted(UNSHARED))
+def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write(
+    tmp_path: Path, case: str, command: str
+) -> None:
+    # `attach` records the binding and keeps the notes under `projects/<name>/`, so a name that
+    # directory cannot exist for has nowhere to go. Reading the overlay's sources for such a name as
+    # absent is what `doctor` needs; here it must not let the run reach its writes, which a record
+    # it cannot place would stop half way through. `--check` refuses it too, as the run it
+    # previews would. The name is never quoted back: it is the repository's.
+    #
+    # Mutations (oracle): `mutations/`'s "attach writes for a project name the overlay has no
+    # directory for" and "attach --check previews a project name the overlay has no directory
+    # for"; "a name longer than the filesystem allows is an overlay that cannot be asked" and "a
+    # binding record the project's name rules out cannot be read" -> the long name fails rather
+    # than refusing.
+    name = UNSHARED[case]
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    overlay = store.parents[2]
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    if case == "a-file-holds-it":
+        (overlay / "projects" / name).write_text("notes\n", encoding="utf-8")
+    store = overlay / "projects" / name / "memory"
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert str(refused.value) == (
+        f"{overlay}/projects/<this project's name> cannot be a directory on this machine -- a "
+        f"file already holds that name, or the name is longer than the filesystem allows -- so "
+        f"there is nowhere to record this binding or keep this project's notes; choose another "
+        f"`name` under [project] in stayfixed.toml"
+    )
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
+    tmp_path: Path, command: str
+) -> None:
+    # The other side of the overlay's leniency: a path the project's own `.claude` makes impossible
+    # is not a settings file that is absent, because `attach` writes `.claude/settings.local.json`
+    # and a run that read it as empty would refuse only at that write, after the ones before it.
+    #
+    # Mutation (oracle): `mutations/`'s "the project's own settings file is read as leniently as an
+    # overlay source".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    (root / ".claude").write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert _everything(tmp_path) == before

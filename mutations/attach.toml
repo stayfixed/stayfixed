@@ -1699,3 +1699,112 @@ after = "    except ZeroDivisionError:\n        # Valid JSON nested past what th
 reddens = [
   "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
 ]
+
+# `project.name` is committed and spells the one free part of the paths the grant question reads
+# under the overlay, `projects/<name>/claude/`. A name that path cannot exist for is an overlay with
+# no source for that project; read as a failure, it turned `hook-entries`' red into a warning on a
+# machine with nothing broken.
+[[mutation]]
+name = "a source the project's name rules out is an overlay that cannot be asked"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if overlay and cannot_exist(exc):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-unreadable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
+]
+
+[[mutation]]
+name = "a name longer than the filesystem allows is an overlay that cannot be asked"
+file = "src/stayfixed/attach/binding.py"
+before = "    return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG"
+after = "    return isinstance(exc, NotADirectoryError)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
+]
+
+[[mutation]]
+name = "a file where the project's directory would be is an overlay that cannot be asked"
+file = "src/stayfixed/attach/binding.py"
+before = "    return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG"
+after = "    return exc.errno == errno.ENAMETOOLONG"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
+]
+
+# The binding record is read on the way to what the overlay grants, and `Path.is_file()` raises for
+# a name longer than the filesystem allows on Python 3.11 to 3.13: the record such a name rules out
+# is one the overlay does not have, on every interpreter.
+[[mutation]]
+name = "a binding record the project's name rules out cannot be read"
+file = "src/stayfixed/attach/binding.py"
+before = "        if cannot_exist(exc):\n            return None"
+after = "        if False:\n            return None"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
+]
+
+# The owner boundary of the leniency above: only a path the name rules out reads as no source. A
+# hook file the owner's overlay keeps and this machine cannot read is the overlay failing to answer,
+# and the row warns.
+[[mutation]]
+name = "every fault reading the overlay's sources reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        if overlay and cannot_exist(exc):"
+after = "        if overlay:"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-unreadable]",
+]
+
+# The leniency stops at the overlay. The project's own `.claude` that is a file has to stop
+# `attach` before it writes; read as an empty settings file it stopped only at that file's write.
+[[mutation]]
+name = "the project's own settings file is read as leniently as an overlay source"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return _read(root / LOCAL_SETTINGS)"
+after = "    return _read(root / LOCAL_SETTINGS, overlay=True)"
+reddens = [
+  "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[attach]",
+  "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[check]",
+]
+
+# Reading such a name's sources as absent is what `doctor` needs, and it takes away the failed read
+# that used to stop `attach` before it wrote: the binding record's write, after four others, would
+# be the first thing to find out. So the run refuses the name above every write, and `--check`
+# refuses it as the run it previews would.
+[[mutation]]
+name = "attach writes for a project name the overlay has no directory for"
+file = "src/stayfixed/attach/write.py"
+before = "    refuse_unless_share_can_exist(binding)\n"
+after = ""
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
+]
+
+[[mutation]]
+name = "attach --check previews a project name the overlay has no directory for"
+file = "src/stayfixed/attach/permissions.py"
+before = "    refuse_unless_share_can_exist(binding)\n"
+after = ""
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
+]
+
+[[mutation]]
+name = "a file where the project's directory would be is no reason to refuse attach"
+file = "src/stayfixed/attach/binding.py"
+before = "    if not stat.S_ISDIR(mode):"
+after = "    if mode == 0:"
+reddens = [
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
+  "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
+]

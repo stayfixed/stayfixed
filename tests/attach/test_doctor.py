@@ -20,7 +20,7 @@ import pytest
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
-from stayfixed.config.loader import load
+from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, SKIP, WARN, Check
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
@@ -937,3 +937,136 @@ def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"
     ]
+
+
+def _named(root: Path, name: str) -> None:
+    """Give the project in `root` another `project.name`, which its `stayfixed.toml` chooses."""
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('name = "p"', f'name = "{name}"'),
+        encoding="utf-8",
+    )
+
+
+# Names a clone can commit that no directory under the overlay's `projects/` can carry: one a file
+# there already holds, and one longer than a file name may be on Linux and macOS alike. Neither
+# needs anything of the overlay but what an owner's own files put there.
+UNSHARED = {
+    "a-file-holds-it": "collides",
+    "longer-than-a-file-name": "a" * 300,
+}
+
+
+def _unshared(tmp_path: Path, case: str, *, ledger: str) -> Path:
+    """A forged clone whose `project.name` names no directory this machine's overlay can hold."""
+    root = _forged_clone(tmp_path)
+    _named(root, UNSHARED[case])
+    if case == "a-file-holds-it":
+        (tmp_path / "overlay" / PROJECTS / "collides").write_text("notes\n", encoding="utf-8")
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+@pytest.mark.parametrize("case", sorted(UNSHARED))
+def test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants(
+    tmp_path: Path, case: str, ledger: str
+) -> None:
+    # `project.name` is committed, and it spells the one free part of the path the grant question
+    # reads under the overlay, `projects/<name>/claude/`. A name that path cannot exist for is an
+    # overlay with no source for that project, so nothing project-specific grants and the forged
+    # entry is red, the row it gets under a name the overlay simply has no project for. It used to
+    # read as an overlay that could not be asked: a warning, beside either ledger.
+    #
+    # Mutations (oracle): `mutations/`'s "a source the project's name rules out is an overlay that
+    # cannot be asked" -> every case warns; "a name longer than the filesystem allows is an overlay
+    # that cannot be asked" and "a binding record the project's name rules out cannot be read" ->
+    # the `longer-than-a-file-name` cases do; "a file where the project's directory would be is an
+    # overlay that cannot be asked" -> the `a-file-holds-it` cases do.
+    root = _unshared(tmp_path, case, ledger=ledger)
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    expected = (
+        TABLE["forged-right-store"] if ledger == "readable" else UNREADABLE_TABLE["forged-overlay"]
+    )
+    assert check == expected
+
+
+@pytest.mark.parametrize("case", sorted(UNSHARED))
+def test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    # The attack whole, through `stayfixed doctor --json`: it used to exit 0. Mutation (oracle):
+    # `mutations/`'s "a source the project's name rules out is an overlay that cannot be asked".
+    root = _unshared(tmp_path, case, ledger="readable")
+    code = _invoke_doctor(tmp_path, monkeypatch, root, _machine(tmp_path))
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 1, red
+    assert [row["name"] for row in red] == ["hook-entries"], red
+    assert f"the overlay does not grant them: {COMMITTED} entry 1 of 1" in red[0]["detail"]
+    # Neither the name nor a byte of the forged command reaches the report.
+    printed = json.dumps(report)
+    assert "collides" not in printed and "a" * 300 not in printed
+    assert "evil.example" not in printed and "forged-1" not in printed
+
+
+def _case_folds(tmp_path: Path) -> bool:
+    probe = tmp_path / "case-probe"
+    probe.write_text("", encoding="utf-8")
+    return (tmp_path / "CASE-PROBE").exists()
+
+
+def test_the_overlays_own_projects_readme_is_no_project_where_case_folds(tmp_path: Path) -> None:
+    # The variant an unbroken overlay hands a clone on macOS's default filesystem: the overlay
+    # template keeps a `README.md` under `projects/`, and `readme.md` is a name `stayfixed.toml`
+    # may hold. Where case does not fold the name is one the overlay simply has no project for,
+    # and the row is the same.
+    root = _forged_clone(tmp_path)
+    _named(root, "readme.md")
+    (tmp_path / "overlay" / PROJECTS / "README.md").write_text("# Projects\n", encoding="utf-8")
+    if not _case_folds(tmp_path):
+        pytest.skip("this filesystem tells README.md from readme.md")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == TABLE["forged-right-store"]
+
+
+# The owner's own `projects/p/claude/` in a state this machine cannot read: no permission to enter
+# it, and a hook file that is a directory. Both are the overlay failing to answer, which is this
+# machine's state and never a repository's, so the row warns as it does for a hook file that will
+# not parse.
+OWN_SOURCES_UNREADABLE = ("no-permission", "hook-file-is-a-directory")
+
+
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+@pytest.mark.parametrize("fault", OWN_SOURCES_UNREADABLE)
+def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
+    tmp_path: Path, fault: str, ledger: str
+) -> None:
+    # Mutation (oracle): `mutations/`'s "every fault reading the overlay's sources reads as no
+    # source" -> both cases are green or red rather than a warning.
+    if fault == "no-permission" and os.geteuid() == 0:
+        pytest.skip("root enters a directory it has no permission for")
+    root = _attached(tmp_path)
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    own = tmp_path / "overlay" / PROJECTS / "p" / "claude"
+    if fault == "no-permission":
+        own.mkdir()
+        own.chmod(0)
+    else:
+        (own / "hooks.json").mkdir(parents=True)
+    try:
+        rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    finally:
+        own.chmod(0o755)
+    expected = (
+        TABLE["owner-overlay-unreadable"]
+        if ledger == "readable"
+        else UNREADABLE_TABLE["owner-overlay-unreadable"]
+    )
+    assert _by_name(rows, "hook-entries") == expected
+    assert not [row.name for row in rows if row.status == "red"]

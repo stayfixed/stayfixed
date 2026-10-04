@@ -55,6 +55,7 @@ from stayfixed.attach.binding import (
     Binding,
     read_binding,
     refuse_unless_overlay,
+    refuse_unless_share_can_exist,
     unlinked_groups,
 )
 from stayfixed.attach.permissions import (
@@ -1161,6 +1162,10 @@ def _plan(
     # `attach_main` then refuses after the fact. After `read_binding`, so a `--store` outside
     # the recorded overlay is still refused for that reason first.
     refuse_unless_overlay(config)
+    # Beside the binding too: a `project.name` no directory under the overlay can carry leaves the
+    # binding record and the group directories nowhere to go, and the overlay's sources read under
+    # it answer "none" rather than refusing, so nothing below would ask before writing.
+    refuse_unless_share_can_exist(binding)
     diff = diff_permissions(root, binding)
     if diff.widens and not confirmed:
         raise Refusal(

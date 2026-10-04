@@ -332,6 +332,13 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     by this machine's state alone. A machine that records no overlay is not that: nothing on it
     can grant, which is the empty set, and `_claims` says why it is empty. An empty set is "the
     overlay grants nothing", which is an answer.
+
+    **Nor is a `project.name` no directory under the overlay can carry.** The name is committed,
+    and it picks `projects/<name>/` out of the overlay; one that a file there already holds, or
+    one longer than the filesystem allows, used to make the read fail and so answer `None`, which
+    let a clone turn this row's red into a warning with nothing on the machine broken.
+    `binding.cannot_exist` reads such a path as one the overlay has no file at, so the answer is
+    what `common/` grants, the same as for a name the overlay has no project for.
     """
     from stayfixed.attach.binding import binding_for
     from stayfixed.attach.permissions import overlay_entries

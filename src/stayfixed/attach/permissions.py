@@ -32,8 +32,10 @@ from typing import Any
 
 from stayfixed.attach.binding import (
     Binding,
+    cannot_exist,
     not_overlay,
     read_binding,
+    refuse_unless_share_can_exist,
     unlinked_groups,
 )
 from stayfixed.config.loader import load
@@ -107,18 +109,30 @@ def settings_document(text: str) -> dict[str, Any]:
     return _object(text, LOCAL_SETTINGS)
 
 
-def _read(path: Path) -> str:
+def _read(path: Path, *, overlay: bool = False) -> str:
+    """A file's text, or an empty string when there is no such file.
+
+    `overlay` is for the overlay's own sources and nothing else: there, a path its spelling rules
+    out (`binding.cannot_exist`) is a file the overlay does not have, because the one free part
+    of that spelling is `project.name` and a repository chooses it. Any other fault -- no
+    permission, a directory where the file goes -- is the overlay failing to answer and stays a
+    `Failure`, which `doctor` reports as a warning. The project's own `.claude/` is never read
+    this way: a `.claude` that is a file has to stop `attach` before it writes, and read as an
+    empty settings file it would stop only at the write of that file.
+    """
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
     except OSError as exc:
+        if overlay and cannot_exist(exc):
+            return ""
         raise Failure(f"{path} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
 
 
-def _allow_rules(path: Path) -> tuple[str, ...]:
+def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     """The `permissions.allow` list of one settings-shaped document, or nothing.
 
     A shape this cannot read is a refusal and never a filter, for the same reason
@@ -128,7 +142,7 @@ def _allow_rules(path: Path) -> tuple[str, ...]:
     file the real run then refused.
     """
     label = str(path)
-    permissions = _object(_read(path), label).get("permissions")
+    permissions = _object(document, label).get("permissions")
     if permissions is None:
         return ()
     if not isinstance(permissions, dict):
@@ -148,7 +162,7 @@ def _hook_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
     reason: what is dropped silently here is an entry the owner put in their overlay on
     purpose, and nothing would say it never arrived.
     """
-    hooks = _object(_read(path), str(path)).get("hooks", {})
+    hooks = _object(_read(path, overlay=True), str(path)).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{path}: 'hooks' is not an object")
     found: dict[str, list[dict[str, Any]]] = {}
@@ -254,9 +268,11 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     # This line is the whole of the committed-settings rule in the module docstring:
     # `.claude/settings.json` sits one name away from both sources and is not on it.
     sources = (overlay_common, overlay_project)
-    granted = [rule for source in sources for rule in _allow_rules(source)]
+    granted = [
+        rule for source in sources for rule in _allow_rules(_read(source, overlay=True), source)
+    ]
     document = local_document(root)
-    held = set(_allow_rules(root / LOCAL_SETTINGS))
+    held = set(_allow_rules(document, root / LOCAL_SETTINGS))
     present = _commands(document, LOCAL_SETTINGS)
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))
@@ -304,6 +320,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
+    refuse_unless_share_can_exist(binding)
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the

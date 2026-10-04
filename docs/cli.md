@@ -2014,7 +2014,10 @@ root itself is **not** taken from that path — it comes from the `[overlay] roo
 configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
 including a directory elsewhere under the same overlay: the session-start path holds every linked
 group to this project's own share, so attaching to a sibling would produce a store every session
-then refuses.
+then refuses. A `[project] name` no directory can carry there — the name of a file the overlay
+keeps under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name
+longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
+well, and the refusal names the shape of the path and never the name.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
