@@ -571,9 +571,9 @@ def test_an_edited_retired_file_is_kept_and_named(
 def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> None:
     # A fresh overlay carries neither file, and an overlay an upgrade has cleared of them has
     # nothing left to remove: run again, `overlay upgrade` plans no action and `overlay init`
-    # names no file it removed or left. Measured by hand rather than declared: `_plan_retired`
-    # planning a removal for a file that is not there reddens the second plan; the engine's
-    # removal and record-dropping paths are `mutations/`'s retirement entries.
+    # names no file it removed or left. Mutation (declared): `mutations/`'s "a retired overlay
+    # file that is absent is planned for removal" -> the first plan's assertion reddens. The
+    # engine's removal and record-dropping paths are the set's other retirement entries.
     root = _an_overlay(tmp_path)
     for relative in (ATTACH_SKILL, RULES_README):
         assert not (root / relative).exists(), relative
