@@ -1779,6 +1779,20 @@ reddens = [
   "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[check]",
 ]
 
+# An overlay need not keep `projects/` at all, and nothing is below a directory that is not there:
+# read as the overlay failing to answer, a name past the longest path turned `hook-entries`' red
+# into a warning and the report's exit into 0.
+[[mutation]]
+name = "an overlay with no projects/ directory cannot be asked about a name past the longest path"
+file = "src/stayfixed/attach/permissions.py"
+before = "        # No `projects/`: the overlay keeps no project here at all.\n        return True"
+after = "        # No `projects/`: the overlay keeps no project here at all.\n        return False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[unreadable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report",
+]
+
 # Nor above it: `projects/` is spelled by the overlay alone, and one that is a file is the
 # overlay's own state, though the path through it is ruled out as one under a file holding the
 # name is.
@@ -1797,8 +1811,8 @@ reddens = [
 [[mutation]]
 name = "a source past the longest path under a project the overlay has no directory for cannot be asked"
 file = "src/stayfixed/attach/permissions.py"
-before = "    except FileNotFoundError:\n        return True"
-after = "    except FileNotFoundError:\n        return False"
+before = "        # No share: the overlay has no directory for this project yet.\n        return True"
+after = "        # No share: the overlay has no directory for this project yet.\n        return False"
 reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[readable]",
   "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[unreadable]",

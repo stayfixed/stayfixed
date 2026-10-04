@@ -148,19 +148,25 @@ def _names_no_directory(share: Path) -> bool:
 
     Asked of the share itself because `cannot_exist` says only that *some* component of a path is
     not a directory or is too long, never which. Only the share's own answer is about the name:
-    absent, a file that holds it, or a name the filesystem rules out. A `projects/` that is not a
-    directory is the overlay's own state, and so is any component below a share that is one. An
-    absent share counts: nothing is below it, and a long name under a long overlay root can put a
-    file under it past the longest path while the share itself is not.
+    absent, a file that holds it, or a name the filesystem rules out. A `projects/` that is there
+    and is not a directory is the overlay's own state, and so is any component below a share that
+    is one. Whatever is absent counts, `projects/` or the share: nothing is below a directory that
+    is not there, so nothing there is the owner's. An overlay need not keep `projects/` at all, and
+    a long name under a long overlay root can put a file under an absent share past the longest
+    path while the share itself is not.
     """
     try:
         if not stat.S_ISDIR(share.parent.stat().st_mode):
             return False
+    except FileNotFoundError:
+        # No `projects/`: the overlay keeps no project here at all.
+        return True
     except OSError:
         return False
     try:
         mode = share.stat().st_mode
     except FileNotFoundError:
+        # No share: the overlay has no directory for this project yet.
         return True
     except OSError as exc:
         return cannot_exist(exc)

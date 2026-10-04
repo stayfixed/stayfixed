@@ -1299,6 +1299,52 @@ def test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_com
     assert check == expected
 
 
+def _past_the_longest_path_with_no_projects(tmp_path: Path, *, ledger: str) -> Path:
+    """A forged clone whose `project.name` is longer than a path may be, against an overlay that
+    keeps no `projects/` directory at all -- one its owner removed or never made."""
+    root = _forged_clone(tmp_path)
+    _named(root, "a" * (os.pathconf(tmp_path, "PC_PATH_MAX") + 10))
+    shutil.rmtree(tmp_path / "overlay" / PROJECTS)
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+def test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants(
+    tmp_path: Path, ledger: str
+) -> None:
+    # An overlay need not keep `projects/`, and nothing is below a directory that is not there, so
+    # nothing there can be the owner's: a name past the longest path is one the overlay has no
+    # project for, as it is beside a `projects/` that is there. Reading the absent `projects/` as a
+    # fault of the overlay's turned the red into a warning. Mutation (oracle): `mutations/`'s "an
+    # overlay with no projects/ directory cannot be asked about a name past the longest path" ->
+    # a warning.
+    root = _past_the_longest_path_with_no_projects(tmp_path, ledger=ledger)
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    expected = (
+        TABLE["forged-right-store"] if ledger == "readable" else UNREADABLE_TABLE["forged-overlay"]
+    )
+    assert check == expected
+
+
+def test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same case through `stayfixed doctor --json`: it exited 0. Mutation (oracle): the one
+    # named above.
+    root = _past_the_longest_path_with_no_projects(tmp_path, ledger="readable")
+    code = _invoke_doctor(tmp_path, monkeypatch, root, _machine(tmp_path))
+    report = json.loads(capsys.readouterr().out)
+    red = [row for row in report["checks"] if row["status"] == "red"]
+    assert code == 1, red
+    assert [row["name"] for row in red] == ["hook-entries"], red
+    assert f"the overlay does not grant them: {COMMITTED} entry 1 of 1" in red[0]["detail"]
+    printed = json.dumps(report)
+    assert "a" * 300 not in printed
+    assert "evil.example" not in printed and "forged-1" not in printed
+
+
 def _case_folds(tmp_path: Path) -> bool:
     probe = tmp_path / "case-probe"
     probe.write_text("", encoding="utf-8")
