@@ -779,6 +779,15 @@ reddens = [
   "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
 ]
 
+# `adopt promote` is the one adoption command: it moves a project out of `initialised` itself, so
+# a second one would be a step every project pays for and nothing needs.
+[[mutation]]
+name = "the adopt group registers a command besides promote"
+file = "src/stayfixed/assess/commands.py"
+before = '    promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))'
+after = '    adopt_sub.add_parser("begin"); promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))'
+reddens = ["tests/test_cli.py::test_adopt_has_promote_and_nothing_else"]
+
 # The write re-stamps the manifest's record, so a manifest it cannot read refuses it; read
 # before the gates, that refusal comes before any custom command runs.
 [[mutation]]
