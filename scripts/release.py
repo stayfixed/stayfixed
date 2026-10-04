@@ -45,6 +45,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.release.api import (
     FORMAT,
     HASHED_FILES,
+    PACKAGE,
     RECORD,
     digests,
     read_record,
@@ -58,7 +59,6 @@ COMMAND = "uv run python scripts/release.py"
 
 PYPROJECT = "pyproject.toml"
 LOCKFILE = "uv.lock"
-PACKAGE = "stayfixed"
 SOURCES = (
     PYPROJECT,
     LOCKFILE,
@@ -393,28 +393,30 @@ def run_hashes(args: argparse.Namespace) -> Result:
 
 
 def parser() -> argparse.ArgumentParser:
+    """The script's parser. Each command's one sentence is both its line in the listing and the
+    description its own `--help` opens with: argparse keeps `help=` for the parent's listing
+    only, which the installed CLI's frame fills in for every command and this script does by
+    hand."""
     top = argparse.ArgumentParser(
         prog="scripts/release.py",
         description="Release discipline for the stayfixed repository itself.",
         epilog=JSON_EPILOG,
     )
     sub = top.add_subparsers(dest="command", metavar="<command>")
-    cmd = sub.add_parser("check", help="every version string agrees", epilog=JSON_EPILOG)
+
+    def command(name: str, sentence: str) -> argparse.ArgumentParser:
+        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)
+
+    cmd = command("check", "every version string agrees")
     cmd.add_argument("--root", default=".", help=ROOT_HELP)
     cmd.add_argument("--tag", default=None, help=TAG_HELP)
     cmd.set_defaults(func=run_check)
-    notes = sub.add_parser(
-        "notes",
-        help="assemble CHANGELOG.md from changelog.d through towncrier",
-        epilog=JSON_EPILOG,
-    )
+    notes = command("notes", "assemble CHANGELOG.md from changelog.d through towncrier")
     notes.add_argument("--version", required=True, help="the version to assemble the section under")
     notes.add_argument("--draft", action="store_true", help="render without writing")
     notes.add_argument("--root", default=".", help=ROOT_HELP)
     notes.set_defaults(func=run_notes)
-    hashes = sub.add_parser(
-        "hashes", help="record the shipped files' hashes for this release", epilog=JSON_EPILOG
-    )
+    hashes = command("hashes", "record the shipped files' hashes for this release")
     hashes.add_argument("--check", action="store_true", help=CHECK_HELP)
     hashes.add_argument("--root", default=".", help=ROOT_HELP)
     hashes.set_defaults(func=run_hashes)

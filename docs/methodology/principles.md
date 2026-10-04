@@ -221,9 +221,8 @@ floating alias is a documented opt-in.
 **What stayfixed does.** Its repository's release check, `scripts/release.py check`,
 cross-checks the version across `pyproject.toml`, the lockfile, the package, both plugin
 manifests and `CHANGELOG.md`; the marketplace entries carry no version because the plugin's
-own overrides it silently [S6]. Changelog
-entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
-resolver at hook time [S13].
+own overrides it silently [S6]. Changelog entries are fragments assembled at release [S12].
+The CLI installs from a git tag with no resolver at hook time [S13].
 
 **Why.** `plugin.json`'s `version` is what update delivery reads [S2]; a full-length SHA is
 the only immutable reference to a reusable workflow [S25].

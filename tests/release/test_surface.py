@@ -14,8 +14,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, for the reason tests/doctor/test_surface.py gives: a subset
     # lets an export arrive unnoticed. `doctor` reads the record's readers and the pins;
     # `scripts/check_artifacts.py` reads `HASHED_FILES` and `RECORD`; and `scripts/release.py`,
-    # which writes the record and checks the version, reads `FORMAT` and `tag_for` besides.
-    # Writing the record is the script's and is not on the surface at all.
+    # which writes the record and checks the version, reads `FORMAT`, `tag_for` and `PACKAGE`
+    # besides. Writing the record is the script's and is not on the surface at all.
     required = {
         # what the record covers, and where it lives. This comment used to say `doctor` names
         # the file it compared; it does not, it says "beside `hooks/run-hook.sh`" in prose, so
@@ -38,7 +38,9 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "released",
         "resolve_pin",
         "is_released",
-        # what a release is tagged as, for the script's `check --tag`
+        # what a release is tagged as, for the script's `check --tag`, and the package name the
+        # platform's tag carries, which the script also looks the package up by in `uv.lock`
         "tag_for",
+        "PACKAGE",
     }
     assert required == set(release.__all__)

@@ -19,7 +19,9 @@ writes the pin, `doctor`'s `ci-ref` row, which judges it, and `stayfixed gate`, 
 moved `[ci] ref` only at a released commit (`is_released`) — all ask this package because "which
 commit is release X" is its own question. `released` is published so the row can ask the remote
 once for the sha and the alias both. `tag_for` is published for the release script, whose
-`check --tag` holds a tag to the tree's version by the same spelling the pin is looked up by.
+`check --tag` holds a tag to the tree's version by the same spelling the pin is looked up by,
+and `PACKAGE` with it: the name the platform's tag carries is the name the script looks the
+package up by in `uv.lock`, and one constant is how the two stay one name.
 """
 
 from stayfixed.release.hashes import (
@@ -31,11 +33,12 @@ from stayfixed.release.hashes import (
     read_record,
 )
 from stayfixed.release.pins import Pin, Resolution, is_released, released, resolve_pin
-from stayfixed.release.versions import tag_for
+from stayfixed.release.versions import PACKAGE, tag_for
 
 __all__ = [
     "FORMAT",
     "HASHED_FILES",
+    "PACKAGE",
     "RECORD",
     "Pin",
     "Resolution",

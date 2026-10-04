@@ -5,14 +5,14 @@ tag and the record of the shipped files, and runs in CI. What was undocumented i
 around it: how to cut a release at all. This file is that, so the bus factor of the release
 process is not one.
 
-The sequence, once, before the detail: `release.py check` → towncrier assembles `CHANGELOG.md`
-from the `changelog.d/` fragments → `claude plugin tag` and the `vX.Y.Z` tag, pushed without
-`main` → the PyPI upload and the GitHub Release, attached to `vX.Y.Z` only and never to the
-floating `v1`, which immutable releases would freeze → `main` moves to the release commit →
-`stayfixed overlay publish-template`, which renders `templates/overlay/` and pushes it to the
-template repository from your own authenticated checkout, so the public repository's CI holds
-no credential that can write a second repository → from `1.0.0` on, the `v1` alias moves → the
-cross-repository smoke runs at the new tag.
+The sequence, once, before the detail: `scripts/release.py check` → towncrier assembles
+`CHANGELOG.md` from the `changelog.d/` fragments → `claude plugin tag` and the `vX.Y.Z` tag,
+pushed without `main` → the PyPI upload and the GitHub Release, attached to `vX.Y.Z` only and
+never to the floating `v1`, which immutable releases would freeze → `main` moves to the release
+commit → `stayfixed overlay publish-template`, which renders `templates/overlay/` and pushes it to
+the template repository from your own authenticated checkout, so the public repository's CI
+holds no credential that can write a second repository → from `1.0.0` on, the `v1` alias moves
+→ the cross-repository smoke runs at the new tag.
 
 ## 1. The sources
 
@@ -26,7 +26,7 @@ cross-repository smoke runs at the new tag.
 | `.claude-plugin/plugin.json` | `version` |
 | `.codex-plugin/plugin.json` | `version` |
 | `CHANGELOG.md` | the first `## <version>` heading after the towncrier marker |
-| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `release.py check` fails while it is stale and `release.py hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
+| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `scripts/release.py check` fails while it is stale and `scripts/release.py hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
 
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
@@ -110,10 +110,10 @@ step 7's sentence true.
 
    **And the two example configurations, which a test holds.** `README.md`'s and `docs/cli.md`'s
    example `stayfixed.toml` blocks each carry `version = "X.Y.Z"`, and a copy of a stale one
-   makes `stayfixed doctor` warn on a brand-new project. `release.py check` cannot see them,
-   because they are examples and not sources, so `tests/test_documents.py` holds them instead:
-   it fails until both name the version the tree carries, and the release workflow runs the
-   suite on the tag.
+   makes `stayfixed doctor` warn on a brand-new project. `scripts/release.py check` cannot see
+   them, because they are examples and not sources, so `tests/test_documents.py` holds them
+   instead: it fails until both name the version the tree carries, and the release workflow runs
+   the suite on the tag.
 
 4. **Assemble the changelog.**
 
@@ -125,9 +125,9 @@ step 7's sentence true.
 
    Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
    as a release note is worth fixing now — this is the text users see. The version comes before
-   the changelog because `release.py notes` refuses a `--version` that is not the project's; after
-   this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty. Four things to look
-   for, in this order:
+   the changelog because `scripts/release.py notes` refuses a `--version` that is not the
+   project's; after this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+   Four things to look for, in this order:
 
    - **A fix for something that never shipped.** A `Fixed` entry is a fix *relative to the
      previous release*, so it is honest only if a user of that release could have met the bug,
@@ -141,7 +141,8 @@ step 7's sentence true.
      behaviour is not there, state the feature as what it now is and delete the fix; keep the
      ones a reader of the previous release has to act on — a grammar that refuses a
      `stayfixed.toml` which loaded before, a flag that means something narrower than it sounds.
-     `release.py check --tag` cannot judge this: it counts pending fragments and never reads them.
+     `scripts/release.py check --tag` cannot judge this: it counts pending fragments and never
+     reads them.
 
      **The first release is this rule with nothing to compare against.** There is no previous
      tag, so every `Fixed` entry in 0.1.0 described a bug no user could have met, and read as a
@@ -190,10 +191,10 @@ step 7's sentence true.
    takes any git ref — while the `stayfixed--` tag is the one the tooling itself looks for.
    Neither is a substitute for the other; make both.
 
-   **No prerelease tags.** `release.py check --tag` compares the tag to `pyproject.toml`'s
-   literal version string, and `uv.lock` normalises a PEP 440 prerelease (`0.1.0-rc1` becomes
-   `0.1.0rc1`), so the six-source rule cannot be satisfied by an `rc` today. `release.yml`
-   triggers on finals only, deliberately.
+   **No prerelease tags.** `scripts/release.py check --tag` compares the tag to
+   `pyproject.toml`'s literal version string, and `uv.lock` normalises a PEP 440 prerelease
+   (`0.1.0-rc1` becomes `0.1.0rc1`), so the six-source rule cannot be satisfied by an `rc` today.
+   `release.yml` triggers on finals only, deliberately.
 
    **Push the tags, not `main`.** A pending publisher does not reserve the PyPI name: until a
    distribution exists under it anyone may upload one, and the release commit's README already
@@ -380,9 +381,10 @@ projects only.
   spent version, delete it, as step 7 says for a taken name.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
-- **`release.py check` fails in the workflow but passed locally.** Almost always `uv.lock`: `uv
-  sync` was not run after the version bump, so the lockfile still carries the old one. The
-  other candidate is `hooks/hashes.json`, if a shipped file moved without `release.py hashes`.
+- **`scripts/release.py check` fails in the workflow but passed locally.** Almost always
+  `uv.lock`: `uv sync` was not run after the version bump, so the lockfile still carries the old
+  one. The other candidate is `hooks/hashes.json`, if a shipped file moved without
+  `scripts/release.py hashes`.
 - **`publish-template` pushed the wrong tree.** The next `publish-template` fixes it: it
   replaces the tree whole rather than merging into it.
 

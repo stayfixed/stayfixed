@@ -464,8 +464,8 @@ def _files(context: Context) -> Row:
     # installation, the record does not name it, or the bytes differ. A file that is present
     # and byte-for-byte what the release shipped was being reported as "does not match the
     # release record" whenever the record was the partial half — which is a real state
-    # `scripts/release.py` anticipates in as many words ("a record naming two of three reads as a
-    # clean comparison for the third"). Telling the owner their file is wrong when the record
+    # `RELEASING.md` anticipates in as many words ("a record naming two of three reads as a clean
+    # comparison for the third"). Telling the owner their file is wrong when the record
     # is the wrong one sends them to reinstall over the one artifact that is correct.
     #
     # All three lists are drawn from `HASHED_FILES`, which is stayfixed's own constant, so
