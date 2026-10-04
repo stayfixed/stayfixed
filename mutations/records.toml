@@ -380,6 +380,16 @@ before = "    except BaseUnresolvable as exc:"
 after = "    except ():"
 reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok"]
 
+# `docs check` reads no note store since the link graph moved to `memory refs`, so a `--store` it
+# accepted would be read by nothing: a person who passed it would get the answer they got without
+# it and no word that the option had done nothing.
+[[mutation]]
+name = "docs check accepts a store it never reads"
+file = "src/stayfixed/docs/commands.py"
+before = '    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"))'
+after = '    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"), store=True)'
+reddens = ["tests/docs/test_commands.py::test_docs_check_takes_no_store"]
+
 # `\s*` crosses newlines under MULTILINE, so an empty marker would be satisfied by any later text.
 [[mutation]]
 name = "an empty Premise marker is satisfied by text anywhere later in the plan"

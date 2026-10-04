@@ -396,7 +396,7 @@ stayfixed hook SessionStart                            # dispatch one harness ho
 
 Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
 `--root` (default: the current directory) and `--machine` (read a machine configuration file
-other than the default); `memory` commands and `docs check` take `--store` as well.
+other than the default); `memory` commands take `--store` as well.
 `stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
 or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
 anywhere and prints one machine-readable object instead of one line.

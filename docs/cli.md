@@ -23,8 +23,7 @@ Three things hold everywhere:
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
-  takes `--store` as well.
+  command, and `assess`, `gate` and `adopt`, takes them with the same meaning.
 
 | Option | Meaning |
 |---|---|
@@ -49,7 +48,7 @@ Three things hold everywhere:
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
 - [`stayfixed bugs renumber OLD NEW`](#stayfixed-bugs-renumber-old-new)
-- [`stayfixed docs check [--budgets] [--links] [--store PATH]`](#stayfixed-docs-check---budgets---links---store-path)
+- [`stayfixed docs check [--budgets] [--links]`](#stayfixed-docs-check---budgets---links)
 - [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
@@ -643,7 +642,7 @@ own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
-## `stayfixed docs check [--budgets] [--links] [--store PATH]`
+## `stayfixed docs check [--budgets] [--links]`
 
 Two checks, both enforced, and no flag runs both (exit `1`, `FAIL:`):
 the always-loaded document at `[paths] agents_md` exists, is within `agents_md_lines` and

@@ -25,13 +25,6 @@ agents = ["claude"]
 name = "widget"
 base_branch = "main"
 release_branch = "main"
-
-[paths]
-memory = "notes"
-
-[memory]
-mode = "in-repo"
-groups = ["developer"]
 """
 AGENTS = "# A\n\n## Current status\n\n- x\n\n- [guide](docs/guide.md)\n"
 
@@ -42,7 +35,7 @@ def invoke(argv: list[str]) -> int:
 
 def project(tmp_path: Path) -> tuple[Path, list[str]]:
     root = tmp_path / "widget"
-    for name in ("docs/specs", "docs/plans", "notes/developer"):
+    for name in ("docs/specs", "docs/plans"):
         (root / name).mkdir(parents=True)
     (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     (root / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
@@ -51,19 +44,24 @@ def project(tmp_path: Path) -> tuple[Path, list[str]]:
     return root, ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
 
 
-def a_note(root: Path, body: str) -> None:
-    (root / "notes" / "developer" / "a.md").write_text(
-        f"---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}",
-        encoding="utf-8",
-    )
-
-
 def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _root, common = project(tmp_path)
     assert invoke(["docs", "check", *common]) == 0
     assert capsys.readouterr().out == "OK: documentation budgets and link targets\n"
+
+
+def test_docs_check_takes_no_store(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # `--store` named the note store whose link graph `docs check` used to report, and that graph
+    # is `memory refs`'s now. Accepted and never read, the option would answer a person who passes
+    # it exactly as if it had done something, so it is a usage error instead. Mutation (declared):
+    # `mutations/`'s "docs check accepts a store it never reads".
+    root, common = project(tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        invoke(["docs", "check", "--store", str(root / "notes"), *common])
+    assert excinfo.value.code == 2
+    assert "--store" in capsys.readouterr().err
 
 
 def test_docs_check_reports_a_budget_finding_on_one_line(

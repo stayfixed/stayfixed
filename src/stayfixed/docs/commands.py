@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
@@ -13,9 +12,6 @@ from stayfixed.command import CHECK_HELP, common_flags, root_and_config
 from stayfixed.findings import Finding, labels, listed
 from stayfixed.printed import printable
 from stayfixed.result import Result
-
-if TYPE_CHECKING:
-    pass
 
 _OK = "OK: documentation budgets and link targets"
 _PLAN_OK = (
@@ -134,7 +130,7 @@ def run_plan_check(args: argparse.Namespace) -> Result:
 def register(groups: SubParsers) -> None:
     docs = groups.add_parser("docs", help="documentation budgets, links and the design trail")
     docs_sub = docs.add_subparsers(dest="command", metavar="<command>")
-    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"), store=True)
+    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets"))
     check.add_argument("--budgets", action="store_true")
     check.add_argument("--links", action="store_true")
     check.set_defaults(func=run_docs_check)
