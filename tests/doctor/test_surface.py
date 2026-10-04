@@ -37,5 +37,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "Context",
         "Claims",
         "Contribution",
+        # the type `Row.status` declares, which a contributed check that decides its status
+        # before building its row annotates
+        "Status",
     }
     assert required == set(doctor.__all__)

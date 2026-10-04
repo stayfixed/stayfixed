@@ -1,4 +1,11 @@
-"""The sixteen checks an installation is judged by, and the context they share.
+"""The core's eleven checks, the run that asks them, and the rows the areas contribute after them.
+
+The report has sixteen rows. Eleven are the core's and live here; the other five are the delivery
+areas' — `attached` from `attach`, `bundles` and `store-debris` from `memory`, `pre-commit` and
+`overlay-requires` from `overlay` — and each area's `doctor.py` contributes them
+(CONTRIBUTING.md, "Areas"), so nothing here imports the overlay, the binding or the note store.
+`hook-entries` stays here because every settings file is the core's to walk, and it asks the
+areas' `Claims` for what each put into them.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label carries "what the check computed" while the detail "may quote the
@@ -11,7 +18,8 @@ defines its own record and reuses `findings.listed` for the summary line alone.
 vocabulary are computed here and print freely. A repository-authored string does not: not
 `[stayfixed] version`, not `[ci] ref`, not a note's filename, not a hook command, not the reason
 `memory.store` gives for an unresolvable store. The hook sink holds its diagnostics log to that
-line in as many words — reasons, never payloads — and this module holds every other row to it.
+line in as many words — reasons, never payloads — and this module holds every other row to it,
+as each area's `doctor.py` holds the rows it contributes.
 
 **No exception, and `hook-entries` is where one was nearly made.** Against a hostile clone,
 `doctor` lists every hook entry with its provenance, and the obvious way to do that is to print
@@ -55,50 +63,33 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from pathlib import Path
 from types import ModuleType
-from typing import Final
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.areas import area_modules
-from stayfixed.attach.api import (
-    Binding,
-    ledger,
-    overlay_entries,
-    read_binding,
-)
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.doctor import model
-from stayfixed.doctor.model import OK, RED, SKIP, WARN, Check, Contribution, Row, Status
+from stayfixed.doctor.model import (
+    OK,
+    RED,
+    SKIP,
+    WARN,
+    Check,
+    Claims,
+    Context,
+    Contribution,
+    Row,
+    Status,
+)
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.gitenv import GitUnavailable
-from stayfixed.guards.api import hooks_dir
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
-from stayfixed.memory.api import (
-    DIFFERENT_REMOTE,
-    MISMATCH,
-    NO_ORIGIN,
-    NO_ORIGIN_CAUSE,
-    NO_ORIGIN_WAY_OUT,
-    PROJECTS,
-    SLOTS,
-    UNBOUND,
-    Store,
-    fit,
-    harness_link_needed,
-    harness_memory_path,
-    render,
-    resolve,
-)
-from stayfixed.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -133,9 +124,9 @@ WRAPPER = "hooks/run-hook.sh"
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
 _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
-# Wall-clock bound on the one subprocess this *module* launches. The area's total is four on a
+# Wall-clock bound on the one subprocess this *module* launches. The report's total is five on a
 # green attached installation — `stayfixed.doctor.__init__` counts them and names the one that
-# leaves the machine — because three more are launched inside the areas the rows below call.
+# leaves the machine — because four more are launched inside the areas the report's rows call.
 #
 # A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it: this bounds
 # `stayfixed --version` behind an interpreter probe, and nothing about it is a project's to tune.
@@ -172,30 +163,6 @@ PLUGIN_ROOT_REMEDY = (
 NAMED_ROOT_CAVEAT = (
     "; this is the plugin root the environment names, whose files are read here and run nowhere"
 )
-# The two overlay-gated rows ask one question before anything else, and `PLUGIN_ROOT_REMEDY`'s
-# rule applies to them for the same reason it applies to that pair: both rows must say the same
-# thing, so the sentences live in one place rather than being copied from one row into the
-# other. They were copied -- `overlay-requires`' skip arm was `pre-commit`'s byte for byte,
-# `or not overlay.is_dir()` included -- and the copy carried the defect with it.
-#
-# The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
-# sentence. `config.overlay.overlay_root` answers `None` for "this machine records no overlay",
-# which is the ordinary state before `stayfixed setup` has run and which nothing can be done
-# about from here; it answers a `Path` for a recorded root whether or not anything is there.
-# So a machine that recorded an overlay and then moved it -- the owner reorganising their own
-# directories is the ordinary way -- was told "no overlay root is recorded on this machine",
-# which is false, and was handed an empty remedy under it. It is the second state, not the
-# first, that is worth acting on: the overlay is where the notes live, and a recorded root
-# that is not there breaks the store as well as these two rows.
-NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
-OVERLAY_GONE = (
-    "the overlay root this machine records is not a directory, so nothing about the overlay "
-    "can be checked from here"
-)
-OVERLAY_GONE_REMEDY = (
-    "put the overlay back where the machine configuration records it, or run `stayfixed setup "
-    "--preset recommended --overlay <path>` to record where it is now"
-)
 # Why `diagnostics` prints a count and no content. One constant because the reason is the row's
 # whole substance, and a change that starts quoting the file has to delete this sentence to do it.
 UNVOUCHED_LOG = (
@@ -208,20 +175,6 @@ DIAGNOSTICS_REMEDY = (
     "read ${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl yourself; each line is one hook "
     "failure, with its event, handler and error type"
 )
-
-
-@dataclass
-class Context(model.Context):
-    """The core's `model.Context`, and the two answers the overlay and store rows below read.
-
-    The overlay root this machine records and the note store this project resolves are the
-    delivery areas' to answer, so the core context carries neither and a check an area contributes
-    cannot reach them through it. The rows here that still read them get them from this
-    subclass, which `_context` builds with both resolved.
-    """
-
-    store: Store | None = None
-    overlay: Path | None = None
 
 
 def _own_root() -> Path | None:
@@ -535,297 +488,6 @@ def _wrapper(context: Context) -> Row:
     return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
 
 
-def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
-    """The marker ids this repository's last `attach` claims, `{}` when it never ran, `None`
-    when the file is there and cannot be read as a ledger.
-
-    Three answers and not two. `ledger()` raises on a file that is not JSON, is not an object,
-    or names something `attach` could not have written — and `.stayfixed/local/attach.json` is a
-    path a clone can commit, because `.gitignore` does not untrack a committed file. Letting
-    that reach `_guarded` made a repository able to force `hook-entries` red with the detail
-    "this check could not run: Failure" and a remedy that cannot help, on an installation with
-    nothing wrong with it. The caller reports the file instead.
-    """
-    if not (root / ATTACH_LEDGER).is_file():
-        return {}
-    try:
-        return dict(ledger(root).entries)
-    except (Failure, Refusal):
-        return None
-
-
-def _attached(context: Context) -> Row:
-    """Attach state, and the shape of the harness memory path.
-
-    `attach` prefers a symlink at `~/.claude/projects/<slug>/memory`, because a settings-file
-    value is subject to workspace trust and a link is not. A **real directory** there is a
-    failure of its own and the reason this check exists rather than a general "not attached":
-    the harness's native reader finds a directory, reads nothing out of it, and reports no fault
-    — it looks attached and behaves like nothing.
-
-    A path that is simply absent is not that. `worktree.harness_link_needed` gates the link on
-    the same trust record every other channel is gated on, so an unapproved store correctly has
-    no link, and calling that red would make `doctor` red on a correct fresh install. So this
-    check *asks that function* rather than assuming: absent-and-not-wanted is green and says
-    which of the two it is, absent-and-wanted is a warning, because a store the record approves
-    and a harness that cannot see it is an attach that did not finish.
-
-    **The link's target is compared, and the sentence about it is only ever printed when it is
-    true.** The shape used to be computed into `detail` and then dropped for the status, and
-    "the harness memory path is a link to the store" was printed for *any* symlink — a dangling
-    one, or one pointing at an unrelated directory — with the row green underneath it. On the
-    one channel `attach` uses to reach the model, that is a false statement about where the
-    model's memory comes from, and the two states it hid are the same failure the real
-    directory is flagged for: one reads nothing, the other reads somebody else's notes.
-    """
-    config = context.config
-    if config.memory.mode != "overlay":
-        # `memory.mode` is repository-authored and is safe to print for one reason only: the
-        # loader holds it to a fixed set of three words, so what reaches this line is one of
-        # stayfixed's own labels rather than a string a clone chose.
-        return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
-    recorded = (context.root / ATTACH_LEDGER).is_file()
-    harness = harness_memory_path(context.root, context.home)
-    if harness.is_dir() and not harness.is_symlink():
-        return Row(
-            RED,
-            "the harness memory path is a real directory rather than a link to the store, so "
-            "this checkout looks attached and behaves like nothing",
-            # `<project>` and not `config.project.name`: the name is repository-authored, and a
-            # remedy is as much output as a detail is.
-            f"remove {harness} and run "
-            f"`stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`",
-        )
-    if not recorded:
-        return Row(
-            WARN,
-            f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
-            f"attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
-        )
-    answer = _binding_answer(context)
-    # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
-    # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
-    # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
-    # last refuses to print the word "attached".
-    if isinstance(answer, str):
-        return _uncorroborated(answer)
-    state = answer.state
-    if state == UNBOUND:
-        return Row(
-            WARN,
-            f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
-            f"binding for this project — a clone can commit that file, so it is not evidence of "
-            f"an attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-            "checkout was never attached on this machine, remove the ledger",
-        )
-    if state == NO_ORIGIN:
-        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
-    if state == MISMATCH:
-        return Row(
-            RED,
-            DIFFERENT_REMOTE,
-            "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
-        )
-    status, shape, remedy = _harness_shape(context, harness)
-    return Row(
-        status, f"attached; the harness memory path is {shape}; the binding is {state}", remedy
-    )
-
-
-# The remedy every harness-memory-path row but the green one carries: one command puts the link
-# back where `attach` puts it, whatever the wrong shape was. `<overlay>` and `<project>` and never
-# `config.project.name`, for the reason the real-directory row above gives.
-_RELINK = f"run `stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`"
-
-# Why the overlay could not corroborate the ledger, as `_binding_answer`'s three answers. Not
-# statuses and not sentences: the row below decides both, and these are the question's own
-# vocabulary. `UNRESOLVED` is about the repository, the other two about this machine.
-UNRESOLVED: Final = "unresolved"
-NO_OVERLAY: Final = "no-overlay"
-UNASKABLE: Final = "unaskable"
-# The fourth, and it is about the repository rather than about this machine. A ledger that is
-# there and will not parse used to answer `UNASKABLE` with the other two, so the row said
-# "no `git`, or a record this process could not read" and the remedy said "run `stayfixed doctor`
-# again where `git` runs" — about a file in the checkout the reader is standing in. `skip` never
-# reaches the exit code, so a repository's own committed, malformed ledger was also silent.
-UNREADABLE_LEDGER: Final = "unreadable-ledger"
-# Said by every row that meets a ledger the overlay has not confirmed, because it is the whole
-# reason those rows exist: the consent record lives in the overlay, and this file does not.
-_NOT_EVIDENCE = f"a clone can commit {ATTACH_LEDGER}, so on its own it is not evidence of an attach"
-_RE_ATTACH = (
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-    "checkout was never attached on this machine, remove the ledger"
-)
-
-
-def _uncorroborated(reason: str) -> Row:
-    """The row for a ledger the overlay did not confirm, split by what the reason is *about*.
-
-    `warn` accuses the repository and `skip` does not, and the split is the point: `skip` never
-    reaches the exit code, so using it for the repository's own doing would be the defect this
-    function was written to remove, and using `warn` for a machine where `setup` has never run
-    would make `doctor` warn on every correct fresh install. Neither row ever says "attached".
-
-    **Four reasons and not three.** A ledger that is there and will not parse was answering
-    with the machine-side two, so the row it got blamed `git` for a malformed file in the
-    reader's own checkout and offered a remedy — run this somewhere `git` works — that could
-    not fix it. By this function's own rule it is the repository's doing and warns.
-    """
-    if reason == UNRESOLVED:
-        return Row(
-            WARN,
-            f"{ATTACH_LEDGER} records an attach, and the store it names is not this project's "
-            f"directory inside the overlay this machine records — {_NOT_EVIDENCE}",
-            _RE_ATTACH,
-        )
-    if reason == UNREADABLE_LEDGER:
-        return Row(
-            WARN,
-            f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
-            f"corroborated and this checkout's attach state is unknown — {_NOT_EVIDENCE}",
-            f"remove {ATTACH_LEDGER}, then run `stayfixed attach --store "
-            f"<overlay>/projects/<project>/memory --check`",
-        )
-    if reason == NO_OVERLAY:
-        return Row(
-            SKIP,
-            f"{ATTACH_LEDGER} records an attach and this machine records no overlay to check it "
-            f"against, so whether this checkout is attached could not be answered here — "
-            f"{_NOT_EVIDENCE}",
-            "run `stayfixed setup --overlay <path>` to record the overlay, then `stayfixed "
-            "doctor` again",
-        )
-    return Row(
-        SKIP,
-        f"{ATTACH_LEDGER} records an attach and the overlay could not be asked about it here — no "
-        f"`git`, or an overlay record this process could not read — so whether this checkout "
-        f"is attached could not be answered; {_NOT_EVIDENCE}",
-        "run `stayfixed doctor` again where `git` runs and the overlay is readable",
-    )
-
-
-def _harness_shape(context: Context, harness: Path) -> tuple[Status, str, str]:
-    """The status, the sentence and the remedy for the harness memory path, as one answer.
-
-    One function because the status and the sentence must not be able to disagree — computing
-    the shape and then discarding it for the status is the defect this replaces.
-
-    The comparison is against `context.store.path`, which is what `worktree._apply_harness_link`
-    links to, resolved on both sides so that two spellings of one directory are one answer. A
-    store that does not resolve means the comparison cannot be made at all, which is a warning
-    naming what could not be asked rather than a green sentence asserting what was not checked.
-    """
-    store = context.store
-    if harness.is_symlink():
-        if store is None:
-            return (
-                WARN,
-                "a link, and the note store does not resolve, so what it points at could not "
-                "be checked",
-                "run `stayfixed memory index --check`, then `stayfixed doctor` again",
-            )
-        if harness.resolve() == store.path.resolve():
-            return OK, "a link to the store", ""
-        if not harness.exists():
-            return RED, "a dangling link, so the harness reads nothing through it", _RELINK
-        return (
-            RED,
-            "a link to a directory that is not this project's note store, so the harness "
-            "reads notes this repository is not bound to",
-            _RELINK,
-        )
-    if store is not None and harness_link_needed(store, context.config):
-        return (
-            WARN,
-            "not in place, although this store's trust record allows it, so the harness sees "
-            "no memory here",
-            _RELINK,
-        )
-    return OK, "not in place, which is what this store's trust record asks for", ""
-
-
-def _binding_answer(context: Context) -> Binding | str:
-    """The overlay binding this repository would attach under, or the label of why there is none.
-
-    Three different situations used to collapse into one `None` — a ledger naming a store the
-    overlay does not permit, a machine that records no overlay at all, and a machine with no
-    usable `git` — and the `attached` row then treated the last two as *attached*. They are not
-    one finding. A ledger whose store is not this project's share of the recorded overlay is a
-    fact about **this repository**, and `.stayfixed/local/attach.json` is a path a clone can
-    commit, so it earns a warning. A missing overlay or a missing `git` is a fact about **our
-    own inputs**, and a row that accused the repository on it would be reporting on itself.
-
-    The three are told apart without restructuring `read_binding`, which raises `Refusal` for
-    two of them: `context.overlay` is the answer of the same `overlay_root(machine)` that
-    function calls with the same argument, so asking it first takes the overlay-is-missing arm
-    off the table, and what is left of `Refusal` is the store that is not this project's
-    permitted root. Anything else that goes wrong — a `Failure` out of the overlay's own record,
-    a ledger this process may not read — answers `UNASKABLE`, which is the conservative
-    direction: it never accuses the repository for something it may not have done.
-    """
-    if context.overlay is None:
-        return NO_OVERLAY
-    try:
-        store = Path(ledger(context.root).store)
-    except (Failure, Refusal):
-        # This one is the repository's file and not our inputs, so it does not join the other
-        # two: a clone can commit `.stayfixed/local/attach.json`, and a file that will not parse
-        # is a fact about the checkout the reader is standing in.
-        return UNREADABLE_LEDGER
-    try:
-        return read_binding(context.root, store=store, machine=context.machine)
-    except Refusal:
-        return UNRESOLVED
-    except (Failure, GitUnavailable):
-        return UNASKABLE
-
-
-def _binding(context: Context) -> Binding | None:
-    """The overlay binding, or `None` when it could not be read, whatever the reason was.
-
-    What `hook-entries` wants: it withholds the provenance column whenever the overlay cannot
-    vouch for an entry, and the three reasons are one answer to that question. `_attached` asks
-    `_binding_answer` directly, because for that row they are three.
-    """
-    answer = _binding_answer(context)
-    return answer if isinstance(answer, Binding) else None
-
-
-def _granted_commands(context: Context) -> set[str] | None:
-    """Every marked command the overlay grants this repository **right now**, or `None`.
-
-    The overlay is what `attach` merges from, and it is trusted by construction: its root comes
-    from the machine configuration, which `config/machine.py` keeps unselectable by a repository.
-    So it is the one source that can answer whether an entry claiming the stayfixed marker is
-    really stayfixed's — and it is the answer the ledger cannot give, because
-    `.stayfixed/local/attach.json` is a path a clone can commit.
-
-    `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
-    the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
-    still let a repository take an id the overlay does grant and hang a different command on it.
-
-    `None` means the overlay could not be asked — no readable ledger to name the store, a store
-    `read_binding` refuses, no `git`, or an overlay whose own hook file will not parse. It is not
-    an empty set: an empty set is "the overlay grants nothing", which is an answer.
-    """
-    binding = _binding(context)
-    if binding is None:
-        return None
-    try:
-        wanted = overlay_entries(binding)
-    except (Failure, Refusal, OSError):
-        return None
-    return {
-        entry["command"]
-        for groups in wanted.values()
-        for group in groups
-        for entry in group["hooks"]
-        if isinstance(entry.get("command"), str)
-    }
-
-
 def _entry_commands(document: str) -> list[str]:
     """Every hook entry's command, in document order, **one element per entry**.
 
@@ -858,7 +520,31 @@ def _entry_commands(document: str) -> list[str]:
 _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 
-def _hook_entries(context: Context) -> Row:
+def _claimed(
+    context: Context, claims: Sequence[Callable[[Context], Claims]]
+) -> tuple[dict[str, str] | None, set[str] | None]:
+    """Every area's `Claims`, as the two answers `hook-entries` reads: the marker ids recorded,
+    and the marked commands granted.
+
+    An area's own record is the only thing that can say what it put into settings files, so the
+    core asks each area that has one, with this report's context and under this row's guard. The
+    answers are pooled, and a `None` from any area is `None` for the pool: an id one record could
+    not be read for, or a command one overlay could not be asked about, is not one the rest can
+    vouch for. With no area claiming anything, nothing is recorded and nothing granted, so every
+    entry claiming the marker is one no area put there.
+    """
+    recorded: dict[str, str] | None = {}
+    granted: set[str] | None = set()
+    for ask in claims:
+        answer = ask(context)
+        if recorded is not None:
+            recorded = None if answer.recorded is None else {**recorded, **answer.recorded}
+        if granted is not None:
+            granted = None if answer.granted is None else granted | answer.granted
+    return recorded, granted
+
+
+def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]] = ()) -> Row:
     """Every entry in every settings file, with provenance.
 
     Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
@@ -878,7 +564,10 @@ def _hook_entries(context: Context) -> Row:
     is trusted by construction because its root comes from the machine configuration rather than
     from anything a repository can reach.
 
-    `_granted_commands` compares the *marked command* and not the id, because an id the overlay
+    Which ids a ledger records and which commands an overlay grants are the areas' to answer,
+    because the areas wrote them: each hands its `Claims` to this row (`_claimed`), and `attach`'s
+    are the attach ledger and the overlay it is bound to. The overlay's answer is the *marked
+    command* and not the id, because an id the overlay
     does grant with a different command hung on it is the same attack one step down. And where
     the overlay cannot be asked at all, the answer is the one this check already gives a file it
     could not parse: report it, never absolve it.
@@ -911,16 +600,12 @@ def _hook_entries(context: Context) -> Row:
     supposed to be reporting on. It is now a `warn` that names the ledger, and the provenance
     column is withheld rather than computed against an empty record.
     """
-    found = _attach_ledger_entries(context.root)
+    found, granted = _claimed(context, claims)
     # An unreadable ledger is not an empty one. With `{}` every entry claiming the marker would
     # be reported as recorded nowhere — a red row with a remedy telling the owner to remove the
     # entries stayfixed installed — so the provenance column is not computed at all and the file
     # is named instead.
     recorded = {} if found is None else found
-    # Asked only when the ledger records something, because nothing can be absolved otherwise
-    # and the overlay costs a `git` call. An empty ledger keeps its old answer: every entry
-    # claiming the marker is one no attach recorded, which is the red row below.
-    granted = _granted_commands(context) if recorded else set()
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
@@ -1048,56 +733,6 @@ def _budgets(context: Context) -> Row:
     return Row(OK, "every budget is the preset's")
 
 
-# When a bundle's largest part counts as "reaching the cap", as a fraction of
-# `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
-# reaches the cap, and the second needs a threshold that the first does not.
-#
-# A fraction and not `parts == slots`: `preset-rules` has one slot and a preset that carries rules
-# fills it, so that predicate warns on every correct installation that has any and says nothing.
-# A named cap (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is
-# `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
-# right.
-NEARLY_FULL = 0.9
-
-
-def _bundles(context: Context) -> Row:
-    """A bundle whose notes do not fit its slots needs a human, not a wider cap.
-
-    Raising a slot count edits `hooks/hooks.json`, which is a shipped file, so this is reported
-    and never repaired. A part already close to the platform cap is the warning before that:
-    one more sentence in one note and the bundle needs a slot that does not exist.
-    """
-    if context.store is None:
-        return Row(SKIP, "the note store does not resolve, so no bundle can be built")
-    ceiling = context.config.native_caps.hook_output_chars * NEARLY_FULL
-    over: list[str] = []
-    full: list[str] = []
-    for bundle in SLOTS:
-        measured = fit(bundle, context.store, context.config)
-        if not measured.fits:
-            over.append(bundle.value)
-            continue
-        emitted = [
-            render(bundle, context.store, context.config, part=n)
-            for n in range(1, measured.parts + 1)
-        ]
-        if any(text is not None and len(text) >= ceiling for text in emitted):
-            full.append(bundle.value)
-    if over:
-        return Row(
-            RED,
-            f"{len(over)} bundle(s) do not fit their session-start slots: {listed(over)}",
-            "run `stayfixed memory fit`, then shorten or unflag the notes it names",
-        )
-    if full:
-        return Row(
-            WARN,
-            f"{len(full)} bundle(s) have a part at the platform cap: {listed(full)}",
-            "run `stayfixed memory fit`",
-        )
-    return Row(OK, "every bundle fits its slots")
-
-
 def _cli_path(context: Context) -> Row:
     """Whether `stayfixed` resolves by name on this machine.
 
@@ -1140,120 +775,6 @@ def _cli_path(context: Context) -> Row:
             f"run `uv tool install git+{REPOSITORY_URL}`",
         )
     return Row(OK, "`stayfixed` resolves on PATH")
-
-
-# The overlay's commit-time secret scan, and the hook `pre-commit install` writes. The hook's
-# *name* only: where it lives is `guards.hooks_dir`'s answer, because an overlay with
-# `core.hooksPath` set, or one that is a worktree or a submodule, keeps its hooks nowhere near
-# `.git/hooks` -- and this row would then warn permanently with a remedy that cannot clear it.
-PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-PRE_COMMIT_HOOK = "pre-commit"
-
-
-def _overlay_absent(overlay: Path | None) -> Row:
-    """Why there is no overlay to measure, told apart into the two states that are not alike.
-
-    Called by both overlay-gated rows and by nothing else, so the sentence a reader gets is the
-    same whichever row they read it in -- see the constants above for the copy this replaces and
-    for what it was saying to whom.
-
-    The argument is the root rather than the `Context`, so that the caller's own
-    `overlay is None or not overlay.is_dir()` narrows `overlay` to a `Path` for the rest of its
-    body. The condition stays at each call site because each row reads the root afterwards; what
-    must not be spelled twice is the answer, and it is not.
-
-    Both arms are a `skip` and neither reaches the exit code. The remedy is the difference, and
-    it follows `Check`'s rule rather than the row's status: "no overlay recorded" is the ordinary
-    state of a machine that has not run `stayfixed setup`, and no command in this row's gift
-    changes it; a root that is recorded and is not there is a fault on this machine that nothing
-    else in the report names, and there is a command for it.
-    """
-    if overlay is None:
-        return Row(SKIP, NO_OVERLAY_RECORDED, "")
-    return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)
-
-
-def _pre_commit(context: Context) -> Row:
-    """Whether the overlay's own secret scan is armed on **this** machine.
-
-    `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
-    machine clones that overlay and never runs `init` again, so the machine that thinks it is
-    set up is exactly the one whose commit-time scan is not.
-    """
-    overlay = context.overlay
-    if overlay is None or not overlay.is_dir():
-        return _overlay_absent(overlay)
-    if not (overlay / PRE_COMMIT_CONFIG).is_file():
-        return Row(
-            WARN,
-            f"the overlay has no {PRE_COMMIT_CONFIG}, so there is no commit-time secret scan "
-            f"for the notes it holds",
-            "run `stayfixed overlay upgrade` to refresh the overlay's shipped files",
-        )
-    try:
-        hooks = hooks_dir(overlay)
-    except Refusal:
-        # `git` is invoked, never imported, and a `git` that cannot answer is a reported finding
-        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is the thing
-        # this row was getting wrong.
-        return Row(
-            WARN,
-            "`git` could not name the overlay's hooks directory, so whether its commit-time "
-            "secret scan is installed cannot be answered here",
-            f"run `git -C {overlay} rev-parse --git-path hooks` and read what it says",
-        )
-    if not (hooks / PRE_COMMIT_HOOK).exists():
-        return Row(
-            WARN,
-            "the overlay's commit-time secret scan is configured and not installed on this "
-            "machine; the push-time scan still runs",
-            f"run `pre-commit install` in {overlay}",
-        )
-    return Row(OK, "the overlay's commit-time secret scan is installed")
-
-
-def _overlay_requires(context: Context) -> Row:
-    """Whether the stayfixed running satisfies the floor the overlay declares: the overlay's
-    requirement as the verdict it can be, since an overlay runs nothing and so cannot refuse to.
-
-    A row of its own, gated on a recorded overlay exactly as `pre-commit` is: the subject is
-    this machine's overlay, not this project, so a `local-only` project on a machine that
-    records one is never red for it -- it is warned instead, which is where the unmet arm below
-    splits. The spec string is the owner's own and is printed as `requires_of`
-    normalised it.
-    """
-    overlay = context.overlay
-    if overlay is None or not overlay.is_dir():
-        return _overlay_absent(overlay)
-    spec = requires_of(overlay)
-    if spec is None:
-        return Row(SKIP, "the overlay declares no stayfixed requirement", "")
-    running = stayfixed.__version__
-    verdict = satisfies(spec, running)
-    if verdict is None:
-        return Row(
-            WARN,
-            "the overlay's stayfixed.requires is not a >=X.Y.Z form this stayfixed reads",
-            f"write stayfixed.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
-        )
-    if not verdict:
-        # **Red only when this project consults the overlay**, which is the reason this
-        # requirement has a row rather than being folded into `versions`: a `local-only` project
-        # on a machine that records an overlay must not go red for a requirement it has no
-        # relationship with. `memory.mode` is what says whether this repository keeps its
-        # notes in the overlay, and red is a statement that *this installation* is wrong -- it
-        # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
-        # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
-        # exactly as `_attached` compares it one screen up; the literal is that comparison's
-        # second site and not a new vocabulary.
-        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
-        return Row(
-            unmet,
-            f"the overlay requires stayfixed {spec} and {running} does not satisfy it",
-            f"install a stayfixed that satisfies {spec}: "
-            f"uv tool install git+{REPOSITORY_URL}@<tag>",
-        )
-    return Row(OK, f"the overlay requires stayfixed {spec}, which {running} satisfies")
 
 
 # `init` records `[ci] ref` as a commit, and the documented opt-in, from 1.0.0 on, is the mutable
@@ -1446,30 +967,6 @@ def _ci_ref(context: Context) -> Row:
     return row
 
 
-def _store_debris(context: Context) -> Row:
-    """Files in the note store that are not notes.
-
-    Counted and not named. A filename in the store is repository-authored in `in-repo` and
-    `local-only` mode — the two the preset ships — so the count is this check's own answer and
-    the remedy names the command that lists them under the trust gate.
-    """
-    store = context.store
-    if store is None:
-        return Row(SKIP, "the note store does not resolve", "")
-    found = 0
-    for target in store.groups.values():
-        for path in target.rglob("*"):
-            if path.is_file() and path.suffix != ".md" and not path.name.startswith("."):
-                found += 1
-    if found:
-        return Row(
-            WARN,
-            f"{found} file(s) in the note store are not notes",
-            "run `stayfixed memory inventory` to see them, and move or delete each one",
-        )
-    return Row(OK, "the note store holds notes and nothing else")
-
-
 def _is_record(line: bytes) -> bool:
     """Whether one line of the sink's log is a JSON object, which is all this check asks of it.
 
@@ -1573,25 +1070,20 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The core's sixteen, in the order the `doctor` table in `docs/cli.md` lists them. The list is the
-# report's order and the core's only registry: a check added here needs no other edit, and a check
-# missing from it is a check nothing runs. An area adds rows after these through its own
-# `doctor.py` (`contributions`), never by an edit here.
+# The core's eleven, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
+# row an area contributes. The list is the report's order and the core's only registry: a check
+# added here needs no other edit, and a check missing from it is a check nothing runs. An area adds
+# rows after these through its own `doctor.py` (`contributions`), never by an edit here.
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("not-initialised", _not_initialised),
     ("versions", _versions),
     ("files", _files),
     ("wrapper", _wrapper),
-    ("attached", _attached),
     ("hook-entries", _hook_entries),
     ("codex-trust", _codex_trust),
     ("budgets", _budgets),
-    ("bundles", _bundles),
     ("cli-path", _cli_path),
-    (PRE_COMMIT_HOOK, _pre_commit),
-    ("overlay-requires", _overlay_requires),
     ("ci-ref", _ci_ref),
-    ("store-debris", _store_debris),
     ("diagnostics", _diagnostics),
     ("ignored-env", _ignored_env),
 )
@@ -1675,6 +1167,22 @@ def contributions() -> list[Contribution]:
     return found
 
 
+def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
+    """The report's checks in the report's order: the core's, then each area's.
+
+    `hook-entries` is the one core check that reads what an area contributes besides rows — the
+    `Claims` each says it put into settings files — so it is handed them here, and asks them
+    itself with the report's context, under its own guard: an area's answer that raises costs
+    that one row, as a contributed check that raises does.
+    """
+    claims = tuple(contribution.claims for contribution in contributed if contribution.claims)
+    core = tuple(
+        (name, partial(_hook_entries, claims=claims) if check is _hook_entries else check)
+        for name, check in CHECKS
+    )
+    return core + tuple(check for contribution in contributed for check in contribution.checks)
+
+
 def _context(
     root: Path,
     *,
@@ -1687,14 +1195,6 @@ def _context(
     context = Context(root, home, machine, runner, env, config)
     context.own_root = _own_root()
     context.plugin_root = plugin_root(env)
-    try:
-        context.overlay = overlay_root(machine)
-    except Failure:
-        context.overlay = None
-    try:
-        context.store = resolve(root, config, machine=machine)
-    except (Failure, Refusal, OSError):
-        context.store = None
     return context
 
 
@@ -1721,9 +1221,7 @@ def run_checks(
     env = os.environ if env is None else env
     # Discovered before anything is read, so the early reports below have a row for every check
     # an area contributes too, and a name that repeats is refused whatever the repository holds.
-    registry: tuple[tuple[str, Callable[[Context], Row]], ...] = CHECKS + tuple(
-        check for contribution in contributions() for check in contribution.checks
-    )
+    registry = _registry(contributions())
     # The registry is the only place a name is spelled, and these two rows are built before a
     # check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.

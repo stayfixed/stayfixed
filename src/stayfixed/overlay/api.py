@@ -36,10 +36,10 @@ published against a sentence predicting that the `release` package would need it
 which nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what
 this docstring asks of every other area.
 
-`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
-`overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar
-and two readers, and the overlay's sync state is the overlay's question, asked where the overlay
-is owned.
+`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for the `attach` area's
+session-start handler. The floor is one grammar and two readers, and the other is this area's own
+`overlay-requires` row in `stayfixed doctor` (`overlay/doctor.py`); the overlay's sync state is the
+overlay's question, asked where the overlay is owned.
 
 `later` and `RELEASE`, the order of two versions and the `X.Y.Z` grammar whole, are the core's
 `stayfixed.semver`, which the floor's reader builds on; `upgrade`, `doctor` and `stayfixed gate`

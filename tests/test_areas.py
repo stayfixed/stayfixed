@@ -338,17 +338,10 @@ def test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area(
 # whose import has gone: the set never carries a pardon for an import that no longer exists, and
 # cutting a crossing is deleting its row in the same commit.
 #
-# One crossing is meant to outlive the rest. `stayfixed setup --overlay` creates or records the
+# One crossing is left, and it is meant to stay. `stayfixed setup --overlay` creates or records the
 # private overlay as the last step of machine setup, so `setup/run.py` calls into the overlay area
 # by design, and the row stays until that step leaves `setup`.
-CORE_TO_DELIVERY = frozenset(
-    {
-        ("doctor/checks.py", "stayfixed.attach.api"),
-        ("doctor/checks.py", "stayfixed.memory.api"),
-        ("doctor/checks.py", "stayfixed.overlay.api"),
-        ("setup/run.py", "stayfixed.overlay.api"),
-    }
-)
+CORE_TO_DELIVERY = frozenset({("setup/run.py", "stayfixed.overlay.api")})
 
 
 def _delivery_offences(where: str, text: str, areas: frozenset[str]) -> list[tuple[str, str]]:
@@ -399,8 +392,29 @@ def test_core_never_imports_delivery() -> None:
             path.read_text(encoding="utf-8"),
             stayfixed.areas.DELIVERY_AREAS,
         )
-    assert len(CORE_TO_DELIVERY) == 4
+    assert len(CORE_TO_DELIVERY) == 1
     assert set(rows) == CORE_TO_DELIVERY, sorted(set(rows) ^ CORE_TO_DELIVERY)
+
+
+def test_an_areas_doctor_module_imports_only_inside_its_functions() -> None:
+    # CONTRIBUTING, "Areas": in an area's `doctor.py`, as in a `hooks.py`, every import sits
+    # inside a function body. The module is imported by discovery, and `memory`'s by that area's
+    # `api.py` too, which every area importing the note store's surface loads, so a module-level
+    # import there is paid by every one of them. Only `typing` and what `TYPE_CHECKING` guards
+    # stand at module level. Mutation (oracle): `mutations/`'s "an area's doctor.py imports
+    # stayfixed at module level".
+    source = ROOT / "src" / "stayfixed"
+    found = sorted(source.glob("*/doctor.py"))
+    # The three delivery areas carry one each, and the walk says so before it judges them.
+    assert [path.parent.name for path in found] == ["attach", "memory", "overlay"]
+    offences: list[str] = []
+    for path in found:
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.ImportFrom) and node.module in ("__future__", "typing"):
+                continue
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                offences.append(f"{path.parent.name}/doctor.py:{node.lineno}")
+    assert offences == []
 
 
 def test_the_delivery_areas_are_attach_memory_and_overlay() -> None:

@@ -6,18 +6,22 @@ made the trim necessary. An area that needs something absent from this list grow
 deliberately, in a commit that says which area and why — it does not import a private module of
 this area.
 
-`doctor` is the one consuming area, and it is the whole of what any module outside this area
-imports from here:
+No module under `src/` outside this area imports from here. `doctor` was the one consuming area,
+and its `attached` row and the claims `hook-entries` reads are now this area's own
+(`attach/doctor.py`), which reaches this area's modules directly. What is left is what the suite
+reads from outside the area:
 
 - the ledger (`ledger`) and `AttachLedger`, because `ledger` returns it: a return
-  type absent from this list is a value `doctor` can hold and cannot declare, and
+  type absent from this list is a value a consumer can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it;
 - the binding (`read_binding`, `Binding`). `Binding.state` is one of `memory.api`'s
-  `BINDING_STATES`, and `doctor` compares it against those members: the vocabulary and the one
-  classifier that decides between its members are the memory area's, so this area publishes
-  neither a copy of the set nor its own members;
-- the overlay's granted hook entries (`overlay_entries`, `LOCAL_SETTINGS`, the file they live
-  in). `overlay_entries` names `Binding` in its signature too.
+  `BINDING_STATES`: the vocabulary and the one classifier that decides between its members are
+  the memory area's, so this area publishes neither a copy of the set nor its own members;
+- the file the overlay's granted hook entries live in (`LOCAL_SETTINGS`), which the doctor area's
+  tests write those entries into.
+
+**Trimmed when the `attached` row moved into this area: `overlay_entries`.** It was published for
+`doctor`'s provenance column, which this area's `doctor.py` now answers.
 
 **`setup` is not a consumer.** This docstring used to say "`setup` runs `attach --check` and
 reads the same `Result`"; `src/stayfixed/setup/` imports nothing from `stayfixed.attach`, and
@@ -48,7 +52,7 @@ too and the core may not import this area; the crossings still pinned are listed
 """
 
 from stayfixed.attach.binding import Binding, read_binding
-from stayfixed.attach.permissions import LOCAL_SETTINGS, overlay_entries
+from stayfixed.attach.permissions import LOCAL_SETTINGS
 from stayfixed.attach.write import AttachLedger, ledger
 
 __all__ = [
@@ -56,6 +60,5 @@ __all__ = [
     "AttachLedger",
     "Binding",
     "ledger",
-    "overlay_entries",
     "read_binding",
 ]

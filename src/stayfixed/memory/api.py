@@ -14,8 +14,8 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-two names are imported from outside this area today, and the areas that reach for them
-are `attach` and `doctor`: the resolver and its store (`resolve`, `Store`, `permitted_roots` and
+Twenty-one names are imported from outside this area today, and the areas that reach for them
+are `attach` and `overlay`: the resolver and its store (`resolve`, `Store`, `permitted_roots` and
 `main_checkout`), the overlay layout `attach` writes and `overlay` renders (`PROJECTS`,
 `PROJECT_RECORD`, `COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
@@ -26,24 +26,21 @@ whether the machine's trust record can be read at all (`require_readable_record`
 asks before its first write, since the index render and the harness link read it after), the
 binding's one classifier and its vocabulary (`binding_state`, `BINDING_STATES` and its four
 members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
-`DIFFERENT_REMOTE`), which `attach` and `doctor` answer the binding question with instead of a
-second classifier of their own,
-the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), and the trust region
-`tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The link graph's check
-is this area's own (`memory.graph`, which `memory refs` reports), so the wiki-link grammar, the
-note walk and `resolved` have no reader outside it and are not here. The overlay root the
-machine file records and the checkout's `origin` are the core's to answer
+`DIFFERENT_REMOTE`), which `attach` answers the binding question with instead of a second
+classifier of its own, the bundle slots `tests/hooks/test_hooks_json.py` holds the hooks file to
+(`SLOTS`), the overlay root and the note store a `doctor` row reads, resolved once per report
+(`Answers`, which the `attach` and `overlay` areas' own `doctor.py` create for their rows), and
+the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
+link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
+wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
+overlay root the machine file records and the checkout's `origin` are the core's to answer
 (`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
 `init` asks them too and the core may not import this area; the crossings still pinned are
 listed in `tests/test_areas.py`.
 
-**Nine more have no importer and stay, each for a reason written here**, because a name
+**Seven more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-two name in their signatures**: `Bundle` and `Fit` (`fit`,
-  `render`). `tests/test_surfaces.py` derives this rather than restating
-  it, and a return type absent from a surface is a value a consumer can hold and cannot
-  declare — the one thing a surface exists to prevent.
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
   `markers` and `DELIMITER`; producing one needs `wrap` and a nonce from `new_nonce`; a forged
@@ -94,12 +91,17 @@ What went is the claim that another area reads it.
   beside them in the docstring this one replaces, which is how they survived. (`linked_names`
   was a fourth, and came back when `attach` began hiding the tree it names.)
 
+**Trimmed when `doctor`'s store rows moved into this area: `fit`, `render`, and the `Bundle` and
+`Fit` their signatures name.** They were published for the `bundles` row, which is now this area's
+own (`memory/doctor.py`) and reads `memory.bundles` directly.
+
 `PartialLink` stays: `attach` imports it, which is what the paragraph that argued for it
 predicted. `Links` stays for the same reason and is the one name on this list an entry names:
 `mutations/`'s "a type the surface names in a signature drops off the surface".
 """
 
-from stayfixed.memory.bundles import SLOTS, Bundle, Fit, fit, render
+from stayfixed.memory.bundles import SLOTS
+from stayfixed.memory.doctor import Answers
 from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
@@ -159,8 +161,7 @@ __all__ = [
     "PROJECT_RECORD",
     "SLOTS",
     "UNBOUND",
-    "Bundle",
-    "Fit",
+    "Answers",
     "Links",
     "PartialLink",
     "Store",
@@ -172,7 +173,6 @@ __all__ = [
     "binding_state",
     "changed",
     "detach_main",
-    "fit",
     "harness_anchor",
     "harness_link_needed",
     "harness_memory_path",
@@ -183,7 +183,6 @@ __all__ = [
     "may_inject",
     "new_nonce",
     "permitted_roots",
-    "render",
     "require_readable_record",
     "resolve",
     "wrap",

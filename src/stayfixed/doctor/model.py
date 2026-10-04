@@ -29,12 +29,12 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: seven of the sixteen skip arms in `checks.py` carry
-    one, counting `checks._overlay_absent`'s two once for each of the two rows that reach them.
+    an empty remedy merely for being a skip: seven of the report's sixteen skip arms carry one,
+    counting `overlay.doctor._overlay_absent`'s two once for each of the two rows that reach them.
     The line is not "always" versus "on a state" — eight state arms over seven rows are empty
     (`checks._files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
-    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is
-    changed by the very command `checks._uncorroborated` names. It is whether **the skip is itself
+    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is changed by
+    the very command `attach.doctor._uncorroborated` names. It is whether **the skip is itself
     worth acting on**: the two rows that report a plugin root nothing can find, which is every hook
     entry on this machine silent; `wrapper`'s row for a root it will read and never execute; the two
     ways a ledger's recorded attach cannot be corroborated; and the two rows that report an
@@ -44,9 +44,9 @@ class Check:
     record in this build, no way to ask Codex — and no command in that row's gift changes it. A
     reader is never handed a command that would not help, and never denied one that would.
 
-    The two overlay rows have *both* kinds of arm, which is what `checks._overlay_absent` is for:
-    the empty one is the machine that never recorded an overlay, and the one with a remedy is the
-    machine that recorded one and moved it. They used to be one arm with one sentence, and the
+    The two overlay rows have *both* kinds of arm, which is what `overlay.doctor._overlay_absent` is
+    for: the empty one is the machine that never recorded an overlay, and the one with a remedy is
+    the machine that recorded one and moved it. They used to be one arm with one sentence, and the
     sentence was the first one.
     """
 
@@ -95,8 +95,8 @@ class Context:
 class Claims:
     """What an area put into settings files, for `hook-entries`' provenance column.
 
-    Carries every answer `_attach_ledger_entries` and `_granted_commands` give today, their
-    `None`s included: `recorded is None` is "the record could not be read" (the row warns and
+    Carries every answer `attach.doctor`'s `_attach_ledger_entries` and `_granted_commands` give,
+    their `None`s included: `recorded is None` is "the record could not be read" (the row warns and
     says so), `granted is None` is "the overlay could not be asked" (the row withholds the
     overlay's provenance rather than calling its entries foreign)."""
 

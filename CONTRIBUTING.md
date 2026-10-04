@@ -133,8 +133,8 @@ that are not areas included, is the **core**, and the rule runs one way: deliver
 core, and the core may not import delivery, through an `api.py` or not, at module level or inside
 a function, so the private layer can be reworked without touching the core. The core may name
 delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
-are the core's — and may not import delivery's code or call its behaviour. The crossings that
-still exist are pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py`, and one of them is meant to
+are the core's — and may not import delivery's code or call its behaviour. One crossing still
+exists, and it is pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to
 stay rather than be cut: `stayfixed setup --overlay` creates or records the overlay as the last
 step of machine setup, so `setup/run.py` imports the overlay area's `api.py`, and that row stays
 until the step leaves `setup`. The pinned set is held in both directions, so
@@ -151,8 +151,14 @@ alike. The rule reads source, as discovery does, so a module named to
   its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
   the report's `Context` and through the same guard, so a check that raises costs its own row and
   not the report. A check's name is unique in the report: discovery refuses a name equal to a core
-  check's or to one another area contributes. `Contribution`, `Context` and `Row` come from
-  `stayfixed.doctor.api`, and, as in a `hooks.py`, every import sits inside a function body.
+  check's or to one another area contributes. A `Contribution` may also carry `claims`, which
+  answers `Claims`: the marker ids the area recorded in settings files and the commands it still
+  grants there, which the core's `hook-entries` row asks with the same `Context`, so an entry the
+  area put there is told apart from a repository claiming it did. `register()` is called once per
+  report, so anything it creates for its checks — the delivery areas each create a
+  `memory.api.Answers` for the overlay root and the note store — is fresh for every report.
+  `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
+  every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an

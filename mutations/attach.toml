@@ -1421,3 +1421,117 @@ reddens = [
   "tests/attach/test_write.py::test_a_doubled_gitignore_region_is_refused_naming_the_file",
   "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
 ]
+
+# A named failure mode, and the shape one existing checkout already had: a **real directory** at
+# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of it
+# and reports no fault, so the installation looks attached and behaves like nothing. The row was
+# declared load-bearing and had a test, and nothing made the test prove it. The mutation asks the
+# path a question a real directory answers "no" to, which is the narrowest way to stop the
+# discriminator discriminating: every other shape this row reads reaches the same arm it did before,
+# so the one test that reddens is the one named for this state.
+[[mutation]]
+name = "doctor stops telling a real directory from a link at the harness memory path"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if harness.is_dir() and not harness.is_symlink():"
+after = "    if harness.is_dir() and not harness.exists():"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
+]
+
+# The harness memory path is the one channel attached memory uses to reach the model, and this row
+# is the only thing that reports on it. The shape was computed into `detail` and then discarded for
+# the status, and the link's target was never compared — so "the harness memory path is a link to
+# the store" was printed, in green, for a dangling link and for a link to anybody's directory.
+[[mutation]]
+name = "doctor stops asking what the harness memory path points at"
+file = "src/stayfixed/attach/doctor.py"
+before = '        if harness.resolve() == store.path.resolve():'
+after = '        if True:'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
+  "tests/attach/test_doctor.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
+# raised, `_guarded` rendered it red, and the remedy was "report this". Reading it as an empty
+# ledger instead is the other wrong answer — every entry `attach` installed would then be
+# reported as one it did not, which is a red row with actively wrong advice.
+[[mutation]]
+name = "doctor reports an unreadable attach ledger as an empty one"
+file = "src/stayfixed/attach/doctor.py"
+before = '''    except (Failure, Refusal):
+        return None'''
+after = '''    except (Failure, Refusal):
+        return {}'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+]
+
+# The overlay that `hook-entries` asks, beside the ledger, which commands it grants — in the arm
+# where it cannot be asked at all. Falling back to the ledger there would hand a repository the
+# answer by breaking the overlay instead of by forging the record: the honest answer is the one
+# that row already gives a settings file it could not parse — report it, never absolve it.
+[[mutation]]
+name = "an unreadable overlay falls back to trusting the ledger"
+file = "src/stayfixed/attach/doctor.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {
+        entry["command"]'''
+after = '''    except (Failure, Refusal, OSError):
+        return set()
+    return {
+        entry["command"]'''
+reddens = [
+  "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+]
+
+# `.stayfixed/local/attach.json` is a file a clone can commit, so the row asks the overlay — the
+# trusted side — whether a binding stands behind it.
+[[mutation]]
+name = "a committed ledger counts as an attach again"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if state == UNBOUND:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
+]
+
+# `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
+# three used to collapse into one `None` that the `attached` row read as "attached". Two entries
+# prove the three are told apart: `mutations/`'s "a ledger naming a store the overlay does not
+# permit is excused as our own input" turns the repository's own doing into a skip nobody acts on,
+# and `mutations/`'s "a machine with no overlay recorded is blamed on the repository" turns a
+# missing overlay into an accusation against the repository.
+[[mutation]]
+name = "a ledger naming a store the overlay does not permit is excused as our own input"
+file = "src/stayfixed/attach/doctor.py"
+before = """    except Refusal:
+        return UNRESOLVED"""
+after = """    except Refusal:
+        return UNASKABLE"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning",
+]
+
+[[mutation]]
+name = "a machine with no overlay recorded is blamed on the repository"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if answers.overlay(context) is None:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
+]
+
+# A ledger that will not parse is the repository's doing, and answering it as an overlay that
+# could not be asked makes the `attached` row a `skip` that blames `git`. `skip` never reaches the
+# exit code, so this is not only a wrong sentence: a clone's own committed, malformed ledger was
+# silent as well as misattributed.
+[[mutation]]
+name = "doctor blames git for a ledger the repository committed"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return UNREADABLE_LEDGER"
+after = "        return UNASKABLE"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git",
+]

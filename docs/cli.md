@@ -2506,15 +2506,21 @@ one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
 Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
+The rows come in a fixed order: the installation's own eleven first, then the five about the
+private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
+private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
+position.
+
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
-resolves to. Four of those are measured on a green attached installation — the wrapper probe and
-three `git` questions — and not one of the four leaves this machine. The `ci-ref` row's
-`git ls-remote` is a fifth on a repository that records a `[ci] ref` at all, and it is the only
-one that does leave: it goes through the `Runner` seam, which is what lets the case that pins the
-four answer it in process instead of launching it. That one is bounded at **30 seconds**, and not
+resolves to, which the binding's row and the note store's rows each ask for themselves. Five of
+those are measured on a green attached installation — the wrapper probe and four `git`
+questions — and not one of the five leaves this machine. The `ci-ref` row's `git ls-remote` is a
+sixth on a repository that records a `[ci] ref` at all, and it is the only one that does leave:
+it goes through the `Runner` seam, which is what lets the case that pins the five answer it in
+process instead of launching it. That one is bounded at **30 seconds**, and not
 at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
 clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
 five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
@@ -2541,18 +2547,18 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex | — |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
-| `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
-| `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
-| `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
+| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
+| `store-debris` | files in the note store that are not notes | the note store |
+| `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
+| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
 **Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and

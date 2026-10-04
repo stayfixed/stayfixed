@@ -21,6 +21,9 @@ with no explanation is what made the trim necessary:
   and answers a `Row`, and `Claims` is what the area put into settings files. They are defined in
   `doctor/model.py`, which imports nothing of any area, and published here because an area's
   `doctor.py` is a consumer like any other.
+- `Status` is the type `Row.status` declares, for a check that decides its status before it
+  builds its row: `attach`'s `attached` row and `overlay`'s `overlay-requires` do, and an
+  annotation they could not import would be a type they could hold and not declare.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
 takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the three
@@ -41,6 +44,7 @@ from stayfixed.doctor.model import (
     Context,
     Contribution,
     Row,
+    Status,
 )
 
 __all__ = [
@@ -54,5 +58,6 @@ __all__ = [
     "Context",
     "Contribution",
     "Row",
+    "Status",
     "run_checks",
 ]

@@ -643,12 +643,17 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 
 
 # What `stayfixed.doctor` says it launches, in `__init__`'s own paragraph and again in
-# `docs/cli.md`: four subprocesses on a green attached installation *besides* the `ci-ref` row,
-# which the stub runner below answers in process rather than launching — so four here and five
+# `docs/cli.md`: five subprocesses on a green attached installation *besides* the `ci-ref` row,
+# which the stub runner below answers in process rather than launching — so five here and six
 # in production on a repository that records a `[ci] ref`, which is what both documents now say.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
-DOCTOR_LAUNCHES = 4
+#
+# Five and not four since the binding's and the note store's rows moved into their own areas:
+# each area resolves the note store for its own rows, once per report, and in overlay mode a
+# resolution asks `git` for the checkout's `origin`. So `attached` and the store's two rows ask
+# it once each, where one shared context used to ask it once for all three.
+DOCTOR_LAUNCHES = 5
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -670,7 +675,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # **The one test here that keeps the library seam**, and the reason is the measurement
     # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
-    # run as a subprocess launches its four in a process no patch of ours can see. Everything
+    # run as a subprocess launches its five in a process no patch of ours can see. Everything
     # else in this module runs the launcher; this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
@@ -696,11 +701,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # The report is green first, so a count taken from a run that fell over early cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the four the paragraph names, not four of something else: one wrapper probe,
-    # and three `git` questions. Asserted by shape rather than by full argv, because two of the
+    # And they are the five the paragraph names, not five of something else: one wrapper probe,
+    # and four `git` questions. Asserted by shape rather than by full argv, because two of the
     # three carry a temporary path.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 3
+    assert sum(1 for argv in launched if argv[0] == "git") == 4
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:

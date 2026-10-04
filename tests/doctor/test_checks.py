@@ -32,7 +32,7 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.doctor import checks
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Row, run_checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
 from stayfixed.doctor.checks import (
     SETTINGS_FILES,
     VERSION_AHEAD,
@@ -45,9 +45,8 @@ from stayfixed.doctor.checks import (
     plugin_root,
 )
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
-from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
-from stayfixed.memory.trust import record
-from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
+from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
+from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.release.api import HASHED_FILES
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
@@ -57,7 +56,7 @@ from tests.runners import LsRemote, Recorder
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
-def module_checks() -> tuple[tuple[str, Callable[[checks.Context], Row]], ...]:
+def module_checks() -> tuple[tuple[str, Callable[[Context], Row]], ...]:
     """`checks.CHECKS`, reachable from a test whose own local `checks` shadows the module."""
     return checks.CHECKS
 
@@ -89,10 +88,10 @@ groups = ["developer"]
 """
 
 
-def _context(root: Path, config: Config) -> checks.Context:
+def _context(root: Path, config: Config) -> Context:
     """A `Context` for a case that calls one check directly rather than `run_checks`: no home,
     no machine file, an empty environment, and a runner that answers success to anything."""
-    return checks.Context(root, None, None, Recorder(), {}, config)
+    return Context(root, None, None, Recorder(), {}, config)
 
 
 def _checks(
@@ -323,6 +322,55 @@ def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
     checks = _checks(tmp_path, _initialised(tmp_path))
     assert len(checks) == 16
     assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
+
+
+# The report's sixteen names in the report's order, written out rather than read back from the
+# registry: the core's own checks, then each delivery area's in area-name order — `attach`,
+# `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
+REPORT = (
+    "not-initialised",
+    "versions",
+    "files",
+    "wrapper",
+    "hook-entries",
+    "codex-trust",
+    "budgets",
+    "cli-path",
+    "ci-ref",
+    "diagnostics",
+    "ignored-env",
+    "attached",
+    "bundles",
+    "store-debris",
+    "pre-commit",
+    "overlay-requires",
+)
+
+
+def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
+    # Moving a check into its area must not cost it its row, nor give it a second one: the
+    # sixteen are the same sixteen, once each. A literal tuple and not the registry read back, so
+    # a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
+    # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
+    # missing.
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    assert tuple(row.name for row in rows) == REPORT
+
+
+def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Path) -> None:
+    # A ledger recording an attach, a project configured for the overlay, and a machine that
+    # records no overlay at all — the state of a clone on a machine where `stayfixed setup` has
+    # never run. Every delivery row asks a question only the overlay can answer, so each one
+    # skips rather than guessing, and none of them is red: a skip never reaches the exit code.
+    root = _attached(tmp_path)
+    rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
+    delivery = REPORT[REPORT.index("attached") :]
+    assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
+        delivery, SKIP
+    )
+    assert not any(row.status == RED for row in rows), [
+        (row.name, row.detail) for row in rows if row.status == RED
+    ]
 
 
 def test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name(tmp_path: Path) -> None:
@@ -836,277 +884,6 @@ def test_neither_variable_set_is_not_a_finding(tmp_path: Path) -> None:
     assert check.status == "ok"
 
 
-def _note(body: str, *, name: str, startup: int) -> str:
-    return (
-        f"---\nname: {name}\ndescription: a standing rule\nmetadata:\n"
-        f"  type: rule\n  startup: {startup}\n---\n\n{body}"
-    )
-
-
-def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> None:
-    # A bundle whose notes do not fit its slots is the condition that needs a human — raising N
-    # edits a shipped file — so doctor reports it. Four standing notes of a whole slot each,
-    # against the three `standing-rules` entries `hooks/hooks.json` declares.
-    #
-    # In the overlay, not in a local-only store: `trust.may_inject` gates a store that lives in
-    # the repository, so an untrusted local store renders every bundle empty and this assertion
-    # would pass for having measured nothing.
-    root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
-    for index in range(4):
-        (store / f"note-{index}.md").write_text(
-            _note("word " * 2_000, name=f"note-{index}", startup=index + 1), encoding="utf-8"
-        )
-    check = _by_name(
-        _checks(tmp_path, root, machine=_machine(tmp_path)),
-        "bundles",
-    )
-    assert check.status == "red"
-    assert "standing-rules" in check.detail
-
-
-def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
-    # The vacuity guard for the test above, and the one that would have caught the first draft
-    # of this check: `parts == slots` warned on every correct installation, because
-    # `preset-rules` has one slot and a preset that carries rules fills it. The shipped preset
-    # carries none, so here `preset-rules` is an empty bundle and doctor is still green: an
-    # installation whose preset imposes no standing rule is the ordinary one.
-    root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
-    (store / "short.md").write_text(_note("a short rule", name="short", startup=1), "utf-8")
-    check = _by_name(
-        _checks(tmp_path, root, machine=_machine(tmp_path)),
-        "bundles",
-    )
-    assert check.status == "ok"
-
-
-def test_a_preset_whose_rules_outgrow_their_slot_is_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The `preset-rules` bundle is still measured now that the shipped preset has nothing in it:
-    # a user's own preset with a rule larger than the one slot the hooks file declares is the
-    # same condition as a standing note that does not fit, reported the same way. Without this
-    # the bundle's row in `_bundles` would be covered only by an empty bundle.
-    from stayfixed.memory import bundles as bundles_module
-
-    root = _attached(tmp_path)
-    monkeypatch.setattr(
-        bundles_module, "load_preset", lambda name: {"rules": {"huge": "word " * 3_000}}
-    )
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "bundles")
-    assert check.status == "red"
-    assert "preset-rules" in check.detail
-
-
-def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_path: Path) -> None:
-    # `NEARLY_FULL` appeared in no test at all: the constant, the fraction and the whole `full`
-    # arm were dead. It is the warning *before* the red row above — one more sentence in one
-    # note and the bundle needs a slot that does not exist, and raising a slot count edits
-    # `hooks/hooks.json`, which is a shipped file and a change somebody has to make deliberately.
-    #
-    # One standing note sized into the band between the threshold and the cap, so this is
-    # neither the `over` arm (which would be red) nor the green one. Both are asserted, because
-    # "warn" alone would also be produced by a `full` list built from the wrong predicate.
-    root = _attached(tmp_path)
-    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
-    cap = load(root, machine=_machine(tmp_path)).native_caps.hook_output_chars
-    body = "word " * ((int(cap * checks.NEARLY_FULL) + 600) // 5)
-    (store / "big.md").write_text(_note(body, name="big", startup=1), encoding="utf-8")
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "bundles")
-    assert check.status == "warn", check.detail
-    assert "standing-rules" in check.detail
-    assert "at the platform cap" in check.detail
-
-
-def test_an_overlay_recording_another_remote_is_red_and_never_merely_attached(
-    tmp_path: Path,
-) -> None:
-    # The binding mismatch `attach` refuses, seen from `doctor` instead: the ledger says this
-    # checkout is attached and the overlay's own project record names a different remote, so
-    # the notes on the other side of that binding are another repository's. The arm existed and
-    # no case reached it — an installation in this state read as ordinarily attached.
-    root = _attached(tmp_path)
-    (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).write_text(
-        'remote = "git@github.com:somebody/else.git"\nfirst_attach = "2026-09-18"\n',
-        encoding="utf-8",
-    )
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert check.status == "red"
-    assert "a different remote" in check.detail
-    # The other repository's remote is overlay-authored, not repository-authored — but it is
-    # still somebody's private URL, and this row has no reason to print one.
-    assert "somebody/else" not in check.detail and "somebody/else" not in check.remedy
-
-
-def test_a_project_with_no_overlay_to_bind_to_is_green_and_says_which_mode(tmp_path: Path) -> None:
-    # The arm every `local-only` fixture in this file runs through and none of them asserts on.
-    # It is the row's one green-without-an-overlay answer, and it is what keeps the three red
-    # and warn arms below from being reachable by an ordinary un-attached project.
-    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "attached")
-    assert check.status == "ok"
-    assert "local-only" in check.detail
-
-
-def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path: Path) -> None:
-    # `memory.mode = "overlay"` and nothing recording an attach. Not red: a project may be
-    # configured for an overlay before anyone has run `stayfixed attach` in this checkout, which
-    # is the ordinary state of a fresh clone. The remedy is the command that ends it.
-    root = _attached(tmp_path)
-    (root / LEDGER).unlink()
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert check.status == "warn"
-    assert LEDGER in check.detail
-    assert "stayfixed attach" in check.remedy
-
-
-def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
-    # The shape an existing checkout can already have, and the one this row exists for, because
-    # it looks attached and behaves like nothing. `~/.claude/projects/<slug>/memory` is where
-    # the harness's own native reader looks, and a real directory there reads as an empty store
-    # while the notes sit untouched in the overlay.
-    root = _attached(tmp_path)
-    home = tmp_path / "home"
-    slug = str(root.resolve()).replace("/", "-").replace(".", "-")
-    (home / ".claude" / "projects" / slug / "memory").mkdir(parents=True)
-    check = _by_name(_checks(tmp_path, root, home=home, machine=_machine(tmp_path)), "attached")
-    assert check.status == "red"
-    assert "real directory" in check.detail
-
-
-def _harness(tmp_path: Path, root: Path) -> Path:
-    """Where `~/.claude/projects/<slug>/memory` is for this root, with its parent made."""
-    slug = str(root.resolve()).replace("/", "-").replace(".", "-")
-    harness = tmp_path / "home" / ".claude" / "projects" / slug / "memory"
-    harness.parent.mkdir(parents=True)
-    return harness
-
-
-def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
-    # The vacuity guard for the test above, and for the three below it. The same fixture, with
-    # the shape `attach` leaves: a symlink whose target really is the store this checkout
-    # resolves, which in overlay mode is the link tree at `paths.memory`.
-    #
-    # This assertion used to be the *only* one on this row's green path, and the check never
-    # compared the link's target — so it passed for a symlink to anything at all and the three
-    # cases below were green with it. It is kept because a fix that reddened the correct shape
-    # would be worse than the defect.
-    root = _attached(tmp_path)
-    harness = _harness(tmp_path, root)
-    harness.symlink_to(root / "docs" / "memory")
-    check = _by_name(
-        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
-    )
-    assert check.status == "ok"
-    assert "a link to the store" in check.detail
-
-
-def test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green(tmp_path: Path) -> None:
-    # The state the row used to print "the harness memory path is a link to the store" for, in
-    # green, while the harness's native reader was reading somebody else's notes. This link is
-    # the one channel attached notes take to reach the model, so a false sentence about where
-    # that memory comes from is the most expensive thing this check could say.
-    #
-    # Mutation: `mutations/`'s "doctor stops asking what the harness memory path points at".
-    root = _attached(tmp_path)
-    elsewhere = tmp_path / "somebody-elses-notes"
-    elsewhere.mkdir()
-    _harness(tmp_path, root).symlink_to(elsewhere)
-    check = _by_name(
-        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
-    )
-    assert check.status == "red"
-    assert "a link to the store" not in check.detail
-    assert check.remedy
-
-
-def test_a_dangling_harness_link_is_never_green(tmp_path: Path) -> None:
-    # The same defect's quieter half: the harness reads nothing through a link to a directory
-    # that is not there, which looks attached and behaves like nothing one shape over from the
-    # real directory the row above it already reddens.
-    root = _attached(tmp_path)
-    _harness(tmp_path, root).symlink_to(tmp_path / "never-existed")
-    check = _by_name(
-        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
-    )
-    assert check.status == "red"
-    assert "dangling" in check.detail
-
-
-def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_that(
-    tmp_path: Path,
-) -> None:
-    # The row's own docstring is right that absent is not a fault by itself: the link is gated
-    # on the same trust record every other channel is, so an unapproved store correctly has
-    # none and reddening that would redden a correct fresh install. But the check has to *ask*
-    # rather than assume — an approved store with no link is an attach that did not finish, and
-    # the harness sees no memory at all. Both arms of `harness_link_needed`, one test.
-    root = _attached(tmp_path)
-    machine = _machine(tmp_path)
-    before = _by_name(_checks(tmp_path, root, machine=machine), "attached")
-    assert before.status == "ok"
-    assert "trust record" in before.detail
-
-    config = load(root, machine=machine)
-    store = resolve(root, config, machine=machine)
-    assert store is not None
-    record(store, config)
-    after = _by_name(_checks(tmp_path, root, machine=machine), "attached")
-    assert after.status == "warn"
-    assert after.remedy
-
-
-def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path: Path) -> None:
-    # The overlay holds the machine owner's own notes, so its commit-time secret scan is
-    # the one that matters. `overlay init` installs it on the machine that created the overlay
-    # and never on a second one that cloned it.
-    root = _attached(tmp_path)
-    (tmp_path / "overlay" / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(checks, "pre-commit").status == "warn"
-    (tmp_path / "overlay" / ".git" / "hooks").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "overlay" / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n")
-    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(checks, "pre-commit").status == "ok"
-
-
-def test_the_overlays_hook_is_found_where_git_says_it_is_and_not_under_dot_git(
-    tmp_path: Path,
-) -> None:
-    # `core.hooksPath` is an ordinary global dotfiles setting, and a worktree or submodule
-    # overlay keeps `.git` as a *file*. Against either, a hardcoded `.git/hooks/pre-commit`
-    # warns permanently with a remedy that cannot clear it — the reader runs `pre-commit
-    # install`, it succeeds, and the row stays yellow. `docs/cli.md` states the rule this
-    # follows: `git rev-parse --git-path hooks`, never `core.hooksPath`.
-    root = _attached(tmp_path)
-    overlay = tmp_path / "overlay"
-    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    hooks = tmp_path / "dotfiles" / "hooks"
-    hooks.mkdir(parents=True)
-    _git(overlay, "config", "core.hooksPath", str(hooks))
-    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(checks, "pre-commit").status == "warn"
-    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
-    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(checks, "pre-commit").status == "ok"
-
-
-def test_an_overlay_git_cannot_answer_about_is_a_warning_and_never_a_red_row(
-    tmp_path: Path,
-) -> None:
-    # `hooks_dir` refuses when `git` cannot name the directory. `_guarded` would turn that into
-    # a red row naming an exception type, which says nothing a reader can act on; the row says
-    # what could not be asked instead. Reached by taking the repository away, which is the
-    # cheapest state `rev-parse` cannot answer in.
-    root = _attached(tmp_path)
-    overlay = tmp_path / "overlay"
-    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    shutil.rmtree(overlay / ".git")
-    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "pre-commit")
-    assert check.status == "warn"
-    assert "hooks directory" in check.detail
-
-
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
     # A project may lower a budget below the preset and never raise it. A value above the
     # preset is ignored rather than refused, so without this check nothing ever says that the
@@ -1228,20 +1005,6 @@ def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path
     assert _by_name(_checks(tmp_path, _initialised(tmp_path)), "budgets").detail == (
         "every budget is the preset's"
     )
-
-
-def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
-    # `store-debris`. The count is stayfixed's own; the file names are not, so they are
-    # counted rather than printed and the remedy names the command that lists them.
-    root = _initialised(tmp_path)
-    store = root / ".stayfixed" / "local" / "memory" / "developer"
-    store.mkdir(parents=True)
-    (store / "kept.md").write_text("---\nname: kept\ndescription: d\n---\n\nbody\n")
-    (store / "scratch.txt").write_text("not a note\n", encoding="utf-8")
-    check = _by_name(_checks(tmp_path, root), "store-debris")
-    assert check.status == "warn"
-    assert "1" in check.detail
-    assert "scratch.txt" not in check.detail
 
 
 def test_a_project_declaring_another_stayfixed_version_is_named_without_quoting_it(
@@ -1379,10 +1142,10 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # Mutation: `mutations/`'s "doctor renders an unreadable file as a broken check".
     context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
 
-    def cannot_read(_: checks.Context) -> Row:
+    def cannot_read(_: Context) -> Row:
         raise PermissionError(13, "Permission denied")
 
-    def is_broken(_: checks.Context) -> Row:
+    def is_broken(_: Context) -> Row:
         raise ValueError("this check has a bug in it")
 
     warned = checks._guarded("files", cannot_read, context)
@@ -1603,81 +1366,50 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in this module: in `CHECKS`.
+    # literal exactly once in the module that registers it: the core's eleven in `CHECKS`, and
+    # each area's in its own `doctor.py`, in the `Contribution` its `register()` returns.
     #
     # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
     # twice and this reddens naming it.
     import ast
+    from types import ModuleType
 
     from stayfixed.doctor import checks as module
 
-    source = Path(module.__file__ or "").read_text(encoding="utf-8")
-    literals = [
-        node.value
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
+    def spelled(where: ModuleType, names: list[str]) -> dict[str, int]:
+        source = Path(where.__file__ or "").read_text(encoding="utf-8")
+        literals = [
+            node.value
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        return {name: literals.count(name) for name in names}
+
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 16
-    counted = {name: literals.count(name) for name in names}
-    assert counted == dict.fromkeys(names, 1), counted
+    assert len(names) == 11
+    assert spelled(module, names) == dict.fromkeys(names, 1)
+    areas = module.discover_contributors()
+    # The three delivery areas, so the loop below is not vacuously true of no area at all.
+    assert [area.__name__ for area in areas] == [
+        "stayfixed.attach.doctor",
+        "stayfixed.memory.doctor",
+        "stayfixed.overlay.doctor",
+    ]
+    for area in areas:
+        contributed = [name for name, _ in area.register().checks]
+        assert contributed, area.__name__
+        assert spelled(area, contributed) == dict.fromkeys(contributed, 1), area.__name__
 
 
 def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -> None:
     # The two-line form of the same property, over the output rather than the source: the
-    # rows come back in registry order with registry names. No mutation of its own — while
-    # `_guarded` stamps the name a row cannot be misnamed; this is the guard that outlives that.
+    # rows come back in registry order with registry names — the core's, then each area's
+    # contribution's. No mutation of its own — while `_guarded` stamps the name a row cannot be
+    # misnamed; this is the guard that outlives that.
     root = _initialised(tmp_path)
     rows = _checks(tmp_path, root)
-    assert [row.name for row in rows] == [name for name, _ in module_checks()]
-
-
-def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach(
-    tmp_path: Path,
-) -> None:
-    # `.stayfixed/local/attach.json` is a path a clone can commit, and `_attached` took its
-    # existence as "this checkout was attached". The overlay is the trusted side, so the row
-    # now asks it: a ledger with no `projects/<name>/project.toml` behind it is a warning
-    # that names the file, and the remedy says what to do in each of the two cases.
-    #
-    # Mutation (declared): `if state == UNBOUND:` -> `if False:` -> the row falls
-    # through to the harness-shape branch and this reddens on the sentence.
-    root = _attached(tmp_path)
-    overlay = _overlay(tmp_path)
-    record = overlay / PROJECTS / "p" / PROJECT_RECORD
-    assert record.is_file(), "the fixture must have recorded a binding for this to be a probe"
-    record.unlink()
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert row.status == WARN
-    assert "has no binding for this project" in row.detail
-    assert "a clone can commit that file" in row.detail
-    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
-
-
-def test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning(tmp_path: Path) -> None:
-    # `_attached` asked the overlay only for its *state*, and `read_binding` answers with a
-    # `Refusal` — not a state — when the store the ledger names is not this project's share of
-    # the recorded overlay. That refusal used to collapse into the same `None` as "no overlay
-    # recorded", the row skipped both new arms, and a repository that committed
-    # `.stayfixed/local/attach.json` with any store it liked was reported `attached: ok` to a
-    # model. This is the likeliest hostile shape of the three: an attacker cannot know
-    # the victim's overlay root, so the store they commit is one the overlay does not permit.
-    #
-    # `warn` and not `skip`: this is a fact about the repository, and `skip` never reaches the
-    # exit code.
-    #
-    # Mutation (declared): `except Refusal: return UNRESOLVED` -> `return UNASKABLE` -> the row
-    # becomes a skip about this machine and this reddens on the status and the sentence.
-    root = _attached(tmp_path)
-    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
-    recorded["store"] = str(tmp_path / "somewhere-else" / "memory")
-    (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert row.status == WARN
-    assert "is not this project's directory inside the overlay" in row.detail
-    assert "not evidence of an attach" in row.detail
-    assert "attached;" not in row.detail, "a ledger the overlay does not confirm is not an attach"
-    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
+    contributed = [name for each in checks.contributions() for name, _ in each.checks]
+    assert [row.name for row in rows] == [name for name, _ in module_checks()] + contributed
 
 
 def _no_overlay_machine(tmp_path: Path) -> Path:
@@ -1689,61 +1421,6 @@ def _no_overlay_machine(tmp_path: Path) -> Path:
     path = tmp_path / "no-overlay.toml"
     path.write_text("[personal]\n", encoding="utf-8")
     return path
-
-
-def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached(
-    tmp_path: Path,
-) -> None:
-    # The universal case on a machine where `setup` has never run, and the other refusal beside the
-    # one the test above covers: `read_binding` refuses for this too, and the row used to print
-    # "attached" over it. It is a fact about *our own inputs*, so it is a `skip` that says what
-    # could not be asked — never a warning that accuses the repository, and never the word
-    # "attached".
-    #
-    # Mutation (declared): `if context.overlay is None: return NO_OVERLAY` -> `if False:` ->
-    # the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the arm is gone)
-    # and this reddens on the status and the sentence.
-    root = _attached(tmp_path)
-    row = _by_name(_checks(tmp_path, root, machine=_no_overlay_machine(tmp_path)), "attached")
-    assert row.status == SKIP
-    assert "records no overlay to check it against" in row.detail
-    assert "attached;" not in row.detail
-    assert "stayfixed setup --overlay" in row.remedy
-
-
-def test_an_overlay_record_this_process_cannot_read_skips_rather_than_reading_as_attached(
-    tmp_path: Path,
-) -> None:
-    # The third of the three, and the one that is about neither side's honesty: the overlay is
-    # recorded and its `projects/<name>/project.toml` will not parse, so `read_binding` raises
-    # `Failure` and nothing can be said about the binding either way. A `skip` naming the
-    # reason, and — the property all three share — not the word "attached".
-    #
-    # No mutation of its own: the arm it exercises is the `except (Failure, GitUnavailable)`
-    # fallback, and the two declared mutations above already prove that `_binding_answer`'s
-    # three answers are told apart rather than collapsed. This is the case that pins the
-    # fallback's own sentence.
-    root = _attached(tmp_path)
-    overlay = _overlay(tmp_path)
-    (overlay / PROJECTS / "p" / PROJECT_RECORD).write_text("remote = [", encoding="utf-8")
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert row.status == SKIP
-    assert "the overlay could not be asked about it here" in row.detail
-    assert "attached;" not in row.detail
-
-
-def test_an_attached_checkout_the_overlay_confirms_is_still_green_and_says_the_binding(
-    tmp_path: Path,
-) -> None:
-    # The vacuity guard for the three above: refusing to print "attached" whenever the overlay
-    # did not answer must not become refusing to print it at all. The fixture is the state a
-    # real attach leaves, the overlay's record matches this checkout's remote, and the row says
-    # so with the binding's own label on it.
-    root = _attached(tmp_path)
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-    assert row.status == OK
-    assert row.detail.startswith("attached;")
-    assert "the binding is bound" in row.detail
 
 
 def test_a_record_naming_a_file_this_build_does_not_ship_is_red(
@@ -1920,28 +1597,6 @@ def test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch(
     assert "do(es) not match the release record" not in row.detail
 
 
-def test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git(
-    tmp_path: Path,
-) -> None:
-    # `_binding_answer` had three answers and needed four. A ledger that is there and will not
-    # parse was joining "no overlay" and "no git" under `unaskable`, so the row said "no `git`,
-    # or a record this process could not read" and the remedy said "run `stayfixed doctor` again
-    # where `git` runs" — about a file in the checkout the reader is standing in. `skip` never
-    # reaches the exit code either, so a clone's committed, malformed ledger was silent, which
-    # is the split `_uncorroborated`'s own docstring exists to make.
-    #
-    # Mutation (declared): the unreadable ledger answers `UNASKABLE` again -> the row is `skip`,
-    # blames `git`, and every assertion below reddens.
-    root = _attached(tmp_path)
-    (root / LEDGER).write_text("this is not json", encoding="utf-8")
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
-
-    assert row.status == WARN
-    assert f"{LEDGER} is here and cannot be read as a ledger" in row.detail
-    assert "`git`" not in row.detail and "`git`" not in row.remedy
-    assert LEDGER in row.remedy
-
-
 def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_path: Path) -> None:
     # `load` reads two files and this arm blamed the first for either, so an owner whose
     # `~/.config/stayfixed/config.toml` had a stray bracket in it was told to fix a repository
@@ -1967,64 +1622,6 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
     assert all(row.status == SKIP for row in rows[1:]), [
         (row.name, row.status) for row in rows[1:] if row.status != SKIP
     ]
-
-
-def _recorded_overlay(tmp_path: Path, requires: object) -> Path:
-    """A machine file recording an overlay whose manifest declares `requires`.
-
-    The manifest writer is `tests/overlay/test_requires.py::overlay_with`, shared rather than
-    respelled: one spelling of the declaration the two readers of it are tested against.
-    """
-    overlay = overlay_with(tmp_path / "overlay", requires)
-    machine = tmp_path / "machine.toml"
-    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
-    return machine
-
-
-UNMET = "the overlay requires stayfixed >=99.0.0 and {running} does not satisfy it"
-
-
-def test_overlay_requires_is_red_when_a_bound_project_needs_a_newer_stayfixed(
-    tmp_path: Path,
-) -> None:
-    # Red because this project keeps its notes in the overlay, so the floor it declares is this
-    # installation's business. Mutation (comment; the verdict's own arm): `if not verdict` ->
-    # `if verdict` -> this and the ok case swap verdicts. The red-versus-warn split below has an
-    # oracle entry of its own.
-    machine = _recorded_overlay(tmp_path, ">=99.0.0")
-    root = _initialised(tmp_path, template=OVERLAY)
-    row = _by_name(_checks(tmp_path, root, machine=machine), "overlay-requires")
-    assert row.status == RED
-    assert row.detail == UNMET.format(running=stayfixed.__version__)
-    assert "uv tool install" in row.remedy
-
-
-def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor(
-    tmp_path: Path,
-) -> None:
-    # The reason this requirement has a row of its own rather than being folded into
-    # `versions`: a `local-only` project on a machine that records an overlay must not go red
-    # for a requirement it has no relationship with. The finding is the same finding
-    # and says the same thing; only the level moves, because red gates the exit code. Asserted
-    # as the level AND the whole text, so this case cannot pass for the red case's reason or
-    # vice versa.
-    #
-    # Mutation (declared): `unmet = RED if ... else WARN` -> `unmet = RED`.
-    machine = _recorded_overlay(tmp_path, ">=99.0.0")
-    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == WARN
-    assert row.detail == UNMET.format(running=stayfixed.__version__)
-    assert "uv tool install" in row.remedy
-
-
-def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overlay(
-    tmp_path: Path,
-) -> None:
-    machine = _recorded_overlay(tmp_path, " >=0.0.1 ")
-    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == OK and ">=0.0.1" in row.detail and " >=0.0.1 " not in row.detail
-    row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
-    assert row.status == SKIP
 
 
 def test_no_case_here_can_read_the_developers_own_machine_configuration(
@@ -2062,27 +1659,6 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     assert overlay_root(expected) == overlay, "the planted file records no overlay"
     row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
     assert row.status == SKIP, row
-
-
-def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
-    machine = _recorded_overlay(tmp_path, "~=1.0")
-    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == WARN and PLUGIN_MANIFEST in row.remedy
-
-
-def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
-    # The reason for a row of its own: the verdict is the machine's, so the `versions` row
-    # stays about the project and never goes red for this.
-    #
-    # And the consequence the decision is actually about, asserted over the whole report rather
-    # than over one row: `doctor` does not exit 1 here. `overlay-requires` was measured as the
-    # only red row this fixture produced while the unmet arm was unconditional, so this
-    # assertion is the exit code and not a restatement of the case above.
-    machine = _recorded_overlay(tmp_path, ">=99.0.0")
-    checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
-    assert _by_name(checks, "versions").status == OK
-    assert [check.name for check in checks if check.status == RED] == []
-    assert len(checks) == 16
 
 
 # The two shas a listing can carry and one it cannot: `RELEASED` is what `v0.1.0` names,
@@ -2430,36 +2006,3 @@ def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
     assert row.status == WARN and "no `uses:` line this build recognises" in row.detail
     # The file is repository-authored and none of it is quoted back.
     assert "o/r" not in row.detail and "other.yml" not in row.detail
-
-
-def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: Path) -> None:
-    """Two states, two sentences, and the same two in both rows that ask.
-
-    `overlay_root` answers `None` for a machine that records no overlay -- the ordinary state
-    before `stayfixed setup` has run -- and a `Path` for a recorded root whether or not anything
-    is there. `pre-commit` and `overlay-requires` collapsed the two into
-    `overlay is None or not overlay.is_dir()` and told both "no overlay root is recorded on this
-    machine", which is false of the second and leaves the owner nothing to act on: the overlay
-    is where the notes live, and a recorded root that is gone breaks the store too.
-
-    The sentences come from `_overlay_absent` so the two rows cannot drift -- `overlay-requires`'
-    arm was a byte-for-byte copy of `pre-commit`'s, which is how it inherited the defect -- and
-    `PLUGIN_ROOT_REMEDY`'s rule, "one constant because both rows must say the same thing", is the
-    one being read onto this pair.
-
-    Mutation: `mutations/`'s "the two overlay rows call a moved overlay an unrecorded one".
-    """
-    machine = tmp_path / "machine.toml"
-    machine.write_text(f'[overlay]\nroot = "{tmp_path / "moved-away"}"\n', encoding="utf-8")
-    root = _initialised(tmp_path)
-    assert overlay_root(machine) is not None, "the fixture records no overlay at all"
-    for name in ("pre-commit", "overlay-requires"):
-        row = _by_name(_checks(tmp_path, root, machine=machine), name)
-        assert row.status == SKIP, row
-        assert row.detail == checks.OVERLAY_GONE, row
-        assert row.remedy == checks.OVERLAY_GONE_REMEDY, row
-    # The other arm keeps the sentence it always had, and keeps carrying no remedy: a machine
-    # that has not run `stayfixed setup` is not a machine with something wrong on it.
-    for name in ("pre-commit", "overlay-requires"):
-        row = _by_name(_checks(tmp_path, root), name)
-        assert row.status == SKIP and row.detail == checks.NO_OVERLAY_RECORDED and not row.remedy
