@@ -723,9 +723,12 @@ def test_a_handler_sees_one_event_whichever_harness_is_detected(
     # set `PLUGIN_ROOT`), so nothing a handler sees may depend on it: the same stdin and the same
     # project-root variable make the same event under Claude Code, under Codex and under a value
     # registered first, and the root is the one `CLAUDE_PROJECT_DIR` names in each, never the
-    # checkout `cwd` sits in. Mutation (declared, on `hooks.commands`): the event is read with no
-    # environment under a harness that names no root variable -> the Codex event's root is the
-    # other checkout and this reddens.
+    # checkout `cwd` sits in. Each run records the harness `dispatch` was handed, so the three
+    # steers are known to have reached three harnesses rather than Claude Code three times.
+    # Mutations (declared, on `hooks.commands`): the event is read with no environment under a
+    # harness that names no root variable -> the Codex event's root is the other checkout and
+    # this reddens; detection is asked with neither environment nor payload -> every run is
+    # Claude Code's and this reddens.
     project = tmp_path / "project"
     project.mkdir()
     other = tmp_path / "other"
@@ -736,6 +739,13 @@ def test_a_handler_sees_one_event_whichever_harness_is_detected(
     monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
     seen: list[HookEvent] = []
+    detected: list[str] = []
+
+    def answered(*args: Any, harness: Harness, **kwargs: Any) -> Any:
+        detected.append(harness.name)
+        return dispatch(*args, harness=harness, **kwargs)
+
+    monkeypatch.setattr("stayfixed.hooks.commands.dispatch", answered)
 
     def note(ev: HookEvent, config: object) -> HookResult:
         seen.append(ev)
@@ -747,6 +757,7 @@ def test_a_handler_sees_one_event_whichever_harness_is_detected(
         monkeypatch.delenv("FAKE_HARNESS", raising=False)
         env = {**steer, "CLAUDE_PROJECT_DIR": str(project)}
         assert _hook(monkeypatch, "PreToolUse", payload, probe, env=env) == 0
+    assert detected == ["claude", "codex", "fake"]
     assert [ev.project_root for ev in seen] == [project] * 3
     assert seen[0] == seen[1] == seen[2]
 

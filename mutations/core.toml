@@ -647,6 +647,18 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
 ]
 
+# Detection reads the process's environment and the payload, and the test that holds the event to
+# one shape under every harness also holds that its runs were answered by three harnesses, so it
+# cannot quietly become Claude Code three times.
+[[mutation]]
+name = "the hook asks detection with neither environment nor payload"
+file = "src/stayfixed/hooks/commands.py"
+before = "        harness = detect(os.environ, payload)"
+after = "        harness = detect({}, None)"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
+]
+
 # The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's
 # precedence: the canonical harness's variable is asked first, and a harness registered ahead of
 # Claude Code cannot move a Claude Code session's root to a variable of its own.
