@@ -1207,6 +1207,16 @@ reddens = [
   "tests/test_harnesses.py::test_every_harness_states_every_surface",
 ]
 
+# A harness is a value that keys a set or a dict, and its reach is a mapping, which has no hash.
+[[mutation]]
+name = "a harness's reach makes the value unhashable"
+file = "src/stayfixed/harnesses.py"
+before = "    reach: Mapping[Surface, Reach] = field(hash=False)"
+after = "    reach: Mapping[Surface, Reach]"
+reddens = [
+  "tests/test_harnesses.py::test_a_harness_can_key_a_set_and_a_dict",
+]
+
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit
 # overwritten or removed there is gone for good, so it is judged against this build's render.
 [[mutation]]

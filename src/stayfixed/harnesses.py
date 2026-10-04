@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -87,7 +87,8 @@ class Reach:
 
     # `None`: the surface does not reach this harness at all.
     tier: Tier | None
-    # Where the claim was measured, with the harness's version, or "unmeasured".
+    # The observation the tier rests on, with the harness's version and the public record that
+    # holds it, or "unmeasured".
     evidence: str
 
 
@@ -106,8 +107,9 @@ class Harness:
     # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
     # no rendering carries a decision, because a deny travels on the exit code.
     render: Callable[[str, str], str]
-    # Every `Surface`, each with the tier it holds at under this harness.
-    reach: Mapping[Surface, Reach]
+    # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
+    # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
+    reach: Mapping[Surface, Reach] = field(hash=False)
     # Positive detection, for every harness but the canonical one, which is the fallback.
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
@@ -162,10 +164,19 @@ def _claude_rule(profile: Profile, rules: str) -> Rendition:
 # The gates are the reusable workflow's, which runs the same under every agent: this repository's
 # smoke workflow runs it against a fixture project, and no agent takes part.
 _IN_CI = Reach(
-    Tier.CI, "the reusable workflow, run on a fixture project by this repository's smoke workflow"
+    Tier.CI,
+    "the reusable workflow, run on a fixture project by `.github/workflows/smoke.yml` on every "
+    "change to this repository and weekly",
 )
+# The records the measurements below are kept in. The delivery spike's plan is not named by its
+# path, which carries words this repository keeps out of its code.
+_P0_SPIKES = "`docs/plans/2026-09-05-agent-harness-p0-spikes.md`"
+_DELIVERY_SPIKE = "the delivery spike of 2026-10-02 in `docs/plans/`"
 # What was measured of Codex's plugin hooks, which both hook surfaces rest on.
-_NO_CODEX_HOOK = "Codex 0.160.0: no plugin hook ran, with or without its hook-trust bypass flag"
+_NO_CODEX_HOOK = (
+    "Codex 0.160.0: no plugin hook ran, with or without its hook-trust bypass flag "
+    f"({_DELIVERY_SPIKE})"
+)
 
 CLAUDE = Harness(
     name="claude",
@@ -178,14 +189,19 @@ CLAUDE = Harness(
     reach=MappingProxyType(
         {
             Surface.GUARDS: Reach(
-                Tier.BLOCKS, "Claude Code 2.1.261: a guard's exit 2 stopped the command unrun"
+                Tier.BLOCKS,
+                "Claude Code 2.1.261: a guard's exit 2 stopped the command unrun "
+                f"({_P0_SPIKES}, the fail-closed matrix)",
             ),
             Surface.NOTICES: Reach(
-                Tier.CONTEXT, "Claude Code 2.1.261: a SessionStart hook's output arrived as context"
+                Tier.CONTEXT,
+                "Claude Code 2.1.261: a SessionStart hook's output arrived as context "
+                f"({_P0_SPIKES}, the hook output cap trial)",
             ),
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(
-                Tier.INSTRUCTIONS, "Claude Code 2.1.285: the plugin's skills were listed"
+                Tier.INSTRUCTIONS,
+                f"Claude Code 2.1.285: the plugin's skills were listed ({_DELIVERY_SPIKE})",
             ),
         }
     ),
@@ -203,9 +219,9 @@ CODEX = Harness(
     # registered value's, so an inherited `CLAUDE_PROJECT_DIR` names it as it does the wrapper's).
     project_dir_env=None,
     # Claude Code's shape, and unmeasured under Codex: Codex 0.160.0 ran none of the plugin's
-    # hooks, with or without its hook-trust bypass flag (the delivery spike of 2026-10-02 in
-    # `docs/plans/`). When Codex's answer is found to differ, it gets a `render` of its own here;
-    # a harness whose output differs is a different value, never a branch inside a shared one.
+    # hooks, with or without its hook-trust bypass flag (`_DELIVERY_SPIKE`). When Codex's answer
+    # is found to differ, it gets a `render` of its own here; a harness whose output differs is a
+    # different value, never a branch inside a shared one.
     render=hook_specific_output,
     reach=MappingProxyType(
         {
@@ -214,7 +230,8 @@ CODEX = Harness(
             Surface.GATES: _IN_CI,
             Surface.METHOD: Reach(
                 Tier.INSTRUCTIONS,
-                "Codex 0.160.0: the plugin's skills arrived, and instructions through AGENTS.md",
+                "Codex 0.160.0: the plugin's skills arrived, and instructions through AGENTS.md "
+                f"({_DELIVERY_SPIKE})",
             ),
         }
     ),

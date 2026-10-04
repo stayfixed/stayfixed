@@ -156,3 +156,11 @@ def test_every_harness_states_every_surface() -> None:
     # `doctor`'s settings walk is these, over every harness.
     assert CLAUDE.local_settings == (".claude/settings.local.json",)
     assert CODEX.local_settings == ()
+
+
+def test_a_harness_can_key_a_set_and_a_dict() -> None:
+    # A harness is a value, and a value is hashable: it keys a dict and sits in a set as it did
+    # before it carried a mapping of its reach. Mutation (declared, on `harnesses`): `reach`
+    # without `field(hash=False)` -> hashing raises and this reddens.
+    assert len(set(HARNESSES)) == len(HARNESSES)
+    assert {harness: harness.name for harness in HARNESSES}[CODEX] == "codex"
