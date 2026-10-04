@@ -1863,6 +1863,17 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
 ]
 
+# A retired file that is not there has nothing to remove: an overlay without one plans no action
+# for it, so a run on a fresh or already-cleared overlay reports nothing to do.
+[[mutation]]
+name = "a retired overlay file that is absent is planned for removal"
+file = "src/stayfixed/scaffold/engine.py"
+before = "    if current is None:\n        unchanged.append(template.id)\n        return"
+after = "    if current is None:\n        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
+]
+
 # A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
 # `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
 [[mutation]]
