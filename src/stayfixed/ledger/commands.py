@@ -27,12 +27,12 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.index import index_text, refuse_index_overwrite, render_index
 
     root, config = root_and_config(args)
-    register = bug_register(config)
-    current = index_text(root, register)
-    refuse_index_overwrite(root, register, current)
-    entries = load_entries(root, register)
-    rendered = render_index(entries, register)
-    index = register.index
+    ledger = bug_register(config)
+    current = index_text(root, ledger)
+    refuse_index_overwrite(root, ledger, current)
+    entries = load_entries(root, ledger)
+    rendered = render_index(entries, ledger)
+    index = ledger.index
     if args.check:
         if current != rendered:
             return Result(

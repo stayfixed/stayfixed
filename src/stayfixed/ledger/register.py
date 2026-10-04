@@ -10,7 +10,9 @@ A leaf of this area: `entries`, `index` and `write` import it, and it imports no
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from string import Formatter
 from typing import TYPE_CHECKING
 
 from stayfixed.identifiers import Identifiers
@@ -23,6 +25,14 @@ EVIDENCE_LABEL = "**What this evidence does not establish:**"
 # not filled the line in. One constant feeds both the template and the rule so they cannot
 # drift apart.
 EVIDENCE_PLACEHOLDER = "the reading a later plan must not inherit"
+
+# The keys the reader takes from every entry, whatever its status.
+_READ_KEYS = ("id", "title", "status")
+# The keys the writer spells itself rather than from a value it is handed: `id`, `title` and
+# `related` through the placeholders below, and `status` as the template's own literal.
+_WRITER_KEYS = ("id", "title", "status", "related")
+# The placeholders the writer fills itself; every other placeholder is a key's whole line.
+_WRITER_FILLS = ("identifier", "title", "today", "related")
 
 
 @dataclass(frozen=True)
@@ -40,21 +50,86 @@ class Section:
 
 @dataclass(frozen=True)
 class Schema:
+    """What an entry of one register holds, and how its index reads.
+
+    Built consistent or not at all: a key, a status or a placeholder that one part names and
+    another lacks is refused here, where the register is written, rather than as a `KeyError` on
+    the first entry that reaches it.
+    """
+
     keys: tuple[str, ...]  # frontmatter keys, in the order an entry writes them
     required: tuple[str, ...]
-    # `void` records a number that was allocated and never carried an entry, so it has none of
-    # these to record.
+    # The void status records a number that was allocated and never carried an entry, so it has
+    # none of these to record.
     required_unless_void: tuple[str, ...]
     statuses: tuple[str, ...]
+    void: str  # the status of a number that never carried an entry
     level: str  # the key whose value is one of `levels`
     levels: tuple[str, ...]  # the bug ledger's severities
     evidence_boundary_for: tuple[str, ...]  # levels whose entries need the evidence line
-    # The file `new` writes. `{identifier}`, `{title}`, `{today}` and `{related}` are filled by
-    # the writer; every key of `keys` other than `id`, `title`, `status` and `related` is a
-    # placeholder for its whole `key: value` line, so an absent value leaves a bare `key:`
-    # behind — the trailing space of `source: ` is whitespace an editor strips on save.
+    dates: tuple[str, ...]  # keys whose value is an ISO date
+    # The file `new` writes. The writer fills `{identifier}`, `{title}`, `{today}` and
+    # `{related}`; any other placeholder names a key outside `_WRITER_KEYS` and stands for that
+    # key's whole `key: value` line, so an absent value leaves a bare `key:` behind (the trailing
+    # space of `source: ` is whitespace an editor strips on save). A key with no placeholder is
+    # one the template spells itself, as the bug ledger's does `found` and `fixed_in`.
     template: str
     sections: tuple[Section, ...]  # in the order the index reads
+
+    def __post_init__(self) -> None:
+        problems = list(_inconsistencies(self))
+        if problems:
+            raise ValueError(f"inconsistent ledger schema: {'; '.join(problems)}")
+
+    @property
+    def line_keys(self) -> tuple[str, ...]:
+        """The keys the template leaves to a value the writer is handed, in the order of `keys`."""
+        placeholders = _placeholders(self.template)
+        return tuple(key for key in self.keys if key in placeholders and key not in _WRITER_KEYS)
+
+
+def _placeholders(template: str) -> set[str]:
+    return {name for _, name, _, _ in Formatter().parse(template) if name}
+
+
+def _inconsistencies(schema: Schema) -> Iterator[str]:
+    """Every way one part of `schema` names what another part lacks."""
+    keys = set(schema.keys)
+    for key in _READ_KEYS:
+        if key not in schema.required:
+            yield f"`{key}` is read from every entry, so it must be required"
+    for name, named in (
+        ("required", schema.required),
+        ("required_unless_void", schema.required_unless_void),
+        ("dates", schema.dates),
+    ):
+        for key in named:
+            if key not in keys:
+                yield f"{name} names `{key}`, which is not a key"
+    if schema.level not in keys:
+        yield f"level `{schema.level}` is not a key"
+    if schema.void not in schema.statuses:
+        yield f"void `{schema.void}` is not a status"
+    # Each status in exactly one section: an entry whose status no section gathers is left out of
+    # the index in silence, and one gathered twice is listed twice.
+    gathered = [status for section in schema.sections for status in section.statuses]
+    for status in schema.statuses:
+        if gathered.count(status) != 1:
+            yield f"status `{status}` is gathered by {gathered.count(status)} sections, not one"
+    for section in schema.sections:
+        for status in section.statuses:
+            if status not in schema.statuses:
+                yield f"section `{section.heading}` gathers `{status}`, which is not a status"
+        for _, key in section.columns:
+            # `related` is a list, which no cell renders.
+            if key not in keys or key == "related":
+                yield (
+                    f"section `{section.heading}` shows `{key}`, which is not a key a cell can show"
+                )
+    lines = keys - set(_WRITER_KEYS)
+    for placeholder in sorted(_placeholders(schema.template) - set(_WRITER_FILLS)):
+        if placeholder not in lines:
+            yield f"the template's `{{{placeholder}}}` is not a line of a key the writer is handed"
 
 
 @dataclass(frozen=True)
@@ -74,6 +149,8 @@ class Register:
     ids: Identifiers  # `Identifiers(config.ledger.id_prefix)`
     schema: Schema
     runbook: str | None  # "<[paths] runbooks>/bug-reports.md", the index's link
+    # "audits": the subdirectory of `directory` holding audit records, which the index links.
+    audits: str | None
 
 
 _BUG_TEMPLATE = f"""---
@@ -114,13 +191,14 @@ BUG_SCHEMA = Schema(
     required=("id", "title", "status", "found"),
     required_unless_void=("severity", "area"),
     statuses=("open", "partial", "fixed", "rejected", "void"),
+    void="void",
     level="severity",
     levels=("high", "medium", "low"),
     evidence_boundary_for=(),
+    dates=("found",),
     template=_BUG_TEMPLATE,
-    # The sections' statuses and `statuses` are pinned equal as sets by
-    # `test_every_status_has_a_section_to_be_rendered_into`, which pins this reading order
-    # separately as a literal; no module-level `assert`, which `python -O` would drop.
+    # `Schema` refuses a status no section gathers; the reading order is pinned as a literal by
+    # `test_every_status_has_a_section_to_be_rendered_into`.
     sections=(
         Section("Open", ("open",), _LIVE),
         Section("Partially fixed", ("partial",), _LIVE),
@@ -144,4 +222,6 @@ def bug_register(config: Config) -> Register:
             BUG_SCHEMA, evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for)
         ),
         runbook=f"{paths.runbooks}/bug-reports.md",
+        # `init` writes the audits README into `<[paths] bugs>/audits/`.
+        audits="audits",
     )

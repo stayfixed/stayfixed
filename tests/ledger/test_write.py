@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,21 @@ def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
     written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert 'source: "#412 in the tracker"' in written
     assert load_entries(root, bug_register(config))[0].fields["source"] == "#412 in the tracker"
+
+
+@pytest.mark.parametrize("key", ["found", "fixed_in", "sevrity"])
+def test_a_value_the_template_has_no_line_for_is_refused_not_dropped(
+    tmp_path: Path, key: str
+) -> None:
+    # `found` and `fixed_in` are literal lines of the bug ledger's template and a misspelt key
+    # names no line at all; `str.format` ignores a keyword it has no field for, so each value was
+    # dropped in silence and the entry filed without it. Mutation (oracle): the refusal skipped ->
+    # every case files an entry.
+    root, config = project(tmp_path)
+    with pytest.raises(ValueError, match=f"the bugs register's template has no line for {key}$"):
+        file_entry(root, bug_register(config), title="t", values={**LOW, key: "x"}, fetch=False)
+    assert list((root / "docs" / "bugs").iterdir()) == []
+    assert not (root / "docs" / "bug-reports.md").exists()
 
 
 def test_new_rejects_a_malformed_related_identifier_before_writing_anything(
@@ -365,7 +381,10 @@ def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_poi
     (root / "src" / "a.py").write_text("# BR-001 and XBR-001 stays\n", encoding="utf-8")
     (root / "docs" / "note.md").write_text("see [BR-001](bugs/BR-001.md)\n", encoding="utf-8")
     result = renumber(root, config, "BR-001", "BR-009", today="2026-01-02")
-    assert result.unswept == []
+    # A frozen record, and a value: a list among its fields made `hash(result)` raise.
+    # Mutation (oracle): the unswept files handed back as the list they were collected in.
+    assert result.unswept == ()
+    assert hash(result) == hash(replace(result))
     assert result.void == root / "docs" / "bugs" / "BR-001.md"
     assert (root / "src" / "a.py").read_text(encoding="utf-8") == "# BR-009 and XBR-001 stays\n"
     assert (root / "docs" / "note.md").read_text(encoding="utf-8") == (
@@ -459,7 +478,7 @@ def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> 
     fixture = root / "tests" / "test_x.py"
     fixture.write_text(f"# {FIXTURE_MARKER}\nENTRY = 'BR-001'\n", encoding="utf-8")
     (root / "src" / "img.png").write_bytes(b"BR-001")
-    assert renumber(root, config, "BR-001", "BR-009").unswept == []
+    assert renumber(root, config, "BR-001", "BR-009").unswept == ()
     assert "BR-001" in fixture.read_text(encoding="utf-8")
     assert (root / "src" / "img.png").read_bytes() == b"BR-001"
 
@@ -615,6 +634,6 @@ def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
     near = root / "src" / "near.py"
     near.write_text("# XBR-001 is a different thing\n", encoding="utf-8")
     before = near.stat().st_mtime_ns
-    assert renumber(root, config, "BR-001", "BR-009").unswept == []
+    assert renumber(root, config, "BR-001", "BR-009").unswept == ()
     assert near.read_text(encoding="utf-8") == "# XBR-001 is a different thing\n"
     assert near.stat().st_mtime_ns == before

@@ -218,6 +218,15 @@ def test_quote_escapes_only_backslash_and_double_quote() -> None:
     assert quote('a "b" \\ c') == '"a \\"b\\" \\\\ c"'
 
 
+def test_an_entry_is_a_hashable_value() -> None:
+    # `Entry` is a frozen record on this area's surface, and a dict among its hashed fields made
+    # `hash(entry)` raise `TypeError`. Mutation (oracle): `fields` hashed with the rest -> raises.
+    first = parse_entry(ENTRY, path=PATH, register=REGISTER)
+    second = parse_entry(ENTRY, path=PATH, register=REGISTER)
+    assert first == second
+    assert len({first, second}) == 1
+
+
 def test_void_entries_need_no_severity_or_area() -> None:
     text = (
         "---\nid: BR-005\ntitle: renumbered\nstatus: void\nfound: 2026-01-01\n"

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -25,7 +25,7 @@ from stayfixed.ledger.register import Register
 from stayfixed.printed import quoted
 
 # The keys every register's entry carries as `Entry`'s own fields; a register's other keys are
-# in `Entry.fields`. `found`, where a register has it, is the date the entry was found on.
+# in `Entry.fields`.
 ENTRY_KEYS = ("id", "title", "status", "area", "related")
 
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n\n?(.*)\Z", re.DOTALL)
@@ -69,7 +69,9 @@ class Entry:
     related: tuple[str, ...]
     body: str
     path: Path
-    fields: Mapping[str, str]
+    # Compared, not hashed: a dict has no hash, and the fields above already tell two entries
+    # apart, so equal entries still hash equal.
+    fields: Mapping[str, str] = field(hash=False)
 
     def value(self, key: str) -> str:
         """The entry's value for one of its register's keys other than `related`."""
@@ -118,25 +120,25 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
     return "".join(out)
 
 
-def _require_iso_date(value: str, *, where: Path) -> str:
+def _require_iso_date(value: str, *, key: str, where: Path) -> str:
     """`value` back, once it is a date that exists.
 
     Both halves are needed. `date.fromisoformat` alone accepts the compact `YYYYMMDD` form and
-    the ISO week form (`2026-W33-1`), neither of which the index's Found column or any date
+    the ISO week form (`2026-W33-1`), neither of which an index's date column or any date
     comparison here is written for, so
     the shape test keeps the extended form. The shape test alone accepts `2026-02-30` and
-    `2026-13-45` — digits in the right places, days nobody can have found a bug on — in the one
+    `2026-13-45` — digits in the right places, days nobody can have recorded anything on — in a
     field this guard is meant to be the authority on.
     """
     if not _ISO_DATE.match(value):
         raise LedgerError(
-            f"{_where(where)}: `found` must be an ISO date (YYYY-MM-DD), got {value!r}"
+            f"{_where(where)}: `{key}` must be an ISO date (YYYY-MM-DD), got {value!r}"
         )
     try:
         date.fromisoformat(value)
     except ValueError as error:
         raise LedgerError(
-            f"{_where(where)}: `found` names a date that does not exist: {value!r}"
+            f"{_where(where)}: `{key}` names a date that does not exist: {value!r}"
         ) from error
     return value
 
@@ -196,11 +198,11 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
         raise LedgerError(
             f"{_where(path)}: `status` must be one of {', '.join(schema.statuses)}, got {status!r}"
         )
-    if status != "void":
+    if status != schema.void:
         for key in schema.required_unless_void:
             if not fields.get(key):
                 raise LedgerError(f"{_where(path)}: missing required frontmatter key `{key}`")
-    # Read in the order the refusals have always come in — the level, the date, the title, the
+    # Read in the order the refusals have always come in — the level, the dates, the title, the
     # area, then the rest — so an entry with two defects is told about the same one first.
     level = schema.level
     values: dict[str, str] = {}
@@ -211,11 +213,11 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
                 f"{_where(path)}: `{level}` must be one of {', '.join(schema.levels)}, "
                 f"got {values[level]!r}"
             )
-    if "found" in schema.keys:
-        values["found"] = _unquote(fields.get("found", ""), key="found", where=path)
+    for key in schema.dates:
+        values[key] = _unquote(fields.get(key, ""), key=key, where=path)
         # Required, it is a date even when quoted empty: `found: ""` passes the presence check.
-        if values["found"] or "found" in schema.required:
-            _require_iso_date(values["found"], where=path)
+        if values[key] or key in schema.required:
+            _require_iso_date(values[key], key=key, where=path)
     title = _unquote(fields["title"], key="title", where=path)
     area = _unquote(fields.get("area", ""), key="area", where=path)
     for key in schema.keys:

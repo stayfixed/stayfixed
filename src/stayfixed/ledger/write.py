@@ -35,10 +35,6 @@ if TYPE_CHECKING:
 # (CONTRIBUTING.md#named-caps), and no shipped file changes with it.
 FETCH_TIMEOUT_SECONDS = 10
 
-# The keys `file_entry` writes itself; every other key of a register's schema is a placeholder in
-# its template for that key's whole line.
-_WRITER_KEYS = ("id", "title", "status", "related")
-
 _ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
 _VOID_POINTER = """---
 id: {old}
@@ -82,7 +78,7 @@ class Unswept:
 @dataclass(frozen=True)
 class Renumbered:
     void: Path
-    unswept: list[Unswept]
+    unswept: tuple[Unswept, ...]
 
 
 def _fetch(root: Path) -> str | None:
@@ -207,9 +203,11 @@ def file_entry(
 ) -> Filed:
     """File a new entry: allocate the next free identifier, write its entry, regenerate the index.
 
-    `values` holds the register's keys other than `_WRITER_KEYS` — for the bug ledger
-    `severity`, `area` and `source` — each written as its template's whole `key: value` line; a
-    key left out is written bare.
+    `values` holds the keys the register's template leaves a whole `key: value` line for
+    (`Schema.line_keys`) — for the bug ledger `severity`, `area` and `source`; a key left out is
+    written bare. A key the template has no line for is a `ValueError`, the caller's mistake: it
+    would otherwise be dropped in silence, since `str.format` ignores a keyword it has no field
+    for.
 
     Every failure is raised before anything reaches disk: a rejected input leaves the tree
     exactly as it was, with no half-filed entry and no allocated-but-unused number. A level
@@ -220,6 +218,11 @@ def file_entry(
     branches hold, which tests and offline use skip.
     """
     schema = register.schema
+    unlined = sorted(set(values) - set(schema.line_keys))
+    if unlined:
+        raise ValueError(
+            f"the {register.name} register's template has no line for {', '.join(unlined)}"
+        )
     if values.get(schema.level, "") not in schema.levels:
         raise LedgerError(f"--{schema.level} must be one of {', '.join(schema.levels)}")
     # Asked before allocating, not left to the `_write_index` call at the end: filing an entry
@@ -240,9 +243,7 @@ def file_entry(
             f"Run `stayfixed {register.name} check`: an entry file the allocator cannot account "
             "for is one this ledger is wrong about."
         )
-    lines = {
-        key: field_line(key, values.get(key, "")) for key in schema.keys if key not in _WRITER_KEYS
-    }
+    lines = {key: field_line(key, values.get(key, "")) for key in schema.line_keys}
     text = schema.template.format(
         identifier=identifier,
         title=scalar(title),
@@ -355,4 +356,4 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
                 Unswept(item.relative.as_posix(), f"could not be written ({fsops.said(error)})")
             )
     _write_index(root, register)
-    return Renumbered(source, unswept)
+    return Renumbered(source, tuple(unswept))
