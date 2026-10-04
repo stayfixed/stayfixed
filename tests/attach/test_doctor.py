@@ -1287,6 +1287,32 @@ def test_the_overlays_own_projects_readme_is_no_project_where_case_folds(tmp_pat
     assert check == TABLE["forged-right-store"]
 
 
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+def test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning(
+    tmp_path: Path, ledger: str
+) -> None:
+    # `common/claude/` is spelled by the overlay alone, so no repository chooses it: a file where
+    # that directory goes is the overlay failing to answer, and the row warns. Only a path under
+    # `projects/<name>/`, whose name the repository commits, reads as one the overlay has no file
+    # at. Read that way too, `common/` granted nothing and the owner's own entry read red.
+    # Mutation (oracle): `mutations/`'s "a common source the overlay cannot hold reads as no
+    # source" -> red.
+    root = _attached(tmp_path)
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    common = tmp_path / "overlay" / COMMON_CLAUDE
+    shutil.rmtree(common)
+    common.write_text("not a directory\n", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    expected = (
+        TABLE["owner-overlay-unreadable"]
+        if ledger == "readable"
+        else UNREADABLE_TABLE["owner-overlay-unreadable"]
+    )
+    assert _by_name(rows, "hook-entries") == expected
+    assert not [row.name for row in rows if row.status == "red"]
+
+
 # The owner's own `projects/p/claude/` in a state this machine cannot read: no permission to enter
 # it, and a hook file that is a directory. Both are the overlay failing to answer, which is this
 # machine's state and never a repository's, so the row warns as it does for a hook file that will

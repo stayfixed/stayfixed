@@ -113,23 +113,26 @@ def settings_document(text: str) -> dict[str, Any]:
     return _object(text, LOCAL_SETTINGS)
 
 
-def _read(path: Path, *, overlay: bool = False) -> str:
+def _read(path: Path, *, named: bool = False) -> str:
     """A file's text, or an empty string when there is no such file.
 
-    `overlay` is for the overlay's own sources and nothing else: there, a path its spelling rules
-    out (`binding.cannot_exist`) is a file the overlay does not have, because the one free part
-    of that spelling is `project.name` and a repository chooses it. Any other fault -- no
-    permission, a directory where the file goes -- is the overlay failing to answer and stays a
-    `Failure`, which `doctor` reports as a warning. The project's own `.claude/` is never read
-    this way: a `.claude` that is a file has to stop `attach` before it writes, and read as an
-    empty settings file it would stop only at the write of that file.
+    `named` is for the overlay's sources under `projects/<name>/` and nothing else: there, a path
+    its spelling rules out (`binding.cannot_exist`) is a file the overlay does not have, because
+    the one free part of that spelling is `project.name` and a repository chooses it. Any other
+    fault -- no permission, a directory where the file goes -- is the overlay failing to answer
+    and stays a `Failure`, which `doctor` reports as a warning. So is any fault under `common/`,
+    whose spelling the overlay alone chooses: a `common/claude` that is a file read as absent
+    granted nothing, so the owner's own entries read red and `attach` went on without them. The
+    project's own `.claude/` is never read this way: a `.claude` that is a file has to stop
+    `attach` before it writes, and read as an empty settings file it would stop only at the write
+    of that file.
     """
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
     except OSError as exc:
-        if overlay and cannot_exist(exc):
+        if named and cannot_exist(exc):
             return ""
         raise Failure(f"{path} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
@@ -159,14 +162,14 @@ def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     return tuple(allow)
 
 
-def _hook_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
+def _hook_groups(path: Path, *, named: bool) -> dict[str, list[dict[str, Any]]]:
     """`event -> groups` out of a `hooks.json`-shaped document, refusing a shape it cannot read.
 
     A shape this cannot read is a refusal and never a filter, for `scaffold.entries`' own
     reason: what is dropped silently here is an entry the owner put in their overlay on
-    purpose, and nothing would say it never arrived.
+    purpose, and nothing would say it never arrived. `named` is `_read`'s.
     """
-    hooks = _object(_read(path, overlay=True), str(path)).get("hooks", {})
+    hooks = _object(_read(path, named=named), str(path)).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{path}: 'hooks' is not an object")
     found: dict[str, list[dict[str, Any]]] = {}
@@ -208,11 +211,12 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     return tuple(found.items())
 
 
-def _claude_sources(binding: Binding, name: str) -> tuple[Path, Path]:
-    """The two per-harness files this diff reads, common first, this project's second."""
+def _claude_sources(binding: Binding, name: str) -> tuple[tuple[Path, bool], tuple[Path, bool]]:
+    """The two per-harness files this diff reads, common first, this project's second, each with
+    whether `project.name` spells its path (`_read`'s `named`)."""
     return (
-        binding.overlay / COMMON_CLAUDE / name,
-        binding.overlay / PROJECTS / binding.project / PROJECT_CLAUDE / name,
+        (binding.overlay / COMMON_CLAUDE / name, False),
+        (binding.overlay / PROJECTS / binding.project / PROJECT_CLAUDE / name, True),
     )
 
 
@@ -226,8 +230,8 @@ def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
     """
     wanted: dict[str, list[dict[str, Any]]] = {}
     seen: dict[str, int] = {}
-    for source in _claude_sources(binding, HOOKS_FILE):
-        for event, groups in _hook_groups(source).items():
+    for source, named in _claude_sources(binding, HOOKS_FILE):
+        for event, groups in _hook_groups(source, named=named).items():
             for group in groups:
                 entries = group.get("hooks") or []
                 if not isinstance(entries, list):
@@ -268,12 +272,13 @@ def _commands(document: str, label: str) -> set[str]:
 
 def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     """What attaching `binding` would add to `root`, without writing a byte."""
-    overlay_common, overlay_project = _claude_sources(binding, PERMISSIONS_FILE)
     # This line is the whole of the committed-settings rule in the module docstring:
     # `.claude/settings.json` sits one name away from both sources and is not on it.
-    sources = (overlay_common, overlay_project)
+    sources = _claude_sources(binding, PERMISSIONS_FILE)
     granted = [
-        rule for source in sources for rule in _allow_rules(_read(source, overlay=True), source)
+        rule
+        for source, named in sources
+        for rule in _allow_rules(_read(source, named=named), source)
     ]
     document = local_document(root)
     held = set(_allow_rules(document, root / LOCAL_SETTINGS))

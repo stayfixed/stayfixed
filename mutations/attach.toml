@@ -56,8 +56,8 @@ reddens = [
 [[mutation]]
 name = "the permission diff starts reading the committed settings file"
 file = "src/stayfixed/attach/permissions.py"
-before = '    sources = (overlay_common, overlay_project)'
-after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
+before = '    sources = _claude_sources(binding, PERMISSIONS_FILE)'
+after = '    sources = (*_claude_sources(binding, PERMISSIONS_FILE), (root / ".claude" / "settings.json", False))'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
 
 # A refusal something downstream reads as permission is a defect this oracle must name outright, and
@@ -1707,7 +1707,7 @@ reddens = [
 [[mutation]]
 name = "a source the project's name rules out is an overlay that cannot be asked"
 file = "src/stayfixed/attach/permissions.py"
-before = "        if overlay and cannot_exist(exc):"
+before = "        if named and cannot_exist(exc):"
 after = "        if False:"
 reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
@@ -1756,11 +1756,26 @@ reddens = [
 [[mutation]]
 name = "every fault reading the overlay's sources reads as no source"
 file = "src/stayfixed/attach/permissions.py"
-before = "        if overlay and cannot_exist(exc):"
-after = "        if overlay:"
+before = "        if named and cannot_exist(exc):"
+after = "        if named:"
 reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-readable]",
   "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[hook-file-is-a-directory-unreadable]",
+]
+
+# Nor does it reach `common/`, whose spelling the overlay alone chooses. A `common/claude` that is a
+# file is the overlay failing to answer: read as no source, it granted nothing, the owner's own
+# entries read red, and `attach` went on without what `common/` grants.
+[[mutation]]
+name = "a common source the overlay cannot hold reads as no source"
+file = "src/stayfixed/attach/permissions.py"
+before = "        (binding.overlay / COMMON_CLAUDE / name, False),"
+after = "        (binding.overlay / COMMON_CLAUDE / name, True),"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning[unreadable]",
+  "tests/attach/test_write.py::test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes[attach]",
+  "tests/attach/test_write.py::test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes[check]",
 ]
 
 # The leniency stops at the overlay. The project's own `.claude` that is a file has to stop
@@ -1769,7 +1784,7 @@ reddens = [
 name = "the project's own settings file is read as leniently as an overlay source"
 file = "src/stayfixed/attach/permissions.py"
 before = "    return _read(root / LOCAL_SETTINGS)"
-after = "    return _read(root / LOCAL_SETTINGS, overlay=True)"
+after = "    return _read(root / LOCAL_SETTINGS, named=True)"
 reddens = [
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[attach]",
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[check]",

@@ -2177,6 +2177,28 @@ def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
     assert _everything(tmp_path) == before
 
 
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes(
+    tmp_path: Path, command: str
+) -> None:
+    # The overlay's leniency is for the path a repository's `project.name` spells, and
+    # `common/claude/` is spelled by the overlay alone: a file there is the overlay failing to
+    # answer, and `attach` stops before it writes, as it does for a source it cannot read. Read
+    # as absent, it attached with nothing `common/` grants and said nothing. Mutation (oracle):
+    # `mutations/`'s "a common source the overlay cannot hold reads as no source".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    common = store.parents[2] / COMMON_CLAUDE
+    shutil.rmtree(common)
+    common.write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"common/claude/permissions\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert _everything(tmp_path) == before
+
+
 def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one(
     tmp_path: Path,
 ) -> None:
