@@ -12,7 +12,7 @@ from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
-from stayfixed.memory.api import resolve
+from stayfixed.memory.api import DELIMITER, resolve
 from stayfixed.memory.notes import walk
 from stayfixed.memory.refs import (
     _ignored,
@@ -250,14 +250,20 @@ def test_a_missing_store_directory_is_said_in_the_resolvers_own_words(
     # A store with no directory is the commonest reason there is nothing to walk, and it had no
     # sentence of its own: the line fell back to a pointer that named no reason at all. The
     # reason is stayfixed's text and prints; the store's path is the repository's and stays inside
-    # the data region. Mutation (declared): `mutations/`'s "a missing store directory is reported
-    # with no reason of its own".
+    # the data region. Mutations (declared): `mutations/`'s "a missing store directory is reported
+    # with no reason of its own", and "a store refusal prints its repository-authored detail
+    # before the data region", which reddens the split below.
     root, _config = project(tmp_path)
     (root / "stayfixed.toml").write_text(
         CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
     )
     assert invoke(["memory", "refs", *flags(root)]) == 1
-    assert "the memory store's directory does not exist" in capsys.readouterr().err
+    lead, opened, region = capsys.readouterr().err.partition(DELIMITER)
+    assert "the memory store's directory does not exist" in lead
+    # The path is kept, because a person needs it, and it is never printed ahead of the marker
+    # that says it is data.
+    assert opened and ".stayfixed" in region
+    assert ".stayfixed" not in lead
 
 
 def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(

@@ -1570,6 +1570,18 @@ reddens = [
   "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
 ]
 
+# The resolver's detail carries the store's path, `paths.memory` or a group's name, all of them the
+# repository's, so a refusal prints stayfixed's sentence first and the detail only inside the
+# region `trust.wrap` marks as data. Joined into the lead, the detail prints ahead of the marker.
+[[mutation]]
+name = "a store refusal prints its repository-authored detail before the data region"
+file = "src/stayfixed/memory/commands.py"
+before = "    lead = _SAID.format(said=reason.said)"
+after = "    lead = _SAID.format(said=str(reason))"
+reddens = [
+  "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
+]
+
 # A machine record naming an overlay root that is no longer there read as "no record of this
 # project; run `stayfixed attach`", and `attach --store <new place>` refuses a store outside the
 # recorded root -- a refusal whose way out was a command that refuses.
