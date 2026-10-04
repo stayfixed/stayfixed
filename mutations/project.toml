@@ -1942,6 +1942,16 @@ reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
 
+# `init` writes the audits README under the directory the bug ledger's index links.
+[[mutation]]
+name = "init writes the audits README under a directory the bug index does not link"
+file = "src/stayfixed/project/templates.py"
+before = '''        _template("ledger-audits", f"{p.bugs}/audits/README.md", "audits-readme.md"),'''
+after = '''        _template("ledger-audits", f"{p.bugs}/audit/README.md", "audits-readme.md"),'''
+reddens = [
+  "tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them",
+]
+
 # `uninstall` builds the footprint to take it out and renders nothing, so it never needs the
 # identifiers only the bug index's render reads: a prefix the ledger refuses stops `init` and
 # `upgrade`, never the way out.

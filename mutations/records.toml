@@ -1954,3 +1954,169 @@ after = "    except OSError:\n        return False"
 reddens = [
   "tests/memory/test_refs.py::test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_error",
 ]
+
+# A second register a project has not started reads its own directory, never the bug ledger's live one.
+[[mutation]]
+name = "the uninitialised arm reads the bug ledger's directory whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "    directory = entry_dir(root, register)\n    return not directory.is_dir()"
+after = "    directory = root / \"docs/bugs\"\n    return not directory.is_dir()"
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live",
+]
+
+# The entries the base carries are named by the register's identifiers: read with the bug ledger's
+# default prefix, a second register's removed entry is no entry at all.
+[[mutation]]
+name = "the base's entries are read with the bug ledger's identifiers whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "    ids = register.ids\n    under = f\"{bugs}/\""
+after = "    ids = type(register.ids)(\"BR\")\n    under = f\"{bugs}/\""
+reddens = [
+  "tests/ledger/test_register.py::test_the_gate_judges_a_second_register_against_its_base",
+]
+
+# Each text the gate renders names the register's own command group; the bug ledger's are pinned
+# to their old bytes by `test_the_bug_ledgers_refusals_are_unchanged`.
+[[mutation]]
+name = "the removed-entry refusal names the bug ledger's renumber whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "    removed = ENTRY_REMOVED.format(name=register.name, void=register.schema.void)"
+after = '    removed = ENTRY_REMOVED.format(name="bugs", void=register.schema.void)'
+reddens = [
+  "tests/ledger/test_register.py::test_the_gate_judges_a_second_register_against_its_base",
+]
+
+[[mutation]]
+name = "the removed-ledger refusal names the bugs gate whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name=register.name)"
+after = '        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name="bugs")'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+[[mutation]]
+name = "an unread base names the bugs gate whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "                directory=bugs, index=index, name=register.name, base=base, root=root, cause=cause"
+after = '                directory=bugs, index=index, name="bugs", base=base, root=root, cause=cause'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+[[mutation]]
+name = "a stale index is sent to the bug ledger's index command whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = '        stale = f"is stale; run: stayfixed {register.name} index"'
+after = '        stale = "is stale; run: stayfixed bugs index"'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+# The body rules hold an entry to its register's levels: the evidence line to the levels the
+# register declares, the state bullet to the register's level key.
+[[mutation]]
+name = "the evidence line is required of the bug ledger's configured levels whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "    required = set(schema.evidence_boundary_for)"
+after = "    required = set(config.ledger.evidence_boundary_required_for)"
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_register_holds_its_own_level_to_the_body_rules[evidence-boundary]",
+]
+
+[[mutation]]
+name = "the state bullet is the bug ledger's severity whatever the register"
+file = "src/stayfixed/ledger/check.py"
+before = "    level = re.escape(register.schema.level.capitalize())"
+after = '    level = "Severity"'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_register_holds_its_own_level_to_the_body_rules[state-in-body]",
+]
+
+# The scan looks where the project says and for what the register names.
+[[mutation]]
+name = "the mention scan reads the bug ledger's identifiers whatever the register"
+file = "src/stayfixed/ledger/scan.py"
+before = "    ids = register.ids\n    needle = f\"{ids.prefix}-\""
+after = "    ids = type(register.ids)(\"BR\")\n    needle = f\"{ids.prefix}-\""
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+[[mutation]]
+name = "a citation is read with the bug ledger's prefix whatever the register"
+file = "src/stayfixed/ledger/scan.py"
+before = "    prefix = register.ids.prefix"
+after = '    prefix = "BR"'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+[[mutation]]
+name = "a citation is read under the bug ledger's directory name whatever the register"
+file = "src/stayfixed/ledger/scan.py"
+before = "    last = PurePosixPath(register.directory).name"
+after = '    last = "bugs"'
+reddens = [
+  "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
+]
+
+# The void entry `renumber` leaves is spelled from the register: the bug ledger's bytes are pinned by
+# `test_renumber_leaves_the_bug_ledgers_void_entry_byte_for_byte`.
+[[mutation]]
+name = "the void entry carries the bug ledger's void status whatever the register"
+file = "src/stayfixed/ledger/write.py"
+before = '        "status": f"status: {schema.void}",'
+after = '        "status": "status: void",'
+reddens = [
+  "tests/ledger/test_register.py::test_renumber_leaves_a_second_registers_own_void_entry",
+]
+
+[[mutation]]
+name = "the void entry dates the move under the bug ledger's found whatever the register"
+file = "src/stayfixed/ledger/write.py"
+before = '    lines.update((key, f"{key}: {today}") for key in schema.dates if key in schema.required)'
+after = '    lines.update(found=f"found: {today}")'
+reddens = [
+  "tests/ledger/test_register.py::test_renumber_leaves_a_second_registers_own_void_entry",
+]
+
+# A schema `renumber` could not leave a readable void entry for is refused where it is built.
+[[mutation]]
+name = "a schema may require a key the void entry cannot fill"
+file = "src/stayfixed/ledger/register.py"
+before = "        if key not in _READ_KEYS and key not in schema.dates:"
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-not-a-date]",
+]
+
+[[mutation]]
+name = "a schema need not carry the related key the void entry points through"
+file = "src/stayfixed/ledger/register.py"
+before = '    if "related" not in keys:'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[no-related-key]",
+]
+
+# The plan lint and the memory graph read the bug ledger's identifiers through its register, as the
+# project configures them.
+[[mutation]]
+name = "the Fixes claim reads the default prefix whatever the project configures"
+file = "src/stayfixed/docs/plans.py"
+before = "    fixes = bug_register(config).ids.fixes"
+after = '    fixes = type(bug_register(config).ids)("BR").fixes'
+reddens = [
+  "tests/docs/test_plans.py::test_a_fixes_claim_names_the_bug_ledgers_configured_prefix",
+]
+
+[[mutation]]
+name = "the bracketed-identifier notice reads the default prefix whatever the project configures"
+file = "src/stayfixed/memory/graph.py"
+before = "    ids = bug_register(config).ids"
+after = '    ids = type(bug_register(config).ids)("BR")'
+reddens = [
+  "tests/memory/test_graph.py::test_a_bracketed_identifier_is_the_bug_ledgers_as_the_project_configures_it",
+]

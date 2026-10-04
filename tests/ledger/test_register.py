@@ -662,14 +662,22 @@ def test_the_gate_judges_a_second_register_against_its_base(tmp_path: Path) -> N
 @needs_git
 def test_a_second_registers_findings_name_its_own_paths_and_commands(tmp_path: Path) -> None:
     # Every text the gate renders from a register names that register: its directory, its index,
-    # its command group. Mutations (oracle): the stale remedy, the removed-ledger refusal and the
-    # unread-base failure each name the bug ledger's group whatever the register -> each text
-    # below says `bugs`.
+    # its command group, its identifiers. Mutations (oracle): the stale remedy, the removed-ledger
+    # refusal and the unread-base failure each name the bug ledger's group whatever the register
+    # -> each text below says `bugs`; the scan reads the bug ledger's identifiers, or its
+    # directory's name, for mentions and citations -> neither `TD-404` is found.
     root, config, base = committed_debt(tmp_path)
     directory, index = root / "docs" / "debt", root / "docs" / "tech-debt.md"
     copied = (directory / "TD-002.md").read_text(encoding="utf-8").replace("TD-002", "TD-003")
     (directory / "TD-003.md").write_text(copied, encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "a.py").write_text("# workaround for TD-404\n", encoding="utf-8")
     (root / "docs" / "plan.md").write_text("see [x](debt/TD-404.md)\n", encoding="utf-8")
+    mention = (
+        "dangling-mention",
+        "src/a.py",
+        "mentions TD-404, which has no entry file (referenced 1 time(s))",
+    )
     citation = (
         "dangling-citation",
         "docs/plan.md",
@@ -678,6 +686,7 @@ def test_a_second_registers_findings_name_its_own_paths_and_commands(tmp_path: P
     live = register_gate(root, config, DEBT, base)
     assert [(f.rule, f.path, f.detail) for f in live] == [
         ("stale-index", "docs/tech-debt.md", f"is stale; run: {DEBT_GROUP} index"),
+        mention,
         citation,
     ]
 
@@ -715,6 +724,7 @@ def test_a_second_registers_findings_name_its_own_paths_and_commands(tmp_path: P
             "docs/tech-debt.md) and this tree has neither; deleting the ledger does not switch "
             "the debt gate off: restore it from the base",
         ),
+        mention,
         citation,
     ]
     for text in [unread, *(f.detail for f in (*live, *missing, *removed))]:
