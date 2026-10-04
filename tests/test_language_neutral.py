@@ -80,9 +80,11 @@ STACK_NAMED = {
     # profile's `recognises` does.
     ("src/stayfixed/guards/bashscan.py", "uv"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
-    # (`cli-path`, `overlay-requires`) and in `setup`'s pinned install command: the tool
-    # stayfixed itself is installed with, not a stack a project is written in.
+    # (`cli-path` in the core's checks, `overlay-requires` in the overlay area's) and in `setup`'s
+    # pinned install command: the tool stayfixed itself is installed with, not a stack a project
+    # is written in.
     ("src/stayfixed/doctor/checks.py", "uv"),
+    ("src/stayfixed/overlay/doctor.py", "uv"),
     ("src/stayfixed/setup/run.py", "uv"),
 }
 
