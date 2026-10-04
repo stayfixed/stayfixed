@@ -14,6 +14,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.memory.graph import check_memory_graph
+from stayfixed.memory.notes import Walk, walk
 from stayfixed.memory.store import resolve
 
 CONFIG = """
@@ -56,7 +57,8 @@ def note(root: Path, group: str, name: str, body: str) -> None:
 def graph(root: Path, config: Config) -> list[tuple[str, str, str]]:
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
-    return [(f.rule, f.path, f.detail) for f in check_memory_graph(store, config)]
+    walked = walk(store.path, [g for g in config.memory.groups if g in store.groups])
+    return [(f.rule, f.path, f.detail) for f in check_memory_graph(store, config, walked)]
 
 
 def test_a_whole_store_passes(tmp_path: Path) -> None:
@@ -116,3 +118,28 @@ def test_refs_reports_graph_notices_without_changing_its_exit(
         ("dead-wiki-link", "developer/a.md", "gone")
     ]
     assert "1 advisory link-graph notice(s)" in data["summary"]
+
+
+def test_refs_walks_the_store_once_for_its_findings_and_the_graph(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The graph's notices are read from the walk `memory refs` made for its own findings, so a
+    # store is read once per command, whatever the graph finds. Counted at the one walk
+    # `check_refs` calls; the graph has no walk of its own to call. No entry in `mutations/`: a
+    # second walk is an import and a call in `memory/graph.py`, not one substituted line.
+    import stayfixed.memory.refs as refs
+
+    root, config = project(tmp_path)
+    note(root, "developer", "a", "see [[gone]]\n")
+    calls: list[Path] = []
+
+    def counted(path: Path, groups: list[str]) -> Walk:
+        calls.append(path)
+        return walk(path, groups)
+
+    monkeypatch.setattr(refs, "walk", counted)
+    store = resolve(root, config, machine=root.parent / "m.toml")
+    assert store is not None
+    report = refs.check_refs(root, config, store)
+    assert [(n.rule, n.detail) for n in report.notices] == [("dead-wiki-link", "gone")]
+    assert calls == [store.path]

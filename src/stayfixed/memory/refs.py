@@ -1,5 +1,5 @@
-"""Backticked repository paths in notes that no longer resolve (`memory refs`), the one grammar
-for a wiki-link, and the link graph's advice beside them.
+"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the link
+graph's advice beside them, over one walk of the store.
 
 Notes are read as authoritative and they age silently: nothing in the tree points back at
 them, so a module they name can be deleted without anything going red, and the next session
@@ -18,7 +18,6 @@ record.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -28,14 +27,12 @@ from stayfixed.errors import Failure
 from stayfixed.findings import Finding
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
+from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
 from stayfixed.memory.notes import Note, Walk, walk
 from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
 from stayfixed.prose import blank_fences, path_references
 
-# `[[name]]` addresses a note by its stem: the one spelling, which the link graph's check
-# (`memory.graph`) reads rather than respelling it.
-WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")
 # Deliberate placeholders a note may write without claiming a file. Not a config key.
 _PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
 DEAD_REFERENCE = "dead-reference"
@@ -169,13 +166,12 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
 
 
 def check_refs(root: Path, config: Config, store: Store) -> RefsReport:
-    # Imported here and not above: `memory.graph` reads this module's `WIKI_LINK` at import.
-    from stayfixed.memory.graph import check_memory_graph
-
+    # One walk for every report below: the link graph reads the notes this walk found, rather
+    # than walking the store again for the same groups.
     walked = walk(store.path, [g for g in config.memory.groups if g in store.groups])
     return RefsReport(
         unresolved(root, config, store, walked) + audience_violations(store, config, walked),
         dict(store.unavailable),
         list(walked.unreadable),
-        check_memory_graph(store, config),
+        check_memory_graph(store, config, walked),
     )
