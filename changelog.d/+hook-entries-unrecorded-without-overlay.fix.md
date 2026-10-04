@@ -13,8 +13,12 @@ needed. What the overlay grants is now asked of the overlay this machine records
 committed files: neither the ledger, readable or not, nor such a name turns the red into a warning;
 a ledger behind such a link reads as one that cannot be read and a settings file behind one as a
 file the row could not read; and an overlay with no directory for the name grants that project only
-what it grants every project. The row still warns while an overlay this machine records cannot be
-read, or `git` cannot run. `stayfixed attach` and `stayfixed attach --check` refuse such a name,
+what it grants every project. It could also put one byte that is not UTF-8 anywhere in the settings
+file holding the entry: the row read the whole file as one it could not read, and warned. Such a
+byte is now read as a replacement character, so the entries in the file are judged as they would be
+without it; a file that begins with a UTF-8 byte-order mark is still one the row cannot read, as
+Node's JSON parser cannot either. The row still warns while an overlay this machine records cannot
+be read, or `git` cannot run. `stayfixed attach` and `stayfixed attach --check` refuse such a name,
 with exit 2, before writing anything; they used to stop on the read that failed. A ledger that
 cannot be read beside marked entries your overlay grants is a warning, whose remedy is to remove the
 file and run `stayfixed attach` to write a new one. One consequence: your own checkout opened on a

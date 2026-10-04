@@ -2270,11 +2270,26 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
 file = "src/stayfixed/doctor/checks.py"
-before = "        except (OSError, UnicodeDecodeError):\n            blind.append(label)"
-after = "        except (OSError, UnicodeDecodeError):\n            unchecked.append(label)"
+before = "        except OSError:\n            blind.append(label)"
+after = "        except OSError:\n            unchecked.append(label)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[recording-it-overlay]",
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[none-no-overlay]",
+]
+
+# One byte that is not UTF-8 in a settings file is no part of any entry: the marker and the commands
+# it marks are ASCII. Refused, it made the file one the walk is blind to, and a forged entry in it
+# lost its red to a warning and an exit of 0.
+[[mutation]]
+name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
+file = "src/stayfixed/doctor/checks.py"
+before = """            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:"""
+after = """            document = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-no-marked-entry]",
 ]
 
 # A file the walk is blind to softens a row with nothing else to say, never one a file it cannot

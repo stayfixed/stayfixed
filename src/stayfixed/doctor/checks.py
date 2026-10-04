@@ -616,6 +616,13 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
     admit it cannot account for. The report names the file and never its contents.
 
+    **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
+    byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
+    are judged as they would be without the byte; a harness may read the file the same way, so
+    a marked entry in it nothing vouches for is red. Only what then fails to parse is `blind` —
+    a UTF-8 byte-order mark among it, which `json.loads` refuses as Node's parser does — and an
+    `OSError` on the read.
+
     **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
     is a warning, which is right for a file this machine will not let anything read and for one
     that will not parse, because the harness cannot load either. Valid JSON nested deeper than the
@@ -652,8 +659,10 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
         if not stat.S_ISREG(mode):
             continue
         try:
-            document = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            # Replaced rather than refused: the marker and every command it marks are ASCII, so a
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
+            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             blind.append(label)
             continue
         try:

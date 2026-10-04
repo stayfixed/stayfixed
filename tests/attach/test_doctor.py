@@ -1241,6 +1241,58 @@ def test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report(
     assert "forged-1" not in red[0]["detail"] + red[0]["remedy"]
 
 
+# Bytes a clone can commit in its settings file that are not plain UTF-8: one Latin-1 byte in a
+# string no entry reads, beside the forged entry and beside an unmarked one, and a UTF-8 byte-order
+# mark ahead of the document.
+SETTINGS_BYTES = {
+    "latin-1-beside-a-forged-entry": TABLE["forged-right-store"],
+    "latin-1-beside-no-marked-entry": Check(
+        "hook-entries", OK, "0 stayfixed entr(ies), 1 foreign; all accounted for", ""
+    ),
+    "byte-order-mark": Check(
+        "hook-entries",
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
+        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
+        "check that each file named above is readable and is valid JSON",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(SETTINGS_BYTES))
+def test_a_byte_that_is_not_utf8_changes_no_entrys_verdict(tmp_path: Path, case: str) -> None:
+    # The marker and every command it marks are ASCII, so one byte that is not UTF-8 elsewhere in
+    # the file is no part of any entry's provenance. Refused, it made the whole file one the walk
+    # was blind to, a warning, and a forged entry in it lost its red: the report exited 0. Node's
+    # parser reads such a file with the byte replaced, and so does the walk now. The byte-order
+    # mark is the other side: `json.loads` refuses it, as Node's `JSON.parse` does, so that file
+    # is still one the walk cannot read. Mutation (oracle): `mutations/`'s "hook-entries is blind
+    # to a settings file holding a byte that is not UTF-8" -> both `latin-1-` cases warn.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    if case == "latin-1-beside-no-marked-entry":
+        path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {"matcher": "Bash", "hooks": [{"type": "command", "command": "ls"}]}
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+    raw = path.read_bytes().rstrip()
+    assert raw.endswith(b"}"), raw
+    if case == "byte-order-mark":
+        path.write_bytes(b"\xef\xbb\xbf" + raw)
+    else:
+        path.write_bytes(raw[:-1] + b', "note": "caf\xe9"}')
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == SETTINGS_BYTES[case]
+
+
 def test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for(
     tmp_path: Path,
 ) -> None:

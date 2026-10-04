@@ -1124,10 +1124,10 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
 
 
 def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: Path) -> None:
-    # A `UnicodeDecodeError` is a `ValueError`, which `_guarded` renders red as a defect in this
-    # module; the file is the machine's or the repository's, and the walk says it could not read
-    # it, as it does for an `OSError`. Mutation (by hand): the decode error left out of the
-    # `except` -> this reddens on `UnicodeDecodeError`.
+    # Bytes that are not UTF-8 where JSON's structure goes: decoded with each replaced, the text
+    # still does not parse, so the walk says it could not read the file rather than reading red
+    # through `_guarded`. Mutation (by hand): the read decoding strictly with no arm for the
+    # decode error -> this reddens on `UnicodeDecodeError`.
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
