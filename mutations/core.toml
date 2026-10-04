@@ -662,6 +662,19 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
 ]
 
+# Detection reads inputs a repository can steer, so no harness renders apart from the canonical
+# one until it is detected by a signal the wrapper controls.
+[[mutation]]
+name = "Codex is given a render of its own"
+file = "src/stayfixed/harnesses.py"
+before = """    # its own needs more than a measured shape: `detect` says what.
+    render=hook_specific_output,"""
+after = """    # its own needs more than a measured shape: `detect` says what.
+    render=lambda event_name, context: hook_specific_output(event_name, context),"""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_renders_through_the_canonical_render",
+]
+
 # The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's
 # precedence: the canonical harness's variable is asked first, and a harness registered ahead of
 # Claude Code cannot move a Claude Code session's root to a variable of its own.

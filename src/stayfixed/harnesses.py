@@ -155,7 +155,7 @@ def _codex_detects(env: Mapping[str, str], payload: Mapping[str, Any] | None) ->
     (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): Codex sets `PLUGIN_ROOT` and
     `PLUGIN_DATA` and ALSO `CLAUDE_PLUGIN_ROOT`, so Claude Code's names alone identify nothing;
     Codex's `SessionStart` stdin also carries `model` and `permission_mode`, which Claude Code's
-    does not."""
+    does not. How far either signal can be trusted is `detect`'s to say."""
     if "PLUGIN_ROOT" in env:
         return True
     return payload is not None and {"model", "permission_mode"} <= set(payload)
@@ -244,9 +244,9 @@ CODEX = Harness(
     # registered value's, so an inherited `CLAUDE_PROJECT_DIR` names it as it does the wrapper's).
     project_dir_env=None,
     # Claude Code's shape, and unmeasured under Codex: Codex 0.160.0 ran none of the plugin's
-    # hooks, with or without its hook-trust bypass flag (`_DELIVERY_SPIKE`). When Codex's answer
-    # is found to differ, it gets a `render` of its own here; a harness whose output differs is a
-    # different value, never a branch inside a shared one.
+    # hooks, with or without its hook-trust bypass flag (`_DELIVERY_SPIKE`). A harness whose
+    # output differs is a different value, never a branch inside a shared one, and a `render` of
+    # its own needs more than a measured shape: `detect` says what.
     render=hook_specific_output,
     reach=MappingProxyType(
         {
@@ -290,6 +290,18 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
     once, in `stayfixed hook`, and hands the answer to `dispatch` and to nothing else. It always
     answers, because a process no value claims is served the canonical shape, and what it answers
     decides how an answer is shaped and never what a handler sees or whether a call is refused.
+
+    **A harness gets a `render` of its own only together with a detection signal a repository
+    cannot steer.** Neither input read here is one: a committed `.claude/settings.json` `env`
+    block reaches the environment, so it can set `PLUGIN_ROOT`, and the payload pair Codex is
+    told by is fragile, because Claude Code's `PreToolUse` stdin already carries
+    `permission_mode` (the spike record `_codex_detects` cites, in its `tool_name` trial), so a
+    Claude Code release that adds `model` there would be answered as Codex. While every value
+    renders through `CANONICAL.render`, what this answers changes no byte of stdout. A value with
+    a `render` of its own would let a repository choose the shape its harness receives, and a
+    shape the harness does not read drops every notice without a word. So a second shape waits on
+    a signal the wrapper controls, such as its argv, and never the environment or stdin;
+    `tests/test_harnesses.py` holds every registered value to the canonical `render` until then.
     """
     for harness in HARNESSES:
         if harness.detects is not None and harness.detects(env, payload):

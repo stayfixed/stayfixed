@@ -151,6 +151,19 @@ def test_no_harness_renders_a_decision(harness: Harness, event: str, context: st
     assert not _decisions(harness.render(event, context), context)
 
 
+def test_every_harness_renders_through_the_canonical_render() -> None:
+    # What `detect` answers is a repository's to steer, so while every value renders the same way
+    # the answer changes nothing a harness receives. A value with a render of its own makes that
+    # answer choose an output shape, which is safe only on a signal no repository reaches.
+    # Mutation (declared, on `harnesses`): Codex given a render of its own -> this reddens.
+    for harness in HARNESSES:
+        assert harness.render is CANONICAL.render, (
+            f"`{harness.name}` has a render of its own. A harness may get one only together with "
+            "a detection signal a repository cannot steer: not the environment and not stdin, "
+            "but one the wrapper controls, such as its argv (`stayfixed.harnesses.detect`)."
+        )
+
+
 def _decisions(rendered: str, context: str) -> set[str]:
     """The decision keys a rendering carries outside the context it was handed.
 
