@@ -94,9 +94,27 @@ def _placeholders(template: str) -> set[str]:
     return {name for _, name, _, _ in Formatter().parse(template) if name}
 
 
+def _status_literal(template: str) -> str | None:
+    """The status the template's frontmatter spells on its own `status:` line, if it has one."""
+    lines = template.splitlines()
+    if lines[:1] != ["---"]:
+        return None
+    for line in lines[1:]:
+        if line == "---":
+            break
+        key, colon, value = line.partition(":")
+        if colon and key == "status":
+            return value.strip()
+    return None
+
+
 def _inconsistencies(schema: Schema) -> Iterator[str]:
     """Every way one part of `schema` names what another part lacks."""
     keys = set(schema.keys)
+    # A key listed twice is written twice by `new` and read once.
+    duplicated = sorted({key for key in schema.keys if schema.keys.count(key) > 1})
+    for key in duplicated:
+        yield f"key `{key}` is listed more than once"
     for key in _READ_KEYS:
         if key not in schema.required:
             yield f"`{key}` is read from every entry, so it must be required"
@@ -129,9 +147,34 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
                     f"section `{section.heading}` shows `{key}`, which is not a key a cell can show"
                 )
     lines = keys - set(_WRITER_KEYS)
-    for placeholder in sorted(_placeholders(schema.template) - set(_WRITER_FILLS)):
+    placeholders = _placeholders(schema.template)
+    for placeholder in sorted(placeholders - set(_WRITER_FILLS)):
         if placeholder not in lines:
             yield f"the template's `{{{placeholder}}}` is not a line of a key the writer is handed"
+    # What `new` writes must read back as an entry: a number, and a status the schema holds.
+    if "identifier" not in placeholders:
+        yield "the template has no `{identifier}`, so an entry it writes carries no number"
+    written = _status_literal(schema.template)
+    if written is None:
+        yield "the template has no `status:` line, so an entry it writes has no status"
+    elif written not in schema.statuses:
+        yield f"the template writes status `{written}`, which is not a status"
+    # A non-void entry must carry its level and every `required_unless_void` key, and `new` writes
+    # a value it is handed only into that key's own line.
+    if schema.level not in (*schema.required, *schema.required_unless_void):
+        yield f"level `{schema.level}` is neither required nor required_unless_void"
+    line_keys = schema.line_keys
+    if schema.level in keys and schema.level not in line_keys:
+        yield (
+            f"level `{schema.level}` has no line of its own in the template, so `new` cannot "
+            "write it"
+        )
+    for key in schema.required_unless_void:
+        if key in keys and key not in line_keys:
+            yield (
+                f"required_unless_void `{key}` has no line of its own in the template, so `new` "
+                "cannot write it"
+            )
     # `renumber` leaves a void entry at the number it moves from, and that entry is held to
     # `required` like any other. It knows the keys every entry is read for, the day of the move
     # for a date, and the new number, which it names in `related`; nothing else.

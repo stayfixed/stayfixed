@@ -458,6 +458,42 @@ def test_the_bug_ledgers_date_refusals_keep_their_words(tmp_path: Path, found: s
             "`related` is not a key, so `renumber`'s void entry cannot name the new number",
             id="no-related-key",
         ),
+        pytest.param(
+            {"keys": (*DEBT.schema.keys, "area")},
+            "key `area` is listed more than once",
+            id="key-listed-twice",
+        ),
+        pytest.param(
+            {"template": DEBT_TEMPLATE.replace("status: open", "status: draft")},
+            "the template writes status `draft`, which is not a status",
+            id="template-status-not-a-status",
+        ),
+        pytest.param(
+            {"template": DEBT_TEMPLATE.replace("status: open\n", "")},
+            "the template has no `status:` line, so an entry it writes has no status",
+            id="template-without-status",
+        ),
+        pytest.param(
+            {"template": DEBT_TEMPLATE.replace("{identifier}", "TD-000")},
+            "the template has no `{identifier}`, so an entry it writes carries no number",
+            id="template-without-identifier",
+        ),
+        pytest.param(
+            {"level": "title"},
+            "level `title` has no line of its own in the template, so `new` cannot write it",
+            id="level-without-a-line",
+        ),
+        pytest.param(
+            {"required_unless_void": ("size", "area", "found")},
+            "required_unless_void `found` has no line of its own in the template, so `new` "
+            "cannot write it",
+            id="required-unless-void-without-a-line",
+        ),
+        pytest.param(
+            {"required_unless_void": ("area",)},
+            "level `size` is neither required nor required_unless_void",
+            id="level-not-required",
+        ),
     ],
 )
 def test_a_schema_built_wrong_is_refused_at_construction(

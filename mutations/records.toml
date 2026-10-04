@@ -765,6 +765,69 @@ reddens = [
   "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-placeholder-the-writer-owns]",
 ]
 
+[[mutation]]
+name = "a schema may list a key twice"
+file = "src/stayfixed/ledger/register.py"
+before = '    for key in duplicated:'
+after = "    for key in ():"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[key-listed-twice]",
+]
+
+[[mutation]]
+name = "a template may write an entry with no number"
+file = "src/stayfixed/ledger/register.py"
+before = '    if "identifier" not in placeholders:'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-identifier]",
+]
+
+[[mutation]]
+name = "a template may write an entry with no status"
+file = "src/stayfixed/ledger/register.py"
+before = '    if written is None:'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-without-status]",
+]
+
+[[mutation]]
+name = "a template may write a status the schema lacks"
+file = "src/stayfixed/ledger/register.py"
+before = '    elif written not in schema.statuses:'
+after = "    elif False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[template-status-not-a-status]",
+]
+
+[[mutation]]
+name = "a schema's level need not be required of a non-void entry"
+file = "src/stayfixed/ledger/register.py"
+before = '    if schema.level not in (*schema.required, *schema.required_unless_void):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[level-not-required]",
+]
+
+[[mutation]]
+name = "a schema's level need not have a line new writes it into"
+file = "src/stayfixed/ledger/register.py"
+before = '    if schema.level in keys and schema.level not in line_keys:'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[level-without-a-line]",
+]
+
+[[mutation]]
+name = "a key a non-void entry must carry need not have a line new writes it into"
+file = "src/stayfixed/ledger/register.py"
+before = '        if key in keys and key not in line_keys:'
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_register.py::test_a_schema_built_wrong_is_refused_at_construction[required-unless-void-without-a-line]",
+]
+
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
 # permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
 # as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
