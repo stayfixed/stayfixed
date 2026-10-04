@@ -1,4 +1,5 @@
-"""The Python profile's red-run hint: which commands run pytest, and which bytecode is stale."""
+"""The Python profile's red-run hint: which commands run pytest, which bytecode is stale, and the
+line it adds to the notice after a failed pytest run."""
 
 from __future__ import annotations
 
@@ -8,7 +9,6 @@ import py_compile
 import struct
 import sys
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,9 @@ from stayfixed.config.schema import Config
 from stayfixed.guards.hygiene import simple_commands
 from stayfixed.guards.roots import contained_roots
 from stayfixed.profiles.python.hygiene import HINT
+from tests.gitfixture import git, needs_git
+from tests.profiles.python.bytecode import compile_module, make_stale
+from tests.profiles.redrun import DIRTY_ONE, LEAD, hygiene, red_event
 
 CONFIG = """
 [stayfixed]
@@ -60,32 +63,6 @@ def runs_pytest(command: str) -> bool:
     return any(HINT.recognises(argv) for argv in simple_commands(command))
 
 
-def compile_module(module: Path) -> Path:
-    """Compile `module` to the `__pycache__` beside it, with a timestamp header.
-
-    `py_compile.compile(..., cfile=None)` alone is NOT enough, and the mutation oracle is what
-    proved it: the oracle runs pytest under `PYTHONPYCACHEPREFIX`, which sends every cached
-    `.pyc` to a scratch tree instead of to a `__pycache__` next to the source — so `report`
-    walked the code roots, found no bytecode at all, and both bytecode tests reported `stale
-    == 0`. One of them then failed on a clean tree and the other SURVIVED its mutation, which
-    is the "the run ran nothing" shape of a vacuous oracle exactly.
-
-    `invalidation_mode` is pinned for the sibling reason: `py_compile` switches to a hash-based
-    header when `SOURCE_DATE_EPOCH` is set in the environment, and a hash-based `.pyc` has no
-    mtime at bytes 8-12 to compare. Only the destination and the mode are pinned here — the
-    header bytes are still the ones the interpreter itself writes, which is the whole point of
-    compiling rather than hand-assembling one.
-    """
-    cache = module.parent / "__pycache__" / f"{module.stem}.{sys.implementation.cache_tag}.pyc"
-    py_compile.compile(
-        str(module),
-        cfile=str(cache),
-        doraise=True,
-        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
-    )
-    return cache
-
-
 def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
     """A `.pyc` is stale when the source mtime recorded in its header (bytes 8-12) no longer
     matches the source's — the condition CPython itself checks. Compile, then move the source
@@ -94,8 +71,7 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     compile_module(module)
-    future = time.time() + 60
-    os.utime(module, (future, future))
+    make_stale(module)
     assert stale(root) == 1
 
 
@@ -180,8 +156,7 @@ def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
     inner.write_text("y = 1\n", encoding="utf-8")
     for module in (root / "src" / "mod.py", inner):
         compile_module(module)
-        future = time.time() + 60
-        os.utime(module, (future, future))
+    make_stale(root / "src" / "mod.py", inner)
     (root / CONFIG_FILE).write_text(
         CONFIG.replace('code_roots = ["src", "tests"]', 'code_roots = ["src", "src", "src/pkg"]'),
         encoding="utf-8",
@@ -224,13 +199,6 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
         + struct.pack("<I", 4)
     )
     assert stale(root) == 0
-
-
-def make_stale(*modules: Path) -> None:
-    """Move each source past the mtime its bytecode recorded."""
-    future = time.time() + 60
-    for module in modules:
-        os.utime(module, (future, future))
 
 
 def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
@@ -345,18 +313,6 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
     assert HINT.report(root, config(root))["roots"] == 1
 
 
-def test_the_note_names_no_code_root_even_when_bytecode_is_stale() -> None:
-    # Pure: the one sentence that mentions code roots is the stale one, so it is rendered from
-    # fixed counts rather than from a tree whose stale count happens to be zero. The second
-    # assertion has no mutation of its own: it pins a NEGATIVE over the module's fixed
-    # sentence, so the only edit that reddens it is one that puts a root name into `STALE`,
-    # which is the "repository bytes are data" rule (CONTRIBUTING.md) this assertion exists to
-    # hold. The note's exact words are pinned in `tests/profiles/test_hints.py`.
-    text = HINT.note({"stale": 2, "roots": 1})
-    assert text is not None and "2 .pyc file(s)" in text
-    assert "src" not in text and "tests" not in text
-
-
 @pytest.mark.parametrize(
     "command",
     [
@@ -399,3 +355,74 @@ def test_an_empty_command_is_not_a_run() -> None:
     # ask directly. Reddened by deleting `if not argv: return False` (`argv[0]` raises);
     # measured.
     assert HINT.recognises([]) is False
+
+
+# Python's line, as the code before the move rendered it, captured from that code and pasted here,
+# never derived from the code under test: a repository in Python must read exactly what it read
+# before its advice moved into the profile.
+STALE_TWO = (
+    "2 .pyc file(s) whose recorded source mtime no longer matches their source, under the "
+    "configured code roots -- the interpreter may be importing a build that predates a fix on "
+    "disk, which fails DETERMINISTICALLY in the shape of the defect the test pins. Delete the "
+    "`__pycache__` directories under those roots, then re-run before attributing anything."
+)
+STALE_ONE = STALE_TWO.replace("2 .pyc", "1 .pyc", 1)
+
+
+def faulty_python_tree(tmp_path: Path) -> Path:
+    """A committed tree with one uncommitted change and one stale `.pyc`.
+
+    The bytecode directory is ignored by a committed `.gitignore`, so it is never itself counted
+    as uncommitted, and the one change is a tracked file modified after its commit: the dirty
+    count runs under the owner's own git, whose `status.showUntrackedFiles` could hide an
+    untracked file and make the count depend on the machine.
+    """
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    (root / "notes.txt").write_text("a\n", encoding="utf-8")
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: seed")
+    compile_module(module)
+    make_stale(module)
+    (root / "notes.txt").write_text("b\n", encoding="utf-8")
+    return root
+
+
+@needs_git
+def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
+    # The everyday case end to end through the handler: a failed pytest over a dirty tree with
+    # stale bytecode gets the core's dirty-tree line and then the Python profile's line, in the
+    # words the notice carried before the move. Reddened by replacing `context_for`'s
+    # `hints = shipped_hints()` with `hints = ()`, so no profile speaks; measured.
+    root = faulty_python_tree(tmp_path)
+    result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
+    assert result.decision is None
+    assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
+
+
+@needs_git
+def test_no_recognising_profile_means_no_notice(tmp_path: Path) -> None:
+    # A red `cargo test` over the same faulty tree: no shipped profile recognises the runner, so
+    # nothing is said -- not even the dirty-tree line. The core cannot tell a failed test run
+    # from any other failed command, and the notice is once per context: a dirty-tree line after
+    # a failed `grep` would spend the one delivery the next failed test run needed. The Python
+    # tree's stale `.pyc` is what makes this non-vacuous: a Python hint that answered for every
+    # command would put both lines here. Oracle: `mutations/`, "the Python hint recognises every
+    # command".
+    root = faulty_python_tree(tmp_path)
+    settings = config(root)
+    assert hygiene().run(red_event(root, "cargo test"), settings).context is None
+    assert hygiene().run(red_event(root, "pytest"), settings).context is not None
+
+
+def test_the_note_is_a_function_of_the_report() -> None:
+    # `note` sees counts and nothing else, so no path, file name or command text a repository
+    # authored can reach the line it renders. Pinned against the literal captured from the code
+    # before the move. Reddened by changing `STALE`'s wording in
+    # `src/stayfixed/profiles/python/hygiene.py`; measured. The second assertion is the silence:
+    # a tree with nothing stale gets no Python line at all. Reddened by dropping `note`'s
+    # `if not stale: return None`; measured.
+    assert HINT.note({"stale": 2, "roots": 1}) == STALE_TWO
+    assert HINT.note({"stale": 0, "roots": 3}) is None

@@ -993,7 +993,7 @@ before = "        reports[name] = report"
 after = """        reports[name] = report
         break"""
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
 
 # A profile with nothing to say is listed while its markers sit at the root, so the clean summary
@@ -1004,7 +1004,7 @@ file = "src/stayfixed/guards/commands.py"
 before = "        if note is None and not detects(load_profile(name), root):"
 after = "        if note is None:"
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
   "tests/guards/test_commands.py::test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuration",
 ]
 
@@ -1023,7 +1023,7 @@ file = "src/stayfixed/guards/commands.py"
 before = '        f"; the {name} profile has nothing to report" for name in reports'
 after = '        f"; the {name} profile has nothing to report" for name in list(reports)[:1]'
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report",
+  "tests/guards/test_commands.py::test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report",
 ]
 
 # A shipped profile whose hint did not load is "I do not know", which this command never reports
@@ -1034,8 +1034,8 @@ file = "src/stayfixed/guards/commands.py"
 before = "    if unloaded:"
 after = "    if False:"
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[absent]",
-  "tests/profiles/test_hints.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[no-hint]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[absent]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_when_a_shipped_hint_cannot_load[no-hint]",
 ]
 
 

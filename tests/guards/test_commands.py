@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import io
 import json
-import os
-import py_compile
 import shutil
 import sys
-import time
+import types
 from pathlib import Path
 
 import pytest
@@ -14,6 +12,8 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from tests.gitfixture import git
+from tests.profiles import redrun
+from tests.profiles.python.bytecode import compile_module, make_stale
 
 
 def invoke(argv: list[str]) -> int:
@@ -437,17 +437,8 @@ def test_test_hygiene_names_the_stale_count_in_its_summary(
     (root / "src").mkdir()
     module = root / "src" / "m.py"
     module.write_text("x = 1\n", encoding="utf-8")
-    # Explicit `cfile` and `TIMESTAMP`, for the reasons `tests/profiles/python/test_hygiene.py`'s
-    # `compile_module` gives: `cfile=None` follows `PYTHONPYCACHEPREFIX` out of the fixture,
-    # and `SOURCE_DATE_EPOCH` in the environment would make the header hash-based.
-    py_compile.compile(
-        str(module),
-        cfile=str(root / "src" / "__pycache__" / f"m.{sys.implementation.cache_tag}.pyc"),
-        doraise=True,
-        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
-    )
-    future = time.time() + 60
-    os.utime(module, (future, future))
+    compile_module(module)
+    make_stale(module)
     (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
@@ -478,14 +469,8 @@ def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_marke
     )
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "chore: code")
-    py_compile.compile(
-        str(module),
-        cfile=str(root / "src" / "__pycache__" / f"m.{sys.implementation.cache_tag}.pyc"),
-        doraise=True,
-        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
-    )
-    future = time.time() + 60
-    os.utime(module, (future, future))
+    compile_module(module)
+    make_stale(module)
     assert not (root / "pyproject.toml").exists()
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
     assert invoke(argv) == 1
@@ -526,6 +511,135 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     captured = capsys.readouterr()
     assert "<injected text>" not in captured.out + captured.err
     assert "the python profile's red-run hint failed: OSError" in captured.out + captured.err
+
+
+def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every shipped profile's markers sit at the root, whatever the tree holds."""
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: True)
+
+
+def committed_project(tmp_path: Path) -> Path:
+    """A repository whose one file, its configuration, is committed: a clean tree."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(redrun.CONFIG, encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: seed")
+    return root
+
+
+@needs_git
+def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `[stayfixed] profile` names one stack; a repository written in two gets both stacks'
+    # counts, each under its profile's name, and only counts: the report that carried a path
+    # reaches `--json` as its integers alone. `beta` has nothing to say, so it is listed only
+    # because detection, replaced here, puts its markers at the root: its entry is the proof that
+    # detection was asked. Oracle: `mutations/`, "test hygiene reports the first stack and
+    # stops", "test hygiene prints a report as the hint returned it" and "test hygiene lists
+    # only the profiles with something to say".
+    loud, quiet = redrun.LoudHint("x", "alpha says"), redrun.FakeHint("y", None)
+    redrun.ship(monkeypatch, {"alpha": loud, "beta": quiet})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] == 0
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
+def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A clean tree in two stacks says so for each of them, in name order, and exits 0: the
+    # summary is what tells a person which stacks were looked at. Oracle: `mutations/`, "test
+    # hygiene's clean summary names only the first stack".
+    redrun.ship(
+        monkeypatch, {"alpha": redrun.FakeHint("x", None), "beta": redrun.FakeHint("y", None)}
+    )
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == (
+        "tree is clean; the alpha profile has nothing to report; "
+        "the beta profile has nothing to report"
+    )
+
+
+@needs_git
+@pytest.mark.parametrize("broken", ["absent", "no-hint"])
+def test_test_hygiene_refuses_when_a_shipped_hint_cannot_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    broken: str,
+) -> None:
+    # The hook leaves out a profile whose `hygiene.py` does not import or has no `HINT`, so one
+    # stack's broken module costs only its own line. This command answers whether a red run can
+    # be trusted, and a profile it could not ask is "I do not know", never "tree is clean": it
+    # refuses (exit 2) and names the profile, a shipped name. `gamma` loads and has nothing to
+    # say, so without the refusal the answer would be clean. Oracle: `mutations/`, "test hygiene
+    # calls a tree clean without a hint it could not load".
+    redrun.ship(monkeypatch, {"gamma": redrun.FakeHint("x", None)})
+    if broken == "no-hint":
+        alpha = types.ModuleType("stayfixed.profiles.alpha.hygiene")
+        monkeypatch.setitem(sys.modules, alpha.__name__, alpha)
+    monkeypatch.setattr("stayfixed.profiles.hints.hint_modules", lambda: ("alpha", "gamma"))
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint could not be loaded" in captured.err
+
+
+@needs_git
+def test_test_hygiene_refuses_a_note_that_is_not_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The hook drops a note that is not text and keeps the rest of its notice. This command
+    # answers whether a red run can be trusted, and a hint that answered outside its protocol is
+    # "I do not know", never "tree is clean" and never a finding printed as whatever the object
+    # renders to: it refuses (exit 2) and names the profile, as for a hint that did not load.
+    # Oracle: `mutations/`, "a note that is not text passes as one".
+    redrun.ship(monkeypatch, {"alpha": redrun.WordlessHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "the alpha profile's red-run hint answered in something other than text" in captured.err
+
+
+@needs_git
+def test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An empty note is text with nothing in it: nothing to report, the same answer the hook
+    # gives by leaving the line out. So a stack whose markers are not at the root and whose note
+    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`, "an empty note is
+    # something to report".
+    redrun.ship(monkeypatch, {"alpha": redrun.EmptyHint("x", "alpha says")})
+    monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
+    monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {}
+    assert out["summary"] == "tree is clean"
 
 
 @needs_git

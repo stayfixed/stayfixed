@@ -1790,7 +1790,7 @@ file = "src/stayfixed/profiles/python/hygiene.py"
 before = "    def recognises(self, argv: Sequence[str]) -> bool:"
 after = """    def recognises(self, argv: Sequence[str]) -> bool:
         return True"""
-reddens = ["tests/profiles/test_hints.py::test_no_recognising_profile_means_no_notice"]
+reddens = ["tests/profiles/python/test_hygiene.py::test_no_recognising_profile_means_no_notice"]
 
 # The profiles' own machinery directly under `profiles/` is core: only a stack's directory,
 # `profiles/<name>/`, may name that stack. A runner named in `hints.py` is a mention like one in
@@ -1817,7 +1817,7 @@ before = """        and COUNT_NAME.fullmatch(key)
 after = "        and type(value) is int"
 reddens = [
   "tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothing_else",
-  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
 
 # Exactly `str` and `int`: a subclass keeps its own `__str__` and `__format__` and can print as
@@ -1908,7 +1908,7 @@ before = "    if note is not None and not isinstance(note, str):"
 after = "    if False:"
 reddens = [
   "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
-  "tests/profiles/test_hints.py::test_test_hygiene_refuses_a_note_that_is_not_text",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_note_that_is_not_text",
 ]
 
 # An empty note is nothing to report, as the hook reads it: a stack whose markers are not at the
@@ -1919,7 +1919,7 @@ file = "src/stayfixed/profiles/hints.py"
 before = "    return report, note or None"
 after = "    return report, note"
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty",
+  "tests/guards/test_commands.py::test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty",
 ]
 
 # A hint's `note` is handed counts and nothing else, which is what keeps a repository's strings out
@@ -1939,5 +1939,5 @@ file = "src/stayfixed/profiles/hints.py"
 before = "    report = counts(hint, root, config)"
 after = "    report = dict(hint.report(root, config))"
 reddens = [
-  "tests/profiles/test_hints.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
+  "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
