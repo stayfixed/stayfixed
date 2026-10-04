@@ -890,7 +890,7 @@ file = "src/stayfixed/doctor/checks.py"
 before = 'from stayfixed.setup.api import USER_SETTINGS'
 after = 'from stayfixed.setup.machine import USER_SETTINGS'
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
@@ -1322,9 +1322,9 @@ reddens = [
 ]
 
 # `[ci] ref` is repository-authored and must be the commit of a released stayfixed. Which commits
-# those are is the release area's own rule (`is_released`, semver tags only), and the row's verdict
-# is what a reader acts on: a ref no released tag names is a project pinned to a gate nobody
-# shipped, reported green.
+# those are is the `release` package's own rule (`is_released`, semver tags only), and the row's
+# verdict is what a reader acts on: a ref no released tag names is a project pinned to a gate
+# nobody shipped, reported green.
 [[mutation]]
 name = "a ci-ref that is no released commit is reported as a released commit"
 file = "src/stayfixed/doctor/checks.py"

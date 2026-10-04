@@ -152,8 +152,10 @@ def _imported_modules(tree: ast.AST, package: tuple[str, ...]) -> list[tuple[int
     return found
 
 
-def _boundary_offences(where: str, text: str, areas: Sequence[str]) -> tuple[list[str], list[str]]:
-    """The rule, for one file: the cross-area imports it makes, and the ones that break it.
+def _boundary_offences(where: str, text: str, ruled: Sequence[str]) -> tuple[list[str], list[str]]:
+    """The rule, for one file: the imports it makes into a `ruled` package other than its own, and
+    the ones that break it. `ruled` is every package the surface rule holds — each area, and each
+    package that publishes an `api.py`.
 
     A function rather than a loop body, so the test below can put a spelling in front of it that
     `src/stayfixed/` does not currently contain. A guard whose rule can only be exercised by the
@@ -165,7 +167,7 @@ def _boundary_offences(where: str, text: str, areas: Sequence[str]) -> tuple[lis
     offences: list[str] = []
     for line, module in _imported_modules(ast.parse(text), ("stayfixed", *parts[:-1])):
         bits = module.split(".")
-        if len(bits) < 3 or bits[0] != "stayfixed" or bits[1] not in areas or bits[1] == here:
+        if len(bits) < 3 or bits[0] != "stayfixed" or bits[1] not in ruled or bits[1] == here:
             continue
         crossings.append(f"{where} -> {module}")
         if bits[2] == "api" or (where, ".".join(bits[:3])) in SURFACE_EXEMPT:
@@ -174,7 +176,7 @@ def _boundary_offences(where: str, text: str, areas: Sequence[str]) -> tuple[lis
     return crossings, offences
 
 
-def test_no_area_reaches_into_another_areas_private_module() -> None:
+def test_no_module_reaches_into_another_packages_private_module() -> None:
     # CONTRIBUTING: "`api.py` is the area's import surface. Other areas import from it and from
     # nothing else." Nothing asserted it, and an external review found the first two violations
     # in this repository's history — `memory/commands.py` importing `hooks.dispatch` and
@@ -241,7 +243,7 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     assert len(SURFACE_EXEMPT) == 1, sorted(SURFACE_EXEMPT)
     for where, module in SURFACE_EXEMPT:
         assert f"{where} -> {module}" in crossings, (where, module)
-    assert not offences, "an area reached past another area's api.py:\n" + "\n".join(offences)
+    assert not offences, "a module reached past another package's api.py:\n" + "\n".join(offences)
 
 
 def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> None:
@@ -253,9 +255,9 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
     #
     # Asserted as the exact offence rather than as "some offence": a rule that resolved the
     # module to any other name would also produce a non-empty list, from the wrong reading.
-    areas = ["doctor", "hooks", "memory", "setup"]
+    ruled = ["doctor", "hooks", "memory", "setup"]
     crossings, offences = _boundary_offences(
-        "doctor/checks.py", "from ..hooks.sink import DIRECTORY\n", areas
+        "doctor/checks.py", "from ..hooks.sink import DIRECTORY\n", ruled
     )
     assert offences == [
         "doctor/checks.py:1 imports stayfixed.hooks.sink",
@@ -270,7 +272,7 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
     # is the arm that fails if the rule is made to refuse every relative import rather than read
     # it, which is the other repair this could have had.
     crossings, offences = _boundary_offences(
-        "doctor/checks.py", "from ..hooks.api import DIRECTORY\n", areas
+        "doctor/checks.py", "from ..hooks.api import DIRECTORY\n", ruled
     )
     assert crossings == [
         "doctor/checks.py -> stayfixed.hooks.api",
@@ -281,7 +283,7 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
     # And an area's own modules, reached relatively, are its own business at any depth — a
     # module's package is itself for one dot, and `from . import x` carries no module at all.
     crossings, offences = _boundary_offences(
-        "doctor/checks.py", "from .checks import OK\nfrom . import commands\n", areas
+        "doctor/checks.py", "from .checks import OK\nfrom . import commands\n", ruled
     )
     assert (crossings, offences) == ([], [])
 

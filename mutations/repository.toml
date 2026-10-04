@@ -790,7 +790,7 @@ file = "tests/test_areas.py"
 before = '    files = sorted(source.rglob("*.py"))'
 after = '    files = sorted(source.rglob("commands.py"))'
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The cross-area import guard (`mutations/`'s "the cross-area import guard walks ten files instead
@@ -822,7 +822,7 @@ before = '    return sorted(set(_area_names(source)) | surfaces)'
 after = '    return _area_names(source)'
 reddens = [
   "tests/test_areas.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
@@ -1339,7 +1339,7 @@ name = "a second live crossing joins the area-boundary exemption"
 file = "tests/test_areas.py"
 before = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})'
 after = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy"), ("memory/commands.py", "stayfixed.hooks.dispatch")})'
-reddens = ["tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module"]
+reddens = ["tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module"]
 
 # The README's `--json` paragraph named four commands where five emit the key, so a reader scripting
 # against it would have read a `memory refs` findings list as "this command does not report
@@ -1446,7 +1446,7 @@ file = "scripts/check_artifacts.py"
 before = "from stayfixed.overlay.api import OVERLAY_FILES"
 after = "from stayfixed.overlay.layout import OVERLAY_FILES"
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # And the walk's own floor: a guard that silently stops walking reports no offences for exactly
@@ -1458,7 +1458,7 @@ file = "tests/test_areas.py"
 before = 'scripts = sorted((ROOT / "scripts").glob("*.py"))'
 after = "scripts = []"
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check names that
