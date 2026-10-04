@@ -777,8 +777,8 @@ function scope, and never at module level of a hook module, so hook discovery st
 neither it nor the configuration layer. (As landed after review: the claim that holds is the
 last one, which `tests/test_areas.py` asserts. A hook process loads the registry before
 `run_hook` runs, because the CLI frame builds its parser from every area's `commands.py` and
-`doctor/checks.py` imports the registry at module level, so the function-scope imports saved
-nothing and are module-level imports now.)
+`src/stayfixed/doctor/checks.py` imports the registry at module level, so the function-scope
+imports saved nothing and are module-level imports now.)
 
 - [ ] **Step 1: Write the failing tests.** `tests/test_harnesses.py`:
   `test_an_environment_codex_sets_is_codex` (`PLUGIN_ROOT` beside `CLAUDE_PLUGIN_ROOT`; and the
