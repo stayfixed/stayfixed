@@ -128,19 +128,25 @@ ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an
 stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
-A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it: `stayfixed
-hook` asks `harnesses.detect` which value it runs under and shapes its stdout with that value's
-`render`, and the event a handler reads does not say which value that was. That is all detection
-decides. Adding a harness is adding a value — a positive `detects`, its project-root variable,
-its `render`, its settings files and its `reach`, the tier each enforcement surface holds at
-under it — and no edit to the hooks core: `doctor` walks the settings files every value names,
-and the README's table of what each agent enforces is held equal to every value's `reach` by a
-test. Nothing else is a harness's to choose, because the harness a process detects is one a
-repository can choose (a committed `env` block can set `PLUGIN_ROOT`): every payload is read by
-the one `hooks.dispatch.read_event`; the project root is the first variable that names one among
-every registered value's project-root variables, the canonical value's first, whichever value
-was detected, and otherwise the checkout `cwd` sits in; and a deny is exit 2 with its reason on
-stderr under every harness and never reaches a `render`.
+A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
+`stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
+that value's `render`, and the event a handler reads does not say which value that was. That is
+all detection decides, because the harness a process detects is one a repository can choose (a
+committed `env` block can set `PLUGIN_ROOT`): every payload is read by the one
+`hooks.dispatch.read_event`; the project root is the first variable that names one among every
+registered value's project-root variables, the canonical value's first, whichever value was
+detected, and otherwise the checkout `cwd` sits in; and a deny is exit 2 with its reason on
+stderr under every harness and never reaches a `render`. Adding a harness is adding a value — a
+positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
+the tier each enforcement surface holds at under it — and nothing that reads those needs an
+edit: `doctor` walks the settings files every value names, and the README's table of what each
+agent enforces is held equal to every value's `reach` by a test. It is not only a value: a
+harness that differs from Claude Code and Codex in any of the facts still spelled outside the
+registry is an edit there too, and the module docstring of `src/stayfixed/harnesses.py` lists
+them — the variable `hooks/run-hook.sh` takes its directory from and the digest recorded for
+it, `hooks.api.DATA_ROOT_VARIABLES`, `doctor`'s plugin-root variables, wrapper environment and
+`codex-trust` row, the `SessionStart` bundles `memory session-context` writes without a
+`render`, and the one hook output cap.
 
 Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
 — the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in

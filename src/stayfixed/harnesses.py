@@ -5,19 +5,18 @@ every harness that reads the standard sees. Where a harness reads something bett
 its `render_profile` renders a profile into that form. `settings` names the committed files in
 which it reads hook entries, for `stayfixed assess`'s foreign-hooks probe to inventory;
 `marker_dir` is the directory whose presence says a repository uses it. A harness is a value,
-not a class: adding one is one more value in `HARNESSES`, and nothing that reads the registry
-changes.
+not a class: what this module states about a harness is one more value in `HARNESSES`, and
+nothing that reads the registry changes. What it does not state yet is the list below.
 
 The registry is also the adapter the hooks core answers through. `stayfixed hook` asks `detect`
 which value it is running under and shapes its stdout with that value's `render`. That is all
 detection decides: every payload is read one way (`hooks.dispatch.read_event`), into an event
 that does not say which harness was detected, because the harness a process detects is one a
 repository can choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` —
-so no value may change what a handler sees. The project root is read the same way under every answer: from the
-first of every registered value's `project_dir_env` that names one, `CANONICAL`'s first
-(`project_root_variables`). A deny reaches no value at all: exit 2 with the reason on stderr is
-the whole of a refusal for every harness. A new harness is a value with a positive `detects`,
-its project-root variable, its `render` and its `reach`; a harness whose payload genuinely
+so no value may change what a handler sees. The project root is read the same way under every
+answer: from the first of every registered value's `project_dir_env` that names one,
+`CANONICAL`'s first (`project_root_variables`). A deny reaches no value at all: exit 2 with the
+reason on stderr is the whole of a refusal for every harness. A harness whose payload genuinely
 differs is a question to answer with that harness's evidence when it arrives.
 
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
@@ -26,11 +25,28 @@ all, with where the claim was measured. The README's table of what each agent en
 equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so a measurement
 that moves a tier is one edit here.
 
-Code that needs a harness fact asks this registry. `doctor` walks every value's `settings` and
-`local_settings` for hook entries, and `attach` merges into the one file `CLAUDE.local_settings`
-names. Two modules older than it still spell paths of their own, `setup` the machine's settings
-file and `attach` the overlay's layout under `.claude/` and `.codex/`, which are a machine's and
-the overlay's as much as a harness's.
+A new harness is a value with a positive `detects`, its project-root variable, its `render`, its
+settings files and its `reach`. What follows still lives outside the registry, spelled for
+Claude Code or Codex, and a harness that differs from both in any of it is an edit there too:
+
+- `hooks/run-hook.sh` takes the directory it enters from `CLAUDE_PROJECT_DIR` alone, before any
+  Python runs, so another root variable is an edit to its `root=` line and to the digest
+  `hooks/hashes.json` records for it (`scripts/release.py hashes`).
+- `hooks.api.DATA_ROOT_VARIABLES` names the variables the sink and `doctor` find the harness's
+  data root by.
+- `doctor` names the plugin-root variables in `NAMED_ROOTS`, runs the wrapper for its `wrapper`
+  row under Claude Code's variables, and reads `CODEX` by name in its `codex-trust` row.
+- `memory session-context` writes a bundle to a `SessionStart` entry's stdout as it is, never
+  through a `render`, so a harness that reads that event's output in another shape is an edit
+  there.
+- One hook output cap, `native_caps.hook_output_chars`, is Claude Code's and is applied under
+  every harness.
+
+Elsewhere, code that needs a harness fact asks this registry: `doctor` walks every value's
+`settings` and `local_settings` for hook entries, and `attach` merges into the one file
+`CLAUDE.local_settings` names. Two modules older than it still spell paths of their own, `setup`
+the machine's settings file and `attach` the overlay's layout under `.claude/` and `.codex/`,
+which are a machine's and the overlay's as much as a harness's.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
