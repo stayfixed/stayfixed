@@ -1792,3 +1792,16 @@ after = """    def recognises(self, argv: Sequence[str]) -> bool:
         return True"""
 reddens = ["tests/profiles/test_hints.py::test_no_recognising_profile_means_no_notice"]
 
+# The profiles' own machinery directly under `profiles/` is core: only a stack's directory,
+# `profiles/<name>/`, may name that stack. A runner named in `hints.py` is a mention like one in
+# any core module.
+[[mutation]]
+name = "the profiles' machinery names a stack"
+file = "src/stayfixed/profiles/hints.py"
+before = 'HINT_FILE = "hygiene.py"'
+after = """HINT_FILE = "hygiene.py"
+_RUNNER = "pytest""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+

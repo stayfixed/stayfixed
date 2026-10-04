@@ -939,6 +939,18 @@ reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
 
+# A bytes literal is code too: the walk reads it as Latin-1, so a stack's word spelled as bytes
+# in a core module is a mention like any string.
+[[mutation]]
+name = "the core names a stack in a bytes literal"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """_VENDORED = b"node_modules"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
 # A hint's `note` is handed counts and nothing else, which is what keeps a repository's strings out
 # of the line it renders: the report goes through `plain_counts` first, a fresh mapping of string
 # keys to plain integers. Handed as returned, a path the report carried reaches `note`; taking a

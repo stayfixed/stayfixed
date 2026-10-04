@@ -1,9 +1,10 @@
 """The core names no language stack: what one stack's runner, artifacts or package manager need
-lives in that stack's profile under `src/stayfixed/profiles/`, so a repository in several
-languages works with no configuration.
+lives in that stack's profile directory, `src/stayfixed/profiles/<name>/`, so a repository in
+several languages works with no configuration.
 
-The walk reads every module under `src/stayfixed/` outside `profiles/` with `ast`, so comments
-and docstrings are prose and are never read; string constants (an f-string's literal parts
+The walk reads every module under `src/stayfixed/` outside those stack directories with `ast` --
+the profiles' own machinery directly under `profiles/` is core and is read -- so comments and
+docstrings are prose and are never read; string and bytes constants (an f-string's literal parts
 included) and identifiers are code and are. A word counts where it stands alone, letters and
 digits on neither side, so `PYTEST`, `is_pytest_run` and `"*.pyc"` are mentions and
 `pipeline` is not.
@@ -54,12 +55,15 @@ _MENTION = re.compile(
 # How many core modules the walk read when the pardons below were measured. A floor and not an
 # equality, so a new core module does not redden this test; it exists so that a walk that read
 # nothing -- a moved package, a wrong root -- cannot pass by finding no mention.
-CORE_MODULES_AT_LEAST = 135
+CORE_MODULES_AT_LEAST = 139
 
 STACK_NAMED = {
-    # The scan's exclusion lists name every common stack's vendored and generated trees and
-    # binary suffixes, so the ledger's mention scan and its sweep skip them all: polyglot by
-    # construction, and acting on no single stack.
+    # The ledger scan's generic exclusions: `EXCLUDED_DIRNAMES` (`node_modules`, `.git`, `.venv`,
+    # `dist`, `build`, `__pycache__`) and `BINARY_SUFFIXES` (images, a PDF, audio, web fonts, `.zip`
+    # and `.pyc`). Today the stack-specific entries are Python's and Node's generated trees and
+    # Python's bytecode suffix, and no other stack's; what the lists do is skip files the mention
+    # scan and the sweep could never read an identifier out of, which changes no stack's
+    # behaviour and asks nothing of any stack's runner.
     ("src/stayfixed/ledger/scan.py", "node_modules"),
     ("src/stayfixed/ledger/scan.py", "venv"),
     ("src/stayfixed/ledger/scan.py", "pycache"),
@@ -68,9 +72,9 @@ STACK_NAMED = {
     # in, as it unwraps `env <cmd>`: what it hands on is the command itself, so the unwrapping
     # is neutral in effect and every profile's recognition reads through it.
     ("src/stayfixed/guards/bashscan.py", "uv"),
-    # stayfixed's own installer, `uv tool install`, named in `doctor`'s remedy and in `setup`'s
-    # pinned install command: the runtime stayfixed itself is installed with, not a stack a
-    # project is written in.
+    # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
+    # (`cli-path`, `overlay-requires`) and in `setup`'s pinned install command: the tool
+    # stayfixed itself is installed with, not a stack a project is written in.
     ("src/stayfixed/doctor/checks.py", "uv"),
     ("src/stayfixed/setup/run.py", "uv"),
 }
@@ -97,6 +101,10 @@ def _code_text(tree: ast.AST) -> Iterator[str]:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if id(node) not in prose:
                 yield node.value
+        elif isinstance(node, ast.Constant) and isinstance(node.value, bytes):
+            # Latin-1 maps every byte to one character, so an ASCII word in a bytes literal reads
+            # as that word and no byte makes the decode fail.
+            yield node.value.decode("latin-1")
         elif isinstance(node, ast.Name):
             yield node.id
         elif isinstance(node, ast.Attribute):
@@ -113,8 +121,14 @@ def _code_text(tree: ast.AST) -> Iterator[str]:
             yield node.module
 
 
+def _in_a_stack_directory(path: Path) -> bool:
+    """True under `profiles/<name>/`, where one stack's knowledge belongs; `profiles/hints.py`
+    and the rest of the machinery beside it are core."""
+    return PROFILES in path.parents and path.parent != PROFILES
+
+
 def _core_modules() -> list[Path]:
-    return [path for path in sorted(PACKAGE.rglob("*.py")) if PROFILES not in path.parents]
+    return [path for path in sorted(PACKAGE.rglob("*.py")) if not _in_a_stack_directory(path)]
 
 
 def stack_mentions(modules: list[Path]) -> set[tuple[str, str]]:
