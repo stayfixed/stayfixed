@@ -519,8 +519,11 @@ def _retire(
     The engine's `plan` decides, by the digest the ledger records or, in a tree generated from a
     template, which carries none, by the digest a release shipped (`template.retired`). Its
     verdict is acted on here rather than through `apply`, which would write a ledger into a tree
-    that arrived without one. A file `plan` cannot read is named and left, never a reason to stop
-    `init`.
+    that arrived without one. A file `plan` cannot read, one that cannot be removed and a
+    successor that cannot be written are each named and passed over, never a reason to stop
+    `init`: stopping lost the lines of the files already removed and left their records in a
+    ledger nothing then wrote, and a later run, finding the file absent, kept the record for good.
+    The ledger returned drops the records of the files actually removed, and only those.
 
     A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
     its place: such a template carried the old name only, and a directory left empty is one git
@@ -530,8 +533,12 @@ def _retire(
     **A path the ledger supplied prints through `printed.quoted`.** The ledger is committed with
     the overlay, and a record whose target this release cannot produce is named at that target,
     so a line break or an escape sequence in it would reach the terminal and a CI runner as it
-    stood. A path inside the path grammar prints as itself. A successor's path is this build's
-    own.
+    stood. A record whose target only case-folds to a place this release's file can be is
+    removed, or left, at the target it names, which may hold letters outside the grammar. A path
+    inside the path grammar prints as itself. A successor's path is this build's own, and so is
+    every path `plan` refuses here: the one refusal that names a recorded target is a region's or
+    an entry's, and a retired overlay file is a whole file, so the wrap on that line guards
+    nothing a ledger can reach today.
     """
     planned = plan(root, preset_defaults(root.name), retired())
     notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
@@ -547,7 +554,8 @@ def _retire(
         try:
             fsops.remove_within(root, action.target)
         except OSError as exc:
-            raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc
+            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+            continue
         notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
         removed.append(action.target)
         if ledger.get(action.artifact_id) is not None:
@@ -561,7 +569,11 @@ def _retire(
         try:
             fsops.write_within(root, action.target, action.payload)
         except OSError as exc:
-            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc
+            notes.append(
+                f"{action.target} cannot be written: {fsops.said(exc)}; "
+                "`stayfixed overlay upgrade` writes it"
+            )
+            continue
         notes.append(f"wrote {action.target} in its place")
         written.append(action.target)
         if ledgered and action.record is not None:

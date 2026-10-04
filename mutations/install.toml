@@ -956,6 +956,26 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_prints_a_retired_file_s_recorded_path_escaped",
 ]
 
+# A record whose target only case-folds to a retired file's place is removed, or left, at the
+# target it names, which may hold letters outside the path grammar.
+[[mutation]]
+name = "overlay init prints a recorded path it removes unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")'
+after = '        notes.append(f"removed {action.target}, which this release no longer ships")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[removed]",
+]
+
+[[mutation]]
+name = "overlay init prints a recorded path it cannot remove unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")'
+after = '            notes.append(f"left {action.target}: cannot be removed: {fsops.said(exc)}")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[cannot-remove]",
+]
+
 # `PATH` is read from the context because it is repository-authored; a path component is
 # unbounded and may hold a newline. Printing the resolved value put that text into `--json`,
 # which the doctor skill relays verbatim.
@@ -1705,8 +1725,8 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
 ]
 
-# A removal that failed after the manifests were renamed exited with their new records only in
-# memory, so the renamed manifests read as hand-edited to every later `upgrade`.
+# A stop after the manifests were renamed exited with their new records only in memory, so the
+# renamed manifests read as hand-edited to every later `upgrade`.
 [[mutation]]
 name = "overlay init records its renames only after the removal"
 file = "src/stayfixed/overlay/create.py"
@@ -1719,7 +1739,34 @@ after = """    ledger, retirement, retired_paths, changed = _retire(root, ledger
     if changed or restamped:
         ledger.write(root)"""
 reddens = [
-  "tests/overlay/test_upgrade.py::test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded",
+  "tests/overlay/test_upgrade.py::test_init_that_stops_part_way_keeps_the_manifests_it_renamed_recorded",
+]
+
+# A retired file `overlay init` could not remove stopped the run: the files already removed were
+# gone, their lines unprinted and their records left in a ledger nothing wrote, so a later run
+# read each absent file as unchanged and kept its record for good.
+[[mutation]]
+name = "overlay init stops at a retired file it cannot remove"
+file = "src/stayfixed/overlay/create.py"
+before = """            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+            continue"""
+after = """            raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
+]
+
+# The same stop one step later, at the `_README.md` written where the old memory README was.
+[[mutation]]
+name = "overlay init stops at a successor it cannot write"
+file = "src/stayfixed/overlay/create.py"
+before = """            notes.append(
+                f"{action.target} cannot be written: {fsops.said(exc)}; "
+                "`stayfixed overlay upgrade` writes it"
+            )
+            continue"""
+after = """            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on",
 ]
 
 # Removing the old README from a 0.1.x template's overlay left `common/memory/` empty; git keeps no

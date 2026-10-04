@@ -1870,16 +1870,19 @@ have no `common/memory/` for the `developer` link to reach. A copy holding anyth
 and the line says so and names the way out: rename the memory README to `_README.md`; the plugin's
 own `attach` skill replaces the template's, so delete your copy once you no longer need your
 edits; a standing rule is a note with `metadata.startup`, so move your rules into such notes and
-delete the README. Until then each run names the copy again. A retired file it cannot read is left too, with a `left <path>: <reason>` line, and is not a failure.
+delete the README. Until then each run names the copy again. A retired file it cannot read or
+cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
+write is named with `overlay upgrade`, which writes it. None of the three is a failure: the run
+goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
+the others, so the next run finishes the job.
 A path these lines name that the manifest supplied and that holds anything but a plain path is
 escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
 terminal.
 A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
 and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
-segment, on a scaffold manifest that cannot be trusted, or on a retired file it has decided to
-remove, or a `_README.md` it has decided to write, and cannot. That last refusal comes after the
-manifests are renamed, and the records of those it re-stamped are already written by then, so a
-later `overlay upgrade` still reads them as stayfixed's.
+segment or on a scaffold manifest that cannot be trusted. The records of the manifests it
+re-stamped are written before it retires anything, so a run that stops after the renames still
+leaves them read as stayfixed's by a later `overlay upgrade`.
 
 ---
 

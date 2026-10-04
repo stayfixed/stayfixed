@@ -355,25 +355,29 @@ def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
         assert not manifest.exists()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
-def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded(
-    tmp_path: Path,
+def test_init_that_stops_part_way_keeps_the_manifests_it_renamed_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `init` renamed the manifests, then failed to remove the old README, and exited with the new
-    # records only in memory: the renamed manifests then read as hand-edited to every `upgrade`.
-    # The records are written before anything is removed, so the refusal leaves them true.
+    # `init` renamed the manifests, then stopped while retiring the old README, and exited with
+    # the new records only in memory: the renamed manifests then read as hand-edited to every
+    # `upgrade`. The records are written before anything is retired, so a stop there leaves them
+    # true. What stops it here is an install whose template tree cannot be read, the one failure
+    # left between the renames and the end of `init`: a removal or a write that fails is named
+    # and passed over instead.
     #
     # Mutation: `mutations/`'s "overlay init records its renames only after the removal".
+    from stayfixed.overlay import create as module
+
+    def unreadable() -> list[object]:
+        raise Failure("the overlay template tree is not readable")
+
     root = _an_overlay(tmp_path)
     path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
-    memory = root / "common" / "memory"
-    memory.chmod(0o555)
-    try:
-        with pytest.raises(Refusal, match="cannot be removed"):
-            init_instance(root, "acme", runner=Recorder())
-    finally:
-        memory.chmod(0o755)
-    assert path.is_file()
+    monkeypatch.setattr(module, "templates", unreadable)
+    with pytest.raises(Failure, match="not readable"):
+        init_instance(root, "acme", runner=Recorder())
+    monkeypatch.undo()
+    assert not path.exists()
     verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     for manifest in (
         ".claude-plugin/plugin.json",
@@ -382,6 +386,82 @@ def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recor
     ):
         assert verbs[manifest] is not Verb.SKIP_MODIFIED, manifest
         assert json.loads((root / manifest).read_text(encoding="utf-8"))["name"].endswith("-acme")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
+def test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on(tmp_path: Path) -> None:
+    # `init` stopped at the first retired file it could not remove: the ones it had already
+    # removed were gone, their `removed` lines never printed, and their records never dropped
+    # from the ledger, so every later run read the absent file as unchanged and kept the record
+    # for good. A file `init` cannot remove is named and left, as one it cannot read is, and the
+    # ledger it writes drops the records of the files it did remove and only those.
+    #
+    # Mutation: `mutations/`'s "overlay init stops at a retired file it cannot remove".
+    root = _an_overlay(tmp_path)
+    for relative, text in (
+        (ATTACH_SKILL, SHIPPED_ATTACH_SKILL),
+        (RULES_README, SHIPPED_RULES_README_0_2),
+    ):
+        _with_a_retired_file(root, relative, ledger=True, text=text, shipped=text, version="0.2.0")
+    rules = root / "common" / "rules"
+    rules.chmod(0o555)
+    try:
+        done = init_instance(root, "acme", runner=Recorder())
+    finally:
+        rules.chmod(0o755)
+    assert f"removed {ATTACH_SKILL}, which this release no longer ships" in done.notes
+    left = [note for note in done.notes if note.startswith(f"left {RULES_README}: ")]
+    assert left == [f"left {RULES_README}: cannot be removed: Permission denied"], done.notes
+    # `init` went on to its last step, the secret scan.
+    assert any("pre-commit" in note for note in done.notes), done.notes
+    assert not (root / ATTACH_SKILL).exists()
+    assert (root / RULES_README).is_file()
+    assert ATTACH_SKILL in done.changed and RULES_README not in done.changed
+    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+    assert ATTACH_SKILL not in recorded
+    assert RULES_README in recorded
+    # And the next run finishes the job.
+    again = init_instance(root, "acme", runner=Recorder())
+    assert f"removed {RULES_README}, which this release no longer ships" in again.notes
+    assert (
+        RULES_README
+        not in json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+    )
+
+
+def test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same stop one step later: the old README was removed, `_README.md` could not be written
+    # in its place, and `init` refused with the README's record still in the ledger and its
+    # `removed` line never printed. The write that fails is named with the command that writes
+    # the file, and the ledger drops the record of the file that is gone.
+    #
+    # Mutation: `mutations/`'s "overlay init stops at a successor it cannot write".
+    from stayfixed import fsops
+
+    write = fsops.write_within
+
+    def refused(root: Path, relative: str, body: str) -> None:
+        if relative == "common/memory/_README.md":
+            raise PermissionError(13, "Permission denied")
+        write(root, relative, body)
+
+    root = _an_overlay(tmp_path)
+    (root / "common" / "memory" / "_README.md").unlink()
+    path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
+    monkeypatch.setattr(fsops, "write_within", refused)
+    done = init_instance(root, "acme", runner=Recorder())
+    monkeypatch.undo()
+    assert f"removed {MEMORY_README}, which this release no longer ships" in done.notes
+    assert (
+        "common/memory/_README.md cannot be written: Permission denied; "
+        "`stayfixed overlay upgrade` writes it"
+    ) in done.notes
+    assert any("pre-commit" in note for note in done.notes), done.notes
+    assert not path.exists()
+    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+    assert MEMORY_README not in recorded
 
 
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
@@ -596,6 +676,50 @@ def test_init_prints_a_retired_file_s_recorded_path_escaped(tmp_path: Path) -> N
     assert len(left) == 1, done.notes
     for note in done.notes:
         assert not any(c in note for c in "\x1b\x07\n"), note
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
+@pytest.mark.parametrize("removable", [True, False], ids=["removed", "cannot-remove"])
+def test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped(
+    tmp_path: Path, removable: bool
+) -> None:
+    # A record whose target case-folds to a place this release's retired file can be is acted on
+    # at the target the record names, so the path `init` prints on its `removed` line, and on the
+    # line naming a file it could not remove, is the ledger's own spelling. Case folding admits
+    # letters outside the path grammar (`\u017f` folds to `s`), and such a path prints through
+    # `printed.quoted` like any other the ledger chose.
+    # Mutation (declared): each line prints the target unescaped -> its escaped spelling is
+    # missing.
+    root = _an_overlay(tmp_path)
+    variant = ".stayfixed/local/artifacts/\u017fkills/attach/SKILL.md"
+    _with_a_retired_file(
+        root,
+        ATTACH_SKILL,
+        ledger=True,
+        text=SHIPPED_ATTACH_SKILL,
+        shipped=SHIPPED_ATTACH_SKILL,
+        version="0.2.0",
+    )
+    (root / ATTACH_SKILL).unlink()
+    copy = root / variant
+    copy.parent.mkdir(parents=True)
+    copy.write_text(SHIPPED_ATTACH_SKILL, encoding="utf-8")
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["artifacts"][ATTACH_SKILL]["target"] = variant
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    if not removable:
+        copy.parent.chmod(0o555)
+    try:
+        done = init_instance(root, "octo", runner=Recorder())
+    finally:
+        copy.parent.chmod(0o755)
+    if removable:
+        assert f"removed {variant!r}, which this release no longer ships" in done.notes
+        assert not copy.exists()
+    else:
+        assert f"left {variant!r}: cannot be removed: Permission denied" in done.notes
+        assert copy.is_file()
 
 
 def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> None:
