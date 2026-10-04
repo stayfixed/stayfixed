@@ -42,11 +42,11 @@ from typing import TYPE_CHECKING
 import stayfixed
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION, rules_file
 from stayfixed.config.loader import CONFIG_FILE
-from stayfixed.config.schema import BRANCH_NAME, Config
+from stayfixed.config.schema import BRANCH_NAME, Config, Paths
 from stayfixed.docs.api import trail_target
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import path_key
-from stayfixed.ledger.api import render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, ledger_path, render_index
 from stayfixed.project.layout import PROJECT_FILES
 from stayfixed.release.api import Resolution
 from stayfixed.scaffold import Kind, Style, Template, validate_sources
@@ -62,7 +62,7 @@ PROJECT = "project"
 # `Template.source` becomes `Record.template` in `.stayfixed/manifest.json`, which is committed and
 # is where a reader finds out where an artifact's bytes came from. Three artifacts
 # here have no shipped file at all — `config` is the rendered document, `bug-index` is
-# `render_index([], config)`, `gitignore` is `IGNORE_BODY` — and all three recorded
+# `render_index([], bug_register(config))`, `gitignore` is `IGNORE_BODY` — and all three recorded
 # `project/<id>`, a name absent from `PROJECT_FILES` and from the tree, which `read` itself
 # refuses. Nothing broke today only because each one overrides `render`; the committed fixture's
 # manifest carried `"template": "project/gitignore"`, a pointer at nothing, for as long as it has
@@ -337,6 +337,17 @@ def _budget(config: Config, name: str) -> str:
     return format(config.budgets.effective(name), ",")
 
 
+def _bug_ledger_documents(paths: Paths) -> list[Template]:
+    """The bug ledger's runbook and audits README, each where its index links it: built from
+    `[paths]` and the two names `bug_register` builds those links from, joined as it joins them."""
+    runbook = ledger_path(paths.runbooks, BUG_RUNBOOK)
+    audits = ledger_path(paths.bugs, BUG_AUDITS)
+    return [
+        _template("ledger-runbook", runbook, "bug-reports-runbook.md"),
+        _template("ledger-audits", f"{audits}/README.md", "audits-readme.md"),
+    ]
+
+
 def _template(
     artifact_id: str,
     target: str,
@@ -569,9 +580,11 @@ def project_templates(
     footprint: list[Template] = [
         _template("documentation-policy", f"{p.architecture}/documentation.md", "documentation.md"),
         _template("adr-template", f"{p.adr}/0000-template.md", "adr-template.md"),
-        _template("ledger-runbook", f"{p.runbooks}/bug-reports.md", "bug-reports-runbook.md"),
-        _template("ledger-audits", f"{p.bugs}/audits/README.md", "audits-readme.md"),
-        _computed("bug-index", p.bug_index, lambda: render_index([], config)),
+        *_bug_ledger_documents(p),
+        # The register is built where the index renders, because only rendering needs the
+        # identifiers it carries: `uninstall` builds this footprint to take it out, and a prefix the
+        # ledger refuses must not stop it.
+        _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),
         _template("trail", trail_target(config), "trail.toml"),

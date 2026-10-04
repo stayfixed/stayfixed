@@ -1,13 +1,14 @@
-"""One definition of what a ledger identifier looks like, from `[ledger] id_prefix`.
+"""One definition of what a ledger identifier looks like, from its register's prefix.
 
 A prefix is the kind of string that gets respelled at each point of use — a regular expression
 in one reader, a format string in a writer, a filename glob in a third — until a dozen copies
 disagree about what an identifier is and no one of them can be corrected alone. One object that
 every reader and writer asks is what makes a prefix that changes change all of them together,
 and it is why this grammar exists at all rather than as a constant per module. A leaf module:
-the ledger, the plan lint (`Fixes BR-nnn`) and the memory graph (`[[BR-nnn]]`) all read it, and
-none of them may import another's area. The prefix is repository-controlled (principle 5): it is
-interpolated into patterns and filenames, so it is held to a shape before either happens.
+the ledger builds each register's identifiers from it, and the plan lint (`Fixes BR-nnn`) and the
+memory graph (`[[BR-nnn]]`) read the bug ledger's through its register, from
+`stayfixed.ledger.api`. The prefix is repository-controlled (principle 5): it is interpolated
+into patterns and filenames, so it is held to a shape before either happens.
 """
 
 from __future__ import annotations
@@ -15,12 +16,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING
 
 from stayfixed.errors import Refusal
-
-if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
 
 # Upper-case letters and digits, one to eight characters, letter first. Not a budget but a named cap
 # (CONTRIBUTING.md#named-caps) on what may be interpolated into a regular expression and a filename,
@@ -74,7 +71,3 @@ class Identifiers:
     def shape(self) -> str:
         """How a message spells the contract: `BR-nnn`."""
         return f"{self.prefix}-nnn"
-
-
-def identifiers(config: Config) -> Identifiers:
-    return Identifiers(config.ledger.id_prefix)

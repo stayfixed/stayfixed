@@ -10,10 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.identifiers import Identifiers
+from stayfixed.config.loader import preset_defaults
 from stayfixed.ledger.entries import (
-    KEYS,
-    STATUSES,
     Entry,
     LedgerError,
     field_line,
@@ -23,8 +21,9 @@ from stayfixed.ledger.entries import (
     related_field,
     scalar,
 )
+from stayfixed.ledger.register import BUG_SCHEMA, bug_register
 
-IDS = Identifiers("BR")
+REGISTER = bug_register(preset_defaults("widget"))
 PATH = Path("docs/bugs/BR-042.md")
 
 ENTRY = """---
@@ -47,19 +46,21 @@ Body prose.
 
 
 def test_parse_entry_reads_every_field() -> None:
-    entry = parse_entry(ENTRY, path=PATH, ids=IDS)
+    entry = parse_entry(ENTRY, path=PATH, register=REGISTER)
     assert entry == Entry(
         id="BR-042",
         title='a widget treats a "0" string target as truthy',
         status="open",
-        severity="low",
-        area="widget rendering",
-        found="2026-07-21",
-        source="audit-2026-07-21",
-        fixed_in="",
         related=("BR-039",),
         body="- **Found:** 2026-07-21 (audit)\n- **Where:** `src/widget/bars.py`\n\nBody prose.\n",
         path=PATH,
+        fields={
+            "severity": "low",
+            "area": "widget rendering",
+            "found": "2026-07-21",
+            "source": "audit-2026-07-21",
+            "fixed_in": "",
+        },
     )
     assert entry.number == 42
 
@@ -99,6 +100,10 @@ def test_parse_entry_reads_every_field() -> None:
             "must be an ISO date",
         ),
         (
+            '---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: ""\n---\n',
+            "must be an ISO date",
+        ),
+        (
             "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\n"
             "found: 2026-02-30\n---\n",
             "names a date that does not exist",
@@ -128,9 +133,11 @@ def test_parse_entry_reads_every_field() -> None:
 def test_parse_entry_rejects_broken_frontmatter(text: str, fragment: str) -> None:
     # Each case is one rule; every message names the path so CI output is actionable.
     # Mutation for the date-exists rule: drop the `date.fromisoformat` call — the `2026-02-30`
-    # row reddens alone.
+    # row reddens alone. A quoted empty `found` passes the presence check and is still held to
+    # the date rule, because the key is required: drop `or "found" in schema.required` from the
+    # reader — the `found: ""` row reddens alone.
     with pytest.raises(LedgerError, match=fragment) as raised:
-        parse_entry(text, path=PATH, ids=IDS)
+        parse_entry(text, path=PATH, register=REGISTER)
     assert str(PATH) in str(raised.value)
 
 
@@ -168,7 +175,7 @@ def test_a_value_that_is_not_a_plain_yaml_string_needs_quotes(raw: str) -> None:
         f"found: 2026-01-01\nsource: {raw}\n---\n"
     )
     with pytest.raises(LedgerError, match="needs double quotes"):
-        parse_entry(text, path=PATH, ids=IDS)
+        parse_entry(text, path=PATH, register=REGISTER)
 
 
 def test_the_writer_quotes_every_yaml_indicator_a_value_can_lead_with() -> None:
@@ -204,11 +211,20 @@ def test_the_reader_accepts_every_value_the_writer_produces(value: str) -> None:
         f"---\nid: BR-001\ntitle: {scalar(value)}\nstatus: open\nseverity: low\n"
         "area: a\nfound: 2026-01-01\n---\n"
     )
-    assert parse_entry(text, path=PATH, ids=IDS).title == value
+    assert parse_entry(text, path=PATH, register=REGISTER).title == value
 
 
 def test_quote_escapes_only_backslash_and_double_quote() -> None:
     assert quote('a "b" \\ c') == '"a \\"b\\" \\\\ c"'
+
+
+def test_an_entry_is_a_hashable_value() -> None:
+    # `Entry` is a frozen record on this area's surface, and a dict among its hashed fields made
+    # `hash(entry)` raise `TypeError`. Mutation (oracle): `fields` hashed with the rest -> raises.
+    first = parse_entry(ENTRY, path=PATH, register=REGISTER)
+    second = parse_entry(ENTRY, path=PATH, register=REGISTER)
+    assert first == second
+    assert len({first, second}) == 1
 
 
 def test_void_entries_need_no_severity_or_area() -> None:
@@ -216,8 +232,8 @@ def test_void_entries_need_no_severity_or_area() -> None:
         "---\nid: BR-005\ntitle: renumbered\nstatus: void\nfound: 2026-01-01\n"
         "related: [BR-009]\n---\n\nbody\n"
     )
-    entry = parse_entry(text, path=PATH, ids=IDS)
-    assert (entry.status, entry.severity, entry.area) == ("void", "", "")
+    entry = parse_entry(text, path=PATH, register=REGISTER)
+    assert (entry.status, entry.fields["severity"], entry.fields["area"]) == ("void", "", "")
 
 
 def test_an_empty_optional_field_is_written_with_no_trailing_space() -> None:
@@ -229,10 +245,11 @@ def test_an_empty_optional_field_is_written_with_no_trailing_space() -> None:
 
 
 def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
-    # `KEYS` is the reader's whole vocabulary; `STATUSES` must each have an index section
-    # (pinned again in test_index.py). No mutation: a key added to one side and not the other
-    # reddens `test_parse_entry_reads_every_field` or the render test, which is the point.
-    assert set(KEYS) == {
+    # The schema's keys are the reader's whole vocabulary; its statuses must each have an index
+    # section, which `Schema` refuses to be built without. No mutation: a key added to one side
+    # and not the other reddens `test_parse_entry_reads_every_field` or the render test, which is
+    # the point.
+    assert set(BUG_SCHEMA.keys) == {
         "id",
         "title",
         "status",
@@ -243,7 +260,7 @@ def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
         "fixed_in",
         "related",
     }
-    assert STATUSES == ("open", "partial", "fixed", "rejected", "void")
+    assert BUG_SCHEMA.statuses == ("open", "partial", "fixed", "rejected", "void")
 
 
 def test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it(tmp_path: Path) -> None:

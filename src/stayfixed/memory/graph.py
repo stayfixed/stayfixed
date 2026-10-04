@@ -4,9 +4,9 @@ shared by every session on the machine, so `memory refs` reports these as notice
 change its exit code.
 
 The wiki-link pattern is defined here, as the link graph's own grammar, and `memory.refs` reads it
-for its audience check; the identifier grammar is `stayfixed.identifiers`, and what counts as prose
-is `stayfixed.prose`'s. The notes come from the walk `memory.refs` already made for its own
-findings, so `memory refs` reads the store once.
+for its audience check; the identifier grammar is the bug ledger's, read through
+`stayfixed.ledger.api`, and what counts as prose is `stayfixed.prose`'s. The notes come from the
+walk `memory.refs` already made for its own findings, so `memory refs` reads the store once.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import re
 from typing import TYPE_CHECKING
 
 from stayfixed.findings import Finding
-from stayfixed.identifiers import identifiers
+from stayfixed.ledger.api import bug_register
 from stayfixed.prose import blank_code_spans, blank_fences
 
 if TYPE_CHECKING:
@@ -40,7 +40,7 @@ def check_memory_graph(store: Store, config: Config, walked: Walk) -> list[Findi
     linkable = {p.stem for p in store.path.glob("*.md")}
     for group in groups:
         linkable |= {p.stem for p in (store.path / group).glob("*.md")}
-    ids = identifiers(config)
+    ids = bug_register(config).ids
     found: list[Finding] = []
     for note in walked.notes:
         where = note.path.relative_to(store.path).as_posix()

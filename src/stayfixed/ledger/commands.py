@@ -9,7 +9,7 @@ from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags, root_and_config
 from stayfixed.findings import labels, listed
-from stayfixed.ledger.entries import SEVERITIES
+from stayfixed.ledger.register import BUG_SCHEMA, bug_register
 from stayfixed.printed import printable
 from stayfixed.result import Result
 
@@ -27,15 +27,18 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.index import index_text, refuse_index_overwrite, render_index
 
     root, config = root_and_config(args)
-    current = index_text(root, config)
-    refuse_index_overwrite(root, config, current)
-    entries = load_entries(root, config)
-    rendered = render_index(entries, config)
-    index = config.paths.bug_index
+    ledger = bug_register(config)
+    current = index_text(root, ledger)
+    refuse_index_overwrite(root, ledger, current)
+    entries = load_entries(root, ledger)
+    rendered = render_index(entries, ledger)
+    index = ledger.index
     if args.check:
         if current != rendered:
             return Result(
-                f"{index} is stale; run: stayfixed bugs index", {"stale": True}, exit_code=1
+                f"{index} is stale; run: stayfixed {ledger.name} index",
+                {"stale": True},
+                exit_code=1,
             )
         return Result(f"OK: {index} is current ({len(entries)} entries)", {"stale": False})
     if current == rendered:
@@ -53,10 +56,11 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
+    # The `bugs` gate itself, so this command and a gate run cannot disagree.
     found = bugs_gate(root, config, args.base or "")
     # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
     # a finding, and there is none.
-    if not found and uninitialised(root, config):
+    if not found and uninitialised(root, bug_register(config)):
         return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
@@ -72,11 +76,9 @@ def run_bugs_new(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     filed = file_entry(
         root,
-        config,
+        bug_register(config),
         title=args.title,
-        severity=args.severity,
-        area=args.area,
-        source=args.source,
+        values={"severity": args.severity, "area": args.area, "source": args.source},
         related=tuple(args.related),
         fetch=not args.no_fetch,
     )
@@ -89,7 +91,7 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
     from stayfixed.ledger.write import renumber
 
     root, config = root_and_config(args)
-    result = renumber(root, config, args.old, args.new)
+    result = renumber(root, config, bug_register(config), args.old, args.new)
     void = result.void.relative_to(root).as_posix()
     # Each file as `{path, reason}`, and the line names each by its `path`: a path may hold
     # `": "`, so a `"path: reason"` string could not be split back into the two.
@@ -116,7 +118,8 @@ def register(groups: SubParsers) -> None:
     sub = bugs.add_subparsers(dest="command", metavar="<command>")
     new = common_flags(sub.add_parser("new", help="file a new entry and regenerate the index"))
     new.add_argument("title")
-    new.add_argument("--severity", required=True, choices=SEVERITIES)
+    # The levels no project configures, so the parser needs no configuration to offer them.
+    new.add_argument("--severity", required=True, choices=BUG_SCHEMA.levels)
     new.add_argument("--area", required=True)
     new.add_argument("--source", default="")
     new.add_argument("--related", nargs="*", default=[])

@@ -1,4 +1,4 @@
-"""The bug ledger: one file per bug under `[paths] bugs`, one generated index.
+"""A ledger: one file per entry under its register's directory, one generated index.
 
 The index is generated from the entry files and must never be edited by hand: the entry files
 are the truth, the index carries nothing of its own, so a conflict in it is always resolved by
@@ -13,26 +13,16 @@ loses its status is worse than one that fails the guard.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
-from stayfixed.identifiers import Identifiers, identifiers
+from stayfixed.identifiers import Identifiers
+from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
-
-if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
-
-STATUSES = ("open", "partial", "fixed", "rejected", "void")
-SEVERITIES = ("high", "medium", "low")
-KEYS = ("id", "title", "status", "severity", "area", "found", "source", "fixed_in", "related")
-REQUIRED_KEYS = ("id", "title", "status", "found")
-# `void` records a number that was allocated and never carried a bug, so it has no severity
-# and no area to record.
-REQUIRED_UNLESS_VOID = ("severity", "area")
 
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n\n?(.*)\Z", re.DOTALL)
 _KEY_VALUE = re.compile(r"\A([a-z_]+):[ \t]*(.*)\Z")
@@ -65,17 +55,24 @@ def _where(path: Path) -> str:
 
 @dataclass(frozen=True)
 class Entry:
+    """One parsed entry file. `fields` holds the register's keys outside `ENGINE_KEYS`, each one
+    the register declares, with `""` for a key the file leaves empty or out."""
+
     id: str
     title: str
     status: str
-    severity: str
-    area: str
-    found: str
-    source: str
-    fixed_in: str
     related: tuple[str, ...]
     body: str
     path: Path
+    # Compared, not hashed: a dict has no hash, and the fields above already tell two entries
+    # apart, so equal entries still hash equal.
+    fields: Mapping[str, str] = field(hash=False)
+
+    def value(self, key: str) -> str:
+        """The entry's value for one of its register's keys other than `related`."""
+        if key in ENGINE_KEYS and key != "related":
+            return str(getattr(self, key))
+        return self.fields[key]
 
     @property
     def number(self) -> int:
@@ -118,25 +115,25 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
     return "".join(out)
 
 
-def _require_iso_date(value: str, *, where: Path) -> str:
+def _require_iso_date(value: str, *, key: str, where: Path) -> str:
     """`value` back, once it is a date that exists.
 
     Both halves are needed. `date.fromisoformat` alone accepts the compact `YYYYMMDD` form and
-    the ISO week form (`2026-W33-1`), neither of which the index's Found column or any date
+    the ISO week form (`2026-W33-1`), neither of which an index's date column or any date
     comparison here is written for, so
     the shape test keeps the extended form. The shape test alone accepts `2026-02-30` and
-    `2026-13-45` — digits in the right places, days nobody can have found a bug on — in the one
+    `2026-13-45` — digits in the right places, days nobody can have recorded anything on — in a
     field this guard is meant to be the authority on.
     """
     if not _ISO_DATE.match(value):
         raise LedgerError(
-            f"{_where(where)}: `found` must be an ISO date (YYYY-MM-DD), got {value!r}"
+            f"{_where(where)}: `{key}` must be an ISO date (YYYY-MM-DD), got {value!r}"
         )
     try:
         date.fromisoformat(value)
     except ValueError as error:
         raise LedgerError(
-            f"{_where(where)}: `found` names a date that does not exist: {value!r}"
+            f"{_where(where)}: `{key}` names a date that does not exist: {value!r}"
         ) from error
     return value
 
@@ -157,7 +154,7 @@ def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...
     return tuple(items)
 
 
-def parse_entry(text: str, *, path: Path, ids: Identifiers) -> Entry:
+def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     """Parse one entry file's text, raising `LedgerError` on anything ambiguous.
 
     `path` is never opened here — it names the file in every message this raises, and becomes
@@ -165,6 +162,7 @@ def parse_entry(text: str, *, path: Path, ids: Identifiers) -> Entry:
     repo-relative one, since these messages are printed by `check` on CI, where an absolute
     path is a runner's scratch directory nobody can act on.
     """
+    ids, schema = register.ids, register.schema
     match = _FRONTMATTER.match(text)
     if match is None:
         raise LedgerError(f"{_where(path)}: no `---` frontmatter block at the top of the file")
@@ -178,46 +176,56 @@ def parse_entry(text: str, *, path: Path, ids: Identifiers) -> Entry:
         if key_value is None:
             raise LedgerError(f"{_where(path)}:{number}: expected `key: value`, got {line!r}")
         key, raw = key_value.group(1), key_value.group(2).strip()
-        if key not in KEYS:
+        if key not in schema.keys:
             raise LedgerError(f"{_where(path)}:{number}: unknown frontmatter key `{key}`")
         if key in fields:
             raise LedgerError(f"{_where(path)}:{number}: duplicate key `{key}`")
         fields[key] = raw
 
-    for key in REQUIRED_KEYS:
+    for key in schema.required:
         if not fields.get(key):
             raise LedgerError(f"{_where(path)}: missing required frontmatter key `{key}`")
     identifier = _unquote(fields["id"], key="id", where=path)
     if not ids.is_identifier(identifier):
         raise LedgerError(f"{_where(path)}: `id` must look like {ids.shape}, got {identifier!r}")
     status = _unquote(fields["status"], key="status", where=path)
-    if status not in STATUSES:
+    if status not in schema.statuses:
         raise LedgerError(
-            f"{_where(path)}: `status` must be one of {', '.join(STATUSES)}, got {status!r}"
+            f"{_where(path)}: `status` must be one of {', '.join(schema.statuses)}, got {status!r}"
         )
-    if status != "void":
-        for key in REQUIRED_UNLESS_VOID:
+    if status != schema.void:
+        for key in schema.required_unless_void:
             if not fields.get(key):
                 raise LedgerError(f"{_where(path)}: missing required frontmatter key `{key}`")
-    severity = _unquote(fields.get("severity", ""), key="severity", where=path)
-    if severity and severity not in SEVERITIES:
+    # Read in the order the refusals have always come in — the level, the dates, the title, then
+    # the rest in the order of the keys, the bug ledger's `area` first among them — so an entry
+    # with two defects is told about the same one first.
+    level = schema.level
+    values: dict[str, str] = {}
+    values[level] = _unquote(fields.get(level, ""), key=level, where=path)
+    if values[level] and values[level] not in schema.levels:
         raise LedgerError(
-            f"{_where(path)}: `severity` must be one of {', '.join(SEVERITIES)}, got {severity!r}"
+            f"{_where(path)}: `{level}` must be one of {', '.join(schema.levels)}, "
+            f"got {values[level]!r}"
         )
-    found = _require_iso_date(_unquote(fields["found"], key="found", where=path), where=path)
+    for key in schema.dates:
+        values[key] = _unquote(fields.get(key, ""), key=key, where=path)
+        # Required, it is a date even when quoted empty: `found: ""` passes the presence check.
+        if values[key] or key in schema.required:
+            _require_iso_date(values[key], key=key, where=path)
+    title = _unquote(fields["title"], key="title", where=path)
+    for key in schema.keys:
+        if key not in ENGINE_KEYS and key not in values:
+            values[key] = _unquote(fields.get(key, ""), key=key, where=path)
 
     return Entry(
         id=identifier,
-        title=_unquote(fields["title"], key="title", where=path),
+        title=title,
         status=status,
-        severity=severity,
-        area=_unquote(fields.get("area", ""), key="area", where=path),
-        found=found,
-        source=_unquote(fields.get("source", ""), key="source", where=path),
-        fixed_in=_unquote(fields.get("fixed_in", ""), key="fixed_in", where=path),
         related=_parse_related(fields.get("related", ""), where=path, ids=ids),
         body=match.group(2),
         path=path,
+        fields=values,
     )
 
 
@@ -229,9 +237,9 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a refusal or an
     internal error: a repository condition reported as an internal error tells the operator the
     tool is broken rather than that their tree is, and there is nothing in that message for them
-    to act on. `check.problems` has an `unreadable-entry` rule for exactly this file and catches
-    this; `scan.scannable` records the same condition on `Scanned.error` instead of raising,
-    because it has a whole tree to get through where this has one file.
+    to act on. `check.register_gate` has an `unreadable-entry` rule for exactly this file and
+    catches this; `scan.scannable` records the same condition on `Scanned.error` instead of
+    raising, because it has a whole tree to get through where this has one file.
     """
     try:
         return path.read_text(encoding="utf-8")
@@ -243,27 +251,26 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
         ) from error
 
 
-def bugs_dir(root: Path, config: Config) -> Path:
-    return contained(root, config.paths.bugs)
+def entry_dir(root: Path, register: Register) -> Path:
+    return contained(root, register.directory)
 
 
-def load_entries(root: Path, config: Config) -> list[Entry]:
-    """Every entry under the configured ledger directory, ordered by identifier number.
+def load_entries(root: Path, register: Register) -> list[Entry]:
+    """Every entry under the register's directory, ordered by identifier number.
 
     Parsed against the repo-relative path, which is `parse_entry`'s documented contract.
     Handing it the absolute one made the writing commands describe a malformed entry by a
     path under a temporary directory while `check` described the same file repo-relatively —
     and on CI the absolute form names a runner's scratch directory nobody can act on.
     """
-    ids = identifiers(config)
-    directory = bugs_dir(root, config)
+    directory = entry_dir(root, register)
     entries = [
         parse_entry(
             read_ledger_text(path, where=path.relative_to(root)),
             path=path.relative_to(root),
-            ids=ids,
+            register=register,
         )
-        for path in sorted(directory.glob(f"{ids.prefix}-*.md"))
+        for path in sorted(directory.glob(f"{register.ids.prefix}-*.md"))
     ]
     return sorted(entries, key=lambda entry: entry.number)
 

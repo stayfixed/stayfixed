@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -10,12 +11,10 @@ from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.gitenv import NO_ANSWER, QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
-from stayfixed.identifiers import DIGITS, identifiers
-from stayfixed.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
+from stayfixed.identifiers import DIGITS
 from stayfixed.ledger.entries import (
-    SEVERITIES,
     LedgerError,
-    bugs_dir,
+    entry_dir,
     field_line,
     load_entries,
     parse_entry,
@@ -25,6 +24,7 @@ from stayfixed.ledger.entries import (
     scalar,
 )
 from stayfixed.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
+from stayfixed.ledger.register import Register
 from stayfixed.ledger.scan import citation_roots, scannable
 
 if TYPE_CHECKING:
@@ -35,41 +35,8 @@ if TYPE_CHECKING:
 # (CONTRIBUTING.md#named-caps), and no shipped file changes with it.
 FETCH_TIMEOUT_SECONDS = 10
 
-# The three optional fields are interpolated whole, `key: value` included, because an absent
-# value has to leave a bare `key:` behind — the trailing space of `source: ` is whitespace an
-# editor strips on save.
-TEMPLATE = f"""---
-id: {{identifier}}
-title: {{title}}
-status: open
-severity: {{severity}}
-{{area}}
-found: {{today}}
-{{source}}
-fixed_in:
-{{related}}
----
-
-- **Found:** {{today}}
-- **Where:** `path/to/file.py::symbol`
-
-What goes wrong, what the user sees, and the evidence for it.
-
-**Suggested fix:** what to change, and what must not change with it.
-
-{EVIDENCE_LABEL} {EVIDENCE_PLACEHOLDER} —
-name what the evidence is silent about, and what would have to be observed to settle it.
-"""
-
 _ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
-_VOID_POINTER = """---
-id: {old}
-title: {title}
-status: void
-found: {today}
-related: [{new}]
----
-
+_VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
 """
@@ -104,7 +71,7 @@ class Unswept:
 @dataclass(frozen=True)
 class Renumbered:
     void: Path
-    unswept: list[Unswept]
+    unswept: tuple[Unswept, ...]
 
 
 def _fetch(root: Path) -> str | None:
@@ -133,7 +100,7 @@ def _fetch(root: Path) -> str | None:
     return f"{cause}; identifiers may collide with branches this checkout has not fetched"
 
 
-def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Allocation:
+def next_identifier(root: Path, register: Register, *, fetch: bool = True) -> Allocation:
     """`1 + max` over every identifier this repository can see: the working tree by filename
     and by `id:` (either alone leaves an occupied number invisible), and every entry ever added
     on any ref.
@@ -145,19 +112,20 @@ def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Alloca
     one rule everywhere rather than a new one.
     """
     warning = _fetch(root) if fetch else None
-    ids = identifiers(config)
-    bugs = bugs_dir(root, config)
+    ids = register.ids
+    directory = entry_dir(root, register)
     numbers: set[int] = set()
-    if bugs.is_dir():
-        numbers.update(entry.number for entry in load_entries(root, config))
+    if directory.is_dir():
+        numbers.update(entry.number for entry in load_entries(root, register))
         numbers.update(
             ids.number(path.stem)
-            for path in bugs.glob(f"{ids.prefix}-*.md")
+            for path in directory.glob(f"{ids.prefix}-*.md")
             if ids.is_identifier(path.stem)
         )
-    # Built from `paths.bugs` like every other path here: spelled literally, a rename would
-    # make the allocator silently under-count and hand out a number some ref already holds.
-    tracked = f"{config.paths.bugs}/"
+    # Built from the register's directory like every other path here: spelled literally, a
+    # rename would make the allocator silently under-count and hand out a number some ref
+    # already holds.
+    tracked = f"{register.directory}/"
     # Quoting forced on, so under an owner's `core.quotePath=false` a name in this history that
     # is not UTF-8 still comes back as ASCII, whatever decodes it; `git_run` reads the raw bytes
     # losslessly too, so this is the second of two holds and not the only one. An entry's own
@@ -210,42 +178,52 @@ def _joined(first: str | None, second: str | None) -> str | None:
     return "; ".join(part for part in (first, second) if part) or None
 
 
-def _write_index(root: Path, config: Config) -> None:
-    rendered = render_index(load_entries(root, config), config)
-    if index_text(root, config) != rendered:
-        fsops.write_within(root, config.paths.bug_index, rendered)
+def _write_index(root: Path, register: Register) -> None:
+    rendered = render_index(load_entries(root, register), register)
+    if index_text(root, register) != rendered:
+        fsops.write_within(root, register.index, rendered)
 
 
 def file_entry(
     root: Path,
-    config: Config,
+    register: Register,
     *,
     title: str,
-    severity: str,
-    area: str,
-    source: str = "",
+    values: Mapping[str, str],
     related: tuple[str, ...] = (),
     today: str = "",
     fetch: bool = True,
 ) -> Filed:
-    """File a new bug: allocate the next free identifier, write its entry, regenerate the index.
+    """File a new entry: allocate the next free identifier, write its entry, regenerate the index.
+
+    `values` holds the keys the register's template leaves a whole `key: value` line for
+    (`Schema.line_keys`) — for the bug ledger `severity`, `area` and `source`; a key left out is
+    written bare. A key the template has no line for is a `ValueError`, the caller's mistake: it
+    would otherwise be dropped in silence, since `str.format` ignores a keyword it has no field
+    for.
 
     Every failure is raised before anything reaches disk: a rejected input leaves the tree
-    exactly as it was, with no half-filed entry and no allocated-but-unused number. A severity
+    exactly as it was, with no half-filed entry and no allocated-but-unused number. A level
     outside the vocabulary, an index that must not be regenerated over, an identifier whose
     file already exists and frontmatter the reader would reject are all rejected here.
 
     `fetch` is the one knob a caller turns off: the allocator asks the network what other
     branches hold, which tests and offline use skip.
     """
-    if severity not in SEVERITIES:
-        raise LedgerError(f"--severity must be one of {', '.join(SEVERITIES)}")
-    # Asked before allocating, not left to the `_write_index` call at the end: filing a bug
+    schema = register.schema
+    unlined = sorted(set(values) - set(schema.line_keys))
+    if unlined:
+        raise ValueError(
+            f"the {register.name} register's template has no line for {', '.join(unlined)}"
+        )
+    if values.get(schema.level, "") not in schema.levels:
+        raise LedgerError(f"--{schema.level} must be one of {', '.join(schema.levels)}")
+    # Asked before allocating, not left to the `_write_index` call at the end: filing an entry
     # must not be what destroys a ledger, and refusing here leaves no half-filed entry behind.
-    refuse_index_overwrite(root, config, index_text(root, config))
-    allocation = next_identifier(root, config, fetch=fetch)
+    refuse_index_overwrite(root, register, index_text(root, register))
+    allocation = next_identifier(root, register, fetch=fetch)
     identifier = allocation.identifier
-    relative = f"{config.paths.bugs}/{identifier}.md"
+    relative = f"{register.directory}/{identifier}.md"
     path = root / relative
     # The allocator reads what this repository can see, which is not the same question as
     # whether the file is there: it cannot see a branch this checkout never fetched (`_fetch`
@@ -255,28 +233,66 @@ def file_entry(
     if path.exists():
         raise LedgerError(
             f"{identifier} was allocated but {relative} already exists; nothing was written. "
-            "Run `stayfixed bugs check`: an entry file the allocator cannot account for is one "
-            "this ledger is wrong about."
+            f"Run `stayfixed {register.name} check`: an entry file the allocator cannot account "
+            "for is one this ledger is wrong about."
         )
-    text = TEMPLATE.format(
+    text = _scaffold(
+        register,
         identifier=identifier,
-        title=scalar(title),
-        severity=severity,
-        area=field_line("area", area),
+        title=title,
+        values=values,
+        related=related,
         today=today or date.today().isoformat(),
-        source=field_line("source", source),
-        related=related_field(related),
     )
     # Validated the same way any other entry file is, before it touches disk: a malformed field
     # must fail cleanly here rather than be written and then fail the index re-render below,
     # leaving a broken entry file that every later `index`, `check` and `new` also fails on.
-    parse_entry(text, path=Path(relative), ids=identifiers(config))
+    parse_entry(text, path=Path(relative), register=register)
     fsops.write_within(root, relative, text)  # creates the ledger directory on the first entry
-    _write_index(root, config)
+    _write_index(root, register)
     return Filed(path, identifier, allocation.warning)
 
 
-def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "") -> Renumbered:
+def _scaffold(
+    register: Register,
+    *,
+    identifier: str,
+    title: str,
+    values: Mapping[str, str],
+    related: tuple[str, ...],
+    today: str,
+) -> str:
+    """The entry `new` writes: the register's template, each key `values` holds on its own line
+    (a key it leaves out written bare), and the number, title, day and related list filled in."""
+    lines = {key: field_line(key, values.get(key, "")) for key in register.schema.line_keys}
+    return register.schema.template.format(
+        identifier=identifier,
+        title=scalar(title),
+        today=today,
+        related=related_field(related),
+        **lines,
+    )
+
+
+def _void_pointer(register: Register, *, old: str, new: str, title: str, today: str) -> str:
+    """The entry `renumber` leaves at `old`: the register's void status, the day of the move for
+    each date every entry must carry, and `new` in `related`, in the order the schema's keys
+    run. `Schema` refuses a register that requires any other key, which this could not fill."""
+    schema = register.schema
+    lines = {
+        "id": f"id: {old}",
+        "title": f"title: {quote(title)}",
+        "status": f"status: {schema.void}",
+        "related": f"related: [{new}]",
+    }
+    lines.update((key, f"{key}: {today}") for key in schema.dates if key in schema.required)
+    frontmatter = "\n".join(lines[key] for key in schema.keys if key in lines)
+    return f"---\n{frontmatter}\n---\n{_VOID_BODY.format(new=new)}"
+
+
+def renumber(
+    root: Path, config: Config, register: Register, old: str, new: str, *, today: str = ""
+) -> Renumbered:
     """Move an entry to a free identifier, taking every reference to it along.
 
     Every check that can reject the call runs before any file is touched. Both endpoints are
@@ -286,21 +302,21 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
     own `id:` line would otherwise be corrupted by the substitution it exists to survive.
 
     A text file the sweep cannot read, or cannot write back, is not silently skipped: once the
-    void pointer exists, `check.problems`' `known` set makes a stale `old` mention in that file
+    void pointer exists, `check.register_gate`' `known` set makes a stale `old` mention in that file
     look intentional forever, and it will never be reported as dangling again. So a file the
     sweep could not touch is collected and returned, and the command fails, rather than
     claiming a rewrite it did not fully deliver. A file that is not text at all is a different
     thing and is skipped in silence, exactly as the scan skips it: it holds no identifier to
     rewrite, and reporting one would fail this command on any repository tracking one image.
     """
-    ids = identifiers(config)
+    ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
         raise LedgerError(f"both identifiers must look like {ids.shape}")
-    bugs = config.paths.bugs
-    source = root / bugs / f"{old}.md"
-    target = root / bugs / f"{new}.md"
+    directory = register.directory
+    source = root / directory / f"{old}.md"
+    target = root / directory / f"{new}.md"
     if not source.is_file():
-        raise LedgerError(f"{bugs}/{old}.md does not exist")
+        raise LedgerError(f"{directory}/{old}.md does not exist")
     if target.exists():
         raise LedgerError(f"{new} already has an entry file; pick a free identifier")
     # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
@@ -311,39 +327,42 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
     # at all. `file_entry` never had it, because `next_identifier` parses the siblings before
     # anything is written. The result is discarded on purpose: the index has to be rendered from
     # the files as they are AFTER the move, so this is a check and not a value.
-    load_entries(root, config)
+    load_entries(root, register)
     # The last of the checks that reject with the tree untouched, and the one this command
     # needs most: it regenerates the index at the end, by which time both endpoints and the
     # whole sweep are already on disk, so a refusal that came any later would come after the
     # damage. Bound to a local rather than inlined like `file_entry`'s identical call, so the
     # oracle entry that pins this call site names a line that appears once in this file.
-    committed_index = index_text(root, config)
-    refuse_index_overwrite(root, config, committed_index)
+    committed_index = index_text(root, register)
+    refuse_index_overwrite(root, register, committed_index)
 
     # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
     # names the file in every message either of them raises.
-    where = Path(bugs) / f"{old}.md"
+    where = Path(directory) / f"{old}.md"
     source_text = read_ledger_text(source, where=where)
-    entry = parse_entry(source_text, path=where, ids=ids)
+    entry = parse_entry(source_text, path=where, register=register)
     # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
     # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
     # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
-    fsops.write_within(root, f"{bugs}/{new}.md", _ID_LINE.sub(f"id: {new}", source_text, count=1))
+    fsops.write_within(
+        root, f"{directory}/{new}.md", _ID_LINE.sub(f"id: {new}", source_text, count=1)
+    )
     # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve to
     # something at every instant from here on, including if the sweep below is interrupted.
     fsops.write_within(
         root,
-        f"{bugs}/{old}.md",
-        _VOID_POINTER.format(
+        f"{directory}/{old}.md",
+        _void_pointer(
+            register,
             old=old,
             new=new,
-            title=quote(f"renumbered to {new} — {entry.title}"),
+            title=f"renumbered to {new} — {entry.title}",
             today=today or date.today().isoformat(),
         ),
     )
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
-    excluded = {source, target, index_path(root, config)}
+    excluded = {source, target, index_path(root, register)}
     unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
         if item.path in excluded:
@@ -370,5 +389,5 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
             unswept.append(
                 Unswept(item.relative.as_posix(), f"could not be written ({fsops.said(error)})")
             )
-    _write_index(root, config)
-    return Renumbered(source, unswept)
+    _write_index(root, register)
+    return Renumbered(source, tuple(unswept))

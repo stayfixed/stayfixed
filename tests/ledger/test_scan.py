@@ -15,6 +15,7 @@ import pytest
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.gitenv import git_run
+from stayfixed.ledger.register import bug_register
 from stayfixed.ledger.scan import (
     FIXTURE_MARKER,
     FIXTURE_MARKER_WINDOW,
@@ -84,7 +85,7 @@ def test_the_top_level_files_are_scanned(tmp_path: Path) -> None:
     # that only knew directories.
     root, config = project(tmp_path)
     write(root, "pyproject.toml", "# see BR-404\n")
-    assert list(code_mentions(root, config)) == ["BR-404"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-404"]
 
 
 @pytest.mark.parametrize(
@@ -99,7 +100,7 @@ def test_the_top_level_files_are_scanned(tmp_path: Path) -> None:
 def test_the_walk_enters_no_vendored_or_generated_directory(tmp_path: Path, location: str) -> None:
     root, config = project(tmp_path)
     write(root, location, "// see BR-404\n")
-    assert code_mentions(root, config) == {}
+    assert code_mentions(root, config, bug_register(config)) == {}
 
 
 def test_a_directory_name_is_excluded_only_inside_the_repository(tmp_path: Path) -> None:
@@ -110,7 +111,7 @@ def test_a_directory_name_is_excluded_only_inside_the_repository(tmp_path: Path)
     (root / "src").mkdir()
     config = load(root, machine=tmp_path / "m.toml")
     write(root, "src/a.py", "# BR-404\n")
-    assert list(code_mentions(root, config)) == ["BR-404"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-404"]
 
 
 def test_a_binary_suffix_and_a_symlink_are_skipped_whole(tmp_path: Path) -> None:
@@ -119,7 +120,7 @@ def test_a_binary_suffix_and_a_symlink_are_skipped_whole(tmp_path: Path) -> None
     outside = tmp_path / "outside.py"
     outside.write_text("# BR-405\n", encoding="utf-8")
     os.symlink(outside, root / "src" / "linked.py")
-    assert code_mentions(root, config) == {}
+    assert code_mentions(root, config, bug_register(config)) == {}
 
 
 def test_a_fixture_holder_is_excluded_from_the_scan(tmp_path: Path) -> None:
@@ -128,7 +129,7 @@ def test_a_fixture_holder_is_excluded_from_the_scan(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     write(root, "tests/test_x.py", f'"""{FIXTURE_MARKER} — sample data"""\nENTRY = "BR-404"\n')
     write(root, "tests/test_y.py", "ENTRY = 'BR-405'\n")
-    assert list(code_mentions(root, config)) == ["BR-405"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-405"]
 
 
 def test_the_marker_is_read_only_from_the_head_of_a_file(tmp_path: Path) -> None:
@@ -139,7 +140,7 @@ def test_the_marker_is_read_only_from_the_head_of_a_file(tmp_path: Path) -> None
         "tests/test_x.py",
         "x = 1\n" * (FIXTURE_MARKER_WINDOW // 6 + 1) + f"# {FIXTURE_MARKER}\nENTRY = 'BR-404'\n",
     )
-    assert list(code_mentions(root, config)) == ["BR-404"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-404"]
 
 
 def test_an_undecodable_file_is_not_text_and_an_unreadable_one_carries_its_error(
@@ -170,7 +171,7 @@ def test_git_enumerates_the_candidates_and_an_ignored_file_is_not_one(tmp_path: 
     write(root, ".gitignore", "src/generated/\n")
     write(root, "src/generated/out.py", "# BR-404\n")
     write(root, "src/a.py", "# BR-405\n")
-    assert list(code_mentions(root, config)) == ["BR-405"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-405"]
 
 
 @needs_git
@@ -194,7 +195,7 @@ def test_a_listing_git_gave_no_answer_for_falls_back_to_the_walk_and_not_to_noth
         return (-1, "") if args[0] == "ls-files" else real(where, *args, **kwargs)
 
     monkeypatch.setattr(module, "git_run", unanswered)
-    assert list(code_mentions(root, config)) == ["BR-405"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-405"]
 
 
 @needs_git
@@ -207,7 +208,7 @@ def test_a_listed_name_that_is_not_utf_8_hides_no_other_file(tmp_path: Path) -> 
     git(root, "init", "-q")
     write(root, "src/a.py", "# BR-405\n")
     plant_path(root, b"src/caf\xe9.py")
-    assert list(code_mentions(root, config)) == ["BR-405"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-405"]
 
 
 @needs_git
@@ -215,7 +216,7 @@ def test_a_root_that_is_not_the_top_of_a_checkout_falls_back_to_the_walk(tmp_pat
     git(tmp_path, "init", "-q")
     root, config = project(tmp_path)
     write(root, "src/a.py", "# BR-404\n")
-    assert list(code_mentions(root, config)) == ["BR-404"]
+    assert list(code_mentions(root, config, bug_register(config))) == ["BR-404"]
 
 
 def test_a_citation_of_an_entry_file_is_resolved_two_ways(tmp_path: Path) -> None:
@@ -225,7 +226,7 @@ def test_a_citation_of_an_entry_file_is_resolved_two_ways(tmp_path: Path) -> Non
     write(root, "docs/deeper/note.md", "see [x](../bugs/BR-406.md)\n")
     # resolves to docs/deeper/bugs/: not a citation
     write(root, "docs/deeper/other.md", "see [x](bugs/BR-407.md)\n")
-    found = entry_citations(root, config)
+    found = entry_citations(root, config, bug_register(config))
     assert set(found) == {"BR-404", "BR-405", "BR-406"}
     assert found["BR-404"] == [(PurePosixPath("src/a.py"), 1)]
 
@@ -235,17 +236,17 @@ def test_an_absolute_path_that_merely_contains_the_entry_path_is_not_a_citation(
 ) -> None:
     root, config = project(tmp_path)
     write(root, "src/a.py", "# /tmp/x/docs/bugs/BR-404.md\n")
-    assert entry_citations(root, config) == {}
+    assert entry_citations(root, config, bug_register(config)) == {}
 
 
 def test_the_index_and_the_entries_are_not_read_as_citers(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     write(root, "docs/bug-reports.md", "| [BR-404](bugs/BR-404.md) |\n")
     write(root, "docs/bugs/BR-001.md", "see [BR-404](BR-404.md)\n")
-    assert entry_citations(root, config) == {}
+    assert entry_citations(root, config, bug_register(config)) == {}
 
 
 def test_the_citation_pattern_follows_the_configured_ledger_directory(tmp_path: Path) -> None:
     _root, config = project(tmp_path, '\n[paths]\nbugs = "docs/defects"\n')
-    assert citation_pattern(config).search("docs/defects/BR-001.md")
-    assert not citation_pattern(config).search("docs/bugs/BR-001.md")
+    assert citation_pattern(bug_register(config)).search("docs/defects/BR-001.md")
+    assert not citation_pattern(bug_register(config)).search("docs/bugs/BR-001.md")

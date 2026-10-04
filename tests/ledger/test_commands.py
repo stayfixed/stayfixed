@@ -337,9 +337,8 @@ def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
 def test_check_answers_with_the_bugs_gate_s_own_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `bugs check` and the `bugs` gate are one function. Mutation
-    # (advisory): the import in `run_bugs_check` becomes `from stayfixed.ledger.check import
-    # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
+    # `bugs check` and the `bugs` gate are one function, so the command cannot pass a ledger the
+    # gate run fails, or the reverse: a finding only `bugs_gate` returns is the command's answer.
     _root, common = project(tmp_path)
     argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
     assert invoke([*argv, *common]) == 0

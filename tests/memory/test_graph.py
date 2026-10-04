@@ -6,6 +6,7 @@ finds. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,20 @@ def test_a_dead_link_a_repeat_and_a_bracketed_identifier_are_each_noted(tmp_path
         ("dead-wiki-link", "developer/a.md", "gone"),
         ("bracketed-identifier", "developer/a.md", "BR-042"),
         ("repeated-link", "developer/a.md", "b"),
+    ]
+
+
+def test_a_bracketed_identifier_is_the_bug_ledgers_as_the_project_configures_it(
+    tmp_path: Path,
+) -> None:
+    # Mutation (oracle): the notice reads the default prefix whatever `[ledger] id_prefix` says
+    # -> `[[DF-042]]` reads as a dead link and `[[BR-042]]` as an identifier.
+    root, config = project(tmp_path)
+    config = replace(config, ledger=replace(config.ledger, id_prefix="DF"))
+    note(root, "developer", "a", "see [[DF-042]] and [[BR-042]]\n")
+    assert graph(root, config) == [
+        ("bracketed-identifier", "developer/a.md", "DF-042"),
+        ("dead-wiki-link", "developer/a.md", "BR-042"),
     ]
 
 

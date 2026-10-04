@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import replace
 from importlib import resources
@@ -15,7 +16,7 @@ from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import HARNESSES
-from stayfixed.ledger.api import render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, render_index
 from stayfixed.profiles import load_profile
 from stayfixed.project.api import PROJECT_FILES, Prepared, project_templates
 from stayfixed.project.footprint import LOCAL_PROFILE, refuse_local_profile
@@ -160,7 +161,46 @@ def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     assert by_id["gitignore"].style is Style.HASH and by_id["gitignore"].render() == IGNORE_BODY
     assert by_id["agents-md"].region == "harness"
     assert "docs/plan/roadmap.md" in by_id["agents-md"].render()
-    assert by_id["bug-index"].render() == render_index([], moved)
+    assert by_id["bug-index"].render() == render_index([], bug_register(moved))
+
+
+def test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them() -> None:
+    # The index `init` writes links the runbook and the audits directory, so the two files `init`
+    # writes beside it are found where it links them, on a layout where every path moved.
+    # Mutation (oracle): the audits README written under a directory the register does not name
+    # -> its link resolves to nothing `init` wrote.
+    config = preset_defaults("widget")
+    moved = replace(
+        config,
+        paths=replace(
+            config.paths, bugs="ledger/entries", bug_index="ledger/INDEX.md", runbooks="guides"
+        ),
+    )
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    preamble = by_id["bug-index"].render().split("\n## ", 1)[0]
+    directory = posixpath.dirname(by_id["bug-index"].target)
+    linked = {
+        posixpath.normpath(f"{directory}/{link}") for link in re.findall(r"\]\(([^)]+)\)", preamble)
+    }
+    assert by_id["ledger-runbook"].target == "guides/bug-reports.md"
+    assert by_id["ledger-audits"].target == "ledger/entries/audits/README.md"
+    assert by_id["ledger-runbook"].target in linked
+    assert posixpath.dirname(by_id["ledger-audits"].target) in linked
+
+
+def test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register() -> None:
+    # The register links the runbook and the audits directory, and `init` writes both files; the
+    # two names live once, beside the register, so neither side can be respelled alone and no
+    # target is built from a link a register may leave unset. Mutations (oracle): "init writes the
+    # runbook where the bug index does not link it" and "init writes the audits README under a
+    # directory the bug index does not link" -> the equalities below redden.
+    config = preset_defaults("widget")
+    moved = replace(config, paths=replace(config.paths, bugs="ledger", runbooks="guides"))
+    ledger = bug_register(moved)
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    assert ledger.runbook == f"guides/{BUG_RUNBOOK}" == by_id["ledger-runbook"].target
+    assert ledger.audits == BUG_AUDITS
+    assert by_id["ledger-audits"].target == f"ledger/{BUG_AUDITS}/README.md"
 
 
 # The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`
