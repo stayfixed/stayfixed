@@ -29,7 +29,7 @@ def event(name: str = "PreToolUse", **raw: object) -> HookEvent:
         "tool_name": "Bash",
     }
     payload.update(raw)
-    return read_event(payload, CLAUDE_ENV, CLAUDE)
+    return read_event(payload, CLAUDE_ENV)
 
 
 def handler(
@@ -525,40 +525,10 @@ def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() ->
             "tool_name": {"name": "Bash"},
         },
         CLAUDE_ENV,
-        CLAUDE,
     )
     assert ev.session_id is None
     assert ev.agent_id is None
     assert ev.tool_name is None
-
-
-@pytest.mark.parametrize("answer", ["claude", "codex", "fake"])
-def test_a_detected_harness_never_moves_the_project_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
-) -> None:
-    # The harness a process detects is one a repository can choose: a committed `env` block can
-    # set `PLUGIN_ROOT`, and the process is then Codex's. The root decides which configuration
-    # loads and so whether a guard refuses, so it is read the same under every answer `detect`
-    # gives: the first registered harness's variable that names one, else the checkout `cwd`
-    # sits in, which is another checkout here. The fake is registered last and names a variable
-    # of its own, so registry order, not detection, is what picks between two named roots.
-    # Mutation (declared, on `hooks.dispatch`): the root is read from the detected harness only
-    # -> the `codex` and `fake` cases redden.
-    project = tmp_path / "project"
-    project.mkdir()
-    other = tmp_path / "other"
-    (other / ".git").mkdir(parents=True)
-    fake = _harness(lambda name, context: context, project_dir_env="FAKE_PROJECT_DIR")
-    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (*HARNESSES, fake))
-    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
-    env = {
-        "CLAUDE_PROJECT_DIR": str(project),
-        "PLUGIN_ROOT": "/r",
-        "FAKE_PROJECT_DIR": str(tmp_path / "elsewhere"),
-    }
-    harness = {value.name: value for value in (*HARNESSES, fake)}[answer]
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(other)}, env, harness)
-    assert (ev.project_root, ev.harness) == (project, answer)
 
 
 def _forbidden(cwd: Path) -> Path | None:
@@ -579,7 +549,7 @@ def test_a_harness_registered_first_never_takes_the_root_from_claude_code(
     monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
     env = {"CLAUDE_PROJECT_DIR": str(project), "FAKE_PROJECT_DIR": str(tmp_path / "elsewhere")}
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env, CLAUDE)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env)
     assert ev.project_root == project
 
 
@@ -589,7 +559,7 @@ def test_the_walk_finds_the_root_through_a_git_directory(
     (tmp_path / ".git").mkdir()
     (tmp_path / "a" / "b").mkdir(parents=True)
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, {}, CLAUDE)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, {})
     assert ev.project_root == tmp_path
 
 
@@ -600,7 +570,7 @@ def test_the_walk_finds_the_root_through_a_git_file(
     (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/w\n", encoding="utf-8")
     (tmp_path / "a").mkdir()
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, {}, CLAUDE)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, {})
     assert ev.project_root == tmp_path
 
 
@@ -616,7 +586,7 @@ def test_the_walk_resolves_a_symlinked_root_the_way_git_does(
     link = tmp_path / "link"
     link.symlink_to(real_repo)
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, {}, CLAUDE)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, {})
     assert ev.project_root == real_repo.resolve()
 
 
@@ -630,7 +600,7 @@ def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
         return Path("/from-git")
 
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", fake)
-    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, {}, CLAUDE)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, {})
     assert ev.project_root == Path("/from-git")
     assert asked == [tmp_path]
 
@@ -663,11 +633,11 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
 
 # --- the harness a hook answers through ---------------------------------------------------------
 #
-# Every harness's payload is read by `read_event` the same way whichever value was detected
-# (`test_a_detected_harness_never_moves_the_project_root`), and the detected value contributes
-# its name to the event and the shape of its stdout to the answer. These tests hold the second
-# half: the value detection chose is the one that renders, a deny reaches no value at all, and the
-# clamp measures the envelope that is actually emitted.
+# Every harness's payload is read by `read_event` the same way whichever value was detected, and
+# the detected value contributes the shape of its stdout to the answer and nothing to the event.
+# These tests hold both halves: a handler sees one event under every answer, the value detection
+# chose is the one that renders, a deny reaches no value at all, and the clamp measures the
+# envelope that is actually emitted.
 
 # Every variable either harness sets, so a test of detection is not answered by the environment
 # the suite happens to run in.
@@ -699,11 +669,19 @@ def _harness(
 
 
 def _hook(
-    monkeypatch: pytest.MonkeyPatch, event_name: str, payload: dict[str, object], probe: Handler
+    monkeypatch: pytest.MonkeyPatch,
+    event_name: str,
+    payload: dict[str, object],
+    probe: Handler,
+    *,
+    env: Mapping[str, str] | None = None,
 ) -> int:
-    """`run_hook` in this process, with `probe` as the only handler and no harness variable."""
+    """`run_hook` in this process, with `probe` as the only handler and no harness variable but
+    the ones `env` sets."""
     for variable in HARNESS_VARIABLES:
         monkeypatch.delenv(variable, raising=False)
+    for variable, value in (env or {}).items():
+        monkeypatch.setenv(variable, value)
     monkeypatch.setattr("stayfixed.hooks.commands.discover", lambda: [probe])
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
     return run_hook(argparse.Namespace(event=event_name))
@@ -714,10 +692,10 @@ def test_a_detected_harness_renders_its_own_answer(
 ) -> None:
     # A harness whose output differs is a value of its own, registered beside the others, and
     # the hook answers through the value detection chose. The handler sees the same event it
-    # would under any harness, named for the one detected, with the root the first registered
-    # variable names, here the fake's own, the only one set. Mutation (declared, on
-    # `hooks.dispatch`): `dispatch` renders with `CANONICAL` instead of the detected harness ->
-    # stdout is Claude Code's JSON and this reddens.
+    # would under any harness, with the root the first registered variable names, here the
+    # fake's own, the only one set. Mutation (declared, on `hooks.dispatch`): `dispatch` renders
+    # with `CANONICAL` instead of the detected harness -> stdout is Claude Code's JSON and this
+    # reddens.
     fake = _harness(
         lambda name, context: f"fake:{name}:{context}",
         detects=lambda env, payload: payload is not None and "fake_session" in payload,
@@ -725,17 +703,52 @@ def test_a_detected_harness_renders_its_own_answer(
     )
     monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
     monkeypatch.setenv("FAKE_PROJECT_DIR", str(tmp_path))
-    seen: list[tuple[str, Path | None]] = []
+    seen: list[Path | None] = []
 
     def note(ev: HookEvent, config: object) -> HookResult:
-        seen.append((ev.harness, ev.project_root))
+        seen.append(ev.project_root)
         return HookResult(context="a note")
 
     probe = Handler(name="probe", event="SessionStart", policy=Policy.OPEN, run=note)
     payload: dict[str, object] = {"fake_session": "x", "cwd": str(tmp_path)}
     assert _hook(monkeypatch, "SessionStart", payload, probe) == 0
     assert capsys.readouterr().out == "fake:SessionStart:a note"
-    assert seen == [("fake", tmp_path)]
+    assert seen == [tmp_path]
+
+
+def test_a_handler_sees_one_event_whichever_harness_is_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The harness a process detects is one a repository can choose (a committed `env` block can
+    # set `PLUGIN_ROOT`), so nothing a handler sees may depend on it: the same stdin and the same
+    # project-root variable make the same event under Claude Code, under Codex and under a value
+    # registered first, and the root is the one `CLAUDE_PROJECT_DIR` names in each, never the
+    # checkout `cwd` sits in. Mutation (declared, on `hooks.commands`): the event is read with no
+    # environment under a harness that names no root variable -> the Codex event's root is the
+    # other checkout and this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    other = tmp_path / "other"
+    (other / ".git").mkdir(parents=True)
+    fake = _harness(
+        lambda name, context: context, detects=lambda env, payload: "FAKE_HARNESS" in env
+    )
+    monkeypatch.setattr("stayfixed.harnesses.registered", lambda: (fake, *HARNESSES))
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    seen: list[HookEvent] = []
+
+    def note(ev: HookEvent, config: object) -> HookResult:
+        seen.append(ev)
+        return HookResult()
+
+    probe = Handler(name="probe", event="PreToolUse", policy=Policy.OPEN, run=note)
+    payload: dict[str, object] = {"cwd": str(other), "session_id": "s", "tool_name": "Bash"}
+    for steer in ({}, {"PLUGIN_ROOT": "/r"}, {"FAKE_HARNESS": "1"}):
+        monkeypatch.delenv("FAKE_HARNESS", raising=False)
+        env = {**steer, "CLAUDE_PROJECT_DIR": str(project)}
+        assert _hook(monkeypatch, "PreToolUse", payload, probe, env=env) == 0
+    assert [ev.project_root for ev in seen] == [project] * 3
+    assert seen[0] == seen[1] == seen[2]
 
 
 def test_an_unknown_harness_renders_the_canonical_shape(

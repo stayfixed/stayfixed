@@ -51,7 +51,7 @@ def _event(root: Path, source: str | None = None) -> HookEvent:
     raw: dict[str, object] = {"hook_event_name": "SessionStart"}
     if source is not None:
         raw["source"] = source
-    return HookEvent("SessionStart", "s1", None, None, {}, root, root, "claude", raw)
+    return HookEvent("SessionStart", "s1", None, None, {}, root, root, raw)
 
 
 def _machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:

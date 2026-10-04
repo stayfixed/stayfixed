@@ -9,11 +9,11 @@ not a class: adding one is one more value in `HARNESSES`, and nothing that reads
 changes.
 
 The registry is also the adapter the hooks core answers through. `stayfixed hook` asks `detect`
-which value it is running under, stamps that value's name on the event and shapes its stdout
-with that value's `render`. That is all detection decides: every payload is read one way
-(`hooks.dispatch.read_event`), because the harness a process detects is one a repository can
-choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` — so no value may
-change what a handler sees. The project root is read the same way under every answer: from the
+which value it is running under and shapes its stdout with that value's `render`. That is all
+detection decides: every payload is read one way (`hooks.dispatch.read_event`), into an event
+that does not say which harness was detected, because the harness a process detects is one a
+repository can choose — a committed `.claude/settings.json` `env` block can set `PLUGIN_ROOT` —
+so no value may change what a handler sees. The project root is read the same way under every answer: from the
 first of every registered value's `project_dir_env` that names one, `CANONICAL`'s first
 (`project_root_variables`). A deny reaches no value at all: exit 2 with the reason on stderr is
 the whole of a refusal for every harness. A new harness is a value with a positive `detects`,
@@ -270,9 +270,9 @@ def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness
     """The first non-canonical harness whose `detects` answers yes, else `CANONICAL`.
 
     The one answer to "which harness is this process running under": the hooks core asks it
-    once, in `stayfixed hook`, and stamps the name on the event. It always answers, because a
-    process no value claims is served the canonical shape, and what it answers decides how an
-    answer is shaped and never what a handler sees or whether a call is refused.
+    once, in `stayfixed hook`, and hands the answer to `dispatch` and to nothing else. It always
+    answers, because a process no value claims is served the canonical shape, and what it answers
+    decides how an answer is shaped and never what a handler sees or whether a call is refused.
     """
     for harness in registered():
         if harness.detects is not None and harness.detects(env, payload):

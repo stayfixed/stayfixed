@@ -51,7 +51,6 @@ def an_event(root: Path, name: str = "SessionStart") -> HookEvent:
         tool_input={},
         cwd=root,
         project_root=root,
-        harness="claude",
     )
 
 

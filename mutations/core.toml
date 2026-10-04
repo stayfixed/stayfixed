@@ -625,15 +625,15 @@ reddens = [
 ]
 
 # The detected harness is a repository's to steer (a committed `env` block can set `PLUGIN_ROOT`),
-# and the project root decides which configuration loads, so the root is read from every
-# registered harness's variable whichever one was detected.
+# and the project root decides which configuration loads, so the event is read from every
+# registered harness's variable whichever one was detected, and is never told which.
 [[mutation]]
 name = "the root is read from the detected harness only"
-file = "src/stayfixed/hooks/dispatch.py"
-before = "        project_root=_named_root(env, project_root_variables()) or checkout_root(cwd),"
-after = "        project_root=_named_root(env, filter(None, (harness.project_dir_env,))) or checkout_root(cwd),"
+file = "src/stayfixed/hooks/commands.py"
+before = "        event = read_event(payload, os.environ)"
+after = "        event = read_event(payload, os.environ if harness.project_dir_env else {})"
 reddens = [
-  "tests/hooks/test_dispatch.py::test_a_detected_harness_never_moves_the_project_root",
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
 ]
 
 # The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's

@@ -93,7 +93,7 @@ def run_hook(args: argparse.Namespace) -> int:
         from stayfixed.harnesses import detect
 
         harness = detect(os.environ, payload)
-        event = read_event(payload, os.environ, harness)
+        event = read_event(payload, os.environ)
         config = None
         root = event.project_root
         document = None if root is None else root / CONFIG_FILE

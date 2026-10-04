@@ -51,22 +51,23 @@ def _named_root(env: Mapping[str, str], names: Iterable[str]) -> Path | None:
     return None
 
 
-def read_event(payload: dict[str, Any], env: Mapping[str, str], harness: Harness) -> HookEvent:
-    """The one reading of a hook's stdin, whichever harness sent it.
+def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
+    """The one reading of a hook's stdin, whichever harness sent it, and never told which.
 
-    One reader, because the detected harness is one a repository can choose: a committed
-    `.claude/settings.json` `env` block can set `PLUGIN_ROOT`, so a harness value that changed
-    what a handler sees would hand the repository the choice of what its guards read. That
-    holds for the project root above all, since it decides which configuration loads and so
-    whether a guard refuses: the root is the first non-empty variable among every registered
-    harness's, asked in `harnesses.project_root_variables`' order whichever harness was detected,
-    and without one the checkout `cwd` sits in (`gitenv.checkout_root`). Codex names none
-    (measured in the spike record, `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its
-    *Codex plugin hooks* trial), so under Codex an inherited `CLAUDE_PROJECT_DIR` still names the
-    root, as it names the directory `hooks/run-hook.sh` enters. The detected harness contributes
-    its name here and its `render` to the answer, nothing else.
+    The detected harness is one a repository can choose: a committed `.claude/settings.json`
+    `env` block can set `PLUGIN_ROOT`, so an event that varied with detection would hand the
+    repository the choice of what its guards read. That holds for the project root above all,
+    since it decides which configuration loads and so whether a guard refuses: the root is the
+    first non-empty variable among every registered harness's, asked in
+    `harnesses.project_root_variables`' order, and without one the checkout `cwd` sits in
+    (`gitenv.checkout_root`). Codex names none (measured in the spike record,
+    `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its *Codex plugin hooks* trial), so
+    under Codex an inherited `CLAUDE_PROJECT_DIR` still names the root, as it names the directory
+    `hooks/run-hook.sh` enters. The detected harness contributes its `render` to the answer and
+    nothing to the event.
     """
-    # Inside the body, as in `run_hook`: hook discovery imports this module and needs no registry.
+    # Inside the body, as in `run_hook`: the CLI frame imports this module, through
+    # `hooks.commands`, to build its parser, and only a hook that runs needs the registry.
     from stayfixed.harnesses import project_root_variables
 
     cwd = Path(str(payload.get("cwd") or "."))
@@ -82,7 +83,6 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str], harness: Harness
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         cwd=cwd,
         project_root=_named_root(env, project_root_variables()) or checkout_root(cwd),
-        harness=harness.name,
         raw=dict(payload),
     )
 

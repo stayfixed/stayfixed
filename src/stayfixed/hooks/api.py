@@ -10,9 +10,9 @@ modules and re-exported here would be an import cycle — `sink.py` imports `Sin
 So the rule this area follows is the other half of the same rule: **a name two areas share is
 defined here.** The four names of the sink's on-disk layout live here for exactly that reason,
 and `sink.py` imports them from here like everybody else. CONTRIBUTING records the exception.
-Which harness a hook runs under is not vocabulary of this kind: it is answered once, by
-`stayfixed.harnesses.detect` in `stayfixed hook`, and a handler reads the answer's name off
-`HookEvent.harness`.
+Which harness a hook runs under is not vocabulary of this kind, and no handler is told it:
+`stayfixed.harnesses.detect` answers it once, in `stayfixed hook`, for the shape of the answer
+alone, because a repository can steer what it answers and so it may decide nothing a handler sees.
 
 **Five names below have no importer outside this area**, and each stays for the reason beside it:
 
@@ -94,8 +94,6 @@ class HookEvent:
     tool_input: dict[str, Any]
     cwd: Path
     project_root: Path | None
-    # The name of the harness `harnesses.detect` answered; detection always answers.
-    harness: str
     raw: dict[str, Any] = field(default_factory=dict, compare=False)
 
 

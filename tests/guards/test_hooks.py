@@ -62,7 +62,6 @@ def bash_event(
         tool_input=tool_input,
         cwd=root,
         project_root=root,
-        harness="claude",
         raw={"tool_name": tool, "tool_input": tool_input},
     )
 
@@ -220,7 +219,6 @@ def post_event(root: Path, command: str, raw_extra: dict[str, object]) -> HookEv
         tool_input=tool_input,
         cwd=root,
         project_root=root,
-        harness="claude",
         raw=raw,
     )
 
