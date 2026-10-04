@@ -463,10 +463,10 @@ def _files(context: Context) -> Row:
     # equal", and a name gets in for three different reasons: the file is absent from the
     # installation, the record does not name it, or the bytes differ. A file that is present
     # and byte-for-byte what the release shipped was being reported as "does not match the
-    # release record" whenever the record was the partial half — which is a real state
-    # `RELEASING.md` anticipates in as many words ("a record naming two of three reads as a clean
-    # comparison for the third"). Telling the owner their file is wrong when the record
-    # is the wrong one sends them to reinstall over the one artifact that is correct.
+    # release record" whenever the record was the partial half — a record the release script
+    # refuses to write (`RELEASING.md`, under `hashes`), and one an installation can still carry.
+    # Telling the owner their file is wrong when the record is the wrong one sends them to
+    # reinstall over the one artifact that is correct.
     #
     # All three lists are drawn from `HASHED_FILES`, which is stayfixed's own constant, so
     # printing their names is this module's own text — the rule the `theirs` count below keeps.

@@ -1879,10 +1879,10 @@ def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(
 ) -> None:
     # A byte-correct file, reported as "does not match the release record". `changed` is "this
     # name did not compare equal", and a name gets in for three reasons; the row had one
-    # sentence for all three. A record that names two of three is a state `scripts/release.py`
-    # anticipates in as many words, and when it happens the file is the correct artifact and
-    # the record is the wrong one — so sending the owner to reinstall over the file is advice
-    # about the wrong half.
+    # sentence for all three. A record that names two of three is one `scripts/release.py hashes`
+    # refuses to write and an installation can still carry, and when it does the file is the
+    # correct artifact and the record is the wrong one — so sending the owner to reinstall over
+    # the file is advice about the wrong half.
     #
     # Mutation (declared): `unrecorded` folds back into `modified` -> the row says "do(es) not
     # match" about a file whose bytes are exactly right, and both assertions below redden.

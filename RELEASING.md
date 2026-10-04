@@ -423,8 +423,9 @@ and prints the rendered section.
 **`hashes`** records the sha256 of the three files the harness executes without Python —
 `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` — into `hooks/hashes.json` beside
 them; a wheel's own contents are the packaging tool's to attest. The record is refused rather
-than written when any of the three is missing: a record naming two of three reads as a clean
-comparison for the third. It is not a release-time command: `check` compares the record to the
+than written when any of the three is missing: a record naming two of three would still claim to
+be what the release shipped, while naming less, and every later comparison would report drift
+against that claim. It is not a release-time command: `check` compares the record to the
 tree on every run, so editing any of the three without re-recording fails the gate in the same
 commit, which is what makes it a record somebody has watched fail. `stayfixed doctor`'s `files`
 row reads the installed record against the installed files. Under `--check` it writes nothing,
