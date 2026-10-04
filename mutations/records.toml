@@ -169,7 +169,7 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/memory/store.py"
-before = '        return GitAnswer(None, ran=_git_is_usable(root))'
+before = '        return GitAnswer(None, ran=git_is_usable(root))'
 after = '        return GitAnswer(None)'
 reddens = [
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",

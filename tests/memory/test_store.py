@@ -525,8 +525,8 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Both seams the store reaches `git` through: its own `_git`, which binds `git_run` in, and
-    `gitenv.origin_remote`, which calls it inside `gitenv`. Patching one would leave the other
-    asking a working `git`."""
+    `gitenv.origin_remote` and `gitenv.git_is_usable`, which call it inside `gitenv`. Patching
+    one would leave the other asking a working `git`."""
 
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched

@@ -2094,7 +2094,7 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository with no origin remote"
 file = "src/stayfixed/gitenv.py"
-before = '    if code == -1 or git_run(root, "--version")[0] != 0:'
+before = "    if code == -1 or not git_is_usable(root):"
 after = "    if code == -1:"
 reddens = [
   "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",

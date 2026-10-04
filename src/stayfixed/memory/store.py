@@ -57,7 +57,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.findings import listed
-from stayfixed.gitenv import GitUnavailable, git_run, origin_remote
+from stayfixed.gitenv import GitUnavailable, git_is_usable, git_run, origin_remote
 from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
@@ -144,26 +144,6 @@ class GitAnswer:
         return self.value
 
 
-def _git_is_usable(root: Path) -> bool:
-    """Whether the `git` on this PATH works at all, asked with the same scrubbed environment.
-
-    The discriminator for a non-zero exit, and the reason this is a second call rather than a
-    guess at exit codes. `git` answers "no" with a non-zero exit in ordinary, correct
-    situations — 128 for "not a git repository", 2 for "no such remote" — and a broken install
-    also exits non-zero, so the number alone cannot tell the two apart. This machine's failure
-    was exactly that shape: `/usr/bin/git` was the Xcode shim with an unaccepted licence, which
-    exits non-zero for every invocation, including `--version`. Asking a question that needs no
-    repository separates "git said no" from "git cannot speak".
-
-    Asked from `root`, as the question that failed was, so a `root` git cannot enter is "cannot
-    speak" here too, as it was when the first question could not be launched there at all.
-
-    Not cached. It runs only after a query has already failed, and caching it would make the
-    answer depend on which test ran first.
-    """
-    return git_run(root, "--version")[0] == 0
-
-
 def _git(root: Path, *args: str) -> GitAnswer:
     """git's one-line answer to `args` asked in `root`, through `gitenv.git_run`.
 
@@ -176,9 +156,9 @@ def _git(root: Path, *args: str) -> GitAnswer:
     if code == -1:
         return GitAnswer(None, ran=False)
     if code != 0:
-        # `git` ran and declined, *or* `git` is broken. `_git_is_usable` is what tells them
+        # `git` ran and declined, *or* `git` is broken. `git_is_usable` is what tells them
         # apart; without it every caller read the second as the first.
-        return GitAnswer(None, ran=_git_is_usable(root))
+        return GitAnswer(None, ran=git_is_usable(root))
     return GitAnswer(out.removesuffix("\n") or None)
 
 
