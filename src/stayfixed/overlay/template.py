@@ -29,37 +29,34 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import (
-    OVERLAY_FILES,
-    RETIRED_ATTACH_SKILL,
-    RETIRED_MEMORY_README,
-    RETIRED_OVERLAY_FILES,
-    RETIRED_RULES_README,
-)
+from stayfixed.overlay.layout import OVERLAY_FILES, RETIRED_MEMORY_README
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
 OVERLAY = "overlay"
 
-# The sha256 of the `common/memory/README.md` 0.1.0 and 0.1.1 shipped, the same file in both. An
-# overlay generated from a template carries no ledger (`publish-template` strips it), so these
-# bytes are the only evidence that such an overlay's copy is stayfixed's to remove.
-SHIPPED_MEMORY_README = "407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"
-# Each retired file: the digests of what a release shipped there, and the way out for a copy
-# `overlay upgrade` keeps because it holds other bytes. The `attach` skill is the same bytes in
-# 0.1.0, 0.1.1 and 0.2.0; the rules README is one file in 0.1.x and another in 0.2.0, which said
-# that nothing read its directory. `tests/overlay/test_upgrade.py` holds each copy whole.
+# Every file an earlier release shipped and this one does not, which `overlay upgrade` and
+# `overlay init` remove where it still holds what stayfixed wrote: the sha256 of each copy a
+# release shipped there, and the way out for a copy kept because it holds other bytes. An overlay
+# generated from a template carries no ledger (`publish-template` strips it), so these digests are
+# the only evidence that such an overlay's copy is stayfixed's to remove.
+#
+# The memory README is the same bytes in 0.1.0 and 0.1.1. The template's own `attach` skill, a
+# subset of the plugin's, which also covers detaching and a moved remote, is the same bytes in
+# 0.1.0, 0.1.1 and 0.2.0. The README of `common/rules/`, a directory nothing read, is one file in
+# 0.1.x and another in 0.2.0, which said so. `tests/overlay/test_upgrade.py` holds each copy whole,
+# and `tests/overlay/test_template.py` holds that none of these is a file the template ships.
 _RETIRED = {
     RETIRED_MEMORY_README: (
-        frozenset({SHIPPED_MEMORY_README}),
+        frozenset({"407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"}),
         "rename it to `_README.md`, or the note reader reads it as a note",
     ),
-    RETIRED_ATTACH_SKILL: (
+    "skills/attach/SKILL.md": (
         frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),
         "the plugin's own `attach` skill replaces it; delete this copy once you no longer need "
         "your edits",
     ),
-    RETIRED_RULES_README: (
+    "common/rules/README.md": (
         frozenset(
             {
                 "926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",
@@ -117,7 +114,7 @@ def templates() -> list[Template]:
 
 
 def retired() -> list[Template]:
-    """One retired whole-file `Template` per file `layout.RETIRED_OVERLAY_FILES` names.
+    """One retired whole-file `Template` per file `_RETIRED` names.
 
     The engine removes such a file only when its bytes are stayfixed's: the digest the manifest
     records, or, with no record, one `_RETIRED` holds for what a release shipped. Any other copy
@@ -132,8 +129,8 @@ def retired() -> list[Template]:
             source=f"{OVERLAY}/{relative}",
             render=str,
             retired=True,
-            shipped=_RETIRED[relative][0],
-            remedy=_RETIRED[relative][1],
+            shipped=shipped,
+            remedy=remedy,
         )
-        for relative in RETIRED_OVERLAY_FILES
+        for relative, (shipped, remedy) in _RETIRED.items()
     ]

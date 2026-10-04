@@ -17,7 +17,6 @@ from __future__ import annotations
 from stayfixed.memory.api import PROJECTS
 
 COMMON = "common"
-COMMON_RULES = f"{COMMON}/rules"
 COMMON_MEMORY = f"{COMMON}/memory"
 COMMON_CLAUDE = f"{COMMON}/claude"
 COMMON_CODEX = f"{COMMON}/codex"
@@ -71,16 +70,10 @@ OVERLAY_FILES = (
 
 CAPABILITY_FILES = CAPABILITY_NAMES
 
-# Files an earlier release shipped and this one does not, which `overlay upgrade` removes where
-# they still hold what stayfixed wrote (`overlay.template.retired`). `common/memory/README.md` is
-# `_README.md` now, for the reason `PLACEHOLDER_NAMES` gives. The template's own `attach` skill was
-# a subset of the plugin's, which also covers detaching and a moved remote, and `common/rules/` was
-# a directory nothing read. None of them is ever a member of `OVERLAY_FILES`:
-# `tests/overlay/test_template.py` holds that.
+# The memory README an earlier release shipped, `_README.md` now for the reason `PLACEHOLDER_NAMES`
+# gives. The files a release no longer ships are listed in `overlay.template`, beside the digests
+# that say a copy of each is stayfixed's; this one is named here as well because it has a successor.
 RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
-RETIRED_ATTACH_SKILL = "skills/attach/SKILL.md"
-RETIRED_RULES_README = f"{COMMON_RULES}/README.md"
-RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README, RETIRED_ATTACH_SKILL, RETIRED_RULES_README)
 # The shipped file that took each retired one's place, which `overlay init` writes when it removes
 # the old name and the new one is not there (`overlay.create._retire` says why).
 SUCCESSORS = {RETIRED_MEMORY_README: f"{COMMON_MEMORY}/_README.md"}

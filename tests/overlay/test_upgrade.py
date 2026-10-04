@@ -297,11 +297,12 @@ def test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do(
 
 
 def test_the_digest_held_for_the_retired_readme_is_the_shipped_files() -> None:
-    # The constant and the bytes it names, checked against each other. No mutation: a changed
-    # digest reddens the removal test above through the no-ledger case.
-    from stayfixed.overlay.template import SHIPPED_MEMORY_README as held
+    # The digest held for the file and the bytes it names, checked against each other. No
+    # mutation: a changed digest reddens the removal test above through the no-ledger case.
+    from stayfixed.overlay.template import retired
 
-    assert digest(SHIPPED_MEMORY_README) == held
+    held = {template.id: template.shipped for template in retired()}[MEMORY_README]
+    assert held == frozenset({digest(SHIPPED_MEMORY_README)})
 
 
 @pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])

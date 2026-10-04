@@ -9,8 +9,8 @@ import pytest
 from stayfixed import __version__
 from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
-from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES, RETIRED_OVERLAY_FILES
-from stayfixed.overlay.template import template_root, templates
+from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
+from stayfixed.overlay.template import retired, template_root, templates
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import MANIFEST_PATH
 
@@ -297,11 +297,12 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
 def test_no_retired_file_is_one_the_template_ships() -> None:
     # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
     # the same id. A name in both would be refreshed and removed by one run, and the tree would
-    # ship a file the next upgrade deletes. No mutation: the two tuples are constants, and this
-    # holds them apart for whoever edits either.
-    assert RETIRED_OVERLAY_FILES
-    assert set(RETIRED_OVERLAY_FILES).isdisjoint(OVERLAY_FILES)
-    for relative in RETIRED_OVERLAY_FILES:
+    # ship a file the next upgrade deletes. No mutation: both lists are constants, and this holds
+    # them apart for whoever edits either.
+    names = [template.target for template in retired()]
+    assert names
+    assert set(names).isdisjoint(OVERLAY_FILES)
+    for relative in names:
         assert not (template_root() / relative).exists(), relative
 
 
