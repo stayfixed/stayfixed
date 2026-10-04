@@ -2314,3 +2314,14 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-there]",
   "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-gone]",
 ]
+
+# The `codex-trust` row names the surfaces the registry says do not reach Codex, which is the one
+# measured fact a Codex user needs when they look.
+[[mutation]]
+name = "the codex-trust row lists no surface that does not run on Codex"
+file = "src/stayfixed/doctor/checks.py"
+before = "    absent = [str(surface) for surface, reach in harness.reach.items() if reach.tier is None]"
+after = "    absent: list[str] = []"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
+]

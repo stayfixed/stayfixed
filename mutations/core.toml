@@ -1186,6 +1186,27 @@ reddens = [
   "tests/test_harnesses.py::test_an_environment_codex_sets_is_codex",
 ]
 
+# A harness's reach is what the README's table of what each agent enforces says, so a tier the
+# registry moves without a measurement is a README that no longer matches it.
+[[mutation]]
+name = "Codex's session guards are stated as blocking"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.GUARDS: Reach(None, _NO_CODEX_HOOK),"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK),"
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
+# Every harness states every surface, so the table and `doctor` never meet a cell nobody filled.
+[[mutation]]
+name = "Codex's reach leaves out the session notices"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.NOTICES: Reach(None, _NO_CODEX_HOOK),\n"
+after = ""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_states_every_surface",
+]
+
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit
 # overwritten or removed there is gone for good, so it is judged against this build's render.
 [[mutation]]
