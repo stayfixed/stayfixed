@@ -40,3 +40,24 @@ def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) 
     blank.write_text("[personal]\n", encoding="utf-8")
     assert overlay_root(blank) is None
     assert overlay_root(tmp_path / "absent.toml") is None
+
+
+# Machine files that are valid TOML and record no usable overlay root: an `[overlay]` that is not a
+# table, and a `root` that is empty or not text.
+NO_USABLE_ROOT = {
+    "overlay-not-a-table": "overlay = 5\n",
+    "root-empty": '[overlay]\nroot = ""\n',
+    "root-not-text": "[overlay]\nroot = 5\n",
+}
+
+
+@pytest.mark.parametrize("case", sorted(NO_USABLE_ROOT))
+def test_a_machine_file_with_no_usable_overlay_root_records_none(tmp_path: Path, case: str) -> None:
+    # Each is a file that parses and records no overlay, so the answer is "not recorded", never an
+    # exception past every caller's catch and never a root nobody recorded. Measured by hand:
+    # without the `isinstance(section, dict)` arm, `overlay-not-a-table` raises `AttributeError`;
+    # without `and value`, `root-empty` answers the working directory, `Path(".")`; without
+    # `isinstance(value, str)`, `root-not-text` answers `Path("5")`.
+    machine = tmp_path / "machine.toml"
+    machine.write_text(NO_USABLE_ROOT[case], encoding="utf-8")
+    assert overlay_root(machine) is None

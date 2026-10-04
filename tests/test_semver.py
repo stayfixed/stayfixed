@@ -69,6 +69,8 @@ def test_later_reads_each_version_s_leading_triple_and_answers_none_without_one(
         ("1.0.0.post1", "1.0.0", None),
         ("1.0.0", "1.0.0.post1", None),
         ("1.0.0+local", "1.0.0", None),
+        # A suffix that begins as a pre-release and goes on past one is not a pre-release.
+        ("1.0.0", "1.0.0rc1.post2", None),
         # The triple still decides whenever it differs, whatever follows it.
         ("1.0.1rc1", "1.0.0", True),
         ("0.9.9", "1.0.0rc1", False),
@@ -79,4 +81,6 @@ def test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else(
 ) -> None:
     # Mutation (oracle): "a release reads as older than its own pre-release" -> the rows whose
     # answer is `True` with a bare `version` redden.
+    # Measured by hand: `_PRE_RELEASE` without its closing `\Z` -> `1.0.0rc1.post2` reads as a
+    # pre-release and its row answers `True`.
     assert later(version, than) is answer

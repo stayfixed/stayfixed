@@ -115,12 +115,14 @@ def _answer(context: Context) -> Row:
 
 
 # What `register()` can hand back that is not a `Contribution` of `(name, check)` pairs, each the
-# way an area's own code could get it wrong: no value at all, the pairs without the record, a pair
-# missing its check, a name that is not text, a check that cannot be called, and claims that are
-# not a function.
+# way an area's own code could get it wrong: no value at all, the pairs without the record, checks
+# that are not a tuple of pairs, a pair missing its check, a name that is not text, a name that is
+# empty, a check that cannot be called, and claims that are not a function.
 MALFORMED = {
     "none": lambda: None,
     "bare-pairs": lambda: (("alpha-row", _answer),),
+    "checks-not-a-tuple": lambda: Contribution(checks=None),  # type: ignore[arg-type]
+    "name-empty": lambda: Contribution(checks=(("", _answer),)),
     "short-pair": lambda: Contribution(checks=(("alpha-row",),)),  # type: ignore[arg-type]
     "name-not-text": lambda: Contribution(checks=((1, _answer),)),  # type: ignore[arg-type]
     "check-not-callable": lambda: Contribution(checks=(("alpha-row", "answer"),)),  # type: ignore[arg-type]
@@ -140,6 +142,9 @@ def test_an_area_whose_register_fails_costs_one_row_named_after_it(
     # `mutations/`'s "doctor calls an area's register() unguarded" -> the `raises` case escapes;
     # "doctor takes whatever an area's register() returns" -> the malformed cases fail later, or
     # report nothing for the area.
+    # Measured by hand: `_well_formed` without its `isinstance(contribution.checks, tuple)` ->
+    # `checks-not-a-tuple` escapes as `TypeError` and the report is lost; without `bool(pair[0])`
+    # -> `name-empty` prints a row with no name.
     _contribute(
         monkeypatch,
         _registering(_raises if register == "raises" else MALFORMED[register]),

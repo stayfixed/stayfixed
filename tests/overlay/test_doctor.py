@@ -18,7 +18,6 @@ import stayfixed
 from stayfixed.config.overlay import overlay_root
 from stayfixed.doctor.api import OK, RED, SKIP, WARN
 from stayfixed.overlay.api import PLUGIN_MANIFEST
-from stayfixed.overlay.doctor import NO_OVERLAY_RECORDED, OVERLAY_GONE, OVERLAY_GONE_REMEDY
 from tests.doctor.test_checks import (
     OVERLAY,
     _attached,
@@ -180,6 +179,17 @@ def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: P
 
     Mutation: `mutations/`'s "the two overlay rows call a moved overlay an unrecorded one".
     """
+    # The sentences are pasted rather than imported from the module under test: compared with
+    # its own constants, `OVERLAY_GONE = NO_OVERLAY_RECORDED` — the very confusion this test is
+    # for — left it green.
+    gone = (
+        "the overlay root this machine records is not a directory, so nothing about the overlay "
+        "can be checked from here"
+    )
+    gone_remedy = (
+        "put the overlay back where the machine configuration records it, or run `stayfixed setup "
+        "--preset recommended --overlay <path>` to record where it is now"
+    )
     machine = tmp_path / "machine.toml"
     machine.write_text(f'[overlay]\nroot = "{tmp_path / "moved-away"}"\n', encoding="utf-8")
     root = _initialised(tmp_path)
@@ -187,10 +197,12 @@ def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: P
     for name in ("pre-commit", "overlay-requires"):
         row = _by_name(_checks(tmp_path, root, machine=machine), name)
         assert row.status == SKIP, row
-        assert row.detail == OVERLAY_GONE, row
-        assert row.remedy == OVERLAY_GONE_REMEDY, row
+        assert row.detail == gone, row
+        assert row.remedy == gone_remedy, row
     # The other arm keeps the sentence it always had, and keeps carrying no remedy: a machine
     # that has not run `stayfixed setup` is not a machine with something wrong on it.
     for name in ("pre-commit", "overlay-requires"):
         row = _by_name(_checks(tmp_path, root), name)
-        assert row.status == SKIP and row.detail == NO_OVERLAY_RECORDED and not row.remedy
+        assert row.status == SKIP, row
+        assert row.detail == "no overlay root is recorded on this machine", row
+        assert not row.remedy, row
