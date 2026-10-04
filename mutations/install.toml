@@ -397,7 +397,7 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/stayfixed/doctor/checks.py"
-before = "            if not holders:"
+before = "            if not holders and not unread:"
 after = "            if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
