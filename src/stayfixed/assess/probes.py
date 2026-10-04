@@ -20,8 +20,9 @@ module's own words, and it goes to the machine-readable output only; the summary
 these items prints counts and this module's vocabulary.
 
 Two inventory items are not built. Another tool's design-document directories are that tool's
-convention, and stayfixed names no other tool's convention. The test-entrypoint audit stays its
-own advisory command until its candidates are triaged (its module says why).
+convention, and stayfixed names no other tool's convention. And whether a test exercises what
+its name says can be judged only by reading one stack's test files, which the inventory does not
+read.
 """
 
 from __future__ import annotations
