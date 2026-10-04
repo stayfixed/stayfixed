@@ -6,6 +6,11 @@ had, and these tests are what holds them. The half of the release record that sh
 — `HASHED_FILES`, `read_record` and what it raises — stays in `stayfixed.release` and is tested
 in `tests/release/`. towncrier is a development dependency and is *invoked*, never imported; the
 argv is the contract, and a stub records it.
+
+Every message that tells the reader which command to run again is asserted against the command
+written out, `uv run python scripts/release.py …`, and never through the script's own
+`COMMAND`: read from the script, the expectation was the script's text compared with itself,
+and a script telling its reader to run a command that no longer exists stayed green.
 """
 
 from __future__ import annotations
@@ -532,7 +537,7 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
     problems = release.check(root, tag="v1.2.3")
     assert problems == [
         "changelog.d still holds 1 fragment(s); run "
-        f"`{release.COMMAND} notes --version 1.2.3` before tagging"
+        "`uv run python scripts/release.py notes --version 1.2.3` before tagging"
     ]
 
 
@@ -583,7 +588,9 @@ def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missin
     for relative in HASHED_FILES:
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
-    assert release.check(root) == [f"{RECORD} is missing; run `{release.COMMAND} hashes`"]
+    assert release.check(root) == [
+        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`"
+    ]
 
 
 def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
@@ -622,12 +629,14 @@ def test_a_draft_adds_the_flag_and_returns_towncriers_stdout(tmp_path: Path) -> 
 
 
 def test_a_version_that_is_not_the_projects_is_refused_before_anything_runs(tmp_path: Path) -> None:
-    # `release check` requires the changelog's first heading to equal pyproject's version,
-    # so assembling under another number writes a changelog the gate then refuses. Refused
-    # here, above the write. Mutation (declared): drop the comparison -> the stub is called
-    # and the `calls == []` assertion reddens.
+    # `check` requires the changelog's first heading to equal pyproject's version, so
+    # assembling under another number writes a changelog the gate then refuses. Refused here,
+    # above the write. Mutation (declared): drop the comparison -> the stub is called and the
+    # `calls == []` assertion reddens. The refusal names the command that lists the places to
+    # change, spelled out for the reason the module docstring gives.
     stub = Recorder(stdout=NOTES)
-    with pytest.raises(Refusal, match="set the version everywhere first"):
+    named = "set the version everywhere first — `uv run python scripts/release.py check` names"
+    with pytest.raises(Refusal, match=re.escape(named)):
         release.build(_root(tmp_path, version="1.2.3"), version="1.3.0", draft=False, runner=stub)
     assert stub.calls == []
 
@@ -660,7 +669,7 @@ def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: P
     assert release.drift(root) == []
     (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
     assert release.drift(root) == [
-        f"{RECORD} does not match hooks/run-hook.sh; run `{release.COMMAND} hashes`"
+        f"{RECORD} does not match hooks/run-hook.sh; run `uv run python scripts/release.py hashes`"
     ]
 
 
@@ -686,7 +695,9 @@ def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path
 def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:
     root = _plugin(tmp_path)
     assert read_record(root) is None
-    assert release.drift(root) == [f"{RECORD} is missing; run `{release.COMMAND} hashes`"]
+    assert release.drift(root) == [
+        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`"
+    ]
     release.write_record(root)
     (root / "scripts" / "stayfixed").unlink()
     assert release.drift(root) == [f"{RECORD} names scripts/stayfixed, which is not in the tree"]
@@ -748,7 +759,7 @@ def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
     assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
     assert on_success["problems"] == []
     assert on_drift["problems"] == [
-        f"{RECORD} does not match hooks/hooks.json; run `{release.COMMAND} hashes`"
+        f"{RECORD} does not match hooks/hooks.json; run `uv run python scripts/release.py hashes`"
     ]
     assert on_drift["files"] == sorted(HASHED_FILES)
 
