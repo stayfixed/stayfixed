@@ -36,6 +36,7 @@ from stayfixed.hooks.api import (
     MARKERS,
     NullSink,
     Sink,
+    data_root,
 )
 
 # `DIRECTORY` (the one directory stayfixed owns inside the data root the harness handed it),
@@ -181,14 +182,13 @@ class DataSink:
 def sink_for(session: str | None, env: Mapping[str, str]) -> Sink:
     """A durable sink under the harness's data root, or `NullSink()` when there is not one.
 
-    `PLUGIN_DATA` is Codex's name for the same thing, so one lookup serves both harnesses: the spike
-    record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured Codex's hook launch setting
-    it beside `CLAUDE_PLUGIN_DATA` in its *Codex plugin hooks* trial. The data root itself belongs
-    to the harness and is not created here; `stayfixed/` under it is ours, and is created by the
-    probe through `write_within`'s contained walk rather than by a `mkdir(parents=True)` that would
-    follow a symlink on the way.
+    The root is `hooks.api.data_root`'s, the one rule `doctor` reads the same tree by, so each
+    harness's name for it (`PLUGIN_DATA` is Codex's) is asked here as it is there. The data root
+    itself belongs to the harness and is not created here; `stayfixed/` under it is ours, and is
+    created by the probe through `write_within`'s contained walk rather than by a
+    `mkdir(parents=True)` that would follow a symlink on the way.
     """
-    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")
+    data = data_root(env)
     if not data:
         return NullSink()
     base = Path(data)

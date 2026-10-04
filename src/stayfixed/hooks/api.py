@@ -14,7 +14,7 @@ Which harness a hook runs under is not vocabulary of this kind: it is answered o
 `stayfixed.harnesses.detect` in `stayfixed hook`, and a handler reads the answer's name off
 `HookEvent.harness`.
 
-**Four names below have no importer outside this area**, and each stays for the reason beside it:
+**Five names below have no importer outside this area**, and each stays for the reason beside it:
 
 - `EVENTS` is the list a handler's event must come from: `registry.discover` refuses any other,
   and an area that needs a new event adds it here, beside the vocabulary its handlers use.
@@ -25,6 +25,8 @@ Which harness a hook runs under is not vocabulary of this kind: it is answered o
   degradation it falls back to when there is no harness data root. `doctor` reports on the tree
   those two write (`DIRECTORY`, `MARKERS`, `DIAGNOSTICS`), so the layout is published and the
   writer's own shape should be nameable beside it.
+- `DATA_ROOT_VARIABLES` is what `data_root` asks, which `sink.py` and `doctor` both call: a
+  harness that names its data root in a variable of its own is one more entry there.
 
 For this area, removing a name from `__all__` is not a trim in any case: `api.py` defines these
 and `tests/test_surfaces.py` holds `DEFINES_ITS_OWN` areas to `imported | defined == __all__`,
@@ -34,7 +36,7 @@ its definition into a private module, which is a different change with a differe
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -44,6 +46,7 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
 __all__ = [
+    "DATA_ROOT_VARIABLES",
     "DIAGNOSTICS",
     "DIAGNOSTICS_MAX_BYTES",
     "DIRECTORY",
@@ -57,6 +60,7 @@ __all__ = [
     "NullSink",
     "Policy",
     "Sink",
+    "data_root",
 ]
 
 
@@ -125,6 +129,25 @@ DIRECTORY = "stayfixed"
 MARKERS = "markers"
 DIAGNOSTICS = "diagnostics.jsonl"
 DIAGNOSTICS_MAX_BYTES = 256 * 1024
+
+# The variables a harness names its data root for this plugin in, asked in this order.
+# `PLUGIN_DATA` is Codex's name for the same directory: the spike record
+# (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured Codex's hook launch setting it
+# beside `CLAUDE_PLUGIN_DATA` in its *Codex plugin hooks* trial.
+DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA", "PLUGIN_DATA")
+
+
+def data_root(env: Mapping[str, str]) -> str | None:
+    """The harness's data root as `env` names it, or `None` when no variable names one.
+
+    One rule for the two readers of the tree under it: the sink writes there and `doctor` counts
+    what it wrote, so a variable one of them asked and the other did not would hide every record.
+    The value is returned as given; whether it is usable is each caller's question.
+    """
+    for name in DATA_ROOT_VARIABLES:
+        if named := env.get(name):
+            return named
+    return None
 
 
 class Sink(Protocol):

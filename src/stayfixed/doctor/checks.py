@@ -94,7 +94,13 @@ from stayfixed.doctor.model import (
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
 from stayfixed.harnesses import CODEX, HARNESSES, Harness, Tier
-from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
+from stayfixed.hooks.api import (
+    DIAGNOSTICS,
+    DIAGNOSTICS_MAX_BYTES,
+    DIRECTORY,
+    MARKERS,
+    data_root,
+)
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -1159,7 +1165,8 @@ def _diagnostics(context: Context) -> Row:
     not write has no cap at all, and one byte past it is itself an answer — this is not a file
     the sink produced, and the count below is a floor rather than a total.
     """
-    data = context.env.get("CLAUDE_PLUGIN_DATA") or context.env.get("PLUGIN_DATA")
+    # The rule the sink found the root by, so this row reads the tree the sink wrote.
+    data = data_root(context.env)
     if not data:
         return Row(
             SKIP,

@@ -727,6 +727,30 @@ def _planted_log(tmp_path: Path, records: list[dict[str, object]]) -> Path:
     return data
 
 
+@pytest.mark.parametrize("named", ["first", "second"])
+def test_the_sink_and_doctor_find_the_data_root_by_one_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, named: str
+) -> None:
+    # The sink writes its tree under the harness's data root and this row reads it from there, so
+    # the two must agree on which variable names that root: a harness whose variable one of them
+    # spelled and the other did not would write markers `doctor` never counts. The variables are
+    # named once, in `hooks.api`, and replacing them there moves both readers. Mutation (declared,
+    # on `hooks.api`): the rule asks only its first variable -> the `second` case reddens.
+    data = tmp_path / "data"
+    data.mkdir()
+    variables = ("A_HARNESS_DATA", "ANOTHER_HARNESS_DATA")
+    monkeypatch.setattr("stayfixed.hooks.api.DATA_ROOT_VARIABLES", variables, raising=False)
+    chosen = variables[0] if named == "first" else variables[1]
+    env = _env(tmp_path, **{chosen: str(data), "CLAUDE_PLUGIN_DATA": str(tmp_path / "unread")})
+    from stayfixed.hooks.sink import sink_for
+
+    sink_for("s1", env).mark("a-key")
+    assert (data / DIRECTORY / MARKERS).is_dir()
+    assert not (tmp_path / "unread").exists()
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "diagnostics")
+    assert (check.status, check.detail) == (OK, "no hook failures are recorded; 1 session(s) seen")
+
+
 def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
     tmp_path: Path,
 ) -> None:
