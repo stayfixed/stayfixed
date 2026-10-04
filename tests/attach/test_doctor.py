@@ -1274,10 +1274,12 @@ def _case_folds(tmp_path: Path) -> bool:
 
 
 def test_the_overlays_own_projects_readme_is_no_project_where_case_folds(tmp_path: Path) -> None:
-    # The variant an unbroken overlay hands a clone on macOS's default filesystem: the overlay
-    # template keeps a `README.md` under `projects/`, and `readme.md` is a name `stayfixed.toml`
-    # may hold. Where case does not fold the name is one the overlay simply has no project for,
-    # and the row is the same.
+    # A regression case, kept for the variant an unbroken overlay hands a clone on macOS's default
+    # filesystem: the overlay template keeps a `README.md` under `projects/`, and `readme.md` is a
+    # name `stayfixed.toml` may hold. Where case does not fold the name is one the overlay simply
+    # has no project for, and the row is the same. It skips where case does not fold, so the rule
+    # it shows is held everywhere by the `a-file-holds-it` cases above: a file the overlay keeps
+    # under `projects/` holding the name, whatever spelling reaches it, is the same fault.
     root = _forged_clone(tmp_path)
     _named(root, "readme.md")
     (tmp_path / "overlay" / PROJECTS / "README.md").write_text("# Projects\n", encoding="utf-8")
