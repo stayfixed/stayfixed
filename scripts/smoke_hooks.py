@@ -34,12 +34,12 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
 # rather than imported, because this script runs without `stayfixed` importable.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
-# Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
-# entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
-# that executes fewer rows prints an identically green summary — the shape `unsampled` and
-# `unentered` close for events and nothing closed for rows.
-EXPECTED_ENTRIES = 13
-EXPECTED_ROWS = 14
+# Counted against the shipped `hooks/hooks.json` and this fixture: nine entries, ten rows
+# (`PreToolUse` carries two samples). Both are asserted because a run that executes fewer rows
+# prints an identically green summary — the shape `unsampled` and `unentered` close for events
+# and nothing closed for rows.
+EXPECTED_ENTRIES = 9
+EXPECTED_ROWS = 10
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # its command after the wrapper. An empty tuple is the other claim and not an absence: that
 # part renders nothing on this fixture, so anything at all in its stdout is a finding.
 #
-# **Why this registry exists.** Before it, all ten of these rows ran against a project with no
+# **Why this registry exists.** Before it, every one of these rows ran against a project with no
 # memory store: `stayfixed` answered "no memory store", the wrapper degraded that to 0 under the
 # `open` policy, and each row asserted an exit code it would have had if `session-context` were
 # `/bin/false`. Measured 2026-09-19 on the storeless fixture: ten rows, 0 bytes of stdout, all
@@ -107,22 +107,15 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # thing the smoke scenario exists to watch.
 #
 # Measured 2026-09-19 against the fixture's store, trusted: standing-rules part 1 1,010,
-# volatile-notes part 1 993, every other part empty. `preset-rules` is empty too, and for a reason
-# of its own: the shipped preset carries no `[rules]` table (stayfixed imposes no standing rule),
-# so that row asserts the bundle says nothing rather than that it renders something. The index
-# bundle is empty on purpose — `memory session-context` renders it only under Codex, and this
-# run is not Codex — so those three rows assert that harness gate rather than a store.
+# volatile-notes part 1 993, every other part empty — so the second and third part of each
+# bundle assert that a store which fits one part says nothing in the slots after it.
 INJECTED: dict[str, tuple[str, ...]] = {
-    "open memory session-context --bundle preset-rules --part 1": (),
     "open memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
     "open memory session-context --bundle standing-rules --part 2": (),
     "open memory session-context --bundle standing-rules --part 3": (),
     "open memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
     "open memory session-context --bundle volatile-notes --part 2": (),
     "open memory session-context --bundle volatile-notes --part 3": (),
-    "open memory session-context --bundle index --part 1": (),
-    "open memory session-context --bundle index --part 2": (),
-    "open memory session-context --bundle index --part 3": (),
 }
 
 
@@ -190,7 +183,7 @@ def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> st
     so — which is the boundary these entries exist to exercise, and it cannot be exercised
     from the outside of it. The owner's own act is performed here, once, the way
     `smoke_exfiltration.py`'s positive control performs it, and the rows below then assert
-    what came through. A failure here is a failure of the run, not a row: the ten injection
+    what came through. A failure here is a failure of the run, not a row: the six injection
     rows after it would go green on empty output.
     """
     done = subprocess.run(  # noqa: S603
@@ -269,7 +262,7 @@ def check_entry(
                 return f"injected nothing carrying {phrase!r} ({len(done.stdout)} characters)"
         if not wanted and done.stdout.strip():
             return f"this part renders nothing on the fixture, yet emitted {len(done.stdout)}"
-    # Only the dispatcher's own entries (`… hook <event>`) speak JSON; the ten
+    # Only the dispatcher's own entries (`… hook <event>`) speak JSON; the six
     # `memory session-context` entries print a bundle as prose, which is how they inject it.
     if "hook" in argv and done.stdout.strip():
         try:
@@ -322,7 +315,7 @@ def main(argv: list[str]) -> int:
         print(f"FAIL  no hook entry for {sorted(unentered)}; hooks.json lost an event")
         return 1
     # The same two directions for the entries that inject. An injection entry with no registry
-    # line would be checked for its exit code alone, which is what all ten of them were;
+    # line would be checked for its exit code alone, which is what every one of them was;
     # a registry line with no entry means `hooks.json` dropped a bundle and the run would
     # simply stop testing it.
     injecting = {tail_of(command) for _, command in found if "session-context" in command}

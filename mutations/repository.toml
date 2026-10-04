@@ -520,7 +520,7 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
 ]
 
-# The wrapper's other half. `hooks/dispatch._git_toplevel` scrubs this identical call one layer
+# The wrapper's other half. `gitenv._git_toplevel` scrubs this identical call one layer
 # down and names the failure verbatim; the wrapper inherited whatever the session had, so
 # `GIT_DIR`/`GIT_WORK_TREE` chose the project -- and every entry but the dispatcher's relies on
 # `--root` defaulting to `.`, so the whole hook then read another repository's configuration,
@@ -776,6 +776,40 @@ before = '''    "PostToolUse": ['''
 after = '''    "UserPromptSubmit": ['''
 reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
+]
+
+# Each bundle gets the numbered slots `SLOTS` declares, one entry per part. Filing one part twice
+# and another not at all keeps the entry count and loses a slot's text, which the declared set
+# of parts catches; two parts swapping places keep that set too, so the order is asserted beside
+# it and only the order catches the second.
+[[mutation]]
+name = "a session-start part is filed twice and another not at all"
+file = "hooks/hooks.json"
+before = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"'''
+after = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
+]
+
+[[mutation]]
+name = "two session-start parts swap places in the hooks file"
+file = "hooks/hooks.json"
+before = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"
+          },
+          {
+            "type": "command",
+            "timeout": 10,
+            "additionalContextLimit": 0,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"'''
+after = '''            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 2"
+          },
+          {
+            "type": "command",
+            "timeout": 10,
+            "additionalContextLimit": 0,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" open memory session-context --bundle volatile-notes --part 1"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
 ]
 
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
@@ -1044,6 +1078,28 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
 ]
 
+# The smoke job's `grep -qx` is the CI side of each script's own floor, and a hand-kept copy of
+# the counts went stale once already: the hooks file lost four entries, the script and the suite
+# agreed on the new counts, and the job failed on every pull request. Each guard derives the line
+# from the script's constants; these put back a count the script no longer prints.
+[[mutation]]
+name = "the smoke job demands a hook summary the script no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "9 entries, 10 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+after = '          grep -qx "13 entries, 14 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_entry",
+]
+
+[[mutation]]
+name = "the smoke job demands an exfiltration summary the scenario no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+after = '          grep -qx "7 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
+]
+
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
 # `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
 # is `base_sha`, the commit whose configuration governs the gates. Disable the character check
@@ -1186,10 +1242,10 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
 ]
 
-# Ten of the thirteen entries are `memory session-context` — the ones that carry repository
-# bytes toward the model — and they ran against a fixture with no memory store at all. Measured
-# on that fixture: ten rows, 0 bytes of stdout, every one green; they would have been
-# identically green if `session-context` were `/bin/false`.
+# Six of the nine entries are `memory session-context` — the ones that carry repository bytes
+# toward the model — and they ran against a fixture with no memory store at all. Measured on that
+# fixture, when there were ten of them: ten rows, 0 bytes of stdout, every one green; they would
+# have been identically green if `session-context` were `/bin/false`.
 [[mutation]]
 name = "the hook smoke stops reading what an injection entry injected"
 file = "scripts/smoke_hooks.py"
@@ -1200,7 +1256,7 @@ reddens = [
 ]
 
 # The registry's converse, which is the direction that fails silently: `SAMPLES` is keyed by
-# EVENT, so dropping one of the eleven `SessionStart` entries leaves every event sampled, runs
+# EVENT, so dropping one of the seven `SessionStart` entries leaves every event sampled, runs
 # one row fewer and prints a green summary.
 [[mutation]]
 name = "the hook smoke stops noticing a bundle that lost its entry"
@@ -1212,7 +1268,7 @@ reddens = [
 ]
 
 # And the count itself, which neither event set nor bundle registry can see: a duplicated entry
-# changes no event and no bundle and runs a fifteenth row.
+# changes no event and no bundle and runs an eleventh row.
 [[mutation]]
 name = "the hook smoke stops counting its own entries and rows"
 file = "scripts/smoke_hooks.py"

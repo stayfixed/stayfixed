@@ -7,7 +7,7 @@ so a module-level `from stayfixed.config.schema import Config` here reddens a te
 no area at all. The annotation is a string under `TYPE_CHECKING`, exactly as `stayfixed.hooks.api`
 already writes it.
 
-There is no `SessionStart` context handler here, and that absence is the design: the four
+There is no `SessionStart` context handler here, and that absence is the design: the two
 injection bundles are invoked as their own `hooks.json` entries so each gets its own platform
 cap (see `bundles`). What remains is the one thing that must happen before any of them can
 work — linking the store into a worktree.

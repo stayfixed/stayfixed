@@ -23,8 +23,9 @@ if TYPE_CHECKING:
 # `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
 # reaches the cap, and the second needs a threshold that the first does not.
 #
-# A fraction and not `parts == slots`: `preset-rules` has one slot and a preset that carries rules
-# fills it, so that predicate warns on every correct installation that has any and says nothing.
+# A fraction and not `parts == slots`: what reaches the platform cap is a part, which the fraction
+# measures, while a bundle whose last slot holds a short part still has that part's room to grow,
+# so that predicate would warn on a correct installation.
 # A named cap (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is
 # `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
 # right.

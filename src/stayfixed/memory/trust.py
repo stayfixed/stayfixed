@@ -106,10 +106,10 @@ def _content_digest(path: Path) -> str:
     """One file's bytes as a fixed-width hex digest — or the marker's, when it has none.
 
     `notes.walk` deliberately quarantines this class of file rather than letting one of them
-    cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
-    unguarded `read_bytes` here takes `store_digest`, `may_inject` and `record` down together,
-    so one committed dangling `gone.md` symlink turns every trust-dependent command into exit
-    2 — `memory trust`, the command that would recover the state, included.
+    cost the whole store. An unguarded `read_bytes` here takes `store_digest`, `may_inject` and
+    `record` down together, so one committed dangling `gone.md` symlink turns every
+    trust-dependent command into exit 2 — `memory trust`, the command that would recover the
+    state, included.
     """
     try:
         content = path.read_bytes()
@@ -151,8 +151,8 @@ def _config_digest(config: Config) -> str:
     """The repository-controlled configuration this area renders into a file the gate covers.
 
     `memory.index_extra` lives in `stayfixed.toml`, which no store file covers, and `_extra`
-    renders it straight into `MEMORY.md` — the file the `index` bundle injects. An attacker who
-    changed nothing else therefore left the digest untouched, and the next `memory index`
+    renders it straight into `MEMORY.md` — the file the harness memory link exposes. An attacker
+    who changed nothing else therefore left the digest untouched, and the next `memory index`
     carried their pointers in under a still-valid record, blessed on the way past by
     `refresh_if_trusted` because stayfixed itself authored that write. The rule that a changed
     hash re-prompts has to mean the hash covers what actually reaches the file.
@@ -178,7 +178,7 @@ def _files(store: Store) -> list[tuple[str, Path]]:
     notes sorted, then the index last.
 
     `MEMORY.md` is covered too, though it is neither a note nor a `memory.groups` entry. It is
-    the file the `index` bundle injects, and a digest built from the group directories alone
+    the file the harness memory link exposes, and a digest built from the group directories alone
     would let a store be trusted once and its index afterwards rewritten — or swapped for a
     symlink to anything — without ever losing that trust. It is folded in here rather than
     covered "another way" because trust is one hash over everything a session reads, and a

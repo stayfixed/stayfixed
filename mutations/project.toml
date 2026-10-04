@@ -29,22 +29,6 @@ reddens = [
   "tests/overlay/test_template.py::test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates",
 ]
 
-# stayfixed supports standing rules and imposes none: the shipped preset carries no `[rules]` table.
-[[mutation]]
-name = "the recommended preset imposes a standing rule again"
-file = "src/stayfixed/presets/recommended.toml"
-before = """[plugins]
-# Installed by `setup --preset recommended`"""
-after = """[rules]
-imposed = "Ask before acting."
-
-[plugins]
-# Installed by `setup --preset recommended`"""
-reddens = [
-  "tests/memory/test_bundles.py::test_the_recommended_preset_imposes_no_standing_rule",
-  "tests/memory/test_commands.py::test_the_recommended_preset_prints_nothing_for_preset_rules",
-]
-
 # --- the shipped data files: guards the external review proved shipped green (PR 12) ---
 #
 # Each mutates a file no type checker reads and no import reaches: a YAML workflow, a

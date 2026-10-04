@@ -41,14 +41,16 @@ from stayfixed.attach.binding import (
 )
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
+from stayfixed.harnesses import CLAUDE
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
 from stayfixed.scaffold import EntriesError, mark
 
-# The project-local file `attach` owns outright. `.claude/settings.json` beside it is the
+# The project-local file `attach` owns outright, as the harness registry names it: the one file
+# Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
 # committed one and is never read.
-LOCAL_SETTINGS = ".claude/settings.local.json"
+(LOCAL_SETTINGS,) = CLAUDE.local_settings
 PERMISSIONS_FILE = "permissions.json"
 HOOKS_FILE = "hooks.json"
 # The per-harness subdirectory of a project's own share of the overlay.

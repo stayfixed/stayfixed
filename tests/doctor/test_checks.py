@@ -557,6 +557,37 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
     assert "unmeasured" in check.detail
 
 
+def test_the_codex_row_names_what_does_not_run_on_codex(tmp_path: Path) -> None:
+    # A Codex user who opens the report is owed the one fact about Codex that was measured: the
+    # session guards and notices do not run there, and the repository gates still hold in CI.
+    # The row reads it off the harness registry, and its text is pinned here as a literal rather
+    # than derived from that registry the way the row derives it, so a row that names the wrong
+    # surfaces cannot agree with its own expectation. A project that does not list Codex gets the
+    # row without it. It stays a skip: no measurement of Codex makes it red. Mutations (declared,
+    # on `doctor`): the row lists no surface, or says no surface runs -> each reddens this.
+    listed = _initialised(
+        tmp_path / "codex",
+        template=LOCAL_ONLY.replace(
+            'state = "installed"', 'state = "installed"\nagents = ["claude", "codex"]'
+        ),
+    )
+    on_codex = _by_name(_checks(tmp_path / "codex", listed), "codex-trust")
+    assert on_codex.status == "skip" and on_codex.remedy == ""
+    unlisted = _initialised(
+        tmp_path / "claude",
+        template=LOCAL_ONLY.replace(
+            'state = "installed"', 'state = "installed"\nagents = ["claude"]'
+        ),
+    )
+    elsewhere = _by_name(_checks(tmp_path / "claude", unlisted), "codex-trust")
+    assert elsewhere.status == "skip"
+    assert "unmeasured" in elsewhere.detail
+    assert on_codex.detail == elsewhere.detail + (
+        "; on Codex the session guards and session notices do not run; "
+        "the repository gates hold in CI"
+    )
+
+
 def test_the_other_check_this_build_cannot_answer_skips_for_its_own_reason(
     tmp_path: Path,
 ) -> None:
@@ -689,6 +720,30 @@ def _planted_log(tmp_path: Path, records: list[dict[str, object]]) -> Path:
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
     return data
+
+
+@pytest.mark.parametrize("named", ["first", "second"])
+def test_the_sink_and_doctor_find_the_data_root_by_one_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, named: str
+) -> None:
+    # The sink writes its tree under the harness's data root and this row reads it from there, so
+    # the two must agree on which variable names that root: a harness whose variable one of them
+    # spelled and the other did not would write markers `doctor` never counts. The variables are
+    # named once, in `hooks.api`, and replacing them there moves both readers. Mutation (declared,
+    # on `hooks.api`): the rule asks only its first variable -> the `second` case reddens.
+    data = tmp_path / "data"
+    data.mkdir()
+    variables = ("A_HARNESS_DATA", "ANOTHER_HARNESS_DATA")
+    monkeypatch.setattr("stayfixed.hooks.api.DATA_ROOT_VARIABLES", variables, raising=False)
+    chosen = variables[0] if named == "first" else variables[1]
+    env = _env(tmp_path, **{chosen: str(data), "CLAUDE_PLUGIN_DATA": str(tmp_path / "unread")})
+    from stayfixed.hooks.sink import sink_for
+
+    sink_for("s1", env).mark("a-key")
+    assert (data / DIRECTORY / MARKERS).is_dir()
+    assert not (tmp_path / "unread").exists()
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "diagnostics")
+    assert (check.status, check.detail) == (OK, "no hook failures are recorded; 1 session(s) seen")
 
 
 def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(

@@ -154,11 +154,10 @@ def test_two_invocations_do_not_share_a_nonce() -> None:
 
 def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Path) -> None:
     # `notes.walk` deliberately quarantines this class of file rather than letting one of them
-    # cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
-    # unguarded `read_bytes` here takes `store_digest`, `may_inject` and `record` down together
-    # — so `memory session-context` and `memory fit` go dark and `memory trust`, the one
-    # command that would recover the state, fails identically. A committed dangling symlink is
-    # all it takes.
+    # cost the whole store. An unguarded `read_bytes` here takes `store_digest`, `may_inject` and
+    # `record` down together — so `memory session-context` and `memory fit` go dark and `memory
+    # trust`, the one command that would recover the state, fails identically. A committed
+    # dangling symlink is all it takes.
     store, config, _machine = a_store(tmp_path, "in-repo")
     (store.groups["developer"] / "gone.md").symlink_to(tmp_path / "nowhere.md")
     assert may_inject(store, config) is False
@@ -194,7 +193,7 @@ def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) ->
     # `MEMORY.md` is not a note and belongs to no `memory.groups` entry, so a digest built only
     # from the group directories never sees it — trust a store once and the index can afterwards
     # be rewritten, or swapped for a symlink to anything, without losing that trust. It is the
-    # file the `index` bundle injects.
+    # file the harness memory link exposes.
     store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     assert may_inject(store, config) is True
@@ -335,8 +334,8 @@ def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Pat
 
 def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:
     # `memory.index_extra` is repository-controlled, lives in `stayfixed.toml` — which no store
-    # file covers — and is rendered straight into `MEMORY.md`, the file the `index` bundle
-    # injects. An attacker who changes nothing but that list left the digest untouched, and the
+    # file covers — and is rendered straight into `MEMORY.md`, the file the harness memory link
+    # exposes. An attacker who changes nothing but that list left the digest untouched, and the
     # next `memory index` carried their pointers in under a still-valid trust record, blessed
     # on the way past by `refresh_if_trusted` because stayfixed itself authored the write.
     store, config, _machine = a_store(tmp_path, "in-repo")

@@ -91,10 +91,10 @@ to.
 
 **What stayfixed does.** Which rules those are is each person's to write, and stayfixed ships
 none: a standing rule is a note with `metadata.startup` in the overlay's `common/memory/` or a
-project's memory, and the `recommended` preset carries no `[rules]` table. `memory
-session-context` renders four bundles — preset rules, standing rules, volatile notes, the
-index — each across numbered parts sized to the platform's per-entry cap, and `memory fit`
-reports a bundle that does not fit its slots.
+project's memory, and the `recommended` preset carries no rule of its own. `memory
+session-context` renders two bundles — standing rules and volatile notes — each across
+numbered parts sized to the platform's per-entry cap, and `memory fit` reports a bundle that
+does not fit its slots.
 Standing rules are flagged when they outgrow their budget and still delivered, because a
 standing rule that does not arrive is a standing rule that gets broken; volatile notes
 degrade to descriptions instead.

@@ -8,12 +8,15 @@ modules and re-exported here would be an import cycle — `sink.py` imports `Sin
 `NullSink` from this module, and this module would import the sink's layout back out of it.
 
 So the rule this area follows is the other half of the same rule: **a name two areas share is
-defined here.** `detect_harness` and the four names of the sink's on-disk layout live here for
-exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
-CONTRIBUTING records the exception.
+defined here.** The four names of the sink's on-disk layout live here for exactly that reason,
+and `sink.py` imports them from here like everybody else. CONTRIBUTING records the exception.
+Which harness a hook runs under is not vocabulary of this kind, and no handler is told it:
+`stayfixed.harnesses.detect` says why.
 
-**Three names below have no importer outside this area**, and each stays for the reason beside it:
+**Six names below have no importer outside this area**, and each stays for the reason beside it:
 
+- `EVENTS` is the list a handler's event must come from: `registry.discover` refuses any other,
+  and an area that needs a new event adds it here, beside the vocabulary its handlers use.
 - `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
   `memory/hooks.py` build, and a consumer that holds one before registering it — a table of
   handlers, a decorator, a test double — cannot annotate the callable without this name.
@@ -21,6 +24,12 @@ CONTRIBUTING records the exception.
   degradation it falls back to when there is no harness data root. `doctor` reports on the tree
   those two write (`DIRECTORY`, `MARKERS`, `DIAGNOSTICS`), so the layout is published and the
   writer's own shape should be nameable beside it.
+- `DATA_ROOT_VARIABLES` is what `data_root` asks, which `sink.py` and `doctor` both call: a
+  harness that names its data root in a variable of its own is one more entry there.
+- `first_set` is the one rule a hook finds a directory in its environment by: `data_root` asks it
+  for the data root and `dispatch.read_event` for the project root. It is defined here because
+  hook discovery imports this module and the rule needs neither the harness registry nor the
+  configuration layer, which discovery imports neither of.
 
 For this area, removing a name from `__all__` is not a trim in any case: `api.py` defines these
 and `tests/test_surfaces.py` holds `DEFINES_ITS_OWN` areas to `imported | defined == __all__`,
@@ -30,7 +39,7 @@ its definition into a private module, which is a different change with a differe
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -40,6 +49,7 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
 __all__ = [
+    "DATA_ROOT_VARIABLES",
     "DIAGNOSTICS",
     "DIAGNOSTICS_MAX_BYTES",
     "DIRECTORY",
@@ -53,7 +63,8 @@ __all__ = [
     "NullSink",
     "Policy",
     "Sink",
-    "detect_harness",
+    "data_root",
+    "first_set",
 ]
 
 
@@ -67,28 +78,6 @@ EVENTS = (
     "PreToolUse",
     "PostToolUse",
 )
-
-
-def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = None) -> str:
-    """Which harness this process is running under, from the environment and the stdin payload.
-
-    Here rather than in `dispatch.py` because two areas ask the question: the dispatcher stamps
-    `HookEvent.harness` with it, and `memory session-context --bundle index` injects the index only
-    on Codex, which has no native auto-memory to load it. Two spellings of this rule would be two
-    answers to "which harness", which is the drift a shared vocabulary exists to stop.
-
-    Measured on both harnesses in the *Codex plugin hooks* trial of the spike record
-    (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): Codex sets PLUGIN_ROOT/PLUGIN_DATA and
-    ALSO CLAUDE_PLUGIN_ROOT, so the CLAUDE_* names alone identify nothing; Codex's SessionStart
-    stdin also carries `model` and `permission_mode`, which Claude Code's does not.
-    """
-    if "PLUGIN_ROOT" in env:
-        return "codex"
-    if payload is not None and {"model", "permission_mode"} <= set(payload):
-        return "codex"
-    if "CLAUDE_PLUGIN_ROOT" in env or "CLAUDE_PROJECT_DIR" in env:
-        return "claude"
-    return "unknown"
 
 
 class Policy(StrEnum):
@@ -109,7 +98,6 @@ class HookEvent:
     tool_input: dict[str, Any]
     cwd: Path
     project_root: Path | None
-    harness: str
     raw: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
@@ -143,6 +131,33 @@ DIRECTORY = "stayfixed"
 MARKERS = "markers"
 DIAGNOSTICS = "diagnostics.jsonl"
 DIAGNOSTICS_MAX_BYTES = 256 * 1024
+
+# The variables a harness names its data root for this plugin in, asked in this order.
+# `PLUGIN_DATA` is Codex's name for the same directory: the spike record
+# (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured Codex's hook launch setting it
+# beside `CLAUDE_PLUGIN_DATA` in its *Codex plugin hooks* trial.
+DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA", "PLUGIN_DATA")
+
+
+def data_root(env: Mapping[str, str]) -> str | None:
+    """The harness's data root as `env` names it, or `None` when no variable names one.
+
+    One rule for the two readers of the tree under it: the sink writes there and `doctor` counts
+    what it wrote, so a variable one of them asked and the other did not would hide every record.
+    The value is returned as given; whether it is usable is each caller's question.
+    """
+    return first_set(env, DATA_ROOT_VARIABLES)
+
+
+def first_set(env: Mapping[str, str], names: Iterable[str]) -> str | None:
+    """The value of the first of `names` that `env` sets non-empty, in their order, or `None`.
+
+    An empty variable reads as unset, so the next one is asked rather than an empty path taken.
+    """
+    for name in names:
+        if named := env.get(name):
+            return named
+    return None
 
 
 class Sink(Protocol):

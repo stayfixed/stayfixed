@@ -51,7 +51,6 @@ def an_event(root: Path, name: str = "SessionStart") -> HookEvent:
         tool_input={},
         cwd=root,
         project_root=root,
-        harness="claude",
     )
 
 
@@ -71,7 +70,7 @@ def test_every_handler_declares_a_known_event_and_an_open_policy() -> None:
 
 
 def test_no_session_start_context_handler_is_registered() -> None:
-    # The four injection bundles are `hooks.json` entries, not handlers: the dispatcher in
+    # The two injection bundles are `hooks.json` entries, not handlers: the dispatcher in
     # `stayfixed.hooks.dispatch` joins every handler's context for one event and clamps the join to
     # a single platform cap, which would collapse the numbered slots, each with its own cap, that
     # the entries exist to keep apart.

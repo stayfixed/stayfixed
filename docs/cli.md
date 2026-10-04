@@ -166,10 +166,8 @@ run it by hand except to see what a session actually receives.
 
 | Bundle | What it is |
 |---|---|
-| `preset-rules` | The `[rules]` table of the configured preset, when it has one. The shipped `recommended` preset has none, so this bundle prints nothing for it: your own standing rules are notes carrying `metadata.startup`, which `standing-rules` injects. Never repository content, so never gated. |
 | `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
 | `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
-| `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only**: Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -181,10 +179,10 @@ Output is deliberately **raw**, not JSON: the margin that keeps a bundle inside 
 is additive only because there is no envelope and no escaping. Do not pass `--json` from a hook
 entry.
 
-When the store is repository data with no trust record, every bundle but `preset-rules` is
-empty, and this command says nothing rather than explaining why — its output *is* what reaches
-the model. `stayfixed memory index` and `stayfixed memory fit` are where the explanation is
-printed, because those are the commands a person runs.
+When the store's notes are repository data with no trust record, both bundles are empty, and
+this command says nothing rather than explaining why — its output *is* what reaches the model.
+`stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
+because those are the commands a person runs.
 
 **Writes** nothing: the bundle goes to standard output and nowhere else.
 
@@ -269,9 +267,11 @@ changes into it so every command's `--root` default is correct, and it maps exit
 `0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
 handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
 before `stayfixed` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
-continues with exit `0`. Either way the reason is written to stderr with a token — Codex
-downgrades an exit `2` with empty stderr to a plain failure, so the reason is part of the
-contract.
+continues with exit `0`. Either way the reason is written to stderr with a token, so the reason
+is part of the contract. That Codex downgrades an exit `2` with empty stderr to a plain failure
+is unmeasured: Codex 0.160.0 ran none of the plugin's hooks, so no exit of this wrapper has been
+observed there, and the README's [What each agent enforces](../README.md#what-each-agent-enforces)
+says what does hold on Codex.
 
 **Exit `2` is shared with the platform, and the wrapper does not pretend otherwise.** Because a
 `2` the dispatcher produced is a deny that must pass through, a `2` CPython produced underneath
@@ -2575,7 +2575,7 @@ nobody sees, so that is where they all are.
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
-| `codex-trust` | whether any stayfixed hook is untrusted on Codex | — |
+| `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
@@ -2592,7 +2592,9 @@ and fifteen on a state of this machine or this repository.** A `skip` is **not**
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
-no spike measured. `ci-ref` was counted beside it and is not any more, and neither is `files`.
+no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what was
+measured: on Codex the session guards and session notices do not run, and the repository gates
+hold in CI. `ci-ref` was counted beside it and is not any more, and neither is `files`.
 `init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
 none — and which state is the ordinary one moves with the release history rather than with any
 code here: while no released tag matches the stayfixed running there is no commit to pin, so

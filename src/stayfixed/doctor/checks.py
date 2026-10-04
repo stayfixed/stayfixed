@@ -93,7 +93,14 @@ from stayfixed.doctor.model import (
 )
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
+from stayfixed.harnesses import CODEX, HARNESSES, Tier
+from stayfixed.hooks.api import (
+    DIAGNOSTICS,
+    DIAGNOSTICS_MAX_BYTES,
+    DIRECTORY,
+    MARKERS,
+    data_root,
+)
 from stayfixed.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -107,15 +114,13 @@ from stayfixed.scaffold import ParserLimitError, marker_id, owned_ids
 from stayfixed.semver import later
 from stayfixed.setup.api import USER_SETTINGS
 
-# Every file a hook entry can be installed into, as a path relative to a root. The set is
-# load-bearing twice — `setup` writes `USER_SETTINGS` and this check reads all three — so
-# `USER_SETTINGS` is a *member* rather than a fourth spelling of the same name: a change that
-# moves it moves this walk with it. The two roots are the project (all three) and `home`
-# (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny rules).
-SETTINGS_FILES = (
-    USER_SETTINGS,
-    ".claude/settings.local.json",
-    ".codex/hooks.json",
+# Every file a hook entry can be installed into, as a path relative to a root: each harness's
+# committed settings files and the ones it keeps out of git, read off the harness registry, so a
+# harness added there is walked here without an edit. The two roots are the project (all of
+# them) and `home` (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny
+# rules, and which `setup` reads off `CLAUDE.settings`: the same file under another root).
+SETTINGS_FILES = tuple(
+    relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
 # Where the harness reads stayfixed's wrapper from, relative to the plugin root. `hooks/` stays
 # at the plugin root — `overlay/template.py` says why — so it is found by environment or by
@@ -530,7 +535,7 @@ NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
-# would type. The three project-relative members of `SETTINGS_FILES` name themselves.
+# would type. The project-relative members of `SETTINGS_FILES` name themselves.
 _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 
@@ -823,17 +828,30 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     return Row(status, "; ".join(parts), remedy)
 
 
+def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+    return " and ".join(filter(None, (", ".join(words[:-1]), *words[-1:])))
+
+
 def _codex_trust(context: Context) -> Row:
     # Red is owed while any stayfixed hook is untrusted on Codex, and the hash Codex keys hook
     # trust on is one no spike has measured. A check that returned green because it could not
     # look would be strictly worse than one that admits it cannot.
-    return Row(
-        SKIP,
+    detail = (
         "whether a stayfixed hook is trusted on Codex is unmeasured: nothing here knows how "
         "Codex records hook trust, and a measurement would need the file it writes it to and "
-        "the hash it keys on",
-        "",
+        "the hash it keys on"
     )
+    # What was measured is what a Codex user needs when they look, and it is the registry's to
+    # say: Codex ran none of the plugin's hooks, so the surfaces that ride on them do not run
+    # there. Still a skip, since nothing measured of Codex makes this row red. Codex's reach has
+    # surfaces in both lists, and the row's text is pinned by its test, so a measurement that
+    # empties one is an edit here.
+    if CODEX.name in context.config.stayfixed.agents:
+        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
+        in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
+        detail += f"; on Codex the {_joined(absent)} do not run; the {_joined(in_ci)} hold in CI"
+    return Row(SKIP, detail, "")
 
 
 def _budgets(context: Context) -> Row:
@@ -1139,7 +1157,8 @@ def _diagnostics(context: Context) -> Row:
     not write has no cap at all, and one byte past it is itself an answer — this is not a file
     the sink produced, and the count below is a floor rather than a total.
     """
-    data = context.env.get("CLAUDE_PLUGIN_DATA") or context.env.get("PLUGIN_DATA")
+    # The rule the sink found the root by, so this row reads the tree the sink wrote.
+    data = data_root(context.env)
     if not data:
         return Row(
             SKIP,

@@ -155,7 +155,7 @@ def test_a_diagnostic_never_carries_a_payload_verbatim(tmp_path: Path) -> None:
 def test_the_session_a_record_is_filed_under_is_capped_like_any_other_field(
     tmp_path: Path,
 ) -> None:
-    # The session id is off the hook's stdin, type-checked by `parse_event` as `str` and no
+    # The session id is off the hook's stdin, type-checked by `read_event` as `str` and no
     # more, so it is payload-controlled exactly as a handler's reason string is. Merged into the
     # record after the cap — which is where it started — it was the one field a repository could
     # write to this log at any length it liked.

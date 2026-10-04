@@ -128,6 +128,17 @@ ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an
 stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
+A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
+`stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
+that value's `render`, and the event a handler reads does not say which value that was. That is
+all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
+positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
+the tier each enforcement surface holds at under it — and nothing that reads those needs an
+edit: `doctor` walks the settings files every value names, and the README's table of what each
+agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a
+new harness still touches outside the registry is listed in the module docstring of
+`src/stayfixed/harnesses.py`.
+
 Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
 — the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
 `src/stayfixed/areas.py`. Every other module under `src/stayfixed/`, `cli.py` and the subpackages
@@ -187,7 +198,7 @@ loaded: the core loads the private layer only when a command asks for it.
   rather than skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
-  `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
+  `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —
   instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
   area's `hooks.py` import *it*: a name defined in one of those modules and re-exported from
   `api.py` would be an import cycle, not a tidying. So in the one area that ships the common

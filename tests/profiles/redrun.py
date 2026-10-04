@@ -60,7 +60,6 @@ def red_event(root: Path, command: str) -> HookEvent:
         tool_input=tool_input,
         cwd=root,
         project_root=root,
-        harness="claude",
         raw={"tool_name": "Bash", "tool_input": tool_input, **RED},
     )
 

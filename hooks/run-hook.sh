@@ -108,7 +108,7 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 #
 # `env -i` with a *fixed* PATH and HOME — `gitenv.GIT_ENV_KEEP` minus the locale names this query
 # has no use for, and minus the inherited `PATH`, which no longer chooses the binary and has no
-# further business here. `hooks/dispatch._git_toplevel` scrubs the identical call one layer down
+# further business here. `gitenv._git_toplevel` scrubs the identical call one layer down
 # and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
 # a different repository, and every `--root`-defaulting entry then reads that repository's
 # `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git

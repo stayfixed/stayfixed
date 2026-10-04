@@ -80,7 +80,7 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "13 entries, 14 row(s), 0 failure(s)" in out, out
+    assert "9 entries, 10 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -109,8 +109,8 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     out = capsys.readouterr().out
     assert code == 1, out
     assert "stderr does not say 'refused: bg-cleanup'" in out, out
-    # And the ten entries that carry repository bytes: they emitted nothing, which is what all
-    # ten of them did against the checkout before the fixture had a store at all.
+    # And the entries that carry repository bytes: they emitted nothing, which is what every
+    # one of them did against the checkout before the fixture had a store at all.
     #
     # Mutation (declared, "the hook smoke stops reading what an injection entry injected"):
     # the registry lookup answers `None` -> this reddens and the row above does not.
@@ -187,20 +187,20 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
 def test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The same question for the ten entries that carry repository bytes. `SAMPLES` is keyed by
-    # EVENT, so dropping one of the eleven `SessionStart` entries leaves every event still
+    # The same question for the six entries that carry repository bytes. `SAMPLES` is keyed by
+    # EVENT, so dropping one of the seven `SessionStart` entries leaves every event still
     # sampled, runs one row fewer and prints a green summary — the bundle stopped being
     # smoke-tested and nothing said so.
     #
     # Mutation (declared, "the hook smoke stops noticing a bundle that lost its entry"): the
-    # `ungathered` set is emptied -> the run proceeds on ten entries and both assertions below
+    # `ungathered` set is emptied -> the run proceeds on eight entries and both assertions below
     # redden.
     smoke = _load("smoke_hooks")
     planted = _plugin(tmp_path)
     entries = planted / "hooks" / "hooks.json"
     document = json.loads(entries.read_text(encoding="utf-8"))
     groups = document["hooks"]["SessionStart"][0]["hooks"]
-    dropped = "--bundle index --part 3"
+    dropped = "--bundle volatile-notes --part 3"
     kept = [entry for entry in groups if dropped not in entry["command"]]
     assert len(kept) == len(groups) - 1, "the fixture removes an entry that is there"
     document["hooks"]["SessionStart"][0]["hooks"] = kept
@@ -225,7 +225,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The other side of the count, and the one neither event set can see: a duplicated entry
-    # changes no event and no bundle, runs a fifteenth row and prints a summary that reads
+    # changes no event and no bundle, runs an eleventh row and prints a summary that reads
     # green. The floor is the only thing that answers.
     #
     # Mutation (declared, "the hook smoke stops counting its own entries and rows"): the
@@ -250,7 +250,7 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     )
     out = capsys.readouterr().out
     assert code == 1, out
-    assert "14 entries and 15 rows, expected 13 and 14" in out, out
+    assert "10 entries and 11 rows, expected 9 and 10" in out, out
 
 
 @needs_git

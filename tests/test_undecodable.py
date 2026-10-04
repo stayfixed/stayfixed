@@ -36,7 +36,7 @@ from stayfixed.config.loader import (
 )
 from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory import bundles, index, store, trust
+from stayfixed.memory import index, store, trust
 from stayfixed.overlay import create, identity
 from stayfixed.overlay.api import COMMON_CODEX
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
@@ -186,11 +186,6 @@ def test_an_undecodable_file_is_its_readers_own_failure(
 
 # (id, what to plant, the call, what the reader answers for a file it cannot read)
 ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
-    (
-        "the memory index a bundle injects",
-        lambda t: lambda: bundles._index(_plant(t / "MEMORY.md")),
-        [],
-    ),
     (
         "the memory index a second writer appended to",
         lambda t: lambda: index._appended(_plant(t / "MEMORY.md")),

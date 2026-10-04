@@ -2,10 +2,11 @@
 
 One module because there are two callers and the rule is the same for both, and being the same
 for both is the point. `memory.store._git` scrubbed and said why — "it must be a real git
-answer, not one an inherited `GIT_DIR` produced" — while `hooks.dispatch._git_toplevel` passed
-no `env=` at all and inherited whatever the session had. That one feeds `project_root()`, which
-every hook decision is derived from, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
-handler in the process answer for a different repository than the one the user is sitting in.
+answer, not one an inherited `GIT_DIR` produced" — while the hook path's toplevel query passed
+no `env=` at all and inherited whatever the session had. That one feeds the hook's project root
+(`checkout_root` below), which every hook decision is derived from, so an inherited `GIT_DIR` or
+`GIT_WORK_TREE` made every handler in the process answer for a different repository than the
+one the user is sitting in.
 
 A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed`, so the hook path
 pays no area import to reach it, and neither caller has to import the other's area to share the
@@ -221,6 +222,51 @@ def git_run(
         return -1, ""
     answer = completed.stdout.decode(codec, "surrogateescape")
     return completed.returncode, answer
+
+
+def _git_toplevel(cwd: Path) -> Path | None:
+    """The checkout git names for `cwd`, as the path on disk, or `None` when git named none.
+
+    Through `git_run`, which scrubs the environment for the reason `memory.store._git` gives in
+    as many words — "it must be a real git answer, not one an inherited `GIT_DIR` produced" —
+    and `checkout_root` feeds *every* hook decision, so an inherited `GIT_DIR` or `GIT_WORK_TREE`
+    made every handler answer for a different repository than the session is in. It also decodes
+    the answer losslessly, so on Linux a checkout under a directory named in latin-1 bytes is
+    that directory; decoded strictly, it would make every hook an internal error, which
+    PreToolUse turns into a refusal of every tool call. The line ending alone is taken off, so a
+    path that ends in a space is still that path.
+    """
+    code, out = git_run(cwd, "rev-parse", "--show-toplevel")
+    top = out.removesuffix("\n")
+    return Path(top) if code == 0 and top else None
+
+
+def _walk_to_git_root(cwd: Path) -> Path | None:
+    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count.
+
+    `git rev-parse --show-toplevel` resolves symlinks in `cwd` before it reports the toplevel,
+    so the walk must too: otherwise the same repository reached through its real path and
+    through a symlink to it would report two different roots where git collapses them into one.
+    """
+    if not cwd.is_absolute():
+        return None
+    for directory in [cwd, *cwd.parents]:
+        if (directory / ".git").exists():
+            return directory.resolve()
+    return None
+
+
+def checkout_root(cwd: Path) -> Path | None:
+    """The checkout `cwd` sits in: a walk for `.git`, else git itself; `None` if neither names one.
+
+    The hook's project root when no registered harness's variable names one, which makes this
+    Codex's hot path: `stayfixed hook` runs as a subprocess on every tool call, and `git
+    rev-parse --show-toplevel` costs about 8 ms of a 33 ms invocation where the walk costs about
+    0.004 ms. git stays behind the walk for what a walk cannot see, such as `GIT_DIR` and a bare
+    repository. It reads no harness variable: those are the registry's
+    (`harnesses.Harness.project_dir_env`), and `hooks.dispatch.read_event` asks them first.
+    """
+    return _walk_to_git_root(cwd) or _git_toplevel(cwd)
 
 
 class GitUnavailable(Failure):

@@ -36,6 +36,7 @@ from stayfixed.hooks.api import (
     MARKERS,
     NullSink,
     Sink,
+    data_root,
 )
 
 # `DIRECTORY` (the one directory stayfixed owns inside the data root the harness handed it),
@@ -56,7 +57,7 @@ DIAGNOSTIC_FIELD_CHARS = 2_000
 # however long a machine runs. A named cap (CONTRIBUTING.md#named-caps); no shipped file changes
 # with it.
 MARKER_SESSIONS_KEPT = 50
-# A session id the payload did not carry. `parse_event` types `session_id` as `str | None`, and
+# A session id the payload did not carry. `read_event` types `session_id` as `str | None`, and
 # every such invocation used to share one constant segment -- `sha256("")`, a hex pair anything
 # can precompute. That made the unkeyed case the one direction a *read* out of this tree could
 # be used in: a data root the environment names, plus a payload with no session id, is enough
@@ -137,7 +138,7 @@ class DataSink:
 
     def diagnostic(self, record: dict[str, object]) -> None:
         # The session is capped with everything else, and not merged in past the cap. It comes off
-        # the hook's stdin and `parse_event` type-checks it as `str` and nothing more, so it is as
+        # the hook's stdin and `read_event` type-checks it as `str` and nothing more, so it is as
         # payload-controlled as any field a handler supplies. A record holds a reason and never a
         # payload (`DIAGNOSTIC_FIELD_CHARS`), and that covers the key this record is filed under as
         # much as it covers the reason string.
@@ -181,14 +182,13 @@ class DataSink:
 def sink_for(session: str | None, env: Mapping[str, str]) -> Sink:
     """A durable sink under the harness's data root, or `NullSink()` when there is not one.
 
-    `PLUGIN_DATA` is Codex's name for the same thing, so one lookup serves both harnesses: the spike
-    record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured Codex's hook launch setting
-    it beside `CLAUDE_PLUGIN_DATA` in its *Codex plugin hooks* trial. The data root itself belongs
-    to the harness and is not created here; `stayfixed/` under it is ours, and is created by the
-    probe through `write_within`'s contained walk rather than by a `mkdir(parents=True)` that would
-    follow a symlink on the way.
+    The root is `hooks.api.data_root`'s, the one rule `doctor` reads the same tree by, so each
+    harness's name for it (`PLUGIN_DATA` is Codex's) is asked here as it is there. The data root
+    itself belongs to the harness and is not created here; `stayfixed/` under it is ours, and is
+    created by the probe through `write_within`'s contained walk rather than by a
+    `mkdir(parents=True)` that would follow a symlink on the way.
     """
-    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")
+    data = data_root(env)
     if not data:
         return NullSink()
     base = Path(data)

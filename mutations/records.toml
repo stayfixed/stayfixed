@@ -71,19 +71,6 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
 ]
 
-# The memory index bundle is split at its section markers, so an index longer than one part fills
-# the slots after the first.
-[[mutation]]
-name = "the index bundle is one block again, so its later slots go dead"
-file = "src/stayfixed/memory/bundles.py"
-before = '    head, *sections = text.split(_SECTION)'
-after = '    head, sections = text, []'
-reddens = ["tests/memory/test_bundles.py::test_an_index_over_one_part_fills_the_second_slot"]
-
-# `split` never breaks a block, so one block larger than the cap is one part larger than
-# the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
-# — measured at 20,288 characters arriving with one of its two region markers, which is the
-# state `trust.wrap`'s nonce region exists to make unreachable.
 # Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
 # "group_order outranks the startup rank in the index order" and "the volatile budget excludes the
 # set that is exactly the budget", left all 617 tests green. The first decides which note leads a
@@ -109,6 +96,10 @@ reddens = [
   "tests/memory/test_bundles.py::test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full",
 ]
 
+# `split` never breaks a block, so one block larger than the cap is one part larger than
+# the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
+# — measured at 20,288 characters arriving with one of its two region markers, which is the
+# state `trust.wrap`'s nonce region exists to make unreachable.
 [[mutation]]
 name = "an oversized part is handed out to be truncated again"
 file = "src/stayfixed/memory/bundles.py"
@@ -116,42 +107,6 @@ before = '    if len(text) > cap:'
 after = '    if False:'
 reddens = [
   "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
-]
-
-# The preset's `[rules]` bundle. A TOML `"""…"""` body keeps the newline before its closing
-# quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three consecutive
-# newlines in front of the next `### ` heading — in text nobody reads until a session-start
-# hook has injected it, which is why it shipped.
-[[mutation]]
-name = "a rule body keeps the padding TOML gave it"
-file = "src/stayfixed/memory/bundles.py"
-before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
-after = '        f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)'
-reddens = [
-  "tests/memory/test_bundles.py::test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body",
-  "tests/memory/test_bundles.py::test_no_rule_of_a_preset_written_as_toml_renders_with_padding",
-]
-
-# A preset is data read at run time and this bundle runs inside a handler whose policy is
-# `open`, so a malformed `rules` key renders nothing rather than raising out of a hook. Both
-# arms shipped with no test: the fixture beside them makes `.get("rules", {})` return `{}`,
-# which the comprehension renders as nothing whether the guards are there or not.
-[[mutation]]
-name = "a rules key that is not a table reaches .items()"
-file = "src/stayfixed/memory/bundles.py"
-before = '    if not isinstance(rules, dict):'
-after = '    if False:'
-reddens = [
-  "tests/memory/test_bundles.py::test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising",
-]
-
-[[mutation]]
-name = "a rule body that is not a string is rendered rather than skipped"
-file = "src/stayfixed/memory/bundles.py"
-before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
-after = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items()'
-reddens = [
-  "tests/memory/test_bundles.py::test_a_rule_whose_body_is_not_a_string_is_skipped",
 ]
 
 # A note in a nested group is keyed on the group the configuration names, not on its folder.

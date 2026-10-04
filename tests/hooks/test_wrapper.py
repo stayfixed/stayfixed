@@ -399,7 +399,7 @@ def test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against(
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_path: Path) -> None:
-    # `hooks/dispatch._git_toplevel` scrubs this exact call one layer down and names the failure
+    # `gitenv._git_toplevel` scrubs this exact call one layer down and names the failure
     # verbatim; the wrapper did not. Measured: `cd repoA` with GIT_DIR/GIT_WORK_TREE naming
     # repoB put the launcher in repoB, and every entry but the dispatcher's relies on `--root`
     # defaulting to `.` — so the whole hook then read another repository's stayfixed.toml,
@@ -518,7 +518,7 @@ def test_stayfixed_runs_from_the_project_root(tmp_path: Path) -> None:
             "memory",
             "session-context",
             "--bundle",
-            "preset-rules",
+            "standing-rules",
         ],
         capture_output=True,
         text=True,

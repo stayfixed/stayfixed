@@ -151,9 +151,9 @@ def index_source(store: Store, config: Config) -> Path | None:
 
     `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
     per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
-    this same answer — `worktree.link`, which materialises it into a worktree, and
-    `bundles._index`, which injects it into the model — so it lives here, beside `INDEX_NAME`,
-    and is called rather than reimplemented.
+    this same answer — `worktree.link`, which materialises it into a worktree, the writer and
+    the check (`_destination`), and the harvest (`_appended`) — so it lives here, beside
+    `INDEX_NAME`, and is called rather than reimplemented.
 
     `None` has three causes, and this function's callers only ever need to ask the read
     question: is there something here to source. An absent target and a *refused* symlink
@@ -370,8 +370,8 @@ def _extra(config: Config, store: Store) -> list[str]:
 
     `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
     not cover, and assigns the check to "the module that first reads those fields". The
-    strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
-    bundle injects — the same channel a symlinked index reaches. `contained` is called without
+    strings are repository-controlled and land verbatim in `MEMORY.md`, the file the harness
+    memory link exposes — the same channel a symlinked index reaches. `contained` is called without
     `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in
     overlay mode, while these are pointers to documents in the repository and a link at the
     last component escaping the root is the same escape as one halfway up.
@@ -449,15 +449,14 @@ class IndexCheck:
 def _destination(store: Store, config: Config) -> Path:
     """The one file the writer writes and the check compares against: what the readers source.
 
-    `index_source` is the rule every *reader* applies — `bundles._index`, `_appended`,
-    `worktree.link`. The writer did not apply it and neither did the check, and each half of
-    that was its own defect. `write_atomically` ends in `os.replace`, which replaces the
-    **link** rather than its target: one run stranded the overlay's shared copy on every other
-    machine, turned the index into a real file inside the repository, and so flipped
-    `in_repository` to True and closed the gate on the index bundle for good. `check_index`
-    meanwhile read `store.path / INDEX_NAME` through `is_file()`, which follows the link, so
-    `--check` answered about a file nothing injects: exit 0 and "index is current" while the
-    index bundle produced `[]`.
+    `index_source` is the rule every *reader* applies — `_appended`, `worktree.link`. The writer
+    did not apply it and neither did the check, and each half of that was its own defect.
+    `write_atomically` ends in `os.replace`, which replaces the **link** rather than its target:
+    one run stranded the overlay's shared copy on every other machine, turned the index into a
+    real file inside the repository, and so flipped `in_repository` to True and closed the trust
+    gate on the index for good. `check_index` meanwhile read `store.path / INDEX_NAME` through
+    `is_file()`, which follows the link, so `--check` answered about a file no reader sources:
+    exit 0 and "index is current" while every reader refused the link it had followed.
 
     Both are the same question, so both ask it here, once.
 

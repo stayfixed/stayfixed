@@ -220,7 +220,7 @@ reddens = [
 # longer equalled itself, walked the disk and swept ignored files.
 [[mutation]]
 name = "the hook path strips a checkout path that ends in a space"
-file = "src/stayfixed/hooks/dispatch.py"
+file = "src/stayfixed/gitenv.py"
 before = '    top = out.removesuffix("\n")'
 after = "    top = out.strip()"
 reddens = [
@@ -412,11 +412,25 @@ reddens = [
 # invocation" -- the defect the sink exists to remove, on one harness only.
 [[mutation]]
 name = "the sink stops recognising Codex's name for the data directory"
-file = "src/stayfixed/hooks/sink.py"
-before = '    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")'
-after = '    data = env.get("CLAUDE_PLUGIN_DATA")'
+file = "src/stayfixed/hooks/api.py"
+before = 'DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA", "PLUGIN_DATA")'
+after = 'DATA_ROOT_VARIABLES = ("CLAUDE_PLUGIN_DATA",)'
 reddens = [
   "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
+]
+
+# The sink writes under the data root and `doctor` counts what it wrote there, and the hook reads
+# its project root beside them: all three find a directory by one rule, which asks every variable
+# it is given and not only the first. Each of the two tests below reddens on its own, one per
+# root, so neither reader can stop asking the rule unseen.
+[[mutation]]
+name = "the first-set-variable rule asks only its first variable"
+file = "src/stayfixed/hooks/api.py"
+before = "    for name in names:"
+after = "    for name in tuple(names)[:1]:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_sink_and_doctor_find_the_data_root_by_one_rule[second]",
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
 ]
 
 # `seen()` was a plain `Path.exists()`, which follows a symlink and counts a directory -- so
@@ -568,6 +582,139 @@ before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)"
 after = "        stdout = render(event_name, context[:keep])"
 reddens = [
   "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
+# The hook answers through the harness value detection chose: a value whose output differs
+# renders its own answer, and the clamp searches that value's own envelope for the prefix that
+# fits, since one measured against Claude Code's is the wrong width for any other.
+[[mutation]]
+name = "the dispatcher renders every answer in Claude Code's shape"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "    stdout = harness.render(event.name, context)"
+after = '    stdout = __import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render(event.name, context)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
+]
+
+[[mutation]]
+name = "the clamp measures Claude Code's envelope whatever the harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = _clamp(harness.render, event.name, context, cap)"
+after = '        stdout = _clamp(__import__("stayfixed.harnesses", fromlist=["CANONICAL"]).CANONICAL.render, event.name, context, cap)'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_clamped_answer_is_the_detected_harnesss_envelope",
+]
+
+# A refusal is exit 2, an empty stdout and the reasons on stderr under every harness, and no
+# harness value is asked to shape one, so a rendering that fails cannot cost a deny.
+[[mutation]]
+name = "a deny is rendered through the detected harness"
+file = "src/stayfixed/hooks/dispatch.py"
+before = '        return Outcome(2, "", "stayfixed: refused: "'
+after = '        return Outcome(2, harness.render(event.name, ""), "stayfixed: refused: "'
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_deny_never_goes_through_render",
+]
+
+# The README's prose cites the version each agent's session guards were measured at, and the
+# registry records it beside that surface's evidence; the README is held to it.
+[[mutation]]
+name = "Claude Code's guard measurement is restated at another version"
+file = "src/stayfixed/harnesses.py"
+before = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.261","""
+after = """                f"({_P0_SPIKES}, the fail-closed matrix)",
+                measured_on="Claude Code 2.1.262","""
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
+# A harness's `render` shapes context and nothing else: a deny travels on the exit code alone, and an
+# allow spelled in the envelope would let a call through that no guard judged.
+[[mutation]]
+name = "the canonical render spells an allow beside the context"
+file = "src/stayfixed/harnesses.py"
+before = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name}}'
+after = '    payload: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event_name, "permissionDecision": "allow"}}'
+reddens = [
+  "tests/test_harnesses.py::test_no_harness_renders_a_decision[plain-PreToolUse-claude]",
+]
+
+# The detected harness is a repository's to steer (a committed `env` block can set `PLUGIN_ROOT`),
+# and the project root decides which configuration loads, so the event is read from every
+# registered harness's variable whichever one was detected, and is never told which.
+[[mutation]]
+name = "the root is read from the detected harness only"
+file = "src/stayfixed/hooks/commands.py"
+before = "        event = read_event(payload, os.environ)"
+after = "        event = read_event(payload, os.environ if harness.project_dir_env else {})"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
+]
+
+# Detection reads the process's environment and the payload, and the test that holds the event to
+# one shape under every harness also holds that its runs were answered by three harnesses, so it
+# cannot quietly become Claude Code three times.
+[[mutation]]
+name = "the hook asks detection with neither environment nor payload"
+file = "src/stayfixed/hooks/commands.py"
+before = "        harness = detect(os.environ, payload)"
+after = "        harness = detect({}, None)"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_handler_sees_one_event_whichever_harness_is_detected",
+]
+
+# Two values that claim one input would leave the registry's order to decide which harness a
+# session gets, so detection claims only what is its own.
+[[mutation]]
+name = "Codex's detection claims every input"
+file = "src/stayfixed/harnesses.py"
+before = """    if "PLUGIN_ROOT" in env:
+        return True"""
+after = """    if True:
+        return True"""
+reddens = [
+  "tests/test_harnesses.py::test_no_input_is_claimed_by_two_harnesses",
+]
+
+# Detection reads inputs a repository can steer, so no harness renders apart from the canonical
+# one until it is detected by a signal the wrapper controls.
+[[mutation]]
+name = "Codex is given a render of its own"
+file = "src/stayfixed/harnesses.py"
+before = """    # its own needs more than a measured shape: `detect` says what.
+    render=hook_specific_output,"""
+after = """    # its own needs more than a measured shape: `detect` says what.
+    render=lambda event_name, context: hook_specific_output(event_name, context),"""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_renders_through_the_canonical_render",
+]
+
+# The registry's order is the order `init` writes `[stayfixed] agents` in, so it is not the root's
+# precedence: the canonical harness's variable is asked first, and a harness registered ahead of
+# Claude Code cannot move a Claude Code session's root to a variable of its own.
+[[mutation]]
+name = "the project-root variables are asked in registry order"
+file = "src/stayfixed/harnesses.py"
+before = "    ordered = (CANONICAL, *(harness for harness in HARNESSES if harness is not CANONICAL))"
+after = "    ordered = HARNESSES"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_harness_registered_first_never_takes_the_root_from_claude_code",
+]
+
+# Hook discovery imports the handler vocabulary and the areas that ship a `hooks.py`, and neither
+# the harness registry nor the configuration layer. That holds for discovery alone: the CLI frame
+# imports the registry when it builds its parser, before any hook runs.
+[[mutation]]
+name = "the handler vocabulary imports the harness registry"
+file = "src/stayfixed/hooks/api.py"
+before = "from typing import TYPE_CHECKING, Any, Protocol\n"
+after = """from typing import TYPE_CHECKING, Any, Protocol
+
+from stayfixed.harnesses import project_root_variables
+"""
+reddens = [
+  "tests/test_areas.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
 ]
 
 # One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
@@ -1116,6 +1263,49 @@ after = "    chosen = HARNESSES"
 reddens = [
   "tests/project/test_templates.py::test_a_harness_not_listed_gets_no_file_of_its_own",
   "tests/test_harnesses.py::test_select_answers_the_listed_harnesses_and_counts_the_rest",
+]
+
+# Detection asks every value that detects before it falls back to Claude Code's schema: Codex
+# mirrors its own root variable under Claude Code's name, so only a positive answer tells it apart.
+[[mutation]]
+name = "detection answers Claude Code before asking any harness"
+file = "src/stayfixed/harnesses.py"
+before = "    for harness in HARNESSES:"
+after = """    return CANONICAL
+    for harness in HARNESSES:"""
+reddens = [
+  "tests/test_harnesses.py::test_an_environment_codex_sets_is_codex",
+]
+
+# A harness's reach is what the README's table of what each agent enforces says, so a tier the
+# registry moves without a measurement is a README that no longer matches it.
+[[mutation]]
+name = "Codex's session guards are stated as blocking"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.GUARDS: _NO_CODEX_HOOK,"
+after = "            Surface.GUARDS: Reach(Tier.BLOCKS, _NO_CODEX_HOOK.evidence, _NO_CODEX_HOOK.measured_on),"
+reddens = [
+  "tests/test_documents.py::test_the_readme_states_each_agents_reach_as_the_registry_does",
+]
+
+# Every harness states every surface, so the table and `doctor` never meet a cell nobody filled.
+[[mutation]]
+name = "Codex's reach leaves out the session notices"
+file = "src/stayfixed/harnesses.py"
+before = "            Surface.NOTICES: _NO_CODEX_HOOK,\n"
+after = ""
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_states_every_surface",
+]
+
+# A harness is a value that keys a set or a dict, and its reach is a mapping, which has no hash.
+[[mutation]]
+name = "a harness's reach makes the value unhashable"
+file = "src/stayfixed/harnesses.py"
+before = "    reach: Mapping[Surface, Reach] = field(hash=False)"
+after = "    reach: Mapping[Surface, Reach]"
+reddens = [
+  "tests/test_harnesses.py::test_a_harness_can_key_a_set_and_a_dict",
 ]
 
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit

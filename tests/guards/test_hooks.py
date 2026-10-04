@@ -11,6 +11,7 @@ import pytest
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.guards import bgcleanup
 from stayfixed.guards.hooks import register
+from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
 from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.floor import floor_env
@@ -61,7 +62,6 @@ def bash_event(
         tool_input=tool_input,
         cwd=root,
         project_root=root,
-        harness="claude",
         raw={"tool_name": tool, "tool_input": tool_input},
     )
 
@@ -140,7 +140,7 @@ def test_a_guard_that_cannot_judge_refuses_rather_than_permits(
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
-    outcome = dispatch(bash_event(root, "ls"), register(), config, sink=recorder)
+    outcome = dispatch(bash_event(root, "ls"), register(), config, harness=CLAUDE, sink=recorder)
     assert outcome.exit_code == 2
     assert "bg-cleanup: RuntimeError: boom" in outcome.stderr
     assert recorder.records[0]["handler"] == "bg-cleanup"
@@ -219,7 +219,6 @@ def post_event(root: Path, command: str, raw_extra: dict[str, object]) -> HookEv
         tool_input=tool_input,
         cwd=root,
         project_root=root,
-        harness="claude",
         raw=raw,
     )
 
@@ -313,6 +312,7 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
         post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
         register(),
         config,
+        harness=CLAUDE,
         sink=recorder,
     )
     assert outcome.exit_code == 0
@@ -329,12 +329,17 @@ def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> 
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
     dispatch(
-        post_event(root, "ls", {"tool_response": {"stdout": ""}}), register(), config, sink=recorder
+        post_event(root, "ls", {"tool_response": {"stdout": ""}}),
+        register(),
+        config,
+        harness=CLAUDE,
+        sink=recorder,
     )
     outcome = dispatch(
         post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
         register(),
         config,
+        harness=CLAUDE,
         sink=recorder,
     )
     assert "uncommitted" in json.loads(outcome.stdout)["hookSpecificOutput"].get(

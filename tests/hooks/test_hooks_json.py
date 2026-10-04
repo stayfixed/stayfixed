@@ -44,7 +44,7 @@ SESSION_SOURCES = {"startup", "resume", "clear", "compact", "fork"}
 def test_there_are_entries_at_all() -> None:
     # The non-vacuity guard every walk-driven assertion below depends on: an empty `hooks`
     # object satisfies all six of them.
-    assert len(_entries()) == 13
+    assert len(_entries()) == 9
 
 
 def test_every_command_parses_against_the_real_parser() -> None:
@@ -70,14 +70,35 @@ def test_no_entry_passes_json() -> None:
 def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
     # A bundle that overflows is split across further entries, and raising N edits this
     # shipped file — so N is asserted from SLOTS rather than counted by hand.
-    declared = {
+    declared = [
         (words[words.index("--bundle") + 1], words[words.index("--part") + 1])
         for event, _matcher, entry in _entries()
         if event == "SessionStart" and "--bundle" in (words := entry["command"].split())
-    }
-    assert declared == {
+    ]
+    assert set(declared) == {
         (bundle.value, str(part)) for bundle, parts in SLOTS.items() for part in range(1, parts + 1)
     }
+    # And in order, behind the dispatcher: each bundle's parts in sequence, standing rules before
+    # volatile notes. The set above cannot see an order, so two entries that swap their parts
+    # still pass it.
+    #
+    # Mutation (oracle): `mutations/`'s "a session-start part is filed twice and another not at
+    # all" reddens the set; "two session-start parts swap places in the hooks file" keeps the set
+    # and reddens the order.
+    session_start = [
+        entry["command"].split()[2:]
+        for event, _matcher, entry in _entries()
+        if event == "SessionStart"
+    ]
+    assert session_start[0] == ["hook", "SessionStart"]
+    assert declared == [
+        ("standing-rules", "1"),
+        ("standing-rules", "2"),
+        ("standing-rules", "3"),
+        ("volatile-notes", "1"),
+        ("volatile-notes", "2"),
+        ("volatile-notes", "3"),
+    ]
 
 
 def test_every_dispatched_event_has_at_least_one_handler() -> None:
