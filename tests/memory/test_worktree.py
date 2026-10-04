@@ -668,10 +668,9 @@ def test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes(
 def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) -> None:
     # The real-file shape, which nothing covered: the existing tests all used a *symlinked*
     # index, so the one arrangement the attack needs — a clone shipping a real `MEMORY.md`
-    # under an overlay-mode store — was untested. The index bundle this area then rendered
-    # refused it correctly and `link` created the harness symlink anyway, after which the
-    # harness's own native memory reader injected the text with no delimiter, no nonce and no
-    # gate.
+    # under an overlay-mode store — was untested. This area's own injection channel refused it
+    # while `link` created the harness symlink, after which the harness's own native memory
+    # reader injected the text with no delimiter, no nonce and no gate.
     root, store, config, _machine = an_overlay_checkout_with_a_committed_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = a_home(tmp_path)

@@ -72,9 +72,9 @@ What went is the claim that another area reads it.
 
 - **The index group** — `INDEX_NAME`, `index_source`, `write_index`, `render_index`,
   `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. Published on the argument that
-  `worktree.py` and the index bundle `bundles.py` rendered then both presented `index_source` as
-  *the* place the per-link target rule reaches the index, and that neither a reader nor `attach`,
-  which creates the symlinked index in the first place, could call it. `attach` calls none of
+  `worktree.py` presented `index_source` as *the* place the per-link target rule reaches the
+  index, and that neither a reader nor `attach`, which creates the symlinked index in the first
+  place, could call it. `attach` calls none of
   them; the index is a command (`memory index`) and the areas that want one run it.
 - **The notes group** — `read_note`, `render_note`, `with_index`, `write_note`, `NoteError`,
   `NoteType` — published for a notes consumer, and nothing outside this area imports them.
