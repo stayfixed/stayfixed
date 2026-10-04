@@ -2073,7 +2073,7 @@ file = "src/stayfixed/config/overlay.py"
 before = "    path = machine_config_path(interactive=False) if machine is None else machine"
 after = "    path = machine_config_path(interactive=True) if machine is None else machine"
 reddens = [
-  "tests/config/test_overlay_root.py::test_the_overlay_root_never_asks_where_the_machine_file_is",
+  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
 ]
 
 # `init` writes the `.gitignore` block as a scaffold artifact and `attach` merges it into the file;

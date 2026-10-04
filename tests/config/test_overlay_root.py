@@ -40,28 +40,3 @@ def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) 
     blank.write_text("[personal]\n", encoding="utf-8")
     assert overlay_root(blank) is None
     assert overlay_root(tmp_path / "absent.toml") is None
-
-
-def test_the_overlay_root_never_asks_where_the_machine_file_is(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The overlay root anchors where the note store may resolve, and a committed
-    # `.claude/settings.json` can set `STAYFIXED_CONFIG` in a session no person is watching. So
-    # with no file named, the root is read from the one place a variable cannot move, even from a
-    # terminal, where the variable is otherwise honoured. Mutation (declared): `mutations/`'s "the
-    # overlay root reads the machine file a variable names".
-    class ATty:
-        def isatty(self) -> bool:
-            return True
-
-    home = tmp_path / "home"
-    (home / ".config" / "stayfixed").mkdir(parents=True)
-    (home / ".config" / "stayfixed" / "config.toml").write_text(
-        '[overlay]\nroot = "/tmp/recorded"\n', encoding="utf-8"
-    )
-    chosen = tmp_path / "chosen.toml"
-    chosen.write_text('[overlay]\nroot = "/tmp/chosen"\n', encoding="utf-8")
-    monkeypatch.setattr("sys.stdin", ATty())
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.setenv("STAYFIXED_CONFIG", str(chosen))
-    assert overlay_root(None) == Path("/tmp/recorded")

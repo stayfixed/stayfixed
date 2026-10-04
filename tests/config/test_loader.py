@@ -198,6 +198,9 @@ def test_one_command_reads_one_machine_file(
     # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
     # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
     # configuration; run `stayfixed setup`" about the file it had just read successfully.
+    #
+    # Mutation (declared): `mutations/`'s "the overlay root reads the machine file a variable
+    # names", which reddens the `overlay_root` assertion.
     from stayfixed.config.machine import machine_config_path
     from stayfixed.config.overlay import overlay_root
     from stayfixed.memory.trust import _trust_file
