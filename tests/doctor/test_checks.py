@@ -362,6 +362,8 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     # records no overlay at all — the state of a clone on a machine where `stayfixed setup` has
     # never run. Every delivery row asks a question only the overlay can answer, so each one
     # skips rather than guessing, and none of them is red: a skip never reaches the exit code.
+    # Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area contributes"
+    # -> the five rows are missing and the comparison reddens.
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
@@ -1370,7 +1372,8 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # each area's in its own `doctor.py`, in the `Contribution` its `register()` returns.
     #
     # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
-    # twice and this reddens naming it.
+    # twice and this reddens naming it. Measured by hand for an area: a stray `_STRAY =
+    # "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming that module.
     import ast
     from types import ModuleType
 
