@@ -100,6 +100,10 @@ def test_parse_entry_reads_every_field() -> None:
             "must be an ISO date",
         ),
         (
+            '---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: ""\n---\n',
+            "must be an ISO date",
+        ),
+        (
             "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\n"
             "found: 2026-02-30\n---\n",
             "names a date that does not exist",
@@ -129,7 +133,9 @@ def test_parse_entry_reads_every_field() -> None:
 def test_parse_entry_rejects_broken_frontmatter(text: str, fragment: str) -> None:
     # Each case is one rule; every message names the path so CI output is actionable.
     # Mutation for the date-exists rule: drop the `date.fromisoformat` call — the `2026-02-30`
-    # row reddens alone.
+    # row reddens alone. A quoted empty `found` passes the presence check and is still held to
+    # the date rule, because the key is required: drop `or "found" in schema.required` from the
+    # reader — the `found: ""` row reddens alone.
     with pytest.raises(LedgerError, match=fragment) as raised:
         parse_entry(text, path=PATH, register=REGISTER)
     assert str(PATH) in str(raised.value)
