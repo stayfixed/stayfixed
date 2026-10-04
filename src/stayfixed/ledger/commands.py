@@ -36,7 +36,9 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
     if args.check:
         if current != rendered:
             return Result(
-                f"{index} is stale; run: stayfixed bugs index", {"stale": True}, exit_code=1
+                f"{index} is stale; run: stayfixed {ledger.name} index",
+                {"stale": True},
+                exit_code=1,
             )
         return Result(f"OK: {index} is current ({len(entries)} entries)", {"stale": False})
     if current == rendered:
@@ -115,6 +117,7 @@ def register(groups: SubParsers) -> None:
     sub = bugs.add_subparsers(dest="command", metavar="<command>")
     new = common_flags(sub.add_parser("new", help="file a new entry and regenerate the index"))
     new.add_argument("title")
+    # The levels no project configures, so the parser needs no configuration to offer them.
     new.add_argument("--severity", required=True, choices=BUG_SCHEMA.levels)
     new.add_argument("--area", required=True)
     new.add_argument("--source", default="")

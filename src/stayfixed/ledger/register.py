@@ -67,7 +67,7 @@ class Schema:
     statuses: tuple[str, ...]
     void: str  # the status of a number that never carried an entry
     level: str  # the key whose value is one of `levels`
-    levels: tuple[str, ...]  # the bug ledger's severities
+    levels: tuple[str, ...]  # the values `level` may hold: the bug ledger's severities
     evidence_boundary_for: tuple[str, ...]  # levels whose entries need the evidence line
     dates: tuple[str, ...]  # keys whose value is an ISO date
     # The file `new` writes. The writer fills `{identifier}`, `{title}`, `{today}` and
@@ -189,11 +189,16 @@ def _inconsistencies(schema: Schema) -> Iterator[str]:
 class Register:
     """One ledger the engine serves.
 
-    `directory` and `index` must be `[paths]` values the configuration loader validated
-    (`src/stayfixed/config/paths.py`: inside the root, no `.git`, no `.stayfixed`): the engine
-    does not check their spelling again, and still resolves each through `contained`, which
-    refuses a symlink the tree holds when the engine reads or writes. A register built from
-    anything else is a defect."""
+    `directory` and `index` come from one of two places: `[paths]` values the configuration
+    loader validated (`src/stayfixed/config/paths.py`: inside the root, no `.git`, no
+    `.stayfixed`), or the shipped preset's own defaults (`preset_defaults`), which this package
+    writes and a repository cannot. The engine does not check their spelling again, and still
+    resolves each through `contained`, which refuses a symlink the tree holds when the engine
+    reads or writes. `runbook` is a root-relative file and `audits` one plain directory name
+    under `directory`, each `None` for a register without one. The index links both, and `init`
+    writes a file at the bug ledger's two, so they must stay where a `[paths]` value may point:
+    the runbook is `BUG_RUNBOOK` under `[paths] runbooks`, and `audits` is `BUG_AUDITS`, with no
+    separator of its own. A register built from anything else is a defect."""
 
     name: str  # "bugs": the command group, and the noun in messages
     title: str  # "Bug reports": the index's heading
@@ -243,8 +248,11 @@ _LIVE = (
     ("Found", "found"),
 )
 
-# The bug ledger's schema as far as it does not depend on a project: `evidence_boundary_for` is
-# `[ledger] evidence_boundary_required_for`, which `bug_register` fills in.
+# The bug ledger's schema less the one part a project configures, so a partial value: its
+# `evidence_boundary_for` is empty here, and only `bug_register` fills it in, from `[ledger]
+# evidence_boundary_required_for`. Read from it only what no project changes (the keys, statuses,
+# levels, sections and template), as the `bugs new` parser does for `--severity`; whatever holds
+# an entry to the ledger's rules takes `bug_register(config).schema`.
 BUG_SCHEMA = Schema(
     keys=("id", "title", "status", "severity", "area", "found", "source", "fixed_in", "related"),
     required=("id", "title", "status", "found"),

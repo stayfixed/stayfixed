@@ -75,7 +75,7 @@ class Entry:
 
     def value(self, key: str) -> str:
         """The entry's value for one of its register's keys other than `related`."""
-        if key in ("id", "title", "status", "area"):
+        if key in ENTRY_KEYS and key != "related":
             return str(getattr(self, key))
         return self.fields[key]
 
@@ -206,13 +206,12 @@ def parse_entry(text: str, *, path: Path, register: Register) -> Entry:
     # area, then the rest — so an entry with two defects is told about the same one first.
     level = schema.level
     values: dict[str, str] = {}
-    if level in schema.keys:
-        values[level] = _unquote(fields.get(level, ""), key=level, where=path)
-        if values[level] and values[level] not in schema.levels:
-            raise LedgerError(
-                f"{_where(path)}: `{level}` must be one of {', '.join(schema.levels)}, "
-                f"got {values[level]!r}"
-            )
+    values[level] = _unquote(fields.get(level, ""), key=level, where=path)
+    if values[level] and values[level] not in schema.levels:
+        raise LedgerError(
+            f"{_where(path)}: `{level}` must be one of {', '.join(schema.levels)}, "
+            f"got {values[level]!r}"
+        )
     for key in schema.dates:
         values[key] = _unquote(fields.get(key, ""), key=key, where=path)
         # Required, it is a date even when quoted empty: `found: ""` passes the presence check.

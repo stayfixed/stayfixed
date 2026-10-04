@@ -1,4 +1,4 @@
-"""One definition of what a ledger identifier looks like, from `[ledger] id_prefix`.
+"""One definition of what a ledger identifier looks like, from its register's prefix.
 
 A prefix is the kind of string that gets respelled at each point of use — a regular expression
 in one reader, a format string in a writer, a filename glob in a third — until a dozen copies
