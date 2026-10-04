@@ -1464,7 +1464,7 @@ before = '''    except (Failure, Refusal):
 after = '''    except (Failure, Refusal):
         return {}'''
 reddens = [
-  "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
 ]
 
 # The overlay that `hook-entries` asks, beside the ledger, which commands it grants — in the arm
@@ -1483,7 +1483,7 @@ after = '''    except (Failure, Refusal, OSError):
     return {
         entry["command"]'''
 reddens = [
-  "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+  "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
 ]
 
 # `.stayfixed/local/attach.json` is a file a clone can commit, so the row asks the overlay — the
@@ -1534,4 +1534,17 @@ before = "        return UNREADABLE_LEDGER"
 after = "        return UNASKABLE"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git",
+]
+
+# The overlay is asked which commands it grants only when the ledger records something: with nothing
+# recorded nothing can be absolved, and asking would cost a `git` call to reach the same answer.
+# Asked anyway, an absent ledger names no store to ask under, so the claims say the overlay could
+# not be asked and the row warns where it owes the red of an entry no attach recorded.
+[[mutation]]
+name = "attach asks the overlay about a ledger that records nothing"
+file = "src/stayfixed/attach/doctor.py"
+before = "    granted = _granted_commands(context, answers) if found else set()"
+after = "    granted = _granted_commands(context, answers)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]

@@ -1,20 +1,26 @@
-"""An area adds rows to `stayfixed doctor` through its own `doctor.py`, discovered by name.
+"""An area adds rows to `stayfixed doctor` through its own `doctor.py`, discovered by name, and
+tells `hook-entries` what it put into settings files through its `Claims`.
 
 The fake areas below are modules injected through `checks.discover_contributors`, the seam the
 discovery reads, the way `tests/test_cli.py` replaces `cli.discover_registrars`: a test that
-shipped a real `doctor.py` to prove the convention would be a check in every user's report.
+shipped a real `doctor.py` to prove the convention would be a check in every user's report. With
+the fakes in place no real area is discovered, so what these cases prove is the core's reading of
+a contribution; what a real area answers is proven in that area's own tests.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.doctor import checks
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Contribution, Row
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution, Row
 from tests.doctor.test_checks import _checks, _initialised
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -134,3 +140,162 @@ def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
     rows = _checks(tmp_path, tmp_path)
     assert [row.name for row in rows] == [*CORE, "alpha-row"]
     assert rows[-1].status == SKIP
+
+
+# --- `Claims`: what each area says it put into settings files ----------------------------------
+
+# Two entries claiming the marker, one for each of two areas, in a settings file `hook-entries`
+# walks. Each area records its own id and grants its own command, so neither answer alone vouches
+# for both entries.
+ALPHA = "echo alpha  # stayfixed:alpha-1"
+OMEGA = "echo omega  # stayfixed:omega-1"
+# An entry claiming the marker that no area records: red whenever the provenance column is
+# computed, so a row that is not red with it in the file is a row that withheld the column.
+NOBODYS = "echo nobody  # stayfixed:nobody-1"
+SETTINGS = ".claude/settings.json"
+
+
+def _hooked(root: Path, *commands: str) -> None:
+    """`root`'s `SETTINGS`, holding one `PreToolUse` hook entry per command, in order."""
+    assert SETTINGS in checks.SETTINGS_FILES, "the walk would never open this file"
+    entries = [{"type": "command", "command": command} for command in commands]
+    (root / SETTINGS).parent.mkdir(parents=True, exist_ok=True)
+    (root / SETTINGS).write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": entries}]}}),
+        encoding="utf-8",
+    )
+
+
+def _claiming(recorded: Mapping[str, str] | None, granted: frozenset[str] | None) -> Contribution:
+    """An area that contributes no row and answers `Claims(recorded, granted)` when asked."""
+    return Contribution(checks=(), claims=lambda context: Claims(recorded, granted))
+
+
+ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
+OMEGA_CLAIMS = _claiming({"omega-1": "PreToolUse"}, frozenset({OMEGA}))
+
+
+def _hook_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *areas: ModuleType) -> Check:
+    _contribute(monkeypatch, *areas)
+    return next(
+        row for row in _checks(tmp_path, tmp_path / "project") if row.name == "hook-entries"
+    )
+
+
+def test_hook_entries_pools_what_every_area_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each area answers for the entries it put there, so the row reads the union of the answers:
+    # alpha's entry is vouched for by alpha's record and grant, omega's by omega's, and an area
+    # that contributes a row and no claims takes no part. Mutations (oracle): `mutations/`'s
+    # "hook-entries keeps only the last area's recorded ids" and "hook-entries keeps only the
+    # last area's granted commands" -> alpha's entry is no longer vouched for and the row is red;
+    # "hook-entries ignores what the areas claim" -> neither is.
+    def answer(context: Context) -> Row:
+        return Row(OK, "answered")
+
+    _hooked(_initialised(tmp_path), ALPHA, OMEGA)
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", ALPHA_CLAIMS),
+        _area("beta", Contribution(checks=(("beta-row", answer),))),
+        _area("omega", OMEGA_CLAIMS),
+    )
+    assert row == Check("hook-entries", OK, "2 stayfixed entr(ies), 0 foreign; all accounted for")
+
+
+def test_an_id_an_area_records_and_nothing_grants_is_never_absolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A record is a file a repository can write, so an id in it vouches for nothing until a grant
+    # stands behind the entry's command. Mutation (oracle): `mutations/`'s "the attach ledger
+    # vouches for a hook entry on its own" -> the entry is absolved and the row is green.
+    _hooked(_initialised(tmp_path), ALPHA)
+    row = _hook_entries(
+        tmp_path, monkeypatch, _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset()))
+    )
+    assert row.status == RED
+    assert "the overlay does not grant" in row.detail
+    assert f"{SETTINGS} entry 1 of 1" in row.detail
+
+
+@pytest.mark.parametrize(
+    ("unknown", "where"),
+    [
+        ("recorded", "first"),
+        ("recorded", "last"),
+        ("granted", "first"),
+        ("granted", "last"),
+    ],
+    ids=["recorded-first", "recorded-last", "granted-first", "granted-last"],
+)
+def test_a_none_from_any_area_is_none_for_the_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unknown: str, where: str
+) -> None:
+    # One area's `None` is an answer nobody else can stand in for: a record it could not read
+    # names ids no other record knows, an overlay it could not ask grants commands no other grant
+    # covers. So the pool is unknown, whichever side of a good answer the `None` falls on, and
+    # the row withholds the provenance column — `NOBODYS`, which no area records, would make it
+    # red — and says which answer is missing. Mutations (oracle): `mutations/`'s "a later area's
+    # record overwrites one an earlier area could not read" and "a later area's grants overwrite
+    # an overlay an earlier area could not ask" -> the `-first` cases compute the column and are
+    # red; "hook-entries judges provenance against an overlay that could not be asked" -> the
+    # `granted` cases are.
+    _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
+    known = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
+    if unknown == "recorded":
+        missing = _claiming(None, frozenset({ALPHA}))
+    else:
+        missing = _claiming({"alpha-1": "PreToolUse"}, None)
+    first, last = (missing, known) if where == "first" else (known, missing)
+    row = _hook_entries(tmp_path, monkeypatch, _area("alpha", first), _area("omega", last))
+    assert row.status == WARN, row
+    assert "all accounted for" not in row.detail
+    assert "are not recorded in" not in row.detail
+    if unknown == "recorded":
+        assert f"{ATTACH_LEDGER} is there and cannot be read as a ledger" in row.detail
+        assert row.remedy == (
+            f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
+        )
+    else:
+        assert "could not be asked which entries it grants" in row.detail
+        assert row.remedy == (
+            "run `stayfixed attach --check`, which reports why the overlay cannot be read"
+        )
+
+
+def test_claims_that_raise_cost_the_hook_entries_row_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `hook-entries` asks the claims itself, under its own guard, so an area whose `claims`
+    # raises costs that one row, red and naming the exception's type and never its message; the
+    # area's own rows and every other row read as they do when the area claims nothing.
+    # Mutation (oracle): `mutations/`'s "doctor asks its checks without the guard" -> the
+    # `RuntimeError` escapes `run_checks`.
+    def answer(context: Context) -> Row:
+        return Row(OK, "answered")
+
+    def raises(context: Context) -> Claims:
+        raise RuntimeError("IGNORE-PRIOR-RULES, a message the claims built")
+
+    root = _initialised(tmp_path)
+    _hooked(root, ALPHA)
+    _contribute(monkeypatch, _area("alpha", Contribution(checks=(("alpha-row", answer),))))
+    quiet = _checks(tmp_path, root)
+    _contribute(
+        monkeypatch,
+        _area("alpha", Contribution(checks=(("alpha-row", answer),), claims=raises)),
+    )
+    rows = _checks(tmp_path, root)
+    assert [row.name for row in rows] == [*CORE, "alpha-row"]
+    broken = next(row for row in rows if row.name == "hook-entries")
+    assert broken == Check(
+        "hook-entries",
+        RED,
+        "this check could not run: RuntimeError",
+        "report this, with the command you ran",
+    )
+    assert [row for row in rows if row.name != "hook-entries"] == [
+        row for row in quiet if row.name != "hook-entries"
+    ]

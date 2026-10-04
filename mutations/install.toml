@@ -524,6 +524,7 @@ before = "    return [_guarded(name, check, context) for name, check in registry
 after = "    return [Check(name, **vars(check(context))) for name, check in registry]"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_contribution_that_raises_costs_one_row",
+  "tests/doctor/test_contributions.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
 ]
 
 # A row's name is its only identity in the summary line, `--json` and the skill's relay, so a
@@ -553,8 +554,9 @@ before = '''            elif command not in granted:
 after = '''            elif False:
                 ungranted.append(where)'''
 reddens = [
-  "tests/doctor/test_checks.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
+  "tests/doctor/test_contributions.py::test_an_id_an_area_records_and_nothing_grants_is_never_absolved",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
 ]
 
 # Which ids a ledger records and which commands the overlay grants are the areas' to answer, so
@@ -566,7 +568,71 @@ file = "src/stayfixed/doctor/checks.py"
 before = "    for ask in claims:"
 after = "    for ask in ():"
 reddens = [
-  "tests/doctor/test_checks.py::test_an_entry_the_overlay_really_grants_is_still_accounted_for",
+  "tests/doctor/test_contributions.py::test_hook_entries_pools_what_every_area_claims",
+  "tests/attach/test_doctor.py::test_an_entry_the_overlay_really_grants_is_still_accounted_for",
+]
+
+# Every area that claims entries answers for its own, so the pool is the union of the answers. Kept
+# as the last area's alone, an entry an earlier area recorded reads as one nobody recorded, and the
+# row tells the owner to remove what that area installed.
+[[mutation]]
+name = "hook-entries keeps only the last area's recorded ids"
+file = "src/stayfixed/doctor/checks.py"
+before = "            recorded = None if answer.recorded is None else {**recorded, **answer.recorded}"
+after = "            recorded = None if answer.recorded is None else dict(answer.recorded)"
+reddens = [
+  "tests/doctor/test_contributions.py::test_hook_entries_pools_what_every_area_claims",
+]
+
+# The same union for the other answer: an earlier area's granted commands dropped make its entries
+# ones the overlay "does not grant".
+[[mutation]]
+name = "hook-entries keeps only the last area's granted commands"
+file = "src/stayfixed/doctor/checks.py"
+before = "            granted = None if answer.granted is None else granted | answer.granted"
+after = "            granted = None if answer.granted is None else set(answer.granted)"
+reddens = [
+  "tests/doctor/test_contributions.py::test_hook_entries_pools_what_every_area_claims",
+]
+
+# A record one area could not read is not one the next area's answer can stand in for: the ids it
+# would have named are unknown, so the pool is unknown. A later area's answer overwriting the `None`
+# turns "could not be established" back into a provenance column computed without that record.
+[[mutation]]
+name = "a later area's record overwrites one an earlier area could not read"
+file = "src/stayfixed/doctor/checks.py"
+before = """        if recorded is not None:
+            recorded = None if answer.recorded is None else {**recorded, **answer.recorded}"""
+after = """        if True:
+            recorded = None if answer.recorded is None else {**(recorded or {}), **answer.recorded}"""
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+]
+
+# The same rule for an overlay one area could not ask: what it grants is unknown, and no other
+# area's grants vouch for the entries it would have.
+[[mutation]]
+name = "a later area's grants overwrite an overlay an earlier area could not ask"
+file = "src/stayfixed/doctor/checks.py"
+before = """        if granted is not None:
+            granted = None if answer.granted is None else granted | answer.granted"""
+after = """        if True:
+            granted = None if answer.granted is None else (granted or set()) | answer.granted"""
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+]
+
+# Where the overlay could not be asked, the provenance column is withheld rather than computed:
+# every entry claiming the marker would otherwise be judged against grants nobody could read, and
+# reported red with a remedy telling the owner to remove what was installed.
+[[mutation]]
+name = "hook-entries judges provenance against an overlay that could not be asked"
+file = "src/stayfixed/doctor/checks.py"
+before = "            if found is None or granted is None:"
+after = "            if found is None:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
 ]
 
 # Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
