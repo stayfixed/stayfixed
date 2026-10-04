@@ -191,9 +191,9 @@ names the test or step that covers it, or "—" when the change cannot reach the
 
 | Command \ change | re-run, nothing changed | a project or install upgraded from `0.2.0` | a path moved or a file absent | killed or failing part-way | uninstalled or detached |
 |---|---|---|---|---|---|
-| `doctor` (Tasks 4–5) | Task 5 `test_every_check_has_one_row_in_one_report` | — (doctor reads the tree as it is; no state differs by version) | Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` | Task 4 `test_a_contribution_that_raises_costs_one_row` | Task 5 `test_an_unattached_project_reports_attached_as_it_did` |
+| `doctor` (Tasks 4–5, 8) | Task 5 `test_every_check_has_one_row_in_one_report`; Task 8 `test_the_codex_row_names_what_does_not_run_on_codex` | — (doctor reads the tree as it is; no state differs by version) | Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` | Task 4 `test_a_contribution_that_raises_costs_one_row` | Task 5 `test_an_unattached_project_reports_attached_as_it_did` |
 | `memory refs` (Task 3) | Task 3 `test_refs_reports_graph_notices_without_changing_its_exit` | — | — (refs already refuses an unresolved store: `tests/memory/test_refs.py`) | — | — |
-| `hook <event>` (Tasks 6, 7, 13) | Task 7 `test_a_detected_harness_renders_its_own_answer` | — (`hooks/hooks.json` and the code ship in one plugin version, and the hook launcher runs the plugin's own `src`) | Task 7 `test_an_unknown_harness_renders_the_canonical_shape` | Task 7 `test_a_deny_never_goes_through_render` | — |
+| `hook <event>` (Tasks 6, 7, 13) | Task 7 `test_a_detected_harness_renders_its_own_answer` | — for a marketplace install (`hooks/hooks.json` and the code ship in one plugin version, and the hook launcher runs the plugin's own `src`). Upgraded in place (a local-path marketplace or `--plugin-dir`), a session already running keeps the `hooks.json` it loaded until it reloads: measured, its four removed `memory session-context` slots (`preset-rules` 1, `index` 1–3) each exit `2`, `unknown bundle`, and a `SessionStart` hook's exit `2` cannot block, so the session starts with that stderr and without those bundles | Task 7 `test_an_unknown_harness_renders_the_canonical_shape` | Task 7 `test_a_deny_never_goes_through_render` | — |
 | `test hygiene` and the `PostToolUse` notice (Task 13) | Task 13 `test_a_red_pytest_run_gets_the_python_profiles_note` | — | Task 13 `test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit`, `test_only_contained_code_roots_are_scanned` | Task 13 `test_a_hint_that_raises_costs_its_note_not_the_dispatch` | — |
 | `bugs new|index|check|renumber` (Tasks 14, 15) | Task 14 `test_the_bug_register_renders_the_index_byte_for_byte` | Task 14 `test_init_renders_the_empty_index_with_the_same_digest` | Task 15 `test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live`; for the bug ledger: `tests/ledger/test_register.py::test_the_bug_ledgers_header_and_links_keep_their_bytes_on_every_layout`, and Task 15 `tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them` | `renumber`, kept and passed the register (`tests/ledger/test_write.py`): `test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints`, `test_renumber_reports_a_file_it_could_not_write_back`, `test_renumber_rejects_a_malformed_sibling_before_it_moves_anything`, `test_renumber_refuses_over_foreign_index_content_without_moving_anything` | — |
 | `init`, `upgrade`, `uninstall` (Task 2) | Task 2 `test_the_ignore_block_init_writes_is_the_block_attach_writes` | Task 2 same (the block's bytes pinned as at `aed27b6`, so `upgrade` sees no change) | Task 2 `test_an_attached_repository_is_refused_and_told_to_detach` (kept, pinned to the literal path) | — | Task 2 same |
@@ -753,7 +753,10 @@ move, the doctor order).
   binary-searches the largest prefix whose envelope, as the detected harness renders it, fits the cap.
 - Removes: `hooks.api.detect_harness`, `dispatch.parse_event`, `dispatch.render` as a module
   function. `HookEvent.harness` carries the detected harness's name; `"unknown"` goes, since
-  detection now always answers.
+  detection now always answers. (As landed: `HookEvent.harness` is removed too, since no handler
+  read it and it was the one field detection changed; `read_event(payload, env)` takes no harness,
+  and its root is the first of `harnesses.project_root_variables()`, the canonical value's first,
+  then `gitenv.checkout_root`.)
 
 **Why the payload has one reader.** The detected harness is one a repository can choose: a
 committed `env` block can set `PLUGIN_ROOT`. So no harness value may change what a handler sees,
@@ -781,8 +784,12 @@ neither it nor the configuration layer.
   (invariant 3, a deny-shaped context included). `tests/hooks/test_dispatch.py`:
   `test_a_detected_harness_renders_its_own_answer` (a fake value whose `render` returns a marker,
   injected through the registry seam with a `detects` that claims the payload: the marker is
-  stdout); `test_the_project_root_comes_from_the_harnesss_own_variable` (Claude Code's variable
-  is read under Claude Code and ignored under Codex, where the walk answers);
+  stdout); `test_a_handler_sees_one_event_whichever_harness_is_detected` (replacing
+  `test_the_project_root_comes_from_the_harnesss_own_variable`, whose per-harness root a ruling
+  overturned: the same stdin and `CLAUDE_PROJECT_DIR` make the same event, root included, under
+  Claude Code, Codex and a value registered first);
+  `test_a_harness_registered_first_never_takes_the_root_from_claude_code` (the canonical
+  value's root variable is asked first whatever the registry's order);
   `test_an_unknown_harness_renders_the_canonical_shape` (the `hookSpecificOutput` JSON pinned as
   a literal, not compared with `CANONICAL.render`); `test_a_deny_never_goes_through_render`
   (calls `dispatch()` directly with a fake harness whose `render` raises and a denying handler:
@@ -802,8 +809,11 @@ neither it nor the configuration layer.
   `test_a_detected_harness_renders_its_own_answer`. (2) In `detect`, return `CANONICAL` before
   asking any `detects`. Expected to redden: `test_an_environment_codex_sets_is_codex`. (3) Route a
   deny through `harness.render`. Expected to redden: `test_a_deny_never_goes_through_render`.
-  (4) In `read_event`, read `CLAUDE_PROJECT_DIR` whatever the harness. Expected to redden:
-  `test_the_project_root_comes_from_the_harnesss_own_variable`.
+  (4) Replaced, with the test it held: "the root is read from the detected harness only" (in
+  `run_hook`, the event read with no environment under a harness that names no root variable).
+  Expected to redden: `test_a_handler_sees_one_event_whichever_harness_is_detected`. (5) "the
+  project-root variables are asked in registry order" (`harnesses.project_root_variables`).
+  Expected to redden: `test_a_harness_registered_first_never_takes_the_root_from_claude_code`.
 
 #### Task 8: State each harness's capability tier, once, in the code and the README
 
