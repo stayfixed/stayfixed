@@ -1951,3 +1951,26 @@ after = '    return "did not run"'
 reddens = [
   "tests/overlay/test_create.py::test_a_git_init_that_ran_and_failed_is_said_to_have_failed",
 ]
+
+# `setup --overlay` is the one crossing from the core into delivery, and it is imported inside the
+# two functions that use it: `setup/api.py` re-exports from this module and `doctor` imports that,
+# so a module-level import here loads the private layer into every `doctor` run.
+[[mutation]]
+name = "setup loads the overlay area at import again"
+file = "src/stayfixed/setup/run.py"
+before = "from stayfixed.presets import load_preset\n"
+after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import load_preset\n"
+reddens = [
+  "tests/test_areas.py::test_in_isolation_no_core_module_loads_a_delivery_area",
+]
+
+# The crossing is pinned per statement and per name, so a second statement beside a pinned one is a
+# new crossing even when it names the same module.
+[[mutation]]
+name = "setup imports one more name from the overlay area in a statement of its own"
+file = "src/stayfixed/setup/run.py"
+before = "    from stayfixed.overlay.api import require_overlay, target_root\n"
+after = "    from stayfixed.overlay.api import require_overlay, target_root\n    from stayfixed.overlay.api import overlay_fault\n"
+reddens = [
+  "tests/test_areas.py::test_core_never_imports_delivery",
+]
