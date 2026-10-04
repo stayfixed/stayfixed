@@ -205,10 +205,12 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
 # reported as "yes" is the one wrong answer.
 _NO_GIT = "git could not report the tree's status, so this tree cannot be judged"
 # The same answer for a profile this command could not ask, which is not one with nothing to
-# report: its hint did not load, or answered outside its protocol. `{name}` is a shipped
-# profile's directory name, never a repository value.
+# report: its hint did not load, answered outside its protocol, or raised. `{name}` is a shipped
+# profile's directory name, never a repository value, and of an exception only its type is
+# printed: its message can carry a path the hint walked, and a path is repository-authored text.
 _UNLOADED = "the {name} profile's red-run hint could not be loaded"
 _WORDLESS = "the {name} profile's red-run hint answered in something other than text"
+_FAILED = "the {name} profile's red-run hint failed: {kind}"
 _UNJUDGED = ", so this tree cannot be judged"
 
 
@@ -239,6 +241,9 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
             report, note = answer(hint, root, config)
         except NotText:
             raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
+        except Exception as exc:
+            kind = type(exc).__name__
+            raise Refusal(_FAILED.format(name=name, kind=kind) + _UNJUDGED) from None
         if note is None and not detects(load_profile(name), root):
             continue
         reports[name] = report

@@ -973,6 +973,18 @@ reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit",
 ]
 
+# A failing hint is "I do not know", refused like the rest, and named by its type alone: the
+# exception's message can carry a path the hint walked, which a repository chose.
+[[mutation]]
+name = "test hygiene prints a failing hint's own message"
+file = "src/stayfixed/guards/commands.py"
+before = "            kind = type(exc).__name__"
+after = '            kind = f"{type(exc).__name__}: {exc}"'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_failing_hint_without_printing_its_message[False]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_failing_hint_without_printing_its_message[True]",
+]
+
 # A repository in two stacks gets two entries, and each carries counts only.
 [[mutation]]
 name = "test hygiene reports the first stack and stops"

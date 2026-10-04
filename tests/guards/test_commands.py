@@ -494,6 +494,41 @@ def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_marke
 
 
 @needs_git
+@pytest.mark.parametrize("as_json", [False, True])
+def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    as_json: bool,
+) -> None:
+    # An exception's message can carry what the hint walked: on Python 3.11 `rglob` lets an
+    # `OSError` for a name too long to open escape with the full path, and a repository chooses
+    # its directories' names. Printed as an internal error, that text reached whoever ran this
+    # command, the agent the shipped skills send here included. The refusal names the profile
+    # and the exception's type and nothing the exception carried, in either output. Oracle:
+    # `mutations/`, "test hygiene prints a failing hint's own message".
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+
+    def broken(self: Path, pattern: str) -> object:
+        raise OSError("<injected text>")
+
+    monkeypatch.setattr(Path, "rglob", broken)
+    json_flag = ["--json"] if as_json else []
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke([*argv, *json_flag]) == 2
+    captured = capsys.readouterr()
+    assert "<injected text>" not in captured.out + captured.err
+    assert "the python profile's red-run hint failed: OSError" in captured.out + captured.err
+
+
+@needs_git
 def test_test_attribute_runs_the_three_trees_and_reports_the_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
