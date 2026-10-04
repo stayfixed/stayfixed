@@ -18,12 +18,6 @@ from stayfixed.project.commands import CUSTOM_GATES
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
-# The skills that ship *into* an overlay. They moved under `src/stayfixed/templates/` with the
-# overlay template and this walk did not follow, so the one document the invocation lint exists
-# for -- that file once shipped an invocation that does not parse -- was walked by nothing while
-# a model read it in every overlay a user creates. The template ships none today; the walks go
-# on reading the directory, so a skill added there is held to every rule below.
-TEMPLATE_SKILLS = ROOT / "src" / "stayfixed" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint: a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
@@ -62,50 +56,17 @@ def skills() -> list[Path]:
     return sorted(SKILLS.glob("*/SKILL.md"))
 
 
-def entry_points() -> list[Path]:
-    """Every `SKILL.md` this repository ships, in the plugin **and** in the overlay template.
-
-    `skills()` never saw the template tree, so a skill the template shipped into every overlay a
-    user creates was held to exactly one of the three rules `skills/README.md` states: it reached
-    the invocation lint through `documents()` and was walked by nothing else. The 80-line cap,
-    the frontmatter check and the harness-tool rule all parametrise over `skills()`, so that file
-    passed them by not being one of their cases. The template ships no skill today; one added
-    there is walked by all three, and reddens `test_the_walk_finds_the_ported_skills`, which
-    names the template's share as empty so that adding one is a decision.
-
-    `skills()` itself is left alone, because `test_the_walk_finds_the_ported_skills` and
-    `test_every_reference_file_is_linked_from_its_skill` are statements about the plugin's own
-    `skills/` directory and its `references/` convention, which the template does not use.
-    """
-    return sorted([*skills(), *TEMPLATE_SKILLS.glob("*/SKILL.md")])
-
-
-def _id(path: Path) -> str:
-    """A case id that is unique across both trees, which may each hold a skill of one name."""
-    return str(path.parent.relative_to(ROOT))
-
-
 def documents() -> list[Path]:
     """Every skill document the invocation check reads: the `SKILL.md` entry points and the
-    `references/` files beside them, in the plugin's own `skills/` **and** in the overlay
-    template.
+    `references/` files beside them.
 
     A reference is skill content a model reads and copies, so an invocation that does not parse
     is as wrong there as in a procedure. `skills/README.md` is excluded because its table names
     harness tools rather than commands. The tool-name rule is deliberately *not* widened this
     way: a reference writes ordinary English about writing ("Write the rule, not the incident")
     that `_TOOL` would read as the harness tool of the same name.
-
-    The template's tree is walked for the same reason the plugin's is: a skill there ships into
-    every overlay a user creates and a model reads it there. It holds none today, and one added
-    there is linted like the plugin's. Where a skill lives is not the question the lint asks.
     """
-    return sorted(
-        path
-        for tree in (SKILLS, TEMPLATE_SKILLS)
-        for path in tree.rglob("*.md")
-        if path.name != "README.md"
-    )
+    return sorted(path for path in SKILLS.rglob("*.md") if path.name != "README.md")
 
 
 def split(path: Path) -> tuple[dict[str, str], str]:
@@ -135,28 +96,24 @@ def test_the_walk_finds_the_ported_skills() -> None:
         "retro-to-guard",
     } <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
-    # invocation cases with it, and so does a template tree that moves again.
+    # invocation cases with it.
     walked = documents()
     assert SKILLS / "memory-sweep" / "references" / "protocol.md" in walked
-    # And the same guard for the walk the three rules above parametrise over. The template tree
-    # moving again would otherwise silently take its cases with it -- which is exactly how that
-    # tree came to be held to one rule of the three in the first place. It ships no skill since
-    # its copy of `attach` was retired for the plugin's own, so the walks' share of it is named
-    # as the empty set: a skill added there again reddens this, and is walked by the rules.
-    # No mutation entry: what breaks this is a file added to the tree, not a line changed.
-    assert TEMPLATE_SKILLS.parent == template_root()
-    assert [path for path in walked if TEMPLATE_SKILLS in path.parents] == []
-    assert set(entry_points()) == set(skills())
+    # The overlay template ships no skill since its copy of `attach` was retired for the
+    # plugin's own, so the rules below walk only `skills/`. A skill added to the template again
+    # reddens this, which makes it a decision: whoever adds one widens these walks to it.
+    # No mutation entry: what breaks this is a directory added to the tree, not a line changed.
+    assert not (template_root() / "skills").exists()
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_every_skill_has_a_name_matching_its_directory_and_a_description(path: Path) -> None:
     fields, _ = split(path)
     assert fields["name"] == path.parent.name
     assert len(fields["description"]) > 40, "a description is what the harness matches on"
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
     assert len(path.read_text(encoding="utf-8").splitlines()) <= SKILL_MAX_LINES
 
@@ -174,7 +131,7 @@ def test_the_tool_name_lint_matches_a_tool_name() -> None:
     assert _TOOL.search("an Agentic workflow") is None
 
 
-@pytest.mark.parametrize("path", entry_points(), ids=_id)
+@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
 def test_no_skill_body_names_a_harness_tool(path: Path) -> None:
     # Mutation: write "use the Grep tool" into a skill body — that skill's case reddens.
     _, body = split(path)
