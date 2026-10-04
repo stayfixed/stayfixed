@@ -186,6 +186,12 @@ What goes wrong, what the user sees, and the evidence for it.
 name what the evidence is silent about, and what would have to be observed to settle it.
 """
 
+# The bug ledger's runbook, a file under `[paths] runbooks`, and its audits directory, a
+# subdirectory of `[paths] bugs`. `bug_register` links both from the index and `init` writes a file
+# at each, both from these two names, so a link and the file it points at cannot be spelled apart.
+BUG_RUNBOOK = "bug-reports.md"
+BUG_AUDITS = "audits"
+
 _LIVE = (
     ("ID", "id"),
     ("Sev", "severity"),
@@ -231,7 +237,6 @@ def bug_register(config: Config) -> Register:
         schema=replace(
             BUG_SCHEMA, evidence_boundary_for=tuple(config.ledger.evidence_boundary_required_for)
         ),
-        runbook=f"{paths.runbooks}/bug-reports.md",
-        # `init` writes the audits README into `<[paths] bugs>/audits/`.
-        audits="audits",
+        runbook=f"{paths.runbooks}/{BUG_RUNBOOK}",
+        audits=BUG_AUDITS,
     )

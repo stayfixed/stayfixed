@@ -46,7 +46,7 @@ from stayfixed.config.schema import BRANCH_NAME, Config, Paths
 from stayfixed.docs.api import trail_target
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import path_key
-from stayfixed.ledger.api import bug_register, render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, render_index
 from stayfixed.project.layout import PROJECT_FILES
 from stayfixed.release.api import Resolution
 from stayfixed.scaffold import Kind, Style, Template, validate_sources
@@ -338,10 +338,11 @@ def _budget(config: Config, name: str) -> str:
 
 
 def _bug_ledger_documents(paths: Paths) -> list[Template]:
-    """The bug ledger's runbook and audits README, each where its index links it."""
+    """The bug ledger's runbook and audits README, each where its index links it: built from
+    `[paths]` and the two names `bug_register` builds those links from."""
     return [
-        _template("ledger-runbook", f"{paths.runbooks}/bug-reports.md", "bug-reports-runbook.md"),
-        _template("ledger-audits", f"{paths.bugs}/audits/README.md", "audits-readme.md"),
+        _template("ledger-runbook", f"{paths.runbooks}/{BUG_RUNBOOK}", "bug-reports-runbook.md"),
+        _template("ledger-audits", f"{paths.bugs}/{BUG_AUDITS}/README.md", "audits-readme.md"),
     ]
 
 
@@ -578,6 +579,9 @@ def project_templates(
         _template("documentation-policy", f"{p.architecture}/documentation.md", "documentation.md"),
         _template("adr-template", f"{p.adr}/0000-template.md", "adr-template.md"),
         *_bug_ledger_documents(p),
+        # The register is built where the index renders, because only rendering needs the
+        # identifiers it carries: `uninstall` builds this footprint to take it out, and a prefix the
+        # ledger refuses must not stop it.
         _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),

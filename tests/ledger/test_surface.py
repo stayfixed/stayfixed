@@ -13,10 +13,11 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # test alone.
     #
     # Outside this area, `stayfixed.assess.gates` imports `bugs_gate`,
-    # `stayfixed.project.templates` imports `render_index` and `bug_register`, and
-    # `stayfixed.docs.plans` and `stayfixed.memory.graph` import `bug_register`; the other names
-    # stay on the argument written beside them in `api.py`: the two artifacts this area leaves on
-    # a project's disk, and the register they are read and written against.
+    # `stayfixed.project.templates` imports `render_index`, `bug_register`, `BUG_RUNBOOK` and
+    # `BUG_AUDITS`, and `stayfixed.docs.plans` and `stayfixed.memory.graph` import
+    # `bug_register`; the other names stay on the argument written beside them in `api.py`: the
+    # two artifacts this area leaves on a project's disk, and the register they are read and
+    # written against.
     required = {
         # the entry file's grammar, and the error a file that will not parse raises
         "Entry",
@@ -33,6 +34,10 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "Schema",
         "Section",
         "bug_register",
+        # the names `init` writes the bug ledger's runbook and audits README under, which its
+        # register links
+        "BUG_RUNBOOK",
+        "BUG_AUDITS",
         # the bugs gate stayfixed.assess.gates runs, bugs check's own function
         "bugs_gate",
     }

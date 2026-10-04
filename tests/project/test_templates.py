@@ -16,7 +16,7 @@ from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import HARNESSES
-from stayfixed.ledger.api import bug_register, render_index
+from stayfixed.ledger.api import BUG_AUDITS, BUG_RUNBOOK, bug_register, render_index
 from stayfixed.profiles import load_profile
 from stayfixed.project.api import PROJECT_FILES, Prepared, project_templates
 from stayfixed.project.footprint import LOCAL_PROFILE, refuse_local_profile
@@ -186,6 +186,21 @@ def test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_the
     assert by_id["ledger-audits"].target == "ledger/entries/audits/README.md"
     assert by_id["ledger-runbook"].target in linked
     assert posixpath.dirname(by_id["ledger-audits"].target) in linked
+
+
+def test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register() -> None:
+    # The register links the runbook and the audits directory, and `init` writes both files; the
+    # two names live once, beside the register, so neither side can be respelled alone and no
+    # target is built from a link a register may leave unset. Mutations (oracle): "init writes the
+    # runbook where the bug index does not link it" and "init writes the audits README under a
+    # directory the bug index does not link" -> the equalities below redden.
+    config = preset_defaults("widget")
+    moved = replace(config, paths=replace(config.paths, bugs="ledger", runbooks="guides"))
+    ledger = bug_register(moved)
+    by_id = {t.id: t for t in _prepared(moved).footprint}
+    assert ledger.runbook == f"guides/{BUG_RUNBOOK}" == by_id["ledger-runbook"].target
+    assert ledger.audits == BUG_AUDITS
+    assert by_id["ledger-audits"].target == f"ledger/{BUG_AUDITS}/README.md"
 
 
 # The `.gitignore` region as a project carries it, copied from the smoke fixture's `.gitignore`
