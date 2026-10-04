@@ -107,7 +107,8 @@ def _ruled_packages(source: Path) -> list[str]:
 
     Discovery is how the CLI finds a command; the rule is about the surface. A package with an
     `api.py` and no `commands.py` (`release`) is held to that surface all the same, and an area
-    with no `api.py` (`assess`) publishes nothing, so no import from outside may reach it."""
+    with no `api.py` (`assess`) publishes nothing, so nothing outside it may import any of its
+    modules."""
     surfaces = {path.parent.name for path in source.glob("*/api.py")}
     return sorted(set(_area_names(source)) | surfaces)
 
@@ -216,8 +217,8 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
     # current. Re-measured 2026-10-04, by running this module's own `_ruled_packages` and
     # `_boundary_offences` over the same two globs in an interpreter: 138 files, 11 areas and
-    # one further package with an `api.py`, 5 scripts and 209 crossings, with a walk narrowed to
-    # `commands.py` alone counting 11 under `src/` and 25 with the scripts — which is what the
+    # one further package with an `api.py`, 5 scripts and 210 crossings, with a walk narrowed to
+    # `commands.py` alone counting 11 under `src/` and 26 with the scripts — which is what the
     # crossings floor of 60 has to be below.
     assert len(areas) == 11, areas
     # The packages held to a surface without being discovered, pinned by name for the reason
