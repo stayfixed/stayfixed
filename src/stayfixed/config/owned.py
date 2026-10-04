@@ -18,8 +18,8 @@ parsed document: the editor keeps a line's trailing comment by pattern, and noth
 
 **What a message prints, and why that is safe.** The table and key come from `OWNED`. The value
 is one stayfixed chose, rendered through `tomlout.quoted`: a version, a member of `STATES`, gate
-names the loader has already held to `PROJECT_NAME`, or a sha the release area resolved from the
-public repository's tags. A document that does not parse is answered with the parser's position
+names the loader has already held to `PROJECT_NAME`, or a sha the `release` package resolved from
+the public repository's tags. A document that does not parse is answered with the parser's position
 alone, as the loader answers it.
 """
 

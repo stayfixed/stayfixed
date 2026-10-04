@@ -40,8 +40,8 @@ and no such guard. That is why `docs/cli.md` says to run it on a checkout you tr
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
 `X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`
-is stayfixed's own: the running version, and a sha the release area resolved from the public
-repository. `orphans` is a count, because the ids of records this build does not produce are
+is stayfixed's own: the running version, and a sha the `release` package resolved from the
+public repository. `orphans` is a count, because the ids of records this build does not produce are
 repository-authored.
 """
 

@@ -32,9 +32,9 @@ because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
 **Trimmed, when the area boundaries were drawn tight.** `COMMON` and `COMMON_RULES` had no importer
 anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
 none outside this area: `upgrade` is driven by this area's own command module, and the template
-tree was published against a sentence predicting that the `release` area would need it, which
-nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what this
-docstring asks of every other area.
+tree was published against a sentence predicting that the `release` package would need it,
+which nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what
+this docstring asks of every other area.
 
 `requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
 `overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar
