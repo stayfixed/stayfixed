@@ -123,8 +123,8 @@ def faulty_python_tree(tmp_path: Path) -> Path:
 def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
     # The everyday case end to end through the handler: a failed pytest over a dirty tree with
     # stale bytecode gets the core's dirty-tree line and then the Python profile's line, in the
-    # words the notice carried before the move. Reddened by handing `context_for` no hints in
-    # `_test_hygiene` (`shipped_hints()` replaced by `()`, so no profile speaks); measured.
+    # words the notice carried before the move. Reddened by replacing `context_for`'s
+    # `hints = shipped_hints()` with `hints = ()`, so no profile speaks; measured.
     root = faulty_python_tree(tmp_path)
     result = hygiene().run(red_event(root, "uv run pytest -q"), config_of(root))
     assert result.decision is None

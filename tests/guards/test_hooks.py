@@ -302,7 +302,7 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
     # `_test_hygiene` its own try/except around `context_for`.
     from stayfixed.guards import hygiene as module
 
-    def broken(command: str, root: Path, config: object, hints: object) -> str | None:
+    def broken(command: str, root: Path, config: object) -> str | None:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(module, "context_for", broken)

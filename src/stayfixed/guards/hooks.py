@@ -87,11 +87,7 @@ def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
 
     if red_exit(event.raw) is None:
         return HookResult()
-    # Here and not at module level, like every import in this file: hook discovery must not
-    # import `stayfixed.profiles`, which `tests/test_areas.py` asserts.
-    from stayfixed.profiles.hints import shipped_hints
-
-    return HookResult(context=context_for(command, event.project_root, config, shipped_hints()))
+    return HookResult(context=context_for(command, event.project_root, config))
 
 
 def register() -> list[Handler]:

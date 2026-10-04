@@ -34,13 +34,13 @@ counts this module computed, and lines a shipped hint rendered from its own coun
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards import bashscan
-from stayfixed.profiles.hints import answer
+from stayfixed.profiles.hints import answer, shipped_hints
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -155,13 +155,14 @@ def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:
         return None
 
 
-def context_for(
-    command: str, root: Path, config: Config, hints: Iterable[tuple[str, RedRunHint | None]]
-) -> str | None:
-    """The notice after `command` failed: `None` unless some hint recognises one of its simple
-    commands, and then the dirty-tree line and the line of each hint that recognised it, in the
-    order `hints` gives."""
+def context_for(command: str, root: Path, config: Config) -> str | None:
+    """The notice after `command` failed: `None` unless some shipped hint recognises one of its
+    simple commands, and then the dirty-tree line and the line of each hint that recognised it,
+    in the order `shipped_hints` gives."""
     commands = simple_commands(command)
+    if not commands:
+        return None
+    hints = shipped_hints()
     speaking = [hint for _, hint in hints if hint is not None and _recognises(hint, commands)]
     if not speaking:
         return None
