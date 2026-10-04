@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards import bashscan
-from stayfixed.profiles.hints import counts, usable
+from stayfixed.profiles.hints import answer
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -132,17 +132,14 @@ def notice(dirty: int | None, notes: Sequence[str]) -> str | None:
     return LEAD + "\n- " + "\n- ".join(lines)
 
 
-# The two guards below are what "a hint that raises costs its own note" means, with the one in
-# `shipped_hints`, which leaves out a profile whose module does not import or has no `HINT`, and
-# `_note`'s refusal of a note that is not text (`profiles.hints.usable`). They are broad on
-# purpose, because an exception out of one stack's hint would reach the dispatcher, which under
-# `Policy.OPEN` records it and drops the handler's whole context -- the dirty-tree line and every
-# other stack's line with it. They are also silent, and that is a cost rather than a design: a
-# handler has no sink to record into, and a broken `recognises` is visible nowhere else.
-# `stayfixed test hygiene` exposes a hint that did not load and one whose note is not text, both
-# of which it refuses over, and one whose `report` or `note` raises, since it calls both unguarded
-# for every shipped hint; it never calls `recognises`. Recording a per-hint failure in the hook's
-# diagnostics would take a sink the handler can reach, which is a change to the handler contract
+# A hint that fails costs its own line and nothing else: one whose module did not load is `None`
+# and skipped, and the two guards below catch everything else, broad on purpose, because an
+# exception out of one stack's hint would reach the dispatcher, which under `Policy.OPEN` records
+# it and drops the handler's whole context -- the dirty-tree line and every other stack's line
+# with it. They are also silent, and that is a cost rather than a design: a handler has no sink
+# to record into. `stayfixed test hygiene` refuses over every such failure but a broken
+# `recognises`, which it never calls and which is visible nowhere else; recording one in the
+# hook's diagnostics would take a sink the handler can reach, a change to the handler contract
 # and not to this module.
 def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
     try:
@@ -153,21 +150,19 @@ def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:
     try:
-        note = hint.note(counts(hint, root, config))
+        return answer(hint, root, config)[1]
     except Exception:
         return None
-    # Text or nothing: anything else would raise in `notice`'s join, outside these guards.
-    return usable(note)
 
 
 def context_for(
-    command: str, root: Path, config: Config, hints: Iterable[tuple[str, RedRunHint]]
+    command: str, root: Path, config: Config, hints: Iterable[tuple[str, RedRunHint | None]]
 ) -> str | None:
     """The notice after `command` failed: `None` unless some hint recognises one of its simple
     commands, and then the dirty-tree line and the line of each hint that recognised it, in the
     order `hints` gives."""
     commands = simple_commands(command)
-    speaking = [hint for _, hint in hints if _recognises(hint, commands)]
+    speaking = [hint for _, hint in hints if hint is not None and _recognises(hint, commands)]
     if not speaking:
         return None
     notes: list[str] = []

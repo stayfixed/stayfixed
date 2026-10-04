@@ -7,9 +7,10 @@ repository in several languages runs several stacks' suites, and the stack whose
 the one whose advice applies.
 
 `note` receives counts and nothing else: both callers, the hook's notice and `stayfixed test
-hygiene`, read a report through `counts`, which keeps a key only when it is a count name
-(`COUNT_NAME`: lower-case letters, digits and underscores, at most 32 characters) and its value
-only when it is a plain integer, and drops the rest before anything reaches `note` or `--json`.
+hygiene`, ask a hint through `answer`, which reads its report through `counts`. That keeps a key
+only when it is a count name (`COUNT_NAME`: lower-case letters, digits and underscores, at most
+32 characters) and its value only when it is a plain integer, and drops the rest before anything
+reaches `note` or `--json`.
 A key is text a hint chose, and one built from the tree it walked would otherwise carry that
 tree's names out; the grammar admits no `/`, `.`, space or upper case, so no path, file name or
 command text a repository authored can pass as a count's name. So the trust rule
@@ -76,23 +77,18 @@ def hint_modules() -> tuple[str, ...]:
     return tuple(name for name in shipped() if package.joinpath(name).joinpath(HINT_FILE).is_file())
 
 
-def shipped_hints() -> tuple[tuple[str, RedRunHint], ...]:
-    """(profile name, its `HINT`), in name order.
+class NotText(TypeError):
+    """A hint's note was neither text nor `None`, which its protocol does not allow."""
 
-    A profile whose `hygiene.py` does not import, or defines no `HINT`, is left out, and only
-    that profile goes quiet: raised from here, the failure would reach the hook's dispatcher
-    ahead of every per-hint guard and cost the whole notice, the dirty-tree line included.
-    `stayfixed test hygiene` compares this with `hint_modules()` and refuses when a profile is
-    missing, because a profile it could not ask is not one with nothing to report. The guard is
-    broad for the reason the per-hint guards in `stayfixed.guards.hygiene` are: a module's
-    import runs its code, and any exception can come out of it.
+
+def shipped_hints() -> tuple[tuple[str, RedRunHint | None], ...]:
+    """Every profile `hint_modules` lists, in its order, with its `HINT`, or `None` for one whose
+    `hygiene.py` does not import or defines no `HINT`.
+
+    Never raises for one profile's module: importing a module runs its code, so any exception can
+    come out of it, and each caller decides what an absent hint costs.
     """
-    found: list[tuple[str, RedRunHint]] = []
-    for name in sorted(hint_modules()):
-        hint = _hint(name)
-        if hint is not None:
-            found.append((name, hint))
-    return tuple(found)
+    return tuple((name, _hint(name)) for name in hint_modules())
 
 
 def _hint(name: str) -> RedRunHint | None:
@@ -103,16 +99,18 @@ def _hint(name: str) -> RedRunHint | None:
     return hint
 
 
-def usable(note: object) -> str | None:
-    """`note` when it is something to report, which is non-empty text, and `None` otherwise.
+def answer(hint: RedRunHint, root: Path, config: Config) -> tuple[dict[str, int], str | None]:
+    """`hint`'s counts under `root` (`counts`), and its note on them: non-empty text, or `None`
+    when it has nothing to say.
 
-    The one test of a note, for the hook's notice and for `stayfixed test hygiene` alike, so
-    that a note the notice drops is never a finding the command reports. A note that is not
-    text breaks the protocol: the hook takes it as nothing to say and keeps the rest of its
-    notice, and the command refuses before it asks this, because a hint it could not read is
-    not one with nothing to report.
+    Raises `NotText` for a note that is neither text nor `None`, and lets whatever `report` or
+    `note` raises through.
     """
-    return note if isinstance(note, str) and note else None
+    report = counts(hint, root, config)
+    note = hint.note(report)
+    if note is not None and not isinstance(note, str):
+        raise NotText
+    return report, note or None
 
 
 def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:
@@ -120,8 +118,7 @@ def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:
 
     A key that is not a string matching `COUNT_NAME` is dropped, and so is a value that is not
     an `int`, or is a `bool`, which is an `int` to Python and is not a count (`red_exit` refuses
-    it for the same reason). What `report` raises reaches the caller: the hook's notice catches
-    it per hint, and `stayfixed test hygiene` reports it as an internal error.
+    it for the same reason). What `report` raises reaches the caller.
     """
     return {
         key: value

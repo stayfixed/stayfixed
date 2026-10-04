@@ -254,7 +254,7 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     # they are handled on their own. Each must cost that profile's line and nothing else: the
     # dirty-tree line and every other stack's line stay. Through the real dispatcher, so
     # "nothing else" includes stderr. Oracle: `mutations/`, "a hint module is imported outside
-    # its guard", "a note is usable whatever it is" and "the hook takes a note whatever it is".
+    # its guard" and "a note that is not text passes as one".
     ship(
         monkeypatch,
         {"delta": WordlessHint("x", "delta says"), "gamma": FakeHint("x", "gamma says")},
@@ -402,7 +402,7 @@ def test_test_hygiene_refuses_a_note_that_is_not_text(
     # answers whether a red run can be trusted, and a hint that answered outside its protocol is
     # "I do not know", never "tree is clean" and never a finding printed as whatever the object
     # renders to: it refuses (exit 2) and names the profile, as for a hint that did not load.
-    # Oracle: `mutations/`, "test hygiene takes a note that is not text as nothing to report".
+    # Oracle: `mutations/`, "a note that is not text passes as one".
     ship(monkeypatch, {"alpha": WordlessHint("x", "alpha says")})
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
     monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
@@ -420,8 +420,8 @@ def test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty(
 ) -> None:
     # An empty note is text with nothing in it: nothing to report, the same answer the hook
     # gives by leaving the line out. So a stack whose markers are not at the root and whose note
-    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`, "test hygiene takes an
-    # empty note for something to report".
+    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`, "an empty note is
+    # something to report".
     ship(monkeypatch, {"alpha": EmptyHint("x", "alpha says")})
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
     monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
