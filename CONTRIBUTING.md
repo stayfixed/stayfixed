@@ -161,7 +161,8 @@ answers, and the command that failed decides which hints speak). That is where o
 runner, build artifacts and package manager belong: no module outside a profile's own directory
 names a stack — the machinery directly under `profiles/` included — except the pardons
 `tests/test_language_neutral.py` lists, each with its reason, and a new mention either moves into
-its profile or joins that list with one.
+its profile or joins that list with one. None imports a profile's code either: the core finds a
+hint by discovery, and that test refuses an import of it without pardon.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their

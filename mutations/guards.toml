@@ -939,6 +939,16 @@ reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
 
+# The words miss the core importing a stack's own code, since a module path holds no listed word;
+# the import walk is what catches it.
+[[mutation]]
+name = "the core imports the Python profile's hint"
+file = "src/stayfixed/guards/hygiene.py"
+before = "from stayfixed.profiles.hints import answer, shipped_hints"
+after = """from stayfixed.profiles.hints import answer, shipped_hints
+from stayfixed.profiles.python.hygiene import PythonHint"""
+reddens = ["tests/test_language_neutral.py::test_no_core_module_imports_a_stack_profiles_code"]
+
 # A bytes literal is code too: the walk reads it as Latin-1, so a stack's word spelled as bytes
 # in a core module is a mention like any string.
 [[mutation]]
