@@ -2,7 +2,7 @@
 
 Nothing here reaches the network, and it is kept out three ways. Every case that writes or plans
 a footprint but one goes through `_invoke`, which appends `--no-ci`: with `[ci] mode` set to
-`none` the run never asks the release area to resolve a pin, so the `subprocess_runner()`
+`none` the run never asks the `release` package to resolve a pin, so the `subprocess_runner()`
 `commands.py` builds is never handed a `git ls-remote` against the public repository. The one
 case that must resolve a pin — the hostile `gate_branch` arm, which exists precisely because
 `_ci` reaches that check *after* the pin — stubs `subprocess_runner` at the seam `commands.py`
@@ -169,8 +169,8 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     # A gate branch that is not a plain branch name used to be reported as a release pin, though no
     # workflow was written; this holds it end to end. `[ci] mode` stays `reusable` here — this is
     # the one case in this module that does not pass `--no-ci` — so the command really reaches the
-    # release area; the runner it would use is stubbed at the seam `commands.py` builds it from, so
-    # no network call is made and the answer is one released tag.
+    # `release` package; the runner it would use is stubbed at the seam `commands.py` builds it
+    # from, so no network call is made and the answer is one released tag.
     from stayfixed import runner as runner_module
 
     root = repository(tmp_path)

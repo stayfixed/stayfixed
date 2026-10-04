@@ -35,7 +35,7 @@ from stayfixed.overlay.layout import (
     SUCCESSORS,
 )
 from stayfixed.overlay.template import retired, templates
-from stayfixed.printed import answered
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
 
@@ -526,23 +526,29 @@ def _retire(
     its place: such a template carried the old name only, and a directory left empty is one git
     does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
     `developer` link to reach.
+
+    **A path the ledger supplied prints through `printed.quoted`.** The ledger is committed with
+    the overlay, and a record whose target this release cannot produce is named at that target,
+    so a line break or an escape sequence in it would reach the terminal and a CI runner as it
+    stood. A path inside the path grammar prints as itself. A successor's path is this build's
+    own.
     """
     planned = plan(root, preset_defaults(root.name), retired())
-    notes = [f"left {r.target}: {r.reason}" for r in planned.refusals]
+    notes = [f"left {quoted(r.target)}: {r.reason}" for r in planned.refusals]
     changed = False
     removed: list[str] = []
     written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
-            notes.append(f"left {action.target} ({action.reason})")
+            notes.append(f"left {quoted(action.target)} ({action.reason})")
             continue
         if not unlinks(action):
             continue
         try:
             fsops.remove_within(root, action.target)
         except OSError as exc:
-            raise Refusal(f"{action.target} cannot be removed: {fsops.said(exc)}") from exc
-        notes.append(f"removed {action.target}, which this release no longer ships")
+            raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc
+        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
         removed.append(action.target)
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))

@@ -168,9 +168,9 @@ where it would pass, and only then enforce — and the decision to enforce shoul
 the base branch, never from the change under review.
 
 **What stayfixed does today.** The state machine ships per gate. `stayfixed assess` inventories
-what stands between a repository and enforcement. `stayfixed adopt begin` starts an adoption
-with a plan, and `stayfixed adopt promote` enforces every gate that passes now and names the
-rest, or enforces the gates it is given only if all of them pass. The gate a pull request faces
+what stands between a repository and enforcement, and `stayfixed adopt promote` enforces every
+gate that passes now and names the rest, or enforces the gates it is given only if all of them
+pass; its first promotion is what starts the adoption. The gate a pull request faces
 reads the base branch's configuration and admits only a change that tightens it, under the
 repository settings `docs/cli.md` names. What it does not do yet is hold the line inside a gate
 — fail new findings while grandfathering old ones — which current linters do [S33] and which is
@@ -218,11 +218,11 @@ reach installed users. A project's reference to a shared workflow is a full-leng
 SHA written by the tool that installed it and bumped by the tool that upgrades it; a
 floating alias is a documented opt-in.
 
-**What stayfixed does.** `release check` cross-checks the version across `pyproject.toml`,
-the lockfile, the package, both plugin manifests and `CHANGELOG.md`; the marketplace
-entries carry no version because the plugin's own overrides it silently [S6]. Changelog
-entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
-resolver at hook time [S13].
+**What stayfixed does.** Its repository's release check, `scripts/release.py check`,
+cross-checks the version across `pyproject.toml`, the lockfile, the package, both plugin
+manifests and `CHANGELOG.md`; the marketplace entries carry no version because the plugin's
+own overrides it silently [S6]. Changelog entries are fragments assembled at release [S12].
+The CLI installs from a git tag with no resolver at hook time [S13].
 
 **Why.** `plugin.json`'s `version` is what update delivery reads [S2]; a full-length SHA is
 the only immutable reference to a reusable workflow [S25].

@@ -21,8 +21,11 @@ from stayfixed.docs.trail import read_trail
 from stayfixed.errors import Failure
 from stayfixed.memory import store
 from stayfixed.project import init
-from stayfixed.release import versions
 from stayfixed.setup.machine import read_machine
+from tests.script import release
+
+# The repository's release script, whose version check is one more reader below.
+script = release()
 
 # Past the interpreter's default recursion limit of 1000 with room to spare, on 3.11 to 3.13.
 DEPTH = 2000
@@ -78,13 +81,13 @@ Case = Callable[[Path], object]
             id="store-overlay-root",
         ),
         pytest.param(
-            lambda t: versions._read(_file(t, "pyproject.toml").parent, versions.PYPROJECT),
-            versions.MalformedSource,
+            lambda t: script._read(_file(t, "pyproject.toml").parent, script.PYPROJECT),
+            script.MalformedSource,
             id="versions-read",
         ),
         pytest.param(
-            lambda t: versions._pyproject(_file(t, "pyproject.toml").parent),
-            versions.MalformedSource,
+            lambda t: script._pyproject(_file(t, "pyproject.toml").parent),
+            script.MalformedSource,
             id="versions-pyproject",
         ),
         pytest.param(

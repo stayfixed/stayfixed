@@ -1,5 +1,6 @@
 """`ledger.code_roots`, contained. `config.paths` guards `[paths]` and names this field as one
-the consuming module must check itself; two commands here consume it."""
+the consuming module must check itself; `test hygiene` consumes it here, and other areas
+through `stayfixed.guards.api`."""
 
 from __future__ import annotations
 
@@ -22,14 +23,13 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     beside it. Every consumer of this list walks each entry with `rglob` and adds up what it
     finds, so `code_roots = ["src", "src"]` doubled every stale `.pyc` in the count the
     hygiene notice prints, and `["src", "src/stayfixed"]` doubled the part of the tree they
-    share -- a wrong number in a notice whose whole job is to be believed about a number, and
-    in an audit's "N test file(s)" total.
+    share -- a wrong number in a notice whose whole job is to be believed about a number.
 
     **An entry is folded before it is asked about.** `contained()` refuses a trailing `/`, a
     doubled `/` and a leading `./` since it shares the write's component rule, and that rule is
     right for a target the engine writes. A code root is only walked, and `"src/"` is the way
-    many people write a directory: refused here, it was dropped from the hygiene counts, the
-    audit and the citation roots with nothing saying so. `PurePosixPath` folds exactly those
+    many people write a directory: refused here, it was dropped from the hygiene counts and the
+    citation roots with nothing saying so. `PurePosixPath` folds exactly those
     three spellings and nothing else -- it keeps `..` and an absolute root, which `contained()`
     still refuses.
 

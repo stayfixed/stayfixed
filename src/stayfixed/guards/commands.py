@@ -182,8 +182,8 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     # encoding — `i18n.commitEncoding` is a real git setting — reached the CLI frame as
     # `internal error: UnicodeDecodeError` and exit 2, the code a caller is told never to read
     # as permission. It is a file this command cannot read, exactly like the `OSError` beside
-    # it, so it is the same `Failure`. `audit.py` and `githooks.py` both catch it explicitly;
-    # this was the one place that did not. It does not render the exception: that one names the
+    # it, so it is the same `Failure`. `githooks.py` catches it explicitly; this was the one
+    # place that did not. It does not render the exception: that one names the
     # offending byte, and the byte came out of the file.
     except OSError as exc:
         raise Failure(f"cannot read {path}: {exc}") from None
@@ -226,52 +226,6 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     )
     data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
     return Result(summary, data, exit_code=1 if findings else 0)
-
-
-def run_test_audit(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.audit import SHAPES, import_roots, run_self_test, scan_paths, suite_files
-    from stayfixed.guards.roots import contained_roots
-
-    problems = run_self_test()
-    if problems:
-        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))
-    root, config = _root_and_config(args)
-    roots = contained_roots(root, config)
-    names = import_roots(roots)
-    files = suite_files(roots)
-    findings = scan_paths(files, SHAPES, names)
-    # `data` is the documented exception to "repository bytes are data": the JSON object is
-    # read by the person or the CI job that owns the repository, so it carries the test paths
-    # and the derived import names. The summary below is counts only.
-    # Spelled out rather than `f.__dict__`: the dataclass is an internal shape and the JSON is a
-    # documented contract (`docs/cli.md`), so reflecting one into the other made every attribute
-    # rename a silent wire break and every attribute added a key nobody documented. These five
-    # keys are the contract; a sixth arrives by being written here.
-    data = {
-        "findings": [
-            {
-                "path": finding.path,
-                "line": finding.line,
-                "test": finding.test,
-                "shape": finding.shape,
-                "detail": finding.detail,
-            }
-            for finding in sorted(findings, key=lambda f: (f.path, f.line))
-        ],
-        "files": len(files),
-        "import_roots": sorted(names),
-    }
-    # Exit 0 with findings, on purpose: candidates are for triage, not a build failure. Run
-    # over stayfixed's own tests with stayfixed's own code roots this command reports six
-    # candidates across 43 test files (measured), and every one of them is a name collision
-    # rather than a defect -- a test that states one imported symbol's tokens in its name and
-    # exercises a neighbouring one, `override_is_honoured` inside
-    # `test_the_override_is_honoured_from_an_interactive_shell`. So exit 1 would be red on its
-    # own repository from the first run, and the schema has no per-command enable switch to
-    # turn it off with. Gating belongs to a change that has triaged these to zero.
-    if findings:
-        return Result(f"{len(findings)} candidate(s) in {len(files)} test file(s)", data)
-    return Result(f"no candidates in {len(files)} test file(s)", data)
 
 
 def run_test_attribute(args: argparse.Namespace) -> Result:
@@ -318,10 +272,6 @@ def register(groups: SubParsers) -> None:
         test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
     )
     hygiene.set_defaults(func=run_test_hygiene)
-    audit = common_flags(
-        test_sub.add_parser("audit-entrypoints", help="tests that never exercise what they name")
-    )
-    audit.set_defaults(func=run_test_audit)
     attribute = common_flags(
         test_sub.add_parser(
             "attribute", help="attribute a failing command to the change or to the environment"

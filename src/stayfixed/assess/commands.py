@@ -1,8 +1,8 @@
 """The assess area's commands: `stayfixed assess` runs every configured gate and the inventory's
 probes over the repository as it is, writes the inventory, and prints counts; `stayfixed gate`
 judges a change's `stayfixed.toml` against its base's and runs the gates as that judgement says;
-`stayfixed adopt begin` and `stayfixed adopt promote` move a project's gates from advisory to
-enforcing, one at a time, as each passes.
+`stayfixed adopt promote` moves a project's gates from advisory to enforcing, one at a time, as
+each passes.
 
 Every module a handler needs is imported inside it, so discovering this area imports neither the
 gates nor the presets.
@@ -58,23 +58,13 @@ NO_TREE_CONFIG = (
     "the run fails rather than pass a change it cannot judge"
 )
 NOTHING_TO_RUN = "nothing to run: no configured gate of the kind asked for"
-ADOPT_HELP = "the adoption state machine: begin with a plan, then promote gates as they pass"
-BEGIN_HELP = "check an adoption plan and mark an initialised project adopting"
-PLAN_HELP = (
-    "a markdown file directly under [paths] plans, with stayfixed as a word of its name; "
-    "a relative path is read from the current directory"
-)
+ADOPT_HELP = "the adoption state machine: promote gates from advisory to enforcing as they pass"
 PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
 PROMOTE_BUILTIN_HELP = (
     "the built-in gates only: no command from [gates.custom] runs, so no custom gate is "
     "promoted, for a repository whose commands you have not agreed to run"
 )
 GATES_HELP = "configured gate names (default: every gate not yet enforcing)"
-BEGUN = (
-    "adopting: the plan passes plan check, and every gate stays advisory until "
-    "`stayfixed adopt promote` enforces it"
-)
-KEPT = "the plan passes plan check; the state stays {after}"
 # Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
 BASE_NOT_THERE = (
     "note: the base this run compares against is not in this checkout (no origin, or not "
@@ -285,17 +275,6 @@ def _transition(transition: Transition) -> dict[str, object]:
     }
 
 
-def run_adopt_begin(args: argparse.Namespace) -> Result:
-    from stayfixed.assess.state import begin
-
-    root, config = root_and_config(args)
-    transition = begin(root, config, Path(args.plan))
-    changed = transition.after != transition.before
-    summary = BEGUN if changed else KEPT.format(after=transition.after)
-    # The state on each side and nothing else: `begin` runs no gate.
-    return Result(summary, {"before": transition.before, "after": transition.after})
-
-
 def run_adopt_promote(args: argparse.Namespace) -> Result:
     from stayfixed.assess.report import (
         BUILTIN_FINDINGS_ELSEWHERE,
@@ -375,9 +354,6 @@ def register(groups: SubParsers) -> None:
 
     adopt = groups.add_parser("adopt", help=ADOPT_HELP)
     adopt_sub = adopt.add_subparsers(dest="command", metavar="<command>")
-    start = common_flags(adopt_sub.add_parser("begin", help=BEGIN_HELP))
-    start.add_argument("plan", metavar="PLAN", help=PLAN_HELP)
-    start.set_defaults(func=run_adopt_begin)
     promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))
     promotion.add_argument("gates", nargs="*", metavar="GATE", help=GATES_HELP)
     promotion.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)

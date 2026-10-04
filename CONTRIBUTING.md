@@ -12,7 +12,7 @@ uv run pytest -n auto --cov --cov-fail-under=92   # the suite across workers, at
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run python scripts/mutation_oracle.py          # every declared mutation still reddens
-uv run stayfixed release check                    # version discipline
+uv run python scripts/release.py check            # version discipline
 ```
 
 All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
@@ -111,19 +111,20 @@ name — there is no shared registry to edit. One table does name areas, `GROUP_
 until its entries outgrow the group they fall into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
-`ledger`, `memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install
+`ledger`, `memory`, `overlay`, `project` and `setup`. Three arrived with the install
 path: `overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
 of it. `project` holds the shipped project templates and `init`, the command that writes a
 repository's footprint from them, and `assess` runs the gates and the inventory over a
 repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
 (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
-(`stayfixed adopt begin` and `stayfixed adopt promote`). `assess` publishes no `api.py`: nothing
-under `src/` or `scripts/` outside it imports it, and tests reach its modules directly, as they
-do every area's.
-(`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
-`harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
-nor a `hooks.py`.)
+(`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
+outside it imports it, and tests reach its modules directly, as they do every area's.
+(`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
+areas, and `harnesses` is a module — nothing discovers them, because they carry neither a
+`commands.py` nor a `hooks.py`. `release` still publishes an `api.py`, which holds what an
+installed stayfixed reads about its own releases: the tags it pins and the record of the files
+a release ships.)
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
@@ -131,11 +132,14 @@ nor a `hooks.py`.)
   interpreter imports neither the configuration layer nor the presets.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
-  `tests/test_areas.py` walks every module under `src/stayfixed/` and fails on a cross-area
-  import that reaches past one. The list is what consumers actually reach for, not what the
-  area finds tidy: a consumer that needs something absent from it grows it deliberately, in a
-  commit that says which consumer and why. `cli.py` is the CLI frame rather than an area, and its
-  one direct import of `hooks.policy` is named in that test rather than skipped silently.
+  `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
+  import that reaches past one. The rule holds every package that publishes an `api.py`, an area
+  or not (`release` is held to its surface like any area), and every area without one
+  (`assess`), none of whose modules anything outside it may import. The list is what consumers
+  actually reach for, not what the area finds tidy: a consumer that needs something absent from
+  it grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI
+  frame rather than an area, and its one direct import of `hooks.policy` is named in that test
+  rather than skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
@@ -317,8 +321,10 @@ reference and prints it in parentheses at the end of the bullet, so the release 
 reads would carry a file-name slug that means nothing to them. Write the fragment as a release
 note someone outside the project can read — not as a note to yourself about the change.
 
-`uv run stayfixed release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
-the package, and both plugin manifests. It runs in CI; run it before you push.
+`uv run python scripts/release.py check` cross-checks the version across `pyproject.toml`,
+`uv.lock`, the package, and both plugin manifests. It runs in CI; run it before you push. It is
+this repository's own tooling and not a command stayfixed ships, as are its `notes` and `hashes`
+beside it ([RELEASING.md](RELEASING.md) says when each runs).
 
 ## Plans
 

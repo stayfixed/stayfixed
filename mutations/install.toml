@@ -890,7 +890,7 @@ file = "src/stayfixed/doctor/checks.py"
 before = 'from stayfixed.setup.api import USER_SETTINGS'
 after = 'from stayfixed.setup.machine import USER_SETTINGS'
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
@@ -943,6 +943,17 @@ before = "    require_overlay(root, because=NOT_AN_OVERLAY)"
 after = "    pass"
 reddens = [
   "tests/overlay/test_create.py::test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it",
+]
+
+# The overlay's ledger is committed, so a retired file's recorded target is repository-chosen, and
+# `overlay init` names one it leaves on a line a terminal and a CI runner read.
+[[mutation]]
+name = "overlay init prints a recorded path it leaves unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '            notes.append(f"left {quoted(action.target)} ({action.reason})")'
+after = '            notes.append(f"left {action.target} ({action.reason})")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_retired_file_s_recorded_path_escaped",
 ]
 
 # `PATH` is read from the context because it is repository-authored; a path component is
@@ -1311,9 +1322,9 @@ reddens = [
 ]
 
 # `[ci] ref` is repository-authored and must be the commit of a released stayfixed. Which commits
-# those are is the release area's own rule (`is_released`, semver tags only), and the row's verdict
-# is what a reader acts on: a ref no released tag names is a project pinned to a gate nobody
-# shipped, reported green.
+# those are is the `release` package's own rule (`is_released`, semver tags only), and the row's
+# verdict is what a reader acts on: a ref no released tag names is a project pinned to a gate
+# nobody shipped, reported green.
 [[mutation]]
 name = "a ci-ref that is no released commit is reported as a released commit"
 file = "src/stayfixed/doctor/checks.py"
@@ -1731,6 +1742,20 @@ before = "        if ledgered and action.record is not None:"
 after = "        if action.record is not None:"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
+]
+
+# An overlay a template generated carries no ledger, so the bytes a release shipped are the only
+# evidence that its copy of a retired file is stayfixed's, and `common/rules/README.md` was one
+# file in 0.1.x and another in 0.2.0: each copy needs its own digest. A recorded copy is removed by
+# its record, so only the unrecorded 0.2.0 cases redden.
+[[mutation]]
+name = "the rules README 0.2.0 shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '"62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",'
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.2.0-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.2.0-no-ledger]",
 ]
 
 # Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may

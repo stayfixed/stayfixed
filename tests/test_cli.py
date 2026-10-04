@@ -159,7 +159,31 @@ def test_every_command_describes_itself_and_names_json_in_its_own_help() -> None
 
 def test_areas_are_discovered_from_the_package() -> None:
     names = {registrar.__module__ for registrar in discover_registrars()}
-    assert "stayfixed.release.commands" in names
+    assert "stayfixed.doctor.commands" in names
+
+
+def _subcommands(group: str) -> set[str]:
+    """The commands the real parser registers under `stayfixed <group>`."""
+    parser = build_parser(discover_registrars())
+    groups = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    nested = next(
+        a for a in groups.choices[group]._actions if isinstance(a, argparse._SubParsersAction)
+    )
+    return set(nested.choices)
+
+
+def test_adopt_has_promote_and_nothing_else() -> None:
+    # `adopt promote` moves a project out of `initialised` itself, so a second adoption command
+    # would be a ritual step every project pays for. Mutation: registering a `begin` parser in
+    # the adopt group reddens this.
+    assert _subcommands("adopt") == {"promote"}
+
+
+def test_the_test_group_has_hygiene_and_attribute() -> None:
+    # The test group holds what a red run needs explained and what a failure is attributed to;
+    # an audit that read one stack's test files and that no gate ran is not among them.
+    # Mutation: registering an `audit-entrypoints` parser in the test group reddens this.
+    assert _subcommands("test") == {"hygiene", "attribute"}
 
 
 def _exploding(args: argparse.Namespace) -> Result:
@@ -224,7 +248,7 @@ def test_a_broken_area_on_a_non_hook_command_still_exits_two(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken)
-    assert main(["release", "check"]) == 2
+    assert main(["doctor"]) == 2
     assert "stayfixed: internal error: RuntimeError" in capsys.readouterr().err
 
 
@@ -234,7 +258,7 @@ def _broken_by_keyboard_interrupt() -> list[Registrar]:
 
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["release", "check"], 2)],
+    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["doctor"], 2)],
 )
 def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_exception(
     monkeypatch: pytest.MonkeyPatch,
@@ -259,20 +283,20 @@ def _register_explodes(groups: SubParsers) -> None:
     raise RuntimeError("register exploded")
 
 
-def _claims_release(groups: SubParsers) -> None:
-    groups.add_parser("release")
+def _claims_doctor(groups: SubParsers) -> None:
+    groups.add_parser("doctor")
 
 
 BROKEN_BUILDS: dict[str, list[Registrar]] = {
     "register-raises": [_register_explodes],
-    "two-areas-claim-one-group": [_claims_release, _claims_release],
+    "two-areas-claim-one-group": [_claims_doctor, _claims_doctor],
 }
 
 
 @pytest.mark.parametrize("registrars", list(BROKEN_BUILDS.values()), ids=list(BROKEN_BUILDS))
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["release", "check"], 2)],
+    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["doctor"], 2)],
 )
 def test_a_broken_parser_build_is_judged_like_a_broken_import(
     monkeypatch: pytest.MonkeyPatch,

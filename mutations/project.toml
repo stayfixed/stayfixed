@@ -29,16 +29,6 @@ reddens = [
   "tests/overlay/test_template.py::test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates",
 ]
 
-# A directory's README that promises what nothing does. Nothing reads `common/rules/`.
-[[mutation]]
-name = "the rules directory's README promises injection again"
-file = "src/stayfixed/templates/overlay/common/rules/README.md"
-before = "Nothing reads this directory yet."
-after = "Everything here is injected at the start of every session."
-reddens = [
-  "tests/overlay/test_template.py::test_no_rendered_markdown_says_a_rules_file_is_injected",
-]
-
 # stayfixed supports standing rules and imposes none: the shipped preset carries no `[rules]` table.
 [[mutation]]
 name = "the recommended preset imposes a standing rule again"
@@ -282,21 +272,21 @@ reddens = [
 # "fifteen files" while a rendered overlay has sixteen — the scaffold engine writes
 # `.stayfixed/manifest.json`, which is in neither of that README's tables and is the file `overlay
 # upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a change that adds a
-# template file now reddens the document instead of outliving it. `.github/dependabot.yml` is the
-# sixteenth shipped file and the seventeenth rendered one, and the count below moved with it. This
+# template file now reddens the document instead of outliving it. The template ships fourteen
+# files today and a create leaves fifteen, and the count below moved with each change to them. This
 # entry is an inline count too, so it has to move as well; the unfiltered oracle is what says so,
 # because a run filtered to one change's own entries cannot see an entry declared earlier that the
 # change invalidated.
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/stayfixed/templates/overlay/README.md"
-before = "`stayfixed overlay create` renders seventeen files here:"
+before = "`stayfixed overlay create` renders fifteen files here:"
 after = "`stayfixed overlay create` renders sixteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
 ]
 
-# The other half of that document: the right count over the wrong sixteen files. `hooks/hooks.json`
+# The other half of that document: the right count over the wrong files. `hooks/hooks.json`
 # is the row that matters most, because it is indistinguishable from `common/claude/hooks.json`
 # by content — both are `{"hooks": {}}` — and the README is the only thing that tells them apart.
 [[mutation]]

@@ -39,12 +39,15 @@ from stayfixed.overlay import create, identity
 from stayfixed.overlay.api import COMMON_CODEX
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.project.init import _existing
-from stayfixed.release import versions
 from stayfixed.setup.machine import read_machine
 from stayfixed.setup.run import _read_document
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
+from tests.script import release
+
+# The repository's release script, whose version check is one more reader below.
+script = release()
 
 UNDECODABLE = b"\xff\xfe[overlay]\n"
 
@@ -145,25 +148,25 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "pyproject.toml, for the release check",
-        lambda t: (_plant(t / versions.PYPROJECT), lambda: versions._pyproject(t))[1],
-        versions.MalformedSource,
+        lambda t: (_plant(t / script.PYPROJECT), lambda: script._pyproject(t))[1],
+        script.MalformedSource,
     ),
     (
         "a version source, for the release check",
         lambda t: (
-            _plant(t / versions.PYPROJECT),
-            lambda: versions._read(t, versions.PYPROJECT),
+            _plant(t / script.PYPROJECT),
+            lambda: script._read(t, script.PYPROJECT),
         )[1],
-        versions.MalformedSource,
+        script.MalformedSource,
     ),
     (
         "the marketplace manifest, for the release check",
         lambda t: (
-            (t / versions.PYPROJECT).write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8"),
-            _plant(t / versions.MARKETPLACE),
-            lambda: versions.check(t),
+            (t / script.PYPROJECT).write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8"),
+            _plant(t / script.MARKETPLACE),
+            lambda: script.check(t),
         )[2],
-        versions.MalformedSource,
+        script.MalformedSource,
     ),
 ]
 

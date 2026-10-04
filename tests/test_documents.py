@@ -371,7 +371,8 @@ def command_functions() -> dict[str, object]:
 def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
     # Mutation: drop `memory refs` from the README sentence -> reddens naming it.
     # The floor first: a walk that resolved no functions would make the comparison below
-    # vacuously true, and a regex that stopped matching would look the same.
+    # vacuously true, and a regex that stopped matching would look the same. Four emit the key
+    # today: `bugs check`, `docs check`, `memory refs` and `plan check`.
     functions = command_functions()
     assert len(functions) >= REGISTERED_COMMANDS_FLOOR, sorted(functions)
     emitting = {
@@ -379,7 +380,7 @@ def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
         for name, func in functions.items()
         if '"findings":' in inspect.getsource(func)  # type: ignore[arg-type]
     }
-    assert len(emitting) >= 5, sorted(emitting)
+    assert len(emitting) >= 4, sorted(emitting)
     match = _FINDINGS_SENTENCE.search(README.read_text(encoding="utf-8"))
     assert match is not None, "README's --json paragraph no longer names the findings commands"
     named = set(re.findall(r"`([^`]+)`", match.group(1)))
@@ -396,9 +397,9 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
 
     Before 0.1.0 the section described the untagged install forms and a marked region the release
     commit replaced; `RELEASING.md` step 5 now bumps the two places the section names the
-    version, and this holds them to the version `release check` holds everywhere else, which it
-    cannot see in a README example. An untagged `git+` install or a promise about "the first
-    release" would put a second install command beside the released one.
+    version, and this holds them to the version `scripts/release.py check` holds everywhere else,
+    which it cannot see in a README example. An untagged `git+` install or a promise about "the
+    first release" would put a second install command beside the released one.
 
     Mutation (declared): the PyPI form becomes an untagged `git+` install -> this reddens.
     """
@@ -432,7 +433,7 @@ def test_the_example_configurations_carry_the_running_version(document: Path) ->
     """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
     kept the last release's number is a copy-paste that makes a brand-new project warn.
 
-    `release check` reads six sources and none of them is an example in a document, so
+    `scripts/release.py check` reads six sources and none of them is an example in a document, so
     `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
     the release. This holds them, the way the Install section is held above.
 
@@ -603,8 +604,8 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
 # `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
-# ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
-# over still said fourteen.
+# ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
+# directory over still said fourteen.
 _DOCTOR_SECTION = re.compile(
     r"^## `stayfixed doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
@@ -669,14 +670,13 @@ def _anchor(heading: str) -> str:
 def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
     # section added without its Contents line, or a heading renamed under a stale link, is
-    # a reference a reader cannot navigate. The floor is today's section count (44: the 39 there
-    # were before `assess`, `gate`, `adopt begin`, `adopt promote` and `init --questions`), so a
-    # walk that found nothing, or half, cannot pass.
+    # a reference a reader cannot navigate. The floor is today's count of sections after the
+    # Contents, 39, so a walk that found nothing, or half, cannot pass.
     # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
     text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
     _, _, after = text.partition("## Contents\n")
     contents, _, rest = after.partition("\n## ")
     listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
-    assert len(headings) >= 44, len(headings)
+    assert len(headings) >= 39, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]

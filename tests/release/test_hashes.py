@@ -1,135 +1,77 @@
-"""The record of the three files the harness executes without Python, kept true on every
-commit by `release check` and compared by `doctor files` on the installed copy."""
+"""The record of the three files the harness executes without Python, as an installed stayfixed
+reads it: `digests`, which hashes the files, and `read_record`, which `doctor files` compares the
+installed copy against. Writing the record and its drift belong to the repository's release
+tooling and are tested in `tests/scripts/test_release.py`; the records here are written by hand,
+so what the reader accepts is held without the writer."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 
 import pytest
 
-from stayfixed.cli import build_parser, run
-from stayfixed.errors import Failure
-from stayfixed.release.commands import register
 from stayfixed.release.hashes import (
+    FORMAT,
     HASHED_FILES,
     RECORD,
     UnreadableRecord,
     digests,
-    drift,
     read_record,
-    write_record,
 )
 
 
-def _plugin(tmp_path: Path) -> Path:
+def hashed_plugin(tmp_path: Path) -> Path:
+    """A plugin root holding each hashed file, each one's text a comment naming it."""
     for relative in HASHED_FILES:
         (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / relative).write_text(f"# {relative}\n", encoding="utf-8")
     return tmp_path
 
 
-def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: Path) -> None:
-    # Mutation (declared): `drift` compares the record against itself -> the second
-    # assertion reddens (no drift after the edit).
-    root = _plugin(tmp_path)
-    write_record(root)
-    assert drift(root) == []
-    (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
-    assert drift(root) == [
-        f"{RECORD} does not match hooks/run-hook.sh; run `stayfixed release hashes`"
-    ]
-
-
-def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path) -> None:
-    root = _plugin(tmp_path)
-    write_record(root)
-    document = json.loads((root / RECORD).read_text(encoding="utf-8"))
-    assert document["format"] == 1
-    assert set(document["files"]) == set(HASHED_FILES)
-    assert document["files"] == digests(root)
-    assert read_record(root) == digests(root)
-    # And what `digests` computes, against a literal rather than against itself. Every other
-    # assertion in this module compares one side of the record to the other, so both move
-    # together: measured, `hashlib.sha256(...).hexdigest()` truncated to `[:8]` in
-    # `release/hashes.py` left `tests/release/` at 56 passed — the algorithm and the digest
-    # length are what a downstream verifier depends on and nothing here pinned either.
+def test_each_file_is_hashed_to_its_full_sha256(tmp_path: Path) -> None:
+    # Against a literal rather than against itself. Every other assertion about the record
+    # compares one side of it to the other, so both move together: measured, the digest
+    # truncated to its first eight characters left every record test passing — the algorithm and
+    # the digest length are what a downstream verifier depends on and nothing pinned either.
     # `tests/scaffold/test_manifest.py` makes the same claim the same way.
     #
-    # Mutation (declared): the record records a truncated digest.
-    assert digests(root)["hooks/hooks.json"] == hashlib.sha256(b"# hooks/hooks.json\n").hexdigest()
+    # Mutation (declared): `mutations/`'s "the release record records a truncated digest".
+    root = hashed_plugin(tmp_path)
+    found = digests(root)
+    assert list(found) == list(HASHED_FILES)
+    for relative in HASHED_FILES:
+        expected = hashlib.sha256(f"# {relative}\n".encode()).hexdigest()
+        assert found[relative] == expected, relative
 
 
-def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:
-    root = _plugin(tmp_path)
+def test_no_record_reads_as_none_and_a_record_reads_back_as_written(tmp_path: Path) -> None:
+    # The two answers the callers branch on: no record is `None`, which `doctor` skips, and a
+    # record is the digests it names, keys and values as written. The record is written here by
+    # hand, in the shape the release script writes, so the reader is held without the writer.
+    # Mutation (declared): `mutations/`'s "no release record reads as a record naming nothing"
+    # and "the release record reader truncates the digests it read".
+    root = hashed_plugin(tmp_path)
     assert read_record(root) is None
-    assert drift(root) == [f"{RECORD} is missing; run `stayfixed release hashes`"]
-    write_record(root)
-    (root / "scripts" / "stayfixed").unlink()
-    assert drift(root) == [f"{RECORD} names scripts/stayfixed, which is not in the tree"]
-
-
-def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The command's argv wiring, which nothing else holds: that `hashes` is registered is held
-    # by the README row walk, which parses every row against the real parser, but that `--check`
-    # reaches `drift` and that the bare form writes is only here. No subprocess anywhere — this
-    # command reads and hashes files and nothing else.
-    root = _plugin(tmp_path)
-    parser = build_parser([register])
-    assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 1
-    # stdout: findings are returned here now, as they are in every other area.
-    assert "is missing" in capsys.readouterr().out
-    assert run(["release", "hashes", "--root", str(root)], parser=parser) == 0
-    assert (root / RECORD).is_file()
-    assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 0
-    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
-    assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 1
-    assert "hooks/hooks.json" in capsys.readouterr().out
-
-
-def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The same invariant `tests/release/test_versions.py` states for `release check`, and the
-    # reason this area stopped raising `Failure` to report a finding: the frame drops
-    # `Result.data` for a `Failure`, so the machine-readable object changed shape on exactly
-    # the condition a consumer runs this to detect.
-    #
-    # Mutation (declared): the drift arm returns `{}` for its data -> the key sets differ.
-    root = _plugin(tmp_path)
-    parser = build_parser([register])
-    assert run(["release", "hashes", "--root", str(root)], parser=parser) == 0
-    capsys.readouterr()
-    assert run(["release", "hashes", "--check", "--root", str(root), "--json"], parser=parser) == 0
-    on_success = json.loads(capsys.readouterr().out)
-    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
-    assert run(["release", "hashes", "--check", "--root", str(root), "--json"], parser=parser) == 1
-    on_drift = json.loads(capsys.readouterr().out)
-
-    assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
-    assert on_success["problems"] == []
-    assert on_drift["problems"] == [
-        f"{RECORD} does not match hooks/hooks.json; run `stayfixed release hashes`"
-    ]
-    assert on_drift["files"] == sorted(HASHED_FILES)
+    written = {relative: f"{index:064x}" for index, relative in enumerate(HASHED_FILES)}
+    (root / RECORD).write_text(
+        json.dumps({"format": FORMAT, "files": written}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert read_record(root) == written
 
 
 def test_a_record_that_is_not_json_is_unreadable_rather_than_absent(tmp_path: Path) -> None:
     # The two answers are different on purpose and the callers branch on the difference: an
     # absent record skips in `doctor` and an unreadable one must be red. A decoder error that
     # read as `None` would turn a corrupted record into a quiet skip — the loudest possible
-    # way to say nothing. Mutation (declared): return `None` instead -> both raises redden.
-    root = _plugin(tmp_path)
+    # way to say nothing. Mutation (declared): return `None` instead -> the raise reddens.
+    root = hashed_plugin(tmp_path)
     (root / RECORD).write_text("{not json\n", encoding="utf-8")
     with pytest.raises(UnreadableRecord, match="not valid JSON"):
         read_record(root)
-    with pytest.raises(UnreadableRecord):
-        drift(root)
 
 
 def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
@@ -143,18 +85,16 @@ def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
 
         printf '{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n' > hooks/hashes.json
 
-    `stayfixed release hashes --check`, `stayfixed release check` and `doctor files` all printed
+    the release checks (`hashes --check`, `check`) and `doctor files` all printed
     `stayfixed: internal error: UnicodeDecodeError: …` and exited **2** — the refusal code,
     where a finding is 1 — and `doctor`'s `except UnreadableRecord` arm did not catch it.
 
-    Mutation (declared): the `UnicodeDecodeError` arm is removed -> both raises redden.
+    Mutation (declared): the `UnicodeDecodeError` arm is removed -> the raise reddens.
     """
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     (root / RECORD).write_bytes(b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n')
     with pytest.raises(UnreadableRecord, match="is not UTF-8 text"):
         read_record(root)
-    with pytest.raises(UnreadableRecord):
-        drift(root)
 
 
 def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
@@ -164,7 +104,7 @@ def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
     # `OSError` reached `doctor._guarded` as `warn — this check could not read something it
     # needed`, when the record is present and the answer "present and unreadable" is red.
     # Mutation (declared): the `OSError` arm is removed -> this reddens.
-    root = _plugin(tmp_path)
+    root = hashed_plugin(tmp_path)
     record = root / RECORD
     record.write_text('{"format": 1, "files": {}}\n', encoding="utf-8")
     record.chmod(0o000)
@@ -196,23 +136,10 @@ def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
 )
 def test_a_record_of_the_wrong_shape_is_unreadable(tmp_path: Path, body: str) -> None:
     # Valid JSON of the wrong shape decodes cleanly, so the decoder catch above never sees it —
-    # the same class of hole `versions._parse` had for a lockfile that was valid TOML of the
-    # wrong shape. Mutation (declared): stop checking `format` -> the first case reads as a
-    # record with no files and this reddens.
-    root = _plugin(tmp_path)
+    # the same class of hole the release check's `_parse` had for a lockfile that was valid TOML
+    # of the wrong shape. Mutation (declared): stop checking `format` -> the first case reads
+    # as a record with no files and this reddens.
+    root = hashed_plugin(tmp_path)
     (root / RECORD).write_text(body + "\n", encoding="utf-8")
     with pytest.raises(UnreadableRecord):
         read_record(root)
-
-
-def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path) -> None:
-    # A record that names two of three files is a record saying "this is what the release
-    # shipped" while naming less than it did, and every reader of it afterwards reports drift
-    # against a claim nobody meant to make. Refused at the moment of writing, where the tree
-    # can still be fixed — and nothing is written. Mutation (declared): drop the length check
-    # -> a partial record lands and both assertions redden.
-    root = _plugin(tmp_path)
-    (root / "hooks" / "hooks.json").unlink()
-    with pytest.raises(Failure, match=re.escape("hooks/hooks.json")):
-        write_record(root)
-    assert not (root / RECORD).exists(), "a refusal wrote a partial record anyway"

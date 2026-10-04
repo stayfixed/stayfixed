@@ -28,7 +28,7 @@ An area that needs something absent from this list grows it deliberately, in a c
 which area and why.
 
 **What is not here.** The commit rules (`offending_lines`, `check_range`, `strip_message` and
-their records), the hygiene and audit surface, the scanner a guard is built on, the failure
+their records), the hygiene surface, the scanner a guard is built on, the failure
 attribution and the background-cleanup judge stay in the modules that define them, each
 reachable there: no other area imports them, and a name published for a consumer that does not
 exist is a claim nothing checks. `assess` needs one name from this area, `commit_gate`, and it is

@@ -2,32 +2,33 @@
 each once it passes.
 
 `[stayfixed] state` is the lifecycle (`initialised`, `adopting`, `installed`) and `enforced` the
-gates promoted while adopting. `begin` checks an adoption plan and marks an `initialised`
-project `adopting`; `promote` runs gates strictly on the tree as it is and adds those that pass
-to `enforced`. A custom gate is promoted only once the base has its command, since `stayfixed
-gate` runs it only then: until it lands there it is not run, and waits. Promoting the last
-configured gate writes `installed` and empties the list, which under `installed` means every
-configured gate, so a gate added later enforces from its first run — for a custom gate, the
-first run after it lands on the base, since `stayfixed gate` runs none before. The state never
-moves back: there is no demotion, and loosening is an owner's edit of `stayfixed.toml`, which
-`stayfixed gate` refuses to a pull request while anything enforces.
+gates promoted while adopting. `promote` runs gates strictly on the tree as it is and adds those
+that pass to `enforced`, moving an `initialised` project to `adopting` with the first gate it
+promotes. An `adopting` project with an empty `enforced` is a valid shape too, written by hand or
+left by an earlier release, and `promote` takes it from there the same way. A custom gate is
+promoted only once the base has its command, since `stayfixed gate` runs it only then: until it
+lands there it is not run, and waits. Promoting the last configured gate writes `installed` and
+empties the list, which under `installed` means every configured gate, so a gate added later
+enforces from its first run — for a custom gate, the first run after it lands on the base, since
+`stayfixed gate` runs none before. The state never moves back: there is no demotion, and loosening
+is an owner's edit of `stayfixed.toml`, which `stayfixed gate` refuses to a pull request while
+anything enforces.
 
 **A gate that reads a file git does not track is never promoted.** The `docs` and `trail` gates
 judge tracked files: CI checks out nothing else, so one that passes here over a file git does not
 track would fail every pull request there. `stayfixed.assess.tracked` turns such a gate's result
 into one that could not judge the tree, and a gate that could not judge is not promoted.
 
-**One write, at one place.** Both verbs change `stayfixed.toml`'s `state` and `enforced` through
+**One write, at one place.** `promote` changes `stayfixed.toml`'s `state` and `enforced` through
 `rewrite_owned` and nothing else, so the manifest's record of an untouched document is
-re-stamped with it and `uninstall` still takes the file back. Neither asks the ignore guard:
+re-stamped with it and `uninstall` still takes the file back. It does not ask the ignore guard:
 `stayfixed.toml` is a fixed name, which that guard exempts so that a person may keep it out of
 git. Every refusal of the write that can be known in advance — a name, a gate already
 enforcing, nothing left to promote, a document the editor cannot rewrite, a manifest the
 re-stamp cannot read — comes before the first gate runs, because a custom gate is a command and
 running it is not free. What is left is the disk refusing the write itself.
 
-**What prints.** Gate names, which the loader holds to a grammar, counts and fixed text; never a
-plan's path or text.
+**What prints.** Gate names, which the loader holds to a grammar, counts and fixed text.
 """
 
 from __future__ import annotations
@@ -39,27 +40,13 @@ from pathlib import Path
 from stayfixed.assess.gates import GateContext, GateResult, run_gates
 from stayfixed.assess.rule import read_base_gates
 from stayfixed.assess.tracked import Unseen, as_ci_sees
-from stayfixed.config.layout import is_adoption_plan
 from stayfixed.config.loader import read_document
 from stayfixed.config.owned import OwnedKeyError, UnparsedDocument, rewrite
 from stayfixed.config.schema import CONFIG_CHECK, Config
-from stayfixed.docs.api import declared_state, lint
-from stayfixed.errors import Failure, Refusal, StayfixedError
+from stayfixed.errors import Refusal, StayfixedError
 from stayfixed.project.api import rewrite_owned
 from stayfixed.scaffold import Manifest
 
-NOT_AN_ADOPTION_PLAN = (
-    "the adoption plan must be a markdown file directly under [paths] plans, with stayfixed as "
-    "a word of its name"
-)
-# Fixed text: the path is the caller's own input, and the name already keeps the rule.
-NO_SUCH_PLAN = "there is no adoption plan at the path given; check its spelling, the date included"
-PLAN_FAILS = "the adoption plan has {count} finding(s) under `stayfixed plan check`; fix them first"
-NO_TRAIL_STATE = (
-    "the adoption plan declares no state in the roadmap's trail, so the listing records it as "
-    "delivered; give its row a state under [states] in the trail.toml beside the roadmap, such "
-    "as `in progress`, then run `stayfixed docs trail`"
-)
 NOT_A_GATE = "every name must be a configured gate, and config is the configuration check"
 NAMED_ENFORCES = (
     "one of the gates named already enforces; name only gates that do not yet, or none for "
@@ -108,36 +95,6 @@ class Transition:
     def unanswered(self) -> tuple[str, ...]:
         """Each gate that could not run."""
         return tuple(r.name for r in self.results if not r.answered)
-
-
-def begin(root: Path, config: Config, plan: Path) -> Transition:
-    """Check `plan` as an adoption plan and mark an `initialised` project `adopting`.
-
-    Past `initialised` the state is kept and nothing is written: a project may carry any number
-    of adoption plans, and nothing records which one began it. While the project runs the
-    `trail` gate the plan's trail row must declare a state, since the listing would otherwise
-    record the plan as delivered.
-    """
-    root = root.resolve()
-    resolved = plan.resolve()
-    if not resolved.is_relative_to(root):
-        raise Refusal(NOT_AN_ADOPTION_PLAN)
-    relative = resolved.relative_to(root).as_posix()
-    if not is_adoption_plan(config, relative):
-        raise Refusal(NOT_AN_ADOPTION_PLAN)
-    if not resolved.is_file():
-        raise Refusal(NO_SUCH_PLAN)
-    findings = lint(root, config, plans=[resolved]).findings
-    if findings:
-        raise Failure(PLAN_FAILS.format(count=len(findings)))
-    # A first trail listing records a row with no state as `delivered`, and says nothing.
-    if "trail" in config.gate_names and declared_state(root, config, relative) is None:
-        raise Failure(NO_TRAIL_STATE)
-    state = config.stayfixed.state
-    if state != "initialised":
-        return Transition(state, state)
-    rewrite_owned(root, {("stayfixed", "state"): "adopting"})
-    return Transition(state, "adopting")
 
 
 def _refuse_an_uneditable_document(root: Path, config: Config) -> None:

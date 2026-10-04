@@ -18,20 +18,18 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > what stands between a repository and enforcement; `stayfixed gate`, which judges a change
 > against what its base branch enforces; `stayfixed adopt`, which enforces a repository's gates
 > as each one passes; and the first stack profile, `python`, whose rules every agent is handed
-> and whose checks `stayfixed assess` runs. The hooks file that wires all
-> of it into a session ships too, so installing the plugin is enough to make the guards fire
-> and the memory bundles arrive. The first skills ship with them, and so do two command groups
-> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
-> `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form
-> of the gate, and adapters for Cursor or Hermes — each leaves this list in the change that
-> ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start a
-> project by hand, which `init` reads as your answers — a run that writes the file itself writes
-> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a
-> shipped profile's markers or `--profile` names one, beside `[project] name`, `base_branch`
-> and `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci`
-> asks for none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]`
-> table only when `--local` does.
+> and whose checks `stayfixed assess` runs. The hooks file that wires all of it into a session
+> ships too, so installing the plugin is enough to make the guards fire and the memory bundles
+> arrive. The first skills ship with them, and so does one command meant for a machine rather
+> than for you — `hook`, which dispatches one harness event. **Not yet:** the memory MCP server,
+> a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
+> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three keys
+> that are enough to start a project by hand, which `init` reads as your answers — a run that
+> writes the file itself writes `[stayfixed] version`, `state` and `agents`, and `profile` when
+> the repository carries a shipped profile's markers or `--profile` names one, beside
+> `[project] name`, `base_branch` and `release_branch`, a `[ci]` table only when it has a released
+> commit to pin or `--no-ci` asks for none, a `[memory]` table only when `--memory-mode` answers
+> it, and an `[artifacts]` table only when `--local` does.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -356,7 +354,6 @@ stayfixed guard bg-cleanup                             # judge one Bash call, re
 stayfixed commit check --range origin/main..HEAD       # attribution lines in commit messages
 stayfixed commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 stayfixed test hygiene                                 # the faults that make a red run unattributable
-stayfixed test audit-entrypoints                       # tests that never exercise what they name
 stayfixed test attribute --command "uv sync --locked && uv run --locked pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
@@ -386,7 +383,6 @@ stayfixed assess                                       # every gate and probe; t
 stayfixed assess --builtin                             # the same, running none of the repository's own gate commands
 stayfixed gate                                         # judge stayfixed.toml against the base, then run every configured gate
 stayfixed gate --only docs --only config               # a few of them; config is the configuration check
-stayfixed adopt begin docs/plans/2026-09-23-stayfixed-adoption.md   # check the adoption plan; the project is adopting
 stayfixed adopt promote docs                           # enforce one gate, if it passes now
 stayfixed adopt promote                                # enforce every gate that passes now; name the rest
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
@@ -395,13 +391,8 @@ stayfixed adopt promote --builtin                      # the same, running none 
 stayfixed doctor                                       # sixteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
-# Internal and release
+# Internal
 stayfixed hook SessionStart                            # dispatch one harness hook event (internal)
-stayfixed release check                                # one version everywhere (this repository's own)
-stayfixed release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
-stayfixed release notes --version 1.2.3 --draft        # render the section towncrier would write
-stayfixed release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
-stayfixed release hashes --check                       # the shipped files still match the release record
 ```
 
 Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
@@ -411,15 +402,13 @@ other than the default); `memory` commands and `docs check` take `--store` as we
 or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
 anywhere and prints one machine-readable object instead of one line.
 The commands that report a list of
-findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
+findings — `bugs check`, `docs check`, `memory refs`, `plan check` —
 all spell it `findings`, whatever their summary line calls them; every other command's keys
 are its own and are listed with it in [docs/cli.md](docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
-internal error. A caller must never read 2 as permission. Two commands are deliberately
-outside that rule. `stayfixed test audit-entrypoints` exits **0** even when it has findings,
-and lists them under `--json`, because its candidates are for triage and gating on them
-is not shipped yet. And `stayfixed hook` refuses with **2** on an internal
+internal error. A caller must never read 2 as permission. One command is deliberately
+outside that rule: `stayfixed hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 stayfixed must not cost you that. A handler's own deny is a decision, not a breakage, and
