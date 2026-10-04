@@ -463,10 +463,10 @@ def _files(context: Context) -> Row:
     # equal", and a name gets in for three different reasons: the file is absent from the
     # installation, the record does not name it, or the bytes differ. A file that is present
     # and byte-for-byte what the release shipped was being reported as "does not match the
-    # release record" whenever the record was the partial half — which is a real state
-    # `release.hashes` anticipates in as many words ("a record naming two of three reads as a
-    # clean comparison for the third"). Telling the owner their file is wrong when the record
-    # is the wrong one sends them to reinstall over the one artifact that is correct.
+    # release record" whenever the record was the partial half — a record the release script
+    # refuses to write (`RELEASING.md`, under `hashes`), and one an installation can still carry.
+    # Telling the owner their file is wrong when the record is the wrong one sends them to
+    # reinstall over the one artifact that is correct.
     #
     # All three lists are drawn from `HASHED_FILES`, which is stayfixed's own constant, so
     # printing their names is this module's own text — the rule the `theirs` count below keeps.
@@ -1356,7 +1356,7 @@ NO_WORKFLOW_REMEDY = (
 def _ref_is_released(context: Context, ref: str) -> Row:
     """What the public repository's tags say about `[ci] ref`, in one `git ls-remote`.
 
-    The alias arm asks for the tag listing and the sha arm asks the release area's own rule
+    The alias arm asks for the tag listing and the sha arm asks the `release` package's own rule
     (`is_released`, which filters to `vX.Y.Z` so the mutable alias cannot make a commit look
     released); the two arms are exclusive, so either way the row launches `git` exactly once.
     """
@@ -1398,7 +1398,7 @@ def _ci_ref(context: Context) -> Row:
     pins the same ref.
 
     **The value never reaches a subprocess.** `init` records it as a sha, and a sha cannot be
-    asked for by name, so the row asks the release area which commits the public repository's
+    asked for by name, so the row asks the `release` package which commits the public repository's
     `v*` tags name -- a constant URL, a constant pattern -- and compares in Python. The alias is
     reported as what it is, a mutable opt-in; and the rendered workflow is read because the pin
     GitHub acts on is the file, not the configuration beside it.

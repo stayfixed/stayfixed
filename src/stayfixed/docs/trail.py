@@ -377,16 +377,6 @@ def rebuild(text: str, root: Path, config: Config, trail: Trail) -> str:
     return head + _PREAMBLE + render_listing(root, config, trail) + tail.lstrip("\n")
 
 
-def declared_state(root: Path, config: Config, relative: str) -> str | None:
-    """The state `trail.toml` declares for the document at `relative`, a root-relative path
-    directly in `[paths] specs` or `plans`, or `None` when it declares none, which the listing
-    would then show as `delivered`."""
-    document = PurePosixPath(relative)
-    return read_trail(trail_path(root, config)).states.get(
-        f"{document.parent.name}/{document.name}"
-    )
-
-
 def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     """The `trail` gate's whole composition: the roadmap's listing, as `rebuild` would write it.
 

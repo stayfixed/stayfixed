@@ -698,35 +698,8 @@ reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
 ]
 
-# `stayfixed adopt begin` and `stayfixed adopt promote`: the state machine's one write is
-# `stayfixed.toml`'s `state` and `enforced`, and each guard below decides whether it happens.
-[[mutation]]
-name = "adopt begin accepts a plan not named as an adoption plan"
-file = "src/stayfixed/assess/state.py"
-before = "    if not is_adoption_plan(config, relative):"
-after = "    if False:"
-reddens = [
-  "tests/assess/test_state.py::test_begin_refuses_a_plan_that_is_not_an_adoption_plan",
-]
-
-[[mutation]]
-name = "adopt begin accepts a plan that fails plan check"
-file = "src/stayfixed/assess/state.py"
-before = "    if findings:"
-after = "    if False:"
-reddens = [
-  "tests/assess/test_state.py::test_begin_fails_an_adoption_plan_that_fails_plan_check",
-]
-
-[[mutation]]
-name = "adopt begin moves an installed project back to adopting"
-file = "src/stayfixed/assess/state.py"
-before = '    if state != "initialised":'
-after = "    if False:"
-reddens = [
-  "tests/assess/test_state.py::test_begin_never_moves_an_installed_project_back",
-]
-
+# `stayfixed adopt promote`: the state machine's one write is `stayfixed.toml`'s `state` and
+# `enforced`, and each guard below decides whether it happens.
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/stayfixed/assess/state.py"
@@ -806,6 +779,15 @@ reddens = [
   "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
 ]
 
+# `adopt promote` is the one adoption command: it moves a project out of `initialised` itself, so
+# a second one would be a step every project pays for and nothing needs.
+[[mutation]]
+name = "the adopt group registers a command besides promote"
+file = "src/stayfixed/assess/commands.py"
+before = '    promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))'
+after = '    adopt_sub.add_parser("begin"); promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))'
+reddens = ["tests/test_cli.py::test_adopt_has_promote_and_nothing_else"]
+
 # The write re-stamps the manifest's record, so a manifest it cannot read refuses it; read
 # before the gates, that refusal comes before any custom command runs.
 [[mutation]]
@@ -828,14 +810,16 @@ reddens = [
   "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
 ]
 
-# `adopt begin` refuses a plan path outside the project root.
+# A project 0.2.0's `adopt begin` left is `adopting` with no `enforced` line, and promotion takes
+# it from there as it takes an initialised one; refused, that project could never be promoted.
 [[mutation]]
-name = "adopt begin reads a plan outside the root"
+name = "promote refuses an adopting project that enforces nothing yet"
 file = "src/stayfixed/assess/state.py"
-before = "    if not resolved.is_relative_to(root):"
-after = "    if False:"
+before = "    state = config.stayfixed.state\n    wanted = ["
+after = "    state = config.stayfixed.state\n    if state == \"adopting\" and not enforcing and configured:\n        raise Refusal(ALL_ENFORCE)\n    wanted = ["
 reddens = [
-  "tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent",
+  "tests/assess/test_state.py::test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting[adopting]",
+  "tests/assess/test_state.py::test_uninstall_after_a_promotion_takes_stayfixed_toml_back[adopting]",
 ]
 
 # The two keys state one fact and the editor edits them one at a time, so its own refusal names
@@ -848,23 +832,6 @@ after = "        raise"
 reddens = [
   "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
 ]
-
-# `adopt begin` refuses a plan path outside the root or one that names no file.
-[[mutation]]
-name = "adopt begin reads a plan that is not there"
-file = "src/stayfixed/assess/state.py"
-before = "    if not resolved.is_file():"
-after = "    if False:"
-reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent"]
-
-# A first trail listing records a row with no declared state as `delivered`, without a word, and
-# the first document of a fresh project is its adoption plan.
-[[mutation]]
-name = "adopt begin accepts a plan whose trail row declares no state"
-file = "src/stayfixed/assess/state.py"
-before = '    if "trail" in config.gate_names and declared_state(root, config, relative) is None:'
-after = "    if False:"
-reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_row_declares_no_state"]
 
 # A promotion enforces what the pull request carrying it runs, and `stayfixed gate` runs a custom
 # gate only with the base's own command: one the base lacks is neither run nor promoted, and a

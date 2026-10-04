@@ -1,5 +1,5 @@
-"""`stayfixed adopt begin` and `stayfixed adopt promote`: the state machine that moves one gate at a
-time from advisory to enforcing, over a repository `init --yes` wrote and two commits made.
+"""`stayfixed adopt promote`: the state machine that moves one gate at a time from advisory to
+enforcing, over a repository `init --yes` wrote and two commits made.
 
 Every promotion is judged against the first commit, named by its full id: the fixture has an
 origin but no remote-tracking ref, so the default base does not exist and `plan` and `commit`
@@ -10,19 +10,19 @@ message, and all five built-in gates pass on the tree as `_project` leaves it.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
 
 from stayfixed.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
 from stayfixed.assess.report import BUILTIN_FINDINGS_ELSEWHERE, FINDINGS_ELSEWHERE
-from stayfixed.assess.state import NO_SUCH_PLAN, Transition, begin, promote
+from stayfixed.assess.state import Transition, promote
 from stayfixed.config.loader import CONFIG_FILE, load, preset_defaults
 from stayfixed.config.owned import OwnedKeyError
 from stayfixed.config.schema import BUILTIN_GATES, Config
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import Refusal
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.project.api import rewrite_owned
 from stayfixed.project.templates import CONFIG_ARTIFACT
 from stayfixed.project.upgrade import upgrade
 from stayfixed.scaffold import Manifest, ManifestError, digest
@@ -57,26 +57,12 @@ def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt stayfixed")
     (root / ADOPTION).write_text(PLAN, encoding="utf-8")
-    _declare(root, "in progress")
     git(root, "add", "-A")
     code, _, err = cli(root, tmp_path, "docs", "trail")
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the stayfixed adoption plan")
     return root, git(root, "rev-parse", "HEAD~1").strip()
-
-
-TRAIL = Path(preset_defaults("widget").paths.roadmap).parent / "trail.toml"
-ROW = f"{Path(PLANS).name}/{Path(ADOPTION).name}"
-
-
-def _declare(root: Path, state: str | None) -> None:
-    """Give the adoption plan's trail row `state` under `[states]`, or none."""
-    text = (root / TRAIL).read_text(encoding="utf-8")
-    text = "".join(line for line in text.splitlines(keepends=True) if not line.startswith('"'))
-    if state is not None:
-        text += f'"{ROW}" = "{state}"\n'
-    (root / TRAIL).write_text(text, encoding="utf-8")
 
 
 def _config(root: Path, tmp_path: Path) -> Config:
@@ -92,6 +78,24 @@ def _set(root: Path, old: str, new: str) -> None:
     text = _document(root)
     assert text.count(old) == 1, old
     (root / CONFIG_FILE).write_text(text.replace(old, new), encoding="utf-8")
+
+
+# Where a promotion may start: a project `init` left, and one an `adopt begin` left in 0.2.0, the
+# release before promotion moved a project out of `initialised` itself. That command wrote
+# `state = "adopting"` and no `enforced` line, through the owned-key rewrite, and an upgrade
+# leaves such a document as it is.
+STARTS = pytest.mark.parametrize("start", ["initialised", "adopting"])
+
+
+def _start(root: Path, start: str) -> None:
+    """Leave the project at `start`; `adopting` is written as 0.2.0's `adopt begin` wrote it, the
+    manifest's record re-stamped with it, so `uninstall` still knows the document as its own."""
+    if start == "initialised":
+        return
+    before = _document(root)
+    rewrite_owned(root, {("stayfixed", "state"): "adopting"})
+    assert _document(root) == before.replace('state = "initialised"\n', 'state = "adopting"\n')
+    assert "\nenforced =" not in _document(root)
 
 
 def _land(root: Path, subject: str = "chore: a custom gate") -> str:
@@ -113,101 +117,41 @@ def _with_marker_gate(root: Path) -> str:
     return _land(root)
 
 
-def test_begin_marks_adopting_and_keeps_every_other_byte_and_the_record(tmp_path: Path) -> None:
-    # Mutation: `begin` calling `rewrite_owned` with `"installed"` -> the byte equality reddens;
-    # skipping the manifest's re-stamp in `rewrite_owned` -> the digest equality reddens.
-    root, _ = _project(tmp_path)
+def test_a_promotion_keeps_every_other_byte_and_the_record(tmp_path: Path) -> None:
+    # The state machine's one write is `state` and `enforced`, through `rewrite_owned`, so the
+    # manifest's record of the untouched document is re-stamped with it. Mutation: `_write`
+    # passing `"installed"` -> the byte equality reddens; skipping the manifest's re-stamp in
+    # `rewrite_owned` -> the digest equality reddens.
+    root, base = _project(tmp_path)
     before = _document(root)
-    transition = begin(root, _config(root, tmp_path), root / ADOPTION)
-    assert (transition.before, transition.after) == ("initialised", "adopting")
+    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
     after = _document(root)
     assert before.count('state = "initialised"') == 1
-    assert after == before.replace('state = "initialised"', 'state = "adopting"')
+    assert before.count("[stayfixed]\n") == 1
+    expected = before.replace('state = "initialised"', 'state = "adopting"')
+    assert after == expected.replace("[stayfixed]\n", '[stayfixed]\nenforced = ["docs"]\n')
     record = Manifest.read(root).get(CONFIG_ARTIFACT)
     assert record is not None
     assert record.sha256 == digest(after)
 
 
-def test_begin_refuses_a_plan_that_is_not_an_adoption_plan(tmp_path: Path) -> None:
-    # Mutation (declared): the name check made `if False:` -> both plans pass `plan check`, so
-    # `begin` marks the project adopting instead of refusing.
-    root, _ = _project(tmp_path)
-    at_root = root / "2026-09-24-stayfixed-adoption.md"
-    unnamed = root / PLANS / "2026-09-24-widget.md"
-    for plan in (at_root, unnamed):
-        plan.write_text(PLAN, encoding="utf-8")
-        with pytest.raises(Refusal, match="adoption plan"):
-            begin(root, _config(root, tmp_path), plan)
-        assert _config(root, tmp_path).stayfixed.state == "initialised"
-
-
-def test_begin_refuses_a_plan_outside_the_root_or_absent(tmp_path: Path) -> None:
-    # Both are refused before `plan check` reads anything, and neither message names the path: it
-    # would print what the caller typed back to it. An absent plan whose name keeps the rule is
-    # told it is not there, not that its name is wrong, so a typo in the date reads as one.
-    # Mutations (declared): the containment check made `if False:` -> the plan outside the root
-    # raises `ValueError` from `relative_to`; the file check made `if False:` -> the absent plan
-    # reaches `plan check`, which fails rather than refuses.
-    root, _ = _project(tmp_path)
-    outside = tmp_path / PLANS / "2026-09-24-stayfixed-adoption.md"
-    outside.parent.mkdir(parents=True)
-    outside.write_text(PLAN, encoding="utf-8")
-    with pytest.raises(Refusal, match="adoption plan must be"):
-        begin(root, _config(root, tmp_path), outside)
-    with pytest.raises(Refusal, match=re.escape(NO_SUCH_PLAN)):
-        begin(root, _config(root, tmp_path), root / PLANS / "2026-09-25-stayfixed-adoption.md")
-    assert _config(root, tmp_path).stayfixed.state == "initialised"
-
-
-def test_begin_refuses_a_plan_whose_trail_row_declares_no_state(tmp_path: Path) -> None:
-    # A first trail listing records a document with no declared state as `delivered`, and says
-    # nothing: the adoption plan would sit in the roadmap as shipped work before a line of it
-    # ran. `begin` holds the plan to a declared state while the project runs the `trail` gate.
-    # Mutation (declared): the check made `if False:` -> the project is marked adopting.
-    root, _ = _project(tmp_path)
-    _declare(root, None)
-    before = _document(root)
-    with pytest.raises(Failure, match="declares no state"):
-        begin(root, _config(root, tmp_path), root / ADOPTION)
-    assert _document(root) == before
-    _declare(root, "delivered")
-    transition = begin(root, _config(root, tmp_path), root / ADOPTION)
-    assert transition.after == "adopting"
-
-
-def test_begin_fails_an_adoption_plan_that_fails_plan_check(tmp_path: Path) -> None:
-    # Mutation (declared): `if findings:` made `if False:` -> the plan with no scope line is
-    # accepted and the project marked adopting.
-    root, _ = _project(tmp_path)
-    before = _document(root)
-    (root / ADOPTION).write_text("# no scope, no premise\n", encoding="utf-8")
-    with pytest.raises(Failure, match="plan check"):
-        begin(root, _config(root, tmp_path), root / ADOPTION)
-    assert _document(root) == before
-
-
-def test_begin_never_moves_an_installed_project_back(tmp_path: Path) -> None:
-    # Mutation (declared): `if state != "initialised":` made `if False:` -> `begin` writes
-    # `adopting` over `installed`.
-    root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
-    before = _document(root)
-    transition = begin(root, _config(root, tmp_path), root / ADOPTION)
-    assert (transition.before, transition.after) == ("installed", "installed")
-    assert _document(root) == before
-
-
-def test_a_named_gate_that_passes_is_enforced_without_begin_first(tmp_path: Path) -> None:
-    # Promotion is its own step: nothing requires `begin` first, and the first promotion moves
-    # an initialised project to adopting, since the loader refuses a list under `initialised`.
+@STARTS
+def test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting(
+    tmp_path: Path, start: str
+) -> None:
+    # Promotion is the one adoption step: the first promotion moves an initialised project to
+    # adopting, since the loader refuses a list under `initialised`, and a project an earlier
+    # release's `adopt begin` left adopting with no list is promoted from there the same way.
     # Mutation: `after` kept at the current state when not installing -> `enforced` is written
-    # under `initialised`, and reloading the document refuses it.
+    # under `initialised`, and reloading the document refuses it. Mutation (declared): `promote`
+    # refusing an adopting project that enforces nothing yet -> the `adopting` case reddens.
     root, base = _project(tmp_path)
+    _start(root, start)
     transition = promote(
         root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml"
     )
     assert (transition.before, transition.after, transition.promoted) == (
-        "initialised",
+        start,
         "adopting",
         ("docs",),
     )
@@ -310,20 +254,19 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
     assert "enforced = []" in _document(root)
 
 
-@pytest.mark.parametrize("begun", [False, True], ids=["initialised", "adopting"])
+@STARTS
 def test_a_project_with_no_gate_is_refused_rather_than_installed(
-    tmp_path: Path, begun: bool
+    tmp_path: Path, start: str
 ) -> None:
     # With nothing configured nothing is wanted, and the completion that is right for an
     # adopting project whose every gate enforces would install one that never earned a gate,
-    # begun or not. Mutation (declared): the refusal's condition made `if False:` -> the project
-    # is written `installed`.
+    # adopting or not. Mutation (declared): the refusal's condition made `if False:` -> the
+    # project is written `installed`.
     root, base = _project(tmp_path)
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write("\n[gates]\nbuiltin = []\n")
-    if begun:
-        begin(root, _config(root, tmp_path), root / ADOPTION)
-        assert _config(root, tmp_path).stayfixed.state == "adopting"
+    _start(root, start)
+    assert _config(root, tmp_path).stayfixed.state == start
     before = _document(root)
     with pytest.raises(Refusal, match="configures no gate"):
         promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
@@ -599,28 +542,11 @@ def test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run(tmp_path: P
     assert not (root / MARKER).exists()
 
 
-def test_adopt_begin_json_carries_the_state_on_each_side_and_nothing_else(tmp_path: Path) -> None:
-    # `begin` runs no gate, so its document has no gate keys to leave empty. Mutation: passing
-    # the promotion's document to `Result` -> the key set reddens.
-    root, _ = _project(tmp_path)
-    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION), "--json")
-    assert code == 0, err
-    printed = json.loads(out)
-    assert {k: v for k, v in printed.items() if k != "summary"} == {
-        "before": "initialised",
-        "after": "adopting",
-    }
-
-
 def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
     # Mutation (declared): the write made to carry `state` alone -> `enforced` stays empty, so
     # the second `gate` still prints `docs: advisory`.
     root, _ = _project(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
-    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION))
-    assert code == 0, err
-    assert "adopting" in out
-    assert _config(root, tmp_path).stayfixed.state == "adopting"
     code, out, err = cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
     assert (code, out.splitlines()) == (0, ["docs: advisory, 0 finding(s)"]), err
     code, out, err = cli(root, tmp_path, "adopt", "promote", "docs", "--base", head, "--json")
@@ -709,17 +635,6 @@ def test_adopt_promote_with_no_base_judges_against_the_base_branch(tmp_path: Pat
     assert json.loads(out)["promoted"] == ["plan"]
 
 
-def test_adopt_begin_prints_no_path_and_exits_2_on_a_plan_that_is_not_one(tmp_path: Path) -> None:
-    # The plan's path is caller input, and a refusal names the rule rather than echoing it.
-    root, _ = _project(tmp_path)
-    stray = root / "2026-09-24-stayfixed-adoption.md"
-    stray.write_text(PLAN, encoding="utf-8")
-    code, out, err = cli(root, tmp_path, "adopt", "begin", str(stray))
-    assert code == 2
-    assert "adoption plan" in err
-    assert str(stray) not in out + err
-
-
 def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Path) -> None:
     # A custom gate whose command cannot start stays advisory, is named as one that could not
     # run, and nothing is written. Mutation: the unanswered names left out of `advisory` in
@@ -739,7 +654,7 @@ def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Pa
 
 
 def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
-    # The two verbs move `state` and `enforced` and nothing `upgrade` owns, so `upgrade` moves
+    # Promotions move `state` and `enforced` and nothing `upgrade` owns, so `upgrade` moves
     # no key afterwards and plans what it planned before the adoption (the roadmap `docs trail`
     # rewrote is hand-edited to it) and nothing more. Mutation: the promotion's write also
     # setting `[stayfixed] version` to an older release -> `upgrade` plans to move it back.
@@ -757,19 +672,26 @@ def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
         return [(a.artifact_id, str(a.verb), a.target) for a in report.footprint.actions]
 
     before = planned()
-    begin(root, _config(root, tmp_path), root / ADOPTION)
     promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
     promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert _config(root, tmp_path).stayfixed.state == "installed"
     assert planned() == before
 
 
-def test_uninstall_after_a_promotion_takes_stayfixed_toml_back(tmp_path: Path) -> None:
+@STARTS
+def test_uninstall_after_a_promotion_takes_stayfixed_toml_back(tmp_path: Path, start: str) -> None:
     # The record was re-stamped at each write, so the promoted document is still one stayfixed
-    # wrote. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
+    # wrote, from either start: the bare promotion installs the project, and `uninstall` takes
+    # the file back. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
+    # Mutation (declared): `promote` refusing an adopting project that enforces nothing yet ->
+    # the `adopting` case reddens.
     root, base = _project(tmp_path)
-    begin(root, _config(root, tmp_path), root / ADOPTION)
-    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
+    _start(root, start)
+    first = promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
+    assert (first.after, first.promoted) == ("adopting", ("docs",))
+    last = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
+    assert (last.before, last.after) == ("adopting", "installed")
+    assert _config(root, tmp_path).stayfixed.state == "installed"
     code, _, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()

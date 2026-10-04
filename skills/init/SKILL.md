@@ -53,6 +53,6 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 - **A `CI:` line saying the workflow was skipped is the whole answer about CI.** Before the
   first stayfixed release there is no commit to pin, and the sentence says so.
 - **Never hand-edit `[stayfixed] version`, `state`, `enforced`, `[ci] ref` or
-  `.stayfixed/manifest.json`.** They are the tool's: the adoption commands move `state` and
+  `.stayfixed/manifest.json`.** They are the tool's: `stayfixed adopt promote` moves `state` and
   `enforced`, and `stayfixed upgrade` moves the version and the ref.
 - **The undo is `stayfixed uninstall`.** Run `stayfixed uninstall --dry-run` first.

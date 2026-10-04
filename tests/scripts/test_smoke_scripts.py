@@ -6,10 +6,8 @@ mismatch is reported and a match is not — so a green CI row means the plugin, 
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import shutil
-import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -17,18 +15,14 @@ import pytest
 
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
+from tests.gitfixture import needs_git
+from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
 def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load(SCRIPTS / f"{name}.py", name)
 
 
 def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None = None) -> Path:

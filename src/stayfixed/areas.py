@@ -33,7 +33,7 @@ def _has_submodule(area: str, submodule: str) -> bool:
     That saving is latent rather than realised on today's frame: `main()` runs
     `discover_registrars()` to build the full argparse parser before argparse can dispatch to
     `hook`, and building that parser already imports `stayfixed.config`, `stayfixed.config.schema`,
-    `stayfixed.presets`, `stayfixed.release` and `stayfixed.release.versions` — so by the time this
+    `stayfixed.presets`, `stayfixed.release` and `stayfixed.release.pins` — so by the time this
     probe runs for `hooks`, those packages are already loaded. The probe would only pay off if
     discovery ever registered just the area named on the command line instead of the full set.
     """

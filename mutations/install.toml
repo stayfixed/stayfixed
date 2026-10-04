@@ -890,7 +890,7 @@ file = "src/stayfixed/doctor/checks.py"
 before = 'from stayfixed.setup.api import USER_SETTINGS'
 after = 'from stayfixed.setup.machine import USER_SETTINGS'
 reddens = [
-  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
@@ -943,6 +943,37 @@ before = "    require_overlay(root, because=NOT_AN_OVERLAY)"
 after = "    pass"
 reddens = [
   "tests/overlay/test_create.py::test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it",
+]
+
+# The overlay's ledger is committed, so a retired file's recorded target is repository-chosen, and
+# `overlay init` names one it leaves on a line a terminal and a CI runner read.
+[[mutation]]
+name = "overlay init prints a recorded path it leaves unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '            notes.append(f"left {quoted(action.target)} ({action.reason})")'
+after = '            notes.append(f"left {action.target} ({action.reason})")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_retired_file_s_recorded_path_escaped",
+]
+
+# A record whose target only case-folds to a retired file's place is removed, or left, at the
+# target it names, which may hold letters outside the path grammar.
+[[mutation]]
+name = "overlay init prints a recorded path it removes unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")'
+after = '        notes.append(f"removed {action.target}, which this release no longer ships")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[removed]",
+]
+
+[[mutation]]
+name = "overlay init prints a recorded path it cannot remove unescaped"
+file = "src/stayfixed/overlay/create.py"
+before = '            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")'
+after = '            notes.append(f"left {action.target}: cannot be removed: {fsops.said(exc)}")'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[cannot-remove]",
 ]
 
 # `PATH` is read from the context because it is repository-authored; a path component is
@@ -1311,9 +1342,9 @@ reddens = [
 ]
 
 # `[ci] ref` is repository-authored and must be the commit of a released stayfixed. Which commits
-# those are is the release area's own rule (`is_released`, semver tags only), and the row's verdict
-# is what a reader acts on: a ref no released tag names is a project pinned to a gate nobody
-# shipped, reported green.
+# those are is the `release` package's own rule (`is_released`, semver tags only), and the row's
+# verdict is what a reader acts on: a ref no released tag names is a project pinned to a gate
+# nobody shipped, reported green.
 [[mutation]]
 name = "a ci-ref that is no released commit is reported as a released commit"
 file = "src/stayfixed/doctor/checks.py"
@@ -1694,8 +1725,8 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
 ]
 
-# A removal that failed after the manifests were renamed exited with their new records only in
-# memory, so the renamed manifests read as hand-edited to every later `upgrade`.
+# A stop after the manifests were renamed exited with their new records only in memory, so the
+# renamed manifests read as hand-edited to every later `upgrade`.
 [[mutation]]
 name = "overlay init records its renames only after the removal"
 file = "src/stayfixed/overlay/create.py"
@@ -1708,7 +1739,74 @@ after = """    ledger, retirement, retired_paths, changed = _retire(root, ledger
     if changed or restamped:
         ledger.write(root)"""
 reddens = [
-  "tests/overlay/test_upgrade.py::test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded",
+  "tests/overlay/test_upgrade.py::test_init_that_stops_part_way_keeps_the_manifests_it_renamed_recorded",
+]
+
+# A retired file `overlay init` could not remove stopped the run: the files already removed were
+# gone, their lines unprinted and their records left in a ledger nothing wrote, so a later run
+# read each absent file as unchanged and kept its record for good.
+[[mutation]]
+name = "overlay init stops at a retired file it cannot remove"
+file = "src/stayfixed/overlay/create.py"
+before = """            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+            continue"""
+after = """            raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
+]
+
+# Retiring the template's `attach` skill and the rules README left `skills/attach/`, `skills/` and
+# `common/rules/` behind, empty.
+[[mutation]]
+name = "overlay upgrade leaves the directories a retirement empties"
+file = "src/stayfixed/overlay/upgrade.py"
+before = "                    fsops.rmdir_parents_within(root, target)"
+after = "                    pass"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[upgrade]",
+]
+
+[[mutation]]
+name = "overlay init leaves the directories a retirement empties"
+file = "src/stayfixed/overlay/create.py"
+before = "        fsops.rmdir_parents_within(root, target)"
+after = "        pass"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[init]",
+]
+
+# A removal whose file was already gone unlinks nothing, and the directories above it held no file
+# of stayfixed's: a person may have made them, so they are not this run's to empty.
+[[mutation]]
+name = "overlay upgrade prunes above a file that was not there"
+file = "src/stayfixed/overlay/upgrade.py"
+before = "        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]"
+after = "        present = [a.target for a in planned.actions if unlinks(a)]"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[upgrade]",
+]
+
+[[mutation]]
+name = "overlay init prunes above a file that was not there"
+file = "src/stayfixed/overlay/create.py"
+before = "        if present:"
+after = "        if True:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[init]",
+]
+
+# The same stop one step later, at the `_README.md` written where the old memory README was.
+[[mutation]]
+name = "overlay init stops at a successor it cannot write"
+file = "src/stayfixed/overlay/create.py"
+before = """            notes.append(
+                f"{action.target} cannot be written: {fsops.said(exc)}; "
+                "`stayfixed overlay upgrade` writes it"
+            )
+            continue"""
+after = """            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on",
 ]
 
 # Removing the old README from a 0.1.x template's overlay left `common/memory/` empty; git keeps no
@@ -1731,6 +1829,55 @@ before = "        if ledgered and action.record is not None:"
 after = "        if action.record is not None:"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
+]
+
+# An overlay a template generated carries no ledger, so the bytes a release shipped are the only
+# evidence that its copy of a retired file is stayfixed's, and `common/rules/README.md` was one
+# file in 0.1.x and another in 0.2.0: each copy needs its own digest. A recorded copy is removed by
+# its record, so only the unrecorded 0.2.0 cases redden.
+[[mutation]]
+name = "the rules README 0.2.0 shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '"62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",'
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.2.0-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.2.0-no-ledger]",
+]
+
+[[mutation]]
+name = "the rules README 0.1.x shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '"926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",'
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.1-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.1-no-ledger]",
+]
+
+# With no digest held for it, an unrecorded copy of the template's `attach` skill is no file of
+# stayfixed's at all: neither removed nor named.
+[[mutation]]
+name = "the attach skill a release shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '        frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),'
+after = "        frozenset(),"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-attach-skill-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-attach-skill-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
+]
+
+# A kept copy of the template's `attach` skill is named with the skill that replaces it, so the
+# owner knows the copy is safe to delete.
+[[mutation]]
+name = "a kept attach skill is not told the plugin's own replaces it"
+file = "src/stayfixed/overlay/template.py"
+before = """        "the plugin's own `attach` skill replaces it; delete this copy once you no longer need """"
+after = """        "delete this copy once you no longer need """"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-recorded]",
+  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
 ]
 
 # Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may

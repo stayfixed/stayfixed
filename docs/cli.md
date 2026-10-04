@@ -9,10 +9,10 @@ Three things hold everywhere:
   It is not declared per command — the frame strips it from `argv` before parsing. A command
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
-  Five commands do: `bugs check`, `docs check`, `memory refs`, `plan check` and
-  `test audit-entrypoints`. Every other command's keys are its own and are listed with it
-  below — `doctor`'s `checks`, `docs check`'s advisory `notices`, `docs trail`'s `undeclared`,
-  and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
+  Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
+  command's keys are its own and are listed with it below — `doctor`'s `checks`, `docs check`'s
+  advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
+  not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
@@ -21,7 +21,7 @@ Three things hold everywhere:
   commands whose exits mean something else: `stayfixed hook` refuses only on `PreToolUse` and
   continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
-- **Every `memory` command takes the same three options**, described once here rather than five
+- **Every `memory` command takes the same three options**, described once here rather than six
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
   command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
   takes `--store` as well.
@@ -38,16 +38,12 @@ Three things hold everywhere:
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
-- [`stayfixed release check [--tag TAG]`](#stayfixed-release-check---tag-tag)
-- [`stayfixed release notes --version X.Y.Z [--draft]`](#stayfixed-release-notes---version-xyz---draft)
-- [`stayfixed release hashes [--check]`](#stayfixed-release-hashes---check)
 - [`stayfixed hook <event>`](#stayfixed-hook-event)
 - [Hooks](#hooks)
 - [`stayfixed guard bg-cleanup`](#stayfixed-guard-bg-cleanup)
 - [`stayfixed commit check --range RANGE`](#stayfixed-commit-check---range-range)
 - [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
 - [`stayfixed test hygiene`](#stayfixed-test-hygiene)
-- [`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints)
 - [`stayfixed test attribute --command CMD [--base REF]`](#stayfixed-test-attribute---command-cmd---base-ref)
 - [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
@@ -58,7 +54,6 @@ Three things hold everywhere:
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
 - [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
-- [`stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`](#stayfixed-adopt-begin-plan---root-path---machine-path)
 - [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`stayfixed memory refs`](#stayfixed-memory-refs)
 - [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
@@ -211,79 +206,6 @@ A bundle that fits because it is *empty* is not a bundle that fits, so the outpu
 whether the trust gate is open.
 
 **Writes** nothing.
-
-## `stayfixed release check [--tag TAG]`
-
-Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/stayfixed/__init__.py`, both
-plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
-
-The `--json` object carries `summary`, `versions` (every source and what it says) and
-`problems` (empty on a clean run), and it carries all three **whether or not there is drift** —
-the drift is in `problems`, not in the shape. A source this gate cannot parse at all is still a
-refusal and prints `error` instead, which is the difference between a finding and a failure.
-
-`--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
-shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
-`stayfixed--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
-other rule tightens: without it a pending fragment in `changelog.d/` lets `CHANGELOG.md` lag,
-because a change writes its fragment long before a release assembles it, but at a tag there is
-nothing left to assemble, so a fragment still pending means the changelog users will read is
-not the one the tag claims. That is a finding naming the count.
-
-**Writes** nothing. It reads the sources above, the fragments pending in `changelog.d/`, and
-`hooks/hashes.json` beside the three files it records.
-
-This is discipline for **the stayfixed repository itself**, not something stayfixed offers your
-project. See [RELEASING.md](../RELEASING.md).
-
-## `stayfixed release notes --version X.Y.Z [--draft]`
-
-Assemble `CHANGELOG.md` from the fragments in `changelog.d/`, through towncrier.
-
-```bash
-stayfixed release notes --version 1.2.3 --draft   # print the section; write nothing
-stayfixed release notes --version 1.2.3           # write it, and consume the fragments
-```
-
-A wrapper and nothing more: towncrier does the rendering and `[tool.towncrier]` in
-`pyproject.toml` owns the format. Two things are this command's own. A `--version` that is not
-the project's version is **refused** (`2`) before towncrier runs, because assembling under
-another number writes a `CHANGELOG.md` heading that `release check` then refuses — set the
-version in every source first, then assemble under it. And a towncrier that cannot be run is a
-finding (`1`) that names it as the development dependency it is, rather than a traceback.
-
-**Writes**, without `--draft`, `CHANGELOG.md`, and consumes the fragment files: towncrier
-removes each one from `changelog.d/` and, in a git checkout, stages both changes in the index —
-`git add` of `CHANGELOG.md`, `git rm` of each tracked fragment. When the tracked fragments were
-all that `changelog.d/` held, as they are while every file there is a `+…` fragment, `git rm`
-removes the directory itself too. With `--draft` nothing is written and the rendered section is
-printed.
-
-## `stayfixed release hashes [--check]`
-
-Record the sha256 of every file the harness executes without Python, into `hooks/hashes.json`
-beside them.
-
-```bash
-stayfixed release hashes            # write the record
-stayfixed release hashes --check    # report drift, write nothing
-```
-
-Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` —
-because those are the ones a harness runs directly; a wheel's own contents are the packaging
-tool's to attest. The record is refused rather than written when any of the three is missing: a
-record naming two of three reads as a clean comparison for the third.
-
-**Not a release-time command.** `stayfixed release check` compares the record to the tree on
-every run, so editing any of the three without re-recording fails the gate in the same commit
-rather than at a tag — which is what makes it a record somebody has watched fail. `doctor
-files` reads the installed record against the installed files, and reports post-install
-modification, a partial update or a broken checkout. An attacker who edits both the files and
-the record is not this check's threat; tag protection and the pinned SHA are.
-
-**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift. Under
-`--check --json` the object carries `summary`, `files` and `problems`, in both outcomes, for
-the reason `release check` above gives.
 
 ## `stayfixed hook <event>`
 
@@ -555,39 +477,6 @@ is present, `2` when git cannot report the tree. The `PostToolUse` `Bash` hook d
 same note once per context after a red pytest run.
 
 **Writes** nothing.
-
-## `stayfixed test audit-entrypoints`
-
-Tests that never exercise what they name, in two shapes: an assertion whose value is produced
-by invoking a test double, and a test whose name states an entry point it imports but never
-mentions again, in its own body or in the local helpers it reaches. Scans every `test_*.py`
-under `[ledger] code_roots`, treating the packages and modules found directly under those
-roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
-`--json`, **with findings and no way to fail on them** — that is deliberate, not an oversight,
-and nothing here gates. Run over a repository's own suite the scanner names name-collision
-candidates that are not defects, so an exit `1` would be red from the first run, and the
-configuration has no per-command switch to turn it off with. Gating waits until the candidates
-have been triaged to zero, and they have not been. Refuses (`2`) if its own self-test no longer
-discriminates.
-
-**Writes** nothing.
-
-A double, for the first shape, is a `Mock`-family object, a `patch(...)`, or an instance of a
-class whose name starts `Fake`, `Stub`, `Dummy`, `Spy`, `Recording` or `Scripted`, reaching the
-test in one of three ways: bound in the test, by assignment or `with ... as`; bound at module
-scope, inside a top-level compound statement too; or as a parameter named `mock_*`, `stub_*`,
-`fake_*`, `dummy_*`, `*_mock`, `*_stub` or `*_fake`, which is how a fixture delivers one. A name
-assigned from a double's attribute is one as well. A binding replaces what the name held: from
-the point a test binds it to anything else it is not a double, and a double another test binds
-is that test's own.
-
-The `--json` object carries `summary` (the line the command would have printed), `files` (how
-many test files were scanned), `import_roots` (the
-top-level names treated as the code under test) and `findings`, sorted by path then line. Each
-finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-on-double` or
-`names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
-`detail` are repository-authored strings, which is why they are in `--json` and not in the
-summary line.
 
 ## `stayfixed test attribute --command CMD [--base REF]`
 
@@ -940,9 +829,8 @@ A row names no finding: `assess` lists them as items.
 A probe that could not look — a git query that failed or timed out, a settings file stayfixed
 cannot read, a path through a symlink — reports a `could-not-look` warning naming where, and
 never reads as "nothing found". Two things are deliberately not inventoried: another tool's
-design-document directories, because stayfixed names no other tool's convention; and
-[`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints), which stays its own
-advisory command until its candidates are triaged.
+design-document directories, because stayfixed names no other tool's convention; and whether a
+test exercises what its name says, which only reading one stack's test files could judge.
 
 **Writes** `.stayfixed/assessment.json`, which the `stayfixed:ignore` region keeps out of git,
 overwritten on every run that gets that far and never read back: format `1`, with `format`,
@@ -1155,48 +1043,28 @@ refuses the base's own load, in a message that says it is the base's, and a base
 older stayfixed that this one no longer loads fails every pull request until the owner fixes it
 on the base branch.
 
-## `stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`
-
-Starts a project's adoption with a plan. `PLAN`, read from the current directory when it is
-relative, must be a markdown file directly under `[paths] plans` with `stayfixed` as a word of its
-name — `2026-09-23-stayfixed-adoption.md`, or `2026-09-23-stayfixed-adoption-api.md` for one of
-several — spelled as the file is on disk, and it must pass `stayfixed plan check`. While the
-project runs the `trail` gate, the plan's row in the `trail.toml` beside the roadmap must declare
-a state under `[states]`, such as `in progress`: a first listing records a row with none as
-`delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past
-that keeps its state: a project may carry any number of adoption plans, nothing records which, and a
-plan is found by its name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it,
-which does not need `begin` first.
-
-**Writes** `stayfixed.toml`'s `[stayfixed] state` through the same editor as `stayfixed upgrade`, and
-the manifest's record of it when that record still describes the file. `--json` carries, on exit 0,
-`before` and `after`, the state on each side.
-
-| Exit | Meaning |
-|---|---|
-| 0 | the plan passes `plan check`; the project is `adopting`, or already was past `initialised` |
-| 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `stayfixed.toml` is missing or does not load |
-| 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `stayfixed.toml` is refused |
-
 ## `stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
-`[stayfixed] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
-enforces each one that passes, names the rest with their finding counts, and exits 1 if any
-failed; the line names up to eight gates in each of its two lists and counts the rest, and
-`--json` carries every one. With names, they pass together or nothing is written, and a named
-gate that already enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
-`installed` and `enforced` is emptied: under `installed` an empty list means every configured
-gate, so a gate the project adds later enforces from its first run — for a custom gate, the
-first run after it lands on the base branch, since `stayfixed gate` runs none before. An
-`adopting` project whose every configured gate already enforces — one that removed the last gate
-it had not promoted — is moved to `installed` with no gate run; a project that configures no
-gate is refused, since it has none to have earned. The state never moves back. A name, a gate
-already enforcing, nothing left to promote, a `stayfixed.toml` the editor cannot rewrite in place
-and a manifest it cannot read are each refused before the first gate runs; a refusal from the
-editor names `state` and `enforced` together, one line each: as they stand when the check before
-the gates finds it, and as the command would write them when the write itself refuses, so
-following it either leaves the project as it was or makes the transition whole.
+`[stayfixed] enforced`. It is the one adoption command: the first gate it promotes moves an
+`initialised` project to `adopting`, and an `adopting` project with nothing enforced yet — one
+written so by hand, or left so by an earlier release — is promoted from the same way. With no
+`GATE`, it runs every configured gate that does not enforce yet, enforces each one that passes,
+names the rest with their finding counts, and exits 1 if any failed; the line names up to eight
+gates in each of its two lists and counts the rest, and `--json` carries every one. With names,
+they pass together or nothing is written, and a named gate that already enforces is refused
+rather than skipped. Once every configured gate enforces, the state becomes `installed` and
+`enforced` is emptied: under `installed` an empty list means every configured gate, so a gate
+the project adds later enforces from its first run — for a custom gate, the first run after it
+lands on the base branch, since `stayfixed gate` runs none before. An `adopting` project whose
+every configured gate already enforces — one that removed the last gate it had not promoted — is
+moved to `installed` with no gate run; a project that configures no gate is refused, since it
+has none to have earned. The state never moves back. A name, a gate already enforcing, nothing
+left to promote, a `stayfixed.toml` the editor cannot rewrite in place and a manifest it cannot
+read are each refused before the first gate runs; a refusal from the editor names `state` and
+`enforced` together, one line each: as they stand when the check before the gates finds it, and
+as the command would write them when the write itself refuses, so following it either leaves the
+project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
 with where `HEAD` forked from it, as for `stayfixed gate`: a 40-hex commit or a `refs/…` name,
@@ -1932,9 +1800,10 @@ when there is none yet. On
 `github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
 from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
-A template published at 0.1.x also brings the `common/memory/README.md` those releases shipped,
-which `overlay init` removes (below). Exits `0` on success, `1` when no tree arrived, `2` on a
-refused name or a missing `--root`.
+A template published at an earlier release also brings the files that release shipped and this
+one does not — `common/memory/README.md` from 0.1.x, `skills/attach/SKILL.md` and
+`common/rules/README.md` from any — which `overlay init` removes (below). Exits `0` on success, `1`
+when no tree arrived, `2` on a refused name or a missing `--root`.
 
 ---
 
@@ -1986,23 +1855,29 @@ once more, to add them.
 under its `owner` or `author` and, where the overlay carries one that records a manifest it
 rewrote or a file below, `.stayfixed/manifest.json` — through the same contained walk every other
 write in this project goes through; and, through the `pre-commit install` it runs in the overlay,
-the overlay's `pre-commit` git hook. It also **removes** `common/memory/README.md`, the file 0.1.0
-and 0.1.1 shipped where `_README.md` is now, exactly as `overlay upgrade` does below: only when it
-holds what stayfixed wrote there, the digest `.stayfixed/manifest.json` records or, in an overlay
-generated from a template, which carries no manifest, the file those releases shipped. `init` is
-the step every generated overlay runs, and a template published at 0.1.x still ships that file.
-When it removes that file and `common/memory/_README.md` is not there, it **writes** the shipped
-`_README.md` in its place: a template from 0.1.x carries only the old name, and a directory left
-empty is one git does not keep, so a clone of the overlay elsewhere would have no `common/memory/`
-for the `developer` link to reach. A copy holding anything else is left, and the line says so and
-names the way out: rename it to `_README.md`. A `common/memory/README.md` it cannot read is left
-too, with a `left common/memory/README.md: <reason>` line, and is not a failure. A tree that
-arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists and cannot be
-read or is not JSON, with nothing written; `2` on an owner that is not one path segment, on a
-scaffold manifest that cannot be trusted, or on a `common/memory/README.md` it has decided to
-remove, or a `_README.md` it has decided to write, and cannot. That last refusal comes after the
-manifests are renamed, and the records of those it re-stamped are already written by then, so a
-later `overlay upgrade` still reads them as stayfixed's.
+the overlay's `pre-commit` git hook. It also **removes** the files an earlier release shipped and
+this one does not, by the rule and from the list
+[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run) gives below, and each directory
+above one of them that this leaves empty: `init` is the step every generated overlay runs, and a
+template published at an earlier release still ships those files.
+When it removes `common/memory/README.md` and `common/memory/_README.md` is not there, it
+**writes** the shipped `_README.md` in its place: a template from 0.1.x carries only the old name,
+and a directory left empty is one git does not keep, so a clone of the overlay elsewhere would
+have no `common/memory/` for the `developer` link to reach. A copy holding anything else is left,
+and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
+names the copy again. A retired file it cannot read or
+cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
+write is named with `overlay upgrade`, which writes it. None of the three is a failure: the run
+goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
+the others, so the next run finishes the job.
+A path these lines name that the manifest supplied and that holds anything but a plain path is
+escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
+terminal.
+A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
+and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
+segment or on a scaffold manifest that cannot be trusted. The records of the manifests it
+re-stamped are written before it retires anything, so a run that stops after the renames still
+leaves them read as stayfixed's by a later `overlay upgrade`.
 
 ---
 
@@ -2010,7 +1885,7 @@ later `overlay upgrade` still reads them as stayfixed's.
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
-sixteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
 `.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
 tree whose two `.claude-plugin/` manifests name it `stayfixed-overlay[-<owner>]` and
 `stayfixed-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
@@ -2035,15 +1910,25 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. It also **removes** one file a release no longer ships,
-`common/memory/README.md`, which is `_README.md` now because the note reader reads every other
-`.md` there as a note, and it does so only when the file holds what stayfixed wrote there: the
-digest `.stayfixed/manifest.json` recorded, or, in an overlay with no manifest (one generated from
-a template, since `publish-template` leaves it out), the file 0.1.0 and 0.1.1 shipped. Any other
-copy may hold your own words, so it is listed as `skip_modified` with the way out: rename it to
-`_README.md`. Exits `0`; `1` when the report carries a REFUSED section, because
-nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
-manifest itself cannot be trusted, or when a write is refused by the containment walk.
+`.stayfixed/manifest.json`. It also **removes** three files a release no longer ships:
+`common/memory/README.md`, which is `_README.md` now because the note reader reads every other `.md`
+there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attach` skill, which the
+plugin's own replaces, since it covers detaching and a moved remote as well; and
+`common/rules/README.md`, the README of a directory nothing read. It does so only when a file holds
+what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
+no manifest (one generated from a template, since `publish-template` leaves it out), a file a
+release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
+other two. Any other copy may hold your own words, so it is listed as `skip_modified` with the way
+out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
+template's, so delete your copy once you no longer need your edits; a standing rule is a note with
+`metadata.startup`, so move your rules into such notes and delete the README. Until then each run
+lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
+up to the first that still holds anything and never the overlay root: `skills/attach/` and
+`skills/`, and `common/rules/`. A directory that is a symbolic link is left, and so is one above a
+file that was already gone when the run began. Exits `0`; `1` when the report
+carries a REFUSED section, because nothing would be written while one of those stands; `2` when
+`--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
+by the containment walk.
 
 ---
 
@@ -2552,21 +2437,21 @@ registrations and installed plugins those commands write into each harness's own
 `--overlay <path>` writes nothing in the overlay; it is only recorded.
 `--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
 repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
-its removal of the `common/memory/README.md` a template published at 0.1.x ships. Run again over the
-overlay it made, it generates nothing, but `overlay init` still runs there, and the report names
-each file `init` changed (an overlay named by 0.1.x gains its account) or says it changed none of
-the overlay's tracked files (`pre-commit install` may still have written its git hook). Exits `0` on
-success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project root, at
-a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:` without
-`--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file is written
-through a walk that never follows one. Every one of those refusals happens before the first write,
-**with one exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a check on the
-tree that arrived, so it runs after the repository has been created on GitHub and cloned — along
-with the machine file, the settings merge and the plugin installs. That refusal says so, and names
-the repository and where it was cloned to, because nothing else would. Everything else `create:` can
-be refused for — the missing `--yes`, a malformed spec, a name that is not one path segment, a
-destination the project root could reach or the machine file could not record — still happens before
-`gh` is run at all.
+its removal of the files a template published at an earlier release ships and this one does not.
+Run again over the overlay it made, it generates nothing, but `overlay init` still runs there, and
+the report names each file `init` changed (an overlay named by 0.1.x gains its account) or says it
+changed none of the overlay's tracked files (`pre-commit install` may still have written its git
+hook). Exits `0` on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from
+the project root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or
+`create:` without `--yes`), and `2` when a symlink stands between `<home>` and the settings file:
+that file is written through a walk that never follows one. Every one of those refusals happens
+before the first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an
+overlay" is a check on the tree that arrived, so it runs after the repository has been created on
+GitHub and cloned — along with the machine file, the settings merge and the plugin installs. That
+refusal says so, and names the repository and where it was cloned to, because nothing else would.
+Everything else `create:` can be refused for — the missing `--yes`, a malformed spec, a name that is
+not one path segment, a destination the project root could reach or the machine file could not
+record — still happens before `gh` is run at all.
 
 The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead
@@ -2994,8 +2879,8 @@ in a parser, which is the whole point of the rule.
 | `--check` | report drift instead of writing, and fail if there is any |
 
 `--check` is the CI half of `--dry-run`: both read and write nothing, and `--check` fails when
-anything differs. `stayfixed bugs index`, `stayfixed docs trail`, `stayfixed memory index` and
-`stayfixed release hashes` all take it with that meaning.
+anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
+take it with that meaning.
 
 Five commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant
@@ -3135,12 +3020,14 @@ and `stayfixed adopt promote` never enforces it.
 
 **Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
 adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
-stayfixed's to write (`stayfixed adopt begin` and `stayfixed adopt promote`),
-and the loader holds them together: an `initialised` project lists none, and an `installed`
-one lists every gate or none. So there are three shapes and no others: `initialised` with
-an empty list (nothing has begun), `adopting` with any list of configured gates, each named
-once, the empty one included (the adoption has begun, and each gate is promoted when it
-passes), and `installed` with every gate or none. The state is kept beside the list because
+stayfixed's to write (`stayfixed adopt promote`), and the loader holds them together: an
+`initialised` project lists none, and an `installed` one lists every gate or none. So there are
+three shapes and no others: `initialised` with an empty list (nothing has begun), `adopting`
+with any list of configured gates, each named once (the adoption has begun, and each gate is
+promoted when it passes), and `installed` with every gate or none. `adopting` with the empty
+list is one of them: `stayfixed adopt promote` never writes it, since its first promotion lists
+a gate, but a person may write it by hand and an earlier release wrote it, and it loads and is
+promoted from like any other `adopting` list. The state is kept beside the list because
 `initialised` and `adopting` differ even when nothing enforces; any other combination does
 not load. A gate enforces when the base branch's list names it, when the change under review
 adds it there, or once either side's state is `installed`, so a change that moves the state to

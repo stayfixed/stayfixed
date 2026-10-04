@@ -4,9 +4,7 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
-import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -17,18 +15,13 @@ import pytest
 from stayfixed.overlay.api import OVERLAY_FILES
 from stayfixed.project.api import PROJECT_FILES
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.scriptload import SCRIPTS, load
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_artifacts.py"
 WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
 
 
 def checker() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("check_artifacts_under_test", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["check_artifacts_under_test"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load(SCRIPTS / "check_artifacts.py", "check_artifacts_under_test")
 
 
 def _wheel(path: Path, *, without: str | None = None) -> Path:
@@ -130,7 +123,7 @@ def test_the_sdist_must_carry_every_mutation_group_file() -> None:
     # comparison reddens.
     module = checker()
     required = {name for name in module.SDIST_MUST if name.startswith("mutations/")}
-    declarations = SCRIPT.parents[1] / "mutations"
+    declarations = SCRIPTS.parent / "mutations"
     carried = {f"mutations/{path.name}" for path in declarations.glob("*.toml")}
     assert carried  # a walk-based assertion states its walk is non-empty
     assert required == carried

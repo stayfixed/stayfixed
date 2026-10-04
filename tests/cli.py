@@ -7,13 +7,14 @@ unless the case wrote it, so no case reads the developer's own machine configura
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.cli import SubParsers, build_parser, discover_registrars, run
 
 
 def cli(
@@ -30,3 +31,13 @@ def cli(
 def custom_gate(name: str, code: str) -> str:
     """A `[gates.custom.<name>]` table running `code` under this interpreter."""
     return f"\n[gates.custom.{name}]\nrun = {json.dumps([sys.executable, '-c', code])}\n"
+
+
+def subparsers(parser: argparse.ArgumentParser) -> SubParsers | None:
+    """The action `parser` dispatches its commands through, or `None` for a command with none.
+
+    Every walk over a parser's commands reaches for this, and argparse names its type privately
+    (`_SubParsersAction`), so the reach is made here once: the day argparse renames it, this is
+    the one line to change.
+    """
+    return next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)

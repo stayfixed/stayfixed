@@ -21,11 +21,10 @@ Six names, each with the consumer that reaches for it:
   differ from the templates. That module's docstring states the measurement. A return type
   absent from this list is a value a consumer can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it.
-- `rewrite_owned`, for `stayfixed adopt begin` and `stayfixed adopt promote`, which move
-  `[stayfixed] state` and `enforced` as a project is adopted and its gates promoted. It is
-  the one operation that rewrites a tool-owned key: a second copy in `adopt` would skip the
-  `config` record's re-stamp, and `uninstall` would then keep every promoted project's
-  `stayfixed.toml` as hand-edited.
+- `rewrite_owned`, for `stayfixed adopt promote`, which moves `[stayfixed] state` and `enforced` as
+  a project is adopted and its gates promoted. It is the one operation that rewrites a tool-owned
+  key: a second copy in `adopt` would skip the `config` record's re-stamp, and `uninstall` would
+  then keep every promoted project's `stayfixed.toml` as hand-edited.
 - `CI_WORKFLOW`, for `stayfixed assess`'s workflow and code-owners probes, which must name
   stayfixed's own caller workflow and would otherwise spell it a third time beside `doctor`'s
   `WORKFLOW`.

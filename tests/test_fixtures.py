@@ -20,13 +20,12 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from tests.declarations import declared
-from tests.gitfixture import git
+from tests.gitfixture import git, needs_git
 from tests.workflow_yaml import load, runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
 HOSTILE = ROOT / "tests" / "fixtures" / "hostile-project"
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 
 
@@ -248,6 +247,9 @@ _RELEASE_BLOCK = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 RELEASING = ROOT / "RELEASING.md"
+# The release check, in the one spelling five places hold: the three blocks and `ci.yml` below,
+# and `release.yml` (`test_the_release_workflow_runs_the_release_check_in_the_one_spelling`).
+RELEASE_CHECK = "uv run python scripts/release.py check"
 _COVERAGE_FLOOR = re.compile(r"--cov-fail-under=(\d+)")
 
 
@@ -296,7 +298,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         "ruff check .",
         "ruff format --check .",
         "mypy",
-        "stayfixed release check",
+        RELEASE_CHECK,
     )
     for name, text in blocks.items():
         assert text.strip(), name
@@ -305,6 +307,13 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         # And each one is really a gate CI runs, so the block cannot drift into naming a
         # command nobody checks.
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
+    # A gate CI runs and then excuses is a gate in name only: `uv run mypy || true` carries the
+    # spelling every check above reads and lets the step pass whatever mypy found. Mutation
+    # (declared): `mutations/`'s "ci lets a failed type check through" -> reddens.
+    excused = [
+        line for line in ci.splitlines() if any(gate in line for gate in required) and "||" in line
+    ]
+    assert excused == [], excused
 
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
@@ -771,6 +780,27 @@ def _gate_environment() -> str:
     match = re.search(r"^\s+ENVIRONMENT: (\S+)$", text, re.M)
     assert match is not None
     return match.group(1)
+
+
+@needs_release_workflow
+def test_the_release_workflow_runs_the_release_check_in_the_one_spelling() -> None:
+    # The fifth place: the release workflow runs the check against the tag, and it runs no
+    # mypy and no oracle, so it is held to this one gate rather than to the contributor's list.
+    # Its spelling had moved with the other four only because one commit moved all five.
+    # The whole command line, not a substring of it: `… check --tag "$GITHUB_REF_NAME" || true`
+    # carries the spelling and lets a failed check through, and so would a second command after
+    # a `;`. Mutation (declared): `release.yml` runs the command the CLI used to ship -> reddens;
+    # and `mutations/`'s "the release workflow lets a failed release check through" -> reddens.
+    bodies = scripts(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    assert bodies, "release.yml runs no script"
+    checks = [body.strip() for body in bodies if RELEASE_CHECK in body]
+    assert checks == [f'{RELEASE_CHECK} --tag "$GITHUB_REF_NAME"'], checks
+    # And no step runs the commands the CLI used to ship, beside the one above or instead of it:
+    # the line above filters to steps that already carry the new spelling, so a second step with
+    # the old one passed it. Mutation (declared): `mutations/`'s "the release workflow builds
+    # after running the release check the CLI no longer ships".
+    for body in bodies:
+        assert "stayfixed release" not in body, body
 
 
 @needs_release_workflow

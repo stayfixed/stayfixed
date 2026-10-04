@@ -13,6 +13,10 @@ alike, and `project.templates._ci` prints one sentence for both (`NO_TAG`) and a
 failed ask (`NOT_ASKED`); `doctor`'s `ci-ref` row splits the same two ways. The `{}` arm exists so
 that `git ls-remote --exit-code`'s non-zero exit for "nothing matched" cannot be read as a failed
 ask, which is the distinction every caller does depend on.
+
+`tag_for` is how a release is called: the pin is looked up by it here, and the repository's own
+release check (`scripts/release.py`) holds a tag to the version the tree carries by it, so the two
+can never disagree about a release's name.
 """
 
 from __future__ import annotations
@@ -22,13 +26,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stayfixed import REPOSITORY_URL
-from stayfixed.release.versions import tag_for
 from stayfixed.runner import Runner
 
+PACKAGE = "stayfixed"
 TAGS = "refs/tags/v*"
 NO_MATCH = 2
 _LINE = re.compile(r"^([0-9a-f]{40})\trefs/tags/(v[0-9][0-9A-Za-z.-]*?)(\^\{\})?$")
 _SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
+
+
+def tag_for(version: str) -> tuple[str, str]:
+    """The two tags one release carries: the workflow's `vX.Y.Z` and the platform's own."""
+    return f"v{version}", f"{PACKAGE}--v{version}"
 
 
 @dataclass(frozen=True)
