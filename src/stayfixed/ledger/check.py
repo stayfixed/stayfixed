@@ -118,13 +118,18 @@ def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
-    bugs, index = register.directory, register.index
+    directory, index = register.directory, register.index
 
     def unread(unknown: ForkUnknown) -> Failure:
         cause = unknown.cause
         return Failure(
             _BASE_UNREAD.format(
-                directory=bugs, index=index, name=register.name, base=base, root=root, cause=cause
+                directory=directory,
+                index=index,
+                name=register.name,
+                base=base,
+                root=root,
+                cause=cause,
             )
         )
 
@@ -133,13 +138,15 @@ def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
         raise unread(forks)
     found: set[str] = set()
     for fork in forks:
-        code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)
+        code, out = git_run(
+            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index
+        )
         if code != 0:
             raise unread(ForkUnknown.of(code))
         found.update(name for name in out.split("\0") if name)
     names = sorted(found)
     ids = register.ids
-    under = f"{bugs}/"
+    under = f"{directory}/"
     entries = tuple(
         name.removeprefix(under)
         for name in names
@@ -216,9 +223,9 @@ def _unledgered(
     """
     found: list[Finding] = []
     if base is not None and base.carried:
-        bugs, index = register.directory, register.index
-        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name=register.name)
-        found.append(Finding("ledger-removed", bugs, None, removed))
+        directory, index = register.directory, register.index
+        removed = LEDGER_REMOVED.format(directory=directory, index=index, name=register.name)
+        found.append(Finding("ledger-removed", directory, None, removed))
     empty: set[str] = set()
     found.extend(_dangling_mentions(root, config, register, empty))
     return found + _dangling_citations(root, config, register, empty)
@@ -262,18 +269,18 @@ def problems(root: Path, config: Config, register: Register, base: str = "") -> 
     if uninitialised(root, register):
         return _unledgered(root, config, register, carried)
     ids, schema = register.ids, register.schema
-    bugs = entry_dir(root, register)
+    directory = entry_dir(root, register)
     index_name = register.index
     # First: a deleted entry is the most structural finding a ledger can have.
     found = _removed_entries(root, register, carried)
-    if not bugs.is_dir():
+    if not directory.is_dir():
         missing = ENTRIES_MISSING.format(directory=register.directory, index=index_name)
         return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
     required = set(schema.evidence_boundary_for)
     restated = _body_state_bullet(register)
-    for path in sorted(bugs.glob(f"{ids.prefix}-*.md")):
+    for path in sorted(directory.glob(f"{ids.prefix}-*.md")):
         # Parsed against the repo-relative path, which is the one every message here names:
         # these are printed by CI, where an absolute path is a runner's scratch directory.
         relative = path.relative_to(root).as_posix()

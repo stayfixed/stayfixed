@@ -1289,8 +1289,8 @@ reddens = [
 [[mutation]]
 name = "the base's ledger is listed without its entries"
 file = "src/stayfixed/ledger/check.py"
-before = '        code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)'
-after = '        code, out = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", bugs, index)'
+before = '            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index'
+after = '            root, "ls-tree", "-z", "--name-only", fork, "--", directory, index'
 reddens = [
   "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
@@ -1736,9 +1736,11 @@ reddens = [
 name = "only the first of several merge bases is listed"
 file = "src/stayfixed/ledger/check.py"
 before = """    for fork in forks:
-        code, out = git_run(root, "ls-tree""""
+        code, out = git_run(
+            root, "ls-tree""""
 after = """    for fork in forks[:1]:
-        code, out = git_run(root, "ls-tree""""
+        code, out = git_run(
+            root, "ls-tree""""
 reddens = [
   "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
 ]
@@ -1970,8 +1972,8 @@ reddens = [
 [[mutation]]
 name = "the base's entries are read with the bug ledger's identifiers whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "    ids = register.ids\n    under = f\"{bugs}/\""
-after = "    ids = type(register.ids)(\"BR\")\n    under = f\"{bugs}/\""
+before = "    ids = register.ids\n    under = f\"{directory}/\""
+after = "    ids = type(register.ids)(\"BR\")\n    under = f\"{directory}/\""
 reddens = [
   "tests/ledger/test_register.py::test_the_gate_judges_a_second_register_against_its_base",
 ]
@@ -1990,8 +1992,8 @@ reddens = [
 [[mutation]]
 name = "the removed-ledger refusal names the bugs gate whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name=register.name)"
-after = '        removed = LEDGER_REMOVED.format(directory=bugs, index=index, name="bugs")'
+before = "        removed = LEDGER_REMOVED.format(directory=directory, index=index, name=register.name)"
+after = '        removed = LEDGER_REMOVED.format(directory=directory, index=index, name="bugs")'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]
@@ -1999,8 +2001,8 @@ reddens = [
 [[mutation]]
 name = "an unread base names the bugs gate whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "                directory=bugs, index=index, name=register.name, base=base, root=root, cause=cause"
-after = '                directory=bugs, index=index, name="bugs", base=base, root=root, cause=cause'
+before = "                name=register.name,"
+after = '                name="bugs",'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]

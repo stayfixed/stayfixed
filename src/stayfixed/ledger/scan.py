@@ -241,14 +241,16 @@ def citation_pattern(register: Register) -> re.Pattern[str]:
     )
 
 
-def _cited_entry(citing: PurePosixPath, matched: str, identifier: str, bugs: PurePosixPath) -> bool:
+def _cited_entry(
+    citing: PurePosixPath, matched: str, identifier: str, directory: PurePosixPath
+) -> bool:
     """Does `matched`, as written in `citing`, name an entry file under the ledger directory?
 
     Resolved two ways, because both are how a reader would follow it: relative to the citing
     file's own directory, and relative to the repository root. Either landing on the entry path
     makes it a citation; neither landing there means the text is not a link to an entry at all.
     """
-    target = f"{bugs}/{identifier}.md"
+    target = f"{directory}/{identifier}.md"
     relative = posixpath.normpath(f"{citing.parent}/{matched}")
     rooted = posixpath.normpath(matched)
     return target in (relative, rooted)
@@ -273,19 +275,19 @@ def entry_citations(
       reports with the command that repairs it. Reported here as well it would name a link in
       a file whose fix is never a hand edit.
     """
-    bugs = PurePosixPath(register.directory)
+    directory = PurePosixPath(register.directory)
     index = PurePosixPath(register.index)
     pattern = citation_pattern(register)
     found: defaultdict[str, list[tuple[PurePosixPath, int]]] = defaultdict(list)
     for item in scannable(root, citation_roots(root, config)):
-        if item.text is None or item.relative == index or _under(item.relative, bugs):
+        if item.text is None or item.relative == index or _under(item.relative, directory):
             continue
         # One substring test decides the whole file: the pattern cannot match without the
         # ledger directory's name, and few files carry one.
-        if f"{bugs.name}/" not in item.text:
+        if f"{directory.name}/" not in item.text:
             continue
         for match in pattern.finditer(item.text):
-            if not _cited_entry(item.relative, match.group(1), match.group(2), bugs):
+            if not _cited_entry(item.relative, match.group(1), match.group(2), directory):
                 continue
             found[match.group(2)].append(
                 (item.relative, item.text.count("\n", 0, match.start()) + 1)

@@ -291,11 +291,11 @@ def renumber(
     ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
         raise LedgerError(f"both identifiers must look like {ids.shape}")
-    bugs = register.directory
-    source = root / bugs / f"{old}.md"
-    target = root / bugs / f"{new}.md"
+    directory = register.directory
+    source = root / directory / f"{old}.md"
+    target = root / directory / f"{new}.md"
     if not source.is_file():
-        raise LedgerError(f"{bugs}/{old}.md does not exist")
+        raise LedgerError(f"{directory}/{old}.md does not exist")
     if target.exists():
         raise LedgerError(f"{new} already has an entry file; pick a free identifier")
     # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
@@ -317,18 +317,20 @@ def renumber(
 
     # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
     # names the file in every message either of them raises.
-    where = Path(bugs) / f"{old}.md"
+    where = Path(directory) / f"{old}.md"
     source_text = read_ledger_text(source, where=where)
     entry = parse_entry(source_text, path=where, register=register)
     # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
     # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
     # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
-    fsops.write_within(root, f"{bugs}/{new}.md", _ID_LINE.sub(f"id: {new}", source_text, count=1))
+    fsops.write_within(
+        root, f"{directory}/{new}.md", _ID_LINE.sub(f"id: {new}", source_text, count=1)
+    )
     # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve to
     # something at every instant from here on, including if the sweep below is interrupted.
     fsops.write_within(
         root,
-        f"{bugs}/{old}.md",
+        f"{directory}/{old}.md",
         _void_pointer(
             register,
             old=old,
