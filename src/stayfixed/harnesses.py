@@ -15,13 +15,20 @@ contributes: every payload is read one way (`hooks.dispatch.read_event`), becaus
 process detects is one a repository can choose — a committed `.claude/settings.json` `env` block
 can set `PLUGIN_ROOT` — so no value may change what a handler sees. A deny reaches no value at
 all: exit 2 with the reason on stderr is the whole of a refusal for every harness. A new harness
-is a value with a positive `detects`, its project-root variable and its `render`; a harness whose
-payload genuinely differs is a question to answer with that harness's evidence when it arrives.
+is a value with a positive `detects`, its project-root variable, its `render` and its `reach`; a
+harness whose payload genuinely differs is a question to answer with that harness's evidence when
+it arrives.
 
-Code that needs a harness fact asks this registry. Three modules older than it still spell
-their own settings files: `doctor`, `setup` and `attach`. `doctor` walks one no field here
-models, the uncommitted `.claude/settings.local.json`, so moving it onto the registry is its
-own change.
+A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier
+at which that surface holds under this harness (`Tier`), or that it does not reach the harness at
+all, with where the claim was measured. The README's table of what each agent enforces is held
+equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so a measurement
+that moves a tier is one edit here.
+
+Code that needs a harness fact asks this registry. `doctor` walks every value's `settings` and
+`local_settings` for hook entries. Two modules older than it still spell their own settings
+files, `setup` and `attach`, whose paths are a machine's and the overlay's layout as much as a
+harness's.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
@@ -33,6 +40,8 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -48,17 +57,55 @@ class Rendition:
     render: Callable[[], str]
 
 
+class Surface(StrEnum):
+    """Where stayfixed enforces something, by how it reaches a session."""
+
+    # A hook that refuses a command before it runs: `bg-cleanup`.
+    GUARDS = "session guards"
+    # A hook that adds context and refuses nothing: the test-hygiene note, the standing rules,
+    # the volatile notes.
+    NOTICES = "session notices"
+    # The bug, documentation, plan, commit and trail checks, run by the reusable workflow.
+    GATES = "repository gates"
+    # The skills and the `AGENTS.md` region.
+    METHOD = "methodology"
+
+
+class Tier(StrEnum):
+    """How strongly a surface holds under a harness."""
+
+    BLOCKS = "blocks in the session"
+    CONTEXT = "context only"
+    CI = "CI only"
+    INSTRUCTIONS = "instructions only"
+
+
+@dataclass(frozen=True)
+class Reach:
+    """One surface under one harness."""
+
+    # `None`: the surface does not reach this harness at all.
+    tier: Tier | None
+    # Where the claim was measured, with the harness's version, or "unmeasured".
+    evidence: str
+
+
 @dataclass(frozen=True)
 class Harness:
     name: str
     marker_dir: str
     settings: tuple[str, ...]
+    # Settings files this harness reads that a repository keeps out of git, which `doctor`
+    # walks beside `settings` and `stayfixed assess` does not: they are this machine's.
+    local_settings: tuple[str, ...]
     # The variable this harness names the project root in, if any; the one datum of the
     # payload's reading that differs between harnesses today.
     project_dir_env: str | None
     # How the hook's stdout is shaped: (event name, joined context) -> stdout. Context only:
     # no rendering carries a decision, because a deny travels on the exit code.
     render: Callable[[str, str], str]
+    # Every `Surface`, each with the tier it holds at under this harness.
+    reach: Mapping[Surface, Reach]
     # Positive detection, for every harness but the canonical one, which is the fallback.
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
@@ -110,12 +157,36 @@ def _claude_rule(profile: Profile, rules: str) -> Rendition:
     )
 
 
+# The gates are the reusable workflow's, which runs the same under every agent: this repository's
+# smoke workflow runs it against a fixture project, and no agent takes part.
+_IN_CI = Reach(
+    Tier.CI, "the reusable workflow, run on a fixture project by this repository's smoke workflow"
+)
+# What was measured of Codex's plugin hooks, which both hook surfaces rest on.
+_NO_CODEX_HOOK = "Codex 0.160.0: no plugin hook ran, with or without its hook-trust bypass flag"
+
 CLAUDE = Harness(
     name="claude",
     marker_dir=CLAUDE_DIR,
     settings=(f"{CLAUDE_DIR}/settings.json",),
+    # The file `attach` merges the overlay's hook entries into.
+    local_settings=(f"{CLAUDE_DIR}/settings.local.json",),
     project_dir_env="CLAUDE_PROJECT_DIR",
     render=hook_specific_output,
+    reach=MappingProxyType(
+        {
+            Surface.GUARDS: Reach(
+                Tier.BLOCKS, "Claude Code 2.1.261: a guard's exit 2 stopped the command unrun"
+            ),
+            Surface.NOTICES: Reach(
+                Tier.CONTEXT, "Claude Code 2.1.261: a SessionStart hook's output arrived as context"
+            ),
+            Surface.GATES: _IN_CI,
+            Surface.METHOD: Reach(
+                Tier.INSTRUCTIONS, "Claude Code 2.1.285: the plugin's skills were listed"
+            ),
+        }
+    ),
     render_profile=_claude_rule,
 )
 # Codex reads `AGENTS.md` from the root down and no other instruction file, and follows no
@@ -125,6 +196,7 @@ CODEX = Harness(
     name="codex",
     marker_dir=".codex",
     settings=(".codex/hooks.json",),
+    local_settings=(),
     # Codex names no project root; the checkout `cwd` sits in is the one it answers for.
     project_dir_env=None,
     # Claude Code's shape, and unmeasured under Codex: Codex 0.160.0 ran none of the plugin's
@@ -132,6 +204,17 @@ CODEX = Harness(
     # `docs/plans/`). When Codex's answer is found to differ, it gets a `render` of its own here;
     # a harness whose output differs is a different value, never a branch inside a shared one.
     render=hook_specific_output,
+    reach=MappingProxyType(
+        {
+            Surface.GUARDS: Reach(None, _NO_CODEX_HOOK),
+            Surface.NOTICES: Reach(None, _NO_CODEX_HOOK),
+            Surface.GATES: _IN_CI,
+            Surface.METHOD: Reach(
+                Tier.INSTRUCTIONS,
+                "Codex 0.160.0: the plugin's skills arrived, and instructions through AGENTS.md",
+            ),
+        }
+    ),
     detects=_codex_detects,
 )
 # Claude Code's hook schema is the de-facto one, which other harnesses imitate, so it answers

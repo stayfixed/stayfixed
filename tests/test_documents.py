@@ -520,6 +520,46 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
     assert "set both to the new version" in RELEASING.read_text(encoding="utf-8")
 
 
+# `README.md`'s `## What each agent enforces` section: everything to the next `## ` heading.
+_REACH_SECTION = re.compile(
+    r"^## What each agent enforces\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
+# A cell's words where a surface does not reach an agent at all.
+NOT_REACHED = "does not run"
+
+
+def _reach_table() -> str:
+    """The README's table as the harness registry states it: a row per surface, a column per
+    harness under the name `[stayfixed] agents` lists it by, and each cell its tier."""
+    from stayfixed.harnesses import HARNESSES, Surface
+
+    head = "| Surface | " + " | ".join(f"`{harness.name}`" for harness in HARNESSES) + " |"
+    rule = "|---" * (len(HARNESSES) + 1) + "|"
+    rows = [
+        f"| {surface} | "
+        + " | ".join(
+            NOT_REACHED if (tier := harness.reach[surface].tier) is None else str(tier)
+            for harness in HARNESSES
+        )
+        + " |"
+        for surface in Surface
+    ]
+    return "\n".join([head, rule, *rows]) + "\n"
+
+
+def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
+    # The table is rendered here from the registry and the README is held equal to it, so the
+    # README stays a plain file a reader can open and the claim it makes about each agent cannot
+    # drift from the one `doctor` reports. An empty table equals nothing rendered, so a section
+    # that lost its table reddens too. Mutation (declared, on `harnesses`): Codex's session
+    # guards stated as blocking -> this reddens.
+    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What each agent enforces section"
+    lines = match.group(1).splitlines(keepends=True)
+    table = "".join(line for line in lines if line.startswith("|"))
+    assert table == _reach_table(), table
+
+
 # A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table
 # runs to the next table header or the end of the block, so a `version` key in another table
 # is not taken for it.

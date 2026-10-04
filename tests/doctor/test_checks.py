@@ -557,6 +557,42 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
     assert "unmeasured" in check.detail
 
 
+def test_the_codex_row_names_what_does_not_run_on_codex(tmp_path: Path) -> None:
+    # A Codex user who opens the report is owed the one fact about Codex that was measured: the
+    # session guards and notices do not run there, and the repository gates still hold in CI.
+    # The row reads it off the harness registry, so it names exactly the surfaces Codex's reach
+    # says do not reach it, and says nothing of Codex to a project that does not list it. It
+    # stays a skip: no measurement of Codex makes it red. Mutation (declared, on `doctor`): the
+    # row lists no surface -> this reddens.
+    from stayfixed.harnesses import CODEX, Tier
+
+    absent = [str(s) for s, reach in CODEX.reach.items() if reach.tier is None]
+    in_ci = [str(s) for s, reach in CODEX.reach.items() if reach.tier is Tier.CI]
+    assert absent and in_ci, "Codex's reach names nothing for this row to report"
+    listed = _initialised(
+        tmp_path / "codex",
+        template=LOCAL_ONLY.replace(
+            'state = "installed"', 'state = "installed"\nagents = ["claude", "codex"]'
+        ),
+    )
+    check = _by_name(_checks(tmp_path / "codex", listed), "codex-trust")
+    assert check.status == "skip" and check.remedy == ""
+    assert "on Codex the" in check.detail
+    for surface in (*absent, *in_ci):
+        assert surface in check.detail, surface
+    assert "hold in CI" in check.detail
+    unlisted = _initialised(
+        tmp_path / "claude",
+        template=LOCAL_ONLY.replace(
+            'state = "installed"', 'state = "installed"\nagents = ["claude"]'
+        ),
+    )
+    check = _by_name(_checks(tmp_path / "claude", unlisted), "codex-trust")
+    assert check.status == "skip"
+    assert "unmeasured" in check.detail
+    assert not any(surface in check.detail for surface in (*absent, *in_ci)), check.detail
+
+
 def test_the_other_check_this_build_cannot_answer_skips_for_its_own_reason(
     tmp_path: Path,
 ) -> None:

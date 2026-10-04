@@ -6,7 +6,16 @@ import json
 
 import pytest
 
-from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Harness, detect, select
+from stayfixed.harnesses import (
+    CANONICAL,
+    CLAUDE,
+    CODEX,
+    HARNESSES,
+    Harness,
+    Surface,
+    detect,
+    select,
+)
 from stayfixed.profiles import load_profile
 
 
@@ -128,3 +137,22 @@ def test_no_harness_renders_a_decision(harness: Harness, event: str, context: st
     # since it renders through the same function.
     rendered = json.loads(harness.render(event, context))
     assert not _keys(rendered) & DECISION_KEYS
+
+
+def test_every_harness_states_every_surface() -> None:
+    # The README's table and `doctor`'s `codex-trust` row both read a harness's reach, and a
+    # surface a value leaves out is one neither can say anything true about: the table would
+    # lose a cell and the row would stop naming what does not run. Mutation (declared, on
+    # `harnesses`): drop the session-notices row from Codex's reach -> this reddens.
+    for harness in HARNESSES:
+        assert set(harness.reach) == set(Surface), harness.name
+        for surface, reach in harness.reach.items():
+            assert reach.evidence, (harness.name, surface)
+            # "Does not reach this agent" is a claim a reader acts on, so only a measurement
+            # may make it; an unmeasured surface keeps the tier it was built for.
+            if reach.tier is None:
+                assert reach.evidence != "unmeasured", (harness.name, surface)
+    # Claude Code's own files, then the one it keeps out of git, which `attach` merges into:
+    # `doctor`'s settings walk is these, over every harness.
+    assert CLAUDE.local_settings == (".claude/settings.local.json",)
+    assert CODEX.local_settings == ()

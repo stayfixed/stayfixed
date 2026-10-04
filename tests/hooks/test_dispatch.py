@@ -660,8 +660,10 @@ def _harness(
         name="fake",
         marker_dir=".fake",
         settings=(),
+        local_settings=(),
         project_dir_env=project_dir_env,
         render=render,
+        reach=CLAUDE.reach,
         detects=detects,
     )
 

@@ -131,8 +131,10 @@ a release ships.)
 A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
 `stayfixed hook` asks `harnesses.detect` which value it runs under, takes the project root from
 the variable that value names, if it names one, and shapes its stdout with that value's `render`.
-Adding a harness is adding a value — a positive `detects`, its project-root variable and its
-`render` — and no edit to the hooks core. Nothing else is a harness's to choose: every payload is
+Adding a harness is adding a value — a positive `detects`, its project-root variable, its
+`render`, its settings files and its `reach`, the tier each enforcement surface holds at under
+it — and no edit to the hooks core: `doctor` walks the settings files every value names, and the
+README's table of what each agent enforces is held equal to every value's `reach` by a test. Nothing else is a harness's to choose: every payload is
 read by the one `hooks.dispatch.read_event`, because the harness a process detects is one a
 repository can choose (a committed `env` block can set `PLUGIN_ROOT`), and a deny is exit 2 with
 its reason on stderr under every harness and never reaches a `render`.

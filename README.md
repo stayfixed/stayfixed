@@ -19,9 +19,10 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > against what its base branch enforces; `stayfixed adopt`, which enforces a repository's gates
 > as each one passes; and the first stack profile, `python`, whose rules every agent is handed
 > and whose checks `stayfixed assess` runs. The hooks file that wires all of it into a session
-> ships too, so installing the plugin is enough to make the guards fire and the memory bundles
-> arrive. The first skills ship with them, and so does one command meant for a machine rather
-> than for you — `hook`, which dispatches one harness event. **Not yet:** the memory MCP server,
+> ships too, so on Claude Code installing the plugin is enough to make the guards fire and the
+> memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
+> skills ship with them, and so does one command meant for a machine rather than for you —
+> `hook`, which dispatches one harness event. **Not yet:** the memory MCP server,
 > a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
 > leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three keys
 > that are enough to start a project by hand, which `init` reads as your answers — a run that
@@ -75,6 +76,30 @@ you would install any other Codex plugin — `setup` reports this as a note rath
 marketplace name (nothing is vendored on a guess). The adoption skill will delegate to
 superpowers where it is present. The adoption skill that walks a plan with the agent ships in a
 later package.
+
+## What each agent enforces
+
+stayfixed reaches an agent in four ways, and they do not hold alike on every agent. The
+**session guards** refuse a command before it runs (`stayfixed guard bg-cleanup`, on every shell
+call); the **session notices** add context and refuse nothing (the test-hygiene note, the standing
+rules, the volatile notes); the **repository gates** — the bug, documentation, plan, commit and
+trail checks — run in CI through the reusable workflow; and the **methodology** is the skills and
+the `AGENTS.md` region. Each column is an agent under the name `[stayfixed] agents` lists it by:
+`claude` is Claude Code and `codex` is Codex.
+
+| Surface | `claude` | `codex` |
+|---|---|---|
+| session guards | blocks in the session | does not run |
+| session notices | context only | does not run |
+| repository gates | CI only | CI only |
+| methodology | instructions only | instructions only |
+
+On Claude Code a guard's refusal stopped the command before it ran when this was measured
+(Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository
+gates still hold in CI, which every agent's changes pass through. Codex ran none of the plugin's
+hooks when this was measured (Codex 0.160.0), so on Codex the session guards do not run until an
+adapter proves otherwise; `stayfixed doctor` says so in its `codex-trust` row whenever
+`[stayfixed] agents` lists `codex`.
 
 ## Install
 
