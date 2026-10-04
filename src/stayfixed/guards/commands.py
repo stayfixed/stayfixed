@@ -253,9 +253,10 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     # repository-authored string and never reaches the summary. `data` is the documented
     # exception and carries none either: each report is what `counts` kept, count names in a
     # fixed grammar with plain integers.
-    summary = "; ".join(findings) or "tree is clean" + "".join(
+    clean = "tree is clean" + "".join(
         f"; the {name} profile has nothing to report" for name in reports
     )
+    summary = "; ".join(findings) or clean
     data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)
 

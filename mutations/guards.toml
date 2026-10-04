@@ -1011,9 +1011,7 @@ reddens = [
 [[mutation]]
 name = "test hygiene's clean summary names no stack"
 file = "src/stayfixed/guards/commands.py"
-before = """    summary = "; ".join(findings) or "tree is clean" + "".join(
-        f"; the {name} profile has nothing to report" for name in reports
-    )"""
+before = "    summary = \"; \".join(findings) or clean"
 after = '    summary = "; ".join(findings) or "tree is clean"'
 reddens = ["tests/guards/test_commands.py::test_test_hygiene_is_clean_on_a_committed_tree"]
 

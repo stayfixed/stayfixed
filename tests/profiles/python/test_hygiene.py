@@ -328,7 +328,7 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
     ],
 )
 def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
-    # Reddened by mutating `recognises`'s `if argv0 == PYTEST: return True` to
+    # Reddened by mutating `recognises`'s `if argv0 == _PYTEST: return True` to
     # `return False`; measured.
     assert runs_pytest(command)
 
@@ -346,7 +346,7 @@ def test_a_real_pytest_invocation_is_recognised(command: str) -> None:
 def test_a_mention_or_an_unrecognised_launcher_is_not_a_run(command: str) -> None:
     # The fourth is the documented under-report: an unrecognised wrapper leaves the note
     # undelivered, never wrongly delivered. Reddened by mutating `recognises` to answer
-    # `PYTEST in " ".join(argv)`, the substring test it exists to replace; measured.
+    # `_PYTEST in " ".join(argv)`, the substring test it exists to replace; measured.
     assert not runs_pytest(command)
 
 

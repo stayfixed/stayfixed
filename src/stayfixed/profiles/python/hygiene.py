@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
     from stayfixed.profiles.hints import RedRunHint
 
-PYTEST = "pytest"
+_PYTEST = "pytest"
 _PYTHON_ARGV0_PREFIX = "python"
 # PEP 552: every .pyc opens with a 4-byte magic, then a 4-byte little-endian flags word, then
 # four more bytes whose MEANING is decided by bit 0 of those flags.
@@ -154,15 +154,15 @@ class PythonHint:
         if not argv:
             return False
         argv0 = Path(argv[0]).name
-        if argv0 == PYTEST:
+        if argv0 == _PYTEST:
             return True
         if not argv0.startswith(_PYTHON_ARGV0_PREFIX):
             return False
-        if f"-m{PYTEST}" in argv:
+        if f"-m{_PYTEST}" in argv:
             return True
-        # `pairwise`, not `zip(argv, argv[1:])`: identical semantics, and ruff's RUF007 refuses
-        # the `zip` form on this tree.
-        return any(current == "-m" and following == PYTEST for current, following in pairwise(argv))
+        return any(
+            current == "-m" and following == _PYTEST for current, following in pairwise(argv)
+        )
 
     def report(self, root: Path, config: Config) -> Mapping[str, int]:
         roots = contained_roots(root, config)
