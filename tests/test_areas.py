@@ -227,9 +227,9 @@ def test_no_module_reaches_into_another_packages_private_module() -> None:
     # The walk is asserted before anything is asserted about it. Both floors are well under
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
     # current. Re-measured 2026-10-04, by running this module's own `_ruled_packages` and
-    # `_boundary_offences` over the same two globs in an interpreter: 138 files, 11 areas and
-    # one further package with an `api.py`, 5 scripts and 210 crossings, with a walk narrowed to
-    # `commands.py` alone counting 11 under `src/` and 26 with the scripts — which is what the
+    # `_boundary_offences` over the same two globs in an interpreter: 144 files, 11 areas and
+    # one further package with an `api.py`, 5 scripts and 242 crossings, with a walk narrowed to
+    # `commands.py` alone counting 9 under `src/` and 24 with the scripts — which is what the
     # crossings floor of 60 has to be below.
     assert len(areas) == 11, areas
     # The packages held to a surface without being discovered, pinned by name for the reason
