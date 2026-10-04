@@ -10,7 +10,6 @@ named tests do not exist read as *caught*, and a `git status` that could not ans
 from __future__ import annotations
 
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -24,23 +23,24 @@ from types import ModuleType
 import pytest
 
 from tests import gitfixture
-from tests.declarations import ANCHOR, cited_names, declared, load
+from tests.declarations import ANCHOR, SCRIPT, cited_names, declared
 from tests.gitfixture import git as _git
+from tests.gitfixture import needs_git
+from tests.script import load
 from tests.test_payload import FILE_MAX_BYTES
 
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def oracle(root: Path | None = None) -> ModuleType:
-    """A fresh copy of the script, loaded by path through `tests.declarations.load`.
+    """A fresh copy of the script, loaded by path through `tests.script.load`.
 
     `root` redirects the module's `ROOT`, which is where it runs pytest and asks `git` about
     the tree, and `DECLARATIONS`, the `mutations/` directory beneath it. Every test below points
     it at a throwaway directory, so nothing here mutates a file in this checkout or reads its git
     state.
     """
-    module = load("mutation_oracle_under_test")
+    module = load(SCRIPT, "mutation_oracle_under_test")
     if root is not None:
         # Through `__dict__`, not an attribute assignment: `ModuleType` types reads as
         # `Any` and writes as an error, and this one is deliberate.

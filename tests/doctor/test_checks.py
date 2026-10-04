@@ -50,8 +50,8 @@ from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PL
 from stayfixed.release.api import HASHED_FILES
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
-from tests.release_script import release
 from tests.runners import LsRemote, Recorder
+from tests.script import release
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 

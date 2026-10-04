@@ -11,7 +11,7 @@ import pytest
 
 from stayfixed import __version__
 from stayfixed.release.api import HASHED_FILES, RECORD
-from tests.release_script import release
+from tests.script import release
 
 ROOT = Path(__file__).resolve().parents[1]
 
