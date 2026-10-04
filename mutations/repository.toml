@@ -3343,8 +3343,8 @@ reddens = ["tests/scripts/test_release.py::test_a_tag_that_names_another_version
 [[mutation]]
 name = "release check tags over a pending fragment"
 file = "scripts/release.py"
-before = "        if pending_fragments(root):\n            count = sum("
-after = "        if False:\n            count = sum("
+before = "        if pending:\n            problems.append("
+after = "        if False:\n            problems.append("
 reddens = ["tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused"]
 
 # The release script's `notes` writes CHANGELOG.md. Under a version that is not the project's it

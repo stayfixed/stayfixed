@@ -180,6 +180,15 @@ def _is_fragment(name: str, types: frozenset[str]) -> bool:
     return bool(prefix) and kind in types
 
 
+def fragments(root: Path) -> list[str]:
+    """The real towncrier fragments `changelog.d` holds, by name, the types read once."""
+    directory = root / "changelog.d"
+    if not directory.is_dir():
+        return []
+    types = fragment_types(root)
+    return sorted(entry.name for entry in directory.iterdir() if _is_fragment(entry.name, types))
+
+
 def pending_fragments(root: Path) -> bool:
     """Whether `changelog.d` holds a real towncrier fragment, letting CHANGELOG.md lag.
 
@@ -187,11 +196,7 @@ def pending_fragments(root: Path) -> bool:
     Finder writes merely by opening the directory — silenced a genuine version drift and turned
     a red release gate green.
     """
-    directory = root / "changelog.d"
-    if not directory.is_dir():
-        return False
-    types = fragment_types(root)
-    return any(_is_fragment(entry.name, types) for entry in directory.iterdir())
+    return bool(fragments(root))
 
 
 def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
@@ -217,22 +222,30 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
 
 
 def check(root: Path, *, tag: str | None = None) -> list[str]:
+    """What stops this tree from being released as one version, at `tag` when one is given."""
+    return checked(root, tag=tag)[0]
+
+
+def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str, str | None]]:
+    """`check`'s problems, and the version each source carried as it read them, so a caller that
+    reports both reads the tree once."""
     # Four different conditions used to share one wrong message, so a user who typoed --root,
     # or ran the command in their own project (--root defaults to "."), was told their
     # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
     # own line rather than the missing-path one: `--root ./pyproject.toml` was told the file
     # does not exist, and a gate that exists to stop asserting untrue things about the user's
     # tree must not assert one itself.
-    if not root.exists():
-        return [f"{root} does not exist; --root must name a repository root"]
-    if not root.is_dir():
-        return [f"{root} is not a directory; --root must name a repository root"]
-    if not (root / PYPROJECT).is_file():
-        return [f"{root} has no {PYPROJECT}; --root must name a repository root"]
     found = collect(root)
+    if not root.exists():
+        return [f"{root} does not exist; --root must name a repository root"], found
+    if not root.is_dir():
+        return [f"{root} is not a directory; --root must name a repository root"], found
+    if not (root / PYPROJECT).is_file():
+        return [f"{root} has no {PYPROJECT}; --root must name a repository root"], found
     canonical = found[PYPROJECT]
     if canonical is None:
-        return [f"{PYPROJECT} has no [project].version"]
+        return [f"{PYPROJECT} has no [project].version"], found
+    pending = fragments(root)
     problems: list[str] = []
     if tag is not None:
         if tag not in tag_for(canonical):
@@ -250,16 +263,13 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
                 f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
                 f"{PYPROJECT} says {canonical!r}"
             )
-        if pending_fragments(root):
-            count = sum(
-                _is_fragment(e.name, fragment_types(root)) for e in (root / "changelog.d").iterdir()
-            )
+        if pending:
             problems.append(
-                f"changelog.d still holds {count} fragment(s); run `{COMMAND} notes "
+                f"changelog.d still holds {len(pending)} fragment(s); run `{COMMAND} notes "
                 f"--version {canonical}` before tagging"
             )
     for name, value in found.items():
-        if name == "CHANGELOG.md" and tag is None and pending_fragments(root):
+        if name == "CHANGELOG.md" and tag is None and pending:
             continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
@@ -280,7 +290,7 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
     # with no record yet is told to write one.
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         problems += drift(root)
-    return problems
+    return problems, found
 
 
 # --- The changelog ------------------------------------------------------------------------------
@@ -362,10 +372,7 @@ def drift(root: Path) -> list[str]:
 
 def run_check(args: argparse.Namespace) -> Result:
     root = Path(args.root)
-    problems = check(root, tag=args.tag)
-    # `collect` after `check` and never before it: a source `collect` could not parse is a
-    # `MalformedSource`, which `check` raises first, so reaching this line means all six parsed.
-    versions = collect(root)
+    problems, versions = checked(root, tag=args.tag)
     data = {"problems": problems, "versions": versions}
     if problems:
         return Result("version drift: " + "; ".join(problems), data, exit_code=1)
