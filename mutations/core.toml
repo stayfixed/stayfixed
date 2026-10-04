@@ -1989,3 +1989,13 @@ after = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)'
 reddens = [
   "tests/test_fsops.py::test_rmdir_parents_within_leaves_a_symlinked_directory_and_what_it_points_at",
 ]
+
+# A command named by a name the parser no longer registers, in a file a reader or a model reads.
+[[mutation]]
+name = "a source comment names the overlay command by its old name"
+file = "src/stayfixed/gitenv.py"
+before = "and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer"
+after = "and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer"
+reddens = [
+  "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
+]

@@ -29,6 +29,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from tests.cli import subparsers
+from tests.test_neutral import tracked_files
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
@@ -308,6 +309,109 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
     found = registered_commands()
     assert {"memory index", "bugs check", "docs check", "plan check", "hook"} <= found
     assert len(found) >= REGISTERED_COMMANDS_FLOOR
+
+
+# Where a tracked file names a command: in backticks, on a line that runs it through `uv run`,
+# and on a line of a fenced block in a document. A mention wrapped onto the next line carries
+# the comment marker or the string-concatenation quotes that continue it, which `_WRAP` reads
+# as the space they stand for.
+_MENTION = re.compile(r"`stayfixed\s([^`]{1,300})`")
+_RUN = re.compile(r"\buv run stayfixed\s+([^\n`\"']*)")
+_FENCED_LINE = re.compile(r"^\s*(?:\$ )?stayfixed\s+([^\n]*)", re.MULTILINE)
+_WRAP = re.compile(r'"?\s*\n\s*(?:#\s*|f?")?')
+_COMMAND_NAME = re.compile(r"[a-z][a-z0-9-]*")
+# What the walk does not read, and why: a plan, the changelog and its fragments are the record of
+# what a command was called when they were written, and a mutation entry plants an old spelling
+# on purpose, in an `after` value no mention walk can tell from prose.
+_NAMES_AS_THEY_WERE = ("docs/plans/", "changelog.d/", "mutations/", "CHANGELOG.md")
+_NAMING_SUFFIXES = (".md", ".yml", ".yaml", ".toml", ".py")
+# A vacuity floor, not a count: the walk read 877 mentions when it was written, and a regex
+# that matched nothing would satisfy the check below it.
+NAMED_COMMANDS_FLOOR = 500
+
+
+def named_commands(relative: str, text: str) -> list[str]:
+    """The text after `stayfixed` in each place `text` names a command."""
+    found = [_WRAP.sub(" ", body) for body in _MENTION.findall(text)]
+    found += _RUN.findall(text)
+    if relative.endswith(".md"):
+        for block in _FENCE.findall(text):
+            found += _FENCED_LINE.findall(block)
+    return found
+
+
+def unregistered(named: list[str]) -> list[str]:
+    """Each of `named` whose group, or whose command under a group, the parser does not register.
+
+    Names only, never a parse: a synopsis carries placeholders (`<group>`, `…`, `{name}`), and a
+    token that is not a command's name is not asked about.
+    """
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
+    wrong: list[str] = []
+    for body in named:
+        words = body.split()
+        if not words or not _COMMAND_NAME.fullmatch(words[0]):
+            continue
+        if words[0] not in groups.choices:
+            wrong.append(body)
+            continue
+        nested = subparsers(groups.choices[words[0]])
+        if (
+            nested is not None
+            and len(words) > 1
+            and _COMMAND_NAME.fullmatch(words[1])
+            and words[1] not in nested.choices
+        ):
+            wrong.append(body)
+    return wrong
+
+
+def test_the_command_name_walk_discriminates() -> None:
+    # The guard for the walk below, which asserts an absence: a walk that read no mention, or
+    # asked nothing of one, would pass it. Spelled through `tick` and `run` so this file names no
+    # command the walk would then find in it.
+    tick, run = "`", "uv run"
+    old = [
+        f"run {tick}stayfixed release check{tick} first",
+        f"{tick}stayfixed adopt begin{tick} and {tick}stayfixed test audit-entrypoints{tick}",
+        f"# {tick}stayfixed overlay\n# publish{tick}",
+        f"        run: {run} stayfixed release check --tag x",
+    ]
+    for text in old:
+        assert unregistered(named_commands("x.py", text)), text
+    assert unregistered(named_commands("x.md", "```bash\nstayfixed release check\n```\n"))
+    fine = [
+        f"{tick}stayfixed adopt promote{tick}, {tick}stayfixed hook <event>{tick}",
+        f"{tick}stayfixed <group>{tick}, {tick}stayfixed …{tick}, {tick}stayfixed {{name}}{tick}",
+        f'"{tick}stayfixed memory "\n    "index --check{tick}"',
+        f"{tick}stayfixed --version{tick}, {run} stayfixed init --yes",
+    ]
+    for text in fine:
+        named = named_commands("x.py", text)
+        assert named and not unregistered(named), text
+
+
+def test_every_command_a_tracked_file_names_is_one_the_parser_registers() -> None:
+    # The release commands left the CLI for `scripts/release.py`, `adopt begin` and `test
+    # audit-entrypoints` left it outright, and the tests that held the new spellings checked that
+    # each was present, never that an old one was gone: five old spellings planted across the
+    # contributor documents, the README, `docs/cli.md` and `release.yml` left them green. And a
+    # source comment had named `overlay publish` since that command became `publish-template`.
+    # Mutation (declared): `mutations/`'s "a source comment names the overlay command by its old
+    # name".
+    named: dict[str, list[str]] = {}
+    count = 0
+    for path in tracked_files():
+        relative = path.relative_to(ROOT).as_posix()
+        if relative.startswith(_NAMES_AS_THEY_WERE) or not relative.endswith(_NAMING_SUFFIXES):
+            continue
+        found = named_commands(relative, path.read_text(encoding="utf-8"))
+        count += len(found)
+        if wrong := unregistered(found):
+            named[relative] = wrong
+    assert count >= NAMED_COMMANDS_FLOOR, count
+    assert named == {}
 
 
 def test_every_registered_command_has_a_readme_row() -> None:

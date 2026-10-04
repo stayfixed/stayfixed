@@ -23,11 +23,11 @@ boundary, and a lossless one, so no byte of git's answer can raise out of a comm
 site decides only what an answer means to it. The
 `Runner` seam in `stayfixed.runner`, which launches the owner's own commands — `git clone` among
 them — for their exit code and a message, is the other. One question goes through that seam
-and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer command, asks
-`git status --porcelain` of a scratch clone it has just filled with stayfixed's own template,
-beside the `add`, `commit` and `push` it runs the same way, so its tests stub all four at one
-seam. It only counts and reports the changed names, and the seam reads them with a replacement
-character, so a name that is not UTF-8 cannot end it as an internal error.
+and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer
+command, asks `git status --porcelain` of a scratch clone it has just filled with stayfixed's own
+template, beside the `add`, `commit` and `push` it runs the same way, so its tests stub all four
+at one seam. It only counts and reports the changed names, and the seam reads them with a
+replacement character, so a name that is not UTF-8 cannot end it as an internal error.
 """
 
 from __future__ import annotations

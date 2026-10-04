@@ -795,6 +795,12 @@ def test_the_release_workflow_runs_the_release_check_in_the_one_spelling() -> No
     assert bodies, "release.yml runs no script"
     checks = [body.strip() for body in bodies if RELEASE_CHECK in body]
     assert checks == [f'{RELEASE_CHECK} --tag "$GITHUB_REF_NAME"'], checks
+    # And no step runs the commands the CLI used to ship, beside the one above or instead of it:
+    # the line above filters to steps that already carry the new spelling, so a second step with
+    # the old one passed it. Mutation (declared): `mutations/`'s "the release workflow builds
+    # after running the release check the CLI no longer ships".
+    for body in bodies:
+        assert "stayfixed release" not in body, body
 
 
 @needs_release_workflow

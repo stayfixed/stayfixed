@@ -3564,6 +3564,16 @@ reddens = [
   "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
 ]
 
+# A second step running the command the CLI used to ship, beside the one in the new spelling.
+[[mutation]]
+name = "the release workflow builds after running the release check the CLI no longer ships"
+file = ".github/workflows/release.yml"
+before = "        run: uv build"
+after = "        run: uv run stayfixed release check && uv build"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_workflow_runs_the_release_check_in_the_one_spelling",
+]
+
 # The installed CLI's frame gives every command its `help=` sentence as its description; the
 # release script has its own parser and no frame, and each command's `--help` opened with
 # `usage:` and went straight to the options.
