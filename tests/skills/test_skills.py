@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
+from stayfixed.overlay.template import template_root
+from stayfixed.project.commands import CUSTOM_GATES
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
@@ -63,12 +65,13 @@ def skills() -> list[Path]:
 def entry_points() -> list[Path]:
     """Every `SKILL.md` this repository ships, in the plugin **and** in the overlay template.
 
-    `skills()` never saw the template tree, so the one skill that goes into every overlay a user
-    creates was held to exactly one of the three rules `skills/README.md` states: it reached the
-    invocation lint through `documents()` and was walked by nothing else. The 80-line cap, the
-    frontmatter check and the harness-tool rule all parametrise over `skills()`, so that file
-    passed them by not being one of their cases. It passes today on its merits; nothing was
-    checking that it would tomorrow.
+    `skills()` never saw the template tree, so a skill the template shipped into every overlay a
+    user creates was held to exactly one of the three rules `skills/README.md` states: it reached
+    the invocation lint through `documents()` and was walked by nothing else. The 80-line cap,
+    the frontmatter check and the harness-tool rule all parametrise over `skills()`, so that file
+    passed them by not being one of their cases. The template ships no skill today; one added
+    there is walked by all three, and reddens `test_the_walk_finds_the_ported_skills`, which
+    names the template's share as empty so that adding one is a decision.
 
     `skills()` itself is left alone, because `test_the_walk_finds_the_ported_skills` and
     `test_every_reference_file_is_linked_from_its_skill` are statements about the plugin's own
@@ -93,9 +96,9 @@ def documents() -> list[Path]:
     way: a reference writes ordinary English about writing ("Write the rule, not the incident")
     that `_TOOL` would read as the harness tool of the same name.
 
-    The template's skills are walked for the same reason the plugin's are: they ship into every
-    overlay a user creates and a model reads them there. Where they live is not the question the
-    lint asks.
+    The template's tree is walked for the same reason the plugin's is: a skill there ships into
+    every overlay a user creates and a model reads it there. It holds none today, and one added
+    there is linted like the plugin's. Where a skill lives is not the question the lint asks.
     """
     return sorted(
         path
@@ -141,8 +144,6 @@ def test_the_walk_finds_the_ported_skills() -> None:
     # its copy of `attach` was retired for the plugin's own, so the walks' share of it is named
     # as the empty set: a skill added there again reddens this, and is walked by the rules.
     # No mutation entry: what breaks this is a file added to the tree, not a line changed.
-    from stayfixed.overlay.template import template_root
-
     assert TEMPLATE_SKILLS.parent == template_root()
     assert [path for path in walked if TEMPLATE_SKILLS in path.parents] == []
     assert set(entry_points()) == set(skills())
@@ -239,8 +240,6 @@ def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None
     # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
     # skill names that note by its words and asks before the first `stayfixed assess`. Mutation
     # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
-    from stayfixed.project.commands import CUSTOM_GATES
-
     text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
     adoption = " ".join(text.split())
     lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
