@@ -159,7 +159,7 @@ def test_every_command_describes_itself_and_names_json_in_its_own_help() -> None
 
 def test_areas_are_discovered_from_the_package() -> None:
     names = {registrar.__module__ for registrar in discover_registrars()}
-    assert "stayfixed.release.commands" in names
+    assert "stayfixed.doctor.commands" in names
 
 
 def _subcommands(group: str) -> set[str]:
@@ -248,7 +248,7 @@ def test_a_broken_area_on_a_non_hook_command_still_exits_two(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("stayfixed.cli.discover_registrars", _broken)
-    assert main(["release", "check"]) == 2
+    assert main(["doctor"]) == 2
     assert "stayfixed: internal error: RuntimeError" in capsys.readouterr().err
 
 
@@ -258,7 +258,7 @@ def _broken_by_keyboard_interrupt() -> list[Registrar]:
 
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["release", "check"], 2)],
+    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["doctor"], 2)],
 )
 def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_exception(
     monkeypatch: pytest.MonkeyPatch,
@@ -283,20 +283,20 @@ def _register_explodes(groups: SubParsers) -> None:
     raise RuntimeError("register exploded")
 
 
-def _claims_release(groups: SubParsers) -> None:
-    groups.add_parser("release")
+def _claims_doctor(groups: SubParsers) -> None:
+    groups.add_parser("doctor")
 
 
 BROKEN_BUILDS: dict[str, list[Registrar]] = {
     "register-raises": [_register_explodes],
-    "two-areas-claim-one-group": [_claims_release, _claims_release],
+    "two-areas-claim-one-group": [_claims_doctor, _claims_doctor],
 }
 
 
 @pytest.mark.parametrize("registrars", list(BROKEN_BUILDS.values()), ids=list(BROKEN_BUILDS))
 @pytest.mark.parametrize(
     ("argv", "code"),
-    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["release", "check"], 2)],
+    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["doctor"], 2)],
 )
 def test_a_broken_parser_build_is_judged_like_a_broken_import(
     monkeypatch: pytest.MonkeyPatch,

@@ -543,8 +543,8 @@ def test_the_declarations_name_exactly_what_the_classification_rests_on() -> Non
 @pytest.mark.parametrize(
     "extra",
     [
-        "    runner.launch(list(EXTRA), root)\n",
-        "    argv = ['curl', 'x']\n    runner.launch(argv, root)\n",
+        "            runner.launch(list(EXTRA), home)\n",
+        "            argv = ['curl', 'x']\n            runner.launch(argv, home)\n",
     ],
     ids=["another-expression", "the-same-expression-rebound"],
 )
@@ -553,10 +553,10 @@ def test_a_declaration_covers_only_the_launch_it_names(extra: str) -> None:
     # function is unclassified, whether it hands another expression or the declared one after
     # binding it again. The entries in `mutations/` that name this test key a declaration on its
     # function alone again, and stop holding a declared element to one binding.
-    notes = "src/stayfixed/release/notes.py"
-    source = (ROOT / notes).read_text(encoding="utf-8")
-    done = "    done = runner.launch(argv, root)\n"
-    launches = WALK.launches_in(source.replace(done, done + extra), notes)
+    installs = "src/stayfixed/setup/run.py"
+    source = (ROOT / installs).read_text(encoding="utf-8")
+    done = "            done = runner.launch(argv, home)\n"
+    launches = WALK.launches_in(source.replace(done, done + extra), installs)
     assert [launch.line for launch in unclassified(launches)] != []
 
 

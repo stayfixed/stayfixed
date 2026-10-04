@@ -296,7 +296,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         "ruff check .",
         "ruff format --check .",
         "mypy",
-        "stayfixed release check",
+        "scripts/release.py check",
     )
     for name, text in blocks.items():
         assert text.strip(), name

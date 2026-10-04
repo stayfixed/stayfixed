@@ -397,9 +397,9 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
 
     Before 0.1.0 the section described the untagged install forms and a marked region the release
     commit replaced; `RELEASING.md` step 5 now bumps the two places the section names the
-    version, and this holds them to the version `release check` holds everywhere else, which it
-    cannot see in a README example. An untagged `git+` install or a promise about "the first
-    release" would put a second install command beside the released one.
+    version, and this holds them to the version `scripts/release.py check` holds everywhere else,
+    which it cannot see in a README example. An untagged `git+` install or a promise about "the
+    first release" would put a second install command beside the released one.
 
     Mutation (declared): the PyPI form becomes an untagged `git+` install -> this reddens.
     """
@@ -433,7 +433,7 @@ def test_the_example_configurations_carry_the_running_version(document: Path) ->
     """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
     kept the last release's number is a copy-paste that makes a brand-new project warn.
 
-    `release check` reads six sources and none of them is an example in a document, so
+    `scripts/release.py check` reads six sources and none of them is an example in a document, so
     `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
     the release. This holds them, the way the Install section is held above.
 
@@ -671,12 +671,12 @@ def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
     # section added without its Contents line, or a heading renamed under a stale link, is
     # a reference a reader cannot navigate. The floor is today's count of sections after the
-    # Contents, 42, so a walk that found nothing, or half, cannot pass.
+    # Contents, 39, so a walk that found nothing, or half, cannot pass.
     # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
     text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
     _, _, after = text.partition("## Contents\n")
     contents, _, rest = after.partition("\n## ")
     listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
-    assert len(headings) >= 42, len(headings)
+    assert len(headings) >= 39, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]

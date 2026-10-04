@@ -24,7 +24,7 @@ def test_commands_modules_are_found_in_area_name_order() -> None:
     names = [module.__name__ for module in area_modules("commands")]
     assert names == sorted(names)
     assert "stayfixed.hooks.commands" in names
-    assert "stayfixed.release.commands" in names
+    assert "stayfixed.doctor.commands" in names
 
 
 def test_the_runner_is_a_leaf_and_not_an_area() -> None:
@@ -83,7 +83,7 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     assert "stayfixed.harnesses" not in imported
 
 
-# The twelve areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
+# The eleven areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
 # CLI frame and not an area — nothing discovers it, it has no `api.py`, and it owns the wiring
 # of the `hook` command — so it reads `stayfixed.hooks.policy` directly. It is named here rather
 # than skipped silently, because an exemption nobody can see is how the two violations this
@@ -206,7 +206,7 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # `_boundary_offences` over the same two globs in an interpreter: 138 files, 12 areas, 4
     # scripts and 179 crossings, with a walk narrowed to `commands.py` alone counting 11 under
     # `src/` and 18 with the scripts — which is what the crossings floor of 60 has to be below.
-    assert len(areas) == 12, areas
+    assert len(areas) == 11, areas
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing

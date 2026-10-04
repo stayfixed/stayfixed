@@ -18,20 +18,18 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > what stands between a repository and enforcement; `stayfixed gate`, which judges a change
 > against what its base branch enforces; `stayfixed adopt`, which enforces a repository's gates
 > as each one passes; and the first stack profile, `python`, whose rules every agent is handed
-> and whose checks `stayfixed assess` runs. The hooks file that wires all
-> of it into a session ships too, so installing the plugin is enough to make the guards fire
-> and the memory bundles arrive. The first skills ship with them, and so do two command groups
-> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
-> `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form
-> of the gate, and adapters for Cursor or Hermes — each leaves this list in the change that
-> ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start a
-> project by hand, which `init` reads as your answers — a run that writes the file itself writes
-> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a
-> shipped profile's markers or `--profile` names one, beside `[project] name`, `base_branch`
-> and `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci`
-> asks for none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]`
-> table only when `--local` does.
+> and whose checks `stayfixed assess` runs. The hooks file that wires all of it into a session
+> ships too, so installing the plugin is enough to make the guards fire and the memory bundles
+> arrive. The first skills ship with them, and so does one command meant for a machine rather
+> than for you — `hook`, which dispatches one harness event. **Not yet:** the memory MCP server,
+> a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
+> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three keys
+> that are enough to start a project by hand, which `init` reads as your answers — a run that
+> writes the file itself writes `[stayfixed] version`, `state` and `agents`, and `profile` when
+> the repository carries a shipped profile's markers or `--profile` names one, beside
+> `[project] name`, `base_branch` and `release_branch`, a `[ci]` table only when it has a released
+> commit to pin or `--no-ci` asks for none, a `[memory]` table only when `--memory-mode` answers
+> it, and an `[artifacts]` table only when `--local` does.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -393,13 +391,8 @@ stayfixed adopt promote --builtin                      # the same, running none 
 stayfixed doctor                                       # sixteen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
-# Internal and release
+# Internal
 stayfixed hook SessionStart                            # dispatch one harness hook event (internal)
-stayfixed release check                                # one version everywhere (this repository's own)
-stayfixed release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
-stayfixed release notes --version 1.2.3 --draft        # render the section towncrier would write
-stayfixed release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
-stayfixed release hashes --check                       # the shipped files still match the release record
 ```
 
 Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
