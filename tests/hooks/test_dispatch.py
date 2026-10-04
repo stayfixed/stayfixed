@@ -692,10 +692,10 @@ def test_a_detected_harness_renders_its_own_answer(
 ) -> None:
     # A harness whose output differs is a value of its own, registered beside the others, and
     # the hook answers through the value detection chose. The handler sees the same event it
-    # would under any harness, with the root the first registered variable names, here the
-    # fake's own, the only one set. Mutation (declared, on `hooks.dispatch`): `dispatch` renders
-    # with `CANONICAL` instead of the detected harness -> stdout is Claude Code's JSON and this
-    # reddens.
+    # would under any harness, with the root from the first project-root variable set, the
+    # canonical harness's asked first; here only the fake's own is set. Mutation (declared, on
+    # `hooks.dispatch`): `dispatch` renders with `CANONICAL` instead of the detected harness ->
+    # stdout is Claude Code's JSON and this reddens.
     fake = _harness(
         lambda name, context: f"fake:{name}:{context}",
         detects=lambda env, payload: payload is not None and "fake_session" in payload,
