@@ -134,12 +134,12 @@ a release ships.)
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
   import that reaches past one. The rule holds every package that publishes an `api.py`, an area
-  or not (`release` is held to its surface like any area), and every area without one, which
-  nothing outside it may import at all (`assess`). The list is what consumers actually reach
-  for, not what the area finds tidy: a consumer that needs something absent from it grows it
-  deliberately, in a commit that says which consumer and why. `cli.py` is the CLI frame rather
-  than an area, and its one direct import of `hooks.policy` is named in that test rather than
-  skipped silently.
+  or not (`release` is held to its surface like any area), and every area without one
+  (`assess`), none of whose modules anything outside it may import. The list is what consumers
+  actually reach for, not what the area finds tidy: a consumer that needs something absent from
+  it grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI
+  frame rather than an area, and its one direct import of `hooks.policy` is named in that test
+  rather than skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
