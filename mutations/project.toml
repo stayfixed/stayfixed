@@ -1860,20 +1860,35 @@ reddens = [
   "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
 ]
 
-# Only a regular `.pyc` is read. Following a symlinked one reads a file outside every code root,
-# and opening a named pipe waits for a writer for good; a link to `/dev/stdin` hung `test hygiene`
-# in a terminal. The source is not held to it: the interpreter follows a symlinked source too.
+# Only a regular `.pyc` is read, and it is judged by the descriptor that reads it. Following a
+# symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
+# waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a
+# pipe whose writer has written a header reads like bytecode. The source is not held to it: the
+# interpreter follows a symlinked source too.
+[[mutation]]
+name = "a symlinked .pyc is followed"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
+after = "_PYC_OPEN = os.O_RDONLY | os.O_NONBLOCK"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
+
+[[mutation]]
+name = "a .pyc that is a named pipe is opened waiting for a writer"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
+after = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW"
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk",
+]
+
 [[mutation]]
 name = "a .pyc that is not a regular file is read"
 file = "src/stayfixed/profiles/python/hygiene.py"
-before = """                if not stat.S_ISREG(pyc.lstat().st_mode):
-                    continue
+before = """        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
 """
 after = ""
-reddens = [
-  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed",
-  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_opened",
-]
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_read"]
 
 [[mutation]]
 name = "a source that is a symlink is not compared"

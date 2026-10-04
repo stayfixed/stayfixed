@@ -242,8 +242,8 @@ def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
     Only the bytecode must be a regular file. A source that is a symlink is still compared,
     because the interpreter follows it too, and its stale bytecode is counted.
     """
-    # Oracle: `mutations/`, "a .pyc that is not a regular file is read" and "a source that is a
-    # symlink is not compared".
+    # Oracle: `mutations/`, "a symlinked .pyc is followed" and "a source that is a symlink is not
+    # compared".
     root = repo(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -264,19 +264,17 @@ def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
     assert stale(root) == 2
 
 
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes on this platform")
-def test_a_pyc_that_is_a_named_pipe_is_never_opened(tmp_path: Path) -> None:
-    """Opening a named pipe for reading waits for a writer, so a `.pyc` that is one, like a
-    committed symlink to `/dev/stdin`, hung `stayfixed test hygiene` for good. The walk must not
-    open it.
+needs_mkfifo = pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes")
 
-    The helper thread is what turns a regression into a failure rather than a hang: while the
-    walk runs it keeps trying to open the pipe's write end without blocking, which succeeds only
-    once a reader is waiting. If it ever succeeds, the walk opened the pipe; the writer then
-    closes, the walk reads an empty header and moves on, and the test fails on `opened`. The
-    real stale `.pyc` beside the pipe is counted, so the walk demonstrably ran.
-    """
-    # Oracle: `mutations/`, "a .pyc that is not a regular file is read".
+# How long a walk over two files may take before the test calls it blocked. A correct walk takes
+# milliseconds, so only a walk starved of the CPU for this long could pass it by accident; the
+# number decides only how long a regression takes to fail.
+PATIENCE_SECONDS = 10
+
+
+def a_tree_with_a_piped_pyc(tmp_path: Path) -> tuple[Path, Path]:
+    """A tree with one real stale `.pyc` and, beside it, a `.pyc` that is a named pipe whose
+    source is stale too: counted, the pipe would make two."""
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     compile_module(module)
@@ -285,28 +283,46 @@ def test_a_pyc_that_is_a_named_pipe_is_never_opened(tmp_path: Path) -> None:
     pipe = module.parent / "__pycache__" / f"piped.{sys.implementation.cache_tag}.pyc"
     os.mkfifo(pipe)
     make_stale(module, piped)
-    opened = threading.Event()
-    done = threading.Event()
+    return root, pipe
 
-    def release_a_waiting_reader() -> None:
-        while not done.is_set():
-            try:
-                os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
-            except OSError:
-                done.wait(0.01)
-                continue
-            opened.set()
-            return
 
-    writer = threading.Thread(target=release_a_waiting_reader, daemon=True)
-    writer.start()
+@needs_mkfifo
+def test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk(tmp_path: Path) -> None:
+    """Opening a named pipe for reading waits for a writer, so a `.pyc` that is one, like a
+    committed symlink to `/dev/stdin`, hung `stayfixed test hygiene` for good. The walk opens
+    without waiting.
+
+    The walk runs in a thread so that a regression fails instead of hanging: when it is still
+    running after `PATIENCE_SECONDS`, it is waiting on the pipe, and opening the write end
+    without blocking, which succeeds once a reader waits, releases it.
+    """
+    # Oracle: `mutations/`, "a .pyc that is a named pipe is opened waiting for a writer".
+    root, pipe = a_tree_with_a_piped_pyc(tmp_path)
+    counted: list[int] = []
+    walker = threading.Thread(target=lambda: counted.append(stale(root)), daemon=True)
+    walker.start()
+    walker.join(PATIENCE_SECONDS)
+    blocked = walker.is_alive()
+    if blocked:
+        os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+        walker.join()
+    assert not blocked
+    assert counted == [1]
+
+
+@needs_mkfifo
+def test_a_pyc_that_is_a_named_pipe_is_never_read(tmp_path: Path) -> None:
+    """A pipe whose writer has already written a whole stale header reads like a `.pyc`, and
+    without waiting: only the check that the opened file is a regular one keeps it out of the
+    count. The test holds both ends itself (`O_RDWR`), so the header sits in the pipe."""
+    # Oracle: `mutations/`, "a .pyc that is not a regular file is read".
+    root, pipe = a_tree_with_a_piped_pyc(tmp_path)
+    writer = os.open(pipe, os.O_RDWR)
     try:
-        count = stale(root)
+        os.write(writer, importlib.util.MAGIC_NUMBER + struct.pack("<III", 0, 0, 0))
+        assert stale(root) == 1
     finally:
-        done.set()
-        writer.join()
-    assert not opened.is_set()
-    assert count == 1
+        os.close(writer)
 
 
 def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:

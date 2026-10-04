@@ -20,6 +20,7 @@ and a `ledger.code_roots` entry is walked and never printed.
 from __future__ import annotations
 
 import importlib.util
+import os
 import stat
 import struct
 from collections.abc import Iterable, Mapping, Sequence
@@ -71,6 +72,13 @@ _PYC_HASH_BASED = 0b1
 # there -- compares a 33-bit number against the 32 bits the header can hold and mismatches
 # forever.
 _PYC_MTIME_MASK = 0xFFFFFFFF
+# Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe was
+# put there by whoever wrote the tree, and opening it reads what it names, or waits on a pipe's
+# writer for good (a link to `/dev/stdin` hung a terminal). So the open refuses a symlink, returns
+# at once from a pipe, and what it opened is judged by its descriptor, which nothing can swap
+# between the check and the read. The source is not held to this: the interpreter follows a
+# symlinked source too.
+_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 
 # The two counts `report` returns, and the names `stayfixed test hygiene --json` prints them under.
 STALE_KEY = "stale"  # .pyc files whose recorded source mtime no longer matches the source
@@ -87,16 +95,24 @@ STALE = (
 def _recorded_source_mtime(pyc: Path) -> int | None:
     """The source mtime CPython recorded in `pyc`'s header, or `None` when there is not one.
 
-    Four things produce `None` and they all mean the same thing to the caller -- skip this
-    file: the header could not be read, it is short, it was written by another interpreter and
-    this one will never open it (see `_PYC_MAGIC` above), or it is hash-based and therefore
-    carries a hash fragment where an mtime would be (see `_PYC_HASH_BASED` above).
+    Five things produce `None` and they all mean the same thing to the caller -- skip this
+    file: it is not a regular file (see `_PYC_OPEN` above), the header could not be read, it is
+    short, it was written by another interpreter and this one will never open it (see
+    `_PYC_MAGIC` above), or it is hash-based and therefore carries a hash fragment where an mtime
+    would be (see `_PYC_HASH_BASED` above).
     """
     try:
-        with pyc.open("rb") as handle:
-            header = handle.read(_PYC_HEADER)
+        descriptor = os.open(pyc, _PYC_OPEN)
     except OSError:
         return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        header = os.read(descriptor, _PYC_HEADER)
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
     if len(header) < _PYC_HEADER:
         return None
     if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:
@@ -115,13 +131,6 @@ def _stale_bytecode(roots: Iterable[Path]) -> int:
             source = pyc.parent.parent / (pyc.name.split(".")[0] + ".py")
             try:
                 if not source.is_file():
-                    continue
-                # Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or
-                # a named pipe was put there by whoever wrote the tree, and opening it reads what
-                # it names, or waits on a pipe's writer for good (a link to `/dev/stdin` hangs a
-                # terminal). `lstat`, so a link is judged as itself; the source is not held to
-                # this, because the interpreter follows a symlinked source too.
-                if not stat.S_ISREG(pyc.lstat().st_mode):
                     continue
                 recorded = _recorded_source_mtime(pyc)
                 if recorded is None:
