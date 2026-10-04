@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import checkout_root
-from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink, first_set
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -43,14 +43,6 @@ class Recorder:
         self.marks.add(key)
 
 
-def _named_root(env: Mapping[str, str], names: Iterable[str]) -> Path | None:
-    """The directory the first of `names` that `env` sets non-empty names, in their order."""
-    for name in names:
-        if named := env.get(name):
-            return Path(named)
-    return None
-
-
 def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     """The one reading of a hook's stdin, whichever harness sent it, and never told which.
 
@@ -71,6 +63,7 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     from stayfixed.harnesses import project_root_variables
 
     cwd = Path(str(payload.get("cwd") or "."))
+    named = first_set(env, project_root_variables())
     tool_input = payload.get("tool_input") or {}
     session_id = payload.get("session_id")
     agent_id = payload.get("agent_id")
@@ -82,7 +75,7 @@ def read_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
         tool_name=tool_name if isinstance(tool_name, str) else None,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         cwd=cwd,
-        project_root=_named_root(env, project_root_variables()) or checkout_root(cwd),
+        project_root=checkout_root(cwd) if named is None else Path(named),
         raw=dict(payload),
     )
 

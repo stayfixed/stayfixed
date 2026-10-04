@@ -419,15 +419,18 @@ reddens = [
   "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
 ]
 
-# The sink writes under the data root and `doctor` counts what it wrote there, so both find the
-# root by one rule, which asks every variable it names and not only the first.
+# The sink writes under the data root and `doctor` counts what it wrote there, and the hook reads
+# its project root beside them: all three find a directory by one rule, which asks every variable
+# it is given and not only the first. Each of the two tests below reddens on its own, one per
+# root, so neither reader can stop asking the rule unseen.
 [[mutation]]
-name = "the data-root rule asks only its first variable"
+name = "the first-set-variable rule asks only its first variable"
 file = "src/stayfixed/hooks/api.py"
-before = "    for name in DATA_ROOT_VARIABLES:"
-after = "    for name in DATA_ROOT_VARIABLES[:1]:"
+before = "    for name in names:"
+after = "    for name in tuple(names)[:1]:"
 reddens = [
   "tests/doctor/test_checks.py::test_the_sink_and_doctor_find_the_data_root_by_one_rule[second]",
+  "tests/hooks/test_dispatch.py::test_a_detected_harness_renders_its_own_answer",
 ]
 
 # `seen()` was a plain `Path.exists()`, which follows a symlink and counts a directory -- so

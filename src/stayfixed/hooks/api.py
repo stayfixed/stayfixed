@@ -14,7 +14,7 @@ Which harness a hook runs under is not vocabulary of this kind, and no handler i
 `stayfixed.harnesses.detect` answers it once, in `stayfixed hook`, for the shape of the answer
 alone, because a repository can steer what it answers and so it may decide nothing a handler sees.
 
-**Five names below have no importer outside this area**, and each stays for the reason beside it:
+**Six names below have no importer outside this area**, and each stays for the reason beside it:
 
 - `EVENTS` is the list a handler's event must come from: `registry.discover` refuses any other,
   and an area that needs a new event adds it here, beside the vocabulary its handlers use.
@@ -27,6 +27,10 @@ alone, because a repository can steer what it answers and so it may decide nothi
   writer's own shape should be nameable beside it.
 - `DATA_ROOT_VARIABLES` is what `data_root` asks, which `sink.py` and `doctor` both call: a
   harness that names its data root in a variable of its own is one more entry there.
+- `first_set` is the one rule a hook finds a directory in its environment by: `data_root` asks it
+  for the data root and `dispatch.read_event` for the project root. It is defined here because
+  hook discovery imports this module and the rule needs neither the harness registry nor the
+  configuration layer, which discovery imports neither of.
 
 For this area, removing a name from `__all__` is not a trim in any case: `api.py` defines these
 and `tests/test_surfaces.py` holds `DEFINES_ITS_OWN` areas to `imported | defined == __all__`,
@@ -36,7 +40,7 @@ its definition into a private module, which is a different change with a differe
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -61,6 +65,7 @@ __all__ = [
     "Policy",
     "Sink",
     "data_root",
+    "first_set",
 ]
 
 
@@ -142,7 +147,15 @@ def data_root(env: Mapping[str, str]) -> str | None:
     what it wrote, so a variable one of them asked and the other did not would hide every record.
     The value is returned as given; whether it is usable is each caller's question.
     """
-    for name in DATA_ROOT_VARIABLES:
+    return first_set(env, DATA_ROOT_VARIABLES)
+
+
+def first_set(env: Mapping[str, str], names: Iterable[str]) -> str | None:
+    """The value of the first of `names` that `env` sets non-empty, in their order, or `None`.
+
+    An empty variable reads as unset, so the next one is asked rather than an empty path taken.
+    """
+    for name in names:
         if named := env.get(name):
             return named
     return None
