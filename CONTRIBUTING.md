@@ -133,7 +133,7 @@ that are not areas included, is the **core**, and the rule runs one way: deliver
 core, and the core may not import delivery, through an `api.py` or not, at module level or inside
 a function, so the private layer can be reworked without touching the core. The core may name
 delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
-are the core's — and never imports delivery's code or calls its behaviour. The crossings that
+are the core's — and may not import delivery's code or call its behaviour. The crossings that
 still exist are pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py`, and one of them is meant to
 stay rather than be cut: `stayfixed setup --overlay` creates or records the overlay as the last
 step of machine setup, so `setup/run.py` imports the overlay area's `api.py`, and that row stays
