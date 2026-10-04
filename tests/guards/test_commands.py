@@ -350,9 +350,11 @@ def test_test_hygiene_reports_the_two_faults(
     # measured. The `roots == 1` assertion has no mutation of its own here — `code_roots` is
     # overridden to the single entry `src`, which exists, so neither the `is_dir()` filter nor
     # the containment call changes this number (both were applied and this test stayed green).
-    # It is the wiring assertion: it pins that `--json` reports the walk's own count, and the
-    # filter and the containment check are pinned in `tests/guards/test_hygiene.py`.
+    # It is the wiring assertion: it pins that `--json` reports the profile's own counts, under
+    # the profile's name, and the filter and the containment check are pinned in
+    # `tests/profiles/python/test_hygiene.py`.
     root = repo(tmp_path)
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
     (root / "stayfixed.toml").write_text(
@@ -361,16 +363,36 @@ def test_test_hygiene_reports_the_two_faults(
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
     assert invoke(argv) == 1
     out = json.loads(capsys.readouterr().out)
-    assert out["dirty"] >= 1 and out["stale"] == 0 and out["roots"] == 1
+    assert out["dirty"] >= 1 and out["profiles"] == {"python": {"stale": 0, "roots": 1}}
+
+
+@needs_git
+def test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `[stayfixed] profile` names one stack, and a repository may be written in several: the
+    # report goes to every profile whose markers sit at the root. `CONFIG` names no profile, so
+    # the Python entry here comes from `pyproject.toml` alone, and a repository with no marker
+    # gets no entry. Reddened by mutating `run_test_hygiene`'s
+    # `if not detects(load_profile(name), root):` to `if False:` (the second assertion);
+    # measured.
+    root = repo(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    invoke(argv)
+    assert set(json.loads(capsys.readouterr().out)["profiles"]) == {"python"}
+    (root / "pyproject.toml").unlink()
+    invoke(argv)
+    assert json.loads(capsys.readouterr().out)["profiles"] == {}
 
 
 @needs_git
 def test_test_hygiene_is_clean_on_a_committed_tree(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `repo()` leaves no `[ledger]`, so the roots are the preset's (`src`, `tests`, `scripts`)
-    # and none of them exists here: this pins the clean-tree path, not the walk. The walk is
-    # pinned in `tests/guards/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
+    # `repo()` leaves no `[ledger]` and no stack's marker, so no profile reports: this pins the
+    # clean-tree path, not the walk. The walk is pinned in
+    # `tests/profiles/python/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
     # `exit_code=1 if findings else 0` to `1`; measured.
     root = repo(tmp_path)
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
@@ -385,7 +407,7 @@ def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
     # Not in the ported plan: exit 2 is the third of the three exit codes the CLI row
     # promises, and without this the `Refusal` branch of `run_test_hygiene` is unexercised —
     # deleting it would report an unjudgeable tree as clean and exit 0. Reddened by replacing
-    # `raise Refusal(_NO_GIT)` with `found = found._replace(dirty=0)`; measured.
+    # `raise Refusal(_NO_GIT)` with `dirty = 0`; measured.
     root = tmp_path / "bare"
     root.mkdir()
     (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
@@ -398,17 +420,17 @@ def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
 def test_test_hygiene_names_the_stale_count_in_its_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The summary's stale branch, which nothing else at the CLI level renders: the two tests
-    # above report `stale == 0` (and the clean one runs with `roots == 0`), so
-    # `f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)"` could be deleted
-    # with both still green. The walk itself is pinned in `tests/guards/test_hygiene.py`; this
-    # is the string a person reads. Reddened by mutating `run_test_hygiene`'s `if found.stale:`
-    # to `if False:`; measured.
+    # The summary's profile branch, which nothing else at the CLI level renders: the tests
+    # above report `stale == 0`, so the profile's line could be dropped from the summary with
+    # them still green. The walk itself is pinned in `tests/profiles/python/test_hygiene.py`;
+    # this is the string a person reads, the profile's name and then its own note. Reddened by
+    # mutating `run_test_hygiene`'s `if note:` to `if False:`; measured.
     root = repo(tmp_path)
+    (root / "pyproject.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     (root / "src").mkdir()
     module = root / "src" / "m.py"
     module.write_text("x = 1\n", encoding="utf-8")
-    # Explicit `cfile` and `TIMESTAMP`, for the reasons `tests/guards/test_hygiene.py`'s
+    # Explicit `cfile` and `TIMESTAMP`, for the reasons `tests/profiles/python/test_hygiene.py`'s
     # `compile_module` gives: `cfile=None` follows `PYTHONPYCACHEPREFIX` out of the fixture,
     # and `SOURCE_DATE_EPOCH` in the environment would make the header hash-based.
     py_compile.compile(
@@ -424,7 +446,7 @@ def test_test_hygiene_names_the_stale_count_in_its_summary(
     )
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 1
-    assert "1 stale .pyc file(s) under 1 code root(s)" in capsys.readouterr().out
+    assert "python: 1 .pyc file(s) whose recorded source mtime" in capsys.readouterr().out
 
 
 @needs_git

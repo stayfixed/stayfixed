@@ -207,24 +207,37 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.hygiene import inspect
+    from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.profiles import detects, load_profile
+    from stayfixed.profiles.hints import shipped_hints
 
     root, config = _root_and_config(args)
-    found = inspect(root, config)
-    if found.dirty is None:
+    dirty = dirty_count(root)
+    if dirty is None:
         raise Refusal(_NO_GIT)
     findings: list[str] = []
-    if found.dirty:
-        findings.append(f"{found.dirty} uncommitted change(s) in the tree")
-    if found.stale:
-        findings.append(f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)")
-    # Counts and labels only: a `ledger.code_roots` entry is a repository-authored string and
-    # never reaches the summary. `data` is the documented exception and carries none either.
-    summary = (
-        "; ".join(findings)
-        or f"tree is clean and bytecode under {found.roots} code root(s) is fresh"
+    if dirty:
+        findings.append(f"{dirty} uncommitted change(s) in the tree")
+    # Every stack the repository is written in, by its profile's own markers, and not the one
+    # `[stayfixed] profile` names: a repository in two stacks gets two entries. Unguarded,
+    # unlike the hook's: a hint that raises is an internal error here, which is where its
+    # author finds out.
+    reports: dict[str, dict[str, int]] = {}
+    for name, hint in shipped_hints():
+        if not detects(load_profile(name), root):
+            continue
+        counts = hint.report(root, config)
+        reports[name] = dict(counts)
+        note = hint.note(counts)
+        if note:
+            findings.append(f"{name}: {note}")
+    # Counts, fixed sentences and shipped profiles' names only: a `ledger.code_roots` entry is a
+    # repository-authored string and never reaches the summary. `data` is the documented
+    # exception and carries none either.
+    summary = "; ".join(findings) or "tree is clean" + "".join(
+        f"; the {name} profile has nothing to report" for name in reports
     )
-    data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
+    data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)
 
 

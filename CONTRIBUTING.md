@@ -126,6 +126,14 @@ areas, and `harnesses` is a module — nothing discovers them, because they carr
 installed stayfixed reads about its own releases: the tags it pins and the record of the files
 a release ships.)
 
+The core is language-neutral. A profile under `src/stayfixed/profiles/<name>/` is a directory of
+data — `profile.toml` and `rules.md` — and, optionally, a `hygiene.py` whose `HINT` is that
+stack's advice after its test runner failed (`stayfixed.profiles.hints` says what a hint
+answers, and the command that failed decides which hints speak). That is where one stack's
+runner, build artifacts and package manager belong: no module outside `profiles/` names a stack
+except the pardons `tests/test_language_neutral.py` lists, each with its reason, and a new
+mention either moves into its profile or joins that list with one.
+
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean

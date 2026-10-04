@@ -1733,3 +1733,62 @@ after = "        names = listed(list(report.custom_gates[:5]))"
 reddens = [
   "tests/project/test_command.py::test_past_the_listed_limit_the_custom_gate_note_counts_the_rest[exactly-the-limit]",
 ]
+
+# The Python profile's red-run hint. Its bytecode reads moved here with it from the core, and the
+# entries with them.
+# The stale-bytecode predicate, both directions: `!=` against the header's recorded mtime is
+# the comparison CPython makes; a naive `pyc mtime > source mtime` reported the healthy case
+# as stale and missed the real one.
+[[mutation]]
+name = "stale bytecode is never counted"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_stale_bytecode_is_counted"]
+
+[[mutation]]
+name = "fresh bytecode is counted as stale"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if True:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
+
+# The other half of the stale-bytecode predicate, and the direction that costs a person time
+# rather than only missing a warning. PEP 552 bytes 8-12 hold the source mtime only while bit 0
+# of the flags word is clear; in a hash-based `.pyc` they hold half the source hash, and
+# comparing that fragment to an mtime reports a perfectly current cache as stale on every run.
+# `SOURCE_DATE_EPOCH` alone flips `py_compile` into that mode, so a reproducible build turns the
+# notice into a permanent false alarm and `test hygiene` into a permanent exit 1.
+[[mutation]]
+name = "a hash-based .pyc is read as if it carried an mtime"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '    if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:'
+after = '    if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_hash_based_pyc_is_not_judged"]
+
+# The third half of the stale-bytecode header read, and the same class as `mutations/`'s "a
+# hash-based .pyc is read as if it carried an mtime": PEP 552 bytes 8-12 are this interpreter's
+# recorded source mtime only when bytes 0-4 are this interpreter's magic. A `__pycache__` keeps one
+# `.pyc` per interpreter tag and nothing removes the old ones, so a `mod.cpython-311.pyc` records
+# the mtime as of a run whose bytecode will never be imported again -- and any edit since makes it
+# mismatch. Measured on a tree whose current bytecode had just been compiled and was fresh:
+# `_stale_bytecode` -> 1, so the notice fires on every red run of a healthy tree and `test hygiene`
+# exits 1 forever.
+[[mutation]]
+name = "a .pyc from another interpreter is read as this one's"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
+after = '    if False:'
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
+
+# Which hint speaks is chosen by the command that failed. A hint that answered for every command
+# would put Python's advice -- and the dirty-tree line, which only a recognised run earns -- on a
+# failed `cargo test`, and spend the once-per-context delivery a failed test run needed.
+[[mutation]]
+name = "the Python hint recognises every command"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "    def recognises(self, argv: Sequence[str]) -> bool:"
+after = """    def recognises(self, argv: Sequence[str]) -> bool:
+        return True"""
+reddens = ["tests/profiles/test_hints.py::test_no_recognising_profile_means_no_notice"]
+

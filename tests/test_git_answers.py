@@ -23,7 +23,7 @@ from stayfixed.attach.write import _worktrees, attach
 from stayfixed.errors import Refusal
 from stayfixed.guards.commit import commits_in
 from stayfixed.guards.githooks import hooks_dir
-from stayfixed.guards.hygiene import inspect
+from stayfixed.guards.hygiene import dirty_count
 from stayfixed.hooks.dispatch import _git_toplevel
 from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
 from stayfixed.memory.store import origin_remote
@@ -33,7 +33,7 @@ from stayfixed.setup.run import _repository
 from tests.attach.test_write import RULE, _attachable
 from tests.cli import cli
 from tests.gitfixture import git, needs_git, plant_path
-from tests.guards.test_hygiene import config, repo
+from tests.guards.test_hygiene import repo
 from tests.project.repos import repository
 from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -130,7 +130,7 @@ def test_a_dirty_name_that_is_not_utf_8_is_counted_and_not_raised(tmp_path: Path
     root = repo(tmp_path)
     git(root, "config", "core.quotePath", "false")
     plant_path(root, b"caf\xe9.py")
-    assert inspect(root, config(root)).dirty == 1
+    assert dirty_count(root) == 1
 
 
 @needs_git
@@ -213,7 +213,7 @@ def test_a_dirty_name_holding_a_line_separator_is_one_entry(tmp_path: Path) -> N
     root = repo(tmp_path)
     git(root, "config", "core.quotePath", "false")
     plant_path(root, "a\u2028b.py".encode())
-    assert inspect(root, config(root)).dirty == 1
+    assert dirty_count(root) == 1
     assert overlay_sync(root).dirty == 1
 
 
