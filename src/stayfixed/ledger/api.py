@@ -53,8 +53,8 @@ identifiers takes them from its register, `bug_register(config).ids`, as the `Fi
 the memory graph do: the prefix is read one way, the way the ledger reads it.
 
 **`bugs_gate` is `stayfixed assess`'s.** It is `(root, config, base) -> list[Finding]`, the
-shape every gate shares, and `bugs check` gives the same answer. It builds the bug ledger's
-register and runs `register_gate`, which stays behind it in `stayfixed.ledger.check`.
+shape every gate shares, and `bugs check` answers with the same function. It builds the bug
+ledger's register and runs `register_gate`, which stays behind it in `stayfixed.ledger.check`.
 """
 
 from stayfixed.ledger.check import bugs_gate

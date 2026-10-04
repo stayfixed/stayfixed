@@ -1346,10 +1346,30 @@ reddens = [
 [[mutation]]
 name = "bugs check drops its --base"
 file = "src/stayfixed/ledger/commands.py"
-before = '    found = register_gate(root, config, ledger, args.base or "")'
-after = "    found = register_gate(root, config, ledger)"
+before = '    found = bugs_gate(root, config, args.base or "")'
+after = "    found = bugs_gate(root, config)"
 reddens = [
   "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
+]
+
+# `bugs check` answers with the `bugs` gate's own function, so a step either gains, a filter or a
+# register built another way, is the other's too: the command cannot pass what a gate run fails.
+# Reaching past the gate to the register gate it runs answers the same today, and only a finding
+# planted in `bugs_gate` alone tells the two apart.
+[[mutation]]
+name = "bugs check answers beside the bugs gate rather than through it"
+file = "src/stayfixed/ledger/commands.py"
+before = '''    from stayfixed.ledger.check import bugs_gate, uninitialised
+
+    root, config = root_and_config(args)
+    # The `bugs` gate itself, so this command and a gate run cannot disagree.
+    found = bugs_gate(root, config, args.base or "")'''
+after = '''    from stayfixed.ledger.check import register_gate, uninitialised
+
+    root, config = root_and_config(args)
+    found = register_gate(root, config, bug_register(config), args.base or "")'''
+reddens = [
+  "tests/ledger/test_commands.py::test_check_answers_with_the_bugs_gate_s_own_function",
 ]
 
 # In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name

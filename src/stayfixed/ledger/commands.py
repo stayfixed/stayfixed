@@ -53,16 +53,14 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
 
 
 def run_bugs_check(args: argparse.Namespace) -> Result:
-    from stayfixed.ledger.check import register_gate, uninitialised
+    from stayfixed.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
-    # The `bugs` gate's own answer (`check.bugs_gate`), over a register built once for it and for
-    # the question below.
-    ledger = bug_register(config)
-    found = register_gate(root, config, ledger, args.base or "")
+    # The `bugs` gate itself, so this command and a gate run cannot disagree.
+    found = bugs_gate(root, config, args.base or "")
     # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
     # a finding, and there is none.
-    if not found and uninitialised(root, ledger):
+    if not found and uninitialised(root, bug_register(config)):
         return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:

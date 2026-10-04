@@ -39,7 +39,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "BUG_RUNBOOK",
         "BUG_AUDITS",
         "ledger_path",
-        # the bugs gate stayfixed.assess.gates runs, whose answer bugs check gives
+        # the bugs gate stayfixed.assess.gates runs, bugs check's own function
         "bugs_gate",
     }
     assert required == set(ledger.__all__)

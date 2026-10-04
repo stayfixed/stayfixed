@@ -942,7 +942,7 @@ BUG_BASE_UNREAD = (
 @needs_git
 @pytest.mark.parametrize("case", ["ledger-removed", "entry-removed", "base-unread", "stale-index"])
 def test_the_bug_ledgers_refusals_are_unchanged(tmp_path: Path, case: str) -> None:
-    # Through `bugs_gate`, the gate run's answer and the one `bugs check` gives. No mutation
+    # Through `bugs_gate`, the function `bugs check` and the gate run answer with. No mutation
     # entry of its own: the second register's texts carry the entries that make these name the
     # register, and this holds what they give the bug ledger to the bytes it always rendered.
     root = project(tmp_path)
