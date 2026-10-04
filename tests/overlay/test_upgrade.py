@@ -586,8 +586,9 @@ def test_each_released_copy_of_a_retired_file_is_removed(
     # and so does `overlay init`, the step a generated overlay runs.
     #
     # Mutation: `mutations/`'s "the rules README 0.2.0 shipped is kept where no ledger records
-    # it", which drops that digest from the ones held for the file. A recorded copy is removed
-    # by its record, so only the unrecorded 0.2.0 case reddens.
+    # it", "the rules README 0.1.x shipped is kept where no ledger records it" and "the attach
+    # skill a release shipped is kept where no ledger records it", each dropping a digest held for
+    # the file. A recorded copy is removed by its record, so only the unrecorded case reddens.
     root = _an_overlay(tmp_path)
     path = _with_a_retired_file(
         root, relative, ledger=ledger, text=shipped, shipped=shipped, version=version
@@ -635,7 +636,8 @@ def test_an_edited_retired_file_is_kept_and_named(
     # left, by `upgrade` and by `init`, and both name it with the way out. The verdict and the
     # way out are the scaffold engine's, held by `mutations/`'s "a retired overlay file with no
     # ledger is removed whatever it holds" and "a kept retired overlay file is named without its
-    # way out"; this holds that the two files reach them with a way out of their own.
+    # way out"; this holds that the two files reach them with a way out of their own, and
+    # `mutations/`'s "a kept attach skill is not told the plugin's own replaces it" breaks one.
     root = _an_overlay(tmp_path)
     edited = shipped + "\nMy own line.\n"
     path = _with_a_retired_file(
