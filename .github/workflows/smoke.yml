@@ -88,7 +88,8 @@ jobs:
             | tee "$RUNNER_TEMP/hooks.out"
           # The script carries the same floor in its own constants; this is the CI side of it,
           # because a run that executed one row exits 0 and prints a summary that reads green.
-          grep -qx "13 entries, 14 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"
+          # `tests/test_check_workflow.py` derives this line from those constants.
+          grep -qx "9 entries, 10 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"
       - name: doctor on the installed plugin reports no red row
         env:
           CLAUDE_PLUGIN_ROOT: ${{ steps.install.outputs.root }}
@@ -125,7 +126,8 @@ jobs:
             --fixture tests/fixtures/hostile-project --scratch "$RUNNER_TEMP/hostile" \
             | tee "$RUNNER_TEMP/hostile.out"
           # Six of this scenario's eight rows assert an ABSENCE, which is also what a run of
-          # one row prints. The count is the difference between those two runs.
+          # one row prints. The count is the difference between those two runs, and
+          # `tests/test_check_workflow.py` derives it from the script's own constant.
           grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"
 
   same-repository-form:

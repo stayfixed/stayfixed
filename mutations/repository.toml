@@ -1078,6 +1078,28 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
 ]
 
+# The smoke job's `grep -qx` is the CI side of each script's own floor, and a hand-kept copy of
+# the counts went stale once already: the hooks file lost four entries, the script and the suite
+# agreed on the new counts, and the job failed on every pull request. Each guard derives the line
+# from the script's constants; these put back a count the script no longer prints.
+[[mutation]]
+name = "the smoke job demands a hook summary the script no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "9 entries, 10 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+after = '          grep -qx "13 entries, 14 row(s), 0 failure(s)" "$RUNNER_TEMP/hooks.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_entry",
+]
+
+[[mutation]]
+name = "the smoke job demands an exfiltration summary the scenario no longer prints"
+file = ".github/workflows/smoke.yml"
+before = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+after = '          grep -qx "7 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
+]
+
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
 # `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
 # is `base_sha`, the commit whose configuration governs the gates. Disable the character check
