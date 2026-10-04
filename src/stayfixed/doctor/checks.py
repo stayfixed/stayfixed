@@ -563,22 +563,27 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     grant is the *marked command* and not the id, because an id that is granted with a different
     command hung on it is the same attack one step down.
 
-    Where an overlay cannot be asked, the answer is the one this check gives a file it could not
-    parse: report it, never absolve it. That withholds the grant comparison and nothing more.
-    Whether a record holds an entry's id needs only the records, so an entry no record holds is red
-    whether or not the overlay can be asked: withholding that too let a clone that commits a ledger
-    beside its entry turn the row into a warning on any machine with no overlay. Where a record
+    Where an overlay this machine records cannot be asked, the answer is the one this check gives a
+    file it could not parse: report it, never absolve it. That withholds the grant comparison and
+    nothing more. Whether a record holds an entry's id needs only the records, so an entry no record
+    holds is red whether or not the overlay can be asked: withholding that too let a clone that
+    commits a ledger beside its entry turn the row into a warning on any machine with no overlay. A
+    machine that records no overlay at all is not one whose overlay could not be asked: there is
+    nothing to ask and nothing vouches, so an entry a record holds is red there too. A warning there
+    let a clone whose committed ledger records its own entry keep the exit code at 0. Where a record
     cannot be read, the row warns and names it and judges no entry: an unreadable record is not an
     empty one, and judged as one it would report every entry `attach` installed as recorded nowhere,
     with a remedy telling the owner to remove it. Reading the record is the area's, which answers
     `None` rather than raising, so a committed file the area cannot parse costs a warning and never
     this row's guard.
 
-    The two red lists are kept apart because their remedies differ. An entry in no record is one
+    The three red lists are kept apart because their remedies differ. An entry in no record is one
     to open and delete; an entry a record holds and its overlay no longer grants is either a
     checkout that has drifted from the overlay or a forged ledger, and `stayfixed attach` settles
     which — it takes out every marked entry the overlay no longer grants, so anything surviving
-    it was never stayfixed's.
+    it was never stayfixed's; and an entry a record holds on a machine that records no overlay is
+    either the owner's checkout on a machine `setup --overlay` has not reached or a forged ledger,
+    and recording the overlay and then attaching settles which.
 
     **Entries are counted, never keys.** `owned_ids` answers a `dict[str, str]`, so N
     entries sharing one id yield one key and the same id under two events keeps only the last —
@@ -598,6 +603,7 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
+    unvouched: list[str] = []
     ungranted: list[str] = []
     blind: list[str] = []
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
@@ -644,7 +650,13 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                 # absolving an entry on a record alone, or on one area's record and another's
                 # grant, is what this row may never do. Without a grant to compare, the entry is
                 # neither absolved nor accused.
-                ungranted.append(where)
+                if any(answer.sourced for answer in holders):
+                    ungranted.append(where)
+                else:
+                    # No holder's machine records a source to grant from, so nothing could vouch
+                    # for the entry: red as surely as a refused grant, said differently, because
+                    # the way out is to record one rather than to re-run what it grants.
+                    unvouched.append(where)
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     status: Status = OK
     remedy = ""
@@ -669,6 +681,18 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
             f"{ATTACH_LEDGER}: {listed(unrecorded)}"
         )
         remedy = "open each entry named above and remove the ones you did not install"
+    if unvouched:
+        status = RED
+        parts.append(
+            f"{len(unvouched)} entr(ies) claim the stayfixed marker and are recorded in "
+            f"{ATTACH_LEDGER}, and this machine records no overlay, so nothing on this machine "
+            f"vouches for them: {listed(unvouched)}"
+        )
+        remedy = (
+            "open each entry named above and remove the ones you did not install; if you did "
+            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
+            "grants them, then `stayfixed attach --store <overlay>/projects/<project>/memory`"
+        )
     if ungranted:
         status = RED
         parts.append(
@@ -680,7 +704,7 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
             "every marked entry the overlay no longer grants; open any that survive it"
         )
     if blind:
-        status = RED if (unrecorded or ungranted) else WARN
+        status = RED if (unrecorded or unvouched or ungranted) else WARN
         parts.append(
             f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "
             f"nothing here accounts for what is in them: {listed(blind)}"

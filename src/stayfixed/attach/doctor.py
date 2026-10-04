@@ -320,20 +320,27 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
     still let a repository take an id the overlay does grant and hang a different command on it.
 
-    `None` means the overlay could not be asked — no readable ledger to name the store, a store
-    `read_binding` refuses, no `git`, no overlay recorded, or an overlay whose own hook file will
-    not parse; for this question those reasons are one answer, where `attached` tells them
-    apart. It is not an empty set: an empty set is "the overlay grants nothing", which is an
-    answer.
+    **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
+    this machine records and the project's name, the same one `attach` would install from, and
+    not the one the ledger's `store` names. Asked through the ledger's store, a store that is not
+    this project's answered "could not be asked", and that is a warning: a clone that committed a
+    ledger recording its own entry, under any store it liked, turned `hook-entries`' red into an
+    exit of 0. Whether that store is right is the `attached` row's question, and it warns there.
+
+    `None` means the overlay this machine records could not be asked — no `git`, an overlay
+    record that will not read, or an overlay whose own hook file will not parse — and is decided
+    by this machine's state alone. A machine that records no overlay is not that: nothing on it
+    can grant, which is the empty set, and `_claims` says why it is empty. An empty set is "the
+    overlay grants nothing", which is an answer.
     """
-    from stayfixed.attach.binding import Binding
+    from stayfixed.attach.binding import binding_for
     from stayfixed.attach.permissions import overlay_entries
     from stayfixed.errors import Failure, Refusal
 
-    binding = _binding_answer(context, answers)
-    if not isinstance(binding, Binding):
-        return None
+    if answers.overlay(context) is None:
+        return set()
     try:
+        binding = binding_for(context.root, context.config, machine=context.machine)
         wanted = overlay_entries(binding)
     except (Failure, Refusal, OSError):
         return None
@@ -354,12 +361,20 @@ def _claims(context: Context, answers: Answers) -> Claims:
     can commit. The overlay is asked only when the ledger records something, because nothing can
     be absolved otherwise and asking it costs a `git` call: an empty ledger keeps its old answer,
     every entry claiming the marker is one no attach recorded.
+
+    `sourced` is whether this machine records an overlay at all, read from the machine file and
+    nothing else: without one the grant is empty because nothing could grant, and the row says
+    so and how to record one rather than that the overlay refused.
     """
     from stayfixed.doctor.api import Claims
 
     found = _attach_ledger_entries(context.root)
     granted = _granted_commands(context, answers) if found else set()
-    return Claims(found, None if granted is None else frozenset(granted))
+    return Claims(
+        found,
+        None if granted is None else frozenset(granted),
+        sourced=answers.overlay(context) is not None,
+    )
 
 
 def register() -> Contribution:

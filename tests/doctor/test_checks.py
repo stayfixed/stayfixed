@@ -365,15 +365,20 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     # skips rather than guessing, and none of them is red: a skip never reaches the exit code.
     # Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area contributes"
     # -> the five rows are missing and the comparison reddens.
+    #
+    # The one red row is the core's `hook-entries`, and it is red on purpose: the ledger is a file
+    # a clone can commit, and on a machine with no overlay nothing vouches for the entry it
+    # records, which a forged ledger recording its own entry looks exactly like.
+    # `tests/attach/test_doctor.py`'s table holds that row whole.
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
     assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
         delivery, SKIP
     )
-    assert not any(row.status == RED for row in rows), [
-        (row.name, row.detail) for row in rows if row.status == RED
-    ]
+    red = [(row.name, row.detail) for row in rows if row.status == RED]
+    assert [name for name, _ in red] == ["hook-entries"], red
+    assert "nothing on this machine vouches for them" in red[0][1]
 
 
 def test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name(tmp_path: Path) -> None:

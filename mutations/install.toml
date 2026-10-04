@@ -652,8 +652,8 @@ reddens = [
 ]
 
 # And only the grant comparison: whether a record holds an entry's id needs the record alone, so a
-# committed ledger beside a committed entry it does not record is red on a machine with no overlay.
-# Withholding the whole column there turned that red into a warning and an exit of 0.
+# committed ledger beside a committed entry it does not record is red where the overlay cannot be
+# asked. Withholding the whole column there turned that red into a warning and an exit of 0.
 [[mutation]]
 name = "an overlay that cannot be asked silences an entry no record holds"
 file = "src/stayfixed/doctor/checks.py"
@@ -661,7 +661,28 @@ before = "            if not readable:\n                # An unreadable record i
 after = "            if not (readable and askable):\n                # An unreadable record is not an empty one"
 reddens = [
   "tests/doctor/test_contributions.py::test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked",
-  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is",
+]
+
+# An entry a record holds where no holder's machine records a source to grant from: red, with the
+# sentence and remedy for recording one, never the refused grant's.
+[[mutation]]
+name = "hook-entries says the overlay does not grant what no overlay was recorded to grant"
+file = "src/stayfixed/doctor/checks.py"
+before = "                if any(answer.sourced for answer in holders):"
+after = "                if True:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+]
+
+[[mutation]]
+name = "a blind settings file softens an entry nothing on this machine vouches for"
+file = "src/stayfixed/doctor/checks.py"
+before = "        status = RED if (unrecorded or unvouched or ungranted) else WARN"
+after = "        status = RED if (unrecorded or ungranted) else WARN"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red",
 ]
 
 # An area's `register()` is its own code as its checks are, so it gets their guard: one that raises,

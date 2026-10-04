@@ -1484,6 +1484,68 @@ after = '''    except (Failure, Refusal, OSError):
         entry["command"]'''
 reddens = [
   "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-overlay-unreadable]",
+]
+
+# The same arm for a `git` that cannot run, which `binding_for` meets as `GitUnavailable`: a fault
+# on this machine, so the row warns, rather than one that costs `hook-entries` its guard.
+[[mutation]]
+name = "a git that cannot run costs the hook-entries row"
+file = "src/stayfixed/attach/doctor.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {'''
+after = '''    except (Refusal, OSError):
+        return None
+    return {'''
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-git-cannot-run]",
+]
+
+# A machine that records no overlay is not one whose overlay could not be asked: nothing on it can
+# grant. Answered as "could not be asked", a clone whose committed ledger records its own forged
+# entry turned `hook-entries`' red into a warning and an exit of 0 on every such machine.
+[[mutation]]
+name = "a machine with no overlay reads as one whose overlay could not be asked"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if answers.overlay(context) is None:\n        return set()"
+after = "    if answers.overlay(context) is None:\n        return None"
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is",
+]
+
+# The grant is asked of the binding the machine derives, never of the store the ledger names: asked
+# through that store, one that is not this project's answered "could not be asked", and the ledger
+# chose the warning.
+[[mutation]]
+name = "attach asks the overlay about the store the ledger names"
+file = "src/stayfixed/attach/doctor.py"
+before = "        binding = binding_for(context.root, context.config, machine=context.machine)"
+after = '''        from pathlib import Path
+
+        from stayfixed.attach.binding import read_binding
+        from stayfixed.attach.write import ledger
+
+        store = Path(ledger(context.root).store)
+        binding = read_binding(context.root, store=store, machine=context.machine)'''
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-foreign-store]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-moved-store]",
+]
+
+# Whether a source is recorded is the machine file's answer, and the row's sentence and remedy
+# follow it: "the overlay does not grant them" where no overlay is recorded sends the reader to an
+# `attach` that cannot run.
+[[mutation]]
+name = "attach says an overlay is recorded where none is"
+file = "src/stayfixed/attach/doctor.py"
+before = "        sourced=answers.overlay(context) is not None,"
+after = "        sourced=True,"
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
 ]
 
 # `.stayfixed/local/attach.json` is a file a clone can commit, so the row asks the overlay — the
@@ -1517,8 +1579,8 @@ reddens = [
 [[mutation]]
 name = "a machine with no overlay recorded is blamed on the repository"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if answers.overlay(context) is None:"
-after = "    if False:"
+before = "    if answers.overlay(context) is None:\n        return NO_OVERLAY"
+after = "    if False:\n        return NO_OVERLAY"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
 ]
@@ -1538,8 +1600,9 @@ reddens = [
 
 # The overlay is asked which commands it grants only when the ledger records something: with nothing
 # recorded nothing can be absolved, and asking would cost a `git` call to reach the same answer.
-# Asked anyway, an absent ledger names no store to ask under, so the claims say the overlay could
-# not be asked and the row says so beside the red of an entry no attach recorded.
+# Asked anyway, an overlay that cannot be read right now makes the claims say it could not be asked,
+# and the row says so beside the red of an entry no attach recorded, about a question it never
+# needed put.
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"

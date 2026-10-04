@@ -244,9 +244,12 @@ def _hooked(root: Path, *commands: str) -> None:
     )
 
 
-def _claiming(recorded: Mapping[str, str] | None, granted: frozenset[str] | None) -> Contribution:
-    """An area that contributes no row and answers `Claims(recorded, granted)` when asked."""
-    return Contribution(checks=(), claims=lambda context: Claims(recorded, granted))
+def _claiming(
+    recorded: Mapping[str, str] | None, granted: frozenset[str] | None, *, sourced: bool = True
+) -> Contribution:
+    """An area that contributes no row and answers `Claims(recorded, granted, sourced)` when
+    asked."""
+    return Contribution(checks=(), claims=lambda context: Claims(recorded, granted, sourced))
 
 
 ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
@@ -407,6 +410,62 @@ def test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked(
     assert "could not be asked which entries it grants" in row.detail
     assert "the overlay does not grant" not in row.detail
     assert row.remedy == "open each entry named above and remove the ones you did not install"
+
+
+# What the row says of an entry a record holds where nothing could grant it, and how it ends.
+UNSOURCED = (
+    f"1 entr(ies) claim the stayfixed marker and are recorded in {ATTACH_LEDGER}, and this "
+    f"machine records no overlay, so nothing on this machine vouches for them: "
+    f"{SETTINGS} entry 1 of 1"
+)
+RECORD_A_SOURCE = (
+    "open each entry named above and remove the ones you did not install; if you did install "
+    "them, run `stayfixed setup --overlay <path>` to record the overlay that grants them, then "
+    "`stayfixed attach --store <overlay>/projects/<project>/memory`"
+)
+
+
+def test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An area whose machine records no source to grant from answers an empty grant with
+    # `sourced=False`, and the row reads that as what it is: nothing could vouch, so the entry is
+    # red, and the sentence and remedy say to record a source rather than that one refused.
+    # Mutation (oracle): `mutations/`'s "hook-entries says the overlay does not grant what no
+    # overlay was recorded to grant" -> the row reads the recorded overlay's sentence.
+    _hooked(_initialised(tmp_path), ALPHA)
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset(), sourced=False)),
+    )
+    assert row == Check(
+        "hook-entries", RED, f"1 stayfixed entr(ies), 0 foreign; {UNSOURCED}", RECORD_A_SOURCE
+    )
+
+
+def test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A settings file the walk is blind to downgrades a row with nothing else to say to a warning,
+    # and must not downgrade one that has a red entry to report. Mutation (oracle): `mutations/`'s
+    # "a blind settings file softens an entry nothing on this machine vouches for" -> the row is a
+    # warning.
+    root = _initialised(tmp_path)
+    _hooked(root, ALPHA)
+    (root / ".codex").mkdir()
+    (root / ".codex" / "hooks.json").write_text("{", encoding="utf-8")
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset(), sourced=False)),
+    )
+    assert row.status == RED, row
+    assert UNSOURCED in row.detail
+    assert "could not be read as hook entries, so nothing here accounts for what is in them: " in (
+        row.detail
+    )
+    assert row.remedy == RECORD_A_SOURCE
 
 
 def test_claims_that_raise_cost_the_hook_entries_row_alone(
