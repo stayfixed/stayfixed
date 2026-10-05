@@ -25,8 +25,8 @@ with no explanation is what made the trim necessary:
   `hook-entries` tells them in — its record, its source and the commands that repair them — and
   a field whose type it could not import is one it could not fill.
 - `Status` is the type `Row.status` declares, for a check that decides its status before it
-  builds its row: `attach`'s `attached` row and `overlay`'s `overlay-requires` do, and an
-  annotation they could not import would be a type they could hold and not declare.
+  builds its row, as an area's own check may: an annotation it could not import would be a type
+  it could hold and not declare.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
 takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the three

@@ -1,9 +1,10 @@
-"""The core's eleven checks, the run that asks them, and the rows the areas contribute after them.
+"""The core's checks, the run that asks them, and the rows the areas contribute after them.
 
-The report has sixteen rows. Eleven are the core's and live here; the other five are the delivery
-areas' — `attached` from `attach`, `bundles` and `store-debris` from `memory`, `pre-commit` and
-`overlay-requires` from `overlay` — and each area's `doctor.py` contributes them
-(CONTRIBUTING.md, "Areas"), so nothing here imports the overlay, the binding or the note store.
+A row of the report is one check's answer under the check's name. The core's checks are `CHECKS`,
+and their rows come first, in that order; every other row is an area's, contributed by its own
+`doctor.py` (CONTRIBUTING.md, "Areas") and asked after the core's in area-name order. So nothing
+here imports an area, and nothing here names or counts the rows an area contributes: which rows a
+report has is `docs/cli.md`'s table, and `tests/doctor/test_checks.py`'s literal `REPORT`.
 `hook-entries` stays here because every settings file is the core's to walk, and it asks the
 areas' `Claims` for what each put into them.
 
@@ -132,9 +133,9 @@ WRAPPER = "hooks/run-hook.sh"
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
 _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
-# Wall-clock bound on the one subprocess this *module* launches. The report's total is five on a
-# green attached installation — `stayfixed.doctor.__init__` counts them and names the one that
-# leaves the machine — because four more are launched inside the areas the report's rows call.
+# Wall-clock bound on the one subprocess this *module* launches. A report launches more, inside the
+# areas whose rows it asks; `docs/cli.md` counts them, and `stayfixed.doctor` says which one leaves
+# the machine.
 #
 # A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it: this bounds
 # `stayfixed --version` behind an interpreter probe, and nothing about it is a project's to tune.
@@ -977,11 +978,10 @@ def _cli_path(context: Context) -> Row:
             WARN,
             "`stayfixed` does not resolve on PATH, so a skill that invokes it by name fails on "
             "Codex, which performs no plugin-root substitution in skill content",
-            # `REPOSITORY_URL` and not the address written out, which is the rule this module
-            # already follows a few rows below in `overlay-requires`' own remedy (a URL is
-            # spelled once). A second spelling of a URL is a second thing to move when the
-            # repository does, and `doctor` is the command whose whole job is finding the two
-            # halves of something that has stopped agreeing.
+            # `REPOSITORY_URL` and not the address written out: a URL is spelled once. A second
+            # spelling of a URL is a second thing to move when the repository does, and `doctor`
+            # is the command whose whole job is finding the two halves of something that has
+            # stopped agreeing.
             f"run `uv tool install git+{REPOSITORY_URL}`",
         )
     return Row(OK, "`stayfixed` resolves on PATH")
@@ -1284,7 +1284,7 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The core's eleven, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
+# The core's checks, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
 # row an area contributes. The list is the report's order and the core's only registry: a check
 # added here needs no other edit, and a check missing from it is a check nothing runs. An area adds
 # rows after these through its own `doctor.py` (`contributions`), never by an edit here.
@@ -1313,7 +1313,7 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
 
     `Exception` and not `BaseException`: what was asked for is that a check which *raises*
     becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
-    one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
+    one `Ctrl-C` into a report of red rows, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
     `red` is what gates the exit code, so a red row is a statement that this installation is

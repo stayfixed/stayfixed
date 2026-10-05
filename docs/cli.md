@@ -2610,8 +2610,9 @@ no overlay root is recorded on this machine **or** when the root it records is n
 — two different arms with two different sentences, because a machine that recorded an overlay
 and then moved it is not a machine that recorded none; `overlay-requires` again when the
 overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
-not resolve; `diagnostics`, when no harness data root is set in the environment; and `ci-ref`,
-when no `[ci] ref` is recorded. `files` has a second state arm of its own — a plugin built
+not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
+`stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
+is recorded. `files` has a second state arm of its own — a plugin built
 before the release record existed carries none, and it says so rather than comparing anything.
 
 **A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
@@ -2619,8 +2620,11 @@ the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, an
 moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
-rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. It
-is whether the skip is itself worth acting on. Those seven report something wrong that no other
+rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. Nor
+is it whether some command elsewhere in the report would change the state: `stayfixed setup
+--overlay`, which `attached` names when it skips for a machine that records no overlay, changes
+the state `pre-commit` skips on there too, and `pre-commit`'s arm still carries nothing. It is
+whether the skip is itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
 other nine report a measurement that is simply unavailable — no store, no overlay, no overlay

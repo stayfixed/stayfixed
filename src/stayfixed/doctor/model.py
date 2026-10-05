@@ -33,25 +33,20 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: seven of the report's sixteen skip arms carry one,
-    counting the two arms `pre-commit` and `overlay-requires` share once for each of those rows.
-    The line is not "always" versus "on a state" — eight state arms over seven rows are empty
-    (`checks._files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
-    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is changed by
-    the very command `attached` names when it skips for a machine that records no overlay. It is
-    whether **the skip is itself worth acting on**: the two rows that report a plugin root nothing
-    can find, which is every hook entry on this machine silent; `wrapper`'s row for a root it will
-    read and never execute; the two ways a ledger's recorded attach cannot be corroborated; and
-    the two rows that report an overlay root this machine records and cannot find, which is the
-    store broken as well as them.
-    Those seven say what to do. The other nine report a measurement that is simply not available —
-    no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
-    record in this build, no way to ask Codex — and no command in that row's gift changes it. A
-    reader is never handed a command that would not help, and never denied one that would.
+    an empty remedy merely for being a skip. The line is not "always" versus "on a state of the
+    machine or the repository", and it is not whether some command elsewhere in the report would
+    change that state: it is whether **the skip is itself worth acting on**. A skip that reports
+    something wrong which no other row will say — a plugin root nothing can find, which is every
+    hook entry on this machine silent; a recorded state nothing could corroborate; a recorded path
+    that is not there — says what to do. A skip that reports a measurement that is simply not
+    available — nothing recorded to measure, no data root, no way to ask — and that no command in
+    that row's gift changes, carries nothing. A reader is never handed a command that would not
+    help, and never denied one that would.
 
-    The two overlay rows have *both* kinds of arm, and share both: the empty one is the machine
-    that never recorded an overlay, and the one with a remedy is the machine that recorded one and
-    moved it. They used to be one arm with one sentence, and the sentence was the first one.
+    One row may have both kinds of arm: a machine that never recorded something and one that
+    recorded it and then moved it are two states with two sentences, and only the second carries
+    a remedy. Which of the report's rows skip, on what, and which of those arms carry a remedy is
+    `docs/cli.md`'s census, not this type's.
     """
 
     name: str
