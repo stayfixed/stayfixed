@@ -22,7 +22,7 @@ to that line in as many words — reasons, never payloads — and this module ho
 it, as each area's `doctor.py` holds the rows it contributes, where a note's filename and the
 reason a store does not resolve are repository-authored too.
 
-**No exception, and `hook-entries` is where one was nearly made.** Against a hostile clone,
+**No exception, and `hook-entries` is where one is most tempting.** Against a hostile clone,
 `doctor` lists every hook entry with its provenance, and the obvious way to do that is to print
 the marker id an entry claims. That id is repository-authored: it is a substring of a hook
 command in a committed `.claude/settings.json`, it reaches `Check.detail` and `--json`, and
@@ -36,25 +36,23 @@ names the entry a reader has to open without reproducing one byte the repository
 strictly more actionable besides: the reader opens the file either way, and a position survives
 two entries claiming one id where a name does not.
 
-**`diagnostics` is the same ruling applied to the other direction.** That row used to print
-three fields of the sink's log on the ground that they are stayfixed's own vocabulary — which
-they are, *for a log stayfixed wrote*. The log is found through `${CLAUDE_PLUGIN_DATA}`, so this
-process never establishes that, and `error` is free text with no grammar and no cap on the read
-side at all. Refusing a bounded, grammar-constrained marker id and printing an unbounded
-free-text field in the same command is not a policy, so `diagnostics` prints a count and the
-reader opens the file. `_diagnostics` has the measurement.
+**`diagnostics` is the same ruling applied to the other direction.** The sink's log has three
+fields that are stayfixed's own vocabulary *for a log stayfixed wrote*. The log is found through
+`${CLAUDE_PLUGIN_DATA}`, so this process never establishes that, and `error` is free text with no
+grammar and no cap on the read side at all. Refusing a bounded, grammar-constrained marker id and
+printing an unbounded free-text field in the same command would not be a policy, so `diagnostics`
+prints a count and the reader opens the file. `_diagnostics` says what quoting would let through.
 
 **A value the environment names is not the same as a value this process chose**, and the two
-checks that touch a plugin root now say which they have: `plugin_root` finds the file, `own_root`
-is the only root anything executes.
+checks that touch a plugin root say which they have: `plugin_root` finds the file, `own_root` is
+the only root anything executes.
 
-**The sink's layout is read from `stayfixed.hooks.api`, which is where it is now defined.** This
-module used to import `DIRECTORY`, `MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` from
-`stayfixed.hooks.sink` — a private module of another area — and excuse it here, on the ground
-that `sink.py` imports `api.py` so a re-export would be a cycle. That was true of a re-export
-and not of the layout itself: four strings that this area and the hook area must agree on are
-shared vocabulary, so they are *defined* on the surface and `sink.py` imports them too. There
-is no departure from "import an area through its published surface" left to record.
+**The sink's layout is read from `stayfixed.hooks.api`, where it is defined.** `DIRECTORY`,
+`MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` are four strings this area and the hook area
+must agree on, so they are shared vocabulary, *defined* on the hook area's surface, which
+`sink.py` imports too — a re-export from `sink.py` would be a cycle, since `sink.py` imports
+`api.py`. So this module imports another area through its published surface, as every module
+does.
 """
 
 from __future__ import annotations
@@ -146,7 +144,7 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
 # with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
 # repo create --clone` waiting on GitHub to instantiate a template, then a clone down the wire —
-# but this row reads one tag listing, and `init` recording a ref is what made a five-minute block
+# but this row reads one tag listing, and once `init` records a ref, five minutes would be a block
 # reachable from a command documented as a one-line diagnostic. The number is the wrapper probe's
 # above, deliberately: both bound one bounded question that a hung peer must not turn into a hung
 # `doctor`, and the report's other `git` calls go through `gitenv`'s five seconds. The shipped
@@ -366,11 +364,11 @@ def _files(context: Context) -> Row:
     # Counted and not dropped, which is what keeps the union above load-bearing: what makes a
     # partial update visible is that the record names a file this build does not ship, never
     # what that name says.
-    # **Three causes, and they were one sentence.** `changed` is "this name did not compare
-    # equal", and a name gets in for three different reasons: the file is absent from the
-    # installation, the record does not name it, or the bytes differ. A file that is present
-    # and byte-for-byte what the release shipped was being reported as "does not match the
-    # release record" whenever the record was the partial half — a record the release script
+    # **Three causes, and three sentences.** `changed` is "this name did not compare equal", and
+    # a name gets in for three different reasons: the file is absent from the installation, the
+    # record does not name it, or the bytes differ. One sentence for all three would report a
+    # file that is present and byte-for-byte what the release shipped as "does not match the
+    # release record" whenever the record is the partial half — a record the release script
     # refuses to write (`RELEASING.md`, under `hashes`), and one an installation can still carry.
     # Telling the owner their file is wrong when the record is the wrong one sends them to
     # reinstall over the one artifact that is correct.
@@ -404,7 +402,7 @@ def _files(context: Context) -> Row:
 def _wrapper(context: Context) -> Row:
     """Execute the wrapper once, and report the token it printed.
 
-    This check closes a measured blind spot that no row reading a file can see. Under `open`
+    This check closes a blind spot that no row reading a file can see. Under `open`
     policy a failed interpreter probe prints to stderr and exits **0**; the harness discards
     stderr on a 0; no Python ran, so nothing reached the sink; and `doctor` itself runs under
     whatever interpreter the user invoked it with rather than under the wrapper's candidate list.
@@ -416,13 +414,13 @@ def _wrapper(context: Context) -> Row:
 
     **Only a root this process derived for itself is ever executed.** `context.own_root` and
     not `context.plugin_root`: with a wheel install `_own_root()` answers `None`, and a project
-    that commits `hooks/run-hook.sh` mode 100755 plus an `env` block naming its own tree was
-    measured getting that script *run* by `stayfixed doctor`, which then reported `wrapper: ok`
-    — code execution and a false clean bill of health in one row. Requiring the named root to
-    lie outside the project root is the weaker containment: it needs both sides resolved to
-    survive a committed symlink, and it still admits a second attacker-controlled checkout on
-    the same machine. A `skip` that names what it could not vouch for is the honest answer for
-    a root this process did not choose, and `files` still reads the file.
+    that commits `hooks/run-hook.sh` mode 100755 plus an `env` block naming its own tree would
+    get that script *run* by `stayfixed doctor` under a named root, which would then report
+    `wrapper: ok` — code execution and a false clean bill of health in one row. Requiring the named
+    root to lie outside the project root is the weaker containment: it needs both sides resolved to
+    survive a committed symlink, and it still admits a second attacker-controlled checkout on the
+    same machine. A `skip` that names what it could not vouch for is the honest answer for a root
+    this process did not choose, and `files` still reads the file.
     """
     # `own_root` and not `plugin_root`, on one line, so the whole rule is the single thing a
     # mutation flips: what is launched here is a root this process derived, never one a
@@ -463,10 +461,9 @@ def _wrapper(context: Context) -> Row:
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
             # Closed, not inherited — and defence in depth rather than the half that carries
-            # the weight. The comment here used to claim this flag stops the probe reopening
-            # "the seam this environment was scrubbed to close", which overstates it: the `env`
-            # dict above drops every `STAYFIXED_*` key, so `STAYFIXED_PYTHON_CANDIDATES` is not in
-            # the child's environment at all and a tty on its own has nothing left to reopen.
+            # the weight: the `env` dict above drops every `STAYFIXED_*` key, so
+            # `STAYFIXED_PYTHON_CANDIDATES` is not in the child's environment at all and a tty on
+            # its own has nothing left to reopen.
             #
             # What it does buy is that the two guards fail independently — a later edit that
             # narrowed the strip, or a second variable gated on a terminal the same way, still
@@ -528,9 +525,10 @@ def _entry_commands(document: str) -> list[str]:
 # a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
 # faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
 # clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
-# raised, it reached `_guarded`, whose warning stood in for `hook-entries` whole, so a marked entry
-# nothing vouches for lost its red beside it; answered `False`, it skipped a file that is there. So
-# `stat` is asked, these three are no file, and any other fault is a file the walk cannot read.
+# raised, it would reach `_guarded`, whose warning would stand in for `hook-entries` whole, so a
+# marked entry nothing vouches for would lose its red beside it; answered `False`, it would skip a
+# file that is there. So `stat` is asked, these three are no file, and any other fault is a file
+# the walk cannot read.
 NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
@@ -561,10 +559,10 @@ def _claimed(context: Context) -> tuple[list[Claims], bool, bool]:
     **Claims that raise are red, whatever they raise.** An area answers what it cannot read as a
     `None` field, so one that raises is a defect in its code, and `Contribution.claims` promises
     red for it. The guard reads an `OSError` as the machine's and warns, so a `PermissionError` out
-    of an area's claims turned the row — and every forged entry it would have listed — into a
-    warning and an exit of 0. It is raised on as `UnansweredClaims`, which the guard names in the
-    row; the exception it chains carries the original, whose message is never printed, because an
-    area may have built it from repository bytes.
+    of an area's claims, reaching it as itself, would turn the row — and every forged entry it
+    would have listed — into a warning and an exit of 0. It is raised on as `UnansweredClaims`,
+    which the guard names in the row; the exception it chains carries the original, whose message is
+    never printed, because an area may have built it from repository bytes.
     """
     try:
         answers = [ask(context) for ask in context.claims]
@@ -610,10 +608,10 @@ def _hook_entries(context: Context) -> Row:
     What each area recorded and what it grants are the areas' to answer, because the areas wrote
     them: each hands its `Claims` to this row (`_claimed`), and the contract is the one `Claims`
     states. A record may be repository bytes — `attach`'s is `.stayfixed/local/attach.json`, a
-    path a clone can commit — so **a record alone may never turn an entry green**: a repository
-    that committed a marked entry and a ledger recording its id got this row to answer "all
-    accounted for". An id is credible only beside a grant from a source the repository cannot
-    choose, and only the same area's grant, so one area's record never borrows another's. The
+    path a clone can commit — so **a record alone may never turn an entry green**: otherwise a
+    repository that committed a marked entry and a ledger recording its id would get this row to
+    answer "all accounted for". An id is credible only beside a grant from a source the repository
+    cannot choose, and only the same area's grant, so one area's record never borrows another's. The
     grant is the *marked command* and not the id, because an id that is granted with a different
     command hung on it is the same attack one step down.
 
@@ -661,10 +659,10 @@ def _hook_entries(context: Context) -> Row:
     comes from `marker_id` over the positional walk, which is the same predicate `owned_ids` is
     built on and the one `attach.write` already keys its ledger with.
 
-    **A file this walk could not read is `blind`, never silently absent.** Three arms used to
-    swallow: an `OSError` on the read, a `json.JSONDecodeError` inside the walk, and a `Refusal`
-    out of `owned_ids` — and all three produced "all accounted for" from the one check whose
-    entire purpose is that nobody's entries go unlisted. `owned_ids` is asked here for its
+    **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
+    read, a `json.JSONDecodeError` inside the walk and a `Refusal` out of `owned_ids` each make the
+    file blind, because any of them swallowed would produce "all accounted for" from the one check
+    whose entire purpose is that nobody's entries go unlisted. `owned_ids` is asked here for its
     *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
     `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
     admit it cannot account for. The report names the file and never its contents.
@@ -763,8 +761,8 @@ def _hook_entries(context: Context) -> Row:
                     # Only an unreadable record could hold it and no grant covers it, so whatever
                     # that record says, nothing vouches: red, and said without claiming to know
                     # whether the record holds it. A record is a file a clone can commit, and an
-                    # unreadable one withholding this verdict turned a forged entry's red into a
-                    # warning and an exit of 0.
+                    # unreadable one withholding this verdict would turn a forged entry's red into
+                    # a warning and an exit of 0.
                     # Told in the words of the first unreadable area whose source was asked and
                     # refused it, or, with none, of the first unreadable area.
                     asked = [answer for answer in unread if answer.sourced]
@@ -951,19 +949,18 @@ def _cli_path(context: Context) -> Row:
     *plugin-root substitution and executable bits* trial measured, so a skill that says
     `stayfixed …` needs the name to resolve on PATH there.
 
-    **Asked of `context.env`, like every other check that reads the environment.** It used to
-    call `shutil.which("stayfixed")`, which reads `os.environ["PATH"]` directly — the one check
-    in this module that ignored the mapping `run_checks` was handed. `run_checks` defaults that
-    mapping to `os.environ`, so nothing changes for a real run; what changes is that the answer
-    is now a function of the context rather than of whichever shell the caller happens to be in.
-    Before this, no test could state an expected answer at all: the row said `ok` on a developer
-    machine with the tool installed and `warn` in a container without it, and a body hardcoded
-    to `WARN` would have passed the whole suite.
+    **Asked of `context.env`, like every other check that reads the environment**, and never of
+    `os.environ["PATH"]` directly, which a bare `shutil.which("stayfixed")` reads. `run_checks`
+    defaults that mapping to `os.environ`, so a real run reads the same `PATH` either way; what
+    asking the context buys is an answer that is a function of the context rather than of
+    whichever shell the caller happens to be in, so a test can state the answer it expects — read
+    from the process, the row says `ok` on a developer machine with the tool installed and `warn`
+    in a container without it, and a body hardcoded to `WARN` would pass the whole suite.
 
     The default is `""` and not `None`, which is the difference between the sentence above being
     true and being true of every environment but one: `shutil.which(path=None)` falls back to
-    `os.environ["PATH"]`, so an `env` carrying no `PATH` reached the process environment through
-    the very call that was supposed to stop doing that. An environment with no `PATH` resolves
+    `os.environ["PATH"]`, so an `env` carrying no `PATH` would reach the process environment
+    through the very call that exists to stop doing that. An environment with no `PATH` resolves
     nothing, which is the honest answer and the one the row's own remedy addresses.
 
     **The resolved path is never printed.** `PATH` is read from `context.env` precisely because
@@ -1085,11 +1082,11 @@ def _ci_ref(context: Context) -> Row:
     fault would make `doctor` red on every correct installation.
 
     **Three ways the workflow can fail to agree, and none of them is `ok`.** It can disagree
-    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one
-    returned the ref's own verdict, so a repository with a released sha recorded and no workflow
-    reported "[ci] ref is a released stayfixed commit", which a reader takes for "my gate is
-    pinned correctly". `[ci] mode` is what makes the absent file a finding rather than the
-    configuration working: only `reusable` renders one.
+    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one,
+    answered with the ref's own verdict, would have a repository with a released sha recorded
+    and no workflow report "[ci] ref is a released stayfixed commit", which a reader takes for
+    "my gate is pinned correctly". `[ci] mode` is what makes the absent file a finding rather than
+    the configuration working: only `reusable` renders one.
 
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
@@ -1105,24 +1102,24 @@ def _ci_ref(context: Context) -> Row:
     # already have.** `_hook_entries` asks `is_file()` of every settings file before it opens one
     # and `_diagnostics` reads its log to a cap; this path had neither, and it is
     # repository-authored in the same sense: a clone chooses what sits at
-    # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there made `read_text` block
-    # with nothing to read, so `doctor` — one line, documented as a diagnostic — never returned
-    # at all. Measured before this guard on a real FIFO: the row did not come back.
+    # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there makes `read_text`
+    # block with nothing to read, so without this guard `doctor` — one line, documented as a
+    # diagnostic — would never return at all.
     #
     # None of the file's bytes is printed on any arm, so this is containment hygiene rather than a
-    # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
-    # and used to reach the `OSError` one below, naming `IsADirectoryError`; the arm's own
-    # sentence says what a reader needs and carries no platform's spelling of the fault.
+    # leak, which is why it is a guard here and not a refusal. A directory reaches this arm and
+    # not the `OSError` one below, which would name `IsADirectoryError`: this arm's own sentence
+    # says what a reader needs and carries no platform's spelling of the fault.
     if not workflow.is_file():
         if workflow.exists() or workflow.is_symlink():
             return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
-        # No file at all, which is not agreement either. `return row` here reported `ok` — "[ci]
-        # ref is a released stayfixed commit" — for a repository with no gate in it, and a reader
-        # takes that for "my gate is pinned correctly". It is the same false green the `not
-        # pinned` arm below refuses by name, and this is the state `init` itself leaves whenever
-        # it reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the
-        # file. `mode` is what tells the cases apart: under `none` or `uvx` this build renders no
-        # workflow, so an absent one is the configuration working.
+        # No file at all, which is not agreement either. `return row` here alone would report
+        # `ok` — "[ci] ref is a released stayfixed commit" — for a repository with no gate in it,
+        # and a reader takes that for "my gate is pinned correctly". It is the same false green the
+        # `not pinned` arm below refuses by name, and this is the state `init` itself leaves
+        # whenever it reports `ci-workflow` under `skipped`, and the state anyone reaches by
+        # deleting the file. `mode` is what tells the cases apart: under `none` or `uvx` this build
+        # renders no workflow, so an absent one is the configuration working.
         if context.config.ci.mode == "reusable":
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
@@ -1203,16 +1200,15 @@ def _diagnostics(context: Context) -> Row:
     `.claude/settings.json` `env` block reaches this process without a trust prompt. `event`,
     `handler` and `error` are stayfixed's own vocabulary *for a log stayfixed wrote*; for a log a
     repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
-    model to relay this detail verbatim. Measured: a committed log whose `handler` was an
-    instruction-shaped string and whose `error` was 5,000 characters produced a 5,114-character
-    `warn` detail carrying both.
+    model to relay this detail verbatim: quoted, a committed log whose `handler` is an
+    instruction-shaped string and whose `error` is 5,000 characters gives a `warn` detail of more
+    than 5,000 characters carrying both.
 
-    The rule this follows is the one this module already applied to `hook-entries`, one
-    paragraph up: a marker id **bounded by a grammar and capped** was still refused, because
-    bounded is not inert. An unbounded free-text field cannot be held to a weaker rule than a
-    bounded one, so the allowlist is gone rather than narrowed. What is left is a count, which
-    is this check's own answer, and a remedy that names the file by the variable rather than by
-    its value — the value is repository-authored too.
+    The rule this follows is the one this module applies to `hook-entries`: a marker id **bounded by
+    a grammar and capped** is still refused, because bounded is not inert. An unbounded free-text
+    field cannot be held to a weaker rule than a bounded one, so no field is allowed through,
+    however few. What is left is a count, which is this check's own answer, and a remedy that names
+    the file by the variable rather than by its value — the value is repository-authored too.
 
     **The read is bounded here, because the cap the sink documents is enforced on write.**
     `DIAGNOSTICS_MAX_BYTES` bounds what `DataSink.diagnostic` appends; a file this process did
@@ -1233,9 +1229,9 @@ def _diagnostics(context: Context) -> Row:
     except OSError as exc:
         # The harness data root is somebody else's directory on somebody else's filesystem, and
         # an unreadable one is a fact about this machine rather than a fault in the
-        # installation. Unguarded it reached `_guarded`, which renders any exception red — so a
-        # directory this process happens not to be able to list produced `diagnostics: red` and
-        # exit 1 on an installation with nothing wrong with it.
+        # installation. Unguarded it would reach `_guarded`, which renders any exception but an
+        # `OSError` red and an `OSError` as a warning about the whole row — so it is answered here,
+        # where the row can still say what it could and could not count.
         return Row(
             WARN,
             f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
@@ -1318,8 +1314,8 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
     `red` is what gates the exit code, so a red row is a statement that this installation is
     wrong. A file that could not be opened is not that: the directories these checks read live
-    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` was measured
-    producing `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
+    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` read as red
+    would give `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
     is a defect in this module and keeps its red, because that is what the row is for.
     """
     try:
@@ -1523,12 +1519,11 @@ def run_checks(
 ) -> list[Check]:
     """One row per check, the core's and every area's, whatever state the machine is in.
 
-    Four keyword parameters, which is the published signature. A fifth,
-    `candidates`, used to thread `STAYFIXED_PYTHON_CANDIDATES` into the `wrapper` check's
-    subprocess so a test could fail the interpreter probe; the wrapper now honours that variable
-    only from an interactive terminal and this probe is handed `/dev/null`, so the parameter
-    could only ever have been a no-op here and is gone. The covering test fails the probe the
-    way a machine does instead — with a plugin root whose launcher is not there.
+    Four keyword parameters, which is the published signature. None chooses the interpreter the
+    `wrapper` check's probe runs under: the wrapper honours `STAYFIXED_PYTHON_CANDIDATES` only
+    from an interactive terminal and this probe is handed `/dev/null`, so such a parameter could
+    only be a no-op here. A test fails the probe the way a machine does — with a plugin root
+    whose launcher is not there.
 
     `env` defaults to the process environment because two checks are *about* the environment —
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
@@ -1564,10 +1559,10 @@ def run_checks(
     try:
         config = load(root, machine=machine)
     except MachineConfigError:
-        # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files
-        # and this arm used to blame the first one for either — telling an owner whose
-        # `~/.config/stayfixed/config.toml` had a stray bracket in it to fix a repository file
-        # with nothing wrong with it, and marking the fault as the repository's when it is this
+        # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files,
+        # and blaming the first for either would tell an owner whose
+        # `~/.config/stayfixed/config.toml` has a stray bracket in it to fix a repository file
+        # with nothing wrong with it, and mark the fault as the repository's when it is this
         # machine's. Told apart by the exception's type and never by its text, because the
         # loader builds that text out of the file's own keys and values.
         #

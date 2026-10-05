@@ -1,18 +1,16 @@
 """The memory area's import surface: everything a consumer may import from this area.
 
-A module and not the package's `__init__`, for one measured reason: `stayfixed.hooks.registry`
+A module and not the package's `__init__`, for one reason: `stayfixed.hooks.registry`
 imports `stayfixed.memory.hooks`, which imports the package first, so a re-export list in
 `__init__.py` pulls the whole area — configuration included — into every `discover()` call and
 reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
 characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
 consumer its types.
 
-**The list is what consumers outside this area import, plus what those names oblige.** That is
-a change of rule and not only of length: it used to be what the areas named in this docstring
-were said to need, and this area's own history is what that produces — seventy names, of which
-forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area that needs
-something absent from this list grows it deliberately, in a commit that says which area and why
-— it does not import a private module of this area.
+**The list is what consumers outside this area import, plus what those names oblige** — not
+what an area might be said to need, which is a list that grows names nothing imports. An area
+that needs something absent from this list grows it deliberately, in a commit that says which
+area and why — it does not import a private module of this area.
 
 Twenty-nine names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
@@ -64,46 +62,33 @@ kept in silence is what made this pass necessary:
   meet it, and this is the one group on this list where the cost of being wrong is a
   repository's bytes reaching a model unwrapped.
 
-**Trimmed, by the pass that set this rule: thirty-three names**, every one of them with no importer
-in `src/`, `scripts/` or `tests/`, no published signature naming it, and no reader reaching it by
-string. Nothing was deleted: each is still where it was written and is reachable from this area's
-own module, which is what `memory/commands.py`, `memory/hooks.py` and this area's tests already do.
-What went is the claim that another area reads it.
+**Not here, though they look like candidates**: names with no importer in `src/`, `scripts/` or
+`tests/`, no published signature naming them, and no reader reaching them by string. Each is
+reachable from this area's own module, which is what `memory/commands.py`, `memory/hooks.py` and
+this area's tests use; an area that comes to need one grows this list by the rule above.
 
 - **The index group** — `INDEX_NAME`, `index_source`, `write_index`, `render_index`,
-  `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. Published on the argument that
-  `worktree.py` presented `index_source` as *the* place the per-link target rule reaches the
-  index, and that neither a reader nor `attach`, which creates the symlinked index in the first
-  place, could call it. `attach` calls none of them; the index is a command (`memory index`)
-  and the areas that want one run it.
+  `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. `attach`, which creates the
+  symlinked index, calls none of them; the index is a command (`memory index`) and the areas
+  that want one run it.
 - **The notes group** — `read_note`, `render_note`, `with_index`, `write_note`, `NoteError`,
-  `NoteType` — published for a notes consumer, and nothing outside this area imports them.
-  `snapshot`, `refresh_if_trusted` and `Snapshot` went with them: they were published as the
-  dance a caller of the exported `write_note` must perform, and with `write_note` gone there is
-  no caller on this surface to perform it. That argument comes back with the verb if an area
-  ever needs the verb.
-- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`. The
-  paragraph that said this debt was paid was measuring the wrong thing: an area existing is not
-  the same as an area importing.
-- **The inventory group** — `inventory`, `totals`, `Entry` — published for a skills consumer,
-  and nothing outside this area imports them.
+  `NoteType` — and nothing outside this area imports them. `snapshot`, `refresh_if_trusted` and
+  `Snapshot` are the dance a caller of `write_note` must perform, so with `write_note` off this
+  surface they have no caller here either.
+- **The refs group** — `check_refs`, `unresolved`, `audience_violations`, `RefsReport`: an area
+  existing is not the same as an area importing, and none imports these.
+- **The inventory group** — `inventory`, `totals`, `Entry` — and nothing outside this area
+  imports them.
 - **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
-  `overlay_group_target` and `resolved`. `in_repository` was published
-  "because `inside_project` hands the reader to it in as many words", which is this surface
-  citing itself; `refusal_reason` was
-  published for an overlay hook that does not exist; `overlay_group_target` is read by
-  `worktree.py`, one module over, and by nothing else.
-- **The leftovers** — `blocks`, `split`, `harness_link_parts`. Three helpers with no argument
-  beside them in the docstring this one replaces, which is how they survived. (`linked_names`
-  was a fourth, and came back when `attach` began hiding the tree it names.)
+  `overlay_group_target` and `resolved`. `overlay_group_target` is read by `worktree.py`, one
+  module over, and by nothing else, and none of the others has a reader outside this area.
+- **The helpers** — `blocks`, `split`, `harness_link_parts`, with no reader outside this area.
+- **The bundles group** — `fit`, `render`, and the `Bundle` and `Fit` their signatures name. The
+  `bundles` row is this area's own (`memory/doctor.py`) and reads `memory.bundles` directly.
 
-**Trimmed when `doctor`'s store rows moved into this area: `fit`, `render`, and the `Bundle` and
-`Fit` their signatures name.** They were published for the `bundles` row, which is now this area's
-own (`memory/doctor.py`) and reads `memory.bundles` directly.
-
-`PartialLink` stays: `attach` imports it, which is what the paragraph that argued for it
-predicted. `Links` stays for the same reason and is the one name on this list an entry names:
-`mutations/`'s "a type the surface names in a signature drops off the surface".
+`PartialLink` and `Links` are here because `attach` imports them, and `Links` is the one name on
+this list an entry names: `mutations/`'s "a type the surface names in a signature drops off the
+surface".
 """
 
 from stayfixed.memory.answers import Answers

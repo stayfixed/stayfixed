@@ -4,8 +4,8 @@ The command module in this area is its first consumer. An area that needs someth
 this list grows it deliberately, in a commit that says which area and why — it does not import
 a private module of this area.
 
-Every name below is here for a reason written beside it, because a surface that survives a trim
-with no explanation is what made the trim necessary:
+Every name below is here for a reason written beside it, because a name kept with no reason is
+one nobody can tell from a leftover:
 
 - `run_checks` is the report, and `Check` is the row it is made of — a return type absent from
   this list is a value a consumer can hold and cannot declare, which is the one thing a surface

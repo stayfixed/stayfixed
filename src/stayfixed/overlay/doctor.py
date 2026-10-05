@@ -24,19 +24,18 @@ if TYPE_CHECKING:
     from stayfixed.doctor.api import Context, Contribution, Row, Status
 
 # The two overlay-gated rows ask one question before anything else, and both must say the same
-# thing about it, so the sentences live in one place rather than being copied from one row into
-# the other. They were copied -- `overlay-requires`' skip arm was `pre-commit`'s byte for byte,
-# `or not overlay.is_dir()` included -- and the copy carried the defect with it.
+# thing about it, so the sentences live in one place rather than in a copy per row: a copy carries
+# a defect into the other row with it.
 #
-# The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
-# sentence. `config.overlay.overlay_root` answers `None` for "this machine records no overlay",
-# which is the ordinary state before `stayfixed setup` has run and which nothing can be done
-# about from here; it answers a `Path` for a recorded root whether or not anything is there.
-# So a machine that recorded an overlay and then moved it -- the owner reorganising their own
-# directories is the ordinary way -- was told "no overlay root is recorded on this machine",
-# which is false, and was handed an empty remedy under it. It is the second state, not the
-# first, that is worth acting on: the overlay is where the notes live, and a recorded root
-# that is not there breaks the store as well as these two rows.
+# `overlay is None or not overlay.is_dir()` is two states, and they get two sentences.
+# `Context.overlay_root` answers `None` for "this machine records no overlay", which is the
+# ordinary state before `stayfixed setup` has run and which nothing can be done about from here;
+# it answers a `Path` for a recorded root whether or not anything is there. A machine that
+# recorded an overlay and then moved it -- the owner reorganising their own directories is the
+# ordinary way -- is not told "no overlay root is recorded on this machine", which would be
+# false, with an empty remedy under it. It is the second state, not the first, that is worth
+# acting on: the overlay is where the notes live, and a recorded root that is not there breaks
+# the store as well as these two rows.
 NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
 OVERLAY_GONE = (
     "the overlay root this machine records is not a directory, so nothing about the overlay "
@@ -59,8 +58,8 @@ def _overlay_absent(overlay: Path | None) -> Row:
     """Why there is no overlay to measure, told apart into the two states that are not alike.
 
     Called by both overlay-gated rows and by nothing else, so the sentence a reader gets is the
-    same whichever row they read it in -- see the constants above for the copy this replaces and
-    for what it was saying to whom.
+    same whichever row they read it in -- the constants above say why the two states are two
+    sentences.
 
     The argument is the root rather than the `Context`, so that the caller's own
     `overlay is None or not overlay.is_dir()` narrows `overlay` to a `Path` for the rest of its

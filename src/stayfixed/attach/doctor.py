@@ -128,11 +128,10 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     and a harness that cannot see it is an attach that did not finish.
 
     **The link's target is compared, and the sentence about it is only ever printed when it is
-    true.** The shape used to be computed into `detail` and then dropped for the status, and
-    "the harness memory path is a link to the store" was printed for *any* symlink — a dangling
-    one, or one pointing at an unrelated directory — with the row green underneath it. On the
-    one channel `attach` uses to reach the model, that is a false statement about where the
-    model's memory comes from, and the two states it hid are the same failure the real
+    true.** "The harness memory path is a link to the store" printed for *any* symlink — a
+    dangling one, or one pointing at an unrelated directory — with the row green underneath it
+    would be, on the one channel `attach` uses to reach the model, a false statement about where
+    the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
     from stayfixed.config.layout import ATTACH_LEDGER
@@ -221,14 +220,14 @@ def _uncorroborated(reason: str) -> Row:
     """The row for a ledger the overlay did not confirm, split by what the reason is *about*.
 
     `warn` accuses the repository and `skip` does not, and the split is the point: `skip` never
-    reaches the exit code, so using it for the repository's own doing would be the defect this
-    function was written to remove, and using `warn` for a machine where `setup` has never run
-    would make `doctor` warn on every correct fresh install. Neither row ever says "attached".
+    reaches the exit code, so using it for the repository's own doing would silence it, and using
+    `warn` for a machine where `setup` has never run would make `doctor` warn on every correct
+    fresh install. Neither row ever says "attached".
 
-    **Four reasons and not three.** A ledger that is there and will not parse was answering
-    with the machine-side two, so the row it got blamed `git` for a malformed file in the
-    reader's own checkout and offered a remedy — run this somewhere `git` works — that could
-    not fix it. By this function's own rule it is the repository's doing and warns.
+    **Four reasons and not three.** A ledger that is there and will not parse is the
+    repository's doing, so by this function's own rule it warns. Answered with the machine-side
+    two, its row would blame `git` for a malformed file in the reader's own checkout and offer a
+    remedy — run this somewhere `git` works — that could not fix it.
     """
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import SKIP, WARN, Row
@@ -274,8 +273,8 @@ def _uncorroborated(reason: str) -> Row:
 def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[Status, str, str]:
     """The status, the sentence and the remedy for the harness memory path, as one answer.
 
-    One function because the status and the sentence must not be able to disagree — computing
-    the shape and then discarding it for the status is the defect this replaces.
+    One function because the status and the sentence must not be able to disagree, which they
+    could if the shape were computed apart from the status and then discarded for it.
 
     The comparison is against the resolved store's path, which is what
     `worktree._apply_harness_link` links to, resolved on both sides so that two spellings of one
@@ -322,13 +321,13 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
 def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     """The overlay binding this repository would attach under, or the label of why there is none.
 
-    Three different situations used to collapse into one `None` — a ledger naming a store the
-    overlay does not permit, a machine that records no overlay at all, and a machine with no
-    usable `git` — and the `attached` row then treated the last two as *attached*. They are not
-    one finding. A ledger whose store is not this project's share of the recorded overlay is a
-    fact about **this repository**, and `.stayfixed/local/attach.json` is a path a clone can
-    commit, so it earns a warning. A missing overlay or a missing `git` is a fact about **our
-    own inputs**, and a row that accused the repository on it would be reporting on itself.
+    Three different situations are three answers and never one `None` — a ledger naming a store
+    the overlay does not permit, a machine that records no overlay at all, and a machine with no
+    usable `git` — because collapsed, the `attached` row would read the last two as *attached*.
+    They are not one finding. A ledger whose store is not this project's share of the recorded
+    overlay is a fact about **this repository**, and `.stayfixed/local/attach.json` is a path a
+    clone can commit, so it earns a warning. A missing overlay or a missing `git` is a fact about
+    **our own inputs**, and a row that accused the repository on it would be reporting on itself.
 
     The three are told apart without restructuring `read_binding`, which raises `Refusal` for
     two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
@@ -382,9 +381,10 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
     **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
     this machine records and the project's name, the same one `attach` would install from, and
     not the one the ledger's `store` names. Asked through the ledger's store, a store that is not
-    this project's answered "could not be asked", and that is a warning: a clone that committed a
-    ledger recording its own entry, under any store it liked, turned `hook-entries`' red into an
-    exit of 0. Whether that store is right is the `attached` row's question, and it warns there.
+    this project's would answer "could not be asked", and that is a warning: a clone that
+    committed a ledger recording its own entry, under any store it liked, would turn
+    `hook-entries`' red into an exit of 0. Whether that store is right is the `attached` row's
+    question, and it warns there.
 
     `None` means the overlay this machine records could not be asked — no `git`, an overlay
     record that will not read, or a hook file the overlay grants this checkout from (`common/`'s,
