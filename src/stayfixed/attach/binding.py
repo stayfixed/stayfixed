@@ -243,6 +243,16 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
+    return _bound(root, config, overlay)
+
+
+def _bound(root: Path, config: Config, overlay: Path) -> Binding:
+    """The binding under an overlay root the caller has already read out of the machine file.
+
+    One read per binding: `read_binding` checks `--store` against the root it read and binds under
+    that same root, rather than handing `binding_for` the machine file to read a second time, which
+    could answer another root if the file changed in between.
+    """
     project = config.project.name
     store = permitted_roots(overlay, project)[1]
     recorded = _recorded(overlay, project)
@@ -263,7 +273,9 @@ def read_binding(
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
-    `Config` and no `--store` to check; this is the seam for one that has both.
+    `Config` and no `--store` to check; this is the seam for one that has both. For the same
+    reason the overlay root is read once, and `--store` is checked against the root the binding
+    is then made under (`_bound`).
     """
     config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
@@ -285,7 +297,7 @@ def read_binding(
             f"{store} is not it. The overlay root comes from the machine configuration and never "
             f"from an argument"
         )
-    return binding_for(root, config, machine=machine)
+    return _bound(root, config, overlay)
 
 
 def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:

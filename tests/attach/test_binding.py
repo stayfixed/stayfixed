@@ -119,6 +119,37 @@ def test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument(
     assert "overlay" in str(refused.value)
 
 
+def test_read_binding_reads_the_machine_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `read_binding` asked the machine file for the overlay root to check `--store` against, and
+    # `binding_for` asked it again for the binding it returned, so one call read the file twice
+    # and the store could be checked against one root and bound under another if the file changed
+    # in between. Called with the caller's `Config`, as every caller in `src/` calls it, so the
+    # count is the binding's own reads and not the loader's.
+    #
+    # Counted at `config.overlay.read_machine_toml`, the read `overlay_root` makes, so any second
+    # route to the root counts too. The binding is asserted first so the count is not vacuous.
+    #
+    # Mutation (oracle): `mutations/`'s "read_binding reads the machine file a second time for the
+    # binding" -> two reads, and this reddens.
+    from stayfixed.config.loader import read_machine_toml as real
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@github.com:o/p.git")
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    config = load(root, machine=machine)
+    reads: list[Path] = []
+
+    def counted(path: Path) -> dict[str, object] | None:
+        reads.append(path)
+        return real(path)
+
+    monkeypatch.setattr("stayfixed.config.overlay.read_machine_toml", counted)
+    binding = read_binding(root, store=store, machine=machine, config=config)
+    assert binding.overlay == store.parents[2]
+    assert reads == [machine]
+
+
 def test_a_store_that_is_not_this_projects_directory_is_refused(tmp_path: Path) -> None:
     # `--store` names `<overlay>/projects/<name>/memory` and nothing else. A store elsewhere
     # under the overlay attaches and then fails on every session start, because

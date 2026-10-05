@@ -50,6 +50,18 @@ reddens = [
   "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
 ]
 
+# `--store` is checked against the overlay root `read_binding` read, and the binding is made under
+# that same root. Handing the binding to `binding_for` reads the machine file a second time, so the
+# store could be checked against one root and bound under another if the file changed in between.
+[[mutation]]
+name = "read_binding reads the machine file a second time for the binding"
+file = "src/stayfixed/attach/binding.py"
+before = "            f\"from an argument\"\n        )\n    return _bound(root, config, overlay)"
+after = "            f\"from an argument\"\n        )\n    return binding_for(root, config, machine=machine)"
+reddens = [
+  "tests/attach/test_binding.py::test_read_binding_reads_the_machine_file_once",
+]
+
 # The trust rule in one line: committed settings that widen permissions are never merged. The
 # mutation is toward a plausible implementation rather than an obviously broken one, which is the
 # difference between an oracle and a smoke test.
