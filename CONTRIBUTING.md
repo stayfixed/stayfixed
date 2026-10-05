@@ -178,18 +178,21 @@ loaded: the core loads the private layer only when a command asks for it.
   `<area> (2)`, when the report already has that name), and the rest of the report stands. The
   area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
   settings files as one nothing records, and goes red too when there is one. A `Contribution`
-  may also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings files and the
-  commands it still grants there, which the core's `hook-entries` row asks with the same `Context`,
-  so an entry the area put there is told apart from a repository claiming it did. The record may be
-  repository bytes and the grants may not, and an entry is absolved only by an area that both
-  records its id and grants its command, never by one area's record and another's grant. `Claims`
-  also carries the area's `Wording`, the phrases the row tells its record, its source and their
-  remedies in, so the core names no area's files or commands of its own; they are printed
-  verbatim, so they are stayfixed's own fixed strings and never built from repository bytes.
+  may also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings
+  files and the commands it still grants there, which the core's `hook-entries` row asks with the
+  same `Context`, so an entry the area put there is told apart from a repository claiming it did.
+  The record may be repository bytes and the grants may not, and an entry is absolved only by an
+  area that both records its id and grants its command, never by one area's record and another's
+  grant. `Claims` also carries the area's `Wording`, the phrases the row tells its record, its
+  source and their remedies in, so the core names no area's files or commands of its own; they are
+  printed verbatim, so they are stayfixed's own fixed strings and never built from repository
+  bytes.
   `register()` is called once per report, so anything it creates for its checks — an area that
   reads the note store creates a value that resolves it at most once — is fresh for every report.
   What the core owns and several areas read is on the `Context` instead: `Context.overlay_root`,
-  the machine file's `[overlay] root`, is resolved at most once per report for every area.
+  the machine file's `[overlay] root`, is read at most once per report for every area that asks
+  the `Context` for it. That is the one answer it caches: code an area reaches through its own
+  modules, such as the binding and the note store, resolves the root again.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and

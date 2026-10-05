@@ -523,10 +523,13 @@ def test_one_report_resolves_the_overlay_root_once_for_every_area(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The overlay root is a key of the machine file, the core's, and two areas read it: `attach`
-    # for the binding and its claims, `overlay` for its two rows. The report's `Context` resolves
-    # it on first read and keeps the answer, so the machine file is asked once per report however
-    # many rows read it. Mutation (oracle): `mutations/`'s "the report resolves the overlay root
-    # for every reader" -> five reads, three of `attach`'s and two of `overlay`'s.
+    # for the binding and its claims, `overlay` for its two rows. What the report caches is
+    # `Context.overlay_root`: resolved on its first read and kept, so every row that reads the root
+    # through the `Context` shares one read of the machine file. That is all it caches. The binding
+    # and the note store this area reads behind the row resolve the root again on their own, and
+    # nothing caches the `git` answers they ask, so this counts only the reads through the
+    # `Context`. Mutation (oracle): `mutations/`'s "the report resolves the overlay root for every
+    # reader" -> five reads, three of `attach`'s and two of `overlay`'s.
     from stayfixed.config.overlay import overlay_root
 
     asked: list[Path | None] = []
