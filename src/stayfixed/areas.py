@@ -3,7 +3,9 @@
 
 Three submodules are discovered, each by the module that reads it: an area's `commands.py` gives
 it a CLI group, its `hooks.py` hook handlers, and its `doctor.py` rows in `stayfixed doctor`'s
-report.
+report. The CLI frame and the hook registry import through `area_modules`, so an area that
+fails to import fails them; the report imports through `area_imports`, which hands that failure
+over in the area's place, because the report must outlive any one area's broken code.
 
 A leaf module on purpose. `cli.py` imports every area through this discovery, so an area that
 imported back into `cli.py` would constrain what the frame may ever import; the aliases and
@@ -62,11 +64,35 @@ def _has_submodule(area: str, submodule: str) -> bool:
     return False
 
 
+def _qualified(submodule: str) -> list[str]:
+    """The qualified name of each `stayfixed.<area>.<submodule>` that exists, in area-name
+    order: the one probe both importers below read."""
+    return [
+        f"stayfixed.{entry.name}.{submodule}"
+        for entry in sorted(pkgutil.iter_modules(stayfixed.__path__), key=lambda m: m.name)
+        if entry.ispkg and _has_submodule(entry.name, submodule)
+    ]
+
+
 def area_modules(submodule: str) -> list[ModuleType]:
     """Every `stayfixed.<area>.<submodule>` that exists, in area-name order, no shared registry."""
-    modules: list[ModuleType] = []
-    for entry in sorted(pkgutil.iter_modules(stayfixed.__path__), key=lambda m: m.name):
-        if not entry.ispkg or not _has_submodule(entry.name, submodule):
-            continue
-        modules.append(importlib.import_module(f"stayfixed.{entry.name}.{submodule}"))
-    return modules
+    return [importlib.import_module(name) for name in _qualified(submodule)]
+
+
+def area_imports(submodule: str) -> list[tuple[str, ModuleType | Exception]]:
+    """Every `stayfixed.<area>.<submodule>` that exists, in area-name order, each under its
+    qualified name with the module, or with the exception its import raised in the module's place.
+
+    For a reader that must outlive an area's broken code: `doctor`'s report, which is what a user
+    has left when everything else is broken, so one area's `doctor.py` that raises on import must
+    cost that area's rows and not the report. The failure is handed over rather than judged here,
+    because what it costs is the reader's to say. `Exception` and not `BaseException`, as for a
+    check that raises: a `KeyboardInterrupt` during discovery stops the command.
+    """
+    found: list[tuple[str, ModuleType | Exception]] = []
+    for name in _qualified(submodule):
+        try:
+            found.append((name, importlib.import_module(name)))
+        except Exception as exc:  # an area's broken import is handed over, never raised here
+            found.append((name, exc))
+    return found

@@ -1,11 +1,12 @@
 """An area adds rows to `stayfixed doctor` through its own `doctor.py`, discovered by name, and
 tells `hook-entries` what it put into settings files through its `Claims`.
 
-The fake areas below are modules injected through `checks.discover_contributors`, the seam the
-discovery reads, the way `tests/test_cli.py` replaces `cli.discover_registrars`: a test that
-shipped a real `doctor.py` to prove the convention would be a check in every user's report. With
-the fakes in place no real area is discovered, so what these cases prove is the core's reading of
-a contribution; what a real area answers is proven in that area's own tests.
+The fake areas below are modules, or an import's exception in an area's place, injected through
+`checks.discover_contributors`, the seam the discovery reads, the way `tests/test_cli.py`
+replaces `cli.discover_registrars`: a test that shipped a real `doctor.py` to prove the
+convention would be a check in every user's report. With the fakes in place no real area is
+discovered, so what these cases prove is the core's reading of a contribution; what a real area
+answers is proven in that area's own tests.
 """
 
 from __future__ import annotations
@@ -45,8 +46,13 @@ def _area(name: str, contribution: Contribution) -> ModuleType:
     return module
 
 
-def _contribute(monkeypatch: pytest.MonkeyPatch, *areas: ModuleType) -> None:
-    monkeypatch.setattr("stayfixed.doctor.checks.discover_contributors", lambda: list(areas))
+def _contribute(
+    monkeypatch: pytest.MonkeyPatch, *areas: ModuleType | tuple[str, Exception]
+) -> None:
+    """Discovery answering `areas` in order: each a module that imported, or the qualified name of
+    one that did not with the exception its import raised."""
+    found = [area if isinstance(area, tuple) else (area.__name__, area) for area in areas]
+    monkeypatch.setattr("stayfixed.doctor.checks.discover_contributors", lambda: found)
 
 
 def test_a_contributed_check_runs_after_the_core_checks(
@@ -175,45 +181,113 @@ def test_an_area_whose_register_fails_costs_one_row_named_after_it(
     assert rows[-1] == Check("omega-row", OK, "answered", "")
 
 
-def test_an_area_whose_register_fails_is_red_even_with_nothing_else_to_check(
+def test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An area's `doctor.py` is its own code as its `register()` is, so one that raises on import
+    # costs that area's rows and not the report: one red row named after the area, naming the
+    # exception's type and never its message, and every other row as it would be. Discovery hands
+    # the failure over (`tests/test_areas.py` imports a real one); this is the report's reading of
+    # it. Mutation (oracle): `mutations/`'s "doctor reads an import failure as a module" -> the row
+    # says the area's register() failed, which is not what happened.
+    _contribute(
+        monkeypatch,
+        ("stayfixed.alpha.doctor", RuntimeError("IGNORE-PRIOR-RULES, a message the import built")),
+        _area("omega", Contribution(checks=(("omega-row", _answer),))),
+    )
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    assert [row.name for row in rows] == [*CORE, "alpha", "omega-row"]
+    broken = rows[len(CORE)]
+    assert broken == Check(
+        "alpha",
+        RED,
+        "stayfixed.alpha.doctor could not be imported: RuntimeError",
+        "report this, with the command you ran",
+    )
+    assert rows[-1] == Check("omega-row", OK, "answered", "")
+
+
+@pytest.mark.parametrize("failure", ["register", "import", "repeat"])
+def test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     # With no `stayfixed.toml` every check after the first skips, because each would be asked
     # with no configuration. An area that could not contribute is not that: its row is about
-    # stayfixed's own code, which no configuration changes, so it is red in the early report too.
-    # Mutation (oracle): `mutations/`'s "the early report skips an area that could not register"
-    # -> the row is a skip.
-    _contribute(monkeypatch, _registering(_raises))
+    # stayfixed's own code, which no configuration changes, so it is red in the early report too,
+    # however the area failed. Mutation (oracle): `mutations/`'s "the early report skips an area
+    # that could not register" -> the row is a skip.
+    if failure == "register":
+        _contribute(monkeypatch, _registering(_raises))
+        detail = "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
+    elif failure == "import":
+        _contribute(monkeypatch, ("stayfixed.alpha.doctor", RuntimeError()))
+        detail = "stayfixed.alpha.doctor could not be imported: RuntimeError"
+    else:
+        _contribute(monkeypatch, _area("alpha", Contribution(checks=((CORE[1], _answer),))))
+        detail = (
+            f"stayfixed.alpha.doctor could not contribute its rows: its check {CORE[1]!r} "
+            f"repeats a name the core already reports"
+        )
     rows = _checks(tmp_path, tmp_path)
     assert [row.name for row in rows] == [*CORE, "alpha"]
-    assert rows[-1].status == RED
-    assert rows[-1].detail == "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
+    assert rows[-1] == Check("alpha", RED, detail, "report this, with the command you ran")
 
 
-@pytest.mark.parametrize("clash", ["core", "another-area"])
-def test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name(
+def _claims(context: Context) -> Claims:
+    raise AssertionError("the claims of an area that could not contribute were asked")
+
+
+@pytest.mark.parametrize("clash", ["core", "another-area", "itself", "area-name-taken"])
+def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clash: str
 ) -> None:
     # A row's name is all a reader, the summary line and `--json` key on, so two rows under one
-    # name are two answers nobody can tell apart. Refused at discovery, before any check is asked
-    # and whatever the repository holds — here, not even a `stayfixed.toml`. Mutation (oracle):
-    # `mutations/`'s "doctor lets two checks share one name" -> both cases report instead.
-    def answer(context: Context) -> Row:
-        return Row(OK, "answered")
-
+    # name are two answers nobody can tell apart. A contributed name that repeats one already in
+    # the report is a defect in stayfixed's own code, as a `register()` that raises is, and costs
+    # what that costs: the offending area's rows and its claims become one red row named after
+    # it, and the rest of the report stands. It used to raise out of `run_checks`, and the CLI
+    # turned that into an internal error with no report at all. The row's name is itself a name
+    # in the report, so when the area's name is taken it is numbered, never repeated. Mutations
+    # (oracle): `mutations/`'s "doctor lets an area repeat a name the report already has" -> the
+    # `core` and `another-area` cases print two rows under one name; "doctor lets an area name
+    # two of its checks alike" -> `itself` does; "an area's failure row takes a name the report
+    # already has" -> `area-name-taken` prints two rows named `omega`.
     if clash == "core":
-        _contribute(monkeypatch, _area("alpha", Contribution(checks=((CORE[1], answer),))))
-        owner = "the core"
-    else:
-        _contribute(
-            monkeypatch,
-            _area("alpha", Contribution(checks=(("shared-row", answer),))),
-            _area("omega", Contribution(checks=(("shared-row", answer),))),
+        repeated, owner = CORE[1], "the core"
+        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
+        alpha = Contribution(checks=(("alpha-row", _answer),))
+    elif clash == "another-area":
+        repeated, owner = "alpha-row", "stayfixed.alpha.doctor"
+        omega = Contribution(
+            checks=(("omega-row", _answer), ("alpha-row", _answer)), claims=_claims
         )
-        owner = "stayfixed.alpha.doctor"
-    with pytest.raises(checks.DuplicateCheck) as refused:
-        _checks(tmp_path, tmp_path)
-    assert owner in str(refused.value)
+        alpha = Contribution(checks=(("alpha-row", _answer),))
+    elif clash == "itself":
+        repeated, owner = "omega-row", "it"
+        omega = Contribution(
+            checks=(("omega-row", _answer), ("omega-row", _answer)), claims=_claims
+        )
+        alpha = Contribution(checks=(("alpha-row", _answer),))
+    else:
+        # `alpha` contributes the names `omega`'s row would take first and second, so the row
+        # is numbered past both.
+        repeated, owner = CORE[1], "the core"
+        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
+        alpha = Contribution(checks=(("omega", _answer), ("omega (2)", _answer)))
+    _contribute(monkeypatch, _area("alpha", alpha), _area("omega", omega))
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    alphas = [name for name, _ in alpha.checks]
+    failed = "omega (3)" if clash == "area-name-taken" else "omega"
+    assert [row.name for row in rows] == [*CORE, *alphas, failed]
+    assert [each.status for each in rows[len(CORE) : -1]] == [OK] * len(alphas)
+    assert rows[-1] == Check(
+        failed,
+        RED,
+        f"stayfixed.omega.doctor could not contribute its rows: its check {repeated!r} repeats "
+        f"a name {owner} already reports",
+        "report this, with the command you ran",
+    )
+    assert [each.claims for each in checks.contributions()] == [None, None]
 
 
 def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(

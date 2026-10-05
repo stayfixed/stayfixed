@@ -74,7 +74,7 @@ from typing import TypeGuard
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
-from stayfixed.areas import area_modules
+from stayfixed.areas import area_imports
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
@@ -1339,8 +1339,8 @@ REPORT_THIS = "report this, with the command you ran"
 
 @dataclass(frozen=True)
 class _Unregistered:
-    """The one check an area gets in place of its own when its `register()` gave none: a red row
-    saying so, named after the area and sitting where its rows would have been."""
+    """The one check an area gets in place of its own when it could not contribute them: a red row
+    saying why, named after the area and sitting where its rows would have been."""
 
     detail: str
 
@@ -1369,69 +1369,101 @@ def _well_formed(contribution: object) -> TypeGuard[Contribution]:
     )
 
 
-def _registered(module: ModuleType) -> Contribution:
-    """`module.register()`, or one red row named after the area when it could not contribute.
+def _registered(qualified: str, found: ModuleType | Exception) -> Contribution | str:
+    """What the area's `doctor.py` contributes, or why it could not: the import's failure, or a
+    `register()` that raised or answered something that is not a `Contribution`.
 
-    `register()` is an area's code as its checks are, so it gets their guard: one that raises,
-    or answers something that is not a `Contribution`, costs that area's rows and not the report,
-    which used to end in an internal error with no report at all. The row names the exception's
-    type and never its message, for `_guarded`'s reason. The area's claims go with its rows, so
-    `hook-entries` then reads every entry that area put into settings files as one nothing
-    records, which is red: an area that cannot say what it wrote vouches for nothing.
-
-    The row's name is the area's, which is stayfixed's own package name and never
-    repository-authored, so it prints.
+    The module and its `register()` are an area's code as its checks are, so they get their
+    guard, and the reason names the exception's type and never its message, for `_guarded`'s
+    reason. `qualified` is stayfixed's own module name and never repository-authored, so it
+    prints.
     """
-    area = module.__name__.removesuffix(".doctor").rpartition(".")[2]
-    reason = f"{module.__name__} could not contribute its rows"
+    if isinstance(found, Exception):
+        return f"{qualified} could not be imported: {type(found).__name__}"
+    reason = f"{qualified} could not contribute its rows"
     try:
-        contribution: object = module.register()
+        contribution: object = found.register()
     except Exception as exc:  # an area's own code, guarded as its checks are
-        return Contribution(checks=((area, _Unregistered(f"{reason}: {type(exc).__name__}")),))
+        return f"{reason}: {type(exc).__name__}"
     if not _well_formed(contribution):
-        detail = f"{reason}: its register() did not return a Contribution of (name, check) pairs"
-        return Contribution(checks=((area, _Unregistered(detail)),))
+        return f"{reason}: its register() did not return a Contribution of (name, check) pairs"
     return contribution
 
 
-class DuplicateCheck(Refusal):
-    """A check whose name another check already has, so the report would print two rows a reader
-    could not tell apart."""
+def _repeated(contribution: Contribution, owners: Mapping[str, str]) -> str | None:
+    """Why `contribution` may not join a report whose names `owners` maps to who reports them:
+    the first of its names that one of them, or an earlier pair of its own, already has."""
+    named = dict(owners)
+    for name, _ in contribution.checks:
+        if name in named:
+            return f"its check {name!r} repeats a name {named[name]} already reports"
+        named[name] = "it"
+    return None
 
 
-def discover_contributors() -> list[ModuleType]:
-    """Every `stayfixed.<area>.doctor`, in area-name order, with no shared registry.
+def _unregistered(qualified: str, detail: str, owners: dict[str, str]) -> Contribution:
+    """The one red row an area that could not contribute gets, recorded in `owners`.
+
+    The row is named after the area. When the report already has that name — a core check's,
+    or a check an earlier area contributed — it is the area's name numbered from 2, `<area> (2)`,
+    `<area> (3)` and so on, the first that is free: the row is a name in the report like any
+    other, and a name is never in it twice. The row carries no claims, because the area's claims
+    go with its rows: `hook-entries` then reads every entry that area put into settings files as
+    one nothing records, which is red, since an area that cannot say what it wrote vouches for
+    nothing.
+    """
+    area = qualified.removesuffix(".doctor").rpartition(".")[2]
+    name, number = area, 1
+    while name in owners:
+        number += 1
+        name = f"{area} ({number})"
+    owners[name] = qualified
+    return Contribution(checks=((name, _Unregistered(detail)),))
+
+
+def discover_contributors() -> list[tuple[str, ModuleType | Exception]]:
+    """Every `stayfixed.<area>.doctor`, in area-name order, with no shared registry, each under its
+    qualified name with the module, or with the exception its import raised.
 
     The seam the report's discovery reads, and the one a test replaces to inject an area, as
     `cli.discover_registrars` is for commands.
     """
-    return area_modules("doctor")
+    return area_imports("doctor")
 
 
 def contributions() -> list[Contribution]:
-    """What each area's `doctor.py` contributes, refused when a name would repeat in the report.
+    """What each area's `doctor.py` contributes, in area-name order, or one red row for an area
+    that could not contribute.
+
+    **One failure policy.** Every way an area's contribution can fail is a defect in stayfixed's
+    own code, and every one costs the same thing: that area's rows and its claims become one red
+    row named after it (`_unregistered`), and the rest of the report stands. A `doctor.py` that
+    fails to import, a `register()` that raises, one that answers something that is not a
+    `Contribution` of `(name, check)` pairs, and one that contributes a name already in the
+    report, alike — none ends the report, which is what a user has left when everything else is
+    broken.
 
     A row's name is its only identity — the summary line, `--json` and the skill that relays the
-    report all key on it — so a contributed name equal to a core check's, or to one another area
-    already contributed, is refused here, before any check is asked. The names are stayfixed's
-    own code and never repository-authored, so the refusal prints them.
+    report all key on it — so a contributed name equal to a core check's, to one an earlier area
+    contributed, or to another of the area's own, is that last failure, found here before any
+    check is asked. The names are stayfixed's own code and never repository-authored, so the row
+    prints them.
 
     Each area's `register()` is called once per call of this function, so whatever an area
-    resolves lazily for its checks is resolved afresh for each report, and through `_registered`,
-    so one that fails is one red row named after its area.
+    resolves lazily for its checks is resolved afresh for each report.
     """
     owners = dict.fromkeys((name for name, _ in CHECKS), "the core")
     found: list[Contribution] = []
-    for module in discover_contributors():
-        contribution = _registered(module)
-        for name, _ in contribution.checks:
-            if name in owners:
-                raise DuplicateCheck(
-                    f"{module.__name__} contributes the doctor check {name!r}, which "
-                    f"{owners[name]} already reports; a check's name is unique in the report"
-                )
-            owners[name] = module.__name__
-        found.append(contribution)
+    for qualified, imported in discover_contributors():
+        contribution = _registered(qualified, imported)
+        if isinstance(contribution, Contribution):
+            repeated = _repeated(contribution, owners)
+            if repeated is None:
+                owners.update((name, qualified) for name, _ in contribution.checks)
+                found.append(contribution)
+                continue
+            contribution = f"{qualified} could not contribute its rows: {repeated}"
+        found.append(_unregistered(qualified, contribution, owners))
     return found
 
 
@@ -1453,9 +1485,9 @@ def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Con
 
 def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
     """A row of the report that is built before any check can be asked: a skip giving `reason`,
-    because every check would be asked with no configuration to read — except an area's row for a
-    `register()` that failed, which is about stayfixed's own code, which no configuration changes,
-    and so is red here as everywhere."""
+    because every check would be asked with no configuration to read — except the row of an area
+    that could not contribute, which is about stayfixed's own code, which no configuration
+    changes, and so is red here as everywhere."""
     if isinstance(check, _Unregistered):
         return Check(name, RED, check.detail, REPORT_THIS)
     return Check(name, SKIP, reason, "")
@@ -1498,7 +1530,7 @@ def run_checks(
     """
     env = os.environ if env is None else env
     # Discovered before anything is read, so the early reports below have a row for every check
-    # an area contributes too, and a name that repeats is refused whatever the repository holds.
+    # an area contributes too, and for every area that could not contribute.
     registry = _registry(contributions())
     # The registry is the only place a name is spelled, and these two rows are built before a
     # check function runs, so they read the first key out of it rather than repeating the word:

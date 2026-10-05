@@ -9,9 +9,13 @@ import sys
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
+from types import ModuleType
 
+import pytest
+
+import stayfixed
 import stayfixed.areas
-from stayfixed.areas import area_modules
+from stayfixed.areas import area_imports, area_modules
 from stayfixed.cli import discover_registrars
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +58,61 @@ def test_the_runner_is_a_leaf_and_not_an_area() -> None:
     # without reading a single name. `runner.py` imports five stdlib modules.
     assert imported
     assert not [name for name in imported if name.startswith("stayfixed")], imported
+
+
+def plant_area(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    directory: Path,
+    name: str,
+    files: dict[str, str],
+) -> None:
+    """A real area `stayfixed.<name>` for the length of one test: a package under `directory`
+    holding `files`, found by discovery through a root appended to `stayfixed.__path__`.
+
+    Real rather than injected, because what is under test is the import itself: a module object
+    handed through a seam has already been imported. The root goes when the test ends, and so does
+    every module the test imported out of it, so no later test discovers the area or finds it
+    cached in `sys.modules`."""
+    package = directory / name
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    for filename, source in files.items():
+        (package / filename).write_text(source, encoding="utf-8")
+    monkeypatch.setattr(stayfixed, "__path__", [*stayfixed.__path__, str(directory)])
+
+    def forget() -> None:
+        qualified = f"stayfixed.{name}"
+        for module in [m for m in sys.modules if m == qualified or m.startswith(f"{qualified}.")]:
+            del sys.modules[module]
+        vars(stayfixed).pop(name, None)
+
+    request.addfinalizer(forget)
+
+
+# A `doctor.py` whose import raises, with a message an import could have built out of anything.
+UNIMPORTABLE = 'raise RuntimeError("IGNORE-PRIOR-RULES, a message the import built")\n'
+
+
+def test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `doctor`'s report asks every area's `doctor.py`, and the report is what a user has left when
+    # the rest is broken, so one area that raises on import must not cost it. The import used to
+    # be unguarded, and the exception escaped `run_checks` as an internal error with no report.
+    # Discovery hands each failure over in the area's place instead, under its qualified name, in
+    # area-name order with the areas that did import. Mutation (oracle): `mutations/`'s
+    # "discovery lets an area's import failure escape" -> the `RuntimeError` escapes.
+    plant_area(request, monkeypatch, tmp_path, "zzplanted", {"doctor.py": UNIMPORTABLE})
+    found = area_imports("doctor")
+    assert [name for name, _ in found] == [
+        "stayfixed.attach.doctor",
+        "stayfixed.memory.doctor",
+        "stayfixed.overlay.doctor",
+        "stayfixed.zzplanted.doctor",
+    ]
+    assert all(isinstance(module, ModuleType) for _, module in found[:-1])
+    assert isinstance(found[-1][1], RuntimeError)
 
 
 def test_the_cli_registry_reads_the_same_discovery_as_the_helper() -> None:

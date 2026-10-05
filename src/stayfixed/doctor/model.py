@@ -166,7 +166,8 @@ class Contribution:
 
     `checks` are `(name, check)` pairs, asked after the core's own in area-name order and each
     through the guard the core's go through, so one that raises costs its own row. A name is
-    unique in the report: discovery refuses one equal to a core check's or another area's.
+    unique in the report: an area that repeats a core check's, another area's or its own costs
+    its rows and its claims, as one red row named after the area.
     """
 
     checks: tuple[tuple[str, Callable[[Context], Row]], ...]

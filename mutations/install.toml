@@ -525,16 +525,37 @@ reddens = [
   "tests/doctor/test_contributions.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
 ]
 
-# A row's name is its only identity in the summary line, `--json` and the skill's relay, so a
-# contributed name that repeats a core check's or another area's is refused at discovery.
+# A row's name is its only identity in the summary line, `--json` and the skill's relay, so an
+# area that contributes a name already in the report -- a core check's, an earlier area's, or one
+# of its own -- costs its rows as one red row named after it, as a register() that raises does.
 [[mutation]]
-name = "doctor lets two checks share one name"
+name = "doctor lets an area repeat a name the report already has"
 file = "src/stayfixed/doctor/checks.py"
-before = "            if name in owners:"
-after = "            if False:"
+before = "        if name in named:"
+after = "        if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name[core]",
-  "tests/doctor/test_contributions.py::test_a_contributed_name_may_not_repeat_a_core_or_another_areas_name[another-area]",
+  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[core]",
+  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[another-area]",
+]
+
+[[mutation]]
+name = "doctor lets an area name two of its checks alike"
+file = "src/stayfixed/doctor/checks.py"
+before = '        named[name] = "it"'
+after = "        pass"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[itself]",
+]
+
+# The red row of an area that could not contribute is a name in the report too, so when the area's
+# name is already taken it is numbered past every name taken, never printed twice.
+[[mutation]]
+name = "an area's failure row takes a name the report already has"
+file = "src/stayfixed/doctor/checks.py"
+before = "    while name in owners:"
+after = "    while False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
 ]
 
 # The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
@@ -894,6 +915,18 @@ reddens = [
   "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[claims-not-callable]",
 ]
 
+# An area's `doctor.py` that fails to import is its own code as its register() is: discovery hands
+# the failure over, and the row says the import failed rather than reading the failure as a module
+# whose register() then fails.
+[[mutation]]
+name = "doctor reads an import failure as a module"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if isinstance(found, Exception):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it",
+]
+
 # The row for an area that could not register is about stayfixed's own code, so it is red in the
 # early report too, where every other check after the first skips for want of a configuration.
 [[mutation]]
@@ -902,7 +935,9 @@ file = "src/stayfixed/doctor/checks.py"
 before = "    if isinstance(check, _Unregistered):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_is_red_even_with_nothing_else_to_check",
+  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
+  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[import]",
+  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[repeat]",
 ]
 
 # The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an

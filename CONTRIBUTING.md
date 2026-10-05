@@ -170,13 +170,15 @@ loaded: the core loads the private layer only when a command asks for it.
 - `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report:
   its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
   the report's `Context` and through the same guard, so a check that raises costs its own row and
-  not the report. `register()` is guarded too: one that raises, or returns anything but a
-  `Contribution` of `(name, check)` pairs, puts one red row named after the area where its rows
-  would have been, and the rest of the report stands. The area's claims (below) go with its rows,
-  so `hook-entries` reads every entry that area put into settings files as one nothing records,
-  and goes red too when there is one. A check's name is unique in the report: discovery refuses a
-  name equal to a core check's or to one another area contributes. A `Contribution` may also carry
-  `claims`, which answers `Claims`: the marker ids the area recorded in settings files and the
+  not the report. An area that cannot contribute is held to one policy, whatever the cause: a
+  `doctor.py` that fails to import, a `register()` that raises or returns anything but a
+  `Contribution` of `(name, check)` pairs, and one that contributes a name already in the report —
+  a core check's, an earlier area's, or another of its own, since a check's name is unique in the
+  report — each puts one red row named after the area where its rows would have been (numbered,
+  `<area> (2)`, when the report already has that name), and the rest of the report stands. The
+  area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
+  settings files as one nothing records, and goes red too when there is one. A `Contribution`
+  may also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings files and the
   commands it still grants there, which the core's `hook-entries` row asks with the same `Context`,
   so an entry the area put there is told apart from a repository claiming it did. The record may be
   repository bytes and the grants may not, and an entry is absolved only by an area that both
