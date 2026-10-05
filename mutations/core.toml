@@ -2181,6 +2181,7 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
   "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
+  "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
 ]
 
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
@@ -2200,6 +2201,23 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
   "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+]
+
+# The other half of the overlay's requires reader's "this reader answers for every string", after
+# the digit bound `mutations/`'s "the version grammar stops bounding its components" holds.
+# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
+# exists on none of them, so without the shared reader's object arm a manifest an owner can save
+# raised `AttributeError` out of a function whose docstring promises `None` for anything it cannot
+# read. The session handler rests on that promise: its backstop swallows a raised reader together
+# with every other line of the same result — which is how an overlay manifest silenced
+# `NOT_ATTACHED` once already.
+[[mutation]]
+name = "the requires reader raises for a manifest that is not an object"
+file = "src/stayfixed/jsonobject.py"
+before = "    if not isinstance(raw, dict):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
 ]
 
 # A document past a limit of the parser is refused as its own kind of `EntriesError`, so `doctor` can

@@ -1761,23 +1761,6 @@ reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
 
-# The other half of "this reader answers for every string", after the digit bound `mutations/`'s
-# "the version grammar stops bounding its components" holds. `json.loads` answers for a list, a
-# string and a number as readily as for an object and `raw.get` exists on none of them, so without
-# this arm a manifest an owner can save raised `AttributeError` out of a function whose docstring
-# promises `None` for anything it cannot read. Both callers rest on that promise: `doctor` renders a
-# raised reader as "this check could not run", and the session handler's backstop swallows it
-# together with every other line of the same result — which is how an overlay manifest silenced
-# `NOT_ATTACHED` once already.
-[[mutation]]
-name = "the requires reader raises for a manifest that is not an object"
-file = "src/stayfixed/overlay/requires.py"
-before = "    if not isinstance(raw, dict):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
-]
-
 # A supply-chain verdict, and the one `ci-ref` row that gates the exit code from the file rather
 # than from the configuration: the pin GitHub acts on is the workflow's `uses:` line, so a
 # workflow pinning something other than `[ci] ref` means the gate that runs is not the one
