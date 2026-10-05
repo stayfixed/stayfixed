@@ -78,11 +78,13 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
 
 
 UNTOLD = (
-    "the configured code roots hold more than {cap} directory entries, so the walk for .pyc files "
-    "stopped there and could not tell whether the interpreter imported a build older than its "
-    "source. If the failure could be a stale build, delete the `__pycache__` directories under "
-    "those roots and re-run before attributing anything."
+    "the configured code roots hold more than {entries} directory entries or {files} .pyc files, "
+    "so the walk for .pyc files stopped there and could not tell whether the interpreter imported "
+    "a build older than its source. If the failure could be a stale build, delete the "
+    "`__pycache__` directories under those roots and re-run before attributing anything."
 )
+READ_FILES = python_hygiene.BYTECODE_READ_FILES
+ENTRIES = python_hygiene.BYTECODE_WALK_ENTRIES
 
 
 def a_stale_tree_of_eight_entries(tmp_path: Path) -> Path:
@@ -115,7 +117,101 @@ def test_a_walk_cut_short_by_its_cap_could_not_tell(
     counts = HINT.report(root, config(root))
     assert counts == {UNDETERMINED: 1, "roots": 1}
     # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
-    assert HINT.note(counts) == UNTOLD.format(cap=7)
+    assert HINT.note(counts) == UNTOLD.format(entries=7, files=READ_FILES)
+
+
+def test_bytecode_past_the_read_cap_could_not_tell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The entry cap bounds the listing, and the listing is the cheap half: each `.pyc` it lists
+    # is then opened and read and its source stat'ed, about fifty times a listed entry's cost,
+    # and any number of `.pyc` files share one source (the name before the first dot). 200,000
+    # of them under one `m.py` took 18 s on this walk with the entry cap alone, past the hook's
+    # 10 s timeout. So the reads have a cap of their own, and reaching it is the same "could not
+    # tell". Here three stale `.pyc` files share one source, well under the entry cap. Oracle:
+    # `mutations/`'s "the stale-bytecode walk reads past its read cap".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compiled = compile_module(module)
+    make_stale(module)
+    for tag in ("one", "two"):
+        (compiled.parent / f"mod.{tag}.pyc").write_bytes(compiled.read_bytes())
+    monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 3)
+    assert HINT.report(root, config(root)) == {"stale": 3, "roots": 1}
+    monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 2)
+    counts = HINT.report(root, config(root))
+    assert counts == {UNDETERMINED: 1, "roots": 1}
+    assert HINT.note(counts) == UNTOLD.format(entries=ENTRIES, files=2)
+
+
+def test_the_entry_cap_is_one_total_across_the_code_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `src` holds three entries (the source, its `__pycache__`, the stale `.pyc`) and `tests`
+    # three more. A cap of four is above either root and below their sum, so a walk that counts
+    # per root would answer, and with every listed code root multiplying the cap no bound is
+    # left on the hook's time. Oracle: `mutations/`'s "the stale-bytecode walk counts its cap
+    # afresh for each code root".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compile_module(module)
+    make_stale(module)
+    (root / "tests").mkdir()
+    for name in ("a.py", "b.py", "c.py"):
+        (root / "tests" / name).write_text("", encoding="utf-8")
+    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 6)
+    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 2}
+    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 4)
+    assert HINT.report(root, config(root)) == {UNDETERMINED: 1, "roots": 2}
+
+
+def test_bytecode_under_a_hidden_directory_is_judged(tmp_path: Path) -> None:
+    # The walk enters hidden directories, as the `rglob` it replaced did: a package under `.ci`
+    # or `.tools` is imported like any other. Oracle: `mutations/`'s "the stale-bytecode walk
+    # skips hidden directories".
+    root = repo(tmp_path)
+    module = root / "src" / ".tools" / "helper.py"
+    module.parent.mkdir()
+    module.write_text("z = 1\n", encoding="utf-8")
+    compile_module(module)
+    make_stale(module)
+    assert stale(root) == 1
+
+
+def test_a_directory_that_cannot_be_listed_is_passed_over(tmp_path: Path) -> None:
+    # A directory the walk cannot list is passed over, as `rglob` passed over it, and the rest
+    # of the tree is still judged: raising would turn a permission bit on one directory into a
+    # failed hint, and `test hygiene` into a refusal for the whole tree. Oracle: `mutations/`'s
+    # "an unlistable directory fails the stale-bytecode walk".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compile_module(module)
+    make_stale(module)
+    locked = root / "src" / "locked"
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("this user lists a directory whose mode is 0; the fault cannot be staged")
+        assert stale(root) == 1
+    finally:
+        locked.chmod(0o700)
+
+
+def test_a_pyc_outside_a_pycache_is_not_judged(tmp_path: Path) -> None:
+    # The interpreter imports bytecode for `src/mod.py` from `src/__pycache__` alone. A `.pyc`
+    # in any other directory is read against the source in that directory's parent, which is
+    # not its source: here a stale header in `src/legacy/` would be charged to `src/mod.py`.
+    # Oracle: `mutations/`'s "the stale-bytecode walk judges a .pyc outside __pycache__".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compiled = compile_module(module)
+    make_stale(module)
+    legacy = root / "src" / "legacy"
+    legacy.mkdir()
+    compiled.rename(legacy / compiled.name)
+    assert (legacy / compiled.name).is_file()
+    assert stale(root) == 0
 
 
 def test_a_normally_compiled_pyc_is_not_stale(tmp_path: Path) -> None:
@@ -476,7 +572,9 @@ def test_a_red_pytest_run_over_a_walk_cut_short_is_told_it_could_not_tell(
     root = faulty_python_tree(tmp_path)
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 2)
     result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
-    assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(cap=2)}"
+    assert (
+        result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(entries=2, files=READ_FILES)}"
+    )
 
 
 @needs_git

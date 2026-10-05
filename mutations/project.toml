@@ -1890,6 +1890,60 @@ before = "                        if visited > BYTECODE_WALK_ENTRIES:"
 after = "                        if False:"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_walk_cut_short_by_its_cap_could_not_tell"]
 
+# The entry cap bounds the listing, the cheap half. Each `.pyc` listed is then opened, read and
+# its source stat'ed, and any number of them share one source: 200k under one `m.py` ran 18 s
+# with the entry cap alone, past the hook's timeout. The reads are charged to a cap of their own.
+[[mutation]]
+name = "the stale-bytecode walk reads past its read cap"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "            if read > BYTECODE_READ_FILES:"
+after = "            if False:"
+reddens = ["tests/profiles/python/test_hygiene.py::test_bytecode_past_the_read_cap_could_not_tell"]
+
+# The walk's documented behaviour, one entry per claim of `_bytecode`'s docstring. The cap is one
+# total across the code roots: counted afresh per root, every root listed multiplies it.
+[[mutation]]
+name = "the stale-bytecode walk counts its cap afresh for each code root"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = """    visited = 0
+    for root in roots:
+        pending = [root]
+"""
+after = """    for root in roots:
+        visited = 0
+        pending = [root]
+"""
+reddens = ["tests/profiles/python/test_hygiene.py::test_the_entry_cap_is_one_total_across_the_code_roots"]
+
+# A directory that cannot be listed is passed over: raising fails the hint, and `test hygiene`
+# refuses the whole tree over one permission bit.
+[[mutation]]
+name = "an unlistable directory fails the stale-bytecode walk"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = """            except OSError:
+                continue
+            if names and"""
+after = """            except FileNotFoundError:
+                continue
+            if names and"""
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_directory_that_cannot_be_listed_is_passed_over"]
+
+[[mutation]]
+name = "the stale-bytecode walk skips hidden directories"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "                        if entry.is_dir(follow_symlinks=False):"
+after = '                        if entry.is_dir(follow_symlinks=False) and entry.name[:1] != ".":'
+reddens = ["tests/profiles/python/test_hygiene.py::test_bytecode_under_a_hidden_directory_is_judged"]
+
+# Only a `__pycache__` holds bytecode the interpreter imports for the sources beside it; a `.pyc`
+# anywhere else is read against the wrong source.
+[[mutation]]
+name = "the stale-bytecode walk judges a .pyc outside __pycache__"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = '            if names and directory.name == "__pycache__":'
+after = "            if names:"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_outside_a_pycache_is_not_judged"]
+
 # Nor does it enter a symlinked directory, which can lead out of every code root.
 [[mutation]]
 name = "the stale-bytecode walk follows a symlinked directory"
