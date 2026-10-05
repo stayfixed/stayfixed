@@ -17,6 +17,8 @@ from tests import gitfixture
 from tests.floor import floor_env
 
 ROOT = Path(__file__).resolve().parents[2]
+# The hook exactly as stayfixed 0.2.0 wrote it into a repository, generated once from the tag.
+RELEASED_0_2_0 = ROOT / "tests" / "fixtures" / "prepare-commit-msg-0.2.0"
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
@@ -242,21 +244,15 @@ def test_a_hook_an_earlier_release_wrote_is_still_ours(tmp_path: Path) -> None:
     # that installed it wrote. The marker line, not the text, is what makes a hook stayfixed's:
     # an install over an earlier text rewrites it in place rather than preserving it as a
     # stranger's `.local` and chaining to it, and an uninstall removes it rather than leaving it
-    # orphaned. The earlier text is the one that said no subcommand installed the hook.
+    # orphaned. The earlier text is frozen in a file, `HOOK_TEXT` as the v0.2.0 tag evaluates it,
+    # and never rebuilt from today's module: a hook built from today's text carries today's marker,
+    # so a changed marker, which would orphan every hook 0.2.0 installed, would pass unseen.
     # Mutation (declared): a hook is ours only when its bytes equal today's text -> this reddens.
+    # Mutation (declared): the marker line changes -> this reddens.
     from stayfixed.guards.githooks import HOOK_TEXT
 
-    current = (
-        "Written by `stayfixed setup --git-hooks`, and removed again, with the hook it\n"
-        "# chains to put back, by `stayfixed setup --git-hooks --uninstall`.\n"
-    )
-    earlier = (
-        "Written, and removed again, by stayfixed's git-hook installer; no `stayfixed`\n"
-        "# subcommand offers it yet, so today it is reached from Python as"
-        " `guards.api.install(root)`.\n"
-    )
-    assert current in HOOK_TEXT
-    old_text = HOOK_TEXT.replace(current, earlier)
+    old_text = RELEASED_0_2_0.read_text(encoding="utf-8")
+    assert old_text != HOOK_TEXT
     root = repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME
     hook.parent.mkdir(parents=True, exist_ok=True)
