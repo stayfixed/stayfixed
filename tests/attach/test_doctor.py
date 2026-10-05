@@ -1839,3 +1839,54 @@ def test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red(
     root = _borrowing(tmp_path, state, grants='{"hooks": {"PreToolUse": "not a list"}}')
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert _by_name(rows, "hook-entries") == BORROWED
+
+
+# A binding record that will not parse, as an owner's mistake or a broken disk leaves one.
+UNPARSEABLE_RECORD = "remote = [unterminated\n"
+# `attached` for a checkout whose binding record will not read: the overlay could not be asked,
+# which is a fact about this machine and so a skip, with the way to the record's own error.
+RECORD_UNREADABLE_ATTACHED = Check(
+    "attached",
+    "skip",
+    f"{LEDGER} records an attach and the overlay could not be asked about it here — no `git`, or "
+    f"an overlay record this process could not read — so whether this checkout is attached could "
+    f"not be answered; a clone can commit {LEDGER}, so on its own it is not evidence of an attach",
+    "run `stayfixed doctor` again where `git` runs and the overlay is readable",
+)
+
+
+def test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_red(
+    tmp_path: Path,
+) -> None:
+    # Whether a checkout is bound is read from `projects/<name>/project.toml`, and the name is
+    # committed: a clone named after a project whose record will not parse made the overlay one
+    # that "could not be asked", so the borrowed entry's red became a warning and the report
+    # exited 0. A record the name picks out is the repository's choice, so one that cannot be read
+    # binds nothing, and the checkout is granted what `common/` grants. Mutation (oracle):
+    # `mutations/`'s "an unreadable binding record makes the overlay one that could not be asked"
+    # -> a warning, and no red row.
+    root = _borrowing(tmp_path, "mismatch")
+    record_path = tmp_path / "overlay" / PROJECTS / BORROWED_NAME / PROJECT_RECORD
+    record_path.write_text(UNPARSEABLE_RECORD, encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == BORROWED
+    assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
+
+
+def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
+    tmp_path: Path,
+) -> None:
+    # The cost of the case above, on the owner's own checkout: the record that would vouch for its
+    # per-project entry cannot be read, so the entry is red rather than a warning — a record the
+    # repository's name picks out may not soften the verdict, whoever's it is. `common/`'s entry is
+    # still accounted for, and the two rows together say what to do: `attached` that the overlay
+    # could not be asked, `hook-entries` which entry nothing vouches for. Pinned whole, so the cost
+    # is a decision rather than a drift. Mutation (oracle): `mutations/`'s "an unreadable binding
+    # record makes the overlay one that could not be asked" -> a warning.
+    root = _granting_project(tmp_path, OWN_NAME)
+    record_path = tmp_path / "overlay" / PROJECTS / OWN_NAME / PROJECT_RECORD
+    assert record_path.is_file()
+    record_path.write_text(UNPARSEABLE_RECORD, encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == BORROWED
+    assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED

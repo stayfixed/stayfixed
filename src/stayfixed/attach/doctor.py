@@ -381,39 +381,58 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     exit of 0. Whether that store is right is the `attached` row's question, and it warns there.
 
     `None` means the overlay this machine records could not be asked — no `git`, an overlay
-    record that will not read, or an overlay whose own hook file will not parse — and is decided
-    by this machine's state alone. A machine that records no overlay is not that: nothing on it
-    can grant, which is the empty set, and `_claims` says why it is empty. An empty set is "the
-    overlay grants nothing", which is an answer.
+    record that will not read, or a hook file the overlay grants this checkout from (`common/`'s,
+    or that of the project its record binds this checkout to) that will not parse — and is
+    decided by this machine's state alone. **Nothing a repository's name picks out may answer
+    `None`**: a `None` turns `hook-entries`' red into a warning, and `project.name` is committed,
+    so a file the name chooses under the overlay's `projects/` would let a clone choose that
+    warning. A machine that records no overlay is not `None` either: nothing on it can grant,
+    which is the empty set, and `_claims` says why it is empty. An empty set is "the overlay
+    grants nothing", which is an answer.
 
     **`projects/<name>/` grants only a checkout the overlay's record binds.** The name is
     committed, so it can name another project of this machine's overlay, and what that project's
     directory grants is that project's: a clone naming itself after it, with an entry equal to
     one granted there and a ledger recording its id, would read "all accounted for". So for a
     binding that is not `bound` — no record, a record of another remote, or no `origin` to compare
-    — the answer is what `common/` grants, and `projects/<name>/` is not opened at all. Opened and
-    then dropped, a hook file there that will not parse would answer `None`, and a clone could
-    pick a project whose file is broken to turn this row's red into a warning. Whether the binding
-    is right is the `attached` row's question, and it says so there.
+    — the answer is what `common/` grants, and the project's hook file is not opened: one there
+    that will not parse would answer `None`. Whether the binding is right is the `attached` row's
+    question, and it says so there.
+
+    **A binding record that cannot be read binds nothing.** Whether the checkout is bound is read
+    from `projects/<name>/project.toml`, so deciding it opens a file the name picks out; one that
+    cannot be read (`binding.UnreadableRecord`) is answered as no record, and the answer is what
+    `common/` grants. The cost falls on an owner whose own record is broken: their per-project
+    entries read red rather than warn, because the record that would vouch for them is the one
+    that cannot be read, and the `attached` row says the overlay could not be asked.
 
     **Nor does a `project.name` no directory under the overlay can carry make the overlay
     unaskable.** One that a file under `projects/` holds, or one longer than the filesystem
     allows, has no binding record — `binding.cannot_exist`'s paths are records the overlay does
-    not have — so it is never bound and the answer is what `common/` grants. A failure there
-    would answer `None`, and a clone could turn this row's red into a warning with nothing on the
-    machine broken. Below a directory the name does pick out, the name chooses nothing, and a
-    file where `claude/` goes is the owner's overlay failing to answer, `None` like any other.
+    not have — so it is never bound and the answer is what `common/` grants. Only below a
+    directory whose record binds this checkout's `origin` does the name choose nothing, and a
+    file there where `claude/` goes is the owner's overlay failing to answer, `None` like any
+    other.
     """
-    from stayfixed.attach.binding import binding_for
-    from stayfixed.attach.permissions import overlay_entries
+    from stayfixed.attach.binding import UnreadableRecord, binding_for
+    from stayfixed.attach.permissions import common_entries, overlay_entries
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND
 
-    if answers.overlay(context) is None:
+    overlay = answers.overlay(context)
+    if overlay is None:
         return set()
     try:
-        binding = binding_for(context.root, context.config, machine=context.machine)
-        wanted = overlay_entries(binding, project=binding.state == BOUND)
+        try:
+            binding: Binding | None = binding_for(
+                context.root, context.config, machine=context.machine
+            )
+        except UnreadableRecord:
+            binding = None
+        if binding is not None and binding.state == BOUND:
+            wanted = overlay_entries(binding)
+        else:
+            wanted = common_entries(overlay)
     except (Failure, Refusal, OSError):
         return None
     return {

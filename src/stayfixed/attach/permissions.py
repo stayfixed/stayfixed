@@ -256,23 +256,36 @@ def _claude_sources(
     )
 
 
-def overlay_entries(binding: Binding, *, project: bool = True) -> dict[str, list[dict[str, Any]]]:
+def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
     """The hook entries the overlay would install, each command carrying its own marker id.
 
     Shaped exactly as `scaffold.apply_entries` wants its `wanted` argument, because that is the
     merge — this area does not own one. Numbering runs per event across both sources in read
     order, so a second attach against an unchanged overlay produces the identical ids and the
     merge is a no-op.
-
-    `project=False` reads `common/` alone and never opens `projects/<name>/`, for a caller that
-    may not take the project's grants (`doctor`, for a checkout the overlay's record does not
-    bind). `common/` is read first, so what it answers is exactly the leading part of the full
-    answer, with the same ids.
     """
+    return _numbered(_claude_sources(binding, HOOKS_FILE))
+
+
+def common_entries(overlay: Path) -> dict[str, list[dict[str, Any]]]:
+    """`overlay_entries` for `common/` alone, which never opens anything under `projects/`.
+
+    For a caller that may not take any project's grants (`doctor`, for a checkout the overlay's
+    record does not bind, or whose record it cannot read), and asked of the overlay root rather
+    than of a `Binding`, because deciding a binding opens the record such a caller may not lean
+    on. `common/` is read first by `overlay_entries` too, so this is exactly the leading part of
+    its answer, with the same ids.
+    """
+    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))
+
+
+def _numbered(
+    sources: tuple[tuple[Path, Path | None], ...],
+) -> dict[str, list[dict[str, Any]]]:
+    """The hook entries in `sources`, read in order, each command marked with its own id."""
     wanted: dict[str, list[dict[str, Any]]] = {}
     seen: dict[str, int] = {}
-    sources = _claude_sources(binding, HOOKS_FILE)
-    for source, share in sources if project else sources[:1]:
+    for source, share in sources:
         for event, groups in _hook_groups(source, share=share).items():
             for group in groups:
                 entries = group.get("hooks") or []
