@@ -504,8 +504,8 @@ reddens = [
 [[mutation]]
 name = "doctor drops the checks an area contributes"
 file = "src/stayfixed/doctor/checks.py"
-before = "    return core + tuple(check for contribution in contributed for check in contribution.checks)"
-after = "    return core + tuple(check for contribution in contributed for check in ())"
+before = "    return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)"
+after = "    return CHECKS + tuple(check for contribution in contributed for check in ())"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_contributed_check_runs_after_the_core_checks",
   "tests/doctor/test_checks.py::test_every_check_has_one_row_in_one_report",
@@ -605,8 +605,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries ignores what the areas claim"
 file = "src/stayfixed/doctor/checks.py"
-before = "    answers = [ask(context) for ask in claims]"
-after = "    answers = [ask(context) for ask in ()]"
+before = "        answers = [ask(context) for ask in context.claims]"
+after = "        answers = [ask(context) for ask in ()]"
 reddens = [
   "tests/doctor/test_contributions.py::test_hook_entries_reads_what_every_area_claims",
   "tests/attach/test_doctor.py::test_an_entry_the_overlay_really_grants_is_still_accounted_for",

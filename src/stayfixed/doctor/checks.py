@@ -67,7 +67,6 @@ import stat
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import TypeGuard
@@ -544,13 +543,12 @@ class UnansweredClaims(RuntimeError):
     reads it as the red it is and not as the machine's warning."""
 
 
-def _claimed(
-    context: Context, claims: Sequence[Callable[[Context], Claims]]
-) -> tuple[list[Claims], bool, bool]:
+def _claimed(context: Context) -> tuple[list[Claims], bool, bool]:
     """Every area's `Claims`, and whether every record could be read and every source asked.
 
     An area's own record is the only thing that can say what it put into settings files, so the
-    core asks each area that has one, with this report's context and under this row's guard. The
+    core asks each area that has one — `context.claims` — with this report's context and under
+    this row's guard. The
     answers are kept apart rather than pooled: an entry is vouched for only by the one area that
     both records its id and grants its command, because a record is a file a repository can
     write, and one area's record standing on another area's grant vouches for an entry neither
@@ -568,7 +566,7 @@ def _claimed(
     area may have built it from repository bytes.
     """
     try:
-        answers = [ask(context) for ask in claims]
+        answers = [ask(context) for ask in context.claims]
     except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
         raise UnansweredClaims(type(exc).__name__) from exc
     readable = all(answer.recorded is not None for answer in answers)
@@ -598,7 +596,7 @@ def _by_area(
     return [(answer, wheres) for answer, wheres in gathered if wheres]
 
 
-def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]] = ()) -> Row:
+def _hook_entries(context: Context) -> Row:
     """Every entry in every settings file, with provenance.
 
     Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
@@ -687,7 +685,7 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     converts is not refused at all: it is read as its text, by `owned_ids` and by the walk, and
     the entries beside it are judged as they would be without it.
     """
-    answers, readable, askable = _claimed(context, claims)
+    answers, readable, askable = _claimed(context)
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
@@ -1474,19 +1472,8 @@ def contributions() -> list[Contribution]:
 
 
 def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
-    """The report's checks in the report's order: the core's, then each area's.
-
-    `hook-entries` is the one core check that reads what an area contributes besides rows — the
-    `Claims` each says it put into settings files — so it is handed them here, and asks them
-    itself with the report's context, under its own guard: an area's answer that raises costs
-    that one row, as a contributed check that raises does.
-    """
-    claims = tuple(contribution.claims for contribution in contributed if contribution.claims)
-    core = tuple(
-        (name, partial(_hook_entries, claims=claims) if check is _hook_entries else check)
-        for name, check in CHECKS
-    )
-    return core + tuple(check for contribution in contributed for check in contribution.checks)
+    """The report's checks in the report's order: the core's, then each area's."""
+    return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)
 
 
 def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
@@ -1507,11 +1494,23 @@ def _context(
     runner: Runner,
     env: Mapping[str, str],
     config: Config,
+    contributed: Sequence[Contribution],
 ) -> Context:
-    context = Context(root, home, machine, runner, env, config)
-    context.own_root = _own_root()
-    context.plugin_root = plugin_root(env)
-    return context
+    """The report's `Context`, whole: both plugin roots, and every area's claims for
+    `hook-entries`, which reads what an area contributes besides rows — the `Claims` each says it
+    put into settings files — and asks them itself, with this context, under its own guard: an
+    area's answer that raises costs that one row, as a contributed check that raises does."""
+    return Context(
+        root,
+        home,
+        machine,
+        runner,
+        env,
+        config,
+        own_root=_own_root(),
+        plugin_root=plugin_root(env),
+        claims=tuple(contribution.claims for contribution in contributed if contribution.claims),
+    )
 
 
 def run_checks(
@@ -1537,7 +1536,8 @@ def run_checks(
     env = os.environ if env is None else env
     # Discovered before anything is read, so the early reports below have a row for every check
     # an area contributes too, and for every area that could not contribute.
-    registry = _registry(contributions())
+    contributed = contributions()
+    registry = _registry(contributed)
     # The registry is the only place a name is spelled, and these two rows are built before a
     # check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.
@@ -1615,5 +1615,6 @@ def run_checks(
         runner=runner,
         env=env,
         config=config,
+        contributed=contributed,
     )
     return [_guarded(name, check, context) for name, check in registry]

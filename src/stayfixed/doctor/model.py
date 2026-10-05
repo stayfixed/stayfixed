@@ -65,16 +65,18 @@ class Row:
     remedy: str = ""
 
 
-@dataclass
+@dataclass(frozen=True)
 class Context:
-    """Everything a check may read, resolved once per run.
+    """Everything a check may read for one report, built whole by `checks.run_checks` and never
+    changed after.
 
-    Built by `checks.run_checks` after `not-initialised` has passed, so `config` is never `None`
-    here: a repository whose configuration does not load has nothing else worth asking about, and
-    the first check says so and the rest skip.
+    Built only once the configuration has loaded, so `config` is never `None` here: a repository
+    whose configuration does not load has nothing else worth asking about, and the first check
+    says so and the rest skip.
 
-    Only what the core answers for. An area that needs more — the overlay root, the note store —
-    resolves it inside its own `doctor.py`, so nothing an area owns is reachable from here.
+    Only what the core answers for: the run's inputs, the configuration, the two plugin roots,
+    and the `claims` the areas contributed. An area that needs more — the overlay root, the note
+    store — resolves it inside its own `doctor.py`, so building this imports nothing of any area.
     """
 
     root: Path
@@ -89,6 +91,10 @@ class Context:
     # answered. Two fields and not a flag, because the check that runs the wrapper should not be
     # able to reach the other answer at all.
     own_root: Path | None = None
+    # Every contributing area's `Contribution.claims`, in area-name order. Carried and not
+    # answered: `hook-entries` asks each under its own guard, so claims that raise cost that row,
+    # red, as `Contribution.claims` promises, and never the report.
+    claims: tuple[Callable[[Context], Claims], ...] = ()
 
 
 @dataclass(frozen=True)
