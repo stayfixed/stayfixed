@@ -16,7 +16,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.memory.graph import check_memory_graph
-from stayfixed.memory.notes import Walk, walk
+from stayfixed.memory.notes import Note, Walk, walk
 from stayfixed.memory.store import resolve
 
 CONFIG = """
@@ -144,27 +144,40 @@ def test_refs_walks_the_store_once_for_its_findings_and_the_graph(
     # reachable by — the note module's own and each loaded `stayfixed` module's binding of it —
     # because a spy on the one name `memory.refs` binds left green a second walk the graph made
     # through `stayfixed.memory.notes.walk` (`mutations/`'s "the memory graph walks the store a
-    # second time").
+    # second time"). A walk counted once is not yet a store read once: each note is read through
+    # `read_note`, and the graph re-reading every note that way, with no second walk, stayed green
+    # (`mutations/`'s "the memory graph reads every note a second time"), so the reads are
+    # counted too, the same way.
     import stayfixed.memory.notes as notes
     import stayfixed.memory.refs as refs
 
     root, config = project(tmp_path)
     note(root, "developer", "a", "see [[gone]]\n")
     calls: list[Path] = []
+    reads: list[str] = []
+    read_note = notes.read_note
 
     def counted(path: Path, groups: list[str]) -> Walk:
         calls.append(path)
         return walk(path, groups)
 
+    def read(path: Path) -> Note:
+        reads.append(path.name)
+        return read_note(path)
+
     for module in [m for name, m in sys.modules.items() if name.startswith("stayfixed.")]:
         if getattr(module, "walk", None) is walk:
             monkeypatch.setattr(module, "walk", counted)
+        if getattr(module, "read_note", None) is read_note:
+            monkeypatch.setattr(module, "read_note", read)
     # The spy reached the name `check_refs` calls and the note module's own, so a count of one is
     # not a count of none.
     assert vars(refs)["walk"] is counted
     assert notes.walk is counted
+    assert notes.read_note is read
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
     report = refs.check_refs(root, config, store)
     assert [(n.rule, n.detail) for n in report.notices] == [("dead-wiki-link", "gone")]
     assert calls == [store.path]
+    assert reads == ["a.md"]

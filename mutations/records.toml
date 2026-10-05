@@ -444,6 +444,16 @@ before = "    for note in walked.notes:"
 after = '    for note in __import__("stayfixed.memory.notes").memory.notes.walk(store.path, groups).notes:'
 reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
 
+# The same read without a second walk: each note re-read from disk through `read_note`.
+[[mutation]]
+name = "the memory graph reads every note a second time"
+file = "src/stayfixed/memory/graph.py"
+before = "        text = blank_code_spans(blank_fences(note.body))"
+after = '''        text = blank_code_spans(
+            blank_fences(__import__("stayfixed.memory.notes").memory.notes.read_note(note.path).body)
+        )'''
+reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
+
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
 # absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
