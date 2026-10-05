@@ -436,19 +436,14 @@ stayfixed doctor --json                                # every check with its st
 stayfixed hook SessionStart                            # dispatch one harness hook event (internal)
 ```
 
-Every command that reads a project takes `--root` (default: the current directory) and
-`--machine` (read a machine configuration file other than the default) — all of them but
-`guard bg-cleanup` and `commit strip`, which read only what they are handed, `hook`, which finds
-the project from the harness's own event, and the two below; `memory` commands and `attach` take
-`--store` as well.
-`stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
-or the overlay itself, not a project root, and it reads no `stayfixed.toml`; `stayfixed setup`
-writes the `--machine` file rather than reading it. `--json` is accepted
-anywhere and prints one machine-readable object instead of one line.
-The commands that report a list of
-findings — `bugs check`, `docs check`, `memory refs`, `plan check` —
-all spell it `findings`, whatever their summary line calls them; every other command's keys
-are its own and are listed with it in [docs/cli.md](docs/cli.md).
+Commands that read a project take `--root` (default: the current directory) and `--machine` (read
+a machine configuration file other than the default); `memory` commands and `attach` take
+`--store` as well. The commands that take neither, and the ones that mean something else by
+either, are listed in [Shared flags](docs/cli.md#shared-flags). `--json` is accepted anywhere and
+prints one machine-readable object instead of one line. The commands that report a list of
+findings — `bugs check`, `docs check`, `memory refs`, `plan check` — all spell it `findings`,
+whatever their summary line calls them; every other command's keys are its own and are listed
+with it in [docs/cli.md](docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
 internal error. A caller must never read 2 as permission. One command is deliberately

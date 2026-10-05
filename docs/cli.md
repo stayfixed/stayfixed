@@ -22,10 +22,8 @@ Three things hold everywhere:
   continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
-  times below. `--root` and `--machine` are not memory's alone: every command that reads a project
-  takes them with the same meaning — all but `guard bg-cleanup`, `commit strip` and `hook`, which
-  take neither, and the `overlay` commands and `setup`, which mean something else by either one
-  they take ([Shared flags](#shared-flags)) — whether or not its heading spells them.
+  times below. `--root` and `--machine` are not memory's alone: [Shared flags](#shared-flags) says
+  which commands take them, and in which sense.
 
 | Option | Meaning |
 |---|---|
@@ -2972,6 +2970,15 @@ binding **mismatch** or a checkout with no `origin`, not a non-empty diff. A dif
 rules is the ordinary state of a first attach and is exactly what the `--yes` gate exists for — the
 refusal `attach` raises names this flag as the way to read that diff first. A `--check` that failed
 whenever the run would widen would make the documented remedy itself a failure.
+
+Every command that reads a project takes `--root` and `--machine`, with the meanings in the first
+table, whether or not its heading spells them. Neither flag is taken by `stayfixed guard
+bg-cleanup`, `stayfixed commit strip`, `stayfixed hook` and `stayfixed overlay publish-template`,
+because none of them reads a project: the first two read only what they are handed, `hook` finds
+the project from the harness's own event, and `publish-template` renders the shipped overlay
+template. The other `overlay` commands take `--root` alone, in the sense the second table gives
+it, and read no `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py`
+holds both lists to the real parser.
 
 ---
 
