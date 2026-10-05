@@ -7,13 +7,30 @@
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/stayfixed/memory/trust.py"
-before = '    except json.JSONDecodeError as exc:'
-after = '''    except json.JSONDecodeError:
-        return {}
-    except RecursionError as exc:'''
+before = '    raw = json_object(text, str(path), error=_refused_record)'
+after = '''    try:
+        raw = json_object(text, str(path), error=_refused_record)
+    except UnreadableTrustRecord:
+        return {}'''
 reddens = [
   "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
   "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+]
+
+# Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
+# or holding an integer longer than Python converts, it is valid JSON that `json.loads` meets with
+# no `JSONDecodeError`, and the reader caught only that.
+[[mutation]]
+name = "the trust record's reader lets a document past the parser escape"
+file = "src/stayfixed/memory/trust.py"
+before = '    raw = json_object(text, str(path), error=_refused_record)'
+after = '''    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise _refused_record(f"{path} is not valid JSON: {exc}") from exc'''
+reddens = [
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
 ]
 
 # The digest framing. Removing it left all 617 tests green: what they proved was that

@@ -8,6 +8,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
@@ -124,6 +125,35 @@ def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory
     machine = project.parent / "machine.toml"
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     assert (machine.parent / "trust.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("document", "clause"),
+    [("[" * 200_000 + "]" * 200_000, NESTED), ('{"/p": ' + "1" * 5_000 + "}", LONG_NUMBER)],
+    ids=["nested", "long-number"],
+)
+def test_a_trust_record_past_the_parser_is_refused_and_never_overwritten(
+    project: Path, capsys: pytest.CaptureFixture[str], document: str, clause: str
+) -> None:
+    # Both documents are valid JSON that `json.loads` meets with no `JSONDecodeError`: nesting
+    # past what it follows raises `RecursionError`, and an integer longer than the interpreter
+    # converts (4,300 digits by default) a plain `ValueError`. The reader caught only the first
+    # kind, so `memory trust` ended in an internal error quoting the interpreter, where a record it
+    # cannot read is refused in the record's own sentence: it holds every project's approval, and
+    # nothing overwrites it.
+    #
+    # Mutation (oracle): `mutations/`'s "the trust record's reader lets a document past the parser
+    # escape" -> the internal error comes back and both cases redden.
+    trust = project.parent / "trust.json"
+    trust.write_text(document, encoding="utf-8")
+    assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 2
+    err = capsys.readouterr().err
+    assert "internal error" not in err
+    assert (
+        f"stayfixed: refused: {trust} {clause}; it holds every project's approval on this "
+        f"machine, so nothing here will overwrite it — repair or delete it"
+    ) in err
+    assert trust.read_text(encoding="utf-8") == document
 
 
 def test_trust_without_the_flag_is_refused_not_silently_granted(
