@@ -1503,29 +1503,38 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in the module that registers it: the core's eleven in `CHECKS`, and
-    # each area's in its own `doctor.py`, in the `Contribution` its `register()` returns.
+    # literal exactly once in the modules that hold it: the core's eleven in `CHECKS`, counted
+    # over every module that defines one of `CHECKS`' checks, and each area's in its own
+    # `doctor.py`, in the `Contribution` its `register()` returns. The core's modules are read off
+    # where the checks are defined rather than listed, so a check split into a module of its own
+    # is scanned without an edit here.
     #
     # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
-    # twice and this reddens naming it. Measured by hand for an area: a stray `_STRAY =
-    # "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming that module.
+    # twice and this reddens naming it; `mutations/`'s "a stray hook-entries name in the module
+    # that defines the check" is the same stray in `doctor/entries.py`. Measured by hand for an
+    # area: a stray `_STRAY = "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming
+    # that module.
     import ast
+    import sys
     from types import ModuleType
 
     from stayfixed.doctor import checks as module
 
-    def spelled(where: ModuleType, names: list[str]) -> dict[str, int]:
-        source = Path(where.__file__ or "").read_text(encoding="utf-8")
+    def spelled(where: list[ModuleType], names: list[str]) -> dict[str, int]:
         literals = [
             node.value
-            for node in ast.walk(ast.parse(source))
+            for each in where
+            for node in ast.walk(ast.parse(Path(each.__file__ or "").read_text(encoding="utf-8")))
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         ]
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
     assert len(names) == 11
-    assert spelled(module, names) == dict.fromkeys(names, 1)
+    core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
+    # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
+    assert "stayfixed.doctor.entries" in [each.__name__ for each in core]
+    assert spelled(core, names) == dict.fromkeys(names, 1)
     found = registry.discover_contributors()
     # The three delivery areas, so the loop below is not vacuously true of no area at all.
     assert [name for name, _ in found] == [
@@ -1538,7 +1547,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     for area in areas:
         contributed = [name for name, _ in area.register().checks]
         assert contributed, area.__name__
-        assert spelled(area, contributed) == dict.fromkeys(contributed, 1), area.__name__
+        assert spelled([area], contributed) == dict.fromkeys(contributed, 1), area.__name__
 
 
 def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -> None:

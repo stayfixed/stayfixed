@@ -1424,6 +1424,17 @@ reddens = [
   "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
 ]
 
+# The same stray in a module that defines a core check but does not register it: the scan reads
+# every module `CHECKS`' checks are defined in, not only the registry's.
+[[mutation]]
+name = "a stray hook-entries name in the module that defines the check"
+file = "src/stayfixed/doctor/entries.py"
+before = '_MACHINE_LABEL = f"~/{USER_SETTINGS}"'
+after = "_MACHINE_LABEL = f\"~/{USER_SETTINGS}\"\n_STRAY = \"hook-entries\""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
+]
+
 # `--settings` names the settings file itself, for the per-file stow layout no `--home` can express.
 # Ignoring it and writing under `home` is the defect the flag exists to remove, and it is a silent
 # one: the command exits 0 into a file no reader reads.
