@@ -546,11 +546,39 @@ def test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish(
     assert invoke([*argv, *json_flag]) == 2
     captured = capsys.readouterr()
     said = json.loads(captured.out)["summary"] if as_json else captured.err
-    assert said.strip() == (
-        ("refused: " if as_json else "stayfixed: refused: ")
-        + "the python profile's red-run hint stopped its walk at a bound and could not tell, "
-        "so this tree cannot be judged"
+    assert said.strip() == ("refused: " if as_json else "stayfixed: refused: ") + CUT_WALK
+
+
+# The refusal for a walk cut at its bound, and the way out of it: the bound is not configurable,
+# what it walks is.
+CUT_WALK = (
+    "the python profile's red-run hint stopped its walk at a bound and could not tell, so this "
+    "tree cannot be judged; narrow `[ledger] code_roots` to the directories that hold code"
+)
+
+
+def test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A JavaScript tree past the bound gets the same refusal as a Python one, by decision: a walk
+    # cut short that met no `__pycache__` has seen no more of the tree than one that met a fresh
+    # one, since the order it lists in is the filesystem's, and the stale `.pyc` can sit just past
+    # the bound. So the refusal names the way out instead, and narrowing `code_roots` is it.
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    for index in range(3):
+        (root / "src" / f"m{index}.js").write_text("", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 0
+    capsys.readouterr()
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 2)
+    assert invoke(argv) == 2
+    assert capsys.readouterr().err.strip() == "stayfixed: refused: " + CUT_WALK
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -995,6 +995,20 @@ after = "        if False:"
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[False]",
   "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[True]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python",
+]
+
+# The cut-walk refusal names its way out: the bound is fixed, `[ledger] code_roots` is not, and a
+# repository whose roots hold a dependency tree got exit 2 on every run with nothing to change.
+[[mutation]]
+name = "the cut-walk refusal names no way out"
+file = "src/stayfixed/guards/commands.py"
+before = "            raise Refusal(_UNTOLD.format(name=name) + _UNJUDGED + _NARROW)"
+after = "            raise Refusal(_UNTOLD.format(name=name) + _UNJUDGED)"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[False]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[True]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python",
 ]
 
 # A repository in two stacks gets two entries, and each carries counts only.
