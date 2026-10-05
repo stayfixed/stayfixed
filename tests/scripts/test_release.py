@@ -624,6 +624,20 @@ def test_the_count_reads_the_folder_the_marketplace_source_names(tmp_path: Path)
     assert release.check(root, tag="v1.2.3") == [_over("'./plugin'", FILES_LIMIT + 1)]
 
 
+def test_a_plugin_the_marketplace_fetches_from_elsewhere_is_not_counted(tmp_path: Path) -> None:
+    # A `source` object names a plugin in another repository, which this tree holds none of: the
+    # owner's way past the count is that repository. Not a git checkout, so a count asked here
+    # would be a problem. Mutation (declared): every source taken for a path -> reddens.
+    elsewhere = {
+        "name": "m",
+        "plugins": [{"name": "stayfixed", "source": {"source": "github", "repo": "o/stayfixed"}}],
+    }
+    root = _at(tmp_path, "1.2.3")
+    marketplace = root / ".claude-plugin" / "marketplace.json"
+    marketplace.write_text(json.dumps(elsewhere), encoding="utf-8")
+    assert release.check(root, tag="v1.2.3") == []
+
+
 def test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count(tmp_path: Path) -> None:
     # A release gate that cannot count does not pass: release.yml runs it in the checkout the tag
     # names, and anywhere else there is no committed tree to read. Mutation (declared): git's
