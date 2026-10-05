@@ -1,6 +1,6 @@
 """Skills are documents held to a contract: frontmatter, a line budget, action language rather
 than tool or product names, and invocations that parse against the real parser or are
-allow-listed by the package that will ship them."""
+allow-listed by the area that will ship them."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed.areas import area_modules
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from stayfixed.overlay.template import template_root
 from stayfixed.project.commands import CUSTOM_GATES
@@ -42,12 +43,12 @@ TOOL_NAMES = (
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against the CLI frame before the command exists, keyed to the
-# package that ships each. The change that ships one DELETES its entry: a parsing command that is
-# still listed here reddens `test_every_invocation_parses_or_is_allowlisted`. Empty since
-# `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written ahead
-# of its command.
+# area whose `commands.py` will register each — an area that already registers commands, so a
+# command a new area will ship is listed once that area exists. The change that ships one DELETES
+# its entry: a parsing command that is still listed here reddens
+# `test_every_invocation_parses_or_is_allowlisted`. Empty since `uninstall` shipped; kept, with its
+# check against the areas that register commands, for the next wrapper written ahead of its command.
 NOT_YET_SHIPPED: dict[str, str] = {}
-PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`stayfixed ([^`\n]+)`")
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
 
@@ -168,8 +169,16 @@ def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
             assert parsed, f"`stayfixed {invocation}` does not parse against the real parser"
 
 
-def test_the_allowlist_names_only_packages_the_design_defines() -> None:
-    assert set(NOT_YET_SHIPPED.values()) <= PACKAGES
+def test_the_allowlist_names_only_areas_that_register_commands() -> None:
+    # A command reaches the CLI through an area's `commands.py`, so the owner an entry names is one
+    # of those areas, and the message the parse check prints names where the command shipped. The
+    # anchor holds the derivation: an `areas` read wrong would otherwise refuse every entry, or
+    # none, with the allowlist empty and the subset check unable to tell. No mutation is declared
+    # for that check while the allowlist is empty, since an empty set is a subset of anything.
+    # Mutation (declared): the area read from the wrong part of the module name -> this reddens.
+    areas = {module.__name__.split(".")[1] for module in area_modules("commands")}
+    assert {"setup", "attach"} <= areas
+    assert set(NOT_YET_SHIPPED.values()) <= areas
 
 
 def test_the_readme_maps_every_tool_name_for_both_harnesses() -> None:

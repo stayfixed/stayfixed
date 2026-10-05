@@ -8,7 +8,7 @@ which it reads hook entries, for `stayfixed assess`'s foreign-hooks probe to inv
 not a class: what this module states about a harness is one more value in `HARNESSES`, and
 nothing that reads the registry changes. What it does not state yet is the list below.
 
-The registry is also the adapter the hooks core answers through. `stayfixed hook` asks `detect`
+The registry is also the adapter the `hooks` area answers through. `stayfixed hook` asks `detect`
 which value it is running under and shapes its stdout with that value's `render`, and nothing
 more: `detect` says why. A harness whose payload genuinely differs is a question to answer with
 that harness's evidence when it arrives.
@@ -285,7 +285,7 @@ def project_root_variables() -> tuple[str, ...]:
 def detect(env: Mapping[str, str], payload: Mapping[str, Any] | None) -> Harness:
     """The first non-canonical harness whose `detects` answers yes, else `CANONICAL`.
 
-    The one answer to "which harness is this process running under": the hooks core asks it
+    The one answer to "which harness is this process running under": the `hooks` area asks it
     once, in `stayfixed hook`, and hands the answer to `dispatch` and to nothing else. It always
     answers, because a process no value claims is served the canonical shape.
 

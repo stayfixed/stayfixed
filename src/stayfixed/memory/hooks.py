@@ -1,4 +1,4 @@
-"""Handlers this area contributes; `hooks-core` owns the entries that invoke them.
+"""Handlers this area contributes; the `hook <event>` entries in `hooks/hooks.json` invoke them.
 
 Every import of `stayfixed.config`, `stayfixed.memory.store` and their neighbours happens **inside**
 a handler body. `tests/test_areas.py` asserts that `discover()` in a clean interpreter imports

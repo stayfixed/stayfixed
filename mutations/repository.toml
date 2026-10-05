@@ -227,6 +227,18 @@ reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
+# A plan's package name, which two module docstrings and one function docstring used as if it
+# named a part of the tree.
+# Gone quiet, the arm lets the name back into a docstring with the suite still green.
+[[mutation]]
+name = "the public-anchor gate stops seeing a plan's package name"
+file = "tests/test_public_anchors.py"
+before = '    ("plan package", re.compile(r"(?i:\bhooks-c[o]re\b)")),'
+after = '    ("plan package", re.compile(r"(?i:\bhooks-c[o]re\b)(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
 # The code-only arms, a spelling at a time: every planted line carries one, so none covers for
 # another. Gone quiet, the plan bookkeeping this change took out of the code comes back unremarked.
 [[mutation]]
@@ -1429,6 +1441,18 @@ file = "tests/skills/test_skills.py"
 before = '_TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")'
 after = '_TOOL = re.compile("ZZZNEVER")'
 reddens = ["tests/skills/test_skills.py::test_the_tool_name_lint_matches_a_tool_name"]
+
+# The allowlist's owners are read off the modules that register commands, and with the allowlist
+# empty only the anchor shows that reading is right: the area taken from the wrong part of the
+# module name leaves one owner, the package, that no entry could name.
+[[mutation]]
+name = "the skill allowlist reads its areas from the wrong part of the module name"
+file = "tests/skills/test_skills.py"
+before = '    areas = {module.__name__.split(".")[1] for module in area_modules("commands")}'
+after = '    areas = {module.__name__.split(".")[0] for module in area_modules("commands")}'
+reddens = [
+  "tests/skills/test_skills.py::test_the_allowlist_names_only_areas_that_register_commands",
+]
 
 # The area-boundary guard's exemption list is emphatic about exemptions nobody can see and
 # nothing held its size. Measured: the historical violation this repository actually merged —

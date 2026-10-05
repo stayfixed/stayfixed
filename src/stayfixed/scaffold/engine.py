@@ -705,8 +705,8 @@ def _write(root: Path, target: str, payload: str) -> None:
 
     The walk, the parent creation and the atomic replacement are `fsops.write_within`; what is
     this area's is the translation below. That split is deliberate: `attach`, `setup`,
-    `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
-    is the walk, not this area's verdict vocabulary.
+    `overlay` and the `hooks` area's sink all write files that are not `Template`s, and the half
+    they need is the walk, not this area's verdict vocabulary.
 
     The second clause is what keeps the refusal exit code, 2, reachable. A user who saves a file
     where a directory component belongs while reading the dry-run report, then confirms, would

@@ -229,7 +229,7 @@ so adding a stack's advice is adding its profile's file, and no core module lear
 name.
 
 The agents are core knowledge too, held in one place. A harness — Claude Code, Codex — is a value
-in `harnesses.HARNESSES`, and the hooks core answers through it:
+in `harnesses.HARNESSES`, and the `hooks` area answers through it:
 `stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
 that value's `render`, and the event a handler reads does not say which value that was. That is
 all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
@@ -245,7 +245,7 @@ plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md)
 contract — a skill body is **action language** and never names a harness tool, a `SKILL.md` is
 capped at 80 lines with the detail in `<skill>/references/`, and every `stayfixed …` invocation
 in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` against the
-package that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
+area that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
 ships a command deletes its `NOT_YET_SHIPPED` entry.
 
 ## Tests
