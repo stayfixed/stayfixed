@@ -1526,13 +1526,15 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     names = [name for name, _ in module.CHECKS]
     assert len(names) == 11
     assert spelled(module, names) == dict.fromkeys(names, 1)
-    areas = module.discover_contributors()
+    found = module.discover_contributors()
     # The three delivery areas, so the loop below is not vacuously true of no area at all.
-    assert [area.__name__ for area in areas] == [
+    assert [name for name, _ in found] == [
         "stayfixed.attach.doctor",
         "stayfixed.memory.doctor",
         "stayfixed.overlay.doctor",
     ]
+    areas = [area for _, area in found if isinstance(area, ModuleType)]
+    assert len(areas) == len(found), found
     for area in areas:
         contributed = [name for name, _ in area.register().checks]
         assert contributed, area.__name__

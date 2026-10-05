@@ -644,8 +644,8 @@ reddens = [
 [[mutation]]
 name = "the binding record's parse failure is quoted back whole"
 file = "src/stayfixed/attach/binding.py"
-before = '        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None'
-after = '        raise Failure(f"{where} is not valid TOML: {exc}") from exc'
+before = '        raise UnreadableRecord(f"{where} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise UnreadableRecord(f"{where} is not valid TOML: {exc}") from exc'
 reddens = [
   "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
 ]
@@ -1473,13 +1473,9 @@ reddens = [
 name = "an unreadable overlay falls back to trusting the ledger"
 file = "src/stayfixed/attach/doctor.py"
 before = '''    except (Failure, Refusal, OSError):
-        return None
-    return {
-        entry["command"]'''
+        return None, None'''
 after = '''    except (Failure, Refusal, OSError):
-        return set()
-    return {
-        entry["command"]'''
+        return set(), None'''
 reddens = [
   "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-overlay-unreadable]",
@@ -1491,11 +1487,11 @@ reddens = [
 name = "a git that cannot run costs the hook-entries row"
 file = "src/stayfixed/attach/doctor.py"
 before = '''    except (Failure, Refusal, OSError):
-        return None
-    return {'''
+        return None, None
+    if binding'''
 after = '''    except (Refusal, OSError):
-        return None
-    return {'''
+        return None, None
+    if binding'''
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-git-cannot-run]",
 ]
@@ -1506,8 +1502,8 @@ reddens = [
 [[mutation]]
 name = "a machine with no overlay reads as one whose overlay could not be asked"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if answers.overlay(context) is None:\n        return set()"
-after = "    if answers.overlay(context) is None:\n        return None"
+before = "    if overlay is None:\n        return set(), None"
+after = "    if overlay is None:\n        return None, None"
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
@@ -1520,17 +1516,90 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about the store the ledger names"
 file = "src/stayfixed/attach/doctor.py"
-before = "        binding = binding_for(context.root, context.config, machine=context.machine)"
-after = '''        from pathlib import Path
+before = '''            binding: Binding | None = binding_for(
+                context.root, context.config, machine=context.machine
+            )'''
+after = '''            from pathlib import Path
 
-        from stayfixed.attach.binding import read_binding
-        from stayfixed.attach.write import ledger
+            from stayfixed.attach.binding import read_binding
+            from stayfixed.attach.write import ledger
 
-        store = Path(ledger(context.root).store)
-        binding = read_binding(context.root, store=store, machine=context.machine)'''
+            store = Path(ledger(context.root).store)
+            binding = read_binding(context.root, store=store, machine=context.machine)'''
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-foreign-store]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-moved-store]",
+]
+
+# `project.name` is committed, so it can name another project of this machine's overlay: what
+# `projects/<name>/` grants is counted only for a checkout that project's record binds. Counted
+# for any, a clone named after another project, with an entry equal to one granted there and a
+# ledger recording its id, read "all accounted for"; and that project's hook file, read whether
+# or not it parses, let a broken one turn the red into a warning.
+[[mutation]]
+name = "doctor counts a project's grants for a checkout its record does not bind"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if binding is not None and binding.state == BOUND:"
+after = "        if binding is not None:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[mismatch]",
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[unbound]",
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[no-origin]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[mismatch]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[unbound]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[no-origin]",
+]
+
+# The owner's side: a checkout its record binds keeps what its own `projects/<name>/` grants, or
+# every per-project entry an owner keeps reads red.
+[[mutation]]
+name = "doctor counts no project's grants, even for the checkout its record binds"
+file = "src/stayfixed/attach/doctor.py"
+before = "            wanted = overlay_entries(binding)\n"
+after = "            wanted = common_entries(overlay)\n"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_bound_checkouts_own_project_grants_account_for_its_entries",
+]
+
+# Deciding whether a checkout is bound opens `projects/<name>/project.toml`, and the name is
+# committed. A record there that will not parse made the overlay one that "could not be asked", so
+# a clone named after a project whose record is broken turned the borrowed entry's red into a
+# warning and an exit of 0. It binds nothing instead, and `common/` is what grants.
+[[mutation]]
+name = "an unreadable binding record makes the overlay one that could not be asked"
+file = "src/stayfixed/attach/doctor.py"
+before = "        except UnreadableRecord:\n            binding, narrowed = None, UNREADABLE_RECORD"
+after = "        except UnreadableRecord:\n            return None, None"
+reddens = [
+  "tests/attach/test_doctor.py::test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_red",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look",
+]
+
+# For a checkout the overlay's record binds to another remote, `projects/<name>/` may grant an entry
+# `common/` does not, to the checkout the record does bind: "the overlay does not grant them" is
+# false there, and the rebuild it offers is one `attach` refuses on a mismatch. An owner who moved
+# `origin` from ssh to https was told both.
+[[mutation]]
+name = "attach tells a checkout its record does not bind that the overlay refused its entries"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if binding is not None and binding.state == MISMATCH:\n        narrowed = MISMATCH\n"
+after = ""
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[mismatch]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[mismatch]",
+]
+
+# The same for a binding record that cannot be read: the record that would say what this checkout
+# is granted is the one missing, and the rebuild `attach` would refuse on it.
+[[mutation]]
+name = "attach tells a checkout whose binding record cannot be read that the overlay refused its entries"
+file = "src/stayfixed/attach/doctor.py"
+before = "            binding, narrowed = None, UNREADABLE_RECORD"
+after = "            binding = None"
+reddens = [
+  "tests/attach/test_doctor.py::test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_red",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look",
 ]
 
 # Whether a source is recorded is the machine file's answer, and the row's sentence and remedy
@@ -1604,8 +1673,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"
-before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
-after = "    granted = _granted_commands(context, answers)"
+before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
+after = "        _granted_commands(context, answers)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
@@ -1617,8 +1686,8 @@ reddens = [
 [[mutation]]
 name = "attach does not ask the overlay about a ledger it cannot read"
 file = "src/stayfixed/attach/doctor.py"
-before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
-after = "    granted = _granted_commands(context, answers) if found else set()"
+before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
+after = "        _granted_commands(context, answers) if found else (set(), None)"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
@@ -1730,20 +1799,20 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
 ]
 
-# `project.name` is committed and spells the one free part of the paths the grant question reads
-# under the overlay, `projects/<name>/claude/`. A name that path cannot exist for is an overlay with
-# no source for that project; read as a failure, it turned `hook-entries`' red into a warning on a
-# machine with nothing broken.
+# `project.name` is committed and spells the one free part of the paths read under the overlay's
+# `projects/<name>/`. A path the name rules out is one the overlay has no file at. `doctor` reads
+# such a name's binding record as absent, so the checkout is never bound and is granted what
+# `common/` grants; read as a failure, it turned `hook-entries`' red into a warning on a machine
+# with nothing broken. `attach --check` reads a source under a share the overlay has no directory
+# for as absent; read as a failure, it failed on a file no overlay can hold.
 [[mutation]]
 name = "a source the project's name rules out is an overlay that cannot be asked"
 file = "src/stayfixed/attach/permissions.py"
 before = "        if share is not None and cannot_exist(exc) and _names_no_directory(share):"
 after = "        if False:"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
-  "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-unreadable]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
 ]
 
 [[mutation]]
@@ -1755,6 +1824,8 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
   "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[longer-than-a-file-name]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report",
 ]
 
 [[mutation]]
@@ -1765,6 +1836,8 @@ after = "    return exc.errno == errno.ENAMETOOLONG"
 reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
   "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[unreadable]",
 ]
 
 # The binding record is read on the way to what the overlay grants, and `Path.is_file()` raises for
@@ -1778,6 +1851,10 @@ after = "        if False:\n            return None"
 reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[longer-than-a-file-name-readable]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[unreadable]",
+  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[readable]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report",
 ]
 
 # The owner boundary of the leniency above: only a path the name rules out reads as no source. A
@@ -1809,43 +1886,17 @@ reddens = [
   "tests/attach/test_write.py::test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_writes[check]",
 ]
 
-# An overlay need not keep `projects/` at all, and nothing is below a directory that is not there:
-# read as the overlay failing to answer, a name past the longest path turned `hook-entries`' red
-# into a warning and the report's exit into 0.
-[[mutation]]
-name = "an overlay with no projects/ directory cannot be asked about a name past the longest path"
-file = "src/stayfixed/attach/permissions.py"
-before = "        # No `projects/`: the overlay keeps no project here at all.\n        return True"
-after = "        # No `projects/`: the overlay keeps no project here at all.\n        return False"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[readable]",
-  "tests/attach/test_doctor.py::test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only_what_common_grants[unreadable]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report",
-]
-
-# Nor above it: `projects/` is spelled by the overlay alone, and one that is a file is the
-# overlay's own state, though the path through it is ruled out as one under a file holding the
-# name is.
-[[mutation]]
-name = "a projects/ that is a file is a name the overlay has no directory for"
-file = "src/stayfixed/attach/permissions.py"
-before = "        if not stat.S_ISDIR(share.parent.stat().st_mode):"
-after = "        if False:"
-reddens = [
-  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-readable]",
-  "tests/attach/test_doctor.py::test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning[projects-is-a-file-unreadable]",
-]
-
-# A directory the overlay has none of yet is no directory of the owner's either: nothing is below
-# it, so a hook file under it that is past the longest path is one the overlay has no file at.
+# A directory the overlay has none of yet is no directory of the owner's either, and neither is one
+# under a `projects/` the overlay does not keep: nothing is below a directory that is not there, so
+# a source under it that is past the longest path is one the overlay has no file at.
 [[mutation]]
 name = "a source past the longest path under a project the overlay has no directory for cannot be asked"
 file = "src/stayfixed/attach/permissions.py"
-before = "        # No share: the overlay has no directory for this project yet.\n        return True"
-after = "        # No share: the overlay has no directory for this project yet.\n        return False"
+before = "        # No share, or no `projects/` above it: the overlay has no directory for this project.\n        return True"
+after = "        # No share, or no `projects/` above it: the overlay has no directory for this project.\n        return False"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[readable]",
-  "tests/attach/test_doctor.py::test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants[unreadable]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
 ]
 
 # Nor does it reach `common/`, whose spelling the overlay alone chooses. A `common/claude` that is a

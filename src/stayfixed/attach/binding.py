@@ -173,6 +173,17 @@ class Binding:
     state: str
 
 
+class UnreadableRecord(Failure):
+    """The overlay's binding record for this project is there and cannot be read.
+
+    A `Failure`, so `attach`, `--check` and the session-start handler stop on it as on any other.
+    Its own class for the one caller that may not: `doctor`'s grant question, where the record is
+    the one `project.name` picks out of `projects/` -- a name the repository commits -- so a record
+    that cannot be read must not be able to turn that question into "could not be asked"
+    (`attach.doctor._granted_commands`).
+    """
+
+
 def _record(overlay: Path, project: str) -> Path:
     return overlay / PROJECTS / project / PROJECT_RECORD
 
@@ -180,7 +191,7 @@ def _record(overlay: Path, project: str) -> Path:
 def _recorded(overlay: Path, project: str) -> str | None:
     """The remote the overlay bound to this project, or `None` when it has bound none.
 
-    A record that exists and cannot be read raises rather than answering `None`.
+    A record that exists and cannot be read raises `UnreadableRecord` rather than answering `None`.
     `memory.store._bound` answers "unreadable" for the same file, which is right for the hook
     path — it degrades closed and says to repair the file, then run `stayfixed attach`. Here
     "no record" is the state that invites a rebind, so a broken record has to stop the run
@@ -203,15 +214,15 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except OSError as exc:
         if cannot_exist(exc):
             return None
-        raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
+        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
     if not stat.S_ISREG(found):
         return None
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
     except OSError as exc:
-        raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
+        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
     except UnicodeDecodeError:
-        raise Failure(f"{where} is not UTF-8 text") from None
+        raise UnreadableRecord(f"{where} is not UTF-8 text") from None
     except UNPARSEABLE as exc:
         # A refused value is bounded before it may print, closing the leak every other
         # `toml_position` caller closes. `tomllib` builds its message as
@@ -222,7 +233,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
         # repository's `origin`, and a remote URL may not print wherever it came from.
         # `toml_position` bounds it to the suffix, and `from None` because a chained `__cause__`
         # would print the message a traceback away.
-        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None
+        raise UnreadableRecord(f"{where} is not valid TOML {toml_position(exc)}") from None
     value = raw.get("remote")
     return value if isinstance(value, str) and value else None
 

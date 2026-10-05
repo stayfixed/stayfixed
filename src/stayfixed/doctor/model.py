@@ -9,7 +9,7 @@ the run; this module is only the shapes they share, so it imports nothing of any
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal
 
@@ -92,6 +92,45 @@ class Context:
 
 
 @dataclass(frozen=True)
+class Wording:
+    """How `hook-entries` names one area's record, the source that grants, and the commands that
+    repair them, so the core's sentences about an area's entries are in that area's words.
+
+    Each field is a complete phrase the row composes into its sentences and remedies verbatim:
+    `record` names the record ("are recorded in {record}"), and `unreadable` follows "{record} is
+    there and"; `inspect` is the remedy for a record that cannot be read beside a source that
+    cannot be asked either; `source` is the source as a noun phrase ("{source} does not grant
+    them"), `unsourced` the clause for a machine that records none, `unaskable` the clause for one
+    that could not be asked, and `diagnose` the remedy for that; `setup` is the remedy that records
+    a source, and `vouch` the command, quoted as the row prints it, that writes the area's entries
+    and its record anew from its source, taking out every marked entry the source no longer grants.
+    `ungranted` and `regrant` are for a source that answered and does not grant *this checkout*
+    what it grants the one it is for, where "{source} does not grant them" would be false and
+    `vouch` may be refused: the clause that says why, in place of that one, and the remedy for the
+    entries it leaves red, in place of the ones built from `vouch`. `None` keeps those, because
+    then the source refusing is what happened.
+
+    **These are stayfixed's own fixed strings, never repository bytes.** The row prints them
+    unquoted into `Check.detail`, `--json` and the remedy a skill relays verbatim, so an area must
+    not build one from anything a repository authored — a configured name, a path read from a
+    record, a value a clone could commit. A repository's bytes are data (principle 5), and this is
+    the one place a contributing area's text reaches the core's output whole.
+    """
+
+    record: str
+    unreadable: str
+    inspect: str
+    source: str
+    unsourced: str
+    unaskable: str
+    diagnose: str
+    setup: str
+    vouch: str
+    ungranted: str | None = None
+    regrant: str | None = None
+
+
+@dataclass(frozen=True)
 class Claims:
     """What an area put into settings files, for `hook-entries`' provenance column.
 
@@ -100,13 +139,15 @@ class Claims:
     grants right now, and **must come from a source the repository cannot choose** — `attach` asks
     the overlay whose root the machine file records — because it is the half that vouches. An entry
     is absolved only when one area both records its id and grants its command; one area's record
-    never stands on another area's grant.
+    never stands on another area's grant. `wording` is how the row names that record, that source
+    and the commands that repair them, and holds `Wording`'s invariant: stayfixed's own fixed
+    strings, never anything a repository authored.
 
     Every answer the two sources can give is carried, their `None`s included: `recorded is None` is
     "the record could not be read" (the row warns and says so, and withholds judgement only of an
     entry this area grants, which may be one the record holds: an entry no grant covers is still
     red, so an area must answer `granted` whether or not its record could be read), `granted is
-    None` is "the overlay could not be asked" (the row warns and withholds only the comparison with
+    None` is "the source could not be asked" (the row warns and withholds only the comparison with
     what is granted: an entry no record holds is still red). A `None` from any one area is `None`
     for every area's entries, because what it would have said is not something another area can.
 
@@ -121,6 +162,9 @@ class Claims:
     recorded: Mapping[str, str] | None
     granted: frozenset[str] | None
     sourced: bool = True
+    # Keyword-only and required: an area's claims without its own words would be told in some
+    # other area's, which is the defect this field exists to end.
+    wording: Wording = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -129,7 +173,8 @@ class Contribution:
 
     `checks` are `(name, check)` pairs, asked after the core's own in area-name order and each
     through the guard the core's go through, so one that raises costs its own row. A name is
-    unique in the report: discovery refuses one equal to a core check's or another area's.
+    unique in the report: an area that repeats a core check's, another area's or its own costs
+    its rows and its claims, as one red row named after the area.
     """
 
     checks: tuple[tuple[str, Callable[[Context], Row]], ...]

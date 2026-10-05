@@ -149,26 +149,23 @@ def _names_no_directory(share: Path) -> bool:
     the owner's and a path through it that cannot exist is one the overlay has no file at.
 
     Asked of the share itself because `cannot_exist` says only that *some* component of a path is
-    not a directory or is too long, never which. Only the share's own answer is about the name:
-    absent, a file that holds it, or a name the filesystem rules out. A `projects/` that is there
-    and is not a directory is the overlay's own state, and so is any component below a share that
-    is one. Whatever is absent counts, `projects/` or the share: nothing is below a directory that
-    is not there, so nothing there is the owner's. An overlay need not keep `projects/` at all, and
-    a long name under a long overlay root can put a file under an absent share past the longest
-    path while the share itself is not.
+    not a directory or is too long, never which. Only the share's own answer is about the name,
+    and any component below a share that is a directory is the owner's own state. Whatever is
+    absent counts, `projects/` or the share: nothing is below a directory that is not there, so
+    nothing there is the owner's. An overlay need not keep `projects/` at all, and a long name
+    under a long overlay root can put a file under an absent share past the longest path while
+    the share itself is not.
+
+    Every caller reaches this past a share that is absent or a directory, so those are the two
+    answers that decide anything: `attach` and `--check` refuse any other share above their reads
+    (`binding.refuse_unless_share_can_exist`), and `doctor` opens `projects/<name>/` only for a
+    binding whose record it has just read there. So a `projects/` that is a file is not told apart
+    from a share a file holds: no caller can reach either.
     """
-    try:
-        if not stat.S_ISDIR(share.parent.stat().st_mode):
-            return False
-    except FileNotFoundError:
-        # No `projects/`: the overlay keeps no project here at all.
-        return True
-    except OSError:
-        return False
     try:
         mode = share.stat().st_mode
     except FileNotFoundError:
-        # No share: the overlay has no directory for this project yet.
+        # No share, or no `projects/` above it: the overlay has no directory for this project.
         return True
     except OSError as exc:
         return cannot_exist(exc)
@@ -267,9 +264,28 @@ def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
     order, so a second attach against an unchanged overlay produces the identical ids and the
     merge is a no-op.
     """
+    return _numbered(_claude_sources(binding, HOOKS_FILE))
+
+
+def common_entries(overlay: Path) -> dict[str, list[dict[str, Any]]]:
+    """`overlay_entries` for `common/` alone, which never opens anything under `projects/`.
+
+    For a caller that may not take any project's grants (`doctor`, for a checkout the overlay's
+    record does not bind, or whose record it cannot read), and asked of the overlay root rather
+    than of a `Binding`, because deciding a binding opens the record such a caller may not lean
+    on. `common/` is read first by `overlay_entries` too, so this is exactly the leading part of
+    its answer, with the same ids.
+    """
+    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))
+
+
+def _numbered(
+    sources: tuple[tuple[Path, Path | None], ...],
+) -> dict[str, list[dict[str, Any]]]:
+    """The hook entries in `sources`, read in order, each command marked with its own id."""
     wanted: dict[str, list[dict[str, Any]]] = {}
     seen: dict[str, int] = {}
-    for source, share in _claude_sources(binding, HOOKS_FILE):
+    for source, share in sources:
         for event, groups in _hook_groups(source, share=share).items():
             for group in groups:
                 entries = group.get("hooks") or []

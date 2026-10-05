@@ -2256,6 +2256,18 @@ reddens = [
   "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
 ]
 
+# `doctor`'s report imports every area's `doctor.py` through `area_imports`, which hands an import
+# that raises over in the area's place, so one broken area costs one red row and not the report.
+[[mutation]]
+name = "discovery lets an area's import failure escape"
+file = "src/stayfixed/areas.py"
+before = "        except Exception as exc:  # an area's broken import is handed over, never raised here"
+after = "        except OSError as exc:  # an area's broken import is handed over, never raised here"
+reddens = [
+  "tests/test_areas.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
+  "tests/doctor/test_command.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report",
+]
+
 # The delivery areas are pinned as a literal, because the one crossing meant to stay exercises only
 # `overlay`: a constant that lost `memory` would let a new crossing into it through.
 [[mutation]]

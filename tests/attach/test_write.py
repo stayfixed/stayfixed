@@ -2244,3 +2244,38 @@ def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_on
     _attach_it(root, store, machine, tmp_path / "home")
     assert (store.parent / PROJECT_RECORD).is_file()
     assert store.is_dir()
+
+
+@pytest.mark.parametrize("projects", ["projects-kept", "projects-absent"])
+def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source(
+    tmp_path: Path, projects: str
+) -> None:
+    # A name whose directory fits under the longest path while the files under it do not, in an
+    # overlay that has no directory for it yet -- under a `projects/` it keeps, or with no
+    # `projects/` at all. Nothing is below a directory that is not there, so `--check` reads each
+    # source there as the absent file it is and previews what `common/` grants. Read as a fault
+    # of the overlay's, it failed: "cannot be read: File name too long". Mutations (oracle):
+    # `mutations/`'s "a source the project's name rules out is an overlay that cannot be asked"
+    # and "a source past the longest path under a project the overlay has no directory for cannot
+    # be asked" -> both cases fail.
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Room under the longest path for the fixture's own files, overlay and checkout alike.
+    while len(str(deep)) < longest - 250:
+        deep = deep / ("d" * min(200, longest - 250 - len(str(deep))))
+    hooks = {"PreToolUse": [{"matcher": "Bash", "hooks": [ENTRY]}]}
+    root, store, machine = _attachable(deep, allow=(RULE,), hooks=hooks)
+    projects_dir = store.parents[1]
+    # The project's directory 10 characters short of the longest path, its name a file name that
+    # may be, and its hook file past the longest path.
+    name = "n" * (longest - 10 - len(str(projects_dir)) - 1)
+    assert len(name) < 255
+    assert len(str(projects_dir / name)) == longest - 10
+    assert len(str(projects_dir / name / "claude" / "hooks.json")) > longest
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    if projects == "projects-absent":
+        shutil.rmtree(projects_dir)
+    result = check(root, store=projects_dir / name / "memory", machine=machine)
+    assert result.exit_code == 0, result.summary
+    assert result.data["added_allow"] == [RULE]
+    assert result.data["added_hooks"] == ["echo hello  # stayfixed:overlay-PreToolUse-1"]

@@ -11,16 +11,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.doctor import checks
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
+from tests.test_areas import UNIMPORTABLE, plant_area
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +131,68 @@ def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[s
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")])
     assert code == 1
     assert "not-initialised" in capsys.readouterr().out
+
+
+def test_claims_that_raise_an_os_error_fail_the_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An area's claims that raise are red, as `Contribution.claims` promises, and red is what
+    # gates the exit code: claims that raised `PermissionError` reached the report's guard as the
+    # machine's `OSError`, so `hook-entries` warned and `stayfixed doctor` exited 0 over entries
+    # nothing had judged. The one area here is injected through `checks.discover_contributors`,
+    # so nothing else in this repository is red. Mutation (oracle): `mutations/`'s "claims that
+    # raise an OSError reach the guard as one" -> the row warns and the exit code is 0.
+    def raises(context: Context) -> Claims:
+        raise PermissionError("IGNORE-PRIOR-RULES, a message the claims built")
+
+    area = ModuleType("stayfixed.alpha.doctor")
+    setattr(area, "register", lambda: Contribution(checks=(), claims=raises))  # noqa: B010
+    monkeypatch.setattr(checks, "discover_contributors", lambda: [(area.__name__, area)])
+    root = _initialised(tmp_path)
+    code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    red = [check for check in report["checks"] if check["status"] == RED]
+    assert red == [
+        {
+            "name": "hook-entries",
+            "status": RED,
+            "detail": "this check could not run: UnansweredClaims",
+            "remedy": "report this, with the command you ran",
+        }
+    ]
+    assert code == 1
+
+
+def test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # End to end, through a real import: an area whose `doctor.py` raises when imported is one
+    # red row named after the area, exit 1 for it, and every other row exactly as a report without
+    # the area gives it. Imported unguarded, the exception would leave `run_checks` for the CLI,
+    # which turns it into an internal error with no report at all. Mutation (oracle):
+    # `mutations/`'s "discovery lets an area's import failure escape" -> the `RuntimeError`
+    # escapes and nothing is reported.
+    root = _initialised(tmp_path)
+    argv = ["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"]
+    assert invoke(argv) == 0
+    baseline = json.loads(capsys.readouterr().out)["checks"]
+    plant_area(request, monkeypatch, tmp_path / "areas", "zzplanted", {"doctor.py": UNIMPORTABLE})
+    code = invoke(argv)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert json.loads(out)["checks"] == [
+        *baseline,
+        {
+            "name": "zzplanted",
+            "status": "red",
+            "detail": "stayfixed.zzplanted.doctor could not be imported: RuntimeError",
+            "remedy": "report this, with the command you ran",
+        },
+    ]
+    assert "IGNORE" not in out
 
 
 def test_the_json_form_carries_every_check_and_its_remedy(
