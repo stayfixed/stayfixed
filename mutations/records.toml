@@ -418,6 +418,42 @@ before = "    if report.findings:"
 after = "    if report.findings or report.notices:"
 reddens = ["tests/memory/test_graph.py::test_refs_reports_graph_notices_without_changing_its_exit"]
 
+# Nor does advice excuse: a stale path fails `memory refs` whatever notices sit beside it, and the
+# failing line still counts them.
+[[mutation]]
+name = "an advisory memory-graph notice clears a stale path's failure"
+file = "src/stayfixed/memory/commands.py"
+before = '    return Result("; ".join([*parts, *advice]), data, exit_code=1)'
+after = '    return Result("; ".join([*parts, *advice]), data, exit_code=0 if report.notices else 1)'
+reddens = ["tests/memory/test_refs.py::test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both"]
+
+[[mutation]]
+name = "the failing memory refs line stops counting the graph's notices"
+file = "src/stayfixed/memory/commands.py"
+before = '    return Result("; ".join([*parts, *advice]), data, exit_code=1)'
+after = '    return Result("; ".join(parts), data, exit_code=1)'
+reddens = ["tests/memory/test_refs.py::test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both"]
+
+# `memory refs` reads the store once: the graph's notices come from the walk made for the stale
+# paths. A second walk reached through the note module's own name, rather than through the name
+# `memory.refs` binds, is a second read of every note all the same.
+[[mutation]]
+name = "the memory graph walks the store a second time"
+file = "src/stayfixed/memory/graph.py"
+before = "    for note in walked.notes:"
+after = '    for note in __import__("stayfixed.memory.notes").memory.notes.walk(store.path, groups).notes:'
+reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
+
+# The same read without a second walk: each note re-read from disk through `read_note`.
+[[mutation]]
+name = "the memory graph reads every note a second time"
+file = "src/stayfixed/memory/graph.py"
+before = "        text = blank_code_spans(blank_fences(note.body))"
+after = '''        text = blank_code_spans(
+            blank_fences(__import__("stayfixed.memory.notes").memory.notes.read_note(note.path).body)
+        )'''
+reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
+
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
 # absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
@@ -1936,6 +1972,17 @@ name = "an area's doctor.py imports stayfixed at module level"
 file = "src/stayfixed/memory/doctor.py"
 before = "from typing import TYPE_CHECKING\n"
 after = "from typing import TYPE_CHECKING\n\nfrom stayfixed.errors import Failure\n"
+reddens = [
+  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
+# The same import nested in a `try`, which runs on import all the same: a walk of the module's
+# top-level statements saw only the `try`.
+[[mutation]]
+name = "an area's doctor.py imports stayfixed at module level inside a try"
+file = "src/stayfixed/memory/doctor.py"
+before = "from typing import TYPE_CHECKING\n"
+after = "from typing import TYPE_CHECKING\n\ntry:\n    from stayfixed.memory.bundles import SLOTS\nexcept ImportError:\n    pass\n"
 reddens = [
   "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]

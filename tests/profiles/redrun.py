@@ -110,6 +110,13 @@ class EmptyHint(FakeHint):
         return ""
 
 
+class NamedUndeterminedHint(FakeHint):
+    """A hint with a real count called `undetermined`, which is a count name like any other."""
+
+    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+        return {"found": 1, "undetermined": 1}
+
+
 class Word(str):
     """A key that passes the count-name grammar and prints as something else."""
 

@@ -157,36 +157,42 @@ functions that use it, and those rows stay until the step leaves `setup`. A row 
 statement and the names it takes, held as a multiset in both directions, so
 `test_core_never_imports_delivery` refuses a new crossing, a second statement beside a pinned one,
 a pinned statement that takes one more name and a pinned row whose import has gone alike. The rule
-reads source, as discovery does, so a module named to `importlib.import_module` is invisible to
-it; `scripts/` is repository tooling and stays under the `api.py` rule alone. What source cannot
-show is when a pardoned statement runs, so `test_in_isolation_no_core_module_loads_a_delivery_area`
-imports every core module in a clean interpreter and refuses any delivery module among what it
-loaded: the core loads the private layer only when a command asks for it.
+reads import statements, so a module named to `importlib.import_module` is invisible to it, and two
+rules of their own hold that door. No core module but `areas.py` imports by a string through
+`importlib.import_module` or `__import__`, under any alias, except the profile discovery
+`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
+that can import by a string any other way (`importlib` beyond `importlib.resources`, `pkgutil`,
+`runpy`, `zipimport`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
+Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
+`scripts/` is repository tooling and stays under the `api.py` rule alone. What source cannot show is
+when a pardoned statement runs, so `test_in_isolation_no_core_module_loads_a_delivery_area` imports
+every core module in a clean interpreter and refuses any delivery module among what it loaded: the
+core loads the private layer only when a command asks for it.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
   interpreter imports neither the configuration layer nor the presets.
-- `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report:
-  its `(name, check)` pairs are asked after the core's own checks, in area-name order, each with
-  the report's `Context` and through the same guard, so a check that raises costs its own row and
-  not the report. An area that cannot contribute is held to one policy, whatever the cause: a
+- `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report: its
+  `(name, check)` pairs are asked after the core's own checks, in area-name order, each with the
+  report's `Context` and through the same guard, so a check that raises costs its own row and not
+  the report. An area that cannot contribute is held to one policy, whatever the cause: a
   `doctor.py` that fails to import, a `register()` that raises or returns anything but a
-  `Contribution` of `(name, check)` pairs, and one that contributes a name already in the report —
-  a core check's, an earlier area's, or another of its own, since a check's name is unique in the
+  `Contribution` of `(name, check)` pairs, and one that contributes a name already in the report — a
+  core check's, an earlier area's, or another of its own, since a check's name is unique in the
   report — each puts one red row named after the area where its rows would have been (numbered,
   `<area> (2)`, when the report already has that name), and the rest of the report stands. The
   area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
-  settings files as one nothing records, and goes red too when there is one. A `Contribution`
-  may also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings
-  files and the commands it still grants there, each under the event and the matcher it grants it
-  under, which the core's `hook-entries` row asks with the same `Context`, so an entry the area put
-  there is told apart from a repository claiming it did. The record may be repository bytes and
-  the grants may not, and an entry is absolved only by an area that both records its id and grants
-  its command where the entry sits, never by one area's record and another's grant. `Claims` also carries the area's `Wording`, the phrases the row tells its record, its
-  source and their remedies in, so the core names no area's files or commands of its own; they are
-  printed verbatim, so they are stayfixed's own fixed strings and never built from repository
-  bytes.
+  settings files as one nothing records, and goes red too when there is one. A `Contribution` may
+  also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings files
+  and the commands it still grants there, each under the event and the matcher it grants it under,
+  which the core's `hook-entries` row asks with the same `Context`, so an entry the area put there
+  is told apart from a repository claiming it did. The record may be repository bytes and the grants
+  may not, and an entry is absolved only by an area that both records its id and grants its command
+  where the entry sits, never by one area's record and another's grant. `Claims` also carries the
+  area's `Wording`, the phrases the row tells its record, its source and their remedies in, so the
+  core names no area's files or commands of its own; they are printed verbatim, so they are
+  stayfixed's own fixed strings and never built from repository bytes.
   `register()` is called once per report, so anything it creates for its checks — an area that
   reads the note store creates a value that resolves it at most once — is fresh for every report.
   What the core owns and several areas read is on the `Context` instead: `Context.overlay_root`,

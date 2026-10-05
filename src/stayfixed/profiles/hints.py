@@ -6,8 +6,9 @@ which hints speak, through `RedRunHint.recognises`, and `[stayfixed] profile` pl
 repository in several languages runs several stacks' suites, and the stack whose runner failed is
 the one whose advice applies.
 
-`note` receives counts and nothing else: both callers, the hook's notice and `stayfixed test
-hygiene`, ask a hint through `answer`, which reads its report through `counts`. That keeps a key
+`note` receives counts and nothing else, or `None` for a walk that could not tell: both callers,
+the hook's notice and `stayfixed test hygiene`, ask a hint through `answer`, which reads its report
+through `counts`. That keeps a key
 only when it is a count name (`COUNT_NAME`: lower-case letters, digits and underscores, at most
 32 characters) and its value only when it is a plain integer, and drops the rest before anything
 reaches `note` or `--json`.
@@ -66,13 +67,17 @@ class RedRunHint(Protocol):
         """
         ...
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
         """The one walk: counts of what could have falsified the run, under `root`, each under a
-        name `COUNT_NAME` matches; `counts` drops anything else."""
+        name `COUNT_NAME` matches; `counts` drops anything else. `None` when the walk stopped at a
+        bound before it had seen the tree, so no count it reached is an answer either way: not a
+        key among the counts, since every key a hint returns is a count name it chose.
+        `stayfixed test hygiene` refuses on `None` rather than read the tree as judged."""
         ...
 
-    def note(self, counts: Mapping[str, int]) -> str | None:
-        """One line for `counts`, or `None` when nothing in them is worth saying."""
+    def note(self, counts: Mapping[str, int] | None) -> str | None:
+        """One line for `counts`, or `None` when nothing in them is worth saying. Given `None`,
+        the report's, the line says the hint could not tell."""
         ...
 
 
@@ -104,9 +109,11 @@ def _hint(name: str) -> RedRunHint | None:
     return hint
 
 
-def answer(hint: RedRunHint, root: Path, config: Config) -> tuple[dict[str, int], str | None]:
-    """`hint`'s counts under `root` (`counts`), and its note on them: non-empty text, or `None`
-    when it has nothing to say.
+def answer(
+    hint: RedRunHint, root: Path, config: Config
+) -> tuple[dict[str, int] | None, str | None]:
+    """`hint`'s counts under `root` (`counts`), `None` when it could not tell, and its note on
+    them: non-empty text, or `None` when it has nothing to say.
 
     Raises `NotText` for a note that is neither text nor `None`, and lets whatever `report` or
     `note` raises through.
@@ -118,17 +125,21 @@ def answer(hint: RedRunHint, root: Path, config: Config) -> tuple[dict[str, int]
     return report, note or None
 
 
-def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int]:
-    """`hint`'s report under `root` as a fresh mapping of count names to plain integers.
+def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int] | None:
+    """`hint`'s report under `root` as a fresh mapping of count names to plain integers, or
+    `None` when the report is: the hint could not tell.
 
     A key is kept only when it is a `str` matching `COUNT_NAME`, and a value only when it is an
     `int` from 0 up to `COUNT_LIMIT`. Exactly those types, and no subclass: a subclass keeps its
     own `__str__` and `__format__`, so it can print as text the check never saw, and `bool` is one
     (`red_exit` refuses it for the same reason). What `report` raises reaches the caller.
     """
+    report = hint.report(root, config)
+    if report is None:
+        return None
     return {
         key: value
-        for key, value in hint.report(root, config).items()
+        for key, value in report.items()
         if type(key) is str
         and COUNT_NAME.fullmatch(key)
         and type(value) is int

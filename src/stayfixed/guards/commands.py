@@ -211,7 +211,14 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 _UNLOADED = "the {name} profile's red-run hint could not be loaded"
 _WORDLESS = "the {name} profile's red-run hint answered in something other than text"
 _FAILED = "the {name} profile's red-run hint failed: {kind}"
+# And for a hint whose walk stopped at its bound (a report of `None`): it has not seen the tree,
+# so neither its count nor its silence is an answer, and a refusal is the one that says so. Even
+# over a tree with no bytecode in it: a walk cut short that met none has not seen the rest, and
+# the order it lists in is the filesystem's. The bound is not configurable and what it walks is,
+# so the refusal names that way out.
+_UNTOLD = "the {name} profile's red-run hint stopped its walk at a bound and could not tell"
 _UNJUDGED = ", so this tree cannot be judged"
+_NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
@@ -244,6 +251,8 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
         except Exception as exc:
             kind = type(exc).__name__
             raise Refusal(_FAILED.format(name=name, kind=kind) + _UNJUDGED) from None
+        if report is None:
+            raise Refusal(_UNTOLD.format(name=name) + _UNJUDGED + _NARROW)
         if note is None and not detects(load_profile(name), root):
             continue
         reports[name] = report

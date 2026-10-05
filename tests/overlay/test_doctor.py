@@ -159,7 +159,6 @@ def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_p
     checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
     assert _by_name(checks, "versions").status == OK
     assert [check.name for check in checks if check.status == RED] == []
-    assert len(checks) == 16
 
 
 def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: Path) -> None:

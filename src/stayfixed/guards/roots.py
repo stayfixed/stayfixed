@@ -20,7 +20,7 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     `ledger.code_roots` first; this is the call it asks the consuming module to make.
 
     NO DIRECTORY IS RETURNED TWICE, and no directory under another returned one is returned
-    beside it. Every consumer of this list walks each entry with `rglob` and adds up what it
+    beside it. Every consumer of this list walks each entry and adds up what it
     finds, so `code_roots = ["src", "src"]` doubled every stale `.pyc` in the count the
     hygiene notice prints, and `["src", "src/stayfixed"]` doubled the part of the tree they
     share -- a wrong number in a notice whose whole job is to be believed about a number.

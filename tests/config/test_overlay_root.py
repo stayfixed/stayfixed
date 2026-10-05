@@ -11,7 +11,13 @@ from stayfixed.config.loader import MachineConfigError
 from stayfixed.config.overlay import overlay_root
 
 
-def test_overlay_root_reads_the_machine_file(tmp_path: Path) -> None:
+def test_a_recorded_root_is_answered_and_an_empty_machine_file_records_none(
+    tmp_path: Path,
+) -> None:
+    # The recorded root anchors where the note store may resolve, so it is answered as recorded;
+    # an empty file is valid TOML that records nothing, so it is "not recorded" and never a broken
+    # file or a root nobody wrote. Measured by hand: with the last line answering `None` whatever
+    # `root` holds, the first assertion reddens. The absent file is held below.
     overlay = tmp_path / "o"
     overlay.mkdir()
     machine = tmp_path / "machine.toml"
@@ -19,7 +25,6 @@ def test_overlay_root_reads_the_machine_file(tmp_path: Path) -> None:
     assert overlay_root(machine) == overlay
     machine.write_text("", encoding="utf-8")
     assert overlay_root(machine) is None
-    assert overlay_root(tmp_path / "absent.toml") is None
 
 
 def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(

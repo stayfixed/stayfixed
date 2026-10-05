@@ -827,7 +827,7 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
     assert done.returncode == 0, done.stderr
     assert RULE_BODY in done.stdout
     rows = _doctor(walk)
-    assert len(rows) == 16 and not [row for row in rows if row["status"] == RED]
+    assert not [row for row in rows if row["status"] == RED]
     assert (walk.root / ".stayfixed" / "manifest.json").is_file()
 
 

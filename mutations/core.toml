@@ -2210,7 +2210,7 @@ reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
   "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
-  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[nested]",
   "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
   "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
@@ -2229,7 +2229,7 @@ after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
-  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[long-number]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
   "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
@@ -2341,6 +2341,60 @@ file = "src/stayfixed/areas.py"
 before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
 reddens = ["tests/test_areas.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
+
+# The delivery rule reads import statements, so the core reaching the private layer by a string —
+# inside a function, where no import-time probe sees it run — crossed with every boundary test
+# green. A string import in the core is discovery's alone, under each spelling of it.
+[[mutation]]
+name = "a core function imports the note store through importlib"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import importlib
+
+    importlib.import_module("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through __import__"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    __import__("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through an alias of import_module"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import import_module as load
+
+    load("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The standard library imports by a string without either name that rule reads:
+# `pkgutil.resolve_name` crossed with all of `test_areas.py` and `test_import_boundary.py` green.
+# So the core's imports of the import machinery are pinned, each with what it reaches.
+[[mutation]]
+name = "a core function imports the note store through pkgutil.resolve_name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pkgutil
+
+    pkgutil.resolve_name("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
+# it is for walks every area through it, the private layer's included.
+[[mutation]]
+name = "a core module asks discovery for every area's api.py"
+file = "src/stayfixed/hooks/registry.py"
+before = "                raise UnknownHookEvent("
+after = '''                area_modules("api")
+                raise UnknownHookEvent('''
+reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check

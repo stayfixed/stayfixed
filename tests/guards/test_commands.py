@@ -486,11 +486,13 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     capsys: pytest.CaptureFixture[str],
     as_json: bool,
 ) -> None:
-    # An exception's message can carry what the hint walked: on Python 3.11 `rglob` lets an
-    # `OSError` for a name too long to open escape with the full path, and a repository chooses
-    # its directories' names. Printed as an internal error, that text reached whoever ran this
-    # command, the agent the shipped skills send here included. The refusal names the profile
-    # and the exception's type and nothing the exception carried, in either output. Oracle:
+    # An exception's message can carry what the hint walked: an `OSError` names the path it
+    # failed on, in full, and a repository chooses its directories' names. The failure is
+    # injected into the walk itself, since the walk passes over what it cannot list and so
+    # raises for no tree a test can build. Printed as an internal error, that text reached
+    # whoever ran this command, the agent the shipped skills send here included. The refusal
+    # names the profile and the exception's type and nothing the exception carried, in either
+    # output. Oracle:
     # `mutations/`, "test hygiene prints a failing hint's own message".
     root = repo(tmp_path)
     (root / "src").mkdir()
@@ -501,16 +503,82 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "chore: code")
 
-    def broken(self: Path, pattern: str) -> object:
+    def broken(roots: object) -> object:
         raise OSError("<injected text>")
 
-    monkeypatch.setattr(Path, "rglob", broken)
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene._bytecode", broken)
     json_flag = ["--json"] if as_json else []
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke([*argv, *json_flag]) == 2
     captured = capsys.readouterr()
     assert "<injected text>" not in captured.out + captured.err
     assert "the python profile's red-run hint failed: OSError" in captured.out + captured.err
+
+
+@needs_git
+@pytest.mark.parametrize("as_json", [False, True])
+def test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    as_json: bool,
+) -> None:
+    # A walk that stopped at its cap has not seen the tree, so this command cannot call it clean
+    # and cannot name a stale count: it refuses, as it does for a tree git cannot report on, and
+    # says the profile could not tell. The tree is committed with its stale `.pyc` ignored, so
+    # an uncut walk answers exit 1 with that count. Oracle: `mutations/`'s "test hygiene reads a
+    # walk cut short as a judged tree".
+    root = repo(tmp_path)
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    compile_module(module)
+    make_stale(module)
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 1)
+    json_flag = ["--json"] if as_json else []
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke([*argv, *json_flag]) == 2
+    captured = capsys.readouterr()
+    said = json.loads(captured.out)["summary"] if as_json else captured.err
+    assert said.strip() == ("refused: " if as_json else "stayfixed: refused: ") + CUT_WALK
+
+
+# The refusal for a walk cut at its bound, and the way out of it: the bound is not configurable,
+# what it walks is.
+CUT_WALK = (
+    "the python profile's red-run hint stopped its walk at a bound and could not tell, so this "
+    "tree cannot be judged; narrow `[ledger] code_roots` to the directories that hold code"
+)
+
+
+def test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A JavaScript tree past the bound gets the same refusal as a Python one, by decision: a walk
+    # cut short that met no `__pycache__` has seen no more of the tree than one that met a fresh
+    # one, since the order it lists in is the filesystem's, and the stale `.pyc` can sit just past
+    # the bound. So the refusal names the way out instead, and narrowing `code_roots` is it.
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    for index in range(3):
+        (root / "src" / f"m{index}.js").write_text("", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 0
+    capsys.readouterr()
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 2)
+    assert invoke(argv) == 2
+    assert capsys.readouterr().err.strip() == "stayfixed: refused: " + CUT_WALK
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -550,6 +618,25 @@ def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
     out = json.loads(capsys.readouterr().out)
     assert out["dirty"] == 0
     assert out["profiles"] == {"alpha": {"found": 1}, "beta": {"found": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
+def test_test_hygiene_reads_a_count_named_undetermined_as_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "Could not tell" is a report of `None`, not a key in the counts: a key is a count name a
+    # hint chose, and `undetermined` matches that grammar like any other, so carried in the counts
+    # it turned a hint's real count into a refusal of the whole tree. Here it is a count, listed
+    # and reported as the finding the note makes of it. Oracle: `mutations/`'s "test hygiene reads
+    # a walk cut short as a judged tree" holds the refusal on a report of `None`.
+    redrun.ship(monkeypatch, {"alpha": redrun.NamedUndeterminedHint("x", "alpha says")})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1, "undetermined": 1}}
     assert out["summary"] == "alpha: alpha says (1)"
 
 

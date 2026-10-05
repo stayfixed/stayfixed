@@ -52,6 +52,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
 
@@ -318,15 +319,6 @@ def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path
     assert "Error" not in row.detail + row.remedy
 
 
-def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
-    # An initialised project with no overlay, no machine file, no gh, no Codex and no network.
-    # A check that raises takes the whole report with it, and a report that cannot run is worth
-    # less than a report with one skip line in it.
-    checks = _checks(tmp_path, _initialised(tmp_path))
-    assert len(checks) == 16
-    assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
-
-
 # The report's sixteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
@@ -355,9 +347,13 @@ def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # sixteen are the same sixteen, once each. A literal tuple and not the registry read back, so
     # a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
-    # missing.
+    # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
+    # no machine file, no gh, no Codex and no network -- so the same run holds that every check
+    # survives that, each with a status of the closed four: a check that raised would take the
+    # report with it, and one skip line is worth more than no report.
     rows = _checks(tmp_path, _initialised(tmp_path))
     assert tuple(row.name for row in rows) == REPORT
+    assert {row.status for row in rows} <= {OK, WARN, RED, SKIP}
 
 
 def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Path) -> None:
@@ -1230,9 +1226,7 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
     # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
     # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
-    _walked(tmp_path, root, label).write_text(
-        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
-    )
+    _walked(tmp_path, root, label).write_text('{"hooks": ' + NESTED + "}", "utf-8")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
         "hook-entries",
@@ -1248,9 +1242,7 @@ def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: 
     # -> a warning.
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
-    (root / ".claude" / "settings.json").write_text(
-        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
-    )
+    (root / ".claude" / "settings.json").write_text('{"hooks": ' + NESTED + "}", "utf-8")
     (root / LOCAL_SETTINGS).write_text("this is not json", "utf-8")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
@@ -1261,12 +1253,6 @@ def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: 
         f"is in them: {LOCAL_SETTINGS}",
         UNCHECKABLE_REMEDY,
     )
-
-
-# An integer literal longer than the interpreter converts to an `int`, 4,300 digits by default on
-# every supported Python. `json.loads` meets it with a plain `ValueError`, which is not the
-# `JSONDecodeError` a reader of malformed JSON catches.
-LONG_NUMBER = "1" * 5_000
 
 
 @pytest.mark.parametrize("label", sorted(WALKED))
@@ -1301,6 +1287,8 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
     # (`RecursionError`). Either reached `_guarded`: `diagnostics` red, "this check could not run",
     # and an exit of 1. A line the parser cannot read is not a record. Mutation (oracle):
     # `mutations/`'s "doctor's hook sink reader lets a line past the parser's reach raise" -> red.
+    # Not `NESTED`: its 400,000 bytes are past `DIAGNOSTICS_MAX_BYTES`, so the read would stop at
+    # the bound before the parser saw a whole line; 100,000 levels fit and still raise.
     text = (
         '{"error": ' + LONG_NUMBER + "}" if line == "long-number" else "[" * 100_000 + "]" * 100_000
     )

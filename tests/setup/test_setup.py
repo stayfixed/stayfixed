@@ -22,6 +22,7 @@ from stayfixed.presets import load_preset
 from stayfixed.runner import Completed
 from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
+from tests import parserlimits
 from tests.gitfixture import git as _git
 from tests.runners import Recorder
 
@@ -163,7 +164,7 @@ def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Pat
 
 @pytest.mark.parametrize(
     ("document", "clause"),
-    [("[" * 200_000 + "]" * 200_000, NESTED), ('{"n": ' + "1" * 5_000 + "}", LONG_NUMBER)],
+    [(parserlimits.NESTED, NESTED), ('{"n": ' + parserlimits.LONG_NUMBER + "}", LONG_NUMBER)],
     ids=["nested", "long-number"],
 )
 def test_a_user_settings_file_past_the_parsers_reach_is_a_failure_naming_it(

@@ -10,6 +10,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.printed import UNPRINTABLE
+from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
 
@@ -129,7 +130,7 @@ def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory
 
 @pytest.mark.parametrize(
     ("document", "clause"),
-    [("[" * 200_000 + "]" * 200_000, NESTED), ('{"/p": ' + "1" * 5_000 + "}", LONG_NUMBER)],
+    [(parserlimits.NESTED, NESTED), ('{"/p": ' + parserlimits.LONG_NUMBER + "}", LONG_NUMBER)],
     ids=["nested", "long-number"],
 )
 def test_a_trust_record_past_the_parser_is_refused_and_never_overwritten(

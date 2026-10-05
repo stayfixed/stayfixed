@@ -270,6 +270,35 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
     assert data["findings"][0]["detail"] == "src/gone.py"
 
 
+def test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Advice neither gates nor excuses: a graph notice beside a stale path must not turn the
+    # finding's exit 1 into a pass, and the failing line still counts the notices, as the passing
+    # line does. Every other case had one or the other, so both mutations survived:
+    # `mutations/`'s "an advisory memory-graph notice clears a stale path's failure" and "the
+    # failing memory refs line stops counting the graph's notices".
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see `src/gone.py` and [[gone]]\n")
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    assert capsys.readouterr().out == (
+        "1 stale reference(s): developer/a.md:8 [dead-reference]; "
+        "1 advisory link-graph notice(s), which do not gate\n"
+    )
+    assert invoke(["memory", "refs", "--json", *flags(root)]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["summary"] == (
+        "1 stale reference(s): developer/a.md:8 [dead-reference]; "
+        "1 advisory link-graph notice(s), which do not gate"
+    )
+    assert [(f["rule"], f["detail"]) for f in data["findings"]] == [
+        ("dead-reference", "src/gone.py")
+    ]
+    assert [(n["rule"], n["path"], n["detail"]) for n in data["notices"]] == [
+        ("dead-wiki-link", "developer/a.md", "gone")
+    ]
+
+
 def test_a_missing_store_directory_is_said_in_the_resolvers_own_words(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

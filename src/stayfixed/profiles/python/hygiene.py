@@ -78,6 +78,27 @@ _PYC_MTIME_MASK = 0xFFFFFFFF
 # between the check and the read. The source is not held to this: the interpreter follows a
 # symlinked source too.
 _PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+# The two bounds on the walk for `.pyc` files, past either of which it stops and reports that it
+# could not tell. Named caps (CONTRIBUTING.md#named-caps), and the shipped file that changes with
+# them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook that runs this walk after a red test
+# run has a 10 s timeout there, which the two together must stay well under. A hook that times
+# out delivers nothing and never banks its once-key, so an unbounded walk over a large tree was
+# paid again after every red run.
+#
+# The walk has two halves of very different cost, so each has its own count. Listing charges
+# every directory entry under the code roots, not only the bytecode. Reading charges every `.pyc`
+# the listing found, before its source is stat'ed and it is opened and read: tens of times a
+# listed entry, and the entry cap alone does not bound it, since any number of `.pyc` files share
+# one source (the name before the first dot) -- 200k of them under one `m.py` took 18 s with the
+# entry cap alone. Measured on a laptop with a warm cache, over 499,990 `.pyc` files sharing one
+# source, the worst tree for both halves: listing them took 0.26-0.46 s, and listing plus reading
+# up to the read cap took 1.2-1.6 s at 10k reads, 1.6-3.0 s at 20k and 3.8-7.6 s at 50k. 20k is
+# the largest of those under a third of the timeout, which leaves room for a slower disk, a cold
+# cache and the `git status` the same hook runs; it is more bytecode, and 500k more entries, than
+# a code root holds once virtual environments and dependency trees are outside it.
+# `docs/cli.md`'s `test hygiene` section states both numbers.
+BYTECODE_WALK_ENTRIES = 500_000
+BYTECODE_READ_FILES = 20_000
 
 # The two counts `report` returns, and the names `stayfixed test hygiene --json` prints them under.
 STALE_KEY = "stale"  # .pyc files whose recorded source mtime no longer matches the source
@@ -88,6 +109,14 @@ STALE = (
     "interpreter may be importing a build that predates a fix on disk, which fails "
     "DETERMINISTICALLY in the shape of the defect the test pins. Delete the `__pycache__` "
     "directories under those roots, then re-run before attributing anything."
+)
+# The note for a walk that stopped at either cap: it names both, numbers of this module's, since
+# the counts do not say which one stopped it, and neither stale bytecode nor its absence.
+UNTOLD = (
+    "the configured code roots hold more than {entries} directory entries or {files} .pyc files, "
+    "so the walk for .pyc files stopped there and could not tell whether the interpreter imported "
+    "a build older than its source. If the failure could be a stale build, delete the "
+    "`__pycache__` directories under those roots and re-run before attributing anything."
 )
 
 
@@ -121,17 +150,64 @@ def _recorded_source_mtime(pyc: Path) -> int | None:
     return int(struct.unpack("<I", header[_PYC_TIMESTAMP])[0])
 
 
-def _stale_bytecode(roots: Iterable[Path]) -> int:
-    stale = 0
-    for directory in roots:
-        for pyc in directory.rglob("*.pyc"):
-            if pyc.parent.name != "__pycache__":
+def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
+    """Every `__pycache__` directory under `roots` with the names in it that end in `.pyc`, or
+    `None` when the walk visited more than `BYTECODE_WALK_ENTRIES` entries and stopped. The cap
+    is one total across `roots`, since every root a configuration lists would otherwise multiply
+    the hook's time.
+
+    Each root is followed, and below it no symlinked directory is entered, a `__pycache__`
+    included; hidden directories are walked, names compare case-sensitively, and only a
+    `__pycache__`'s `.pyc` files are kept, the one place the interpreter imports them from for
+    the sources beside it. That is what
+    `Path.rglob("*.pyc")` did on 3.11 to 3.13, measured on each: this walk replaces it because
+    rglob counts nothing it skips, so no bound could be put on what it visits. A directory that
+    cannot be listed is passed over, as rglob passed over it.
+    """
+    found: list[tuple[Path, list[str]]] = []
+    visited = 0
+    for root in roots:
+        pending = [root]
+        while pending:
+            directory = pending.pop()
+            names: list[str] = []
+            try:
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        visited += 1
+                        if visited > BYTECODE_WALK_ENTRIES:
+                            return None
+                        if entry.is_dir(follow_symlinks=False):
+                            pending.append(directory / entry.name)
+                        elif entry.name.endswith(".pyc"):
+                            names.append(entry.name)
+            except OSError:
                 continue
-            source = pyc.parent.parent / (pyc.name.split(".")[0] + ".py")
+            if names and directory.name == "__pycache__":
+                found.append((directory, names))
+    return found
+
+
+def _stale_bytecode(roots: Iterable[Path]) -> int | None:
+    """How many `.pyc` files under `roots` record a source mtime their source no longer has, or
+    `None` when the walk stopped at either cap -- `BYTECODE_WALK_ENTRIES` on the listing,
+    `BYTECODE_READ_FILES` on the `.pyc` files it goes on to read: a count of what it reached
+    before then would be no answer, in either direction."""
+    walked = _bytecode(roots)
+    if walked is None:
+        return None
+    stale = 0
+    read = 0
+    for cache, names in walked:
+        for name in names:
+            read += 1
+            if read > BYTECODE_READ_FILES:
+                return None
+            source = cache.parent / (name.split(".")[0] + ".py")
             try:
                 if not source.is_file():
                     continue
-                recorded = _recorded_source_mtime(pyc)
+                recorded = _recorded_source_mtime(cache / name)
                 if recorded is None:
                     continue
                 if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
@@ -164,11 +240,16 @@ class PythonHint:
             current == "-m" and following == _PYTEST for current, following in pairwise(argv)
         )
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
         roots = contained_roots(root, config)
-        return {STALE_KEY: _stale_bytecode(roots), ROOTS_KEY: len(roots)}
+        stale = _stale_bytecode(roots)
+        if stale is None:
+            return None
+        return {STALE_KEY: stale, ROOTS_KEY: len(roots)}
 
-    def note(self, counts: Mapping[str, int]) -> str | None:
+    def note(self, counts: Mapping[str, int] | None) -> str | None:
+        if counts is None:
+            return UNTOLD.format(entries=BYTECODE_WALK_ENTRIES, files=BYTECODE_READ_FILES)
         stale = counts.get(STALE_KEY, 0)
         if not stale:
             return None

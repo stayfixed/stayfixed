@@ -37,6 +37,7 @@ from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
@@ -886,9 +887,7 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
         ledger(root)
 
 
-# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
-# Python, which no reader caught, and both files below are ones a clone can commit.
-NESTED = "[" * 200_000 + "]" * 200_000
+# `NESTED`, which no reader caught, in two files a clone can commit.
 
 
 def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
@@ -943,11 +942,7 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path
         )
 
 
-# An integer literal longer than the interpreter converts, 4,300 digits by default on every
-# supported Python: `json.loads` raises a plain `ValueError` for it, which is neither the
-# `JSONDecodeError` nor the `RecursionError` a reader catches, and both files below are ones a
-# clone can commit.
-LONG_NUMBER = "1" * 5_000
+# `LONG_NUMBER`, which no reader caught, in two files a clone can commit.
 
 
 def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
