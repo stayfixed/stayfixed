@@ -31,10 +31,9 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.doctor import checks
+from stayfixed.doctor import checks, entries, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
 from stayfixed.doctor.checks import (
-    SETTINGS_FILES,
     VERSION_AHEAD,
     VERSION_BEHIND,
     VERSION_UNORDERED,
@@ -44,6 +43,7 @@ from stayfixed.doctor.checks import (
     WORKFLOW_NOT_A_FILE,
     plugin_root,
 )
+from stayfixed.doctor.entries import SETTINGS_FILES
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -1187,14 +1187,14 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
     context = _context(root, load(root, machine=_machine(tmp_path)))
-    row = checks._hook_entries(context)
+    row = entries._hook_entries(context)
     assert "could not be read as hook entries" in row.detail
 
 
 # Every settings file the walk reads, each with the directory it is read from: the three a project
 # keeps, and the machine's own copy under the home directory, which the row names by its `~/` label.
 WALKED = {
-    **{relative: ("root", relative) for relative in checks.SETTINGS_FILES},
+    **{relative: ("root", relative) for relative in entries.SETTINGS_FILES},
     f"~/{USER_SETTINGS}": ("home", USER_SETTINGS),
 }
 
@@ -1526,7 +1526,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     names = [name for name, _ in module.CHECKS]
     assert len(names) == 11
     assert spelled(module, names) == dict.fromkeys(names, 1)
-    found = module.discover_contributors()
+    found = registry.discover_contributors()
     # The three delivery areas, so the loop below is not vacuously true of no area at all.
     assert [name for name, _ in found] == [
         "stayfixed.attach.doctor",
@@ -1548,7 +1548,9 @@ def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -
     # misnamed; this is the guard that outlives that.
     root = _initialised(tmp_path)
     rows = _checks(tmp_path, root)
-    contributed = [name for each in checks.contributions() for name, _ in each.checks]
+    contributed = [
+        name for each in registry.contributions(checks.CHECKS) for name, _ in each.checks
+    ]
     assert [row.name for row in rows] == [name for name, _ in module_checks()] + contributed
 
 

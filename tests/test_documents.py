@@ -769,7 +769,8 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # Mutation: rename one check in `docs/cli.md`'s table -> reddens naming the row. In order
     # and not as a set, because the table's order is the report's order and the document says
     # so: the core's checks, then each area's contribution in area-name order.
-    from stayfixed.doctor.checks import CHECKS, contributions
+    from stayfixed.doctor.checks import CHECKS
+    from stayfixed.doctor.registry import contributions
 
     section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
@@ -778,7 +779,7 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # a regex that matched nothing would make the comparison below vacuously true, and a
     # section that lost its table would look exactly like one that never had it.
     expected = [name for name, _ in CHECKS]
-    expected += [name for contribution in contributions() for name, _ in contribution.checks]
+    expected += [name for contribution in contributions(CHECKS) for name, _ in contribution.checks]
     assert len(rows) == len(expected), rows
     assert rows == expected, [
         (row, name) for row, name in zip(rows, expected, strict=True) if row != name

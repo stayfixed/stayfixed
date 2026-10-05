@@ -2,7 +2,7 @@
 tells `hook-entries` what it put into settings files through its `Claims`.
 
 The fake areas below are modules, or an import's exception in an area's place, injected through
-`checks.discover_contributors`, the seam the discovery reads, the way `tests/test_cli.py`
+`registry.discover_contributors`, the seam the discovery reads, the way `tests/test_cli.py`
 replaces `cli.discover_registrars`: a test that shipped a real `doctor.py` to prove the
 convention would be a check in every user's report. With the fakes in place no real area is
 discovered, so what these cases prove is the core's reading of a contribution; what a real area
@@ -20,7 +20,7 @@ from types import ModuleType
 
 import pytest
 
-from stayfixed.doctor import checks
+from stayfixed.doctor import checks, registry
 from stayfixed.doctor.api import (
     OK,
     RED,
@@ -33,6 +33,7 @@ from stayfixed.doctor.api import (
     Row,
     Wording,
 )
+from stayfixed.doctor.entries import SETTINGS_FILES
 from tests.doctor.test_checks import _checks, _initialised
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -53,7 +54,7 @@ def _contribute(
     """Discovery answering `areas` in order: each a module that imported, or the qualified name of
     one that did not with the exception its import raised."""
     found = [area if isinstance(area, tuple) else (area.__name__, area) for area in areas]
-    monkeypatch.setattr("stayfixed.doctor.checks.discover_contributors", lambda: found)
+    monkeypatch.setattr("stayfixed.doctor.registry.discover_contributors", lambda: found)
 
 
 def test_a_contributed_check_runs_after_the_core_checks(
@@ -288,7 +289,7 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
         f"a name {owner} already reports",
         "report this, with the command you ran",
     )
-    assert [each.claims for each in checks.contributions()] == [None, None]
+    assert [each.claims for each in registry.contributions(checks.CHECKS)] == [None, None]
 
 
 def test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row(
@@ -405,7 +406,7 @@ def _speaks_no_attach(row: Check) -> None:
 
 def _hooked(root: Path, *commands: str) -> None:
     """`root`'s `SETTINGS`, holding one `PreToolUse` hook entry per command, in order."""
-    assert SETTINGS in checks.SETTINGS_FILES, "the walk would never open this file"
+    assert SETTINGS in SETTINGS_FILES, "the walk would never open this file"
     entries = [{"type": "command", "command": command} for command in commands]
     (root / SETTINGS).parent.mkdir(parents=True, exist_ok=True)
     (root / SETTINGS).write_text(

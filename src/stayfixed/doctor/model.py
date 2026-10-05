@@ -1,10 +1,13 @@
 """What a `doctor` row is made of, and what an area hands the report to add rows of its own.
 
 The vocabulary lives here rather than in `checks.py` because two kinds of module speak it: the
-core's checks in `checks.py`, and an area's own `doctor.py`, which `checks.run_checks` discovers by
-name and which reaches this module through `doctor/api.py`. `checks.py` is the core's checks and
-the run; this module is the shapes they share and the one answer every area reads alike, the
-overlay root (`Context.overlay_root`), so it imports nothing of any area.
+core's checks in `checks.py` and `entries.py`, and an area's own `doctor.py`, which
+`registry.contributions` discovers by name and which reaches this module through `doctor/api.py`.
+`checks.py` is the core's checks and the run; this module is the shapes they share and the one
+answer every area reads alike, the overlay root (`Context.overlay_root`), so it imports nothing of
+any area. `REPORT_THIS` is here too, because the run's guard in `checks.py` and the rows
+`registry.py` builds for an area that could not contribute both give it, and `checks.py` imports
+`registry.py`, so neither of the two can hold it for the other.
 """
 
 from __future__ import annotations
@@ -26,6 +29,9 @@ RED: Final = "red"
 SKIP: Final = "skip"
 Status = Literal["ok", "warn", "red", "skip"]
 STATUSES: tuple[Status, ...] = (OK, WARN, RED, SKIP)
+# The remedy of a row that is red because stayfixed's own code broke: nothing the reader did can
+# clear it, and the command they ran is what a fix starts from.
+REPORT_THIS = "report this, with the command you ran"
 
 
 @dataclass(frozen=True)

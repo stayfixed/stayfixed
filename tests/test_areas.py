@@ -511,7 +511,7 @@ def test_in_isolation_no_core_module_loads_a_delivery_area() -> None:
     # The source rule above reads statements, and a statement inside a function is pardoned there
     # because it is the pinned crossing. What it cannot see is when that statement runs: the
     # crossing stood at module level in `setup/run.py`, `setup/api.py` re-exports from that
-    # module, and `doctor/checks.py` imports `setup.api` for `USER_SETTINGS` — so importing
+    # module, and `doctor/entries.py` imports `setup.api` for `USER_SETTINGS` — so importing
     # `doctor`'s report loaded `overlay.api`, `overlay.create`, `memory.store` and the rest of the
     # private layer, with every rule green. So every core module is imported in one clean
     # interpreter, which loads the union of their import closures, and no delivery module may be

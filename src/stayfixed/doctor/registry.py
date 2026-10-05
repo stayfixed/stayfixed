@@ -1,0 +1,162 @@
+"""How the report finds the rows the areas contribute, and what an area that cannot gets instead.
+
+Every `stayfixed.<area>.doctor` is discovered by name (`discover_contributors`), its `register()`
+is asked under a guard, and every way an area's contribution can fail costs one red row named
+after the area and never the report (`contributions`). None of it is a check: it is the one
+failure policy for an area's own code and the seam a test replaces to inject an area, so it is
+kept apart from the core's checks, and a test patches `discover_contributors` here, where
+`contributions` reads it. It imports nothing of `checks.py`: the core's checks reach it as
+`contributions`' argument, whose names no area may repeat, so `checks.py` imports this module
+for the run without a cycle.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from types import ModuleType
+from typing import TypeGuard
+
+from stayfixed.areas import area_imports
+from stayfixed.doctor.model import RED, REPORT_THIS, SKIP, Check, Context, Contribution, Row
+
+
+@dataclass(frozen=True)
+class _Unregistered:
+    """The one check an area gets in place of its own when it could not contribute them: a red row
+    saying why, named after the area and sitting where its rows would have been."""
+
+    detail: str
+
+    def __call__(self, context: Context) -> Row:
+        return Row(RED, self.detail, REPORT_THIS)
+
+
+def _well_formed(contribution: object) -> TypeGuard[Contribution]:
+    """Whether `register()` answered a `Contribution` of `(name, check)` pairs, each name text
+    and each check callable, with claims that are a function or absent.
+
+    Asked before any of it is read, because every way an area's own code can get this wrong —
+    `None`, the bare pairs, a pair without its check — otherwise fails later, inside the run,
+    where it costs the report."""
+    if not isinstance(contribution, Contribution) or not isinstance(contribution.checks, tuple):
+        return False
+    if contribution.claims is not None and not callable(contribution.claims):
+        return False
+    return all(
+        isinstance(pair, tuple)
+        and len(pair) == 2
+        and isinstance(pair[0], str)
+        and bool(pair[0])
+        and callable(pair[1])
+        for pair in contribution.checks
+    )
+
+
+def _registered(qualified: str, found: ModuleType | Exception) -> Contribution | str:
+    """What the area's `doctor.py` contributes, or why it could not: the import's failure, or a
+    `register()` that raised or answered something that is not a `Contribution`.
+
+    The module and its `register()` are an area's code as its checks are, so they get their
+    guard, and the reason names the exception's type and never its message, for
+    `checks._guarded`'s reason. `qualified` is stayfixed's own module name and never
+    repository-authored, so it prints.
+    """
+    if isinstance(found, Exception):
+        return f"{qualified} could not be imported: {type(found).__name__}"
+    reason = f"{qualified} could not contribute its rows"
+    try:
+        contribution: object = found.register()
+    except Exception as exc:  # an area's own code, guarded as its checks are
+        return f"{reason}: {type(exc).__name__}"
+    if not _well_formed(contribution):
+        return f"{reason}: its register() did not return a Contribution of (name, check) pairs"
+    return contribution
+
+
+def _repeated(contribution: Contribution, owners: Mapping[str, str]) -> str | None:
+    """Why `contribution` may not join a report whose names `owners` maps to who reports them:
+    the first of its names that one of them, or an earlier pair of its own, already has."""
+    named = dict(owners)
+    for name, _ in contribution.checks:
+        if name in named:
+            return f"its check {name!r} repeats a name {named[name]} already reports"
+        named[name] = "it"
+    return None
+
+
+def _unregistered(qualified: str, detail: str, owners: dict[str, str]) -> Contribution:
+    """The one red row an area that could not contribute gets, recorded in `owners`.
+
+    The row is named after the area. When the report already has that name — a core check's,
+    or a check an earlier area contributed — it is the area's name numbered from 2, `<area> (2)`,
+    `<area> (3)` and so on, the first that is free: the row is a name in the report like any
+    other, and a name is never in it twice. The row carries no claims, because the area's claims
+    go with its rows: `hook-entries` then reads every entry that area put into settings files as
+    one nothing records, which is red, since an area that cannot say what it wrote vouches for
+    nothing.
+    """
+    area = qualified.removesuffix(".doctor").rpartition(".")[2]
+    name, number = area, 1
+    while name in owners:
+        number += 1
+        name = f"{area} ({number})"
+    owners[name] = qualified
+    return Contribution(checks=((name, _Unregistered(detail)),))
+
+
+def discover_contributors() -> list[tuple[str, ModuleType | Exception]]:
+    """Every `stayfixed.<area>.doctor`, in area-name order, with no shared registry, each under its
+    qualified name with the module, or with the exception its import raised.
+
+    The seam the report's discovery reads, and the one a test replaces to inject an area, as
+    `cli.discover_registrars` is for commands.
+    """
+    return area_imports("doctor")
+
+
+def contributions(core: Sequence[tuple[str, Callable[[Context], Row]]]) -> list[Contribution]:
+    """What each area's `doctor.py` contributes, in area-name order, or one red row for an area
+    that could not contribute. `core` is the core's checks, `checks.CHECKS`, whose rows come first
+    in the report.
+
+    **One failure policy.** Every way an area's contribution can fail is a defect in stayfixed's
+    own code, and every one costs the same thing: that area's rows and its claims become one red
+    row named after it (`_unregistered`), and the rest of the report stands. A `doctor.py` that
+    fails to import, a `register()` that raises, one that answers something that is not a
+    `Contribution` of `(name, check)` pairs, and one that contributes a name already in the
+    report, alike — none ends the report, which is what a user has left when everything else is
+    broken.
+
+    A row's name is its only identity — the summary line, `--json` and the skill that relays the
+    report all key on it — so a contributed name equal to a core check's, to one an earlier area
+    contributed, or to another of the area's own, is that last failure, found here before any
+    check is asked. The names are stayfixed's own code and never repository-authored, so the row
+    prints them.
+
+    Each area's `register()` is called once per call of this function, so whatever an area
+    resolves lazily for its checks is resolved afresh for each report.
+    """
+    owners = dict.fromkeys((name for name, _ in core), "the core")
+    found: list[Contribution] = []
+    for qualified, imported in discover_contributors():
+        contribution = _registered(qualified, imported)
+        if isinstance(contribution, Contribution):
+            repeated = _repeated(contribution, owners)
+            if repeated is None:
+                owners.update((name, qualified) for name, _ in contribution.checks)
+                found.append(contribution)
+                continue
+            contribution = f"{qualified} could not contribute its rows: {repeated}"
+        found.append(_unregistered(qualified, contribution, owners))
+    return found
+
+
+def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
+    """A row of the report that is built before any check can be asked: a skip giving `reason`,
+    because every check would be asked with no configuration to read — except the row of an area
+    that could not contribute, which is about stayfixed's own code, which no configuration
+    changes, and so is red here as everywhere."""
+    if isinstance(check, _Unregistered):
+        return Check(name, RED, check.detail, REPORT_THIS)
+    return Check(name, SKIP, reason, "")

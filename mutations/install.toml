@@ -396,7 +396,7 @@ reddens = [
 # and without this comparison every such entry reads as one `attach` installed.
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if False:"
 reddens = [
@@ -411,7 +411,7 @@ reddens = [
 # account for.
 [[mutation]]
 name = "doctor swallows a settings file it could not read instead of reporting it"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        except Refusal:\n            blind.append(label)"
 after = "        except Refusal:\n            pass"
 reddens = [
@@ -508,7 +508,7 @@ reddens = [
 # of its own -- costs its rows as one red row named after it, as a register() that raises does.
 [[mutation]]
 name = "doctor lets an area repeat a name the report already has"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "        if name in named:"
 after = "        if False:"
 reddens = [
@@ -518,7 +518,7 @@ reddens = [
 
 [[mutation]]
 name = "doctor lets an area name two of its checks alike"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = '        named[name] = "it"'
 after = "        pass"
 reddens = [
@@ -529,7 +529,7 @@ reddens = [
 # name is already taken it is numbered past every name taken, never printed twice.
 [[mutation]]
 name = "an area's failure row takes a name the report already has"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    while name in owners:"
 after = "    while False:"
 reddens = [
@@ -540,7 +540,7 @@ reddens = [
 # area that contributes a check under it joins, and the report prints two rows named after the area.
 [[mutation]]
 name = "an area's failure row is not counted among the report's names"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    owners[name] = qualified\n"
 after = "    pass\n"
 reddens = [
@@ -552,7 +552,7 @@ reddens = [
 # one is turned away too.
 [[mutation]]
 name = "asking whether an area repeats a name records its names in the report"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    named = dict(owners)"
 after = "    named = owners"
 reddens = [
@@ -568,7 +568,7 @@ reddens = [
 # file.
 [[mutation]]
 name = "the attach ledger vouches for a hook entry on its own"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            elif askable and not any(command in (answer.granted or ()) for answer in holders):"
 after = "            elif False:"
 reddens = [
@@ -582,7 +582,7 @@ reddens = [
 # and nothing granted, and call every entry `attach` installed one that no attach recorded.
 [[mutation]]
 name = "hook-entries ignores what the areas claim"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        answers = [ask(context) for ask in context.claims]"
 after = "        answers = [ask(context) for ask in ()]"
 reddens = [
@@ -607,7 +607,7 @@ reddens = [
 # the owner to remove what that area installed.
 [[mutation]]
 name = "hook-entries keeps only the last area's recorded ids"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]"
 after = "            holders = [answer for answer in answers[-1:] if entry_id in (answer.recorded or {})]"
 reddens = [
@@ -618,7 +618,7 @@ reddens = [
 # the overlay "does not grant".
 [[mutation]]
 name = "hook-entries keeps only the last area's granted commands"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "(command in (answer.granted or ()) for answer in holders)"
 after = "(command in (answer.granted or ()) for answer in answers[-1:])"
 reddens = [
@@ -630,7 +630,7 @@ reddens = [
 # and a record is a file a repository can write.
 [[mutation]]
 name = "hook-entries absolves an entry on one area's record and another area's grant"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "(command in (answer.granted or ()) for answer in holders)"
 after = "(command in (answer.granted or ()) for answer in answers)"
 reddens = [
@@ -641,7 +641,7 @@ reddens = [
 # does not, vouches for nothing.
 [[mutation]]
 name = "hook-entries compares a grant by its id rather than its command"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "(command in (answer.granted or ()) for answer in holders)"
 after = "(entry_id in {marker_id(text) for text in (answer.granted or ())} for answer in holders)"
 reddens = [
@@ -654,7 +654,7 @@ reddens = [
 # area's readable record turns "could not be established" back into a column computed without it.
 [[mutation]]
 name = "a later area's record overwrites one an earlier area could not read"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "    readable = all(answer.recorded is not None for answer in answers)"
 after = "    readable = all(answer.recorded is not None for answer in answers[-1:])"
 reddens = [
@@ -665,7 +665,7 @@ reddens = [
 # area's grants vouch for the entries it would have.
 [[mutation]]
 name = "a later area's grants overwrite an overlay an earlier area could not ask"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "    askable = all(answer.granted is not None for answer in answers)"
 after = "    askable = all(answer.granted is not None for answer in answers[-1:])"
 reddens = [
@@ -677,7 +677,7 @@ reddens = [
 # reported red with a remedy telling the owner to remove what was installed.
 [[mutation]]
 name = "hook-entries judges provenance against an overlay that could not be asked"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            elif askable and not any("
 after = "            elif not any("
 reddens = [
@@ -690,7 +690,7 @@ reddens = [
 # asked. Withholding the whole column there turned that red into a warning and an exit of 0.
 [[mutation]]
 name = "an overlay that cannot be asked silences an entry no record holds"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if not holders and not unread and askable:"
 reddens = [
@@ -701,7 +701,7 @@ reddens = [
 # sentence and remedy for recording one, never the refused grant's.
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                elif refusing := [answer for answer in holders if answer.sourced]:"
 after = "                elif refusing := holders:"
 reddens = [
@@ -715,7 +715,7 @@ reddens = [
 # checkout its record binds to another remote, grants the entry to the checkout it does bind.
 [[mutation]]
 name = "hook-entries says a source refused what its area says it grants elsewhere"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = '    return words.ungranted or f"{words.source} does not grant them"'
 after = '    return f"{words.source} does not grant them"'
 reddens = [
@@ -728,7 +728,7 @@ reddens = [
 # mismatch without `--trust-remote`.
 [[mutation]]
 name = "hook-entries offers the vouch an area says may be refused"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        remedy = words.regrant or ("
 after = "        remedy = ("
 reddens = [
@@ -738,7 +738,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries offers the rebuild an area says may be refused, beside an unreadable record"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = '            f"{words.regrant or _rebuild(words)}"'
 after = '            f"{_rebuild(words)}"'
 reddens = [
@@ -747,7 +747,7 @@ reddens = [
 
 [[mutation]]
 name = "a blind settings file softens an entry nothing on this machine vouches for"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
 after = "        red = (unrecorded, ungranted, unread_unvouched, unread_ungranted, unchecked)"
 reddens = [
@@ -756,7 +756,7 @@ reddens = [
 
 [[mutation]]
 name = "a blind settings file softens an entry beside an unreadable record that nothing grants"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
 after = "        red = (unrecorded, unvouched, ungranted, unchecked)"
 reddens = [
@@ -769,7 +769,7 @@ reddens = [
 # of 0 on every machine, overlay or none.
 [[mutation]]
 name = "an unreadable record withholds judgement of every entry"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                if any(command in (answer.granted or ()) for answer in unread):"
 after = "                if unread:"
 reddens = [
@@ -791,7 +791,7 @@ reddens = [
 # got corrupted reads red for every entry their overlay grants, told to remove what they installed.
 [[mutation]]
 name = "an unreadable record withholds judgement of nothing its area grants"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                if any(command in (answer.granted or ()) for answer in unread):"
 after = "                if False:"
 reddens = [
@@ -804,7 +804,7 @@ reddens = [
 # installed reads as recorded nowhere, red, with a remedy telling the owner to remove it.
 [[mutation]]
 name = "an unreadable record reads as one recording nothing"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if not holders:"
 reddens = [
@@ -820,7 +820,7 @@ reddens = [
 # and remedy say to record one, never that one refused.
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside an unreadable record"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                    asked = [answer for answer in unread if answer.sourced]"
 after = "                    asked = unread"
 reddens = [
@@ -834,7 +834,7 @@ reddens = [
 # red row `attach` cannot clear yet.
 [[mutation]]
 name = "the rebuild remedy is offered where the overlay cannot be asked"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "_rebuild(answer.wording) if answer.granted is not None else"
 after = "_rebuild(answer.wording) if True else"
 reddens = [
@@ -847,7 +847,7 @@ reddens = [
 # the walkthrough follows that remedy to green.
 [[mutation]]
 name = "an unreadable ledger is never told how to rebuild it"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "_rebuild(answer.wording) if answer.granted is not None else"
 after = "_rebuild(answer.wording) if False else"
 reddens = [
@@ -861,7 +861,7 @@ reddens = [
 # below puts one sentence back in the wrong area's words, or in words no claimant gave.
 [[mutation]]
 name = "hook-entries names a record where no area claims one"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = """f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere\""""
 after = """f"are not recorded in {' or '.join(records)}\""""
 reddens = [
@@ -870,7 +870,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries names only the first area's record of an entry no record holds"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        records = list(dict.fromkeys(answer.wording.record for answer in answers))"
 after = "        records = list(dict.fromkeys(answer.wording.record for answer in answers[:1]))"
 reddens = [
@@ -879,7 +879,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries names the first area's record wherever a record could not be read"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        unreadable = [answer for answer in answers if answer.recorded is None]"
 after = "        unreadable = answers[:1]"
 reddens = [
@@ -889,7 +889,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries names only the first source that could not be asked"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        unasked = [answer for answer in answers if answer.granted is None]"
 after = "        unasked = [answer for answer in answers if answer.granted is None][:1]"
 reddens = [
@@ -898,7 +898,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries tells a refused grant in the first area's words"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                    ungranted.append((refusing[0], where))"
 after = "                    ungranted.append((answers[0], where))"
 reddens = [
@@ -908,7 +908,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries tells an unvouched entry in the first area's words"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                    unvouched.append((holders[0], where))"
 after = "                    unvouched.append((answers[0], where))"
 reddens = [
@@ -917,7 +917,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries tells an entry beside unreadable records in the first one's words"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                        unread_ungranted.append((asked[0], where))"
 after = "                        unread_ungranted.append((unread[0], where))"
 reddens = [
@@ -929,7 +929,7 @@ reddens = [
 # read as the machine's warning, and a forged entry the row would have listed kept the exit code 0.
 [[mutation]]
 name = "claims that raise an OSError reach the guard as one"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        raise UnansweredClaims(type(exc).__name__) from exc"
 after = "        raise"
 reddens = [
@@ -942,7 +942,7 @@ reddens = [
 # the report, which otherwise ends in an internal error with no report at all.
 [[mutation]]
 name = "doctor calls an area's register() unguarded"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    except Exception as exc:  # an area's own code, guarded as its checks are"
 after = "    except OSError as exc:  # an area's own code, guarded as its checks are"
 reddens = [
@@ -951,7 +951,7 @@ reddens = [
 
 [[mutation]]
 name = "doctor takes whatever an area's register() returns"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    if not _well_formed(contribution):"
 after = "    if False:"
 reddens = [
@@ -968,7 +968,7 @@ reddens = [
 # whose register() then fails.
 [[mutation]]
 name = "doctor reads an import failure as a module"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    if isinstance(found, Exception):"
 after = "    if False:"
 reddens = [
@@ -979,7 +979,7 @@ reddens = [
 # early report too, where every other check after the first skips for want of a configuration.
 [[mutation]]
 name = "the early report skips an area that could not register"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    if isinstance(check, _Unregistered):"
 after = "    if False:"
 reddens = [
@@ -1300,7 +1300,7 @@ reddens = [
 # assertion and nothing else.
 [[mutation]]
 name = "an area reaches past another area's api.py again"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = 'from stayfixed.setup.api import USER_SETTINGS'
 after = 'from stayfixed.setup.machine import USER_SETTINGS'
 reddens = [
@@ -2359,7 +2359,7 @@ reddens = [
 # reads such a path as a file it is blind to.
 [[mutation]]
 name = "hook-entries skips a settings file it cannot ask about"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            regular = names_regular_file(path)\n        except OSError:\n            blind.append(label)"
 after = "            regular = names_regular_file(path)\n        except OSError:\n            pass"
 reddens = [
@@ -2374,7 +2374,7 @@ reddens = [
 # at 0, with or without a ledger, with an overlay recorded or not.
 [[mutation]]
 name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        except ParserLimitError:\n            unchecked.append(label)"
 after = "        except ParserLimitError:\n            blind.append(label)"
 reddens = [
@@ -2387,7 +2387,7 @@ reddens = [
 # commit and a harness running as the same user cannot read either, so it stays a warning.
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = """            document = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             blind.append(label)"""
@@ -2404,7 +2404,7 @@ reddens = [
 # lost its red to a warning and an exit of 0.
 [[mutation]]
 name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = """            document = path.read_text(encoding="utf-8", errors="replace")
         except OSError:"""
 after = """            document = path.read_text(encoding="utf-8")
@@ -2418,7 +2418,7 @@ reddens = [
 # check has made red.
 [[mutation]]
 name = "a blind settings file softens a settings file nothing can check"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
 after = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
 reddens = [
