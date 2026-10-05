@@ -35,6 +35,7 @@ def json_object(
     *,
     error: Callable[[str], Exception],
     limit: Callable[[str], Exception] | None = None,
+    shape: Callable[[str], Exception] | None = None,
     numbers: Callable[[str], object] = int,
 ) -> dict[str, Any]:
     """`text` parsed as a JSON object, with each integer literal handed to `numbers`.
@@ -43,7 +44,10 @@ def json_object(
     is not a JSON object`, and `<label>` before `NESTED` or `LONG_NUMBER` for valid JSON past the
     parser's reach. `error` builds the exception each sentence is raised as. `limit`, when a
     caller gives one, builds the exception for the parser's reach instead, and is handed the
-    clause alone — `NESTED` or `LONG_NUMBER` — so the caller says whose document it is.
+    clause alone — `NESTED` or `LONG_NUMBER` — so the caller says whose document it is. `shape`,
+    when a caller gives one, builds the exception for valid JSON that is not an object instead,
+    for a caller whose sentence for that document is about what it fails to say rather than
+    about how it reads: the overlay probe, whose manifest has to name the tree an overlay.
 
     Empty text is not an object here: a caller for which an empty file means an empty object
     answers that before it asks, and one for which it is no record at all lets it fail as JSON.
@@ -59,7 +63,7 @@ def json_object(
         # integer literal the interpreter will not convert.
         raise _past(label, LONG_NUMBER, error, limit) from None
     if not isinstance(raw, dict):
-        raise error(f"{label} is not a JSON object")
+        raise (error if shape is None else shape)(f"{label} is not a JSON object")
     return raw
 
 

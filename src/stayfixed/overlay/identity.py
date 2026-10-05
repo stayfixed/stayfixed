@@ -34,11 +34,21 @@ file failed and what it had to say, never what it actually said.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from typing import Any
 
 from stayfixed.errors import Refusal
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay.naming import NAMED, SEGMENT, claims
+
+
+class _Unreadable(Exception):
+    """A manifest that is not JSON, or is JSON past this interpreter's parser. Never printed:
+    `overlay_fault` says which file in its own words."""
+
+
+class _NotAnObject(Exception):
+    """A manifest that parses and is not an object, so it names nothing."""
 
 
 def segment(label: str, value: str) -> str:
@@ -66,11 +76,20 @@ def overlay_fault(root: Path) -> str | None:
         path = root / row.path
         if not path.is_file():
             return f"{root} does not carry the overlay layout ({row.path} is missing)"
+        # Through `jsonobject`, whose parser-limit arms are the point: a manifest nested past the
+        # parser or holding an integer longer than it converts is valid JSON that `json.loads`
+        # meets with no `JSONDecodeError`, and it ended `setup --overlay` in an internal error. A
+        # manifest that parses and is not an object keeps this probe's own sentence, which says
+        # what it fails to name.
+        document: dict[str, Any] | None
         try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            text = path.read_text(encoding="utf-8")
+            document = json_object(text, str(row.path), error=_Unreadable, shape=_NotAnObject)
+        except (OSError, UnicodeDecodeError, _Unreadable):
             return f"{root} carries a {row.path} that cannot be read as JSON"
-        if not isinstance(document, dict) or not claims(document.get("name"), row.name):
+        except _NotAnObject:
+            document = None
+        if document is None or not claims(document.get("name"), row.name):
             return (
                 f"{root} carries a {row.path} that does not name a stayfixed overlay; its `name` "
                 f"has to be {row.name}, or {row.name}-<owner> after `stayfixed overlay init`"

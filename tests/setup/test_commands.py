@@ -8,11 +8,13 @@ invocation exits 0.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.setup.api import SetupReport
 from tests.runners import Recorder
 
@@ -200,3 +202,49 @@ def test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are(
     assert code == 0
     assert seen["settings"] == home / "dotfiles" / "claude" / "settings.json"
     assert "~" not in str(seen["settings"])
+
+
+# Two manifests that are valid JSON past this interpreter's parser: nested deeper than it follows,
+# and holding an integer longer than it converts (4,300 digits by default).
+PAST_THE_PARSER = {
+    "nested": "[" * 200_000 + "]" * 200_000,
+    "long-number": '{"name": ' + "1" * 5_000 + "}",
+}
+
+
+@pytest.mark.parametrize("manifest", [PLUGIN_MANIFEST, MARKETPLACE_MANIFEST])
+@pytest.mark.parametrize("case", sorted(PAST_THE_PARSER))
+def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    manifest: str,
+) -> None:
+    # `overlay_fault` caught only `JSONDecodeError`, and `json.loads` meets neither document with
+    # one: nesting past what it follows raises `RecursionError`, and the long integer a plain
+    # `ValueError`. So `stayfixed setup --overlay` ended in an internal error instead of refusing
+    # a tree whose manifests it cannot read. Each manifest in turn, the other one well-formed, so
+    # the refusal is about the one asked. Nothing is recorded, and the runner is never reached:
+    # the probe runs above every write.
+    #
+    # Mutation (oracle): `mutations/`'s "the overlay probe lets a manifest past the parser escape"
+    # -> the internal error comes back and every case reddens.
+    overlay = tmp_path / "overlay"
+    (overlay / ".claude-plugin").mkdir(parents=True)
+    (overlay / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), "utf-8")
+    (overlay / MARKETPLACE_MANIFEST).write_text(
+        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), "utf-8"
+    )
+    (overlay / manifest).write_text(PAST_THE_PARSER[case], encoding="utf-8")
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--yes", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
+    code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
+    err = capsys.readouterr().err
+    assert "internal error" not in err
+    assert f"stayfixed: refused: {overlay} carries a {manifest} that cannot be read as JSON" in err
+    assert code == 2
+    assert not machine.exists()
+    assert stub.calls == []

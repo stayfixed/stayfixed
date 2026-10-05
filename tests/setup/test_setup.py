@@ -919,6 +919,27 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     assert _wrote_anything(home, machine) == []
 
 
+@pytest.mark.parametrize("document", ["[]", '"stayfixed-overlay"', "null"])
+def test_a_manifest_that_parses_and_is_not_an_object_names_no_overlay(
+    tmp_path: Path, document: str
+) -> None:
+    # The probe reads its manifests through `jsonobject`, which calls a document that parses and
+    # is not an object "not a JSON object". This probe's own sentence for one is that it does not
+    # name a stayfixed overlay, which says what to write there; "cannot be read as JSON" would be
+    # false about `[]`. Mutation: `identity`'s `shape=_NotAnObject` dropped from the `json_object`
+    # call -> the sentence is the unreadable one and this reddens.
+    from stayfixed.overlay.api import overlay_fault
+
+    _seed_overlay(tmp_path)
+    (tmp_path / PLUGIN_MANIFEST).write_text(document, encoding="utf-8")
+    fault = overlay_fault(tmp_path)
+    assert fault == (
+        f"{tmp_path} carries a {PLUGIN_MANIFEST} that does not name a stayfixed overlay; its "
+        f"`name` has to be stayfixed-overlay, or stayfixed-overlay-<owner> after `stayfixed "
+        f"overlay init`"
+    )
+
+
 def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_path: Path) -> None:
     # The probe was the two manifest *files* existing, which the stayfixed checkout itself satisfies
     # and any Claude Code plugin repository satisfies — so "carries the overlay's own layout"
