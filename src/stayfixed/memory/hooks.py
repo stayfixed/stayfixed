@@ -53,10 +53,10 @@ REVOKED = (
     "run `stayfixed memory trust --in-repo-memory` after reviewing what changed"
 )
 # `git` could not be run, or the machine configuration file is broken. Neither is "there is
-# no store": both used to arrive as one, because `store._git` answered `None` for "could not
-# ask" and for "the answer is nothing" alike, and `overlay_root` answered `None` for a
-# syntax error and for an unrecorded overlay alike. Saying `NO_STORE` for those sent the
-# user to `stayfixed attach` for a fault that was in their machine, not in their project.
+# no store", which is why `gitenv.git_answer` tells "could not ask" from "the answer is
+# nothing" and `overlay_root` raises for a file it cannot read or parse rather than
+# answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
+# user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
 
 
@@ -92,7 +92,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         except Refusal:
             # Not the same event as a disk error, and deliberately not reported as one.
             # `link` raises `PathEscape` when a repository-controlled `memory.groups` name
-            # tries to leave the worktree tree; swallowing that in a blanket catch made an
+            # tries to leave the worktree tree; swallowing that in a blanket catch would make an
             # attempted escape indistinguishable from "nothing to do". It still must not cost
             # the session, and the refusal's message is built out of the offending name — so
             # the fixed line goes to the model and the name stays out of it, exactly as
@@ -109,8 +109,8 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
-    # clauses above buy is that the two failures this function can actually produce are no
-    # longer silent, and are no longer the same event.
+    # clauses above buy is that the two failures this function can actually produce are
+    # neither silent nor the same event.
     except Exception:
         return HookResult()
 

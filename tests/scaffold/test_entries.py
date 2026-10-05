@@ -8,6 +8,7 @@ from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
     apply_entries,
+    entry_commands,
     mark,
     marker_id,
     owned,
@@ -157,8 +158,8 @@ def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() 
     # `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a
     # file the repository chose. The refusal is its own kind, because the document is valid JSON a
     # harness may well read: `doctor` reports it red, where a malformed one is a warning.
-    # Mutation (oracle): `mutations/`'s "the settings engine lets a nested document raise past its
-    # refusal" -> both raise `RecursionError`.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> both raise `RecursionError`.
     nested = '{"hooks": ' + NESTED + "}"
     with pytest.raises(ParserLimitError, match="nested deeper"):
         owned_ids(nested)
@@ -177,13 +178,45 @@ def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge(
     # and a number it cannot hold it cannot write back unchanged, so it refuses. The `ValueError`
     # used to leave the engine past every caller's catch. Mutations (oracle): `mutations/`'s "the
     # settings engine reads a number past the parser's reach in the document doctor walks" ->
-    # `owned_ids` refuses; "the settings engine lets a number past the parser's reach raise past its
-    # refusal" -> `apply_entries` raises `ValueError`.
+    # `owned_ids` refuses; "the JSON object reader lets a number past the parser's reach raise" ->
+    # `apply_entries` raises `ValueError`.
     marked = json.loads(document(("PreToolUse", mark("a.sh", "bg-cleanup"))))
     long = json.dumps(marked)[:-1] + ', "n": ' + LONG_NUMBER + "}"
     assert owned_ids(long) == {"bg-cleanup": "PreToolUse"}
     with pytest.raises(ParserLimitError, match="number longer"):
         apply_entries(long, {})
+
+
+def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_refuses() -> None:
+    # `doctor`'s `hook-entries` names an entry by its position in this list, so every entry holds
+    # a place: two entries sharing one id are two, and one whose command is absent or not a string
+    # is `""`, which no marker matches. An integer is read as its text, as every number is here.
+    # Mutation (oracle): `mutations/`'s "doctor counts hook entries by marker id rather than by
+    # position" -> the second `shared` entry vanishes; the entry names the row's own tests, and
+    # this one reddens under it too, measured by hand.
+    shared = mark("a.sh", "same-id")
+    raw = {
+        "permissions": {"allow": ["Bash(ls)"]},
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": shared}, {"type": "command"}]},
+                {"hooks": [{"command": None}, {"command": 7}, {"command": "plain.sh"}]},
+            ],
+            "SessionStart": [{"hooks": [{"command": shared}]}],
+        },
+    }
+    assert entry_commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
+    assert entry_commands("") == []
+    assert entry_commands(json.dumps({"permissions": {}})) == []
+    # The walk is the engine's strict one: a shape `apply_entries` would refuse is refused here,
+    # as `owned_ids` refuses it, and a number past the parser's reach is read as its text.
+    for refused in ("not json", "[]", '{"hooks": []}', '{"hooks": {"Stop": [1]}}'):
+        with pytest.raises(EntriesError):
+            owned_ids(refused)
+        with pytest.raises(EntriesError):
+            entry_commands(refused)
+    long = json.dumps(raw)[:-1] + ', "n": ' + LONG_NUMBER + "}"
+    assert entry_commands(long) == [shared, "", "", "7", "plain.sh", shared]
 
 
 def test_an_empty_document_gains_the_wanted_entries() -> None:

@@ -16,20 +16,19 @@ three ways that can go wrong: nothing recorded stays nothing recorded, a value n
 survives a rewrite that touched something else, and one table's `root` never collapses into a
 fourth state (see `config.overlay.overlay_root`'s own docstring on that).
 
-The docstring used to say "table by table" while the merge covered exactly three hard-coded
-names and then replaced the whole file, so a `[trust]` table or a key at the top level was gone
-after one `setup`. `README.md` lists this file under "Written by: **you**, or `stayfixed setup`",
-which makes a table this writer does not recognise the ordinary case rather than the exotic one:
-every one of them is carried through in the file's own order, and the three it owns are merged
-in place.
+`README.md` lists this file under "Written by: **you**, or `stayfixed setup`", which makes a
+table this writer does not recognise the ordinary case rather than the exotic one: a merge that
+covered only the three tables it owns and replaced the rest of the file would lose a `[trust]`
+table or a key at the top level after one `setup`. So every table it does not own is carried
+through in the file's own order, and the three it owns are merged in place.
 
 **Two things a rewrite still costs, both stated rather than discovered.** Comments do not
 survive — `tomllib` discards them on the way in, and there is no round-tripping parser in the
 standard library to keep them — and a key that is not a bare TOML key cannot be re-emitted.
 Neither may wedge the command: `tomlout` emits every *value* type a TOML document can hold, so
-the float and the nested table that used to make every future run exit 2 round-trip now, and
-the one refusal left names this file, the key, and what to do about it instead of naming a
-serialiser the owner has never heard of.
+a float or a nested table round-trips rather than making every future run exit 2, and the one
+refusal left names this file, the key, and what to do about it instead of naming a serialiser
+the owner has never heard of.
 
 **`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer
 `setup` uses owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
@@ -51,7 +50,6 @@ repeat.
 
 from __future__ import annotations
 
-import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,30 +76,28 @@ class Written:
 
 
 def read_machine(path: Path) -> dict[str, Any]:
-    """The machine file as a raw `dict`, exactly as `tomllib` parses it.
+    """The machine file as a raw `dict`, exactly as `tomllib` parses it, and `{}` where no file is.
 
-    A file that is not UTF-8 or not TOML is the loader's `MachineConfigError`, the one failure
-    every reader of this file gives, naming the position and never the parser's message.
+    Read through `config.loader.read_machine_toml`, the one reader every reader of this file
+    shares, so a file that cannot be read, is not UTF-8 or is not TOML is the loader's
+    `MachineConfigError` here as everywhere: one failure in one set of words, naming the error's
+    class or the parser's position and never the parser's message. `setup` reports it as the
+    failure it is, rather than as an internal error with the operating system's own message.
     """
-    from stayfixed.config.loader import NOT_UTF8, UNPARSEABLE, MachineConfigError, toml_position
+    from stayfixed.config.loader import read_machine_toml
 
-    try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        raise MachineConfigError(NOT_UTF8.format(path=path)) from None
-    except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
-
-
-def _existing(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    return read_machine(path)
+    return read_machine_toml(path) or {}
 
 
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name)
     return dict(value) if isinstance(value, dict) else {}
+
+
+def read_personal(path: Path) -> dict[str, Any]:
+    """The machine file's `[personal]` table, and `{}` where there is no file, no such table, or
+    a `personal` that is not a table: what an earlier run or the owner already set there."""
+    return _table(read_machine(path), "personal")
 
 
 def write_machine(
@@ -123,21 +119,18 @@ def write_machine(
     Everything else in the file — a table this writer has never heard of, a key at the top
     level — is carried through untouched, in the order it was written in.
     """
-    existing = _existing(path)
+    existing = read_machine(path)
 
     merged_personal = {**_table(existing, "personal"), **personal}
-    # All three spread over the existing table. `overlay` used to replace its table outright,
-    # which the two lines around it did not: a hand-written `[overlay] note` was gone after
-    # any `setup`, and an `[overlay]` carrying no `root` vanished whole -- on the file this
-    # module's own docstring promises to merge "table by table, key by key".
+    # All three spread over the existing table, `overlay` included: replaced outright, a
+    # hand-written `[overlay] note` would be gone after any `setup`, and an `[overlay]` carrying no
+    # `root` would vanish whole -- on the file this module's own docstring promises to merge
+    # "table by table, key by key".
     #
-    # That spread is also what carries a recorded `root` through a run that was not given one.
-    # There used to be an explicit read-back here -- `root = overlay_root` and, when it was
-    # `None`, the existing `[overlay] root` parsed back into a `Path` -- written when this table
-    # was still replaced wholesale. Once the spread arrived it was dead code that looked like a
-    # guard: its entry disarmed it and every test stayed green. The property is declared now where
-    # the spread keeps it, as `mutations/`'s "write_machine replaces the overlay table instead of
-    # merging over it".
+    # That spread is also what carries a recorded `root` through a run that was not given one, so
+    # no read-back of the existing `[overlay] root` is needed beside it. The property is declared
+    # where the spread keeps it, as `mutations/`'s "write_machine replaces the overlay table
+    # instead of merging over it".
     owned: dict[str, dict[str, object]] = {
         "personal": merged_personal,
         "overlay": {

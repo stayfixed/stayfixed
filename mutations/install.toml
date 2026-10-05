@@ -229,10 +229,26 @@ reddens = [
 [[mutation]]
 name = "the overlay probe stops reading what the manifests name"
 file = "src/stayfixed/overlay/identity.py"
-before = "        if not isinstance(document, dict) or not claims(document.get(\"name\"), row.name):"
-after = "        if not isinstance(document, dict):"
+before = "        if document is None or not claims(document.get(\"name\"), row.name):"
+after = "        if document is None:"
 reddens = [
   "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
+]
+
+# The probe answers every way its manifests can fail to parse, because what it returns is a
+# refusal and what escapes it is an internal error: a manifest nested past the parser or holding an
+# integer longer than it converts is valid JSON that `json.loads` meets with no `JSONDecodeError`,
+# and either ended `stayfixed setup --overlay` in one.
+[[mutation]]
+name = "the overlay probe lets a manifest past the parser escape"
+file = "src/stayfixed/overlay/identity.py"
+before = "            document = json_object(text, str(row.path), error=_Unreadable, shape=_NotAnObject)"
+after = "            document = __import__(\"json\").loads(text)"
+reddens = [
+  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[long-number-.claude-plugin/plugin.json]",
+  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[long-number-.claude-plugin/marketplace.json]",
+  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/plugin.json]",
+  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/marketplace.json]",
 ]
 
 # The actual control over a named overlay path: a path outside the repository that already
@@ -396,7 +412,7 @@ reddens = [
 # and without this comparison every such entry reads as one `attach` installed.
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if False:"
 reddens = [
@@ -411,8 +427,8 @@ reddens = [
 # account for.
 [[mutation]]
 name = "doctor swallows a settings file it could not read instead of reporting it"
-file = "src/stayfixed/doctor/checks.py"
-before = "        except Refusal:\n            blind.append(label)"
+file = "src/stayfixed/doctor/entries.py"
+before = "        except Refusal:\n            found.append((_BLIND, None, label))"
 after = "        except Refusal:\n            pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
@@ -442,28 +458,6 @@ before = "            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)"
 after = "            raw = handle.read()"
 reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
-]
-
-# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
-# id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `_entry_commands` walks
-# positionally for that reason, and the walk had a test and no entry. The mutation makes the walk
-# key by id instead of counting entries, which is precisely the defect positional counting exists to
-# prevent: the second entry vanishes, so the count is wrong AND the grant comparison never sees the
-# command hung on the borrowed id.
-[[mutation]]
-name = "doctor counts hook entries by marker id rather than by position"
-file = "src/stayfixed/doctor/checks.py"
-before = """                command = entry.get("command") if isinstance(entry, dict) else None
-                found.append(command if isinstance(command, str) else "")"""
-after = """                command = entry.get("command") if isinstance(entry, dict) else None
-                text = command if isinstance(command, str) else ""
-                here = marker_id(text)
-                if here is None or here not in {marker_id(seen) for seen in found}:
-                    found.append(text)"""
-reddens = [
-  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
-  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
 ]
 
 # `red` is what gates the exit code. A directory this process cannot list is a fact about the
@@ -504,10 +498,10 @@ reddens = [
 [[mutation]]
 name = "doctor drops the checks an area contributes"
 file = "src/stayfixed/doctor/checks.py"
-before = "    return core + tuple(check for contribution in contributed for check in contribution.checks)"
-after = "    return core + tuple(check for contribution in contributed for check in ())"
+before = "    return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)"
+after = "    return CHECKS + tuple(check for contribution in contributed for check in ())"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_contributed_check_runs_after_the_core_checks",
+  "tests/doctor/test_registry.py::test_a_contributed_check_runs_after_the_core_checks",
   "tests/doctor/test_checks.py::test_every_check_has_one_row_in_one_report",
 ]
 
@@ -518,11 +512,11 @@ reddens = [
 [[mutation]]
 name = "doctor asks its checks without the guard"
 file = "src/stayfixed/doctor/checks.py"
-before = "    return [_guarded(name, check, context) for name, check in registry]"
-after = "    return [Check(name, **vars(check(context))) for name, check in registry]"
+before = "    return [_guarded(name, check, context) for name, check in report_checks]"
+after = "    return [Check(name, **vars(check(context))) for name, check in report_checks]"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_contribution_that_raises_costs_one_row",
-  "tests/doctor/test_contributions.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
+  "tests/doctor/test_registry.py::test_a_contribution_that_raises_costs_one_row",
+  "tests/doctor/test_entries.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
 ]
 
 # A row's name is its only identity in the summary line, `--json` and the skill's relay, so an
@@ -530,43 +524,49 @@ reddens = [
 # of its own -- costs its rows as one red row named after it, as a register() that raises does.
 [[mutation]]
 name = "doctor lets an area repeat a name the report already has"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "        if name in named:"
 after = "        if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[core]",
-  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[another-area]",
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[core]",
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[another-area]",
 ]
 
 [[mutation]]
 name = "doctor lets an area name two of its checks alike"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = '        named[name] = "it"'
 after = "        pass"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[itself]",
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[itself]",
 ]
 
 # The red row of an area that could not contribute is a name in the report too, so when the area's
 # name is already taken it is numbered past every name taken, never printed twice.
 [[mutation]]
 name = "an area's failure row takes a name the report already has"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    while name in owners:"
 after = "    while False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
 ]
 
-# The failure row's name is one of the report's names once it is chosen: left out of them, a later
-# area that contributes a check under it joins, and the report prints two rows named after the area.
+# A failure row stands in for rows an area could not give, so it is named only once every
+# contribution's names are known: named as each area was met, it took a name a healthy later area's
+# check had, and that area was turned away for repeating it, its row gone from the report.
 [[mutation]]
-name = "an area's failure row is not counted among the report's names"
-file = "src/stayfixed/doctor/checks.py"
-before = "    owners[name] = qualified\n"
-after = "    pass\n"
+name = "an area's failure row is named before every contribution's names are known"
+file = "src/stayfixed/doctor/registry.py"
+before = """    answers = [
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    ]"""
+after = """    answers = (
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    )"""
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row",
+  "tests/doctor/test_registry.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[register]",
+  "tests/doctor/test_registry.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[import]",
 ]
 
 # Whether an area repeats a name is asked of a copy of the report's names: asked of the names
@@ -574,11 +574,11 @@ reddens = [
 # one is turned away too.
 [[mutation]]
 name = "asking whether an area repeats a name records its names in the report"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    named = dict(owners)"
 after = "    named = owners"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free",
+  "tests/doctor/test_registry.py::test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free",
 ]
 
 # The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
@@ -590,11 +590,11 @@ reddens = [
 # file.
 [[mutation]]
 name = "the attach ledger vouches for a hook entry on its own"
-file = "src/stayfixed/doctor/checks.py"
-before = "            elif askable and not any(command in (answer.granted or ()) for answer in holders):"
+file = "src/stayfixed/doctor/entries.py"
+before = "            elif askable and not any(_grants(answer, placed) for answer in holders):"
 after = "            elif False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_id_an_area_records_and_nothing_grants_is_never_absolved",
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_and_nothing_grants_is_never_absolved",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
   "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
 ]
@@ -604,12 +604,24 @@ reddens = [
 # and nothing granted, and call every entry `attach` installed one that no attach recorded.
 [[mutation]]
 name = "hook-entries ignores what the areas claim"
-file = "src/stayfixed/doctor/checks.py"
-before = "    answers = [ask(context) for ask in claims]"
-after = "    answers = [ask(context) for ask in ()]"
+file = "src/stayfixed/doctor/entries.py"
+before = "        return [ask(context) for ask in context.claims]"
+after = "        return [ask(context) for ask in ()]"
 reddens = [
-  "tests/doctor/test_contributions.py::test_hook_entries_reads_what_every_area_claims",
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
   "tests/attach/test_doctor.py::test_an_entry_the_overlay_really_grants_is_still_accounted_for",
+]
+
+# The overlay root is the machine file's, the core's, and more than one area reads it: the report's
+# `Context` resolves it on first read and keeps the answer, so one report asks the machine file once
+# however many rows read it. A plain property would ask it again for every reader.
+[[mutation]]
+name = "the report resolves the overlay root for every reader"
+file = "src/stayfixed/doctor/model.py"
+before = "    @cached_property\n    def overlay_root(self) -> Path | None:"
+after = "    @property\n    def overlay_root(self) -> Path | None:"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_report_resolves_the_overlay_root_once_for_every_area",
 ]
 
 # Every area that claims entries answers for its own, so the row asks every area. Read from the
@@ -617,22 +629,22 @@ reddens = [
 # the owner to remove what that area installed.
 [[mutation]]
 name = "hook-entries keeps only the last area's recorded ids"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]"
 after = "            holders = [answer for answer in answers[-1:] if entry_id in (answer.recorded or {})]"
 reddens = [
-  "tests/doctor/test_contributions.py::test_hook_entries_reads_what_every_area_claims",
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
 ]
 
 # The same for the other answer: an earlier area's granted commands dropped make its entries ones
 # the overlay "does not grant".
 [[mutation]]
 name = "hook-entries keeps only the last area's granted commands"
-file = "src/stayfixed/doctor/checks.py"
-before = "(command in (answer.granted or ()) for answer in holders)"
-after = "(command in (answer.granted or ()) for answer in answers[-1:])"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(_grants(answer, placed) for answer in answers[-1:])"
 reddens = [
-  "tests/doctor/test_contributions.py::test_hook_entries_reads_what_every_area_claims",
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
 ]
 
 # A grant vouches only for the record of the area that grants it. Read from every area, one area's
@@ -640,23 +652,49 @@ reddens = [
 # and a record is a file a repository can write.
 [[mutation]]
 name = "hook-entries absolves an entry on one area's record and another area's grant"
-file = "src/stayfixed/doctor/checks.py"
-before = "(command in (answer.granted or ()) for answer in holders)"
-after = "(command in (answer.granted or ()) for answer in answers)"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(_grants(answer, placed) for answer in answers)"
 reddens = [
-  "tests/doctor/test_contributions.py::test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_together",
+  "tests/doctor/test_entries.py::test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_together",
 ]
 
 # The grant is compared by the marked command, so an id an area does grant, hung on a command it
 # does not, vouches for nothing.
 [[mutation]]
 name = "hook-entries compares a grant by its id rather than its command"
-file = "src/stayfixed/doctor/checks.py"
-before = "(command in (answer.granted or ()) for answer in holders)"
-after = "(entry_id in {marker_id(text) for text in (answer.granted or ())} for answer in holders)"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(entry_id in {marker_id(grant.command) for grant in (answer.granted or ())} for answer in holders)"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved",
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# And the command is compared where it sits: under its event and in a group with its matcher, which
+# say when a harness runs it and for which tools. A grant compared without either vouches for the
+# owner's own command hung anywhere a repository likes, and the row reads "all accounted for".
+[[mutation]]
+name = "hook-entries vouches for a granted command under any event"
+file = "src/stayfixed/doctor/entries.py"
+before = "        and grant.event == placed.event"
+after = "        and True"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-event]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
+]
+
+[[mutation]]
+name = "hook-entries vouches for a granted command under any matcher"
+file = "src/stayfixed/doctor/entries.py"
+before = "        and grant.matcher == placed.matcher"
+after = "        and True"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-matcher]",
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[no-matcher]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
 ]
 
 # A record one area could not read is not one the next area's answer can stand in for: the ids it
@@ -664,22 +702,22 @@ reddens = [
 # area's readable record turns "could not be established" back into a column computed without it.
 [[mutation]]
 name = "a later area's record overwrites one an earlier area could not read"
-file = "src/stayfixed/doctor/checks.py"
-before = "    readable = all(answer.recorded is not None for answer in answers)"
-after = "    readable = all(answer.recorded is not None for answer in answers[-1:])"
+file = "src/stayfixed/doctor/entries.py"
+before = "    unread = [answer for answer in answers if answer.recorded is None]"
+after = "    unread = [answer for answer in answers[-1:] if answer.recorded is None]"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
 ]
 
 # The same rule for an overlay one area could not ask: what it grants is unknown, and no other
 # area's grants vouch for the entries it would have.
 [[mutation]]
 name = "a later area's grants overwrite an overlay an earlier area could not ask"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "    askable = all(answer.granted is not None for answer in answers)"
 after = "    askable = all(answer.granted is not None for answer in answers[-1:])"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
 ]
 
 # Where the overlay could not be asked, the grant comparison is withheld rather than computed:
@@ -687,12 +725,12 @@ reddens = [
 # reported red with a remedy telling the owner to remove what was installed.
 [[mutation]]
 name = "hook-entries judges provenance against an overlay that could not be asked"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            elif askable and not any("
 after = "            elif not any("
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
 ]
 
 # And only the grant comparison: whether a record holds an entry's id needs the record alone, so a
@@ -700,22 +738,22 @@ reddens = [
 # asked. Withholding the whole column there turned that red into a warning and an exit of 0.
 [[mutation]]
 name = "an overlay that cannot be asked silences an entry no record holds"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if not holders and not unread and askable:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked",
+  "tests/doctor/test_entries.py::test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked",
 ]
 
 # An entry a record holds where no holder's machine records a source to grant from: red, with the
 # sentence and remedy for recording one, never the refused grant's.
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                elif refusing := [answer for answer in holders if answer.sourced]:"
 after = "                elif refusing := holders:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so",
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
 ]
@@ -725,12 +763,12 @@ reddens = [
 # checkout its record binds to another remote, grants the entry to the checkout it does bind.
 [[mutation]]
 name = "hook-entries says a source refused what its area says it grants elsewhere"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = '    return words.ungranted or f"{words.source} does not grant them"'
 after = '    return f"{words.source} does not grant them"'
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
-  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
   "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
 ]
 
@@ -738,39 +776,48 @@ reddens = [
 # mismatch without `--trust-remote`.
 [[mutation]]
 name = "hook-entries offers the vouch an area says may be refused"
-file = "src/stayfixed/doctor/checks.py"
-before = "        remedy = words.regrant or ("
-after = "        remedy = ("
+file = "src/stayfixed/doctor/entries.py"
+before = "    return words.regrant or ("
+after = "    return ("
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
   "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
 ]
 
 [[mutation]]
 name = "hook-entries offers the rebuild an area says may be refused, beside an unreadable record"
-file = "src/stayfixed/doctor/checks.py"
-before = '            f"{words.regrant or _rebuild(words)}"'
-after = '            f"{_rebuild(words)}"'
+file = "src/stayfixed/doctor/entries.py"
+before = '    return f"{_OPEN}; then {words.regrant or _rebuild(words)}"'
+after = '    return f"{_OPEN}; then {_rebuild(words)}"'
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
 ]
 
+# A settings file the walk cannot read is a warning, and the row's status is the most severe of
+# its findings', so the blind file, told last, softens a row with nothing else to say and never a
+# red one. Read off the last finding alone, it turned an entry nothing vouches for, beside a
+# readable record or an unreadable one, and a file nothing can check, into a warning.
 [[mutation]]
-name = "a blind settings file softens an entry nothing on this machine vouches for"
-file = "src/stayfixed/doctor/checks.py"
-before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
-after = "        red = (unrecorded, ungranted, unread_unvouched, unread_ungranted, unchecked)"
+name = "a blind settings file softens a red row"
+file = "src/stayfixed/doctor/entries.py"
+before = "    status: Status = RED if RED in statuses else WARN if statuses else OK"
+after = "    status: Status = findings[-1].kind.status if findings else OK"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
+  "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
 ]
 
+# Its remedy is offered only where nothing else has one: a reader with a red entry to open is told
+# how, not to check a file is valid JSON.
 [[mutation]]
-name = "a blind settings file softens an entry beside an unreadable record that nothing grants"
-file = "src/stayfixed/doctor/checks.py"
-before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
-after = "        red = (unrecorded, unvouched, ungranted, unchecked)"
+name = "a blind settings file's remedy displaces a red entry's"
+file = "src/stayfixed/doctor/entries.py"
+before = "    WARN,\n    0,\n    _blind,"
+after = "    WARN,\n    8,\n    _blind,"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
 ]
 
 # A record that cannot be read may hold any id, so it withholds judgement only of an entry its own
@@ -779,12 +826,12 @@ reddens = [
 # of 0 on every machine, overlay or none.
 [[mutation]]
 name = "an unreadable record withholds judgement of every entry"
-file = "src/stayfixed/doctor/checks.py"
-before = "                if any(command in (answer.granted or ()) for answer in unread):"
+file = "src/stayfixed/doctor/entries.py"
+before = "                if any(_grants(answer, placed) for answer in unread):"
 after = "                if unread:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
-  "tests/doctor/test_contributions.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-overlay]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-no-overlay]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-no-overlay]",
@@ -801,11 +848,11 @@ reddens = [
 # got corrupted reads red for every entry their overlay grants, told to remove what they installed.
 [[mutation]]
 name = "an unreadable record withholds judgement of nothing its area grants"
-file = "src/stayfixed/doctor/checks.py"
-before = "                if any(command in (answer.granted or ()) for answer in unread):"
+file = "src/stayfixed/doctor/entries.py"
+before = "                if any(_grants(answer, placed) for answer in unread):"
 after = "                if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
 ]
@@ -814,13 +861,13 @@ reddens = [
 # installed reads as recorded nowhere, red, with a remedy telling the owner to remove it.
 [[mutation]]
 name = "an unreadable record reads as one recording nothing"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "            if not holders and not unread:"
 after = "            if not holders:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
-  "tests/doctor/test_contributions.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
@@ -830,11 +877,11 @@ reddens = [
 # and remedy say to record one, never that one refused.
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside an unreadable record"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = "                    asked = [answer for answer in unread if answer.sourced]"
 after = "                    asked = unread"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-no-overlay]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-no-overlay]",
 ]
@@ -844,9 +891,9 @@ reddens = [
 # red row `attach` cannot clear yet.
 [[mutation]]
 name = "the rebuild remedy is offered where the overlay cannot be asked"
-file = "src/stayfixed/doctor/checks.py"
-before = "_rebuild(answer.wording) if answer.granted is not None else"
-after = "_rebuild(answer.wording) if True else"
+file = "src/stayfixed/doctor/entries.py"
+before = "_rebuild(area.wording) if area.granted is not None else"
+after = "_rebuild(area.wording) if True else"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay-unreadable]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-git-cannot-run]",
@@ -857,12 +904,12 @@ reddens = [
 # the walkthrough follows that remedy to green.
 [[mutation]]
 name = "an unreadable ledger is never told how to rebuild it"
-file = "src/stayfixed/doctor/checks.py"
-before = "_rebuild(answer.wording) if answer.granted is not None else"
-after = "_rebuild(answer.wording) if False else"
+file = "src/stayfixed/doctor/entries.py"
+before = "_rebuild(area.wording) if area.granted is not None else"
+after = "_rebuild(area.wording) if False else"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
   "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
 ]
 
@@ -871,67 +918,93 @@ reddens = [
 # below puts one sentence back in the wrong area's words, or in words no claimant gave.
 [[mutation]]
 name = "hook-entries names a record where no area claims one"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = """f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere\""""
 after = """f"are not recorded in {' or '.join(records)}\""""
 reddens = [
-  "tests/doctor/test_contributions.py::test_with_no_area_claiming_anything_an_entry_claiming_the_marker_is_recorded_nowhere",
+  "tests/doctor/test_entries.py::test_with_no_area_claiming_anything_an_entry_claiming_the_marker_is_recorded_nowhere",
 ]
 
 [[mutation]]
 name = "hook-entries names only the first area's record of an entry no record holds"
-file = "src/stayfixed/doctor/checks.py"
-before = "        records = list(dict.fromkeys(answer.wording.record for answer in answers))"
-after = "        records = list(dict.fromkeys(answer.wording.record for answer in answers[:1]))"
+file = "src/stayfixed/doctor/entries.py"
+before = "    records = list(dict.fromkeys(area.wording.record for area in areas))"
+after = "    records = list(dict.fromkeys(area.wording.record for area in areas[:1]))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_entry_no_record_holds_names_every_record_it_is_missing_from",
+  "tests/doctor/test_entries.py::test_an_entry_no_record_holds_names_every_record_it_is_missing_from",
 ]
 
 [[mutation]]
 name = "hook-entries names the first area's record wherever a record could not be read"
-file = "src/stayfixed/doctor/checks.py"
-before = "        unreadable = [answer for answer in answers if answer.recorded is None]"
-after = "        unreadable = answers[:1]"
+file = "src/stayfixed/doctor/entries.py"
+before = "            found.append((_UNREADABLE, answer, None))"
+after = "            found.append((_UNREADABLE, answers[0], None))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_unreadable_record_is_named_in_its_own_areas_words[second]",
-  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
+  "tests/doctor/test_entries.py::test_an_unreadable_record_is_named_in_its_own_areas_words[second]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
 ]
 
 [[mutation]]
 name = "hook-entries names only the first source that could not be asked"
-file = "src/stayfixed/doctor/checks.py"
-before = "        unasked = [answer for answer in answers if answer.granted is None]"
-after = "        unasked = [answer for answer in answers if answer.granted is None][:1]"
+file = "src/stayfixed/doctor/entries.py"
+before = "            found.append((_UNASKABLE, answer, None))"
+after = "            found.append((_UNASKABLE, answers[0], None))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_two_unaskable_sources_each_get_their_own_part_and_remedy",
+  "tests/doctor/test_entries.py::test_two_unaskable_sources_each_get_their_own_part_and_remedy",
 ]
 
 [[mutation]]
 name = "hook-entries tells a refused grant in the first area's words"
-file = "src/stayfixed/doctor/checks.py"
-before = "                    ungranted.append((refusing[0], where))"
-after = "                    ungranted.append((answers[0], where))"
+file = "src/stayfixed/doctor/entries.py"
+before = "                    found.append((_UNGRANTED, refusing[0], where))"
+after = "                    found.append((_UNGRANTED, answers[0], where))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[sourced]",
-  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[sourced]",
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
 ]
 
 [[mutation]]
 name = "hook-entries tells an unvouched entry in the first area's words"
-file = "src/stayfixed/doctor/checks.py"
-before = "                    unvouched.append((holders[0], where))"
-after = "                    unvouched.append((answers[0], where))"
+file = "src/stayfixed/doctor/entries.py"
+before = "                    found.append((_UNVOUCHED, holders[0], where))"
+after = "                    found.append((_UNVOUCHED, answers[0], where))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
 ]
 
 [[mutation]]
 name = "hook-entries tells an entry beside unreadable records in the first one's words"
-file = "src/stayfixed/doctor/checks.py"
-before = "                        unread_ungranted.append((asked[0], where))"
-after = "                        unread_ungranted.append((unread[0], where))"
+file = "src/stayfixed/doctor/entries.py"
+before = "                        found.append((_UNREAD_UNGRANTED, asked[0], where))"
+after = "                        found.append((_UNREAD_UNGRANTED, unread[0], where))"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_areas_words",
+  "tests/doctor/test_entries.py::test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_areas_words",
+]
+
+# Each kind of finding is told one part per area, and its remedy is every area's, joined: two areas'
+# red entries of one kind are two areas' to repair. Keeping only the last area's remedy named the
+# first area's entries with no way out of them.
+[[mutation]]
+name = "hook-entries keeps only the last area's remedy for a kind"
+file = "src/stayfixed/doctor/entries.py"
+before = '    return Row(status, "; ".join(parts), "; ".join(dict.fromkeys(chosen)))'
+after = '    return Row(status, "; ".join(parts), "; ".join(list(chosen)[-1:]))'
+reddens = [
+  "tests/doctor/test_entries.py::test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy[sourced]",
+  "tests/doctor/test_entries.py::test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy[unsourced]",
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[alpha]",
+]
+
+# An unreadable record and another area's unaskable source are two findings, each its own area's:
+# told only where no record was unreadable, the unaskable source and its remedy went unsaid.
+[[mutation]]
+name = "hook-entries tells an unaskable source only where every record could be read"
+file = "src/stayfixed/doctor/entries.py"
+before = "        elif answer.granted is None:"
+after = "        elif answer.granted is None and not unread:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[alpha]",
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[omega]",
 ]
 
 # An area answers what it cannot read as a `None` field, so claims that raise are a defect in its
@@ -939,11 +1012,11 @@ reddens = [
 # read as the machine's warning, and a forged entry the row would have listed kept the exit code 0.
 [[mutation]]
 name = "claims that raise an OSError reach the guard as one"
-file = "src/stayfixed/doctor/checks.py"
-before = "        raise UnansweredClaims(type(exc).__name__) from exc"
+file = "src/stayfixed/doctor/entries.py"
+before = "        raise UnansweredClaims from exc"
 after = "        raise"
 reddens = [
-  "tests/doctor/test_contributions.py::test_claims_that_raise_an_os_error_are_red_and_never_a_warning",
+  "tests/doctor/test_entries.py::test_claims_that_raise_an_os_error_are_red_and_never_a_warning",
   "tests/doctor/test_command.py::test_claims_that_raise_an_os_error_fail_the_report",
 ]
 
@@ -952,25 +1025,25 @@ reddens = [
 # the report, which otherwise ends in an internal error with no report at all.
 [[mutation]]
 name = "doctor calls an area's register() unguarded"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    except Exception as exc:  # an area's own code, guarded as its checks are"
 after = "    except OSError as exc:  # an area's own code, guarded as its checks are"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[raises]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[raises]",
 ]
 
 [[mutation]]
 name = "doctor takes whatever an area's register() returns"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    if not _well_formed(contribution):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[none]",
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[bare-pairs]",
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[short-pair]",
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[name-not-text]",
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[check-not-callable]",
-  "tests/doctor/test_contributions.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[claims-not-callable]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[none]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[bare-pairs]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[short-pair]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[name-not-text]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[check-not-callable]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[claims-not-callable]",
 ]
 
 # An area's `doctor.py` that fails to import is its own code as its register() is: discovery hands
@@ -978,11 +1051,11 @@ reddens = [
 # whose register() then fails.
 [[mutation]]
 name = "doctor reads an import failure as a module"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/registry.py"
 before = "    if isinstance(found, Exception):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it",
+  "tests/doctor/test_registry.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it",
 ]
 
 # The row for an area that could not register is about stayfixed's own code, so it is red in the
@@ -990,12 +1063,12 @@ reddens = [
 [[mutation]]
 name = "the early report skips an area that could not register"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if isinstance(check, _Unregistered):"
+before = "    if isinstance(check, Unregistered):"
 after = "    if False:"
 reddens = [
-  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
-  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[import]",
-  "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[repeat]",
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[import]",
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[repeat]",
 ]
 
 # The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an
@@ -1004,10 +1077,10 @@ reddens = [
 [[mutation]]
 name = "the early report names the core's checks alone"
 file = "src/stayfixed/doctor/checks.py"
-before = "    first, *rest = [name for name, _ in registry]"
+before = "    first, *rest = [name for name, _ in report_checks]"
 after = "    first, *rest = [name for name, _ in CHECKS]"
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
+  "tests/doctor/test_registry.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
 ]
 
 # Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
@@ -1276,8 +1349,8 @@ reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_e
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "        home, deny_rules, _existing_personal(machine), settings=settings"
-after = "        home, deny_rules, personal, settings=settings"
+before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal, settings=settings)"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
@@ -1310,7 +1383,7 @@ reddens = [
 # assertion and nothing else.
 [[mutation]]
 name = "an area reaches past another area's api.py again"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = 'from stayfixed.setup.api import USER_SETTINGS'
 after = 'from stayfixed.setup.machine import USER_SETTINGS'
 reddens = [
@@ -1430,6 +1503,17 @@ name = "a doctor check spells its own name again"
 file = "src/stayfixed/doctor/checks.py"
 before = 'WRAPPER = "hooks/run-hook.sh"'
 after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"files\""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
+]
+
+# The same stray in a module that defines a core check but does not register it: the scan reads
+# every module `CHECKS`' checks are defined in, not only the registry's.
+[[mutation]]
+name = "a stray hook-entries name in the module that defines the check"
+file = "src/stayfixed/doctor/entries.py"
+before = '_MACHINE_LABEL = f"~/{USER_SETTINGS}"'
+after = "_MACHINE_LABEL = f\"~/{USER_SETTINGS}\"\n_STRAY = \"hook-entries\""
 reddens = [
   "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
 ]
@@ -1760,23 +1844,6 @@ reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
 
-# The other half of "this reader answers for every string", after the digit bound `mutations/`'s
-# "the version grammar stops bounding its components" holds. `json.loads` answers for a list, a
-# string and a number as readily as for an object and `raw.get` exists on none of them, so without
-# this arm a manifest an owner can save raised `AttributeError` out of a function whose docstring
-# promises `None` for anything it cannot read. Both callers rest on that promise: `doctor` renders a
-# raised reader as "this check could not run", and the session handler's backstop swallows it
-# together with every other line of the same result — which is how an overlay manifest silenced
-# `NOT_ATTACHED` once already.
-[[mutation]]
-name = "the requires reader raises for a manifest that is not an object"
-file = "src/stayfixed/overlay/requires.py"
-before = "    if not isinstance(raw, dict):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
-]
-
 # A supply-chain verdict, and the one `ci-ref` row that gates the exit code from the file rather
 # than from the configuration: the pin GitHub acts on is the workflow's `uses:` line, so a
 # workflow pinning something other than `[ci] ref` means the gate that runs is not the one
@@ -1853,7 +1920,7 @@ reddens = [
 
 # The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
 # `.github/workflows/stayfixed.yml`. This row read it with neither of the guards its two siblings in
-# the same module have -- `_hook_entries` asks `is_file()` of every settings file before it opens
+# the same module have -- `hook_entries` asks `is_file()` of every settings file before it opens
 # one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
 # `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
 # timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
@@ -1933,17 +2000,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
 
-# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
-# an internal error": every reader of a document somebody else wrote answers one nested past the
-# parser as one that does not parse.
-[[mutation]]
-name = "setup meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/setup/machine.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
-]
 
 # git's exit 128 inside a checkout is a repository it will not describe — another user's under
 # `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
@@ -2374,54 +2430,19 @@ reddens = [
 ]
 
 # A settings file, or the directory holding it, can be committed as a symbolic link to a name longer
-# than a file name may be. `Path.is_file()` raised `ENAMETOOLONG` there on Python 3.11 to 3.13, and
-# `_guarded`'s warning stood in for all of `hook-entries`: a forged entry beside the link lost its red
-# and the report exited 0. From 3.14 it answered `False` and the walk skipped a file that is there.
-# Asked with `stat`, such a path is a file the walk is blind to.
+# than a file name may be. Raised past the walk, `ENAMETOOLONG` puts `_guarded`'s warning in place of
+# all of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0; read
+# as no file, the walk skips a file that is there. `fsops.names_regular_file` raises it, and the walk
+# reads such a path as a file it is blind to.
 [[mutation]]
 name = "hook-entries skips a settings file it cannot ask about"
-file = "src/stayfixed/doctor/checks.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                blind.append(label)"
-after = "            if False:\n                blind.append(label)"
+file = "src/stayfixed/doctor/entries.py"
+before = "            regular = names_regular_file(path)\n        except OSError:\n            found.append((_BLIND, None, label))"
+after = "            regular = names_regular_file(path)\n        except OSError:\n            pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.claude]",
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.codex/hooks.json]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.claude/settings.local.json-overlay]",
-]
-
-# The other half: a path that names no file is skipped, as `is_file()` always answered, and is not a
-# file the walk is blind to.
-[[mutation]]
-name = "hook-entries is blind to a settings path that names no file"
-file = "src/stayfixed/doctor/checks.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                blind.append(label)"
-after = "            if True:\n                blind.append(label)"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
-]
-
-[[mutation]]
-name = "hook-entries reads a settings path that is no regular file"
-file = "src/stayfixed/doctor/checks.py"
-before = "        if not stat.S_ISREG(mode):\n            continue"
-after = "        if False:\n            continue"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
-]
-
-# The walk's own reader reads integers as `owned_ids` does. With the interpreter's limit it raised
-# a plain `ValueError` on a document `owned_ids` had accepted, past the walk to `_guarded`: "this
-# check could not run".
-[[mutation]]
-name = "hook-entries counts entries with the interpreter's limit on numbers"
-file = "src/stayfixed/doctor/checks.py"
-before = "        raw = json.loads(document, parse_int=str) if document.strip() else {}"
-after = "        raw = json.loads(document) if document.strip() else {}"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[long-number-none-no-overlay]",
-  "tests/attach/test_doctor.py::test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for",
 ]
 
 # Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it
@@ -2430,9 +2451,9 @@ reddens = [
 # at 0, with or without a ledger, with an overlay recorded or not.
 [[mutation]]
 name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
-file = "src/stayfixed/doctor/checks.py"
-before = "        except ParserLimitError:\n            unchecked.append(label)"
-after = "        except ParserLimitError:\n            blind.append(label)"
+file = "src/stayfixed/doctor/entries.py"
+before = "        except ParserLimitError:\n            found.append((_UNCHECKED, None, label))"
+after = "        except ParserLimitError:\n            found.append((_BLIND, None, label))"
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[nested-recording-it-overlay]",
@@ -2443,9 +2464,13 @@ reddens = [
 # commit and a harness running as the same user cannot read either, so it stays a warning.
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
-file = "src/stayfixed/doctor/checks.py"
-before = "        except OSError:\n            blind.append(label)"
-after = "        except OSError:\n            unchecked.append(label)"
+file = "src/stayfixed/doctor/entries.py"
+before = """            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            found.append((_BLIND, None, label))"""
+after = """            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            found.append((_UNCHECKED, None, label))"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[recording-it-overlay]",
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[none-no-overlay]",
@@ -2456,7 +2481,7 @@ reddens = [
 # lost its red to a warning and an exit of 0.
 [[mutation]]
 name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
-file = "src/stayfixed/doctor/checks.py"
+file = "src/stayfixed/doctor/entries.py"
 before = """            document = path.read_text(encoding="utf-8", errors="replace")
         except OSError:"""
 after = """            document = path.read_text(encoding="utf-8")
@@ -2464,17 +2489,6 @@ after = """            document = path.read_text(encoding="utf-8")
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-no-marked-entry]",
-]
-
-# A file the walk is blind to softens a row with nothing else to say, never one a file it cannot
-# check has made red.
-[[mutation]]
-name = "a blind settings file softens a settings file nothing can check"
-file = "src/stayfixed/doctor/checks.py"
-before = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)"
-after = "        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted)"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
 ]
 
 # A memory README already gone leaves the same hole as one `init` removed, and `_README.md` was

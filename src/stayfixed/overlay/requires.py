@@ -9,10 +9,10 @@ built out of parts.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.semver import COMPONENT, VERSION
 
@@ -30,10 +30,8 @@ def requires_of(root: Path) -> str | None:
     """
     path = root / PLUGIN_MANIFEST
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(raw, dict):
+        raw = json_object(path.read_text(encoding="utf-8"), PLUGIN_MANIFEST, error=ValueError)
+    except (OSError, ValueError):  # bytes that are not UTF-8 are a `ValueError` too
         return None
     head = raw.get("stayfixed")
     value = head.get("requires") if isinstance(head, dict) else None

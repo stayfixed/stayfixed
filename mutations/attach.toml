@@ -50,6 +50,18 @@ reddens = [
   "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
 ]
 
+# `--store` is checked against the overlay root `read_binding` read, and the binding is made under
+# that same root. Handing the binding to `binding_for` reads the machine file a second time, so the
+# store could be checked against one root and bound under another if the file changed in between.
+[[mutation]]
+name = "read_binding reads the machine file a second time for the binding"
+file = "src/stayfixed/attach/binding.py"
+before = "            f\"from an argument\"\n        )\n    return _bound(root, config, overlay)"
+after = "            f\"from an argument\"\n        )\n    return binding_for(root, config, machine=machine)"
+reddens = [
+  "tests/attach/test_binding.py::test_read_binding_reads_the_machine_file_once",
+]
+
 # The trust rule in one line: committed settings that widen permissions are never merged. The
 # mutation is toward a plausible implementation rather than an obviously broken one, which is the
 # difference between an oracle and a smoke test.
@@ -773,7 +785,7 @@ reddens = [
 name = "attach meets an overlay record nested past the parser as an internal error"
 file = "src/stayfixed/attach/binding.py"
 before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
+after = "    except UNPARSEABLE[0] as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
 ]
@@ -782,7 +794,7 @@ reddens = [
 name = "attach's first-attach date meets an overlay record nested past the parser as an internal error"
 file = "src/stayfixed/attach/write.py"
 before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
-after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
+after = "    except (OSError, UnicodeDecodeError, UNPARSEABLE[0]):"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[first-attach]",
 ]
@@ -1608,7 +1620,7 @@ reddens = [
 [[mutation]]
 name = "attach says an overlay is recorded where none is"
 file = "src/stayfixed/attach/doctor.py"
-before = "        sourced=answers.overlay(context) is not None,"
+before = "        sourced=context.overlay_root is not None,"
 after = "        sourced=True,"
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
@@ -1646,7 +1658,7 @@ reddens = [
 [[mutation]]
 name = "a machine with no overlay recorded is blamed on the repository"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if answers.overlay(context) is None:\n        return NO_OVERLAY"
+before = "    if context.overlay_root is None:\n        return NO_OVERLAY"
 after = "    if False:\n        return NO_OVERLAY"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
@@ -1673,8 +1685,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"
-before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
-after = "        _granted_commands(context, answers)"
+before = "    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)"
+after = "    granted, narrowed = _granted_commands(context)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
@@ -1686,8 +1698,8 @@ reddens = [
 [[mutation]]
 name = "attach does not ask the overlay about a ledger it cannot read"
 file = "src/stayfixed/attach/doctor.py"
-before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
-after = "        _granted_commands(context, answers) if found else (set(), None)"
+before = "    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)"
+after = "    granted, narrowed = _granted_commands(context) if found else (set(), None)"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
@@ -1773,30 +1785,6 @@ before = "    except (OSError, RuntimeError):\n        # A store through a symli
 after = "    except OSError:\n        # A store through a symlink loop"
 reddens = [
   "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
-]
-
-# A committed ledger nested past what `json.loads` follows raises `RecursionError` on every
-# supported Python. Read as the unreadable ledger it is, `doctor` warns and `attach` and `detach`
-# fail before they write; let through, all three ended in an exception past every reader's catch.
-[[mutation]]
-name = "the attach ledger's reader lets a nested ledger raise"
-file = "src/stayfixed/attach/write.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
-  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
-  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
-]
-
-# The same parse in the settings file `attach` merges into.
-[[mutation]]
-name = "attach's settings reader lets a nested document raise"
-file = "src/stayfixed/attach/permissions.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, in a file"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, in a file"
-reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
 ]
 
 # `project.name` is committed and spells the one free part of the paths read under the overlay's
@@ -1933,7 +1921,7 @@ reddens = [
 [[mutation]]
 name = "attach writes for a project name the overlay has no directory for"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_share_can_exist(binding)\n"
+before = "    refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
@@ -1943,7 +1931,7 @@ reddens = [
 [[mutation]]
 name = "attach --check previews a project name the overlay has no directory for"
 file = "src/stayfixed/attach/permissions.py"
-before = "    refuse_unless_share_can_exist(binding)\n"
+before = "    refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
@@ -1953,7 +1941,7 @@ reddens = [
 [[mutation]]
 name = "a file where the project's directory would be is no reason to refuse attach"
 file = "src/stayfixed/attach/binding.py"
-before = "    if not stat.S_ISDIR(mode):"
+before = "    if mode is not None and not stat.S_ISDIR(mode):"
 after = "    if mode == 0:"
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
@@ -1964,75 +1952,57 @@ reddens = [
 [[mutation]]
 name = "attach refuses a project the overlay has no directory for yet"
 file = "src/stayfixed/attach/binding.py"
-before = "    except FileNotFoundError:\n        return\n"
+before = "    except FileNotFoundError:\n        mode = None\n"
 after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))\n"
 reddens = [
   "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
 ]
 
-# A committed ledger holding an integer literal longer than the interpreter converts makes
-# `json.loads` raise a plain `ValueError`, which no reader of the ledger caught: `doctor` read red,
-# "this check could not run", in the `attached` and `hook-entries` rows, and `attach` and `detach`
-# ended in an internal error. Read as the unreadable ledger it is, all four answer as they do for a
-# ledger that does not parse.
+# A name whose directory fits under the longest path while a path `attach` makes inside it does
+# not -- the binding record, the index or a group's directory: `attach` wrote through descriptors,
+# every later reader took the record for no record, and the run ended in an internal error linking
+# the tree after its writes, while `--check` answered 0. Both refuse it above every write, and one
+# predicate, asked of the paths the link tree is built from, is that refusal for both.
 [[mutation]]
-name = "the attach ledger's reader lets a number past the parser's reach raise"
-file = "src/stayfixed/attach/write.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
+name = "attach and --check go on for a name whose share holds a path past the longest one"
+file = "src/stayfixed/attach/binding.py"
+before = "            if exc.errno == errno.ENAMETOOLONG:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
+after = "            if False:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
-  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
-  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+  "tests/attach/test_commands.py::test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-group]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-long-group]",
 ]
 
-# The same number in the settings file `attach` merges into.
+# The paths asked are the link tree's own, and the record alone is the shortest of them: asked of
+# the record only, a name whose record fits while the index or a group's directory does not went on
+# to an internal error after every write, which is the gap the record's own refusal left.
 [[mutation]]
-name = "attach's settings reader lets a number past the parser's reach raise"
-file = "src/stayfixed/attach/permissions.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
+name = "attach and --check ask only the binding record whether it can exist"
+file = "src/stayfixed/attach/binding.py"
+before = "    made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))\n"
+after = "    made = (share / PROJECT_RECORD,)\n"
 reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-group]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-long-group]",
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file
-# name may be. `Path.is_file()` raised `ENAMETOOLONG` there on Python 3.11 to 3.13, past every catch
-# to `_guarded`, whose warning stood in for all of `hook-entries`: a forged entry beside the link lost
-# its red and the report exited 0. `stat` raises it on every interpreter, and the ledger reads as one
-# that cannot be read.
+# name may be. Raised past every catch to `_guarded`, `ENAMETOOLONG` puts its warning in place of all
+# of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0.
+# `fsops.names_regular_file` raises it on every interpreter, and the ledger reads as one that cannot
+# be read.
 [[mutation]]
 name = "a ledger doctor cannot ask about reads as no ledger"
 file = "src/stayfixed/attach/doctor.py"
-before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
-after = "        return NO_LEDGER"
+before = "    except OSError:\n        return UNREADABLE_LEDGER"
+after = "    except OSError:\n        return NO_LEDGER"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[the-ledger-forged-overlay]",
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[its-directory-forged-no-overlay]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.stayfixed/local/attach.json-overlay]",
-]
-
-# The other half: a path that names no file is no ledger, as `is_file()` always answered, and an
-# entry beside it is one no record holds.
-[[mutation]]
-name = "a ledger path that names no file reads as one that cannot be read"
-file = "src/stayfixed/attach/doctor.py"
-before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
-after = "        return UNREADABLE_LEDGER"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
-  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
-]
-
-[[mutation]]
-name = "doctor reads a ledger path that is no regular file"
-file = "src/stayfixed/attach/doctor.py"
-before = "    if not stat.S_ISREG(mode):\n        return NO_LEDGER\n    try:\n        return ledger(root)"
-after = "    if False:\n        return NO_LEDGER\n    try:\n        return ledger(root)"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
 ]
 
 # `attached` asks whether there is a ledger the way `hook-entries` does, through the one reading
@@ -2047,4 +2017,16 @@ after = "    if not (context.root / ATTACH_LEDGER).is_file():"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[the-ledger-nothing-there]",
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[its-directory-nothing-there]",
+]
+
+# Discovery imports every area's `hooks.py` unguarded, because a hook fails fast, so what that module
+# imports at module level is on every hook's path: an edge to the report's module lets a defect
+# confined to `doctor.py` stop every hook, and loads the report on each one.
+[[mutation]]
+name = "attach's hooks import the area's doctor module"
+file = "src/stayfixed/attach/hooks.py"
+before = "from stayfixed.attach import ATTACH_STORE\n"
+after = "from stayfixed.attach import ATTACH_STORE\nfrom stayfixed.attach.doctor import NO_LEDGER\n"
+reddens = [
+  "tests/attach/test_hooks.py::test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module",
 ]

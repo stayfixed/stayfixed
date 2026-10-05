@@ -7,13 +7,30 @@
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/stayfixed/memory/trust.py"
-before = '    except json.JSONDecodeError as exc:'
-after = '''    except json.JSONDecodeError:
-        return {}
-    except RecursionError as exc:'''
+before = '    raw = json_object(text, str(path), error=_refused_record)'
+after = '''    try:
+        raw = json_object(text, str(path), error=_refused_record)
+    except UnreadableTrustRecord:
+        return {}'''
 reddens = [
   "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
   "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+]
+
+# Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
+# or holding an integer longer than Python converts, it is valid JSON that `json.loads` meets with
+# no `JSONDecodeError`, and the reader caught only that.
+[[mutation]]
+name = "the trust record's reader lets a document past the parser escape"
+file = "src/stayfixed/memory/trust.py"
+before = '    raw = json_object(text, str(path), error=_refused_record)'
+after = '''    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise _refused_record(f"{path} is not valid JSON: {exc}") from exc'''
+reddens = [
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
+  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
 ]
 
 # The digest framing. Removing it left all 617 tests green: what they proved was that
@@ -118,16 +135,6 @@ after = '        return self.path.parent.name'
 reddens = [
   "tests/memory/test_index.py::test_a_nested_group_still_gets_its_section",
   "tests/memory/test_index.py::test_a_nested_groups_routing_key_is_the_configured_one",
-]
-
-# A git that fails at everything is unavailable, never a repository that answered with no binding.
-[[mutation]]
-name = "a broken git reads as a repository that answered"
-file = "src/stayfixed/memory/store.py"
-before = '        return GitAnswer(None, ran=git_is_usable(root))'
-after = '        return GitAnswer(None)'
-reddens = [
-  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
 # A note whose body did not change is written back byte for byte, never renormalised.
@@ -1920,19 +1927,6 @@ after = '        "--recurse-submodules=on-demand",'
 reddens = [
   "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[reachable]",
   "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[gone]",
-]
-
-# The overlay root and the note store a delivery row reads are resolved by one helper, and a
-# resolution that refuses is the row's skip. A `Refusal` that escaped it would reach the report's
-# guard and turn both store rows red, "this check could not run", for a `stayfixed.toml` the
-# repository is entitled to write.
-[[mutation]]
-name = "the delivery rows let a refusing store escape"
-file = "src/stayfixed/memory/answers.py"
-before = "    except (Failure, Refusal, OSError):"
-after = "    except (Failure, OSError):"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
 ]
 
 # An area's `doctor.py` is imported by discovery and imports nothing of stayfixed at module level,

@@ -20,29 +20,28 @@ checked, and each closes a hole the other three leave open:
    repository's own `origin`. `git` runs with a scrubbed environment, because an inherited
    `GIT_DIR` would otherwise answer for a different repository altogether.
 
-**What the environment can and cannot choose.** The store's *location* is never named by a
-variable this process reads: `resolve` takes an `env` mapping and ignores it by contract, and
-`_git` runs with a scrubbed environment, so neither a `STAYFIXED_STORE`-shaped variable nor an
-inherited `GIT_DIR` can point this module at another project's notes. Both halves are pinned
-by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block
-that applies with no trust prompt in a non-interactive session.
+**What the environment can and cannot choose.** The store's *location* is never named by a variable
+this process reads: `resolve` takes an `env` mapping and ignores it by contract, and
+`gitenv.git_answer` runs with a scrubbed environment, so neither a `STAYFIXED_STORE`-shaped variable
+nor an inherited `GIT_DIR` can point this module at another project's notes. Both halves are pinned
+by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block that
+applies with no trust prompt in a non-interactive session.
 
-**The machine file makes the same claim now.** `machine_config_path` gates `STAYFIXED_CONFIG`
-behind `interactive` — and `XDG_CONFIG_HOME` with it, which it did not, and which made the
-first gate worth nothing: both variables reach the same file and this area routes the store's
-overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
-through it. A committed `env` block therefore chose which overlay root `permitted_roots` was
-computed from, and which `trust.json` `may_inject` consulted, wherever no `--machine` was
-threaded.
+**The machine file makes the same claim.** `machine_config_path` gates `STAYFIXED_CONFIG` and
+`XDG_CONFIG_HOME` alike behind `interactive`, since gating one alone is worth nothing: both
+variables reach the same file, and this area routes the store's overlay anchor
+(`overlay_root(None)`) and the trust record (`trust._trust_file(None)`) through it. A committed
+`env` block that could set either would choose which overlay root `permitted_roots` is computed
+from, and which `trust.json` `may_inject` consults, wherever no `--machine` is threaded.
 
-Stated exactly, because the exposure was not the same size as the invariant it broke: pointing
-a variable somewhere of the author's choosing **suppressed** memory — no overlay root and no
-recorded digest means overlay stores refuse to resolve and the gate fails closed — while making
-it *grant* anything additionally required a pre-recorded hash matching a digest of the store at
-the clone's absolute path, which is the key `trust` records under. No injection was ever built
-from it. It was still a hole in an invariant two other properties lean on, and closing it in
-`config/machine.py` — the foundation's file — is what makes the claim above about `env` a claim
-about the whole module rather than about `resolve` alone.
+Stated exactly, because the exposure is not the same size as the invariant: pointing a variable
+somewhere of the author's choosing would **suppress** memory — no overlay root and no recorded
+digest means overlay stores refuse to resolve and the gate fails closed — while making it
+*grant* anything would additionally require a pre-recorded hash matching a digest of the store
+at the clone's absolute path, which is the key `trust` records under. It is still an invariant
+two other properties lean on, and holding it in `config/machine.py` — the foundation's file — is
+what makes the claim above about `env` a claim about the whole module rather than about
+`resolve` alone.
 """
 
 from __future__ import annotations
@@ -57,17 +56,21 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.findings import listed
-from stayfixed.gitenv import GitUnavailable, git_is_usable, git_run, origin_remote
+from stayfixed.gitenv import GitUnavailable, git_answer, origin_remote
 from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
-# The overlay's per-project directory, named once. It was a bare literal at the two call
-# sites below and the `overlay` area was about to spell it a third time, in a second area —
-# which is the drift `_inside` names: "two spellings of a containment rule is one more place
-# for them to stop agreeing". It lives here, with `COMMON`, because this module is the one
-# that resolves the overlay layout for the hook path; `overlay` imports it from the surface.
+# The overlay's per-project directory, named once: the two call sites below and the `overlay` area
+# all spell it, and a literal at each is the drift `_inside` names: "two spellings of a containment
+# rule is one more place for them to stop agreeing". It lives here, with `COMMON`, because this
+# module is the one that resolves the overlay layout for the hook path; `overlay` imports it from
+# the surface.
 PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
+# The one directory under `projects/<name>/` that holds notes, named once: `permitted_roots`
+# builds the path with it, and `attach` states the path's shape with it where it may not print
+# the project's name, and lays out the group directories under it.
+STORE_DIR = "memory"
 COMMON = Path("common") / "memory"
 
 
@@ -85,13 +88,11 @@ class Store:
     unavailable: dict[str, str] = field(default_factory=dict)
     # The machine file this store was resolved against, carried rather than re-passed.
     #
-    # It used to be an optional keyword on about twenty functions across four modules, five of
-    # which carried a docstring paragraph asking the caller *in prose* to "pass the same
-    # `machine` used to resolve `store`". Nothing enforced it, and `None` was not inert: it
-    # re-read `$XDG_CONFIG_HOME/stayfixed/config.toml` out of the process environment, silently
-    # changing `permitted_roots`, the index destination, and which `trust.json` was consulted.
-    # A caller that forgot one argument got a different overlay, a different write target and a
-    # different trust record, with nothing to say so.
+    # Not an optional keyword on every function that reads the store: a `None` there is not
+    # inert — it re-reads `$XDG_CONFIG_HOME/stayfixed/config.toml` out of the process
+    # environment, silently changing `permitted_roots`, the index destination, and which
+    # `trust.json` is consulted — so a caller that forgot one argument would get a different
+    # overlay, a different write target and a different trust record, with nothing to say so.
     #
     # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
     # Putting the value here makes the mismatch unrepresentable instead of documented.
@@ -118,63 +119,20 @@ class Unresolved:
         return ": ".join(part for part in (self.said, self.detail) if part)
 
 
-@dataclass(frozen=True)
-class GitAnswer:
-    """Three values, where there were two: an answer, no answer, or could not ask.
-
-    `value` is the answer when there is one. `ran` is False only when `git` could not be run or
-    exited non-zero — an empty stdout from a successful run is "no answer", which is a fact
-    about the repository rather than about the machine.
-    """
-
-    value: str | None
-    ran: bool = True
-
-    @property
-    def unavailable(self) -> bool:
-        return not self.ran
-
-    def require(self, what: str) -> str | None:
-        """The answer, raising rather than answering `None` when `git` could not be asked."""
-        if not self.ran:
-            raise GitUnavailable(
-                f"`git` could not answer {what} in this checkout; stayfixed cannot tell where "
-                f"the store is without it — check that `git` runs here"
-            )
-        return self.value
-
-
-def _git(root: Path, *args: str) -> GitAnswer:
-    """git's one-line answer to `args` asked in `root`, through `gitenv.git_run`.
-
-    `git_run` scrubs the environment and decodes losslessly, so an `origin` URL holding a byte
-    that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
-    answer is what git printed, a path as the filesystem spells it, less its line ending
-    alone — never `strip()`, which takes a trailing space off a path that ends in one.
-    """
-    code, out = git_run(root, *args)
-    if code == -1:
-        return GitAnswer(None, ran=False)
-    if code != 0:
-        # `git` ran and declined, *or* `git` is broken. `git_is_usable` is what tells them
-        # apart; without it every caller read the second as the first.
-        return GitAnswer(None, ran=git_is_usable(root))
-    return GitAnswer(out.removesuffix("\n") or None)
-
-
 def main_checkout(root: Path) -> Path:
     """The checkout that owns the store, for a session running inside a worktree.
 
     The result must be an ancestor of nothing and a sibling of anything — but it must be a
-    real git answer, not one an inherited `GIT_DIR` produced, which is why `_git` scrubs.
+    real git answer, not one an inherited `GIT_DIR` produced, which is why `git_answer` scrubs.
 
     Raises `GitUnavailable` rather than answering `root` when `git` could not be run. Answering
-    `root` made `worktree.link` open with "this is the main checkout" and become a silent
+    `root` would make `worktree.link` open with "this is the main checkout" and become a silent
     no-op: no group links, no index link, no harness link, and `hooks.py` emitting its "nothing
-    to do" answer while every memory bundle was empty and nothing reported a failure.
+    to do" answer while every memory bundle is empty and nothing reports a failure.
     """
-    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").require(
-        "which checkout owns this worktree"
+    common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir").require(
+        "`git` could not answer which checkout owns this worktree in this checkout; stayfixed "
+        "cannot tell where the store is without it — check that `git` runs here"
     )
     return Path(common).parent if common else root
 
@@ -186,12 +144,12 @@ _BACK_POINTER = "gitdir"
 def _registered_worktree(root: Path) -> Path | None:
     """The checkout `root` is genuinely a registered worktree of, or `None` when it is not one.
 
-    The fallback used to require the worktree to live *under* the main checkout, and that
-    killed the feature in git's own documented layout: `git worktree add ../side` puts the
-    tree beside the checkout, containment was False, and `resolve` answered that there was no
-    store at all — so nothing was ever linked in the one place this module exists for.
+    Not whether the worktree lives *under* the main checkout: in git's own documented layout,
+    `git worktree add ../side` puts the tree beside the checkout, so a containment test would
+    answer that there is no store at all — and nothing would be linked in the one place this
+    module exists for.
 
-    **Registration is the question containment was standing in for.** A linked worktree's
+    **Registration is the question containment would only stand in for.** A linked worktree's
     private git directory is `<common-dir>/worktrees/<name>`, and that directory holds a
     `gitdir` file naming the `.git` file the worktree was created for. Both halves are
     checked, because only the first is written by whoever owns `root`: a `.git` may be a plain
@@ -201,17 +159,17 @@ def _registered_worktree(root: Path) -> Path | None:
     path named `.git` — but the fallback reads a store out of another repository, so it does
     not rest on that.)
 
-    Both queries go through `_git`, which scrubs the environment. That is a second lock on the
-    same door rather than this one's support: an inherited `GIT_DIR` answers for whatever
+    Both queries go through `git_answer`, which scrubs the environment. That is a second lock on
+    the same door rather than this one's support: an inherited `GIT_DIR` answers for whatever
     repository it names, and there it is also its own common dir, so a redirected fallback
     fails the registration test above anyway. Because they are redundant, each is pinned by its
     own test rather than by one that dies only when both are gone —
     `test_an_inherited_git_dir_never_reaches_the_git_helper` for the scrubbing and
     `test_a_directory_that_merely_sits_under_a_checkout_is_not_a_worktree_of_it` for this.
     """
-    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    private = _git(root, "rev-parse", "--path-format=absolute", "--git-dir")
-    if common.unavailable or private.unavailable:
+    common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    private = git_answer(root, "rev-parse", "--path-format=absolute", "--git-dir")
+    if not (common.ran and private.ran):
         raise GitUnavailable(
             "`git` could not answer whether this is a registered worktree; stayfixed cannot "
             "fall back to the checkout that owns the store without it — check that `git` "
@@ -234,17 +192,17 @@ def _registered_worktree(root: Path) -> Path | None:
 
 # The one answer to "does the overlay's record bind this checkout's `origin`", which `memory`
 # commands, `attach`, `attach --check`, `doctor` and the session-start line all read
-# (`binding_state`). A checkout with no `origin` is its own state and is asked first: it used to be
-# answered twice, here and in `attach.binding`, and the second answer called it a different remote
-# URL and pointed at `--trust-remote`, which then refused for the missing `origin`.
+# (`binding_state`). A checkout with no `origin` is its own state and is asked first, and here
+# alone: a second answer to it would be one more place to call it a different remote URL and point
+# at `--trust-remote`, which refuses for the missing `origin`.
 UNBOUND = "unbound"
 BOUND = "bound"
 MISMATCH = "mismatch"
 NO_ORIGIN = "no-origin"
 BINDING_STATES = (UNBOUND, BOUND, MISMATCH, NO_ORIGIN)
 
-# Each cause, and the way out that fits it. They used to be one `False` and one sentence, "run
-# `stayfixed attach`", which for a changed remote is the command that refuses. Fixed text: the
+# Each cause, and the way out that fits it, rather than one sentence for all of them: "run
+# `stayfixed attach`", for a changed remote, is the command that refuses. Fixed text: the
 # project's name and the record's path, which the repository chooses, go in `Unresolved.detail`
 # and never in these. The two a surface says with a way out of its own are kept apart from their
 # way out, so every surface says the same cause.
@@ -275,10 +233,11 @@ REMOTE_MISMATCH = (
 )
 _UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}
 # Asked before any of the four: a machine record naming an overlay root that is not there (the
-# overlay moved, or this machine never cloned it) read as "no record of this project", whose way
-# out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The root is
-# the owner's own configuration and not the repository's, so it is part of this sentence, through
-# `printed.quoted`, rather than a detail printed inside the region that marks repository text.
+# overlay moved, or this machine never cloned it) must not read as "no record of this project",
+# whose way out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The
+# root is the owner's own configuration and not the repository's, so it is part of this sentence,
+# through `printed.quoted`, rather than a detail printed inside the region that marks repository
+# text.
 OVERLAY_GONE = (
     "the overlay root the machine configuration records, {root}, is not a directory on this "
     "machine; record where the overlay is now with `stayfixed setup --preset NAME --overlay "
@@ -309,6 +268,22 @@ def binding_state(recorded: str | None, origin: str | None) -> str:
     return BOUND if recorded == origin else MISMATCH
 
 
+def read_binding_record(record: Path) -> dict[str, str]:
+    """The binding record at `record`, `projects/<name>/project.toml`: each key whose value is a
+    non-empty string, mapped to it.
+
+    The one reader of that file, and no failure policy: an `OSError`, a `UnicodeDecodeError` and
+    each of `UNPARSEABLE` are raised as met, because what a record that cannot be read means is
+    each caller's to say, and its three callers say three things, each at its own `except`.
+    `_bound` answers the hook path "unreadable", which degrades closed; `attach`'s `_recorded`
+    stops the run, so a broken record never becomes a first attach; and `attach`'s
+    `_first_attach` keeps today's date, which is a note and binds nothing. Whether there is a
+    record at all is the caller's question too, asked before this.
+    """
+    raw = tomllib.loads(record.read_text(encoding="utf-8"))
+    return {key: value for key, value in raw.items() if isinstance(value, str) and value}
+
+
 def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
 
@@ -319,13 +294,11 @@ def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     recorded = None
     if record.is_file():
         try:
-            raw = tomllib.loads(record.read_text(encoding="utf-8"))
+            recorded = read_binding_record(record).get("remote")
         except (OSError, UnicodeDecodeError, *UNPARSEABLE):
             # The path and never the exception: a TOML error's message quotes the file's own
             # text, and this file holds a remote URL.
             return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
-        value = raw.get("remote")
-        recorded = value if isinstance(value, str) and value else None
     cause = _UNBOUND_CAUSES.get(binding_state(recorded, origin_remote(root)))
     return None if cause is None else Unresolved(cause, f"project {quoted(project)}")
 
@@ -334,16 +307,15 @@ def _inside(candidate: Path, parent: Path) -> bool:
     """`candidate` is `parent` or sits under it, both resolved first.
 
     `Path.is_relative_to` and not a hand-rolled `== base or base in parents`, which is the same
-    predicate written out longhand — and which `index._resolved_if_permitted` already spelled
-    the short way, so the module had two spellings of one rule. Two spellings of a containment
-    rule is one more place for them to stop agreeing.
+    predicate written out longhand, beside `index._resolved_if_permitted`'s short spelling of
+    it. Two spellings of a containment rule is one more place for them to stop agreeing.
     """
     return candidate.resolve().is_relative_to(parent.resolve())
 
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
     """This project's whole share of the overlay: the common notes and its own."""
-    return overlay / COMMON, overlay / PROJECTS / project / "memory"
+    return overlay / COMMON, overlay / PROJECTS / project / STORE_DIR
 
 
 # The one group whose notes are not this project's, and `common/memory` *is* its store rather
@@ -406,8 +378,8 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
     """Whether `--store` names this project's own share of the recorded overlay, in overlay mode.
 
     That directory is the far end of the link tree, not a store of its own: `developer` lives in
-    `common/memory`, beside it, so resolving groups *under* it answered a smaller store — the
-    index it rendered had no developer notes, and `--check` then called that index current. A
+    `common/memory`, beside it, so resolving groups *under* it would answer a smaller store — an
+    index rendered from it has no developer notes, and `--check` would call that index current. A
     store is one store however it is named, so this name resolves as the plain run does.
     """
     if override is None or overlay is None or config.memory.mode != "overlay":
@@ -433,10 +405,10 @@ def _resolve_at(
     elif mode == "local-only":
         try:
             # `contained` with no `allow_final_symlink` refuses a symlink at *any* level
-            # between the root and the target, which testing `base.is_symlink()` did not:
-            # `.stayfixed` and `.stayfixed/local` were never looked at, and a group directory
+            # between the root and the target, which testing `base.is_symlink()` would not:
+            # it never looks at `.stayfixed` and `.stayfixed/local`, and a group directory
             # reached *through* one of those is not itself a symlink, so the per-group check
-            # below never ran either. That is the same hazard the comment below documents for
+            # below would never run either. That is the same hazard the comment below documents for
             # `paths.memory`, left open one directory higher — and in the mode the preset
             # ships by default, where the whole store is otherwise ungoverned by `contained`.
             base = contained(root, str(LOCAL_STORE))
@@ -503,10 +475,10 @@ def resolved(
     """The store and, when there is none, why — in **one** pass.
 
     `resolve` and `refusal_reason` each walk the whole resolution, and a caller that needs both
-    (every `memory` command does: the store to work with, the reason to report) walked it
+    (every `memory` command does: the store to work with, the reason to report) would walk it
     twice. Each walk runs up to four `git` queries with a five-second timeout apiece, so a
-    hanging `git` cost a refused command up to forty seconds — inside a `SessionStart` hook,
-    once per bundle entry. The two functions below stay, because a caller that wants only one
+    hanging `git` would cost a refused command up to forty seconds — inside a `SessionStart`
+    hook, once per bundle entry. The two functions below stay, because a caller that wants only one
     of the two answers should not have to say so; this is the one for callers that want both.
 
     The reason's `detail` is repository-authored text: see `refusal_reason` for what that

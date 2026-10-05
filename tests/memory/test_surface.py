@@ -28,7 +28,10 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the overlay's per-project layout: attach writes it, overlay renders it
         "PROJECTS",
         "PROJECT_RECORD",
+        "STORE_DIR",
         "COMMON_GROUP",
+        # the one reader of the binding record, which attach reads with a policy of its own
+        "read_binding_record",
         # the link tree attach builds and its `attached` row reports on
         "link",
         "attach_main",
@@ -39,8 +42,11 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
         "linked_names",  # every name the tree holds, which attach hides from git
-        # the overlay root and the note store a doctor row reads, resolved once per report, for
-        # the attach and overlay areas' rows
+        # every path the tree points at in the overlay, which attach asks the length of before
+        # its first write
+        "link_sources",
+        # the note store a doctor row reads, resolved once per area per report, for the attach
+        # area's row
         "Answers",
         # the bundle slots, which tests/hooks/test_hooks_json.py holds the hooks file to
         "SLOTS",

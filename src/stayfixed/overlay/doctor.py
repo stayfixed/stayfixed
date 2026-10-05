@@ -5,8 +5,9 @@ area's: it renders the overlay, declares the floor `overlay-requires` judges, an
 `.pre-commit-config.yaml` whose installation `pre-commit` asks about. `doctor`'s core discovers
 this module by name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
 
-The overlay root comes from the `Answers` this module's `register()` creates, one per report, so
-both rows read one answer and nothing one run resolved reaches the next.
+The overlay root is the core's answer, `Context.overlay_root`, which the report resolves at most
+once for every row that reads it, so both rows read one answer and nothing one run resolved
+reaches the next.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -21,22 +22,20 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from stayfixed.doctor.api import Context, Contribution, Row, Status
-    from stayfixed.memory.api import Answers
 
 # The two overlay-gated rows ask one question before anything else, and both must say the same
-# thing about it, so the sentences live in one place rather than being copied from one row into
-# the other. They were copied -- `overlay-requires`' skip arm was `pre-commit`'s byte for byte,
-# `or not overlay.is_dir()` included -- and the copy carried the defect with it.
+# thing about it, so the sentences live in one place rather than in a copy per row: a copy carries
+# a defect into the other row with it.
 #
-# The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
-# sentence. `config.overlay.overlay_root` answers `None` for "this machine records no overlay",
-# which is the ordinary state before `stayfixed setup` has run and which nothing can be done
-# about from here; it answers a `Path` for a recorded root whether or not anything is there.
-# So a machine that recorded an overlay and then moved it -- the owner reorganising their own
-# directories is the ordinary way -- was told "no overlay root is recorded on this machine",
-# which is false, and was handed an empty remedy under it. It is the second state, not the
-# first, that is worth acting on: the overlay is where the notes live, and a recorded root
-# that is not there breaks the store as well as these two rows.
+# `overlay is None or not overlay.is_dir()` is two states, and they get two sentences.
+# `Context.overlay_root` answers `None` for "this machine records no overlay", which is the
+# ordinary state before `stayfixed setup` has run and which nothing can be done about from here;
+# it answers a `Path` for a recorded root whether or not anything is there. A machine that
+# recorded an overlay and then moved it -- the owner reorganising their own directories is the
+# ordinary way -- is not told "no overlay root is recorded on this machine", which would be
+# false, with an empty remedy under it. It is the second state, not the first, that is worth
+# acting on: the overlay is where the notes live, and a recorded root that is not there breaks
+# the store as well as these two rows.
 NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
 OVERLAY_GONE = (
     "the overlay root this machine records is not a directory, so nothing about the overlay "
@@ -47,20 +46,13 @@ OVERLAY_GONE_REMEDY = (
     "--preset recommended --overlay <path>` to record where it is now"
 )
 
-# The overlay's commit-time secret scan, and the hook `pre-commit install` writes. The hook's
-# *name* only: where it lives is `guards.hooks_dir`'s answer, because an overlay with
-# `core.hooksPath` set, or one that is a worktree or a submodule, keeps its hooks nowhere near
-# `.git/hooks` -- and this row would then warn permanently with a remedy that cannot clear it.
-PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-PRE_COMMIT_HOOK = "pre-commit"
-
 
 def _overlay_absent(overlay: Path | None) -> Row:
     """Why there is no overlay to measure, told apart into the two states that are not alike.
 
     Called by both overlay-gated rows and by nothing else, so the sentence a reader gets is the
-    same whichever row they read it in -- see the constants above for the copy this replaces and
-    for what it was saying to whom.
+    same whichever row they read it in -- the constants above say why the two states are two
+    sentences.
 
     The argument is the root rather than the `Context`, so that the caller's own
     `overlay is None or not overlay.is_dir()` narrows `overlay` to a `Path` for the rest of its
@@ -80,7 +72,7 @@ def _overlay_absent(overlay: Path | None) -> Row:
     return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)
 
 
-def _pre_commit(context: Context, answers: Answers) -> Row:
+def _pre_commit(context: Context) -> Row:
     """Whether the overlay's own secret scan is armed on **this** machine.
 
     `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
@@ -90,8 +82,9 @@ def _pre_commit(context: Context, answers: Answers) -> Row:
     from stayfixed.doctor.api import OK, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.guards.api import hooks_dir
+    from stayfixed.overlay.layout import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None or not overlay.is_dir():
         return _overlay_absent(overlay)
     if not (overlay / PRE_COMMIT_CONFIG).is_file():
@@ -105,8 +98,8 @@ def _pre_commit(context: Context, answers: Answers) -> Row:
         hooks = hooks_dir(overlay)
     except Refusal:
         # `git` is invoked, never imported, and a `git` that cannot answer is a reported finding
-        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is the thing
-        # this row was getting wrong.
+        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is wrong for an
+        # overlay that keeps its hooks elsewhere (`overlay.layout.PRE_COMMIT_HOOK` says when).
         return Row(
             WARN,
             "`git` could not name the overlay's hooks directory, so whether its commit-time "
@@ -123,7 +116,7 @@ def _pre_commit(context: Context, answers: Answers) -> Row:
     return Row(OK, "the overlay's commit-time secret scan is installed")
 
 
-def _overlay_requires(context: Context, answers: Answers) -> Row:
+def _overlay_requires(context: Context) -> Row:
     """Whether the stayfixed running satisfies the floor the overlay declares: the overlay's
     requirement as the verdict it can be, since an overlay runs nothing and so cannot refuse to.
 
@@ -139,7 +132,7 @@ def _overlay_requires(context: Context, answers: Answers) -> Row:
     from stayfixed.overlay.layout import PLUGIN_MANIFEST
     from stayfixed.overlay.requires import requires_of, satisfies
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None or not overlay.is_dir():
         return _overlay_absent(overlay)
     spec = requires_of(overlay)
@@ -174,14 +167,12 @@ def _overlay_requires(context: Context, answers: Answers) -> Row:
 
 
 def register() -> Contribution:
-    """The two overlay rows, sharing one `Answers` so the overlay root is read once for both."""
+    """The two overlay rows, both reading the report's one overlay root."""
     from stayfixed.doctor.api import Contribution
-    from stayfixed.memory.api import Answers
 
-    answers = Answers()
     return Contribution(
         checks=(
-            (PRE_COMMIT_HOOK, lambda context: _pre_commit(context, answers)),
-            ("overlay-requires", lambda context: _overlay_requires(context, answers)),
+            ("pre-commit", _pre_commit),
+            ("overlay-requires", _overlay_requires),
         )
     )

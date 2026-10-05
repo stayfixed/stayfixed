@@ -21,6 +21,7 @@ EXPORTED = [
     "Manifest",
     "ManifestError",
     "ParserLimitError",
+    "Placed",
     "Plan",
     "Record",
     "Refused",
@@ -33,6 +34,7 @@ EXPORTED = [
     "digest",
     "drop",
     "effective_target",
+    "entry_commands",
     "extract",
     "left_copies",
     "local_copies",
@@ -41,12 +43,15 @@ EXPORTED = [
     "ours_locally",
     "owned",
     "owned_ids",
+    "placed_entries",
     "plan",
     "printable",
     "render_report",
+    "settings_object",
     "unlinks",
     "upsert",
     "validate_sources",
+    "wanted_placements",
 ]
 
 

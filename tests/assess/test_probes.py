@@ -228,12 +228,32 @@ def test_a_settings_file_stayfixed_cannot_read_is_named_and_not_fatal(tmp_path: 
 def test_a_settings_file_nested_past_the_parser_s_depth_is_named_and_not_fatal(
     tmp_path: Path,
 ) -> None:
-    # `json` answers deep nesting with `RecursionError`, which no `ValueError` catches.
-    # Mutation (advisory): `RecursionError` dropped from the probe's `except` -> reddens.
+    # `json` answers deep nesting with `RecursionError`, which no `ValueError` catches; the
+    # engine's reader refuses it as a `ParserLimitError`. Mutation (advisory): `EntriesError`
+    # dropped from the probe's `except` -> `run_probes` raises and this reddens.
     root = _repo(tmp_path, 'agents = ["claude"]')
     _write(root, ".claude/settings.json", "[" * 100_000)
     assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
         (COULD_NOT_LOOK, (".claude/settings.json",))
+    ]
+
+
+def test_a_number_past_the_parser_s_reach_does_not_hide_the_foreign_entry_beside_it(
+    tmp_path: Path,
+) -> None:
+    # An integer literal longer than the interpreter converts (4,300 digits by default) is valid
+    # JSON a harness reads, and no part of any entry's provenance. The probe parsed the file a
+    # second time with the interpreter's limit on numbers and called it unreadable, while `doctor`
+    # read the same file and named the foreign entry. Mutation (advisory): the probe reads the
+    # entries through `json.loads` again -> "could not look" and this reddens.
+    root = _repo(tmp_path, 'agents = ["claude"]')
+    _write(
+        root,
+        ".claude/settings.json",
+        _settings("echo foreign")[:-1] + ', "n": ' + "1" * 5_000 + "}",
+    )
+    assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
+        ("foreign-hooks", (".claude/settings.json",))
     ]
 
 

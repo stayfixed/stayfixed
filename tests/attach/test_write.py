@@ -26,9 +26,9 @@ from stayfixed.attach.write import (
     Attached,
     attach,
 )
-from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory.api import PROJECT_RECORD
+from stayfixed.memory.api import PROJECT_RECORD, link_sources
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 
@@ -895,8 +895,8 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
     tmp_path: Path,
 ) -> None:
     # The ledger is the unreadable ledger it is, and the attach that reads it back answers so
-    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the attach
-    # ledger's reader lets a nested ledger raise" -> both raise `RecursionError`.
+    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the JSON object
+    # reader lets a document nested past the parser raise" -> both raise `RecursionError`.
     root, store, machine = _attachable(tmp_path)
     attach(
         root,
@@ -924,8 +924,8 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
 
 def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
     # The settings file `attach` merges into, read first by `permissions.settings_document`.
-    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a nested document raise"
-    # -> both raise `RecursionError`.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> both raise `RecursionError`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text('{"hooks": ' + NESTED + "}", encoding="utf-8")
@@ -953,7 +953,7 @@ LONG_NUMBER = "1" * 5_000
 def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
     tmp_path: Path,
 ) -> None:
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the parser's
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
     # reach raise" -> both raise `ValueError`.
     root, store, machine = _attachable(tmp_path)
     attach(
@@ -981,7 +981,7 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
 
 
 def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
-    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a number past the parser's
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
     # reach raise" -> both raise `ValueError`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()
@@ -2250,11 +2250,15 @@ def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_on
 def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source(
     tmp_path: Path, projects: str
 ) -> None:
-    # A name whose directory fits under the longest path while the files under it do not, in an
-    # overlay that has no directory for it yet -- under a `projects/` it keeps, or with no
-    # `projects/` at all. Nothing is below a directory that is not there, so `--check` reads each
-    # source there as the absent file it is and previews what `common/` grants. Read as a fault
-    # of the overlay's, it failed: "cannot be read: File name too long". Mutations (oracle):
+    # A name whose directory, binding record and every path `attach` links inside it fit under
+    # the longest path while a source under it does not, in an overlay that has no directory for
+    # it yet -- under a `projects/` it keeps, or with no `projects/` at all. Nothing is below a
+    # directory that is not there, so `--check` reads each source there as the absent file it is
+    # and previews what `common/` grants. Read as a fault of the overlay's, it failed: "cannot be
+    # read: File name too long". A record or a linked path past the longest path is refused before
+    # any source is read, which is `tests/attach/test_commands.py`'s
+    # `test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too`,
+    # so those fit here and the permissions file is the source past them. Mutations (oracle):
     # `mutations/`'s "a source the project's name rules out is an overlay that cannot be asked"
     # and "a source past the longest path under a project the overlay has no directory for cannot
     # be asked" -> both cases fail.
@@ -2266,12 +2270,19 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     hooks = {"PreToolUse": [{"matcher": "Bash", "hooks": [ENTRY]}]}
     root, store, machine = _attachable(deep, allow=(RULE,), hooks=hooks)
     projects_dir = store.parents[1]
-    # The project's directory 10 characters short of the longest path, its name a file name that
-    # may be, and its hook file past the longest path.
-    name = "n" * (longest - 10 - len(str(projects_dir)) - 1)
+    # How far past the project's directory the longest path `attach` links there reaches, off the
+    # paths the link tree is built from for the fixture's own name.
+    share = store.parent
+    linked = link_sources(store.parents[2], load(root, machine=machine))
+    reach = max(len(str(path)) for path in linked if share in path.parents) - len(str(share))
+    # The project's directory one character shorter than that path needs, its name a file name
+    # that may be, its binding record and every linked path under the longest path and its
+    # permissions file past it.
+    name = "n" * (longest - reach - 1 - len(str(projects_dir)) - 1)
     assert len(name) < 255
-    assert len(str(projects_dir / name)) == longest - 10
-    assert len(str(projects_dir / name / "claude" / "hooks.json")) > longest
+    assert len(str(projects_dir / name)) + reach == longest - 1
+    assert len(str(projects_dir / name / PROJECT_RECORD)) < longest
+    assert len(str(projects_dir / name / "claude" / "permissions.json")) > longest
     (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
     if projects == "projects-absent":
         shutil.rmtree(projects_dir)

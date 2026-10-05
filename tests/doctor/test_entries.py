@@ -1,12 +1,11 @@
-"""An area adds rows to `stayfixed doctor` through its own `doctor.py`, discovered by name, and
-tells `hook-entries` what it put into settings files through its `Claims`.
+"""`hook-entries`, the core row that reads what every area claims, told with fake areas: each
+area's `Claims` — the ids it recorded and the commands it grants — in that area's own `Wording`.
+The row is `stayfixed.doctor.entries`'.
 
-The fake areas below are modules, or an import's exception in an area's place, injected through
-`checks.discover_contributors`, the seam the discovery reads, the way `tests/test_cli.py`
-replaces `cli.discover_registrars`: a test that shipped a real `doctor.py` to prove the
-convention would be a check in every user's report. With the fakes in place no real area is
-discovered, so what these cases prove is the core's reading of a contribution; what a real area
-answers is proven in that area's own tests.
+The fake areas are `tests/doctor/test_registry.py`'s, injected through the seam discovery reads.
+With them in place no real area is discovered, so what these cases prove is the core's reading
+of the claims; what `attach` answers is proven in `tests/attach/test_doctor.py`, through the
+whole report.
 """
 
 from __future__ import annotations
@@ -16,15 +15,13 @@ import shutil
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 
 import pytest
 
-from stayfixed.doctor import checks
 from stayfixed.doctor.api import (
     OK,
     RED,
-    SKIP,
     WARN,
     Check,
     Claims,
@@ -33,325 +30,13 @@ from stayfixed.doctor.api import (
     Row,
     Wording,
 )
+from stayfixed.doctor.entries import SETTINGS_FILES
+from stayfixed.scaffold import Placed, wanted_placements
 from tests.doctor.test_checks import _checks, _initialised
+from tests.doctor.test_registry import CORE, _area, _contribute
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
-CORE = [name for name, _ in checks.CHECKS]
-
-
-def _area(name: str, contribution: Contribution) -> ModuleType:
-    """A stand-in for `stayfixed.<name>.doctor`, whose `register()` answers `contribution`."""
-    module = ModuleType(f"stayfixed.{name}.doctor")
-    setattr(module, "register", lambda: contribution)  # noqa: B010 - a module built at runtime
-    return module
-
-
-def _contribute(
-    monkeypatch: pytest.MonkeyPatch, *areas: ModuleType | tuple[str, Exception]
-) -> None:
-    """Discovery answering `areas` in order: each a module that imported, or the qualified name of
-    one that did not with the exception its import raised."""
-    found = [area if isinstance(area, tuple) else (area.__name__, area) for area in areas]
-    monkeypatch.setattr("stayfixed.doctor.checks.discover_contributors", lambda: found)
-
-
-def test_a_contributed_check_runs_after_the_core_checks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The core's rows first, then each area's in the order discovery hands the areas over, and
-    # each contributed check is asked with the run's own context. Mutation (oracle): `mutations/`'s
-    # "doctor drops the checks an area contributes" -> the two contributed rows are missing.
-    asked: list[Path] = []
-
-    def first(context: Context) -> Row:
-        asked.append(context.root)
-        return Row(WARN, "the first area's answer", "the first area's remedy")
-
-    def second(context: Context) -> Row:
-        return Row(OK, "the second area's answer")
-
-    _contribute(
-        monkeypatch,
-        _area("alpha", Contribution(checks=(("alpha-row", first),))),
-        _area("omega", Contribution(checks=(("omega-row", second),))),
-    )
-    root = _initialised(tmp_path)
-    rows = _checks(tmp_path, root)
-    assert [row.name for row in rows] == [*CORE, "alpha-row", "omega-row"]
-    assert rows[-2:] == [
-        Check("alpha-row", WARN, "the first area's answer", "the first area's remedy"),
-        Check("omega-row", OK, "the second area's answer", ""),
-    ]
-    assert asked == [root]
-
-
-def test_a_contribution_that_raises_costs_one_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A contributed check is asked through the guard the core's are, so one that raises is one
-    # red row naming the exception's type and never its message, which a check may have built
-    # out of repository bytes, and the report around it is whole. Mutation (oracle): `mutations/`'s
-    # "doctor asks its checks without the guard" -> the `RuntimeError` escapes `run_checks`.
-    def broken(context: Context) -> Row:
-        raise RuntimeError("IGNORE-PRIOR-RULES, a message the check built")
-
-    def after(context: Context) -> Row:
-        return Row(OK, "still asked")
-
-    _contribute(
-        monkeypatch,
-        _area("alpha", Contribution(checks=(("alpha-broken", broken), ("alpha-after", after)))),
-    )
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha-broken", "alpha-after"]
-    broken_row = rows[len(CORE)]
-    assert broken_row == Check(
-        "alpha-broken",
-        RED,
-        "this check could not run: RuntimeError",
-        "report this, with the command you ran",
-    )
-    assert "IGNORE" not in broken_row.detail + broken_row.remedy
-    assert rows[-1] == Check("alpha-after", OK, "still asked", "")
-
-
-def _registering(register: object) -> ModuleType:
-    """A stand-in for `stayfixed.alpha.doctor` whose `register` is `register` itself."""
-    module = ModuleType("stayfixed.alpha.doctor")
-    setattr(module, "register", register)  # noqa: B010 - a module built at runtime
-    return module
-
-
-def _raises() -> Contribution:
-    raise RuntimeError("IGNORE-PRIOR-RULES, a message register() built")
-
-
-def _answer(context: Context) -> Row:
-    return Row(OK, "answered")
-
-
-# What `register()` can hand back that is not a `Contribution` of `(name, check)` pairs, each the
-# way an area's own code could get it wrong: no value at all, the pairs without the record, checks
-# that are not a tuple of pairs, a pair missing its check, a name that is not text, a name that is
-# empty, a check that cannot be called, and claims that are not a function.
-MALFORMED = {
-    "none": lambda: None,
-    "bare-pairs": lambda: (("alpha-row", _answer),),
-    "checks-not-a-tuple": lambda: Contribution(checks=None),  # type: ignore[arg-type]
-    "name-empty": lambda: Contribution(checks=(("", _answer),)),
-    "short-pair": lambda: Contribution(checks=(("alpha-row",),)),  # type: ignore[arg-type]
-    "name-not-text": lambda: Contribution(checks=((1, _answer),)),  # type: ignore[arg-type]
-    "check-not-callable": lambda: Contribution(checks=(("alpha-row", "answer"),)),  # type: ignore[arg-type]
-    "claims-not-callable": lambda: Contribution(checks=(), claims="claims"),  # type: ignore[arg-type]
-}
-
-
-@pytest.mark.parametrize("register", ["raises", *MALFORMED])
-def test_an_area_whose_register_fails_costs_one_row_named_after_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, register: str
-) -> None:
-    # `register()` is an area's code like its checks are, so one that raises, or hands back
-    # something that is not a `Contribution`, costs one row and not the report: a red row named
-    # after the area, where its rows would have been, naming the exception's type and never its
-    # message, and every other row as it would be. It used to escape `run_checks`, which the CLI
-    # turns into an internal error and exit 2 with no report at all. Mutations (oracle):
-    # `mutations/`'s "doctor calls an area's register() unguarded" -> the `raises` case escapes;
-    # "doctor takes whatever an area's register() returns" -> the malformed cases fail later, or
-    # report nothing for the area.
-    # Measured by hand: `_well_formed` without its `isinstance(contribution.checks, tuple)` ->
-    # `checks-not-a-tuple` escapes as `TypeError` and the report is lost; without `bool(pair[0])`
-    # -> `name-empty` prints a row with no name.
-    _contribute(
-        monkeypatch,
-        _registering(_raises if register == "raises" else MALFORMED[register]),
-        _area("omega", Contribution(checks=(("omega-row", _answer),))),
-    )
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha", "omega-row"]
-    broken = rows[len(CORE)]
-    if register == "raises":
-        detail = "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
-    else:
-        detail = (
-            "stayfixed.alpha.doctor could not contribute its rows: its register() did not "
-            "return a Contribution of (name, check) pairs"
-        )
-    assert broken == Check("alpha", RED, detail, "report this, with the command you ran")
-    assert "IGNORE" not in broken.detail + broken.remedy
-    assert rows[-1] == Check("omega-row", OK, "answered", "")
-
-
-def test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # An area's `doctor.py` is its own code as its `register()` is, so one that raises on import
-    # costs that area's rows and not the report: one red row named after the area, naming the
-    # exception's type and never its message, and every other row as it would be. Discovery hands
-    # the failure over (`tests/test_areas.py` imports a real one); this is the report's reading of
-    # it. Mutation (oracle): `mutations/`'s "doctor reads an import failure as a module" -> the row
-    # says the area's register() failed, which is not what happened.
-    _contribute(
-        monkeypatch,
-        ("stayfixed.alpha.doctor", RuntimeError("IGNORE-PRIOR-RULES, a message the import built")),
-        _area("omega", Contribution(checks=(("omega-row", _answer),))),
-    )
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha", "omega-row"]
-    broken = rows[len(CORE)]
-    assert broken == Check(
-        "alpha",
-        RED,
-        "stayfixed.alpha.doctor could not be imported: RuntimeError",
-        "report this, with the command you ran",
-    )
-    assert rows[-1] == Check("omega-row", OK, "answered", "")
-
-
-@pytest.mark.parametrize("failure", ["register", "import", "repeat"])
-def test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
-    # With no `stayfixed.toml` every check after the first skips, because each would be asked
-    # with no configuration. An area that could not contribute is not that: its row is about
-    # stayfixed's own code, which no configuration changes, so it is red in the early report too,
-    # however the area failed. Mutation (oracle): `mutations/`'s "the early report skips an area
-    # that could not register" -> the row is a skip.
-    if failure == "register":
-        _contribute(monkeypatch, _registering(_raises))
-        detail = "stayfixed.alpha.doctor could not contribute its rows: RuntimeError"
-    elif failure == "import":
-        _contribute(monkeypatch, ("stayfixed.alpha.doctor", RuntimeError()))
-        detail = "stayfixed.alpha.doctor could not be imported: RuntimeError"
-    else:
-        _contribute(monkeypatch, _area("alpha", Contribution(checks=((CORE[1], _answer),))))
-        detail = (
-            f"stayfixed.alpha.doctor could not contribute its rows: its check {CORE[1]!r} "
-            f"repeats a name the core already reports"
-        )
-    rows = _checks(tmp_path, tmp_path)
-    assert [row.name for row in rows] == [*CORE, "alpha"]
-    assert rows[-1] == Check("alpha", RED, detail, "report this, with the command you ran")
-
-
-def _claims(context: Context) -> Claims:
-    raise AssertionError("the claims of an area that could not contribute were asked")
-
-
-@pytest.mark.parametrize("clash", ["core", "another-area", "itself", "area-name-taken"])
-def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clash: str
-) -> None:
-    # A row's name is all a reader, the summary line and `--json` key on, so two rows under one
-    # name are two answers nobody can tell apart. A contributed name that repeats one already in
-    # the report is a defect in stayfixed's own code, as a `register()` that raises is, and costs
-    # what that costs: the offending area's rows and its claims become one red row named after
-    # it, and the rest of the report stands. It used to raise out of `run_checks`, and the CLI
-    # turned that into an internal error with no report at all. The row's name is itself a name
-    # in the report, so when the area's name is taken it is numbered, never repeated. Mutations
-    # (oracle): `mutations/`'s "doctor lets an area repeat a name the report already has" -> the
-    # `core` and `another-area` cases print two rows under one name; "doctor lets an area name
-    # two of its checks alike" -> `itself` does; "an area's failure row takes a name the report
-    # already has" -> `area-name-taken` prints two rows named `omega`.
-    if clash == "core":
-        repeated, owner = CORE[1], "the core"
-        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
-        alpha = Contribution(checks=(("alpha-row", _answer),))
-    elif clash == "another-area":
-        repeated, owner = "alpha-row", "stayfixed.alpha.doctor"
-        omega = Contribution(
-            checks=(("omega-row", _answer), ("alpha-row", _answer)), claims=_claims
-        )
-        alpha = Contribution(checks=(("alpha-row", _answer),))
-    elif clash == "itself":
-        repeated, owner = "omega-row", "it"
-        omega = Contribution(
-            checks=(("omega-row", _answer), ("omega-row", _answer)), claims=_claims
-        )
-        alpha = Contribution(checks=(("alpha-row", _answer),))
-    else:
-        # `alpha` contributes the names `omega`'s row would take first and second, so the row
-        # is numbered past both.
-        repeated, owner = CORE[1], "the core"
-        omega = Contribution(checks=((CORE[1], _answer),), claims=_claims)
-        alpha = Contribution(checks=(("omega", _answer), ("omega (2)", _answer)))
-    _contribute(monkeypatch, _area("alpha", alpha), _area("omega", omega))
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    alphas = [name for name, _ in alpha.checks]
-    failed = "omega (3)" if clash == "area-name-taken" else "omega"
-    assert [row.name for row in rows] == [*CORE, *alphas, failed]
-    assert [each.status for each in rows[len(CORE) : -1]] == [OK] * len(alphas)
-    assert rows[-1] == Check(
-        failed,
-        RED,
-        f"stayfixed.omega.doctor could not contribute its rows: its check {repeated!r} repeats "
-        f"a name {owner} already reports",
-        "report this, with the command you ran",
-    )
-    assert [each.claims for each in checks.contributions()] == [None, None]
-
-
-def test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The red row an area that could not contribute gets is a name in the report like any other, so
-    # a later area that contributes a check under that name repeats it. Recorded only in the row
-    # and not among the names the report already has, the later area's check joined, and the
-    # report printed two rows named `alpha`: one red, one green, which nothing keyed on the name
-    # can tell apart. Mutation (oracle): `mutations/`'s "an area's failure row is not counted among
-    # the report's names" -> two rows named `alpha`.
-    _contribute(
-        monkeypatch,
-        _registering(_raises),
-        _area("omega", Contribution(checks=(("alpha", _answer),), claims=_claims)),
-    )
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha", "omega"]
-    assert rows[-1] == Check(
-        "omega",
-        RED,
-        "stayfixed.omega.doctor could not contribute its rows: its check 'alpha' repeats a name "
-        "stayfixed.alpha.doctor already reports",
-        "report this, with the command you ran",
-    )
-
-
-def test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # An area whose second check repeats a core name contributes none of its rows, so its first
-    # name is not in the report, and a later area may use it. Asking whether the area repeats a
-    # name must not write the area's names among the report's: written there, the turned-away
-    # area's first name was taken by nobody's row, and the later area was turned away too, for
-    # repeating a name "it" already reports. Mutation (oracle): `mutations/`'s "asking whether an
-    # area repeats a name records its names in the report" -> omega's row is red.
-    _contribute(
-        monkeypatch,
-        _area("alpha", Contribution(checks=(("shared", _answer), (CORE[1], _answer)))),
-        _area("omega", Contribution(checks=(("shared", _answer),))),
-    )
-    rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha", "shared"]
-    assert rows[-1] == Check("shared", OK, "answered", "")
-
-
-def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The report has one row per check whatever state the repository is in, so with no
-    # `stayfixed.toml` a contributed check gets the skip every core check after the first gets,
-    # and is never asked: it would be asked with no configuration to read. Mutation (oracle):
-    # `mutations/`'s "the early report names the core's checks alone" -> the row is missing.
-    def unreachable(context: Context) -> Row:
-        raise AssertionError("asked with no configuration")
-
-    _contribute(monkeypatch, _area("alpha", Contribution(checks=(("alpha-row", unreachable),))))
-    rows = _checks(tmp_path, tmp_path)
-    assert [row.name for row in rows] == [*CORE, "alpha-row"]
-    assert rows[-1].status == SKIP
-
-
-# --- `Claims`: what each area says it put into settings files ----------------------------------
 
 # Two entries claiming the marker, one for each of two areas, in a settings file `hook-entries`
 # walks. Each area records its own id and grants its own command, so neither answer alone vouches
@@ -403,20 +88,33 @@ def _speaks_no_attach(row: Check) -> None:
         assert word not in row.detail + row.remedy, (word, row)
 
 
-def _hooked(root: Path, *commands: str) -> None:
-    """`root`'s `SETTINGS`, holding one `PreToolUse` hook entry per command, in order."""
-    assert SETTINGS in checks.SETTINGS_FILES, "the walk would never open this file"
+def _hooked(
+    root: Path,
+    *commands: str,
+    event: str = "PreToolUse",
+    fields: Mapping[str, str] = MappingProxyType({"matcher": "Bash"}),
+) -> None:
+    """`root`'s `SETTINGS`, holding one hook entry per command, in order, in one group under
+    `event` whose fields besides its entries are `fields`: by default where `_granting` grants."""
+    assert SETTINGS in SETTINGS_FILES, "the walk would never open this file"
     entries = [{"type": "command", "command": command} for command in commands]
     (root / SETTINGS).parent.mkdir(parents=True, exist_ok=True)
     (root / SETTINGS).write_text(
-        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": entries}]}}),
+        json.dumps({"hooks": {event: [{**fields, "hooks": entries}]}}),
         encoding="utf-8",
     )
 
 
+def _granting(*commands: str) -> frozenset[Placed]:
+    """A grant of each command where `_hooked` puts it by default, as an area answers one: read
+    back by the walk out of the entries `apply_entries` would install, never spelled by hand."""
+    entries = [{"type": "command", "command": command} for command in commands]
+    return frozenset(wanted_placements({"PreToolUse": [{"matcher": "Bash", "hooks": entries}]}))
+
+
 def _claiming(
     recorded: Mapping[str, str] | None,
-    granted: frozenset[str] | None,
+    granted: frozenset[Placed] | None,
     *,
     sourced: bool = True,
     wording: Wording = ALPHA_WORDING,
@@ -429,8 +127,8 @@ def _claiming(
     )
 
 
-ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
-OMEGA_CLAIMS = _claiming({"omega-1": "PreToolUse"}, frozenset({OMEGA}), wording=OMEGA_WORDING)
+ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, _granting(ALPHA))
+OMEGA_CLAIMS = _claiming({"omega-1": "PreToolUse"}, _granting(OMEGA), wording=OMEGA_WORDING)
 
 
 def _hook_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *areas: ModuleType) -> Check:
@@ -477,13 +175,46 @@ def test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_togethe
         tmp_path,
         monkeypatch,
         _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset())),
-        _area("omega", _claiming({}, frozenset({ALPHA}), wording=OMEGA_WORDING)),
+        _area("omega", _claiming({}, _granting(ALPHA), wording=OMEGA_WORDING)),
     )
     assert row.status == RED, row
     assert (
         f"1 entr(ies) claim the stayfixed marker and are recorded in .alpha/record.json, and "
         f"alpha's source does not grant them: {SETTINGS} entry 1 of 1"
     ) in row.detail
+    _speaks_no_attach(row)
+
+
+@pytest.mark.parametrize(
+    ("event", "fields"),
+    [
+        pytest.param("SessionStart", {"matcher": "*"}, id="another-event-and-matcher"),
+        pytest.param("SessionStart", {"matcher": "Bash"}, id="another-event"),
+        pytest.param("PreToolUse", {"matcher": "*"}, id="another-matcher"),
+        pytest.param("PreToolUse", {}, id="no-matcher"),
+    ],
+)
+def test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str, fields: Mapping[str, str]
+) -> None:
+    # A grant is an entry where the area puts it: alpha grants `ALPHA` under `PreToolUse`, for the
+    # `Bash` matcher (`_hooked`'s), and the same marked command under another event or matcher is
+    # one alpha never put there — the harness runs it at another time, or for other tools. It is
+    # told as a refused grant, the kind a command the area does not grant at all is. Mutations
+    # (oracle): `mutations/`'s "hook-entries vouches for a granted command under any event" ->
+    # `another-event` is absolved; "hook-entries vouches for a granted command under any matcher"
+    # -> `another-matcher` and `no-matcher` are.
+    _hooked(_initialised(tmp_path), ALPHA, event=event, fields=fields)
+    row = _hook_entries(tmp_path, monkeypatch, _area("alpha", ALPHA_CLAIMS))
+    assert row == Check(
+        "hook-entries",
+        RED,
+        f"1 stayfixed entr(ies), 0 foreign; 1 entr(ies) claim the stayfixed marker and are "
+        f"recorded in .alpha/record.json, and alpha's source does not grant them: {SETTINGS} "
+        f"entry 1 of 1",
+        "run `alpha vouch`, which takes out every marked entry alpha's source no longer grants; "
+        "open any that survive it",
+    )
     _speaks_no_attach(row)
 
 
@@ -614,9 +345,9 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     def claims(area: str) -> Contribution:
         wording = WORDING[area]
         if area == known:
-            return _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}), wording=wording)
+            return _claiming({"alpha-1": "PreToolUse"}, _granting(ALPHA), wording=wording)
         if unknown == "recorded":
-            return _claiming(None, frozenset({ALPHA, NOBODYS}), wording=wording)
+            return _claiming(None, _granting(ALPHA, NOBODYS), wording=wording)
         return _claiming({"alpha-1": "PreToolUse"}, None, wording=wording)
 
     row = _hook_entries(
@@ -689,7 +420,7 @@ def test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say
     # recorded; "hook-entries says the overlay does not grant what no overlay was recorded to grant,
     # beside an unreadable record" -> `unsourced` reads the sentence for a recorded overlay.
     _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
-    granted = frozenset({ALPHA}) if sourced else frozenset()
+    granted = _granting(ALPHA) if sourced else frozenset()
     row = _hook_entries(
         tmp_path, monkeypatch, _area("alpha", _claiming(None, granted, sourced=sourced))
     )
@@ -757,9 +488,9 @@ def test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red(
 ) -> None:
     # A settings file the walk is blind to downgrades a row with nothing else to say to a warning,
     # and must not downgrade one that has a red entry to report, whether or not the record that
-    # might hold it could be read. Mutations (oracle): `mutations/`'s "a blind settings file softens
-    # an entry nothing on this machine vouches for" -> `readable` is a warning; "a blind settings
-    # file softens an entry beside an unreadable record that nothing grants" -> `unreadable` is.
+    # might hold it could be read; nor may its remedy displace the red entry's. Mutations (oracle):
+    # `mutations/`'s "a blind settings file softens a red row" -> both cases are a warning; "a
+    # blind settings file's remedy displaces a red entry's" -> both are told to check the file.
     root = _initialised(tmp_path)
     _hooked(root, ALPHA)
     (root / ".codex").mkdir()
@@ -836,12 +567,10 @@ def test_an_unreadable_record_is_named_in_its_own_areas_words(
         alpha = ALPHA_CLAIMS
         detail, remedy = UNREADABLE["omega"], REBUILD["omega"]
     else:
-        alpha = _claiming(None, frozenset({ALPHA}))
+        alpha = _claiming(None, _granting(ALPHA))
         detail = f"{UNREADABLE['alpha']}; {UNREADABLE['omega']}"
         remedy = f"{REBUILD['alpha']}; check that .omega/record.json is readable"
-    omega = _claiming(
-        None, frozenset({OMEGA}) if which == "second" else None, wording=OMEGA_WORDING
-    )
+    omega = _claiming(None, _granting(OMEGA) if which == "second" else None, wording=OMEGA_WORDING)
     row = _hook_entries(tmp_path, monkeypatch, _area("alpha", alpha), _area("omega", omega))
     assert row == Check("hook-entries", WARN, f"2 stayfixed entr(ies), 0 foreign; {detail}", remedy)
     _speaks_no_attach(row)
@@ -872,15 +601,102 @@ def test_two_unaskable_sources_each_get_their_own_part_and_remedy(
     )
 
 
+@pytest.mark.parametrize("unreadable", ["alpha", "omega"])
+def test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unreadable: str
+) -> None:
+    # One area's record cannot be read and the other's source cannot be asked: two things the row
+    # withholds judgement for, each its own area's to repair, so each gets its part and its remedy,
+    # whichever area comes first. The row used to tell the unaskable source only where no record
+    # was unreadable, so the second fact and its remedy were dropped: nothing said why the other
+    # area's entries were never compared against a grant.
+    _hooked(_initialised(tmp_path), ALPHA, OMEGA)
+    unasked = "omega" if unreadable == "alpha" else "alpha"
+    own = {"alpha": ({"alpha-1": "PreToolUse"}, ALPHA), "omega": ({"omega-1": "PreToolUse"}, OMEGA)}
+
+    def claims(area: str) -> Contribution:
+        recorded, command = own[area]
+        if area == unreadable:
+            return _claiming(None, _granting(command), wording=WORDING[area])
+        return _claiming(recorded, None, wording=WORDING[area])
+
+    row = _hook_entries(
+        tmp_path, monkeypatch, _area("alpha", claims("alpha")), _area("omega", claims("omega"))
+    )
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"2 stayfixed entr(ies), 0 foreign; {UNREADABLE[unreadable]}; {unasked}'s source could "
+        f"not be asked which entries it grants, so nothing here vouches for the ones claiming the "
+        f"marker",
+        f"{REBUILD[unreadable]}; run `{unasked} diagnose`",
+    )
+    _speaks_no_attach(row)
+
+
+@pytest.mark.parametrize("sourced", [True, False], ids=["sourced", "unsourced"])
+def test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sourced: bool
+) -> None:
+    # Each area's red entries are told in its own part, and the way out of them is that area's
+    # command, so the remedy carries every area's, joined as the warnings' are. The row used to
+    # keep only the last area's remedy for a red part, so the first area's entries were named with
+    # no way out of them: `alpha vouch` never reached the reader of alpha's entry.
+    _hooked(_initialised(tmp_path), ALPHA, OMEGA)
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset(), sourced=sourced)),
+        _area(
+            "omega",
+            _claiming(
+                {"omega-1": "PreToolUse"}, frozenset(), sourced=sourced, wording=OMEGA_WORDING
+            ),
+        ),
+    )
+    if sourced:
+        parts = [
+            f"1 entr(ies) claim the stayfixed marker and are recorded in .{area}/record.json, and "
+            f"{area}'s source does not grant them: {SETTINGS} entry {n} of 2"
+            for n, area in enumerate(("alpha", "omega"), start=1)
+        ]
+        remedies = [
+            f"run `{area} vouch`, which takes out every marked entry {area}'s source no longer "
+            f"grants; open any that survive it"
+            for area in ("alpha", "omega")
+        ]
+    else:
+        parts = [
+            f"1 entr(ies) claim the stayfixed marker and are recorded in .{area}/record.json, and "
+            f"this machine records no {area} source, so nothing on this machine vouches for them: "
+            f"{SETTINGS} entry {n} of 2"
+            for n, area in enumerate(("alpha", "omega"), start=1)
+        ]
+        remedies = [
+            "open each entry named above and remove the ones you did not install; if you did "
+            f"install them, run `{area} setup` to record {area}'s source, then `{area} vouch`"
+            for area in ("alpha", "omega")
+        ]
+    assert row == Check(
+        "hook-entries",
+        RED,
+        "; ".join(["2 stayfixed entr(ies), 0 foreign", *parts]),
+        "; ".join(remedies),
+    )
+    _speaks_no_attach(row)
+
+
 @pytest.mark.parametrize("omega", ["sourced", "unsourced"])
 def test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, omega: str
 ) -> None:
     # An entry a record holds and nothing vouches for is told in the holding area's words: its
     # record, its source, and the command that rewrites its entries. `STRAY` is alpha's and
-    # `OMEGA` is omega's, so each gets a part of its own, categories in the row's order and areas
-    # in area order, and the remedy is the last part's. Told in one area's words, the other's
-    # entry sent a reader to a record that does not hold it and a command that does not touch it.
+    # `OMEGA` is omega's, so each gets a part of its own, kinds in the row's order and areas in
+    # area order, and the remedy is every part's of the row's highest step: both areas' where
+    # both refused, alpha's alone where omega's entry is of a lower step. Told in one area's words,
+    # the other's entry sent a reader to a record that does not hold it and a command that does not
+    # touch it.
     # The first area holds neither, so "the first area" and "the area that holds it" differ for
     # both entries. Mutations (oracle): `mutations/`'s "hook-entries tells a refused grant in the
     # first area's words" -> both cases tell an entry in nobody's words; "hook-entries tells an
@@ -915,8 +731,8 @@ def test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it(
         parts, remedy = (
             [alpha_part, omega_part],
             (
-                "run `omega vouch`, which takes out every marked entry omega's source no longer "
-                "grants; open any that survive it"
+                f"{alpha_remedy}; run `omega vouch`, which takes out every marked entry omega's "
+                "source no longer grants; open any that survive it"
             ),
         )
     else:
@@ -946,7 +762,7 @@ def test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_area
         tmp_path,
         monkeypatch,
         _area("alpha", _claiming(None, frozenset(), sourced=False)),
-        _area("omega", _claiming(None, frozenset({OMEGA}), wording=OMEGA_WORDING)),
+        _area("omega", _claiming(None, _granting(OMEGA), wording=OMEGA_WORDING)),
     )
     assert row == Check(
         "hook-entries",

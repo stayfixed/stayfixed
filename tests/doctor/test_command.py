@@ -16,7 +16,7 @@ from types import ModuleType
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.doctor import checks
+from stayfixed.doctor import checks, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
@@ -139,7 +139,7 @@ def test_claims_that_raise_an_os_error_fail_the_report(
     # An area's claims that raise are red, as `Contribution.claims` promises, and red is what
     # gates the exit code: claims that raised `PermissionError` reached the report's guard as the
     # machine's `OSError`, so `hook-entries` warned and `stayfixed doctor` exited 0 over entries
-    # nothing had judged. The one area here is injected through `checks.discover_contributors`,
+    # nothing had judged. The one area here is injected through `registry.discover_contributors`,
     # so nothing else in this repository is red. Mutation (oracle): `mutations/`'s "claims that
     # raise an OSError reach the guard as one" -> the row warns and the exit code is 0.
     def raises(context: Context) -> Claims:
@@ -147,7 +147,7 @@ def test_claims_that_raise_an_os_error_fail_the_report(
 
     area = ModuleType("stayfixed.alpha.doctor")
     setattr(area, "register", lambda: Contribution(checks=(), claims=raises))  # noqa: B010
-    monkeypatch.setattr(checks, "discover_contributors", lambda: [(area.__name__, area)])
+    monkeypatch.setattr(registry, "discover_contributors", lambda: [(area.__name__, area)])
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     report = json.loads(capsys.readouterr().out)

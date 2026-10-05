@@ -45,14 +45,29 @@ def test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared(tmp_pat
     Uncovered before this case, measured with `--cov-report=term-missing` over `tests/doctor
     tests/overlay tests/release`.
 
-    Mutation (oracle): `if not isinstance(raw, dict):` -> `if False:` -> each shape below raises
-    instead of answering.
+    Mutation (oracle): `mutations/`'s "the requires reader raises for a manifest that is not an
+    object" -> each shape below raises instead of answering.
     """
     root = tmp_path / "overlay"
     (root / ".claude-plugin").mkdir(parents=True)
     for body in ("[]", '[{"stayfixed": {"requires": ">=0.1.0"}}]', '">=0.1.0"', "3", "null"):
         (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
         assert requires_of(root) is None, body
+
+
+def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -> None:
+    # Valid JSON nested past what `json.loads` follows raises `RecursionError`, which the reader's
+    # `ValueError` arm does not catch, so it escaped a function whose docstring promises `None` for
+    # anything it cannot read, and the session handler's backstop swallowed every other line of
+    # the same result with it. An integer longer than the interpreter converts is a `ValueError`
+    # and was already `None`; it is here so both limits stay answered. Mutation (oracle):
+    # `mutations/`'s "the JSON object reader lets a document nested past the parser raise" ->
+    # the nested case raises and this reddens.
+    root = tmp_path / "overlay"
+    (root / ".claude-plugin").mkdir(parents=True)
+    for body in ("[" * 200_000 + "]" * 200_000, '{"n": ' + "1" * 5_000 + "}"):
+        (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
+        assert requires_of(root) is None, body[:8]
 
 
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:

@@ -26,6 +26,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import LONG_NUMBER, NESTED, SETTINGS
 from tests.gitfixture import git
+from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -245,8 +246,8 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
 def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
     # A committed ledger nested deeper than `json.loads` follows ended `detach` in an internal
     # error. It is a ledger that cannot be read, so the run fails before it withdraws anything.
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" ->
-    # `RecursionError`.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> `RecursionError`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -262,7 +263,7 @@ def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) 
 def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
     # A committed ledger holding an integer literal longer than the interpreter converts ended
     # `detach` in an internal error, `ValueError`. It is a ledger that cannot be read, so the run
-    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the attach ledger's
+    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the JSON object
     # reader lets a number past the parser's reach raise" -> `ValueError`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -327,22 +328,6 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
     assert not (root / SETTINGS).exists()
 
 
-def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at both seams the store runs it through: its own
-    `git_run`, and `gitenv`'s, which `origin_remote` calls.
-
-    The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
-    Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
-    whole process.
-    """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
-    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
-
-
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -366,7 +351,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    _a_git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(Failure):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)

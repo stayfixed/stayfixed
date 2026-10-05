@@ -20,13 +20,17 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from stayfixed.errors import Refusal
+from stayfixed.jsonobject import json_object
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
+# What every refusal of a settings document calls it: the engine is handed text, never a path.
+_DOCUMENT = "settings document"
 
 
 class EntriesError(Refusal):
@@ -79,32 +83,28 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
     return found
 
 
-def _load(document: str, *, numbers: Callable[[str], object] = int) -> dict[str, Any]:
-    """The document as an object, with each integer literal handed to `numbers`."""
+def settings_object(
+    document: str, label: str = _DOCUMENT, *, numbers: Callable[[str], object] = int
+) -> dict[str, Any]:
+    """The document as an object, with each integer literal handed to `numbers`, and empty text
+    as an empty one. `label` names it in every refusal.
+
+    Public because `attach` reads the settings file it merges into, and the overlay's files it
+    merges from, by this rule: one reader, so a document the engine would refuse is one `attach`
+    refuses too.
+    """
     if not document.strip():
         return {}
-    try:
-        raw = json.loads(document, parse_int=numbers)
-    except json.JSONDecodeError as exc:
-        raise EntriesError(f"settings document is not valid JSON: {exc}") from exc
-    except RecursionError:
-        # Valid JSON nested past what the parser follows. A settings document may be one a clone
-        # committed, so it is refused rather than left to escape the callers that catch the
-        # refusal, and refused as a limit and not as a shape: see `ParserLimitError`.
-        raise ParserLimitError(
-            "settings document is nested deeper than this reader follows"
-        ) from None
-    except ValueError:
-        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits
-        # by default), which `json.loads` meets with a plain `ValueError`. Refused for the reason
-        # the arm above gives; the message is not the interpreter's, which tells the reader to
-        # raise a limit.
-        raise ParserLimitError(
-            "settings document holds a number longer than this reader converts"
-        ) from None
-    if not isinstance(raw, dict):
-        raise EntriesError("settings document is not a JSON object")
-    return raw
+    # A settings document may be one a clone committed, so valid JSON past the parser's reach is
+    # refused rather than left to escape the callers that catch the refusal, and refused as a
+    # limit and not as a shape: see `ParserLimitError`.
+    return json_object(
+        document,
+        label,
+        error=EntriesError,
+        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
+        numbers=numbers,
+    )
 
 
 def _hooks_table(raw: dict[str, Any]) -> dict[str, Any]:
@@ -153,26 +153,101 @@ def _without_marked(group: dict[str, Any]) -> dict[str, Any] | None:
     return {**group, "hooks": kept}
 
 
-def owned_ids(document: str) -> dict[str, str]:
-    """Every id stayfixed claims in this document, mapped to its event — `doctor`'s provenance.
+def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Every hook entry in the document with its event and the group holding it, in document
+    order, read as strictly as `apply_entries` reads it: a shape the merge would refuse is refused
+    here too, so a reader reporting on a settings file never accounts for one the engine could not
+    rewrite.
 
-    Integers are read as their text: an id and an event are strings, so no number is part of the
-    answer, and one longer than the interpreter converts must not keep a reader from the entries
-    beside it. A settings file is one a clone can commit, and the harness reads such a number.
+    Integers are read as their text: no entry's id, event or marker is a number, and one longer
+    than the interpreter converts must not keep a reader from the entries beside it. A settings
+    file is one a clone can commit, and the harness reads such a number.
     """
-    raw = _load(document, numbers=str)
+    raw = settings_object(document, numbers=str)
+    for event in _hooks_table(raw):
+        for group in _groups(raw, event):
+            for entry in _entries_of(group):
+                yield event, group, entry
+
+
+def owned_ids(document: str) -> dict[str, str]:
+    """Every id stayfixed claims in this document, mapped to its event."""
     return {
         claimed: event
-        for event in _hooks_table(raw)
-        for group in _groups(raw, event)
-        for entry in _entries_of(group)
+        for event, _, entry in _read_entries(document)
         if (claimed := _claimed(entry)) is not None
     }
 
 
+@dataclass(frozen=True)
+class Placed:
+    """One hook entry where a harness reads it: its event, its group's matcher, and its command.
+
+    All three, because each decides what the entry does: the event is when the harness runs the
+    command and the matcher is for which tools, so one command under another event or matcher is
+    another hook. That is why `doctor` compares a grant as a `Placed` and never as a command alone
+    — a repository that hung a granted command somewhere it was not granted would otherwise be
+    vouched for.
+
+    `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
+    each integer in it as its text, as `_read_entries` reads it: a string and anything else a
+    clone may commit there are each one value, and a matcher that is absent stays apart from one
+    that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
+    never guesses what a harness makes of it. Never printed: an event and a matcher are bytes a
+    repository chose.
+    """
+
+    event: str
+    matcher: str | None
+    command: str
+
+
+def _matcher(group: dict[str, Any]) -> str | None:
+    """A group's matcher as `Placed` holds it."""
+    if "matcher" not in group:
+        return None
+    return json.dumps(group["matcher"], sort_keys=True)
+
+
+def placed_entries(document: str) -> list[Placed]:
+    """Every hook entry in the document where it is, in document order, **one element per entry**
+    — `doctor`'s provenance.
+
+    One per entry and not one per readable command, and never keyed by id: the position in this
+    list is what the report names, and two entries sharing one id are two entries. So an entry
+    whose `command` is absent, or is neither a string nor an integer, still occupies its place and
+    contributes `""`; an integer, which the walk reads as its text, contributes that text. Either
+    is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
+    refuses, read by the same walk.
+    """
+    found: list[Placed] = []
+    for event, group, entry in _read_entries(document):
+        command = entry.get("command")
+        text = command if isinstance(command, str) else ""
+        found.append(Placed(event, _matcher(group), text))
+    return found
+
+
+def entry_commands(document: str) -> list[str]:
+    """`placed_entries`' commands alone, in its order, for a reader that asks only whether an
+    entry claims the marker."""
+    return [placed.command for placed in placed_entries(document)]
+
+
+def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
+    """Where `apply_entries` puts each entry of `wanted`, as `placed_entries` reads it back.
+
+    Read back through the document `apply_entries` would write and not off `wanted` itself,
+    because what a grant is compared with is what the walk reads out of a settings file: an
+    integer in a matcher is its text there, and a grant that kept it a number would never equal
+    the entry it installed. Refuses what `placed_entries` refuses.
+    """
+    return placed_entries(json.dumps({"hooks": wanted}))
+
+
 def owned(document: str) -> str:
     """A canonical rendering of only the entries stayfixed claims — what the manifest stamps."""
-    raw = _load(document)
+    raw = settings_object(document)
     claimed: dict[str, list[dict[str, Any]]] = {}
     for event in sorted(_hooks_table(raw)):
         for group in _groups(raw, event):
@@ -183,7 +258,7 @@ def owned(document: str) -> str:
 
 
 def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str:
-    raw = _load(document)
+    raw = settings_object(document)
     hooks = dict(_hooks_table(raw))
     for event in sorted(set(hooks) | set(wanted)):
         foreign = [kept for group in _groups(raw, event) if (kept := _without_marked(group))]

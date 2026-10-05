@@ -103,7 +103,7 @@ def test_a_git_that_fails_everything_is_not_a_repository_without_an_origin(
     # non-zero exit, which is `None`, and a git that exits non-zero for everything — the Xcode
     # shim with an unaccepted licence — must not read the same way, or the user is sent to
     # `stayfixed attach` about their own `git`. Mutation (declared): `mutations/`'s "a broken git
-    # reads as a repository with no origin remote".
+    # reads as a repository that answered".
     root = tmp_path / "project"
     root.mkdir()
     git(root, "init", "-q")

@@ -43,6 +43,10 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
         # outside `src/`, which a walk of `src/` alone does not see
         "OVERLAY_FILES",
+        # the overlay's commit-time secret scan and its hook's name, for `attach`, which installs
+        # the hook where it is missing; this area's `pre-commit` row asks about the same two
+        "PRE_COMMIT_CONFIG",
+        "PRE_COMMIT_HOOK",
         # the floor an overlay declares and whether a running stayfixed meets it, for the
         # `attach` area's session-start handler
         "requires_of",

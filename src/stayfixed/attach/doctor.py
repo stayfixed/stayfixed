@@ -7,10 +7,11 @@ lists each hook entry with its provenance, and only this area can say which entr
 recorded and which of them the overlay still grants. `doctor`'s core discovers this module by
 name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
 
-The overlay root and the note store come from the `Answers` this module's `register()` creates,
-one per report, so the binding the row reads and the claims `hook-entries` reads ask the overlay
-root once between them. The attach ledger comes from the `_Ledger` created beside it, so both read
-the file once between them, and both read it the same way.
+The overlay root is the core's answer, `Context.overlay_root`, resolved at most once per report
+for every row that reads it. The note store comes from the `Answers` this module's `register()`
+creates, one per report, so the row resolves it once. The attach ledger comes from the `_Ledger`
+created beside it, so the binding the row reads and the claims `hook-entries` reads read the file
+once between them, and both read it the same way.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
     from stayfixed.attach.write import AttachLedger
     from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status, Wording
     from stayfixed.memory.api import Answers
+    from stayfixed.scaffold import Placed
 
 
 # What `_ledger_state` answers beside a ledger: no file at the ledger's path, and a file there that
@@ -51,34 +53,30 @@ def _ledger_state(root: Path) -> AttachLedger | str:
 
     Three answers and not two. `ledger()` raises on a file that is not JSON, is not an object,
     or names something `attach` could not have written — and `.stayfixed/local/attach.json` is a
-    path a clone can commit, because `.gitignore` does not untrack a committed file. Letting
-    that reach the report's guard made a repository able to force a row red with the detail
-    "this check could not run: Failure" and a remedy that cannot help, on an installation with
-    nothing wrong with it. The rows report the file instead.
+    path a clone can commit, because `.gitignore` does not untrack a committed file. Let through to
+    the report's guard, that would let a repository force a row red with the detail "this check
+    could not run: Failure" and a remedy that cannot help, on an installation with nothing wrong
+    with it. The rows report the file instead.
 
-    **Whether it is there is asked with `stat`, and a path it cannot answer about is unreadable.**
-    A clone can commit the ledger, or a directory above it, as a symbolic link to a name longer
-    than a file name may be. `is_file()` raises there on Python 3.11 to 3.13, and the error reached
-    `_guarded`, whose warning stood in for the whole row: a forged entry beside the link lost its
-    red in `hook-entries`, and a real directory at the harness memory path lost its red in
-    `attached`. From 3.14 `is_file()` answers `False`, which reads a file that is there as no
-    ledger. A path that names no file — nothing there, a dangling link or a loop, or something
-    other than a regular file — is no ledger, as `is_file()` always answered.
+    **Whether it is there is `fsops.names_regular_file`'s answer, and a path it cannot answer
+    about is unreadable.** A clone can commit the ledger, or a directory above it, as a symbolic
+    link to a name longer than a file name may be. Raised past this function to `_guarded`, the
+    error's warning would stand in for the whole row, so a forged entry beside the link would lose
+    its red in `hook-entries` and a real directory at the harness memory path its red in
+    `attached`; read as no ledger, a file that is there would be skipped. A path that names no file
+    — nothing there, a dangling link or a loop, or something other than a regular file — is no
+    ledger.
     """
-    import errno
-    import stat
-
     from stayfixed.attach.write import ledger
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.errors import Failure, Refusal
+    from stayfixed.fsops import names_regular_file
 
     try:
-        mode = (root / ATTACH_LEDGER).stat().st_mode
-    except OSError as exc:
-        names_no_file = exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
-        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER
-    if not stat.S_ISREG(mode):
-        return NO_LEDGER
+        if not names_regular_file(root / ATTACH_LEDGER):
+            return NO_LEDGER
+    except OSError:
+        return UNREADABLE_LEDGER
     try:
         return ledger(root)
     except (Failure, Refusal):
@@ -88,7 +86,7 @@ def _ledger_state(root: Path) -> AttachLedger | str:
 class _Ledger:
     """`_ledger_state` for one report, read on first use and never again.
 
-    Created by `register()` beside the report's `Answers`, so `attached` and the claims
+    Created once per report by `register()`, so `attached` and the claims
     `hook-entries` reads ask one question of the file and get one answer: no row can read the
     ledger as there while another reads it as absent or unreadable.
     """
@@ -127,13 +125,13 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     and a harness that cannot see it is an attach that did not finish.
 
     **The link's target is compared, and the sentence about it is only ever printed when it is
-    true.** The shape used to be computed into `detail` and then dropped for the status, and
-    "the harness memory path is a link to the store" was printed for *any* symlink — a dangling
-    one, or one pointing at an unrelated directory — with the row green underneath it. On the
-    one channel `attach` uses to reach the model, that is a false statement about where the
-    model's memory comes from, and the two states it hid are the same failure the real
+    true.** "The harness memory path is a link to the store" printed for *any* symlink — a
+    dangling one, or one pointing at an unrelated directory — with the row green underneath it
+    would be, on the one channel `attach` uses to reach the model, a false statement about where
+    the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.memory.api import (
@@ -142,7 +140,6 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         NO_ORIGIN,
         NO_ORIGIN_CAUSE,
         NO_ORIGIN_WAY_OUT,
-        PROJECTS,
         UNBOUND,
         harness_memory_path,
     )
@@ -159,19 +156,16 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             RED,
             "the harness memory path is a real directory rather than a link to the store, so "
             "this checkout looks attached and behaves like nothing",
-            # `<project>` and not `config.project.name`: the name is repository-authored, and a
-            # remedy is as much output as a detail is.
-            f"remove {harness} and run "
-            f"`stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`",
+            f"remove {harness} and run `{ATTACH_STORE}`",
         )
     if ledger.state(context.root) == NO_LEDGER:
         return Row(
             WARN,
             f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
             f"attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
+            f"run `{ATTACH_STORE} --check`",
         )
-    answer = _binding_answer(context, answers, ledger)
+    answer = _binding_answer(context, ledger)
     # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
     # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
     # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
@@ -185,8 +179,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
             f"binding for this project — a clone can commit that file, so it is not evidence of "
             f"an attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-            "checkout was never attached on this machine, remove the ledger",
+            _re_attach(),
         )
     if state == NO_ORIGIN:
         return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
@@ -205,30 +198,37 @@ UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
 # The fourth is `UNREADABLE_LEDGER`, above, and it is about the repository rather than about this
-# machine. A ledger that is there and will not parse used to answer `UNASKABLE` with the other two,
-# so the row said "no `git`, or a record this process could not read" and the remedy said "run
-# `stayfixed doctor` again where `git` runs" — about a file in the checkout the reader is standing
-# in. `skip` never reaches the exit code, so a repository's own committed, malformed ledger was
-# also silent.
-_RE_ATTACH = (
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-    "checkout was never attached on this machine, remove the ledger"
-)
+# machine: a ledger that is there and will not parse is a file in the checkout the reader is
+# standing in. Told with the other two, the row would blame `git` or an unreadable record and send
+# the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
+# reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
+
+
+def _re_attach() -> str:
+    """The remedy for a ledger the overlay does not corroborate. A function only because the
+    command it names is imported, and an import here sits inside a function body."""
+    from stayfixed.attach import ATTACH_STORE
+
+    return (
+        f"run `{ATTACH_STORE} --check`; if this checkout was never attached on this machine, "
+        "remove the ledger"
+    )
 
 
 def _uncorroborated(reason: str) -> Row:
     """The row for a ledger the overlay did not confirm, split by what the reason is *about*.
 
     `warn` accuses the repository and `skip` does not, and the split is the point: `skip` never
-    reaches the exit code, so using it for the repository's own doing would be the defect this
-    function was written to remove, and using `warn` for a machine where `setup` has never run
-    would make `doctor` warn on every correct fresh install. Neither row ever says "attached".
+    reaches the exit code, so using it for the repository's own doing would silence it, and using
+    `warn` for a machine where `setup` has never run would make `doctor` warn on every correct
+    fresh install. Neither row ever says "attached".
 
-    **Four reasons and not three.** A ledger that is there and will not parse was answering
-    with the machine-side two, so the row it got blamed `git` for a malformed file in the
-    reader's own checkout and offered a remedy — run this somewhere `git` works — that could
-    not fix it. By this function's own rule it is the repository's doing and warns.
+    **Four reasons and not three.** A ledger that is there and will not parse is the
+    repository's doing, so by this function's own rule it warns. Answered with the machine-side
+    two, its row would blame `git` for a malformed file in the reader's own checkout and offer a
+    remedy — run this somewhere `git` works — that could not fix it.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import SKIP, WARN, Row
 
@@ -242,15 +242,14 @@ def _uncorroborated(reason: str) -> Row:
             WARN,
             f"{ATTACH_LEDGER} records an attach, and the store it names is not this project's "
             f"directory inside the overlay this machine records — {not_evidence}",
-            _RE_ATTACH,
+            _re_attach(),
         )
     if reason == UNREADABLE_LEDGER:
         return Row(
             WARN,
             f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {not_evidence}",
-            f"remove {ATTACH_LEDGER}, then run `stayfixed attach --store "
-            f"<overlay>/projects/<project>/memory --check`",
+            f"remove {ATTACH_LEDGER}, then run `{ATTACH_STORE} --check`",
         )
     if reason == NO_OVERLAY:
         return Row(
@@ -273,8 +272,8 @@ def _uncorroborated(reason: str) -> Row:
 def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[Status, str, str]:
     """The status, the sentence and the remedy for the harness memory path, as one answer.
 
-    One function because the status and the sentence must not be able to disagree — computing
-    the shape and then discarding it for the status is the defect this replaces.
+    One function because the status and the sentence must not be able to disagree, which they
+    could if the shape were computed apart from the status and then discarded for it.
 
     The comparison is against the resolved store's path, which is what
     `worktree._apply_harness_link` links to, resolved on both sides so that two spellings of one
@@ -282,13 +281,13 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     at all, which is a warning naming what could not be asked rather than a green sentence
     asserting what was not checked.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.doctor.api import OK, RED, WARN
-    from stayfixed.memory.api import PROJECTS, harness_link_needed
+    from stayfixed.memory.api import harness_link_needed
 
     # The remedy every arm but the green ones carries: one command puts the link back where
-    # `attach` puts it, whatever the wrong shape was. `<overlay>` and `<project>` and never
-    # `config.project.name`, for the reason `_attached`'s real-directory row gives.
-    relink = f"run `stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`"
+    # `attach` puts it, whatever the wrong shape was.
+    relink = f"run `{ATTACH_STORE}`"
     store = answers.store(context)
     if harness.is_symlink():
         if store is None:
@@ -318,19 +317,19 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     return OK, "not in place, which is what this store's trust record asks for", ""
 
 
-def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Binding | str:
+def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     """The overlay binding this repository would attach under, or the label of why there is none.
 
-    Three different situations used to collapse into one `None` — a ledger naming a store the
-    overlay does not permit, a machine that records no overlay at all, and a machine with no
-    usable `git` — and the `attached` row then treated the last two as *attached*. They are not
-    one finding. A ledger whose store is not this project's share of the recorded overlay is a
-    fact about **this repository**, and `.stayfixed/local/attach.json` is a path a clone can
-    commit, so it earns a warning. A missing overlay or a missing `git` is a fact about **our
-    own inputs**, and a row that accused the repository on it would be reporting on itself.
+    Three different situations are three answers and never one `None` — a ledger naming a store
+    the overlay does not permit, a machine that records no overlay at all, and a machine with no
+    usable `git` — because collapsed, the `attached` row would read the last two as *attached*.
+    They are not one finding. A ledger whose store is not this project's share of the recorded
+    overlay is a fact about **this repository**, and `.stayfixed/local/attach.json` is a path a
+    clone can commit, so it earns a warning. A missing overlay or a missing `git` is a fact about
+    **our own inputs**, and a row that accused the repository on it would be reporting on itself.
 
     The three are told apart without restructuring `read_binding`, which raises `Refusal` for
-    two of them: `answers.overlay` is the answer of the same `overlay_root(machine)` that
+    two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
     function calls with the same argument, so asking it first takes the overlay-is-missing arm
     off the table, and what is left of `Refusal` is the store that is not this project's
     permitted root. Anything else that goes wrong — a `Failure` out of the overlay's own record,
@@ -343,7 +342,7 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import GitUnavailable
 
-    if answers.overlay(context) is None:
+    if context.overlay_root is None:
         return NO_OVERLAY
     recorded = ledger.state(context.root)
     # This one is the repository's file and not our inputs, so it does not join the other two: a
@@ -363,8 +362,9 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
         return UNASKABLE
 
 
-def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | None, str | None]:
-    """Every marked command the overlay grants this repository **right now**, or `None`; and,
+def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]:
+    """Every marked command the overlay grants this repository **right now**, where it grants it,
+    or `None`; and,
     beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
     be false: `MISMATCH` or `UNREADABLE_RECORD`, else `None` (`_wording` says what each changes).
 
@@ -377,13 +377,17 @@ def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | No
     `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
     the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
     still let a repository take an id the overlay does grant and hang a different command on it.
+    And each is where `attach` would write it — its event and its group's matcher, read back by
+    `scaffold.wanted_placements` as the `hook-entries` walk reads the settings file — because the
+    granted command hung under another event or matcher is a hook the overlay never granted.
 
     **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
     this machine records and the project's name, the same one `attach` would install from, and
     not the one the ledger's `store` names. Asked through the ledger's store, a store that is not
-    this project's answered "could not be asked", and that is a warning: a clone that committed a
-    ledger recording its own entry, under any store it liked, turned `hook-entries`' red into an
-    exit of 0. Whether that store is right is the `attached` row's question, and it warns there.
+    this project's would answer "could not be asked", and that is a warning: a clone that
+    committed a ledger recording its own entry, under any store it liked, would turn
+    `hook-entries`' red into an exit of 0. Whether that store is right is the `attached` row's
+    question, and it warns there.
 
     `None` means the overlay this machine records could not be asked — no `git`, an overlay
     record that will not read, or a hook file the overlay grants this checkout from (`common/`'s,
@@ -430,8 +434,9 @@ def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | No
     from stayfixed.attach.permissions import common_entries, overlay_entries
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
+    from stayfixed.scaffold import wanted_placements
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None:
         return set(), None
     narrowed: str | None = None
@@ -446,18 +451,12 @@ def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | No
             wanted = overlay_entries(binding)
         else:
             wanted = common_entries(overlay)
+        granted = set(wanted_placements(wanted))
     except (Failure, Refusal, OSError):
         return None, None
     if binding is not None and binding.state == MISMATCH:
         narrowed = MISMATCH
-    commands = {
-        entry["command"]
-        for groups in wanted.values()
-        for group in groups
-        for entry in group["hooks"]
-        if isinstance(entry.get("command"), str)
-    }
-    return commands, narrowed
+    return granted, narrowed
 
 
 def _wording(narrowed: str | None = None) -> Wording:
@@ -475,6 +474,7 @@ def _wording(narrowed: str | None = None) -> Wording:
     A function and not a module-level constant only because building the value imports the doctor
     area's surface and the ledger's path, and an import in this module sits inside a function body
     (the module docstring says why)."""
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import Wording
     from stayfixed.memory.api import MISMATCH
@@ -512,22 +512,23 @@ def _wording(narrowed: str | None = None) -> Wording:
         ),
         diagnose="run `stayfixed attach --check`, which reports why the overlay cannot be read",
         setup="run `stayfixed setup --overlay <path>` to record the overlay that grants them",
-        vouch="`stayfixed attach --store <overlay>/projects/<project>/memory`",
+        vouch=f"`{ATTACH_STORE}`",
         ungranted=ungranted,
         regrant=regrant,
     )
 
 
-def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
+def _claims(context: Context, ledger: _Ledger) -> Claims:
     """What `attach` put into settings files, for `hook-entries`' provenance column.
 
     The ledger says which marker ids the last `attach` recorded, and the overlay says which
-    marked commands it grants right now; the row needs both, because the ledger is a file a clone
-    can commit. The overlay is asked unless the ledger is readable and records nothing, because
-    then nothing can be absolved and asking it costs a `git` call: an empty ledger keeps its old
-    answer, every entry claiming the marker is one no attach recorded. A ledger that cannot be read
-    is not that: the grant is what decides whether an entry beside it may be the owner's (a warning)
-    or is one nothing on this machine vouches for (red), so the overlay is asked for it too.
+    marked commands it grants right now, and where; the row needs both, because the ledger is a
+    file a clone can commit. The overlay is asked unless the ledger is readable and records
+    nothing, because then nothing can be absolved and asking it costs a `git` call: an empty
+    ledger keeps its old answer, every entry claiming the marker is one no attach recorded. A
+    ledger that cannot be read is not that: the grant is what decides whether an entry beside it
+    may be the owner's (a warning) or is one nothing on this machine vouches for (red), so the
+    overlay is asked for it too.
 
     `sourced` is whether this machine records an overlay at all, read from the machine file and
     nothing else: without one the grant is empty because nothing could grant, and the row says
@@ -536,20 +537,18 @@ def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
     from stayfixed.doctor.api import Claims
 
     found = _attach_ledger_entries(ledger.state(context.root))
-    granted, narrowed = (
-        _granted_commands(context, answers) if found is None or found else (set(), None)
-    )
+    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)
     return Claims(
         found,
         None if granted is None else frozenset(granted),
-        sourced=answers.overlay(context) is not None,
+        sourced=context.overlay_root is not None,
         wording=_wording(narrowed),
     )
 
 
 def register() -> Contribution:
-    """The `attached` row and this area's claims, sharing one `Answers` and one `_Ledger` for the
-    report."""
+    """The `attached` row and this area's claims, sharing one `_Ledger` for the report, and the
+    row's one `Answers` for the note store."""
     from stayfixed.doctor.api import Contribution
     from stayfixed.memory.api import Answers
 
@@ -557,5 +556,5 @@ def register() -> Contribution:
     ledger = _Ledger()
     return Contribution(
         checks=(("attached", lambda context: _attached(context, answers, ledger)),),
-        claims=lambda context: _claims(context, answers, ledger),
+        claims=lambda context: _claims(context, ledger),
     )

@@ -36,6 +36,11 @@ published against a sentence predicting that the `release` package would need it
 which nothing in `stayfixed.release` does. If it ever does, it grows the list then, which is what
 this docstring asks of every other area.
 
+`PRE_COMMIT_CONFIG` and `PRE_COMMIT_HOOK` are published for `attach`, which installs the
+overlay's commit-time secret scan on a machine where it is missing: the overlay ships the
+configuration, and this area's own `pre-commit` row in `stayfixed doctor` asks about the same two
+names, so they are spelled once, in the layout, beside the files the overlay ships.
+
 `requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for the `attach` area's
 session-start handler. The floor is one grammar and two readers, and the other is this area's own
 `overlay-requires` row in `stayfixed doctor` (`overlay/doctor.py`); the overlay's sync state is the
@@ -56,6 +61,8 @@ from stayfixed.overlay.layout import (
     MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
+    PRE_COMMIT_CONFIG,
+    PRE_COMMIT_HOOK,
 )
 from stayfixed.overlay.requires import requires_of, satisfies
 from stayfixed.overlay.sync import Sync, overlay_sync
@@ -68,6 +75,8 @@ __all__ = [
     "MARKETPLACE_MANIFEST",
     "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
+    "PRE_COMMIT_CONFIG",
+    "PRE_COMMIT_HOOK",
     "Created",
     "Initialised",
     "Sync",

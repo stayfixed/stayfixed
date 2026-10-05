@@ -1,12 +1,15 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
-Everything a consumer needs is re-exported here, including the four primitives other areas
-reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for any caller that
-builds `Template.entries`, and `drop` / `apply_entries` for `uninstall`. The three refusals a
-consumer has to catch by name are here too: a caller that cannot import `ManifestError`,
-`RegionError` or `EntriesError` from this list has no way to tell a bad merge from a bug except
-by catching `Refusal` whole; `ParserLimitError`, an `EntriesError` too, is the valid JSON past a
-limit of the parser that `doctor` must tell from a malformed document. `effective_target` and
+Everything a consumer needs is re-exported here, including the primitives other areas reach for
+directly: `placed_entries` for `doctor`'s provenance list, each entry a `Placed`, and
+`wanted_placements` for the grants it is compared with, which `attach` answers; `entry_commands`
+for `assess`, which asks only for commands; `owned_ids` for the ids `attach` records in its
+ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
+`uninstall`. The three refusals a consumer has to catch by name
+are here too: a caller that cannot import `ManifestError`, `RegionError` or `EntriesError`
+from this list has no way to tell a bad merge from a bug except by catching `Refusal` whole;
+`ParserLimitError`, an `EntriesError` too, is the valid JSON past a limit of the parser that
+`doctor` must tell from a malformed document. `effective_target` and
 `unlinks` are for `uninstall`, which must compare paths the way the engine resolves them (an
 `[artifacts] local` artifact lives where `Template.target` does not say) and must know which
 planned removal deletes a file rather than rewriting it without stayfixed's part: both are the
@@ -36,11 +39,16 @@ from stayfixed.scaffold.engine import (
 from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
+    Placed,
     apply_entries,
+    entry_commands,
     mark,
     marker_id,
     owned,
     owned_ids,
+    placed_entries,
+    settings_object,
+    wanted_placements,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from stayfixed.scaffold.manifest import (
@@ -72,6 +80,7 @@ __all__ = [
     "Manifest",
     "ManifestError",
     "ParserLimitError",
+    "Placed",
     "Plan",
     "Record",
     "Refused",
@@ -84,6 +93,7 @@ __all__ = [
     "digest",
     "drop",
     "effective_target",
+    "entry_commands",
     "extract",
     "left_copies",
     "local_copies",
@@ -92,10 +102,13 @@ __all__ = [
     "ours_locally",
     "owned",
     "owned_ids",
+    "placed_entries",
     "plan",
     "printable",
     "render_report",
+    "settings_object",
     "unlinks",
     "upsert",
     "validate_sources",
+    "wanted_placements",
 ]

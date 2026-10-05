@@ -25,7 +25,6 @@ subtract with them, and `check` reports only how many there were.
 
 from __future__ import annotations
 
-import json
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +44,7 @@ from stayfixed.harnesses import CLAUDE
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
-from stayfixed.scaffold import EntriesError, mark
+from stayfixed.scaffold import EntriesError, mark, settings_object
 
 # The project-local file `attach` owns outright, as the harness registry names it: the one file
 # Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
@@ -86,25 +85,6 @@ class PermissionDiff:
         return bool(self.added_allow or self.added_hooks)
 
 
-def _object(text: str, label: str) -> dict[str, Any]:
-    if not text.strip():
-        return {}
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise EntriesError(f"{label} is not valid JSON: {exc}") from exc
-    except RecursionError:
-        # Valid JSON nested past what the parser follows, in a file a clone may have committed.
-        raise EntriesError(f"{label} is nested deeper than this reader follows") from None
-    except ValueError:
-        # Valid JSON holding an integer literal longer than the interpreter converts, which
-        # `json.loads` meets with a plain `ValueError`, in a file a clone may have committed.
-        raise EntriesError(f"{label} holds a number longer than this reader converts") from None
-    if not isinstance(raw, dict):
-        raise EntriesError(f"{label} is not a JSON object")
-    return raw
-
-
 def settings_document(text: str) -> dict[str, Any]:
     """The local settings file as an object, refusing a shape the merge could not read back.
 
@@ -113,7 +93,7 @@ def settings_document(text: str) -> dict[str, Any]:
     this cannot read is refused rather than filtered, because what a filter drops here is
     somebody's own setting and nothing would say it went.
     """
-    return _object(text, LOCAL_SETTINGS)
+    return settings_object(text, LOCAL_SETTINGS)
 
 
 def _read(path: Path, *, share: Path | None = None) -> str:
@@ -182,7 +162,7 @@ def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     file the real run then refused.
     """
     label = str(path)
-    permissions = _object(document, label).get("permissions")
+    permissions = settings_object(document, label).get("permissions")
     if permissions is None:
         return ()
     if not isinstance(permissions, dict):
@@ -202,7 +182,7 @@ def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, 
     reason: what is dropped silently here is an entry the owner put in their overlay on
     purpose, and nothing would say it never arrived. `share` is `_read`'s.
     """
-    hooks = _object(_read(path, share=share), str(path)).get("hooks", {})
+    hooks = settings_object(_read(path, share=share), str(path)).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{path}: 'hooks' is not an object")
     found: dict[str, list[dict[str, Any]]] = {}
@@ -304,6 +284,19 @@ def _numbered(
     return wanted
 
 
+def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, str]]:
+    """Every marked command in `overlay_entries`' or `common_entries`' answer, with its event, in
+    its order: the grants flattened once, for the diff and the ledger, which each ask only for
+    commands. Each is a string, because `_numbered` refuses an entry without one. `doctor` asks
+    where each one sits too, and reads that through `scaffold.wanted_placements`."""
+    return [
+        (event, entry["command"])
+        for event, groups in wanted.items()
+        for group in groups
+        for entry in group["hooks"]
+    ]
+
+
 def local_document(root: Path) -> str:
     """The project's own `settings.local.json`, or an empty string when it has none."""
     return _read(root / LOCAL_SETTINGS)
@@ -311,7 +304,7 @@ def local_document(root: Path) -> str:
 
 def _commands(document: str, label: str) -> set[str]:
     """Every hook command already in a settings document, whoever wrote it."""
-    hooks = _object(document, label).get("hooks", {})
+    hooks = settings_object(document, label).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{label}: 'hooks' is not an object")
     found: set[str] = set()
@@ -341,11 +334,9 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))
     added_hooks = tuple(
-        entry["command"]
-        for groups in overlay_entries(binding).values()
-        for group in groups
-        for entry in group["hooks"]
-        if entry["command"] not in present
+        command
+        for _, command in marked_commands(overlay_entries(binding))
+        if command not in present
     )
     return PermissionDiff(added_allow, added_hooks, already)
 
@@ -384,7 +375,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
-    refuse_unless_share_can_exist(binding)
+    refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the

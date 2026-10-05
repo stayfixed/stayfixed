@@ -27,6 +27,17 @@ MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
 # two — a harness installs a plugin by the name in its manifest, and this project ships a Codex
 # half of everything else.
 CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
+# The overlay's commit-time secret scan, and the hook `pre-commit install` writes for it: `attach`
+# installs the hook when it is missing, and `doctor`'s `pre-commit` row asks whether it is there.
+# The hook's *name* only: where it lives is `guards.hooks_dir`'s answer and never `.git/hooks`,
+# because an overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is
+# a worktree or a submodule, where `.git` is a file, keeps its hooks somewhere else entirely. A
+# hardcoded path would find the scan missing on every attach, shell out to `pre-commit install`
+# every time, and warn in `doctor` with a remedy that cannot clear it. `docs/cli.md`'s
+# `setup --git-hooks` section states the rule: `git rev-parse --git-path hooks`, never
+# `core.hooksPath`.
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
+PRE_COMMIT_HOOK = "pre-commit"
 
 # Every file `templates/overlay/` ships, in one fixed order. The list and the tree are two
 # statements of one thing: `tests/overlay/test_template.py` asserts each way round, so a file
@@ -36,8 +47,8 @@ CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 # has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
 # because a hash match is not consent for a permission or a hook entry. Named once, unpacked
 # into OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is
-# a rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
-# spelling of the two names, under a comment claiming they were not spelled twice.
+# a rename everywhere, where a list derived by filtering OVERLAY_FILES against a second spelling
+# of the two names would let the two drift apart.
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 
 # A directory's own documentation rather than a file in its own right: `overlay create`
@@ -61,7 +72,7 @@ OVERLAY_FILES = (
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
     f"{PROJECTS}/README.md",
-    ".pre-commit-config.yaml",
+    PRE_COMMIT_CONFIG,
     ".github/workflows/scan.yml",
     ".github/dependabot.yml",
     ".gitignore",

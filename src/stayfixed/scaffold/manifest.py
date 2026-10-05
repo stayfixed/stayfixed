@@ -33,6 +33,7 @@ from pathlib import Path
 from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.fsops import UnsafePath, write_within
+from stayfixed.jsonobject import json_object
 
 MANIFEST_PATH = Path(".stayfixed") / "manifest.json"
 FORMAT = 1
@@ -128,16 +129,16 @@ class Manifest:
         path = _contained_path(root)
         if not path.is_file():
             return cls({})
-        # `ValueError` rather than `json.JSONDecodeError`: bytes that are not UTF-8 raise
-        # `UnicodeDecodeError` from the decode, before the parser runs, and that is a
-        # `ValueError` too. `RecursionError` is the parser's answer to nesting deep enough to
-        # exhaust the stack. The file is tracked, so a clone chooses all three.
+        # The file is tracked, so a clone chooses every way it can fail to read. Bytes that are
+        # not UTF-8 fail in the decode, before the parser runs. The parse goes through
+        # `jsonobject`, which answers JSON nested past the parser and an integer longer than it
+        # converts in words of its own: quoting those exceptions told the owner of a committed
+        # ledger to raise an interpreter limit, or reported the parser's stack.
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, RecursionError) as exc:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
             raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
-        if not isinstance(raw, dict):
-            raise ManifestError(f"{MANIFEST_PATH} is not a JSON object")
+        raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)
         version = raw.get("format", FORMAT)
         if not isinstance(version, int) or version > FORMAT:
             raise ManifestError(

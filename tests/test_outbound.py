@@ -330,15 +330,19 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
     ),
     "re-export": (
         TOP,
-        "from stayfixed.memory.store import git_run as g\ng(r, 'push', 'origin', 'HEAD')",
+        "from stayfixed.memory.refs import git_run as g\ng(r, 'push', 'origin', 'HEAD')",
         ("git", "push", "origin", "HEAD"),
     ),
     "re-export-module": (
         TOP,
-        "from stayfixed.memory import store\nstore.git_run(r, 'push')",
+        "from stayfixed.memory import refs\nrefs.git_run(r, 'push')",
         ("git", "push"),
     ),
-    "derived": (TOP, "from stayfixed.memory.store import _git\n_git(r, 'push')", ("git", "push")),
+    "derived": (
+        TOP,
+        "from stayfixed.gitenv import git_answer\ngit_answer(r, 'push')",
+        ("git", "push"),
+    ),
     "derived-here": (
         TOP,
         f"{GIT_RUN}def ask(r, *args):\n    return git_run(r, '-c', 'x=y', *args)\nask(r, 'push')",

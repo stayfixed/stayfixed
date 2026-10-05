@@ -2,8 +2,9 @@
 what this area claims for the core's `hook-entries` row.
 
 Every case runs the whole report through `run_checks`, so the row is asked the way a user's
-`stayfixed doctor` asks it: discovered in this area's `doctor.py`, with the overlay root and the
-note store resolved by the lazy value its `register()` creates. The fixtures are the doctor
+`stayfixed doctor` asks it: discovered in this area's `doctor.py`, with the note store resolved by
+the lazy value its `register()` creates and the overlay root by the report's `Context`. The
+fixtures are the doctor
 area's own (`tests/doctor/test_checks.py`), shared rather than respelled, because the core's
 `hook-entries` cases read the same attached checkout.
 """
@@ -29,7 +30,6 @@ from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
-from tests.attach.test_binding import _git_that_cannot_run
 from tests.attach.test_write import LONG_NUMBER, NESTED
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
@@ -48,6 +48,7 @@ from tests.doctor.test_checks import (
 )
 from tests.floor import is_developers
 from tests.gitfixture import git as _git
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -278,7 +279,7 @@ def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_
     # could not be asked — never a warning that accuses the repository, and never the word
     # "attached".
     #
-    # Mutation (declared): `if answers.overlay(context) is None: return NO_OVERLAY` ->
+    # Mutation (declared): `if context.overlay_root is None: return NO_OVERLAY` ->
     # `if False:` -> the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the
     # arm is gone) and this reddens on the status and the sentence.
     root = _attached(tmp_path)
@@ -445,8 +446,8 @@ def test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable(
     # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
     # Python, and it reached `_guarded` from both rows that read the ledger: red, "this check
     # could not run", on a file a clone chose. It is a ledger that cannot be read. Mutation
-    # (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" -> both
-    # rows are red again.
+    # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
+    # raise" -> both rows are red again.
     root = _attached(tmp_path)
     (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -468,8 +469,8 @@ def test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unr
     # `ValueError`, which reached `_guarded` from both rows that read the ledger: red, "this check
     # could not run", exit 1, on a file a clone chose and with nothing wrong on the machine. The
     # owner's checkout, whose overlay grants every entry, reads as the unreadable ledger it is.
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the
-    # parser's reach raise" -> both rows are red again.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
+    # reach raise" -> both rows are red again.
     root = _attached(tmp_path)
     (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -518,11 +519,41 @@ def test_one_report_reads_the_ledger_once_and_the_configuration_not_again(
     assert (len(reads), len(loads)) == (1, 0)
 
 
+def test_one_report_resolves_the_overlay_root_once_for_every_area(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The overlay root is a key of the machine file, the core's, and two areas read it: `attach`
+    # for the binding and its claims, `overlay` for its two rows. What the report caches is
+    # `Context.overlay_root`: resolved on its first read and kept, so every row that reads the root
+    # through the `Context` shares one read of the machine file. That is all it caches. The binding
+    # and the note store this area reads behind the row resolve the root again on their own, and
+    # nothing caches the `git` answers they ask, so this counts only the reads through the
+    # `Context`. Mutation (oracle): `mutations/`'s "the report resolves the overlay root for every
+    # reader" -> five reads, three of `attach`'s and two of `overlay`'s.
+    from stayfixed.config.overlay import overlay_root
+
+    asked: list[Path | None] = []
+
+    def counted(machine: Path | None) -> Path | None:
+        asked.append(machine)
+        return overlay_root(machine)
+
+    # The name the report's `Context` calls the machine file's reader by, in `doctor.model`.
+    monkeypatch.setattr("stayfixed.doctor.model.recorded_overlay_root", counted)
+    root = _attached(tmp_path)
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    # Non-vacuous: both areas read the root, and found the overlay there.
+    assert _by_name(rows, "attached").detail.startswith("attached;")
+    assert _by_name(rows, "hook-entries").status == OK
+    assert _by_name(rows, "pre-commit").status != SKIP
+    assert asked == [_machine(tmp_path)]
+
+
 # --- what this area claims for `hook-entries` --------------------------------------------------
 #
 # `hook-entries` is the core's row, and the provenance it prints is this area's answer: which marker
 # ids the attach ledger records and which marked commands the overlay grants (`_claims`). How the
-# core reads a `Claims` is proven in `tests/doctor/test_contributions.py` with injected answers;
+# core reads a `Claims` is proven in `tests/doctor/test_entries.py` with injected answers;
 # these cases prove the answers this area gives, through the whole report.
 
 
@@ -647,6 +678,58 @@ NOT_GRANTED = (
 )
 NOT_ASKED = "run `stayfixed attach --check`, which reports why the overlay cannot be read"
 
+# Where a clone hangs the marked command `common/` grants under `PreToolUse` with matcher `Bash`
+# (`_overlay`'s grant, which `_attached` installs), as `(event, group fields besides hooks)`:
+# another event and another matcher at once, as the defect was reported; another event alone;
+# another matcher alone; and no matcher at all, which a harness reads as matching everything.
+ELSEWHERE = {
+    "another-event-and-matcher": ("SessionStart", {"matcher": "*"}),
+    "another-event": ("SessionStart", {"matcher": "Bash"}),
+    "another-matcher": ("PreToolUse", {"matcher": "*"}),
+    "no-matcher": ("PreToolUse", {}),
+}
+
+
+@pytest.mark.parametrize("binding", ["bound", "unbound"])
+@pytest.mark.parametrize("placement", sorted(ELSEWHERE))
+def test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for(
+    tmp_path: Path, placement: str, binding: str
+) -> None:
+    # The overlay grants an entry where it puts it: `common/` grants `echo hi` under `PreToolUse`,
+    # for the `Bash` matcher, and `attach` installs it there and nowhere else. A clone that hung
+    # that exact marked command under `SessionStart` with matcher `*`, beside a ledger recording
+    # its id, read "all accounted for", because the row compared the id and the command and never
+    # where the entry sits — and where it sits is when the harness runs it. Unbound as reported,
+    # and bound too, because the grant `common/` makes is the same to both.
+    #
+    # Mutations (oracle): `mutations/`'s "hook-entries vouches for a granted command under any
+    # event" -> the `another-event` cases are absolved; "hook-entries vouches for a granted
+    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and the walk
+    # dropping either from what it reads ("the hook entry walk reads every entry under one event",
+    # "the hook entry walk reads every entry without its matcher") absolves them on both sides.
+    root = _attached(tmp_path)
+    if binding == "unbound":
+        (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).unlink()
+    # The vacuity guard, per case: the same command where `common/` grants it is accounted for.
+    assert _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries") == Check(
+        "hook-entries", "ok", f"{ONE_ENTRY}all accounted for", ""
+    )
+    event, fields = ELSEWHERE[placement]
+    document = json.loads((root / LOCAL_SETTINGS).read_text(encoding="utf-8"))
+    granted = document["hooks"]["PreToolUse"][0]["hooks"][0]
+    document["hooks"].setdefault(event, []).append({**fields, "hooks": [dict(granted)]})
+    (root / LOCAL_SETTINGS).write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == Check(
+        "hook-entries",
+        "red",
+        f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and "
+        f"the overlay does not grant them: {LOCAL_SETTINGS} entry 2 of 2",
+        NOT_GRANTED,
+    )
+    # By position: the event and the matcher are repository bytes, and the row names neither.
+    assert "SessionStart" not in check.detail + check.remedy
+
 
 def test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is(
     tmp_path: Path,
@@ -767,7 +850,7 @@ def _table_row(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ch
         )
     elif case == "owner-git-cannot-run":
         root = _attached(tmp_path)
-        _git_that_cannot_run(monkeypatch)
+        git_that_cannot_run(monkeypatch)
     elif case == "forged-foreign-store":
         root = _forged_clone(tmp_path, store=tmp_path / "somewhere-else" / "memory")
     elif case == "owner-moved-store":
@@ -922,7 +1005,7 @@ def _unreadable_row(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             json.dumps({"hooks": {"PreToolUse": "not a list"}}), encoding="utf-8"
         )
     elif where == "git-cannot-run":
-        _git_that_cannot_run(monkeypatch)
+        git_that_cannot_run(monkeypatch)
     else:
         assert where == "overlay", case
     return _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
@@ -1146,10 +1229,11 @@ def test_a_ledger_path_that_names_no_file_is_no_ledger_as_before(
     tmp_path: Path, shape: str
 ) -> None:
     # The vacuity guard for the case above: asking with `stat` must not turn every path that holds
-    # no ledger into one that cannot be read. Mutations (oracle): `mutations/`'s "a ledger path
-    # that names no file reads as one that cannot be read" -> the dangling link and the loop say
-    # the ledger cannot be read; "doctor reads a ledger path that is no regular file" -> the
-    # directory does.
+    # no ledger into one that cannot be read. The probe is the one `hook-entries` asks, so its
+    # entries are named for that row and prove this reader too. Mutations (oracle): `mutations/`'s
+    # "hook-entries is blind to a settings path that names no file" -> the dangling link and the
+    # loop say the ledger cannot be read; "hook-entries reads a settings path that is no regular
+    # file" -> the directory does.
     root = _forged_clone(tmp_path)
     path = root / LEDGER
     path.unlink()

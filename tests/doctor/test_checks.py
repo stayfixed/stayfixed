@@ -18,6 +18,7 @@ import json
 import os
 import pty
 import shutil
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -31,10 +32,9 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.doctor import checks
+from stayfixed.doctor import checks, entries, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
 from stayfixed.doctor.checks import (
-    SETTINGS_FILES,
     VERSION_AHEAD,
     VERSION_BEHIND,
     VERSION_UNORDERED,
@@ -44,6 +44,7 @@ from stayfixed.doctor.checks import (
     WORKFLOW_NOT_A_FILE,
     plugin_root,
 )
+from stayfixed.doctor.entries import SETTINGS_FILES
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -1187,14 +1188,14 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
     context = _context(root, load(root, machine=_machine(tmp_path)))
-    row = checks._hook_entries(context)
+    row = entries.hook_entries(context)
     assert "could not be read as hook entries" in row.detail
 
 
 # Every settings file the walk reads, each with the directory it is read from: the three a project
 # keeps, and the machine's own copy under the home directory, which the row names by its `~/` label.
 WALKED = {
-    **{relative: ("root", relative) for relative in checks.SETTINGS_FILES},
+    **{relative: ("root", relative) for relative in entries.SETTINGS_FILES},
     f"~/{USER_SETTINGS}": ("home", USER_SETTINGS),
 }
 
@@ -1225,9 +1226,9 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
     # Python, and a harness may read it (Claude Code's parser does), so the hooks in it may run.
     # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
     # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
-    # (oracle): `mutations/`'s "the settings engine lets a nested document raise past its refusal"
-    # -> the row reads "this check could not run"; "hook-entries reads a settings file past the
-    # parser's reach as one it is blind to" -> it warns.
+    # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
+    # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
+    # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
     _walked(tmp_path, root, label).write_text(
         '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
@@ -1243,8 +1244,8 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
 
 def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: Path) -> None:
     # A file the walk is blind to warns only where nothing else has made the row red, and a file it
-    # cannot check has. Mutation (oracle): `mutations/`'s "a blind settings file softens a settings
-    # file nothing can check" -> a warning.
+    # cannot check has. Mutation (oracle): `mutations/`'s "a blind settings file softens a red row"
+    # -> a warning.
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.json").write_text(
@@ -1428,7 +1429,7 @@ def test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command(tmp_pat
     # comparison is on the marked *command* rather than on the id. `overlay-PreToolUse-1` is an
     # id this overlay really does grant; the command hung on it here is not the one it grants it
     # for. The comparison is the core's and the grants it reads are `attach`'s, so
-    # `tests/doctor/test_contributions.py`'s
+    # `tests/doctor/test_entries.py`'s
     # `test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved` proves the
     # comparison again with grants it injects. Mutation (oracle): `mutations/`'s "hook-entries
     # compares a grant by its id rather than its command".
@@ -1503,30 +1504,39 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in the module that registers it: the core's eleven in `CHECKS`, and
-    # each area's in its own `doctor.py`, in the `Contribution` its `register()` returns.
+    # literal exactly once in the modules that hold it: the core's eleven in `CHECKS`, counted
+    # over every module that defines one of `CHECKS`' checks, and each area's in its own
+    # `doctor.py`, in the `Contribution` its `register()` returns. The core's modules are read off
+    # where the checks are defined rather than listed, so a check split into a module of its own
+    # is scanned without an edit here.
     #
     # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
-    # twice and this reddens naming it. Measured by hand for an area: a stray `_STRAY =
-    # "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming that module.
+    # twice and this reddens naming it; `mutations/`'s "a stray hook-entries name in the module
+    # that defines the check" is the same stray in `doctor/entries.py`. Measured by hand for an
+    # area: a stray `_STRAY = "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming
+    # that module.
     import ast
+    import sys
     from types import ModuleType
 
     from stayfixed.doctor import checks as module
 
-    def spelled(where: ModuleType, names: list[str]) -> dict[str, int]:
-        source = Path(where.__file__ or "").read_text(encoding="utf-8")
+    def spelled(where: list[ModuleType], names: list[str]) -> dict[str, int]:
         literals = [
             node.value
-            for node in ast.walk(ast.parse(source))
+            for each in where
+            for node in ast.walk(ast.parse(Path(each.__file__ or "").read_text(encoding="utf-8")))
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         ]
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
     assert len(names) == 11
-    assert spelled(module, names) == dict.fromkeys(names, 1)
-    found = module.discover_contributors()
+    core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
+    # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
+    assert "stayfixed.doctor.entries" in [each.__name__ for each in core]
+    assert spelled(core, names) == dict.fromkeys(names, 1)
+    found = registry.discover_contributors()
     # The three delivery areas, so the loop below is not vacuously true of no area at all.
     assert [name for name, _ in found] == [
         "stayfixed.attach.doctor",
@@ -1538,7 +1548,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     for area in areas:
         contributed = [name for name, _ in area.register().checks]
         assert contributed, area.__name__
-        assert spelled(area, contributed) == dict.fromkeys(contributed, 1), area.__name__
+        assert spelled([area], contributed) == dict.fromkeys(contributed, 1), area.__name__
 
 
 def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -> None:
@@ -1548,7 +1558,9 @@ def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -
     # misnamed; this is the guard that outlives that.
     root = _initialised(tmp_path)
     rows = _checks(tmp_path, root)
-    contributed = [name for each in checks.contributions() for name, _ in each.checks]
+    contributed = [
+        name for each in registry.contributions(checks.CHECKS) for name, _ in each.checks
+    ]
     assert [row.name for row in rows] == [name for name, _ in module_checks()] + contributed
 
 
@@ -1762,6 +1774,42 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
     assert all(row.status == SKIP for row in rows[1:]), [
         (row.name, row.status) for row in rows[1:] if row.status != SKIP
     ]
+
+
+def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `load` reads the machine file with `interactive=False`, which honours neither
+    # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and the row named the file through the terminal
+    # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
+    # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
+    # variable names — which is fine, and was never read.
+    #
+    # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
+    # the one where no `--machine` was given. `HOME` is this test's, so the file `load` reads is
+    # under it, and the variable names a well-formed file beside it.
+    #
+    # Mutation: `run_checks`' `machine_config_path(interactive=False)` without its argument -> the
+    # file read and named is the variable's, which loads, and the first assertion reddens. The
+    # file is resolved once for both, so no mutation can make them differ again.
+    root = _initialised(tmp_path)
+    home = tmp_path / "owner-home"
+    read = home / ".config" / "stayfixed" / "config.toml"
+    read.parent.mkdir(parents=True)
+    read.write_text("[personal\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.toml"
+    elsewhere.write_text("[personal]\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("STAYFIXED_CONFIG", str(elsewhere))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    rows = run_checks(
+        root, home=tmp_path / "home", machine=None, runner=Recorder(), env=_env(tmp_path)
+    )
+    first = rows[0]
+
+    assert "the machine configuration file does not load" in first.detail
+    assert str(read) in first.remedy
+    assert str(elsewhere) not in first.remedy
 
 
 def test_no_case_here_can_read_the_developers_own_machine_configuration(

@@ -113,10 +113,11 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
+from stayfixed.jsonobject import json_object
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
-from stayfixed.setup.machine import USER_SETTINGS, read_machine, write_machine
+from stayfixed.setup.machine import USER_SETTINGS, read_personal, write_machine
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
@@ -175,13 +176,6 @@ def _personal_defaults(preset: dict[str, Any]) -> dict[str, Any]:
     return dict(preset.get("defaults", {}).get("personal", {}))
 
 
-def _existing_personal(machine: Path) -> dict[str, Any]:
-    if not machine.is_file():
-        return {}
-    raw = read_machine(machine).get("personal")
-    return dict(raw) if isinstance(raw, dict) else {}
-
-
 def _new_personal_values(preset: dict[str, Any], machine: Path) -> dict[str, Any]:
     """The preset's personal defaults, minus every key the machine file already carries.
 
@@ -189,7 +183,7 @@ def _new_personal_values(preset: dict[str, Any], machine: Path) -> dict[str, Any
     owner's, and a preset default may not win over it on a later run. An absent key gets the
     preset's default, which is what makes a *first* run write all three.
     """
-    existing = _existing_personal(machine)
+    existing = read_personal(machine)
     return {k: v for k, v in _personal_defaults(preset).items() if k not in existing}
 
 
@@ -265,13 +259,10 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
         raise Failure(f"{path} is not UTF-8 text") from None
     if not text.strip():
         return {}, text
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{path} is not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise Failure(f"{path} is not a JSON object")
-    return raw, text
+    # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is
+    # refused as a `Failure` naming it rather than read, and rather than ending setup in an
+    # internal error.
+    return json_object(text, str(path), error=Failure), text
 
 
 def _write_user_settings(
@@ -941,9 +932,7 @@ def setup(
     # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every stayfixed reader reads.
-    deny_written = _write_user_settings(
-        home, deny_rules, _existing_personal(machine), settings=settings
-    )
+    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)
 
     installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
     notes = list(install_notes)

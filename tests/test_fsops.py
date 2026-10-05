@@ -197,6 +197,16 @@ def test_a_parent_component_anywhere_along_the_path_is_refused(tmp_path: Path) -
         pass
 
 
+def test_a_component_holding_a_nul_is_refused(tmp_path: Path) -> None:
+    # A NUL names no file on any system, and a path call meets it with `ValueError`, which no
+    # caller of this rule catches: refused here, it is the `UnsafePath` every caller already turns
+    # into its own refusal. Mutation (oracle): `mutations/`'s "a path component holding a NUL
+    # passes the containment rule".
+    with pytest.raises(UnsafePath):
+        checked_components("memory/a\x00b")
+    assert not (tmp_path / "memory").exists()
+
+
 def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
     # `os.open` ignores `dir_fd` for an absolute path, so without this the walk restarts at the
     # filesystem root. This is the case that succeeds on Linux, where CI runs.
@@ -545,3 +555,39 @@ def test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by() ->
     # may carry a path: whole is for `UnsafePath` alone, by its type. Mutation: decide by
     # `error.filename is None` in `said` — this reddens.
     assert fsops.said(OSError("/machine/checkout/src/a.py: refused")) == "OSError"
+
+
+def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers(
+    tmp_path: Path,
+) -> None:
+    # The probe `doctor`'s `hook-entries` walk and `attach`'s ledger reader share: a path that
+    # names no file is `False` for both, and a path neither can ask about is raised, because one
+    # calls it a file it is blind to and the other an unreadable ledger.
+    regular = tmp_path / "regular"
+    regular.write_text("{}", encoding="utf-8")
+    assert fsops.names_regular_file(regular) is True
+    # Followed through a link, as `Path.is_file()` follows it.
+    (tmp_path / "to-regular").symlink_to(regular)
+    assert fsops.names_regular_file(tmp_path / "to-regular") is True
+    # Names no file: nothing there, a dangling link, a loop, a component that is not a directory,
+    # and something that is not a regular file. Mutations (oracle): `mutations/`'s "hook-entries
+    # is blind to a settings path that names no file" raises for the first four, and "hook-entries
+    # reads a settings path that is no regular file" answers `True` for the directory.
+    (tmp_path / "dangling").symlink_to(tmp_path / "nothing-here")
+    (tmp_path / "loop").symlink_to(tmp_path / "loop")
+    (tmp_path / "directory").mkdir()
+    for path in (
+        tmp_path / "absent",
+        tmp_path / "dangling",
+        tmp_path / "loop",
+        regular / "below-a-file",
+        tmp_path / "directory",
+    ):
+        assert fsops.names_regular_file(path) is False, path
+    # A link to a name longer than a file name may be is a path a clone can commit, and it is not
+    # one that names no file: it is the caller's to classify. Mutation (oracle): `mutations/`'s
+    # "the regular-file probe reads a path it cannot ask about as no file" -> `False`.
+    (tmp_path / "past-a-name").symlink_to(tmp_path / ("x" * 300))
+    with pytest.raises(OSError) as raised:
+        fsops.names_regular_file(tmp_path / "past-a-name")
+    assert raised.value.errno not in fsops.NAMES_NO_FILE

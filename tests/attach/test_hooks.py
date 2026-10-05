@@ -8,6 +8,8 @@ denies directly.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -32,6 +34,7 @@ from stayfixed.hooks.api import EVENTS, HookEvent, HookResult, Policy
 from stayfixed.hooks.registry import discover
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
+from tests.test_areas import LIST_IMPORTS, ROOT
 
 ORIGIN = "git@github.com:owner/widget.git"
 CONFIG = (
@@ -113,6 +116,43 @@ def test_an_unattached_overlay_project_is_told_to_attach(
     # reddens and the silent case below prints NOT_ATTACHED.
     root, _, machine = _recorded(tmp_path, monkeypatch)
     assert _run(root, machine, None) == NOT_ATTACHED
+
+
+def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
+    # One spelling of `stayfixed attach --store ...` serves the session-start line and every row
+    # of `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
+    # constant, a change to it would otherwise reach the session unread. The constant spells the
+    # overlay's `projects` directory out, because this module is imported by discovery and must
+    # not import the memory area, so it is held to the memory area's name for it. No mutation: a
+    # changed spelling on either side reddens one of the two lines.
+    from stayfixed.attach import ATTACH_STORE
+    from stayfixed.memory.api import PROJECTS
+
+    assert f"stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory" == ATTACH_STORE
+    assert NOT_ATTACHED == (
+        "stayfixed: this repository is not attached to the overlay this machine records; "
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    )
+
+
+def test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module() -> None:
+    # `hooks/registry.py` imports every area's `hooks` module with no guard, because a hook fails
+    # fast. So whatever `hooks.py` imports at module level is on every hook's path: a defect
+    # confined to `attach/doctor.py` would stop discovery for every event, and every hook run would
+    # load the report's code. Asked in a clean interpreter, because in this one the suite has
+    # already imported everything. Mutation (oracle): `mutations/`'s "attach's hooks import the
+    # area's doctor module".
+    completed = subprocess.run(
+        [sys.executable, "-c", LIST_IMPORTS],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert completed.returncode == 0, completed.stderr
+    loaded = completed.stdout.split()
+    assert "stayfixed.attach.hooks" in loaded, "the probe discovered nothing"
+    assert [name for name in loaded if name.split(".")[-1] == "doctor"] == []
 
 
 @needs_git

@@ -9,6 +9,7 @@ refuses.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -366,6 +367,163 @@ def test_check_reads_each_of_its_two_documents_once(
     monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
     assert loads == []
+
+
+def test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `project.name` whose directory under the overlay's `projects/` fits under the longest path
+    # while the binding record inside it does not. `--check` read the overlay's sources under it as
+    # absent and exited 0. `attach` then wrote the ignore region, the settings merge, the ledger
+    # and the record -- through descriptors, which no path length bounds -- and ended in an
+    # internal error building the link tree; and a record past the longest path is one every
+    # later reader of it takes for no record at all. `--check` previews the run, so it refuses the
+    # name as the run now does, above every write. The name is never quoted back: it is the
+    # repository's.
+    #
+    # Mutation (oracle): `mutations/`'s "attach and --check go on for a name whose share holds a
+    # path past the longest one" -> `--check` exits 0 again.
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from stayfixed.memory.api import PROJECT_RECORD
+    from tests.attach.test_binding import CONFIG
+
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Room under the longest path for the fixture's own files, overlay and checkout alike.
+    while len(str(deep)) < longest - 250:
+        deep = deep / ("d" * min(200, longest - 250 - len(str(deep))))
+    root, store = _project_and_store(deep, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(deep, overlay=store.parents[2])
+    projects = store.parents[1]
+    # The project's directory 10 characters short of the longest path, its name a file name that
+    # may be, and its binding record past the longest path.
+    name = "n" * (longest - 10 - len(str(projects)) - 1)
+    assert len(name) < 255
+    assert len(str(projects / name)) == longest - 10
+    assert len(str(projects / name / PROJECT_RECORD)) > longest
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    flags = _flags(root, projects / name / "memory", machine)
+    refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=projects)}"
+    before = snapshot(deep)
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert name not in checked.out + checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert_snapshot_unchanged(deep, before)
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [("developer",), ("developer", "project-stable"), ("developer", "project-stable-" + "g" * 40)],
+    ids=["the-index", "a-group", "a-long-group"],
+)
+def test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], groups: tuple[str, ...]
+) -> None:
+    # A `project.name` whose directory and binding record fit under the longest path while a path
+    # the link tree points at inside that directory does not: the index, which the first attach
+    # writes, or a group's directory, which it creates. `--check` read the overlay's sources under
+    # the name -- shorter than a long group's directory -- and exited 0. `attach` then wrote the
+    # ignore region, the settings merge, the ledger and the record, and ended in an internal error
+    # (`PartialLink`, "File name too long") linking the tree. Both refuse it above every write,
+    # and neither quotes the name or a group back: both are the repository's.
+    #
+    # The longest path is measured off the paths the tree is built from (`link_sources`), for a
+    # placeholder name, and the name is then made exactly long enough for that path to be as long
+    # as the system's longest -- which no path may be, since the limit counts the terminating NUL.
+    #
+    # Mutation (oracle): `mutations/`'s "attach and --check go on for a name whose share holds a
+    # path past the longest one" -> `--check` exits 0 again, and `attach` writes.
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE, load
+    from stayfixed.memory.api import PROJECT_RECORD, link_sources
+    from tests.attach.test_binding import CONFIG
+
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Room under the longest path for the fixture's own files, overlay and checkout alike.
+    while len(str(deep)) < longest - 250:
+        deep = deep / ("d" * min(200, longest - 250 - len(str(deep))))
+    root, store = _project_and_store(deep, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(deep, overlay=store.parents[2])
+    overlay, projects = store.parents[2], store.parents[1]
+    fixture = 'groups = ["developer", "project-stable"]'
+
+    def configure(name: str) -> None:
+        text = CONFIG.format(name=name)
+        assert fixture in text
+        written = text.replace(fixture, f"groups = {json.dumps(list(groups))}")
+        (root / CONFIG_FILE).write_text(written, encoding="utf-8")
+
+    configure("p")
+    share = projects / "p"
+    made = [
+        path for path in link_sources(overlay, load(root, machine=machine)) if share in path.parents
+    ]
+    reach = max(len(str(path)) for path in made) - len(str(share))
+    assert reach > len(str(share / PROJECT_RECORD)) - len(str(share))
+    name = "n" * (longest - reach - len(str(projects)) - 1)
+    assert len(name) < 255
+    assert len(str(projects / name / PROJECT_RECORD)) < longest
+    configure(name)
+    flags = _flags(root, projects / name / "memory", machine)
+    refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=projects)}"
+    before = snapshot(deep)
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert name not in checked.out + checked.err
+    assert groups[-1] not in checked.out + checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert groups[-1] not in attached.out + attached.err
+    assert_snapshot_unchanged(deep, before)
+    assert not (projects / name).exists()
+
+
+def test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `memory.groups` entry holding a NUL names no path anywhere, and every path call meets it
+    # with `ValueError: embedded null character`: `--check` and `attach` both ended in an internal
+    # error. It is a group no directory can be, so it is refused as one leaving the share is,
+    # above every write and without being quoted back.
+    #
+    # Mutation (oracle): `mutations/`'s "a path component holding a NUL passes the containment
+    # rule" -> both commands end in the internal error again.
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    text = CONFIG.format(name="p").replace(
+        'groups = ["developer", "project-stable"]', 'groups = ["developer", "a\\u0000b"]'
+    )
+    assert "\\u0000" in text
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    for said in (checked, attached):
+        assert said.err.startswith("stayfixed: refused: ")
+        assert "memory.groups" in said.err
+        assert "internal error" not in said.err
+        assert "\x00" not in said.out + said.err
+    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_attach_reads_each_of_its_two_documents_once_too(

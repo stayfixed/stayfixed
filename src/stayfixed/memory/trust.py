@@ -26,6 +26,7 @@ from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.fsops import write_atomically
+from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
 
@@ -273,19 +274,20 @@ def _recorded(machine: Path | None) -> dict[str, str]:
             f"{path} is not UTF-8 text; it holds every project's approval on this machine, so "
             f"nothing here will overwrite it — repair or delete it"
         ) from None
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise UnreadableTrustRecord(
-            f"{path} is not valid JSON ({exc}); it holds every project's approval on this "
-            f"machine, so nothing here will overwrite it — repair or delete it"
-        ) from exc
-    if not isinstance(raw, dict):
-        raise UnreadableTrustRecord(
-            f"{path} is not a JSON object; it holds every project's approval on this machine, "
-            f"so nothing here will overwrite it — repair or delete it"
-        )
+    # Through `jsonobject`, whose parser-limit arms are what this reader lacked: a record nested
+    # past the parser or holding an integer longer than it converts is valid JSON that
+    # `json.loads` meets with no `JSONDecodeError`, and it ended `memory trust` and the gate in an
+    # internal error. Each of its sentences is this record's refusal, with the record's reason.
+    raw = json_object(text, str(path), error=_refused_record)
     return {k: v for k, v in raw.items() if isinstance(v, str)}
+
+
+def _refused_record(reason: str) -> UnreadableTrustRecord:
+    """The refusal for a `trust.json` that does not parse as the record, `reason` first."""
+    return UnreadableTrustRecord(
+        f"{reason}; it holds every project's approval on this machine, so nothing here will "
+        f"overwrite it — repair or delete it"
+    )
 
 
 def approval_recorded(path: Path, machine: Path | None) -> bool:

@@ -17,8 +17,9 @@ import pytest
 
 import stayfixed
 from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.project.commands import CI_LEFT, CI_PINNED
-from stayfixed.scaffold import Kind, Location, Manifest, Record, digest
+from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from tests.gitfixture import git, needs_git
 from tests.project.repos import forge_record, initialised, tree
 from tests.runners import LsRemote
@@ -71,6 +72,37 @@ def test_a_current_footprint_says_so_and_exits_zero(tmp_path: Path) -> None:
         "pin",
         "asked",
     } <= set(data)
+
+
+# Two manifests that are valid JSON past this interpreter's parser, and what the refusal says of
+# each: nested deeper than it follows, and an integer longer than it converts (4,300 digits by
+# default).
+PAST_THE_PARSER = {
+    "nested": ("[" * 200_000 + "]" * 200_000, NESTED),
+    "long-number": ('{"format": ' + "1" * 5_000 + "}", LONG_NUMBER),
+}
+
+
+@needs_git
+@pytest.mark.parametrize("command", COMMANDS)
+@pytest.mark.parametrize("case", sorted(PAST_THE_PARSER))
+def test_a_manifest_past_the_parser_is_refused_in_its_own_words(
+    tmp_path: Path, case: str, command: str
+) -> None:
+    # The reader caught both documents and quoted the exception: "is unreadable: Exceeds the limit
+    # (4300 digits) for integer string conversion ... use sys.set_int_max_str_digits() to increase
+    # the limit", which tells the owner of a committed ledger to change their interpreter, and
+    # for the nested one the parser's report of its own stack. The refusal now says what the file
+    # holds, in the sentence shape the reader's other refusals have, and quotes no interpreter.
+    # Mutation (oracle): `mutations/`'s "the manifest reader quotes the parser's exception for a
+    # document past its reach" -> every case reddens.
+
+    root = initialised(tmp_path)
+    document, clause = PAST_THE_PARSER[case]
+    (root / MANIFEST_PATH).write_text(document, encoding="utf-8")
+    code, data = _run(root, tmp_path, command, "--dry-run")
+    assert code == 2
+    assert data["summary"] == f"refused: {MANIFEST_PATH} {clause}"
 
 
 @needs_git

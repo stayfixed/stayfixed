@@ -64,6 +64,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from stayfixed.attach import ATTACH_STORE
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ NO_OVERLAY = (
 NOT_ASKABLE = "stayfixed: the overlay binding could not be checked on this machine"
 NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    f"run `{ATTACH_STORE} --check`"
 )
 REMOTE_MISMATCH = (
     "stayfixed: the overlay records a different remote under this project's name; "
@@ -197,9 +198,8 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
         elif binding.state == MISMATCH:
             lines.append(REMOTE_MISMATCH)
         elif binding.state == NO_ORIGIN_STATE:
-            # The sentence every other surface says for this state: it used to be read as a
-            # mismatch here too, and the line sent the reader to `--check` about a different
-            # remote that was not there.
+            # The sentence every other surface says for this state, and never a mismatch's: that
+            # line would send the reader to `--check` about a different remote that is not there.
             lines.append(NO_ORIGIN)
         try:
             real = unlinked_groups(root, config)

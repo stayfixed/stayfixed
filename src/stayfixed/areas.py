@@ -1,5 +1,5 @@
 """Areas discovered by name: the half `stayfixed.cli`, `stayfixed.hooks.registry` and
-`stayfixed.doctor.checks` share.
+`stayfixed.doctor.registry` share.
 
 Three submodules are discovered, each by the module that reads it: an area's `commands.py` gives
 it a CLI group, its `hooks.py` hook handlers, and its `doctor.py` rows in `stayfixed doctor`'s

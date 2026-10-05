@@ -1,11 +1,13 @@
-"""The core's eleven checks, the run that asks them, and the rows the areas contribute after them.
+"""The core's checks, the run that asks them, and the rows the areas contribute after them.
 
-The report has sixteen rows. Eleven are the core's and live here; the other five are the delivery
-areas' — `attached` from `attach`, `bundles` and `store-debris` from `memory`, `pre-commit` and
-`overlay-requires` from `overlay` — and each area's `doctor.py` contributes them
-(CONTRIBUTING.md, "Areas"), so nothing here imports the overlay, the binding or the note store.
-`hook-entries` stays here because every settings file is the core's to walk, and it asks the
-areas' `Claims` for what each put into them.
+A row of the report is one check's answer under the check's name. The core's checks are `CHECKS`,
+and their rows come first, in that order; every other row is an area's, contributed by its own
+`doctor.py` (CONTRIBUTING.md, "Areas") and asked after the core's in area-name order. So nothing
+here imports an area, and nothing here names or counts the rows an area contributes: which rows a
+report has is `docs/cli.md`'s table, and `tests/doctor/test_checks.py`'s literal `REPORT`.
+`hook-entries` is a core check because every settings file is the core's to walk, and it asks the
+areas' `Claims` for what each put into them. This module is the list and the run: that row's walk
+is `entries.py`'s, and how the areas' rows are found and guarded is `registry.py`'s.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label carries "what the check computed" while the detail "may quote the
@@ -17,11 +19,11 @@ defines its own record and reuses `findings.listed` for the summary line alone.
 **What may be printed, and what may not.** Counts, labels, statuses and stayfixed's own
 vocabulary are computed here and print freely. A repository-authored string does not: not
 `[stayfixed] version`, not `[ci] ref`, not a hook command. The hook sink holds its diagnostics log
-to that line in as many words — reasons, never payloads — and this module holds every other row to
-it, as each area's `doctor.py` holds the rows it contributes, where a note's filename and the
-reason a store does not resolve are repository-authored too.
+to that line in as many words — reasons, never payloads — and this module and `entries.py` hold
+every other row to it, as each area's `doctor.py` holds the rows it contributes, where a note's
+filename and the reason a store does not resolve are repository-authored too.
 
-**No exception, and `hook-entries` is where one was nearly made.** Against a hostile clone,
+**No exception, and `hook-entries` is where one is most tempting.** Against a hostile clone,
 `doctor` lists every hook entry with its provenance, and the obvious way to do that is to print
 the marker id an entry claims. That id is repository-authored: it is a substring of a hook
 command in a committed `.claude/settings.json`, it reaches `Check.detail` and `--json`, and
@@ -35,65 +37,56 @@ names the entry a reader has to open without reproducing one byte the repository
 strictly more actionable besides: the reader opens the file either way, and a position survives
 two entries claiming one id where a name does not.
 
-**`diagnostics` is the same ruling applied to the other direction.** That row used to print
-three fields of the sink's log on the ground that they are stayfixed's own vocabulary — which
-they are, *for a log stayfixed wrote*. The log is found through `${CLAUDE_PLUGIN_DATA}`, so this
-process never establishes that, and `error` is free text with no grammar and no cap on the read
-side at all. Refusing a bounded, grammar-constrained marker id and printing an unbounded
-free-text field in the same command is not a policy, so `diagnostics` prints a count and the
-reader opens the file. `_diagnostics` has the measurement.
+**`diagnostics` is the same ruling applied to the other direction.** The sink's log has three
+fields that are stayfixed's own vocabulary *for a log stayfixed wrote*. The log is found through
+`${CLAUDE_PLUGIN_DATA}`, so this process never establishes that, and `error` is free text with no
+grammar and no cap on the read side at all. Refusing a bounded, grammar-constrained marker id and
+printing an unbounded free-text field in the same command would not be a policy, so `diagnostics`
+prints a count and the reader opens the file. `_diagnostics` says what quoting would let through.
 
 **A value the environment names is not the same as a value this process chose**, and the two
-checks that touch a plugin root now say which they have: `plugin_root` finds the file, `own_root`
-is the only root anything executes.
+checks that touch a plugin root say which they have: `plugin_root` finds the file, `own_root` is
+the only root anything executes.
 
-**The sink's layout is read from `stayfixed.hooks.api`, which is where it is now defined.** This
-module used to import `DIRECTORY`, `MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` from
-`stayfixed.hooks.sink` — a private module of another area — and excuse it here, on the ground
-that `sink.py` imports `api.py` so a re-export would be a cycle. That was true of a re-export
-and not of the layout itself: four strings that this area and the hook area must agree on are
-shared vocabulary, so they are *defined* on the surface and `sink.py` imports them too. There
-is no departure from "import an area through its published surface" left to record.
+**The sink's layout is read from `stayfixed.hooks.api`, where it is defined.** `DIRECTORY`,
+`MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` are four strings this area and the hook area
+must agree on, so they are shared vocabulary, *defined* on the hook area's surface, which
+`sink.py` imports too — a re-export from `sink.py` would be a cycle, since `sink.py` imports
+`api.py`. So this module imports another area through its published surface, as every module
+does.
 """
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import re
 import shutil
-import stat
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
-from types import ModuleType
-from typing import TypeGuard
 
 import stayfixed
 from stayfixed import REPOSITORY_URL
-from stayfixed.areas import area_imports
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
+from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     OK,
     RED,
+    REPORT_THIS,
     SKIP,
     WARN,
     Check,
-    Claims,
     Context,
     Contribution,
     Row,
-    Status,
-    Wording,
 )
+from stayfixed.doctor.registry import Unregistered, contributions
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.harnesses import CODEX, HARNESSES, Tier
+from stayfixed.harnesses import CODEX, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -110,18 +103,8 @@ from stayfixed.release.api import (
     released,
 )
 from stayfixed.runner import Runner
-from stayfixed.scaffold import ParserLimitError, marker_id, owned_ids
 from stayfixed.semver import later
-from stayfixed.setup.api import USER_SETTINGS
 
-# Every file a hook entry can be installed into, as a path relative to a root: each harness's
-# committed settings files and the ones it keeps out of git, read off the harness registry, so a
-# harness added there is walked here without an edit. The two roots are the project (all of
-# them) and `home` (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny
-# rules, and which `setup` reads off `CLAUDE.settings`: the same file under another root).
-SETTINGS_FILES = tuple(
-    relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
-)
 # Where the harness reads stayfixed's wrapper from, relative to the plugin root. `hooks/` stays
 # at the plugin root — `overlay/template.py` says why — so it is found by environment or by
 # checkout probe and never through `importlib.resources`.
@@ -133,9 +116,9 @@ WRAPPER = "hooks/run-hook.sh"
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
 _TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
-# Wall-clock bound on the one subprocess this *module* launches. The report's total is five on a
-# green attached installation — `stayfixed.doctor.__init__` counts them and names the one that
-# leaves the machine — because four more are launched inside the areas the report's rows call.
+# Wall-clock bound on the one subprocess this *module* launches. A report launches more, inside the
+# areas whose rows it asks; `docs/cli.md` counts them, and `stayfixed.doctor` says which one leaves
+# the machine.
 #
 # A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it: this bounds
 # `stayfixed --version` behind an interpreter probe, and nothing about it is a project's to tune.
@@ -146,7 +129,7 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
 # with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
 # repo create --clone` waiting on GitHub to instantiate a template, then a clone down the wire —
-# but this row reads one tag listing, and `init` recording a ref is what made a five-minute block
+# but this row reads one tag listing, and once `init` records a ref, five minutes would be a block
 # reachable from a command documented as a one-line diagnostic. The number is the wrapper probe's
 # above, deliberately: both bound one bounded question that a hung peer must not turn into a hung
 # `doctor`, and the report's other `git` calls go through `gitenv`'s five seconds. The shipped
@@ -366,11 +349,11 @@ def _files(context: Context) -> Row:
     # Counted and not dropped, which is what keeps the union above load-bearing: what makes a
     # partial update visible is that the record names a file this build does not ship, never
     # what that name says.
-    # **Three causes, and they were one sentence.** `changed` is "this name did not compare
-    # equal", and a name gets in for three different reasons: the file is absent from the
-    # installation, the record does not name it, or the bytes differ. A file that is present
-    # and byte-for-byte what the release shipped was being reported as "does not match the
-    # release record" whenever the record was the partial half — a record the release script
+    # **Three causes, and three sentences.** `changed` is "this name did not compare equal", and
+    # a name gets in for three different reasons: the file is absent from the installation, the
+    # record does not name it, or the bytes differ. One sentence for all three would report a
+    # file that is present and byte-for-byte what the release shipped as "does not match the
+    # release record" whenever the record is the partial half — a record the release script
     # refuses to write (`RELEASING.md`, under `hashes`), and one an installation can still carry.
     # Telling the owner their file is wrong when the record is the wrong one sends them to
     # reinstall over the one artifact that is correct.
@@ -404,7 +387,7 @@ def _files(context: Context) -> Row:
 def _wrapper(context: Context) -> Row:
     """Execute the wrapper once, and report the token it printed.
 
-    This check closes a measured blind spot that no row reading a file can see. Under `open`
+    This check closes a blind spot that no row reading a file can see. Under `open`
     policy a failed interpreter probe prints to stderr and exits **0**; the harness discards
     stderr on a 0; no Python ran, so nothing reached the sink; and `doctor` itself runs under
     whatever interpreter the user invoked it with rather than under the wrapper's candidate list.
@@ -416,13 +399,13 @@ def _wrapper(context: Context) -> Row:
 
     **Only a root this process derived for itself is ever executed.** `context.own_root` and
     not `context.plugin_root`: with a wheel install `_own_root()` answers `None`, and a project
-    that commits `hooks/run-hook.sh` mode 100755 plus an `env` block naming its own tree was
-    measured getting that script *run* by `stayfixed doctor`, which then reported `wrapper: ok`
-    — code execution and a false clean bill of health in one row. Requiring the named root to
-    lie outside the project root is the weaker containment: it needs both sides resolved to
-    survive a committed symlink, and it still admits a second attacker-controlled checkout on
-    the same machine. A `skip` that names what it could not vouch for is the honest answer for
-    a root this process did not choose, and `files` still reads the file.
+    that commits `hooks/run-hook.sh` mode 100755 plus an `env` block naming its own tree would
+    get that script *run* by `stayfixed doctor` under a named root, which would then report
+    `wrapper: ok` — code execution and a false clean bill of health in one row. Requiring the named
+    root to lie outside the project root is the weaker containment: it needs both sides resolved to
+    survive a committed symlink, and it still admits a second attacker-controlled checkout on the
+    same machine. A `skip` that names what it could not vouch for is the honest answer for a root
+    this process did not choose, and `files` still reads the file.
     """
     # `own_root` and not `plugin_root`, on one line, so the whole rule is the single thing a
     # mutation flips: what is launched here is a root this process derived, never one a
@@ -463,10 +446,9 @@ def _wrapper(context: Context) -> Row:
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
             # Closed, not inherited — and defence in depth rather than the half that carries
-            # the weight. The comment here used to claim this flag stops the probe reopening
-            # "the seam this environment was scrubbed to close", which overstates it: the `env`
-            # dict above drops every `STAYFIXED_*` key, so `STAYFIXED_PYTHON_CANDIDATES` is not in
-            # the child's environment at all and a tty on its own has nothing left to reopen.
+            # the weight: the `env` dict above drops every `STAYFIXED_*` key, so
+            # `STAYFIXED_PYTHON_CANDIDATES` is not in the child's environment at all and a tty on
+            # its own has nothing left to reopen.
             #
             # What it does buy is that the two guards fail independently — a later edit that
             # narrowed the strip, or a second variable gated on a terminal the same way, still
@@ -495,401 +477,6 @@ def _wrapper(context: Context) -> Row:
             "run `hooks/run-hook.sh open --version` and read its stderr",
         )
     return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
-
-
-def _entry_commands(document: str) -> list[str]:
-    """Every hook entry's command, in document order, **one element per entry**.
-
-    One per entry and not one per readable command: the position in this list is what the report
-    names, so an entry whose `command` is absent or is not a string still occupies its place and
-    contributes `""`, which `marker_id` reads as unmarked — which it certainly is.
-
-    Called only after `scaffold.owned_ids` has accepted the document, so the shapes this walk
-    tolerates are the shapes the engine already vouched for, and it reads integers as their text as
-    that reader does: a number past the interpreter's conversion is no part of any command. What it
-    must not do is *raise*: `doctor` is what a user has left when everything else is broken.
-    """
-    try:
-        raw = json.loads(document, parse_int=str) if document.strip() else {}
-    except json.JSONDecodeError:
-        return []
-    hooks = raw.get("hooks") if isinstance(raw, dict) else None
-    found: list[str] = []
-    for groups in hooks.values() if isinstance(hooks, dict) else []:
-        for group in groups if isinstance(groups, list) else []:
-            entries = group.get("hooks") if isinstance(group, dict) else None
-            for entry in entries if isinstance(entries, list) else []:
-                command = entry.get("command") if isinstance(entry, dict) else None
-                found.append(command if isinstance(command, str) else "")
-    return found
-
-
-# The faults of a `stat` that say its path names no file: nothing there, a component that is not
-# a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
-# faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
-# clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
-# raised, it reached `_guarded`, whose warning stood in for `hook-entries` whole, so a marked entry
-# nothing vouches for lost its red beside it; answered `False`, it skipped a file that is there. So
-# `stat` is asked, these three are no file, and any other fault is a file the walk cannot read.
-NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
-
-# How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
-# `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
-# would type. The project-relative members of `SETTINGS_FILES` name themselves.
-_MACHINE_LABEL = f"~/{USER_SETTINGS}"
-
-
-class UnansweredClaims(RuntimeError):
-    """An area's claims raised. Never an `OSError`, whatever they raised, so the report's guard
-    reads it as the red it is and not as the machine's warning."""
-
-
-def _claimed(
-    context: Context, claims: Sequence[Callable[[Context], Claims]]
-) -> tuple[list[Claims], bool, bool]:
-    """Every area's `Claims`, and whether every record could be read and every source asked.
-
-    An area's own record is the only thing that can say what it put into settings files, so the
-    core asks each area that has one, with this report's context and under this row's guard. The
-    answers are kept apart rather than pooled: an entry is vouched for only by the one area that
-    both records its id and grants its command, because a record is a file a repository can
-    write, and one area's record standing on another area's grant vouches for an entry neither
-    area put there whole. A `None` is still one for the whole: an id one record could not be read
-    for, or a command one source could not be asked about, is not one the rest can vouch for.
-    With no area claiming anything, nothing is recorded and nothing granted, so every entry
-    claiming the marker is one no area put there.
-
-    **Claims that raise are red, whatever they raise.** An area answers what it cannot read as a
-    `None` field, so one that raises is a defect in its code, and `Contribution.claims` promises
-    red for it. The guard reads an `OSError` as the machine's and warns, so a `PermissionError` out
-    of an area's claims turned the row — and every forged entry it would have listed — into a
-    warning and an exit of 0. It is raised on as `UnansweredClaims`, which the guard names in the
-    row; the exception it chains carries the original, whose message is never printed, because an
-    area may have built it from repository bytes.
-    """
-    try:
-        answers = [ask(context) for ask in claims]
-    except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
-        raise UnansweredClaims(type(exc).__name__) from exc
-    readable = all(answer.recorded is not None for answer in answers)
-    askable = all(answer.granted is not None for answer in answers)
-    return answers, readable, askable
-
-
-def _rebuild(words: Wording) -> str:
-    """How an owner gets an area's unreadable record back: remove it, and have the area write a
-    new one from its source — an area that writes a record refuses to write over one it cannot
-    read."""
-    return f"remove {words.record} and run {words.vouch} to write a new one"
-
-
-def _refused(words: Wording) -> str:
-    """The clause saying an area's source does not vouch for entries it was asked about: that it
-    does not grant them, or the area's own `ungranted` where that would be false."""
-    return words.ungranted or f"{words.source} does not grant them"
-
-
-def _by_area(
-    answers: Sequence[Claims], told: Sequence[tuple[Claims, str]]
-) -> list[tuple[Claims, list[str]]]:
-    """`told`'s entries gathered under the area whose words tell them, in area order, leaving out
-    an area with none."""
-    gathered = [(answer, [where for owner, where in told if owner is answer]) for answer in answers]
-    return [(answer, wheres) for answer, wheres in gathered if wheres]
-
-
-def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]] = ()) -> Row:
-    """Every entry in every settings file, with provenance.
-
-    Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
-    marker id one area records *and* whose command that same area still grants is that area's;
-    an entry with no marker is foreign and is left alone by every merge this project ships; an
-    entry that **claims** the marker and cannot be vouched for is a repository saying it is
-    stayfixed, which is a stronger statement than "foreign" and the one a reader needs. It is
-    reported by position — see the module docstring for why not by name.
-
-    What each area recorded and what it grants are the areas' to answer, because the areas wrote
-    them: each hands its `Claims` to this row (`_claimed`), and the contract is the one `Claims`
-    states. A record may be repository bytes — `attach`'s is `.stayfixed/local/attach.json`, a
-    path a clone can commit — so **a record alone may never turn an entry green**: a repository
-    that committed a marked entry and a ledger recording its id got this row to answer "all
-    accounted for". An id is credible only beside a grant from a source the repository cannot
-    choose, and only the same area's grant, so one area's record never borrows another's. The
-    grant is the *marked command* and not the id, because an id that is granted with a different
-    command hung on it is the same attack one step down.
-
-    Where a source this machine records cannot be asked, the answer is the one this check gives a
-    file it could not parse: report it, never absolve it. That withholds the grant comparison and
-    nothing more. Whether a record holds an entry's id needs only the records, so an entry no record
-    holds is red whether or not a source can be asked: withholding that too would let a clone that
-    commits a record beside its entry turn the row into a warning on any machine with no source. A
-    machine that records no source at all is not one whose source could not be asked: there is
-    nothing to ask and nothing vouches, so an entry a record holds is red there too, or a clone
-    whose committed record holds its own entry would keep the exit code at 0. Where a record cannot
-    be read, the row warns and names it, and withholds judgement only of an entry that record's own
-    area grants: that entry may be one the record holds. An unreadable record is not an empty one,
-    and judged as one it would report every entry its area installed as recorded nowhere, with a
-    remedy telling the owner to remove it. But it is not a vouching one either: an entry no grant
-    covers is red whatever the record would have said, because a clone can commit a record that
-    will not parse as easily as one that does, and withholding the verdict there would turn a
-    forged entry's red into a warning on every machine. Reading the record is the area's, which
-    answers `None` rather than raising, so a committed file the area cannot parse never costs this
-    row's guard.
-
-    The red lists are kept apart because their remedies differ. An entry in no record is one to
-    open and delete; an entry a record holds and its source no longer grants is either a checkout
-    that has drifted from the source or a forged record, and the area's `vouch` command settles
-    which — it takes out every marked entry the source no longer grants, so anything surviving it
-    was never stayfixed's; an entry a record holds on a machine that records no source is either
-    the owner's checkout on a machine that has not recorded one yet or a forged record, and
-    recording the source and then vouching settles which; and the last two again, for an entry
-    only an unreadable record could hold, whose way out also writes the record anew.
-
-    **Every sentence about a record or a source is in its area's own words** — `Claims.wording`,
-    whose `Wording` says what each phrase is — because the record the row names is the file a
-    reader opens and the command it names is the one they run: an area's entry told in another
-    area's words sends them to a record that does not hold it. So each red list is told one part
-    per area, in area order: an entry a record holds by the first holder whose source refused it,
-    or the first holder where none records a source; an entry only an unreadable record could
-    hold by the first such area whose source refused it, or the first such area; and the remedy
-    is the last part's. An unreadable record or an unaskable source is a part of its own per area,
-    and their remedies are joined. An entry no record holds names every record it is missing
-    from, and with no area claiming anything, none.
-
-    **Entries are counted, never keys.** `owned_ids` answers a `dict[str, str]`, so N
-    entries sharing one id yield one key and the same id under two events keeps only the last —
-    which deflates the claimed count and inflates `foreign` by exactly the difference. The count
-    comes from `marker_id` over the positional walk, which is the same predicate `owned_ids` is
-    built on and the one `attach.write` already keys its ledger with.
-
-    **A file this walk could not read is `blind`, never silently absent.** Three arms used to
-    swallow: an `OSError` on the read, a `json.JSONDecodeError` inside the walk, and a `Refusal`
-    out of `owned_ids` — and all three produced "all accounted for" from the one check whose
-    entire purpose is that nobody's entries go unlisted. `owned_ids` is asked here for its
-    *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
-    `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
-    admit it cannot account for. The report names the file and never its contents.
-
-    **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
-    byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
-    are judged as they would be without the byte; a harness may read the file the same way, so
-    a marked entry in it nothing vouches for is red. Only what then fails to parse is `blind` —
-    a UTF-8 byte-order mark among it, which `json.loads` refuses as Node's parser does — and an
-    `OSError` on the read.
-
-    **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
-    is a warning, which is right for a file this machine will not let anything read and for one
-    that will not parse, because the harness cannot load either. Valid JSON nested deeper than the
-    parser follows is neither: a harness may read it (Claude Code's parser does), so the hooks in
-    it may run, and a warning there let a clone commit a marked entry beside such nesting and keep
-    the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may leave
-    unknown the provenance of an entry a harness may run. A number longer than the interpreter
-    converts is not refused at all: it is read as its text, by `owned_ids` and by the walk, and
-    the entries beside it are judged as they would be without it.
-    """
-    answers, readable, askable = _claimed(context, claims)
-    claimed = 0
-    foreign = 0
-    unrecorded: list[str] = []
-    # Each red entry a record holds, or only an unreadable record could, beside the area whose
-    # words tell it: a record and a remedy are an area's, so each list is told one part per area.
-    unvouched: list[tuple[Claims, str]] = []
-    ungranted: list[tuple[Claims, str]] = []
-    unread_unvouched: list[tuple[Claims, str]] = []
-    unread_ungranted: list[tuple[Claims, str]] = []
-    unchecked: list[str] = []
-    blind: list[str] = []
-    walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
-    if context.home is not None:
-        walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
-    for base, relative, label in walked:
-        path = base / relative
-        # Asked with `stat`, for the reason `NAMES_NO_FILE` gives: a path this walk cannot ask
-        # about is a file it is blind to, and one that names no file is skipped as it always was.
-        try:
-            mode = path.stat().st_mode
-        except OSError as exc:
-            if exc.errno not in NAMES_NO_FILE:
-                blind.append(label)
-            continue
-        if not stat.S_ISREG(mode):
-            continue
-        try:
-            # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
-            document = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            blind.append(label)
-            continue
-        try:
-            # Called for its *strictness* and not for its answer, so the discarded return value
-            # is the point rather than an oversight: this is the engine's own reader, and a
-            # document `apply_entries` would refuse is one this walk must not silently tolerate.
-            owned_ids(document)
-        except ParserLimitError:
-            unchecked.append(label)
-            continue
-        except Refusal:
-            blind.append(label)
-            continue
-        commands = _entry_commands(document)
-        for position, command in enumerate(commands, start=1):
-            entry_id = marker_id(command)
-            if entry_id is None:
-                foreign += 1
-                continue
-            claimed += 1
-            where = f"{label} entry {position} of {len(commands)}"
-            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
-            # An area whose record could not be read may hold this id or may not, and nothing
-            # here can say which. It is not an empty record: judged as one, every entry its area
-            # installed would read as recorded nowhere, red, with a remedy telling the owner to
-            # remove it.
-            unread = [answer for answer in answers if answer.recorded is None]
-            if not holders and not unread:
-                # Needs the records alone, so a source that cannot be asked does not withhold
-                # it: a committed record beside a committed entry it does not hold is red
-                # whether or not this machine records a source.
-                unrecorded.append(where)
-            elif askable and not any(command in (answer.granted or ()) for answer in holders):
-                # Needs the sources too, and only a holder's own grant vouches for its record:
-                # absolving an entry on a record alone, or on one area's record and another's
-                # grant, is what this row may never do. Without a grant to compare, the entry is
-                # neither absolved nor accused.
-                if any(command in (answer.granted or ()) for answer in unread):
-                    # An area whose record is unreadable grants it, so it may be that area's: the
-                    # record that would say is the one missing, and the row warns that it is.
-                    continue
-                if not holders:
-                    # Only an unreadable record could hold it and no grant covers it, so whatever
-                    # that record says, nothing vouches: red, and said without claiming to know
-                    # whether the record holds it. A record is a file a clone can commit, and an
-                    # unreadable one withholding this verdict turned a forged entry's red into a
-                    # warning and an exit of 0.
-                    # Told in the words of the first unreadable area whose source was asked and
-                    # refused it, or, with none, of the first unreadable area.
-                    asked = [answer for answer in unread if answer.sourced]
-                    if asked:
-                        unread_ungranted.append((asked[0], where))
-                    else:
-                        unread_unvouched.append((unread[0], where))
-                elif refusing := [answer for answer in holders if answer.sourced]:
-                    # Told in the words of the first holder whose source refused it.
-                    ungranted.append((refusing[0], where))
-                else:
-                    # No holder's machine records a source to grant from, so nothing could vouch
-                    # for the entry: red as surely as a refused grant, said differently, because
-                    # the way out is to record one rather than to re-run what it grants.
-                    unvouched.append((holders[0], where))
-    parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
-    status: Status = OK
-    remedy = ""
-    # Every sentence and remedy below about an area's record or source is told in that area's
-    # `Wording`, never in one area's words for another's: a record the row names is the one the
-    # reader opens, and a command it names is the one they run.
-    if not readable:
-        status = WARN
-        unreadable = [answer for answer in answers if answer.recorded is None]
-        parts.extend(
-            f"{answer.wording.record} is there and {answer.wording.unreadable}"
-            for answer in unreadable
-        )
-        # Rebuilding needs the source the area writes from, so where that area's source cannot
-        # be asked the remedy stays with the file.
-        remedy = "; ".join(
-            _rebuild(answer.wording) if answer.granted is not None else answer.wording.inspect
-            for answer in unreadable
-        )
-    elif not askable:
-        status = WARN
-        unasked = [answer for answer in answers if answer.granted is None]
-        parts.extend(
-            f"{answer.wording.unaskable}, so nothing here vouches for the ones claiming the marker"
-            for answer in unasked
-        )
-        remedy = "; ".join(answer.wording.diagnose for answer in unasked)
-    if unrecorded:
-        status = RED
-        # Every record was read and none holds these, so the sentence names each of them; with
-        # no area claiming anything there is no record to name, and nothing records them.
-        records = list(dict.fromkeys(answer.wording.record for answer in answers))
-        missing = (
-            f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere"
-        )
-        parts.append(
-            f"{len(unrecorded)} entr(ies) claim the stayfixed marker and {missing}: "
-            f"{listed(unrecorded)}"
-        )
-        remedy = "open each entry named above and remove the ones you did not install"
-    for answer, wheres in _by_area(answers, unvouched):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{words.record}, and {words.unsourced}, so nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; if you did "
-            f"install them, {words.setup}, then {words.vouch}"
-        )
-    for answer, wheres in _by_area(answers, ungranted):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{words.record}, and {_refused(words)}: {listed(wheres)}"
-        )
-        remedy = words.regrant or (
-            f"run {words.vouch}, which takes out every marked entry {words.source} no longer "
-            f"grants; open any that survive it"
-        )
-    for answer, wheres in _by_area(answers, unread_unvouched):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.unsourced}, so "
-            f"whatever {words.record} records, nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; if you did "
-            f"install them, {words.setup}; then {_rebuild(words)}"
-        )
-    for answer, wheres in _by_area(answers, unread_ungranted):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and {_refused(words)}, so "
-            f"whatever {words.record} records, nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; then "
-            f"{words.regrant or _rebuild(words)}"
-        )
-    if unchecked:
-        status = RED
-        parts.append(
-            f"{len(unchecked)} settings file(s) are nested deeper than this check can follow, so "
-            f"nothing here can check the entries in them: {listed(unchecked)}"
-        )
-        remedy = (
-            "open each file named above and remove what you did not put there; stayfixed writes "
-            "no settings file nested that deep"
-        )
-    if blind:
-        # A file this walk cannot read softens a row with nothing else to say, never a red one.
-        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)
-        status = RED if any(red) else WARN
-        parts.append(
-            f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "
-            f"nothing here accounts for what is in them: {listed(blind)}"
-        )
-        remedy = remedy or "check that each file named above is readable and is valid JSON"
-    if status == OK:
-        parts.append("all accounted for")
-    return Row(status, "; ".join(parts), remedy)
 
 
 def _joined(words: Sequence[str]) -> str:
@@ -952,19 +539,18 @@ def _cli_path(context: Context) -> Row:
     *plugin-root substitution and executable bits* trial measured, so a skill that says
     `stayfixed …` needs the name to resolve on PATH there.
 
-    **Asked of `context.env`, like every other check that reads the environment.** It used to
-    call `shutil.which("stayfixed")`, which reads `os.environ["PATH"]` directly — the one check
-    in this module that ignored the mapping `run_checks` was handed. `run_checks` defaults that
-    mapping to `os.environ`, so nothing changes for a real run; what changes is that the answer
-    is now a function of the context rather than of whichever shell the caller happens to be in.
-    Before this, no test could state an expected answer at all: the row said `ok` on a developer
-    machine with the tool installed and `warn` in a container without it, and a body hardcoded
-    to `WARN` would have passed the whole suite.
+    **Asked of `context.env`, like every other check that reads the environment**, and never of
+    `os.environ["PATH"]` directly, which a bare `shutil.which("stayfixed")` reads. `run_checks`
+    defaults that mapping to `os.environ`, so a real run reads the same `PATH` either way; what
+    asking the context buys is an answer that is a function of the context rather than of
+    whichever shell the caller happens to be in, so a test can state the answer it expects — read
+    from the process, the row says `ok` on a developer machine with the tool installed and `warn`
+    in a container without it, and a body hardcoded to `WARN` would pass the whole suite.
 
     The default is `""` and not `None`, which is the difference between the sentence above being
     true and being true of every environment but one: `shutil.which(path=None)` falls back to
-    `os.environ["PATH"]`, so an `env` carrying no `PATH` reached the process environment through
-    the very call that was supposed to stop doing that. An environment with no `PATH` resolves
+    `os.environ["PATH"]`, so an `env` carrying no `PATH` would reach the process environment
+    through the very call that exists to stop doing that. An environment with no `PATH` resolves
     nothing, which is the honest answer and the one the row's own remedy addresses.
 
     **The resolved path is never printed.** `PATH` is read from `context.env` precisely because
@@ -979,11 +565,10 @@ def _cli_path(context: Context) -> Row:
             WARN,
             "`stayfixed` does not resolve on PATH, so a skill that invokes it by name fails on "
             "Codex, which performs no plugin-root substitution in skill content",
-            # `REPOSITORY_URL` and not the address written out, which is the rule this module
-            # already follows a few rows below in `overlay-requires`' own remedy (a URL is
-            # spelled once). A second spelling of a URL is a second thing to move when the
-            # repository does, and `doctor` is the command whose whole job is finding the two
-            # halves of something that has stopped agreeing.
+            # `REPOSITORY_URL` and not the address written out: a URL is spelled once. A second
+            # spelling of a URL is a second thing to move when the repository does, and `doctor`
+            # is the command whose whole job is finding the two halves of something that has
+            # stopped agreeing.
             f"run `uv tool install git+{REPOSITORY_URL}`",
         )
     return Row(OK, "`stayfixed` resolves on PATH")
@@ -1087,11 +672,11 @@ def _ci_ref(context: Context) -> Row:
     fault would make `doctor` red on every correct installation.
 
     **Three ways the workflow can fail to agree, and none of them is `ok`.** It can disagree
-    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one
-    returned the ref's own verdict, so a repository with a released sha recorded and no workflow
-    reported "[ci] ref is a released stayfixed commit", which a reader takes for "my gate is
-    pinned correctly". `[ci] mode` is what makes the absent file a finding rather than the
-    configuration working: only `reusable` renders one.
+    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one,
+    answered with the ref's own verdict, would have a repository with a released sha recorded
+    and no workflow report "[ci] ref is a released stayfixed commit", which a reader takes for
+    "my gate is pinned correctly". `[ci] mode` is what makes the absent file a finding rather than
+    the configuration working: only `reusable` renders one.
 
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
@@ -1103,28 +688,28 @@ def _ci_ref(context: Context) -> Row:
     if row.status == RED:
         return row
     workflow = context.root / WORKFLOW
-    # **A regular file, and a bounded read of it — the two guards its siblings in this module
-    # already have.** `_hook_entries` asks `is_file()` of every settings file before it opens one
-    # and `_diagnostics` reads its log to a cap; this path had neither, and it is
+    # **A regular file, and a bounded read of it — the two guards its siblings in this area
+    # already have.** `entries.hook_entries` asks whether every settings file is a regular file
+    # before it opens one and `_diagnostics` reads its log to a cap, and this path is
     # repository-authored in the same sense: a clone chooses what sits at
-    # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there made `read_text` block
-    # with nothing to read, so `doctor` — one line, documented as a diagnostic — never returned
-    # at all. Measured before this guard on a real FIFO: the row did not come back.
+    # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there makes an unguarded
+    # `read_text` block with nothing to read, so `doctor` — one line, documented as a diagnostic —
+    # never returns at all; measured on a real FIFO, the row did not come back.
     #
     # None of the file's bytes is printed on any arm, so this is containment hygiene rather than a
     # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
-    # and used to reach the `OSError` one below, naming `IsADirectoryError`; the arm's own
+    # rather than the `OSError` one below, which would name `IsADirectoryError`; the arm's own
     # sentence says what a reader needs and carries no platform's spelling of the fault.
     if not workflow.is_file():
         if workflow.exists() or workflow.is_symlink():
             return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
-        # No file at all, which is not agreement either. `return row` here reported `ok` — "[ci]
-        # ref is a released stayfixed commit" — for a repository with no gate in it, and a reader
-        # takes that for "my gate is pinned correctly". It is the same false green the `not
-        # pinned` arm below refuses by name, and this is the state `init` itself leaves whenever
-        # it reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the
-        # file. `mode` is what tells the cases apart: under `none` or `uvx` this build renders no
-        # workflow, so an absent one is the configuration working.
+        # No file at all, which is not agreement either. `return row` here alone would report
+        # `ok` — "[ci] ref is a released stayfixed commit" — for a repository with no gate in it,
+        # and a reader takes that for "my gate is pinned correctly". It is the same false green the
+        # `not pinned` arm below refuses by name, and this is the state `init` itself leaves
+        # whenever it reports `ci-workflow` under `skipped`, and the state anyone reaches by
+        # deleting the file. `mode` is what tells the cases apart: under `none` or `uvx` this build
+        # renders no workflow, so an absent one is the configuration working.
         if context.config.ci.mode == "reusable":
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
@@ -1205,16 +790,15 @@ def _diagnostics(context: Context) -> Row:
     `.claude/settings.json` `env` block reaches this process without a trust prompt. `event`,
     `handler` and `error` are stayfixed's own vocabulary *for a log stayfixed wrote*; for a log a
     repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
-    model to relay this detail verbatim. Measured: a committed log whose `handler` was an
-    instruction-shaped string and whose `error` was 5,000 characters produced a 5,114-character
-    `warn` detail carrying both.
+    model to relay this detail verbatim: quoted, a committed log whose `handler` is an
+    instruction-shaped string and whose `error` is 5,000 characters gives a `warn` detail of more
+    than 5,000 characters carrying both.
 
-    The rule this follows is the one this module already applied to `hook-entries`, one
-    paragraph up: a marker id **bounded by a grammar and capped** was still refused, because
-    bounded is not inert. An unbounded free-text field cannot be held to a weaker rule than a
-    bounded one, so the allowlist is gone rather than narrowed. What is left is a count, which
-    is this check's own answer, and a remedy that names the file by the variable rather than by
-    its value — the value is repository-authored too.
+    The rule this follows is the one this module applies to `hook-entries`: a marker id **bounded by
+    a grammar and capped** is still refused, because bounded is not inert. An unbounded free-text
+    field cannot be held to a weaker rule than a bounded one, so no field is allowed through,
+    however few. What is left is a count, which is this check's own answer, and a remedy that names
+    the file by the variable rather than by its value — the value is repository-authored too.
 
     **The read is bounded here, because the cap the sink documents is enforced on write.**
     `DIAGNOSTICS_MAX_BYTES` bounds what `DataSink.diagnostic` appends; a file this process did
@@ -1235,9 +819,9 @@ def _diagnostics(context: Context) -> Row:
     except OSError as exc:
         # The harness data root is somebody else's directory on somebody else's filesystem, and
         # an unreadable one is a fact about this machine rather than a fault in the
-        # installation. Unguarded it reached `_guarded`, which renders any exception red — so a
-        # directory this process happens not to be able to list produced `diagnostics: red` and
-        # exit 1 on an installation with nothing wrong with it.
+        # installation. Unguarded it would reach `_guarded`, which renders any exception but an
+        # `OSError` red and an `OSError` as a warning about the whole row — so it is answered here,
+        # where the row can still say what it could and could not count.
         return Row(
             WARN,
             f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
@@ -1286,16 +870,16 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The core's eleven, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
+# The core's checks, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
 # row an area contributes. The list is the report's order and the core's only registry: a check
 # added here needs no other edit, and a check missing from it is a check nothing runs. An area adds
-# rows after these through its own `doctor.py` (`contributions`), never by an edit here.
+# rows after these through its own `doctor.py` (`registry.contributions`), never by an edit here.
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("not-initialised", _not_initialised),
     ("versions", _versions),
     ("files", _files),
     ("wrapper", _wrapper),
-    ("hook-entries", _hook_entries),
+    ("hook-entries", hook_entries),
     ("codex-trust", _codex_trust),
     ("budgets", _budgets),
     ("cli-path", _cli_path),
@@ -1315,13 +899,13 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
 
     `Exception` and not `BaseException`: what was asked for is that a check which *raises*
     becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
-    one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
+    one `Ctrl-C` into a report of red rows, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
     `red` is what gates the exit code, so a red row is a statement that this installation is
     wrong. A file that could not be opened is not that: the directories these checks read live
-    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` was measured
-    producing `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
+    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` read as red
+    would give `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
     is a defect in this module and keeps its red, because that is what the row is for.
     """
     try:
@@ -1338,155 +922,11 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     return Check(name, row.status, row.detail, row.remedy)
 
 
-# The remedy of a row that is red because stayfixed's own code broke: nothing the reader did can
-# clear it, and the command they ran is what a fix starts from.
-REPORT_THIS = "report this, with the command you ran"
-
-
-@dataclass(frozen=True)
-class _Unregistered:
-    """The one check an area gets in place of its own when it could not contribute them: a red row
-    saying why, named after the area and sitting where its rows would have been."""
-
-    detail: str
-
-    def __call__(self, context: Context) -> Row:
-        return Row(RED, self.detail, REPORT_THIS)
-
-
-def _well_formed(contribution: object) -> TypeGuard[Contribution]:
-    """Whether `register()` answered a `Contribution` of `(name, check)` pairs, each name text
-    and each check callable, with claims that are a function or absent.
-
-    Asked before any of it is read, because every way an area's own code can get this wrong —
-    `None`, the bare pairs, a pair without its check — otherwise fails later, inside the run,
-    where it costs the report."""
-    if not isinstance(contribution, Contribution) or not isinstance(contribution.checks, tuple):
-        return False
-    if contribution.claims is not None and not callable(contribution.claims):
-        return False
-    return all(
-        isinstance(pair, tuple)
-        and len(pair) == 2
-        and isinstance(pair[0], str)
-        and bool(pair[0])
-        and callable(pair[1])
-        for pair in contribution.checks
-    )
-
-
-def _registered(qualified: str, found: ModuleType | Exception) -> Contribution | str:
-    """What the area's `doctor.py` contributes, or why it could not: the import's failure, or a
-    `register()` that raised or answered something that is not a `Contribution`.
-
-    The module and its `register()` are an area's code as its checks are, so they get their
-    guard, and the reason names the exception's type and never its message, for `_guarded`'s
-    reason. `qualified` is stayfixed's own module name and never repository-authored, so it
-    prints.
-    """
-    if isinstance(found, Exception):
-        return f"{qualified} could not be imported: {type(found).__name__}"
-    reason = f"{qualified} could not contribute its rows"
-    try:
-        contribution: object = found.register()
-    except Exception as exc:  # an area's own code, guarded as its checks are
-        return f"{reason}: {type(exc).__name__}"
-    if not _well_formed(contribution):
-        return f"{reason}: its register() did not return a Contribution of (name, check) pairs"
-    return contribution
-
-
-def _repeated(contribution: Contribution, owners: Mapping[str, str]) -> str | None:
-    """Why `contribution` may not join a report whose names `owners` maps to who reports them:
-    the first of its names that one of them, or an earlier pair of its own, already has."""
-    named = dict(owners)
-    for name, _ in contribution.checks:
-        if name in named:
-            return f"its check {name!r} repeats a name {named[name]} already reports"
-        named[name] = "it"
-    return None
-
-
-def _unregistered(qualified: str, detail: str, owners: dict[str, str]) -> Contribution:
-    """The one red row an area that could not contribute gets, recorded in `owners`.
-
-    The row is named after the area. When the report already has that name — a core check's,
-    or a check an earlier area contributed — it is the area's name numbered from 2, `<area> (2)`,
-    `<area> (3)` and so on, the first that is free: the row is a name in the report like any
-    other, and a name is never in it twice. The row carries no claims, because the area's claims
-    go with its rows: `hook-entries` then reads every entry that area put into settings files as
-    one nothing records, which is red, since an area that cannot say what it wrote vouches for
-    nothing.
-    """
-    area = qualified.removesuffix(".doctor").rpartition(".")[2]
-    name, number = area, 1
-    while name in owners:
-        number += 1
-        name = f"{area} ({number})"
-    owners[name] = qualified
-    return Contribution(checks=((name, _Unregistered(detail)),))
-
-
-def discover_contributors() -> list[tuple[str, ModuleType | Exception]]:
-    """Every `stayfixed.<area>.doctor`, in area-name order, with no shared registry, each under its
-    qualified name with the module, or with the exception its import raised.
-
-    The seam the report's discovery reads, and the one a test replaces to inject an area, as
-    `cli.discover_registrars` is for commands.
-    """
-    return area_imports("doctor")
-
-
-def contributions() -> list[Contribution]:
-    """What each area's `doctor.py` contributes, in area-name order, or one red row for an area
-    that could not contribute.
-
-    **One failure policy.** Every way an area's contribution can fail is a defect in stayfixed's
-    own code, and every one costs the same thing: that area's rows and its claims become one red
-    row named after it (`_unregistered`), and the rest of the report stands. A `doctor.py` that
-    fails to import, a `register()` that raises, one that answers something that is not a
-    `Contribution` of `(name, check)` pairs, and one that contributes a name already in the
-    report, alike — none ends the report, which is what a user has left when everything else is
-    broken.
-
-    A row's name is its only identity — the summary line, `--json` and the skill that relays the
-    report all key on it — so a contributed name equal to a core check's, to one an earlier area
-    contributed, or to another of the area's own, is that last failure, found here before any
-    check is asked. The names are stayfixed's own code and never repository-authored, so the row
-    prints them.
-
-    Each area's `register()` is called once per call of this function, so whatever an area
-    resolves lazily for its checks is resolved afresh for each report.
-    """
-    owners = dict.fromkeys((name for name, _ in CHECKS), "the core")
-    found: list[Contribution] = []
-    for qualified, imported in discover_contributors():
-        contribution = _registered(qualified, imported)
-        if isinstance(contribution, Contribution):
-            repeated = _repeated(contribution, owners)
-            if repeated is None:
-                owners.update((name, qualified) for name, _ in contribution.checks)
-                found.append(contribution)
-                continue
-            contribution = f"{qualified} could not contribute its rows: {repeated}"
-        found.append(_unregistered(qualified, contribution, owners))
-    return found
-
-
-def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
-    """The report's checks in the report's order: the core's, then each area's.
-
-    `hook-entries` is the one core check that reads what an area contributes besides rows — the
-    `Claims` each says it put into settings files — so it is handed them here, and asks them
-    itself with the report's context, under its own guard: an area's answer that raises costs
-    that one row, as a contributed check that raises does.
-    """
-    claims = tuple(contribution.claims for contribution in contributed if contribution.claims)
-    core = tuple(
-        (name, partial(_hook_entries, claims=claims) if check is _hook_entries else check)
-        for name, check in CHECKS
-    )
-    return core + tuple(check for contribution in contributed for check in contribution.checks)
+def _report_checks(
+    contributed: list[Contribution],
+) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
+    """The report's checks in the report's order: the core's, then each area's."""
+    return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)
 
 
 def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
@@ -1494,7 +934,7 @@ def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
     because every check would be asked with no configuration to read — except the row of an area
     that could not contribute, which is about stayfixed's own code, which no configuration
     changes, and so is red here as everywhere."""
-    if isinstance(check, _Unregistered):
+    if isinstance(check, Unregistered):
         return Check(name, RED, check.detail, REPORT_THIS)
     return Check(name, SKIP, reason, "")
 
@@ -1507,11 +947,23 @@ def _context(
     runner: Runner,
     env: Mapping[str, str],
     config: Config,
+    contributed: Sequence[Contribution],
 ) -> Context:
-    context = Context(root, home, machine, runner, env, config)
-    context.own_root = _own_root()
-    context.plugin_root = plugin_root(env)
-    return context
+    """The report's `Context`, whole: both plugin roots, and every area's claims for
+    `hook-entries`, which reads what an area contributes besides rows — the `Claims` each says it
+    put into settings files — and asks them itself, with this context, under its own guard: an
+    area's answer that raises costs that one row, as a contributed check that raises does."""
+    return Context(
+        root,
+        home,
+        machine,
+        runner,
+        env,
+        config,
+        own_root=_own_root(),
+        plugin_root=plugin_root(env),
+        claims=tuple(contribution.claims for contribution in contributed if contribution.claims),
+    )
 
 
 def run_checks(
@@ -1524,12 +976,11 @@ def run_checks(
 ) -> list[Check]:
     """One row per check, the core's and every area's, whatever state the machine is in.
 
-    Four keyword parameters, which is the published signature. A fifth,
-    `candidates`, used to thread `STAYFIXED_PYTHON_CANDIDATES` into the `wrapper` check's
-    subprocess so a test could fail the interpreter probe; the wrapper now honours that variable
-    only from an interactive terminal and this probe is handed `/dev/null`, so the parameter
-    could only ever have been a no-op here and is gone. The covering test fails the probe the
-    way a machine does instead — with a plugin root whose launcher is not there.
+    Four keyword parameters, which is the published signature. None chooses the interpreter the
+    `wrapper` check's probe runs under: the wrapper honours `STAYFIXED_PYTHON_CANDIDATES` only
+    from an interactive terminal and this probe is handed `/dev/null`, so such a parameter could
+    only be a no-op here. A test fails the probe the way a machine does — with a plugin root
+    whose launcher is not there.
 
     `env` defaults to the process environment because two checks are *about* the environment —
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
@@ -1537,12 +988,13 @@ def run_checks(
     env = os.environ if env is None else env
     # Discovered before anything is read, so the early reports below have a row for every check
     # an area contributes too, and for every area that could not contribute.
-    registry = _registry(contributions())
-    # The registry is the only place a name is spelled, and these two rows are built before a
-    # check function runs, so they read the first key out of it rather than repeating the word:
+    contributed = contributions(CHECKS)
+    report_checks = _report_checks(contributed)
+    # The list of checks is the only place a name is spelled, and these two rows are built before
+    # a check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.
-    first, *rest = [name for name, _ in registry]
-    asked = dict(registry)
+    first, *rest = [name for name, _ in report_checks]
+    asked = dict(report_checks)
     # Asked of the name before `is_file`, which follows a link: a symlinked `stayfixed.toml` goes
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
@@ -1561,19 +1013,24 @@ def run_checks(
                 for name in rest
             ),
         ]
+    # The machine file, resolved once and handed to `load`, so the file the row below names when
+    # it does not load is the file that was read. `load` resolves no `--machine` with
+    # `interactive=False`, which honours neither variable that can name another file; naming it
+    # through the terminal check instead told an owner at a terminal with `STAYFIXED_CONFIG` set
+    # to fix the file the variable names, which nothing had read.
+    read = machine_config_path(interactive=False) if machine is None else machine
     try:
-        config = load(root, machine=machine)
+        config = load(root, machine=read)
     except MachineConfigError:
-        # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files
-        # and this arm used to blame the first one for either — telling an owner whose
-        # `~/.config/stayfixed/config.toml` had a stray bracket in it to fix a repository file
-        # with nothing wrong with it, and marking the fault as the repository's when it is this
+        # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files,
+        # and blaming the first for either would tell an owner whose
+        # `~/.config/stayfixed/config.toml` has a stray bracket in it to fix a repository file
+        # with nothing wrong with it, and mark the fault as the repository's when it is this
         # machine's. Told apart by the exception's type and never by its text, because the
         # loader builds that text out of the file's own keys and values.
         #
         # The machine file's path is the machine owner's own and may be printed: it is not
         # repository-authored, and `stayfixed setup --machine`'s own help spells the default.
-        where = machine if machine is not None else machine_config_path()
         blamed = "the machine configuration file"
         return [
             Check(
@@ -1581,7 +1038,7 @@ def run_checks(
                 RED,
                 f"{blamed} does not load, so nothing here can be checked against a "
                 f"configuration — {CONFIG_FILE} itself was not the problem",
-                f"run `stayfixed doctor` again after fixing {where}",
+                f"run `stayfixed doctor` again after fixing {read}",
             ),
             *(_early(name, asked[name], f"{blamed} does not load") for name in rest),
         ]
@@ -1615,5 +1072,6 @@ def run_checks(
         runner=runner,
         env=env,
         config=config,
+        contributed=contributed,
     )
-    return [_guarded(name, check, context) for name, check in registry]
+    return [_guarded(name, check, context) for name, check in report_checks]

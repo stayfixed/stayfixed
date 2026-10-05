@@ -1,15 +1,15 @@
 """The environment every `git` this project runs is given, and the bound on how long it may take.
 
-One module because there are two callers and the rule is the same for both, and being the same
-for both is the point. `memory.store._git` scrubbed and said why — "it must be a real git
-answer, not one an inherited `GIT_DIR` produced" — while the hook path's toplevel query passed
-no `env=` at all and inherited whatever the session had. That one feeds the hook's project root
-(`checkout_root` below), which every hook decision is derived from, so an inherited `GIT_DIR` or
-`GIT_WORK_TREE` made every handler in the process answer for a different repository than the
-one the user is sitting in.
+One module because every caller needs the same rule, and being the same for all of them is the
+point: a git answer must be a real one about the repository asked, never one an inherited
+`GIT_DIR` produced. The hook path's toplevel query feeds the hook's project root
+(`checkout_root` below), which every hook decision is derived from, so a query that inherited
+the session's `GIT_DIR` or `GIT_WORK_TREE` would make every handler in the process answer for a
+different repository than the one the user is sitting in; the memory store's queries decide
+whose notes a session reads, and the same variable would choose another project's.
 
 A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed`, so the hook path
-pays no area import to reach it, and neither caller has to import the other's area to share the
+pays no area import to reach it, and no caller has to import another's area to share the
 constant.
 
 **`PATH` is here on purpose, and it is the one entry with a cost.** `git` is resolved through it
@@ -18,11 +18,11 @@ answer — a hardcoded path is what picks the Xcode shim on macOS over the worki
 installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
 session, which is a harness-level exposure this module cannot close and does not pretend to.
 
-`git_run` is the one runner for every question this project asks git about a repository it
-works on — the hook path's toplevel, the memory store's three-valued answer and its usability
-probe, the hooks directory, the dirty count and the commit range included. One decoding
-boundary, and a lossless one, so no byte of git's answer can raise out of a command and each
-site decides only what an answer means to it. The
+`git_run` is the one runner for every question this project asks git about a repository it works on
+— the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
+`origin_remote` read and its usability probe, the hooks directory, the dirty count and the commit
+range included. One decoding boundary, and a lossless one, so no byte of git's answer can raise out
+of a command and each site decides only what an answer means to it. The
 `Runner` seam in `stayfixed.runner`, which launches the owner's own commands — `git clone` among
 them — for their exit code and a message, is the other. One question goes through that seam
 and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer
@@ -134,10 +134,11 @@ def pipe_encoding() -> str:
     the one `os.fsdecode`, `Path.iterdir` and `sys.argv` use for the same names.
 
     Not the locale's. The two agree on Linux, where the filesystem codec follows the locale, and
-    differ on macOS, where it is UTF-8 whatever `LC_ALL` says: under a latin-1 locale there, git's
-    `café.md` came back as mojibake and a name sent on `stdin` reached git as bytes that were not
-    its own, so every comparison between git's answer and a path missed — a gitignored document
-    read as not ignored. The error handler is `surrogateescape`, the filesystem's own on POSIX.
+    differ on macOS, where it is UTF-8 whatever `LC_ALL` says: under a latin-1 locale there, the
+    locale's codec turns git's `café.md` into mojibake and sends a name on `stdin` to git as bytes
+    that are not its own, so every comparison between git's answer and a path would miss — a
+    gitignored document would read as not ignored. The error handler is `surrogateescape`, the
+    filesystem's own on POSIX.
 
     Named once so `answer_bytes` undoes exactly what `git_run` did: where the codec is latin-1
     every byte decodes, so an answer carries no surrogate escape to show it was not UTF-8, and
@@ -151,7 +152,7 @@ def answer_lines(answer: str) -> list[str]:
 
     Never `str.splitlines()`, which also breaks at `\\r`, `\\v`, `\\f`, `\\x1c` to `\\x1e`,
     `\\x85` and the Unicode line and paragraph separators — characters git prints raw inside a
-    path — so a worktree at `…/wt\\rx` was listed as `…/wt`, a directory that is not it. A
+    path — so a worktree at `…/wt\\rx` would be listed as `…/wt`, a directory that is not it. A
     single-line answer is `answer.removesuffix("\\n")` for the same reason, and never `strip()`,
     which takes a trailing space or `\\r` off a path that ends in one. No answer is no lines.
     """
@@ -227,10 +228,10 @@ def git_run(
 def _git_toplevel(cwd: Path) -> Path | None:
     """The checkout git names for `cwd`, as the path on disk, or `None` when git named none.
 
-    Through `git_run`, which scrubs the environment for the reason `memory.store._git` gives in
-    as many words — "it must be a real git answer, not one an inherited `GIT_DIR` produced" —
-    and `checkout_root` feeds *every* hook decision, so an inherited `GIT_DIR` or `GIT_WORK_TREE`
-    made every handler answer for a different repository than the session is in. It also decodes
+    Through `git_run`, which scrubs the environment because the answer must be a real git answer,
+    not one an inherited `GIT_DIR` produced, and `checkout_root` feeds *every* hook decision, so
+    an inherited `GIT_DIR` or `GIT_WORK_TREE` would make every handler answer for a different
+    repository than the session is in. It also decodes
     the answer losslessly, so on Linux a checkout under a directory named in latin-1 bytes is
     that directory; decoded strictly, it would make every hook an internal error, which
     PreToolUse turns into a refusal of every tool call. The line ending alone is taken off, so a
@@ -273,11 +274,10 @@ class GitUnavailable(Failure):
     """`git` could not be run at all, or answered with an error.
 
     Distinct from "git ran and said no", and the distinction is the whole point of the class.
-    `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
-    every caller read "could not ask" as "the answer is nothing" — and the user was told to run
-    `stayfixed attach` when the real fault was their `git`. This review machine hit exactly that
-    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `GIT_ENV_KEEP` scrubs
-    `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
+    A reader that took "could not ask" for "the answer is nothing" tells the user to run
+    `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when
+    `/usr/bin/git` is the Xcode shim with an unaccepted licence, since `GIT_ENV_KEEP` scrubs
+    `DEVELOPER_DIR`.
     """
 
 
@@ -287,20 +287,60 @@ def git_is_usable(root: Path) -> bool:
     The discriminator for a non-zero exit, and the reason this is a second call rather than a
     guess at exit codes. `git` answers "no" with a non-zero exit in ordinary, correct
     situations — 128 for "not a git repository", 2 for "no such remote" — and a broken install
-    also exits non-zero, so the number alone cannot tell the two apart. This machine's failure
-    was exactly that shape: `/usr/bin/git` was the Xcode shim with an unaccepted licence, which
-    exits non-zero for every invocation, including `--version`. Asking a question that needs no
-    repository separates "git said no" from "git cannot speak".
+    also exits non-zero, so the number alone cannot tell the two apart: the Xcode shim with an
+    unaccepted licence exits non-zero for every invocation, including `--version`. Asking a
+    question that needs no repository separates "git said no" from "git cannot speak".
 
     Asked from `root`, as the question that failed was, so a `root` git cannot enter is "cannot
     speak" here too, as it was when the first question could not be launched there at all.
 
-    One probe for every reader that has to tell the two apart — `origin_remote` here and the
-    memory store's three-valued answer — so they cannot disagree about which `git` is broken.
-    Not cached. It runs only after a query has already failed, and caching it would make the
+    One probe for every reader that has to tell the two apart — `git_answer` below, which
+    `origin_remote` and the memory store read — so they cannot disagree about which `git` is
+    broken. Not cached. It runs only after a query has already failed, and caching it would make the
     answer depend on which test ran first.
     """
     return git_run(root, "--version")[0] == 0
+
+
+@dataclass(frozen=True)
+class GitAnswer:
+    """git's one-line answer to one question, in three values: an answer, no answer, or could
+    not ask.
+
+    `value` is the answer when there is one. `ran` is False only when `git` could not be run, or
+    exited non-zero and `git_is_usable` says it cannot speak at all — an empty stdout from a
+    successful run, and a refusal from a `git` that works, are "no answer", which is a fact about
+    the repository rather than about the machine.
+    """
+
+    value: str | None
+    ran: bool = True
+
+    def require(self, refusal: str) -> str | None:
+        """The answer, raising `GitUnavailable(refusal)` rather than answering `None` when `git`
+        could not be asked. The words are the caller's, because only the caller knows what went
+        unanswered and what that stops."""
+        if not self.ran:
+            raise GitUnavailable(refusal)
+        return self.value
+
+
+def git_answer(root: Path, *args: str) -> GitAnswer:
+    """git's one-line answer to `args` asked in `root`, through `git_run`.
+
+    `git_run` scrubs the environment and decodes losslessly, so an `origin` URL holding a byte
+    that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
+    answer is what git printed, a path as the filesystem spells it, less its line ending
+    alone — never `strip()`, for `answer_lines`'s reason.
+    """
+    code, out = git_run(root, *args)
+    if code == -1:
+        return GitAnswer(None, ran=False)
+    if code != 0:
+        # `git` ran and declined, *or* `git` is broken. `git_is_usable` is what tells them
+        # apart; without it every reader would take the second for the first.
+        return GitAnswer(None, ran=git_is_usable(root))
+    return GitAnswer(out.removesuffix("\n") or None)
 
 
 def origin_remote(root: Path) -> str | None:
@@ -320,22 +360,17 @@ def origin_remote(root: Path) -> str | None:
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
     "No origin remote" is a fact about the repository and reads as *not this one*, while "could
     not ask" is a fault on this machine, and collapsing them tells the user to run `stayfixed
-    attach` about their own `git`. A non-zero exit is either, so `git_is_usable` asks a second
-    question that needs no repository from the same `root`: git answers "no such remote" with an
-    exit of its own, and a broken install exits non-zero for everything.
+    attach` about their own `git`. A non-zero exit is either, so `git_answer` has `git_is_usable`
+    ask a second question that needs no repository from the same `root`: git answers "no such
+    remote" with an exit of its own, and a broken install exits non-zero for everything.
 
     The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
     that shows it wraps it first.
     """
-    code, out = git_run(root, "remote", "get-url", "origin")
-    if code == 0:
-        return out.removesuffix("\n") or None
-    if code == -1 or not git_is_usable(root):
-        raise GitUnavailable(
-            "`git` could not read this repository's origin remote — the fault is on this "
-            "machine rather than in the repository; check that `git` runs here"
-        )
-    return None
+    return git_answer(root, "remote", "get-url", "origin").require(
+        "`git` could not read this repository's origin remote — the fault is on this "
+        "machine rather than in the repository; check that `git` runs here"
+    )
 
 
 SHALLOW = (

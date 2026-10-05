@@ -840,8 +840,8 @@ reddens = [
 [[mutation]]
 name = "a broken machine file is blamed on stayfixed.toml again"
 file = "src/stayfixed/config/loader.py"
-before = '        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
-after = '        raise ConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
+before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
@@ -1062,10 +1062,28 @@ reddens = [
 [[mutation]]
 name = "the manifest reader lets undecodable bytes out as a crash again"
 file = "src/stayfixed/scaffold/manifest.py"
-before = "        except (OSError, ValueError, RecursionError) as exc:"
-after = "        except (OSError, json.JSONDecodeError) as exc:"
+before = "        except (OSError, UnicodeDecodeError) as exc:"
+after = "        except OSError as exc:"
 reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The ledger is tracked, so a clone can commit one nested past the parser or holding an integer
+# longer than Python converts. Read through `jsonobject`, each is a refusal in the reader's own
+# words; quoted, the refusal told the owner to raise an interpreter limit.
+[[mutation]]
+name = "the manifest reader quotes the parser's exception for a document past its reach"
+file = "src/stayfixed/scaffold/manifest.py"
+before = "        raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)"
+after = """        try:
+            raw = json.loads(text)
+        except (ValueError, RecursionError) as exc:
+            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc"""
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-uninstall]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-uninstall]",
 ]
 
 # The one list four places report as a count, and the one fault none of those areas can fix for
@@ -1561,9 +1579,9 @@ reddens = [
 name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
 file = "src/stayfixed/config/loader.py"
 before = """    except UnicodeDecodeError:
-        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 after = """    except KeyError:
-        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 reddens = [
   "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
@@ -1687,14 +1705,16 @@ name = "a machine file nested past the parser is an internal error"
 file = "src/stayfixed/config/loader.py"
 before = """
     except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 """
 after = """
     except tomllib.TOMLDecodeError as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 """
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
 ]
 
 [[mutation]]
@@ -2161,30 +2181,75 @@ reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
 
-# A settings document nested past what `json.loads` follows raises `RecursionError` on every
-# supported Python, and every caller of the engine catches its refusal and nothing else: `doctor`'s
-# `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a file
-# a clone can commit.
+# The note store a delivery row reads is resolved once per area per report, and a resolution
+# that refuses is the row's skip, by the one rule `errors.resolved_or_none` holds for every answer a
+# row reads and does not own. A `Refusal` that escaped it would reach the report's guard and turn
+# both store rows red, "this check could not run", for a `stayfixed.toml` the repository is
+# entitled to write.
 [[mutation]]
-name = "the settings engine lets a nested document raise past its refusal"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows. A settings document"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows. A settings document"
+name = "the delivery rows let a refusing store escape"
+file = "src/stayfixed/errors.py"
+before = "    except (Failure, Refusal, OSError):"
+after = "    except (Failure, OSError):"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
+]
+
+# A document nested past what `json.loads` follows raises `RecursionError` on every supported
+# Python, and every caller of the shared reader catches its refusal and nothing else: the settings
+# engine's (`doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an
+# internal error), `attach`'s reader of the settings file it merges into, and its reader of the
+# ledger it wrote (`doctor` warns and `attach` and `detach` fail before they write), each on a file
+# a clone can commit. One line serves all three readers, so one entry names a test of each.
+[[mutation]]
+name = "the JSON object reader lets a document nested past the parser raise"
+file = "src/stayfixed/jsonobject.py"
+before = "    except RecursionError:"
+after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
+  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
+  "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
 ]
 
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
-# raises a plain `ValueError`, which is neither of the two errors above. The merge refuses it, as it
-# refuses the nesting; `owned_ids` reads the number as its text, below, so `doctor` never meets it.
+# raises a plain `ValueError`, which is neither of the two errors above. Each reader refuses it as
+# it refuses the nesting — a committed ledger holding one read red, "this check could not run", in
+# `doctor`'s `attached` and `hook-entries` rows — and `owned_ids` reads the number as its text,
+# below, so `doctor` never meets it in a settings file.
 [[mutation]]
-name = "the settings engine lets a number past the parser's reach raise past its refusal"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
+name = "the JSON object reader lets a number past the parser's reach raise"
+file = "src/stayfixed/jsonobject.py"
+before = "    except ValueError:"
+after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
+  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
+  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
+]
+
+# The other half of the overlay's requires reader's "this reader answers for every string", after
+# the digit bound `mutations/`'s "the version grammar stops bounding its components" holds.
+# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
+# exists on none of them, so without the shared reader's object arm a manifest an owner can save
+# raised `AttributeError` out of a function whose docstring promises `None` for anything it cannot
+# read. The session handler rests on that promise: its backstop swallows a raised reader together
+# with every other line of the same result — which is how an overlay manifest silenced
+# `NOT_ATTACHED` once already.
+[[mutation]]
+name = "the requires reader raises for a manifest that is not an object"
+file = "src/stayfixed/jsonobject.py"
+before = "    if not isinstance(raw, dict):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
 ]
 
 # A document past a limit of the parser is refused as its own kind of `EntriesError`, so `doctor` can
@@ -2206,8 +2271,8 @@ reddens = [
 [[mutation]]
 name = "the settings engine reads a number past the parser's reach in the document doctor walks"
 file = "src/stayfixed/scaffold/entries.py"
-before = "    raw = _load(document, numbers=str)"
-after = "    raw = _load(document)"
+before = "    raw = settings_object(document, numbers=str)"
+after = "    raw = settings_object(document)"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
@@ -2309,18 +2374,6 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
 ]
 
-# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
-# an internal error": every reader of a document somebody else wrote answers one nested past the
-# parser as one that does not parse.
-[[mutation]]
-name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/config/overlay.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
-]
-
 # The overlay root anchors where the note store may resolve, so with no file named it is read from
 # the one path no variable can move, even from a terminal.
 [[mutation]]
@@ -2344,28 +2397,32 @@ reddens = [
   "tests/project/test_templates.py::test_the_ignore_block_init_writes_is_the_block_attach_writes",
 ]
 
-# A git that fails at everything is unavailable, never a repository with no `origin` remote: the
-# exit code alone cannot tell the two apart, so the origin's reader asks a second question that
-# needs no repository.
+# A git that fails at everything is unavailable, never a repository that answered — with no
+# `origin` remote, or with no checkout that owns a worktree: the exit code alone cannot tell the
+# two apart, so the three-valued answer both readers take asks a second question that needs no
+# repository. One line serves both readers, so one entry names a test of each.
 [[mutation]]
-name = "a broken git reads as a repository with no origin remote"
+name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/gitenv.py"
-before = "    if code == -1 or not git_is_usable(root):"
-after = "    if code == -1:"
+before = "        return GitAnswer(None, ran=git_is_usable(root))"
+after = "        return GitAnswer(None)"
 reddens = [
   "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
 ]
 
 # A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
 # loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
-# `PermissionError`.
+# `PermissionError`. The reader is the loader's own, which `[personal]` is read through too.
 [[mutation]]
 name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
-file = "src/stayfixed/config/overlay.py"
+file = "src/stayfixed/config/loader.py"
 before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 reddens = [
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[setup]",
 ]
 
 # A retired artifact whose file was already gone read as unchanged and kept its record for good:
@@ -2394,4 +2451,103 @@ after = "                if True:"
 reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
+]
+
+# `fsops.names_regular_file` is the one place a path that names no file is told from one that cannot
+# be asked about, for `hook-entries`' walk over settings files and for `attach`'s ledger reader, so
+# one entry per decision proves it for both. A path a clone can commit that names no file -- nothing
+# there, a dangling link, a loop -- is skipped by the walk and is no ledger to the reader: there is
+# nothing there for a harness to read either. Neither reader may call it one it cannot read.
+[[mutation]]
+name = "hook-entries is blind to a settings path that names no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+# Something other than a regular file -- a directory -- names no file to read, whichever reader asks.
+[[mutation]]
+name = "hook-entries reads a settings path that is no regular file"
+file = "src/stayfixed/fsops.py"
+before = "    return stat.S_ISREG(mode)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
+]
+
+# Any other fault is the caller's to classify, and the probe raises it rather than answering for
+# the caller: read as no file, a symbolic link to a name longer than a file name may be hides a
+# settings file from `hook-entries` and a ledger from `attached`.
+[[mutation]]
+name = "the regular-file probe reads a path it cannot ask about as no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
+]
+
+# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
+# id yield one key and the same id under two events keeps only the last -- which deflates the
+# claimed count and inflates `foreign` by exactly the difference. `entry_commands` walks
+# positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
+# walk key by id instead of counting entries, which is precisely the defect positional counting
+# exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
+# sees the command hung on the borrowed id.
+[[mutation]]
+name = "doctor counts hook entries by marker id rather than by position"
+file = "src/stayfixed/scaffold/entries.py"
+before = """        text = command if isinstance(command, str) else ""
+        found.append(Placed(event, _matcher(group), text))"""
+after = """        text = command if isinstance(command, str) else ""
+        here = marker_id(text)
+        if here is None or here not in {marker_id(seen.command) for seen in found}:
+            found.append(Placed(event, _matcher(group), text))"""
+reddens = [
+  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# The walk says where each entry sits, and `doctor` reads a grant back through the same walk, so
+# an entry is vouched for only under the event and the matcher it was granted under. A walk that
+# dropped either would drop it from both sides at once, and the owner's own command hung under
+# another event or matcher would read "all accounted for".
+[[mutation]]
+name = "the hook entry walk reads every entry under one event"
+file = "src/stayfixed/scaffold/entries.py"
+before = "        found.append(Placed(event, _matcher(group), text))"
+after = '        found.append(Placed("", _matcher(group), text))'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
+]
+
+[[mutation]]
+name = "the hook entry walk reads every entry without its matcher"
+file = "src/stayfixed/scaffold/entries.py"
+before = '    if "matcher" not in group:'
+after = "    if True:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
+]
+
+# A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,
+# which no caller of the containment rule catches, so `attach` and `attach --check` ended in an
+# internal error. The rule refuses the component, and each caller's own refusal follows.
+[[mutation]]
+name = "a path component holding a NUL passes the containment rule"
+file = "src/stayfixed/fsops.py"
+before = "        if \"\\x00\" in part:"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
+  "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
 ]

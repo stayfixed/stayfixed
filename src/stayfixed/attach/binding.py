@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import errno
 import stat
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,17 +39,16 @@ from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     binding_state,
+    link_sources,
     permitted_roots,
+    read_binding_record,
 )
 
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
 # decides between them (`binding_state`): this module answered the same question with a copy of
 # its own that called a checkout with no `origin` a mismatch.
-# The one directory under `projects/<name>/` that holds notes. `permitted_roots` is what names
-# it; this spelling exists so the `--store` refusal below can state the shape of the path it
-# wants without printing the project name it would otherwise embed.
-STORE_DIR = "memory"
 # One sentence, said by both `binding_for` and `read_binding`: neither reads an overlay root
 # that was not recorded through `stayfixed setup`.
 NO_OVERLAY = (
@@ -102,6 +100,16 @@ SHARE_CANNOT_EXIST = (
     "record this binding or keep this project's notes; choose another `name` under [project] in "
     "stayfixed.toml"
 )
+# The refusal for a `project.name` whose directory fits under the longest path while a path
+# `attach` creates or links inside it does not. The shape again and never the name, for the reason
+# above, and never a group either: `memory.groups` is the repository's too, and a long entry is
+# the other way to reach it.
+PATH_CANNOT_EXIST = (
+    "{projects}/<this project's name>/ would hold a path longer than this machine allows -- the "
+    "binding record " + PROJECT_RECORD + ", the notes index or a memory group's directory -- so "
+    "attach could not record the binding or link the notes there; choose a shorter `name` under "
+    "[project] in stayfixed.toml, or shorter memory.groups entries"
+)
 
 
 def cannot_exist(exc: OSError) -> bool:
@@ -118,7 +126,7 @@ def cannot_exist(exc: OSError) -> bool:
     return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG
 
 
-def refuse_unless_share_can_exist(binding: Binding) -> None:
+def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     """Refuse a `project.name` no directory under the overlay's `projects/` can carry.
 
     `attach` writes the binding record and the group directories under `projects/<name>/`, and
@@ -126,19 +134,51 @@ def refuse_unless_share_can_exist(binding: Binding) -> None:
     so nothing below this asks: the first to find out would be the record's write, after the
     ignore region, the rule copies, the settings merge and the ledger. Above every write, then,
     and in `--check` as well. A share that is absent is fine: `attach` creates it.
+
+    **Nor a name whose directory fits under the longest path while a path `attach` makes inside it
+    does not** -- the binding record, and every path the link tree points at there
+    (`link_sources`: the index, which the first attach writes, and each group's directory, which
+    it creates). Each is written or created through descriptors, which no path length bounds, so
+    the write succeeds; but every reader names it by its whole path. `_recorded` answers a record
+    past the longest one with "no record", so the binding would be written and then read as
+    unbound for ever; and the system refuses a link whose target is that long, so building the
+    link tree ended in an internal error (`PartialLink`, "File name too long") after the ignore
+    region, the settings merge, the ledger and the record -- with `--check` answering 0 before it,
+    because the overlay's sources it reads are shorter than a long group's directory. The paths
+    are the ones the tree is built from, and not suffix lengths counted here, so a group added to
+    the tree is asked about without a second list to keep. Each is asked with `lstat`, whether or
+    not the share is there yet: the system refuses a path past the longest one before it looks
+    anything up, so the answer is about the spelling and never about what the overlay holds.
+    `common/memory` is outside the share and its length is not the name's, so it is not asked.
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
     try:
-        mode = share.stat().st_mode
+        mode: int | None = share.stat().st_mode
     except FileNotFoundError:
-        return
+        mode = None
     except OSError as exc:
         if not cannot_exist(exc):
             raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
         mode = 0
-    if not stat.S_ISDIR(mode):
+    if mode is not None and not stat.S_ISDIR(mode):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+    made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
+    for path in (path for path in made if path.is_relative_to(share)):
+        try:
+            path.lstat()
+        except OSError as exc:
+            # Only the length decides here: an absent path is a first attach, and a record that
+            # is there and cannot be read was already refused by `_recorded` on the way to
+            # `binding`.
+            if exc.errno == errno.ENAMETOOLONG:
+                raise Refusal(
+                    PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)
+                ) from None
+        except ValueError:
+            # A group holding a NUL, which no path can: not a question of length, and the
+            # `memory.groups` containment both callers ask next refuses it by name of the key.
+            continue
 
 
 def not_overlay(config: Config) -> str | None:
@@ -218,7 +258,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
     if not stat.S_ISREG(found):
         return None
     try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        recorded = read_binding_record(record)
     except OSError as exc:
         raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
     except UnicodeDecodeError:
@@ -234,8 +274,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
         # `toml_position` bounds it to the suffix, and `from None` because a chained `__cause__`
         # would print the message a traceback away.
         raise UnreadableRecord(f"{where} is not valid TOML {toml_position(exc)}") from None
-    value = raw.get("remote")
-    return value if isinstance(value, str) and value else None
+    return recorded.get("remote")
 
 
 def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
@@ -247,6 +286,16 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
+    return _bound(root, config, overlay)
+
+
+def _bound(root: Path, config: Config, overlay: Path) -> Binding:
+    """The binding under an overlay root the caller has already read out of the machine file.
+
+    One read per binding: `read_binding` checks `--store` against the root it read and binds under
+    that same root, rather than handing `binding_for` the machine file to read a second time, which
+    could answer another root if the file changed in between.
+    """
     project = config.project.name
     store = permitted_roots(overlay, project)[1]
     recorded = _recorded(overlay, project)
@@ -267,7 +316,9 @@ def read_binding(
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
-    `Config` and no `--store` to check; this is the seam for one that has both.
+    `Config` and no `--store` to check; this is the seam for one that has both. For the same
+    reason the overlay root is read once, and `--store` is checked against the root the binding
+    is then made under (`_bound`).
     """
     config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
@@ -289,7 +340,7 @@ def read_binding(
             f"{store} is not it. The overlay root comes from the machine configuration and never "
             f"from an argument"
         )
-    return binding_for(root, config, machine=machine)
+    return _bound(root, config, overlay)
 
 
 def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
