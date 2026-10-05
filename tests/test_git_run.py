@@ -73,6 +73,19 @@ def test_the_product_s_git_reads_the_home_the_suite_gives_each_test(tmp_path: Pa
     assert (code, out) == (0, "CLAUDE.md\0")
 
 
+@needs_git
+def test_the_product_s_git_runs_no_automatic_maintenance_under_test(tmp_path: Path) -> None:
+    # The product's `fetch` starts maintenance as a fixture's `commit` does, and from git 2.55 it
+    # outlives the command, holding `objects/maintenance.lock` while a test may already be
+    # removing or walking the repository. `scrubbed_env` drops the `GIT_CONFIG_COUNT` the
+    # fixture's `git` is sealed with, so the suite reaches the product's through the `HOME` it
+    # keeps: asked by the product's own `git_run`, both keys answer as `tests/gitfixture.py` sets
+    # them. Mutation (declared): the conftest writes an empty `.gitconfig` -> neither key is set.
+    git_run(tmp_path, "init", "-q")
+    assert git_run(tmp_path, "config", "--get", "maintenance.auto") == (0, "false\n")
+    assert git_run(tmp_path, "config", "--get", "gc.auto") == (0, "0\n")
+
+
 # A byte no UTF-8 locale decodes, and the string this process spells it as: `os.fsdecode` is
 # how `os.listdir`, `Path.iterdir` and `sys.argv` hand the same name to Python, so it is the
 # one spelling a git answer can be compared with, and the one that opens the file it names.

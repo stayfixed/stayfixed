@@ -34,6 +34,22 @@ runs of the same fixture on two machines produce the same author. Three modules 
 `-c user.email=…` at the call site to buy exactly this; those call sites still work and are
 now merely redundant.
 
+**Git's automatic maintenance is off**, because it outlives the command that started it. A
+`commit`, `merge`, `fetch`, `pull`, `am` or `rebase`, and the `receive-pack` behind a push, ends
+by starting `git maintenance run --auto --detach`, and from git 2.55 the process that detaches
+keeps `objects/maintenance.lock` until its background work is done — after the fixture's
+`commit` has returned. A test that removes or walks `.git` straight after one races it: on
+2026-10-05 `shutil.rmtree(root / ".git")` listed the lock and then found it gone, and the test
+failed with `FileNotFoundError: 'maintenance.lock'` on one leg of four (Python 3.13's `rmtree`
+ignores a file that vanishes; 3.11's and 3.12's raise). `maintenance.auto = false` stops the
+spawn, and `gc.auto = 0` stops the `gc --auto` an older git ran in its place. They go in as
+`GIT_CONFIG_COUNT` entries, which reach every `git` the fixture's own starts in the same
+repository. They do not reach the other side of a push to a local remote: git unsets
+`GIT_CONFIG_COUNT` for the `receive-pack` it starts there, so a pushed-to bare repository can
+still be left with maintenance running, and no test removes or walks one after pushing to it.
+The `git` the product runs reads neither variable, and `tests/conftest.py` gives it the same two
+keys through the `HOME` it does read.
+
 `home` defaults to `root.parent`, which is inside `tmp_path` for every fixture in this suite:
 CONTRIBUTING.md's Tests section holds a test to never reading or writing the developer's real
 home, and pointing the two configuration variables at `os.devnull` is the first half of that,
@@ -64,6 +80,20 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 # fixtures are built under one.
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
 
+# The configuration that keeps every `git` the suite runs from leaving maintenance running behind
+# it, for the reason in the module docstring: as `GIT_CONFIG_COUNT` entries in `env` below, and as
+# the per-test global configuration `tests/conftest.py` writes for the product's own `git`.
+MAINTENANCE_OFF = (("maintenance.auto", "false"), ("gc.auto", "0"))
+
+
+def gitconfig(entries: tuple[tuple[str, str], ...]) -> str:
+    """`entries`, each a dotted `section.name` and its value, as the text of a gitconfig file."""
+    lines: list[str] = []
+    for key, value in entries:
+        section, _, name = key.partition(".")
+        lines += [f"[{section}]", f"\t{name} = {value}"]
+    return "".join(f"{line}\n" for line in lines)
+
 
 def env(home: Path, **extra: str) -> dict[str, str]:
     """The sealed environment one fixture `git` runs in, with `extra` layered on top.
@@ -90,6 +120,10 @@ def env(home: Path, **extra: str) -> dict[str, str]:
             "GIT_COMMITTER_EMAIL": "t@example.com",
         }
     )
+    sealed["GIT_CONFIG_COUNT"] = str(len(MAINTENANCE_OFF))
+    for index, (key, value) in enumerate(MAINTENANCE_OFF):
+        sealed[f"GIT_CONFIG_KEY_{index}"] = key
+        sealed[f"GIT_CONFIG_VALUE_{index}"] = value
     sealed.update(extra)
     return sealed
 

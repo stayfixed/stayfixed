@@ -1725,6 +1725,29 @@ reddens = [
   "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
 ]
 
+# From git 2.55 the maintenance a `commit` starts detaches and keeps `objects/maintenance.lock`
+# after the commit returns, and `shutil.rmtree` of a fixture's `.git` raced it on CI. With the
+# count at zero git reads none of the keys `env()` sets, and the commit starts it again.
+[[mutation]]
+name = "a fixture git leaves automatic maintenance running again"
+file = "tests/gitfixture.py"
+before = '    sealed["GIT_CONFIG_COUNT"] = str(len(MAINTENANCE_OFF))'
+after = '    sealed["GIT_CONFIG_COUNT"] = "0"'
+reddens = [
+  "tests/test_gitfixture.py::test_a_fixture_commit_leaves_no_maintenance_running_behind_it",
+]
+
+# The product's `git` reads no `GIT_CONFIG_COUNT`, so the same two keys reach it through the
+# per-test `HOME`; an empty `.gitconfig` there leaves its `fetch` starting maintenance again.
+[[mutation]]
+name = "the product's git under test runs automatic maintenance again"
+file = "tests/conftest.py"
+before = '    (home / ".gitconfig").write_text(gitconfig(MAINTENANCE_OFF), encoding="utf-8")'
+after = '    (home / ".gitconfig").write_text("", encoding="utf-8")'
+reddens = [
+  "tests/test_git_run.py::test_the_product_s_git_runs_no_automatic_maintenance_under_test",
+]
+
 # The durable half. A guard that stopped walking reports no offences for the same reason a clean
 # tree does, so the walk's own floor is what this proves — narrowed to the one file the walk
 # already excludes, `modules` comes back empty and the floor is the assertion that goes red.
