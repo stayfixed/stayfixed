@@ -29,10 +29,10 @@ one nobody can tell from a leftover:
   it could hold and not declare.
 
 `plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
-takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the three
+takes it from `stayfixed.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the
 settings files `_hook_entries` walks: it is the walk's own input, not the report or its row, and
-`entries.py` and this area's tests read it from `stayfixed.doctor.entries`. `stayfixed assess` needs
-nothing from this list.
+this area's tests read it from `stayfixed.doctor.entries`, which defines it. `stayfixed assess`
+needs nothing from this list.
 """
 
 from stayfixed.doctor.checks import run_checks

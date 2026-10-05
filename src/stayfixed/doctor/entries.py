@@ -50,14 +50,13 @@ def _claimed(context: Context) -> tuple[list[Claims], bool, bool]:
 
     An area's own record is the only thing that can say what it put into settings files, so the
     core asks each area that has one — `context.claims` — with this report's context and under
-    this row's guard. The
-    answers are kept apart rather than pooled: an entry is vouched for only by the one area that
-    both records its id and grants its command, because a record is a file a repository can
-    write, and one area's record standing on another area's grant vouches for an entry neither
-    area put there whole. A `None` is still one for the whole: an id one record could not be read
-    for, or a command one source could not be asked about, is not one the rest can vouch for.
-    With no area claiming anything, nothing is recorded and nothing granted, so every entry
-    claiming the marker is one no area put there.
+    this row's guard. The answers are kept apart rather than pooled: an entry is vouched for only
+    by the one area that both records its id and grants its command, because a record is a file a
+    repository can write, and one area's record standing on another area's grant vouches for an
+    entry neither area put there whole. A `None` is still one for the whole: an id one record could
+    not be read for, or a command one source could not be asked about, is not one the rest can
+    vouch for. With no area claiming anything, nothing is recorded and nothing granted, so every
+    entry claiming the marker is one no area put there.
 
     **Claims that raise are red, whatever they raise.** An area answers what it cannot read as a
     `None` field, so one that raises is a defect in its code, and `Contribution.claims` promises

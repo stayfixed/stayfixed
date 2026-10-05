@@ -5,9 +5,9 @@ core's checks in `checks.py` and `entries.py`, and an area's own `doctor.py`, wh
 `registry.contributions` discovers by name and which reaches this module through `doctor/api.py`.
 `checks.py` is the core's checks and the run; this module is the shapes they share and the one
 answer every area reads alike, the overlay root (`Context.overlay_root`), so it imports nothing of
-any area. `REPORT_THIS` is here too, because the run's guard in `checks.py` and the rows
-`registry.py` builds for an area that could not contribute both give it, and `checks.py` imports
-`registry.py`, so neither of the two can hold it for the other.
+any area. `REPORT_THIS` is here too: the run's guard in `checks.py` and the rows `registry.py`
+builds for an area that could not contribute both give it, and it is a remedy, part of what a row
+is made of, rather than anything of the run's or of discovery's.
 """
 
 from __future__ import annotations

@@ -175,8 +175,9 @@ def entry_commands(document: str) -> list[str]:
 
     One per entry and not one per readable command, and never keyed by id: the position in this
     list is what the report names, and two entries sharing one id are two entries. So an entry
-    whose `command` is absent or is not a string still occupies its place and contributes `""`,
-    which `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
+    whose `command` is absent, or is neither a string nor an integer, still occupies its place and
+    contributes `""`; an integer, which the walk reads as its text, contributes that text. Either
+    is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
     found: list[str] = []

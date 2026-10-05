@@ -644,9 +644,9 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 
 
 # What `docs/cli.md` says `stayfixed doctor` launches: five subprocesses on a green attached
-# installation *besides* the `ci-ref` row,
-# which the stub runner below answers in process rather than launching — so five here and six
-# in production on a repository that records a `[ci] ref`, which is what both documents now say.
+# installation *besides* the `ci-ref` row, which the stub runner below answers in process rather
+# than launching — so five here and six in production on a repository that records a `[ci] ref`,
+# which is what `docs/cli.md` says.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
 #
