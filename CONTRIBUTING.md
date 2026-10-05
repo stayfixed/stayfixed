@@ -186,9 +186,10 @@ loaded: the core loads the private layer only when a command asks for it.
   also carries the area's `Wording`, the phrases the row tells its record, its source and their
   remedies in, so the core names no area's files or commands of its own; they are printed
   verbatim, so they are stayfixed's own fixed strings and never built from repository bytes.
-  `register()` is called once per report, so anything it creates for its checks — each delivery
-  area creates a value that resolves the overlay root and the note store at most once — is fresh
-  for every report.
+  `register()` is called once per report, so anything it creates for its checks — an area that
+  reads the note store creates a value that resolves it at most once — is fresh for every report.
+  What the core owns and several areas read is on the `Context` instead: `Context.overlay_root`,
+  the machine file's `[overlay] root`, is resolved at most once per report for every area.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/test_areas.py` holds that one.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and

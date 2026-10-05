@@ -1,10 +1,10 @@
 """The note store's rows in `stayfixed doctor`: `bundles` and `store-debris`.
 
 Both measure the note store, and the store is this area's to resolve. `doctor`'s core discovers
-this module by name and asks its rows after its own (CONTRIBUTING.md, "Areas"), so the core
-resolves neither the store nor the overlay root, and nothing about either lives in the report's
-`Context`. The store comes from the `Answers` (`memory.answers`) this module's `register()`
-creates, one per report, so both rows read one answer.
+this module by name and asks its rows after its own (CONTRIBUTING.md, "Areas"), so the core never
+resolves the store and nothing about it lives in the report's `Context`. The store comes from the
+`Answers` (`memory.answers`) this module's `register()` creates, one per report, so both rows read
+one answer.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads before

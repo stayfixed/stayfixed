@@ -5,8 +5,9 @@ area's: it renders the overlay, declares the floor `overlay-requires` judges, an
 `.pre-commit-config.yaml` whose installation `pre-commit` asks about. `doctor`'s core discovers
 this module by name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
 
-The overlay root comes from the `Answers` this module's `register()` creates, one per report, so
-both rows read one answer and nothing one run resolved reaches the next.
+The overlay root is the core's answer, `Context.overlay_root`, which the report resolves at most
+once for every row that reads it, so both rows read one answer and nothing one run resolved
+reaches the next.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from stayfixed.doctor.api import Context, Contribution, Row, Status
-    from stayfixed.memory.api import Answers
 
 # The two overlay-gated rows ask one question before anything else, and both must say the same
 # thing about it, so the sentences live in one place rather than being copied from one row into
@@ -80,7 +80,7 @@ def _overlay_absent(overlay: Path | None) -> Row:
     return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)
 
 
-def _pre_commit(context: Context, answers: Answers) -> Row:
+def _pre_commit(context: Context) -> Row:
     """Whether the overlay's own secret scan is armed on **this** machine.
 
     `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
@@ -91,7 +91,7 @@ def _pre_commit(context: Context, answers: Answers) -> Row:
     from stayfixed.errors import Refusal
     from stayfixed.guards.api import hooks_dir
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None or not overlay.is_dir():
         return _overlay_absent(overlay)
     if not (overlay / PRE_COMMIT_CONFIG).is_file():
@@ -123,7 +123,7 @@ def _pre_commit(context: Context, answers: Answers) -> Row:
     return Row(OK, "the overlay's commit-time secret scan is installed")
 
 
-def _overlay_requires(context: Context, answers: Answers) -> Row:
+def _overlay_requires(context: Context) -> Row:
     """Whether the stayfixed running satisfies the floor the overlay declares: the overlay's
     requirement as the verdict it can be, since an overlay runs nothing and so cannot refuse to.
 
@@ -139,7 +139,7 @@ def _overlay_requires(context: Context, answers: Answers) -> Row:
     from stayfixed.overlay.layout import PLUGIN_MANIFEST
     from stayfixed.overlay.requires import requires_of, satisfies
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None or not overlay.is_dir():
         return _overlay_absent(overlay)
     spec = requires_of(overlay)
@@ -174,14 +174,12 @@ def _overlay_requires(context: Context, answers: Answers) -> Row:
 
 
 def register() -> Contribution:
-    """The two overlay rows, sharing one `Answers` so the overlay root is read once for both."""
+    """The two overlay rows, both reading the report's one overlay root."""
     from stayfixed.doctor.api import Contribution
-    from stayfixed.memory.api import Answers
 
-    answers = Answers()
     return Contribution(
         checks=(
-            (PRE_COMMIT_HOOK, lambda context: _pre_commit(context, answers)),
-            ("overlay-requires", lambda context: _overlay_requires(context, answers)),
+            (PRE_COMMIT_HOOK, _pre_commit),
+            ("overlay-requires", _overlay_requires),
         )
     )

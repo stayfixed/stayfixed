@@ -39,8 +39,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
         "linked_names",  # every name the tree holds, which attach hides from git
-        # the overlay root and the note store a doctor row reads, resolved once per report, for
-        # the attach and overlay areas' rows
+        # the note store a doctor row reads, resolved once per area per report, for the attach
+        # area's row
         "Answers",
         # the bundle slots, which tests/hooks/test_hooks_json.py holds the hooks file to
         "SLOTS",

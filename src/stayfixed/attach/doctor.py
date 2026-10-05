@@ -7,10 +7,11 @@ lists each hook entry with its provenance, and only this area can say which entr
 recorded and which of them the overlay still grants. `doctor`'s core discovers this module by
 name (CONTRIBUTING.md, "Areas") and imports nothing of this area.
 
-The overlay root and the note store come from the `Answers` this module's `register()` creates,
-one per report, so the binding the row reads and the claims `hook-entries` reads ask the overlay
-root once between them. The attach ledger comes from the `_Ledger` created beside it, so both read
-the file once between them, and both read it the same way.
+The overlay root is the core's answer, `Context.overlay_root`, resolved at most once per report
+for every row that reads it. The note store comes from the `Answers` this module's `register()`
+creates, one per report, so the row resolves it once. The attach ledger comes from the `_Ledger`
+created beside it, so the binding the row reads and the claims `hook-entries` reads read the file
+once between them, and both read it the same way.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads
@@ -88,7 +89,7 @@ def _ledger_state(root: Path) -> AttachLedger | str:
 class _Ledger:
     """`_ledger_state` for one report, read on first use and never again.
 
-    Created by `register()` beside the report's `Answers`, so `attached` and the claims
+    Created once per report by `register()`, so `attached` and the claims
     `hook-entries` reads ask one question of the file and get one answer: no row can read the
     ledger as there while another reads it as absent or unreadable.
     """
@@ -171,7 +172,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             f"attach",
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
         )
-    answer = _binding_answer(context, answers, ledger)
+    answer = _binding_answer(context, ledger)
     # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
     # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
     # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
@@ -318,7 +319,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     return OK, "not in place, which is what this store's trust record asks for", ""
 
 
-def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Binding | str:
+def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
     """The overlay binding this repository would attach under, or the label of why there is none.
 
     Three different situations used to collapse into one `None` — a ledger naming a store the
@@ -330,7 +331,7 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
     own inputs**, and a row that accused the repository on it would be reporting on itself.
 
     The three are told apart without restructuring `read_binding`, which raises `Refusal` for
-    two of them: `answers.overlay` is the answer of the same `overlay_root(machine)` that
+    two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
     function calls with the same argument, so asking it first takes the overlay-is-missing arm
     off the table, and what is left of `Refusal` is the store that is not this project's
     permitted root. Anything else that goes wrong — a `Failure` out of the overlay's own record,
@@ -343,7 +344,7 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import GitUnavailable
 
-    if answers.overlay(context) is None:
+    if context.overlay_root is None:
         return NO_OVERLAY
     recorded = ledger.state(context.root)
     # This one is the repository's file and not our inputs, so it does not join the other two: a
@@ -363,7 +364,7 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
         return UNASKABLE
 
 
-def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | None, str | None]:
+def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
     """Every marked command the overlay grants this repository **right now**, or `None`; and,
     beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
     be false: `MISMATCH` or `UNREADABLE_RECORD`, else `None` (`_wording` says what each changes).
@@ -431,7 +432,7 @@ def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | No
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
 
-    overlay = answers.overlay(context)
+    overlay = context.overlay_root
     if overlay is None:
         return set(), None
     narrowed: str | None = None
@@ -518,7 +519,7 @@ def _wording(narrowed: str | None = None) -> Wording:
     )
 
 
-def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
+def _claims(context: Context, ledger: _Ledger) -> Claims:
     """What `attach` put into settings files, for `hook-entries`' provenance column.
 
     The ledger says which marker ids the last `attach` recorded, and the overlay says which
@@ -536,20 +537,18 @@ def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
     from stayfixed.doctor.api import Claims
 
     found = _attach_ledger_entries(ledger.state(context.root))
-    granted, narrowed = (
-        _granted_commands(context, answers) if found is None or found else (set(), None)
-    )
+    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)
     return Claims(
         found,
         None if granted is None else frozenset(granted),
-        sourced=answers.overlay(context) is not None,
+        sourced=context.overlay_root is not None,
         wording=_wording(narrowed),
     )
 
 
 def register() -> Contribution:
-    """The `attached` row and this area's claims, sharing one `Answers` and one `_Ledger` for the
-    report."""
+    """The `attached` row and this area's claims, sharing one `_Ledger` for the report, and the
+    row's one `Answers` for the note store."""
     from stayfixed.doctor.api import Contribution
     from stayfixed.memory.api import Answers
 
@@ -557,5 +556,5 @@ def register() -> Contribution:
     ledger = _Ledger()
     return Contribution(
         checks=(("attached", lambda context: _attached(context, answers, ledger)),),
-        claims=lambda context: _claims(context, answers, ledger),
+        claims=lambda context: _claims(context, ledger),
     )

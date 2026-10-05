@@ -2,8 +2,9 @@
 what this area claims for the core's `hook-entries` row.
 
 Every case runs the whole report through `run_checks`, so the row is asked the way a user's
-`stayfixed doctor` asks it: discovered in this area's `doctor.py`, with the overlay root and the
-note store resolved by the lazy value its `register()` creates. The fixtures are the doctor
+`stayfixed doctor` asks it: discovered in this area's `doctor.py`, with the note store resolved by
+the lazy value its `register()` creates and the overlay root by the report's `Context`. The
+fixtures are the doctor
 area's own (`tests/doctor/test_checks.py`), shared rather than respelled, because the core's
 `hook-entries` cases read the same attached checkout.
 """
@@ -278,7 +279,7 @@ def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_
     # could not be asked — never a warning that accuses the repository, and never the word
     # "attached".
     #
-    # Mutation (declared): `if answers.overlay(context) is None: return NO_OVERLAY` ->
+    # Mutation (declared): `if context.overlay_root is None: return NO_OVERLAY` ->
     # `if False:` -> the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the
     # arm is gone) and this reddens on the status and the sentence.
     root = _attached(tmp_path)
@@ -516,6 +517,33 @@ def test_one_report_reads_the_ledger_once_and_the_configuration_not_again(
     assert _by_name(rows, "attached").detail.startswith("attached;")
     assert _by_name(rows, "hook-entries").status == OK
     assert (len(reads), len(loads)) == (1, 0)
+
+
+def test_one_report_resolves_the_overlay_root_once_for_every_area(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The overlay root is a key of the machine file, the core's, and two areas read it: `attach`
+    # for the binding and its claims, `overlay` for its two rows. The report's `Context` resolves
+    # it on first read and keeps the answer, so the machine file is asked once per report however
+    # many rows read it. Mutation (oracle): `mutations/`'s "the report resolves the overlay root
+    # for every reader" -> five reads, three of `attach`'s and two of `overlay`'s.
+    from stayfixed.config.overlay import overlay_root
+
+    asked: list[Path | None] = []
+
+    def counted(machine: Path | None) -> Path | None:
+        asked.append(machine)
+        return overlay_root(machine)
+
+    # The name the report's `Context` calls the machine file's reader by, in `doctor.model`.
+    monkeypatch.setattr("stayfixed.doctor.model.recorded_overlay_root", counted)
+    root = _attached(tmp_path)
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    # Non-vacuous: both areas read the root, and found the overlay there.
+    assert _by_name(rows, "attached").detail.startswith("attached;")
+    assert _by_name(rows, "hook-entries").status == OK
+    assert _by_name(rows, "pre-commit").status != SKIP
+    assert asked == [_machine(tmp_path)]
 
 
 # --- what this area claims for `hook-entries` --------------------------------------------------

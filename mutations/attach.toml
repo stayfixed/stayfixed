@@ -1608,7 +1608,7 @@ reddens = [
 [[mutation]]
 name = "attach says an overlay is recorded where none is"
 file = "src/stayfixed/attach/doctor.py"
-before = "        sourced=answers.overlay(context) is not None,"
+before = "        sourced=context.overlay_root is not None,"
 after = "        sourced=True,"
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
@@ -1646,7 +1646,7 @@ reddens = [
 [[mutation]]
 name = "a machine with no overlay recorded is blamed on the repository"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if answers.overlay(context) is None:\n        return NO_OVERLAY"
+before = "    if context.overlay_root is None:\n        return NO_OVERLAY"
 after = "    if False:\n        return NO_OVERLAY"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
@@ -1673,8 +1673,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"
-before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
-after = "        _granted_commands(context, answers)"
+before = "    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)"
+after = "    granted, narrowed = _granted_commands(context)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
@@ -1686,8 +1686,8 @@ reddens = [
 [[mutation]]
 name = "attach does not ask the overlay about a ledger it cannot read"
 file = "src/stayfixed/attach/doctor.py"
-before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
-after = "        _granted_commands(context, answers) if found else (set(), None)"
+before = "    granted, narrowed = _granted_commands(context) if found is None or found else (set(), None)"
+after = "    granted, narrowed = _granted_commands(context) if found else (set(), None)"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",

@@ -3,17 +3,21 @@
 The vocabulary lives here rather than in `checks.py` because two kinds of module speak it: the
 core's checks in `checks.py`, and an area's own `doctor.py`, which `checks.run_checks` discovers by
 name and which reaches this module through `doctor/api.py`. `checks.py` is the core's checks and
-the run; this module is only the shapes they share, so it imports nothing of any area.
+the run; this module is the shapes they share and the one answer every area reads alike, the
+overlay root (`Context.overlay_root`), so it imports nothing of any area.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal
 
+from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.schema import Config
+from stayfixed.errors import Failure, Refusal
 from stayfixed.runner import Runner
 
 OK: Final = "ok"
@@ -74,9 +78,13 @@ class Context:
     whose configuration does not load has nothing else worth asking about, and the first check
     says so and the rest skip.
 
-    Only what the core answers for: the run's inputs, the configuration, the two plugin roots,
-    and the `claims` the areas contributed. An area that needs more — the overlay root, the note
-    store — resolves it inside its own `doctor.py`, so building this imports nothing of any area.
+    **What the core answers for, and what every area reads alike.** The fields are the core's:
+    the run's inputs, the configuration, the two plugin roots, and the `claims` the areas
+    contributed. `overlay_root` is the core's too — `[overlay] root` is a key of the machine file,
+    which the core owns (`config.overlay`) — and is here because more than one area reads it, so
+    it is resolved once per report for all of them. What an area owns — the note store, the
+    attach ledger, the binding — is resolved inside that area's own `doctor.py` and never reaches
+    this type, so building it imports nothing of any area.
     """
 
     root: Path
@@ -95,6 +103,27 @@ class Context:
     # answered: `hook-entries` asks each under its own guard, so claims that raise cost that row,
     # red, as `Contribution.claims` promises, and never the report.
     claims: tuple[Callable[[Context], Claims], ...] = ()
+
+    @cached_property
+    def overlay_root(self) -> Path | None:
+        """The overlay root the machine file records, whether or not anything is there; `None`
+        when it records none, or when it cannot be read.
+
+        Resolved on first read and never again for this report: `cached_property` keeps the
+        answer in the instance's `__dict__` without going through `__setattr__`, which is why a
+        frozen dataclass without slots can carry it, and an answer that is itself `None` is kept
+        as well. A fresh `Context` per report is a fresh answer per report, so nothing one run
+        resolved reaches the next.
+
+        A `Failure`, a `Refusal` or an `OSError` is `None`, as a machine that records no overlay
+        is: a machine file that names an overlay nothing can read is a row's skip, never "this
+        check could not run", which is red and gates the exit code for something the repository
+        did not do wrong.
+        """
+        try:
+            return recorded_overlay_root(self.machine)
+        except (Failure, Refusal, OSError):
+            return None
 
 
 @dataclass(frozen=True)

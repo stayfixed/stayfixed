@@ -28,8 +28,8 @@ binding's one classifier and the states and causes it answers in (`binding_state
 `MISMATCH`, `NO_ORIGIN`, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
 `DIFFERENT_REMOTE`), which `attach` answers the binding question with instead of a second
 classifier of its own, the bundle slots `tests/hooks/test_hooks_json.py` holds the hooks file to
-(`SLOTS`), the overlay root and the note store a `doctor` row reads, resolved once per report
-(`Answers`, which the `attach` and `overlay` areas' own `doctor.py` create for their rows), and
+(`SLOTS`), the note store a `doctor` row reads, resolved once per area per report (`Answers`,
+which the `attach` area's own `doctor.py` creates for its row), and
 the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
 link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
 wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
