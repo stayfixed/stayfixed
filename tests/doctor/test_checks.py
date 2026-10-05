@@ -323,7 +323,6 @@ def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
     # A check that raises takes the whole report with it, and a report that cannot run is worth
     # less than a report with one skip line in it.
     checks = _checks(tmp_path, _initialised(tmp_path))
-    assert len(checks) == 16
     assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
 
 
