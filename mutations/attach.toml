@@ -1941,7 +1941,7 @@ reddens = [
 [[mutation]]
 name = "a file where the project's directory would be is no reason to refuse attach"
 file = "src/stayfixed/attach/binding.py"
-before = "    if not stat.S_ISDIR(mode):"
+before = "    if mode is not None and not stat.S_ISDIR(mode):"
 after = "    if mode == 0:"
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
@@ -1952,10 +1952,23 @@ reddens = [
 [[mutation]]
 name = "attach refuses a project the overlay has no directory for yet"
 file = "src/stayfixed/attach/binding.py"
-before = "    except FileNotFoundError:\n        return\n"
+before = "    except FileNotFoundError:\n        mode = None\n"
 after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))\n"
 reddens = [
   "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
+]
+
+# A name whose directory fits under the longest path while its binding record does not: `attach`
+# wrote the record through descriptors and every later reader took it for no record, and the run
+# ended in an internal error after its writes, while `--check` answered 0. Both refuse it above
+# every write, and one predicate is that refusal for both.
+[[mutation]]
+name = "attach and --check go on for a name whose binding record is past the longest path"
+file = "src/stayfixed/attach/binding.py"
+before = "        if exc.errno == errno.ENAMETOOLONG:\n            raise Refusal(RECORD_CANNOT_EXIST"
+after = "        if False:\n            raise Refusal(RECORD_CANNOT_EXIST"
+reddens = [
+  "tests/attach/test_commands.py::test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach",
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file

@@ -9,6 +9,7 @@ refuses.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -366,6 +367,55 @@ def test_check_reads_each_of_its_two_documents_once(
     monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
     assert loads == []
+
+
+def test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `project.name` whose directory under the overlay's `projects/` fits under the longest path
+    # while the binding record inside it does not. `--check` read the overlay's sources under it as
+    # absent and exited 0. `attach` then wrote the ignore region, the settings merge, the ledger
+    # and the record -- through descriptors, which no path length bounds -- and ended in an
+    # internal error building the link tree; and a record past the longest path is one every
+    # later reader of it takes for no record at all. `--check` previews the run, so it refuses the
+    # name as the run now does, above every write. The name is never quoted back: it is the
+    # repository's.
+    #
+    # Mutation (oracle): `mutations/`'s "attach and --check go on for a name whose binding record
+    # is past the longest path" -> `--check` exits 0 again.
+    from stayfixed.attach.binding import RECORD_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from stayfixed.memory.api import PROJECT_RECORD
+    from tests.attach.test_binding import CONFIG
+
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Room under the longest path for the fixture's own files, overlay and checkout alike.
+    while len(str(deep)) < longest - 250:
+        deep = deep / ("d" * min(200, longest - 250 - len(str(deep))))
+    root, store = _project_and_store(deep, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(deep, overlay=store.parents[2])
+    projects = store.parents[1]
+    # The project's directory 10 characters short of the longest path, its name a file name that
+    # may be, and its binding record past the longest path.
+    name = "n" * (longest - 10 - len(str(projects)) - 1)
+    assert len(name) < 255
+    assert len(str(projects / name)) == longest - 10
+    assert len(str(projects / name / PROJECT_RECORD)) > longest
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    flags = _flags(root, projects / name / "memory", machine)
+    refused = f"stayfixed: refused: {RECORD_CANNOT_EXIST.format(projects=projects)}"
+    before = snapshot(deep)
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert name not in checked.out + checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert_snapshot_unchanged(deep, before)
 
 
 def test_attach_reads_each_of_its_two_documents_once_too(

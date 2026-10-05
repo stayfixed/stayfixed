@@ -99,6 +99,13 @@ SHARE_CANNOT_EXIST = (
     "record this binding or keep this project's notes; choose another `name` under [project] in "
     "stayfixed.toml"
 )
+# The refusal for a `project.name` whose directory fits under the longest path while the binding
+# record inside it does not. The shape again and never the name, for the reason above.
+RECORD_CANNOT_EXIST = (
+    "{projects}/<this project's name>/" + PROJECT_RECORD + " would be longer than a path may be "
+    "on this machine, so the binding would be recorded where nothing can read it back; choose a "
+    "shorter `name` under [project] in stayfixed.toml"
+)
 
 
 def cannot_exist(exc: OSError) -> bool:
@@ -123,19 +130,34 @@ def refuse_unless_share_can_exist(binding: Binding) -> None:
     so nothing below this asks: the first to find out would be the record's write, after the
     ignore region, the rule copies, the settings merge and the ledger. Above every write, then,
     and in `--check` as well. A share that is absent is fine: `attach` creates it.
+
+    **Nor a name whose directory fits under the longest path while the record inside it does
+    not.** `attach` writes the record through descriptors, which no path length bounds, so the
+    write succeeds; but every reader of the record names it by its whole path, and `_recorded`
+    answers a path past the longest one with "no record" -- so the binding would be written and
+    then read as unbound for ever, and the run itself ended in an internal error building the link
+    tree after its writes. Asked of the record's own path, whether or not the share is there yet:
+    a path past the longest one is refused before anything below it is looked up.
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
     try:
-        mode = share.stat().st_mode
+        mode: int | None = share.stat().st_mode
     except FileNotFoundError:
-        return
+        mode = None
     except OSError as exc:
         if not cannot_exist(exc):
             raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
         mode = 0
-    if not stat.S_ISDIR(mode):
+    if mode is not None and not stat.S_ISDIR(mode):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+    try:
+        (share / PROJECT_RECORD).stat()
+    except OSError as exc:
+        # Only the length decides here: an absent record is a first attach, and a record that
+        # is there and cannot be read was already refused by `_recorded` on the way to `binding`.
+        if exc.errno == errno.ENAMETOOLONG:
+            raise Refusal(RECORD_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)) from None
 
 
 def not_overlay(config: Config) -> str | None:

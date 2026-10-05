@@ -2041,7 +2041,9 @@ group to this project's own share, so attaching to a sibling would produce a sto
 then refuses. A `[project] name` no directory can carry there — the name of a file the overlay
 keeps under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name
 longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
-well, and the refusal names the shape of the path and never the name.
+well, and the refusal names the shape of the path and never the name. So is a name whose directory
+there fits under the longest path the system allows while the `project.toml` that records the
+binding inside it does not, because nothing could read that record back.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
