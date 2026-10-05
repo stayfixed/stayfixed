@@ -199,6 +199,32 @@ def test_a_dangling_harness_link_is_never_green(tmp_path: Path) -> None:
     assert "dangling" in check.detail
 
 
+def test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_says_nothing_was_checked(
+    tmp_path: Path,
+) -> None:
+    # The arm between the green link and the red ones: a link at the harness memory path and a
+    # note store that does not resolve, so there is nothing to compare the link's target against.
+    # Green there would be the false sentence the comparison exists to prevent, said about a link
+    # nobody checked. The store is made not to resolve by taking away the link tree at
+    # `paths.memory`; the harness link points at a real directory, so no other arm can claim it.
+    # The binding stays bound, so this is the harness shape's answer and no earlier arm's.
+    # Mutation (oracle): `mutations/`'s "doctor calls a harness link it could not check green"
+    # -> the row is ok.
+    root = _attached(tmp_path)
+    _harness(tmp_path, root).symlink_to(tmp_path / "overlay" / PROJECTS / "p" / "memory")
+    shutil.rmtree(root / "docs" / "memory")
+    check = _by_name(
+        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
+    )
+    assert check == Check(
+        "attached",
+        "warn",
+        "attached; the harness memory path is a link, and the note store does not resolve, so "
+        "what it points at could not be checked; the binding is bound",
+        "run `stayfixed memory index --check`, then `stayfixed doctor` again",
+    )
+
+
 def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_that(
     tmp_path: Path,
 ) -> None:

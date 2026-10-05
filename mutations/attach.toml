@@ -1638,6 +1638,34 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
 ]
 
+# A checkout with no `origin` cannot be the one the overlay's record binds, and its notes are not
+# this repository's to read: red, like a record of another remote. A warning there is an exit of 0
+# over a binding nobody can confirm. `tests/test_binding_answers.py` holds the sentence and the way
+# out on every surface; the status is held by the borrowed-name case, whose `no-origin` state
+# reaches this arm.
+[[mutation]]
+name = "a checkout with no origin is only a warning in the attached row"
+file = "src/stayfixed/attach/doctor.py"
+before = "        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)"
+after = "        return Row(WARN, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[no-origin]",
+]
+
+# A harness link beside a note store that does not resolve has nothing to be compared against, so
+# what it points at was never checked. Green there says the link is fine on no evidence, on the one
+# channel attached memory takes to the model.
+[[mutation]]
+name = "doctor calls a harness link it could not check green"
+file = "src/stayfixed/attach/doctor.py"
+before = """                WARN,
+                "a link, and the note store does not resolve, so what it points at could not \""""
+after = """                OK,
+                "a link, and the note store does not resolve, so what it points at could not \""""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_harness_link_beside_a_store_that_does_not_resolve_warns_and_says_nothing_was_checked",
+]
+
 # `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
 # three used to collapse into one `None` that the `attached` row read as "attached". Two entries
 # prove the three are told apart: `mutations/`'s "a ledger naming a store the overlay does not
