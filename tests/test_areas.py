@@ -7,7 +7,7 @@ import ast
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -548,23 +548,58 @@ def test_in_isolation_no_core_module_loads_a_delivery_area() -> None:
     assert delivery == []
 
 
+_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+
+
+def _type_checking(test: ast.expr) -> bool:
+    """Whether an `if` tests `TYPE_CHECKING` itself, bare or as `typing.TYPE_CHECKING`."""
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return (
+        isinstance(test, ast.Attribute)
+        and test.attr == "TYPE_CHECKING"
+        and isinstance(test.value, ast.Name)
+        and test.value.id == "typing"
+    )
+
+
+def _imports_run_on_import(nodes: Iterable[ast.AST]) -> list[ast.Import | ast.ImportFrom]:
+    """Every import statement under `nodes` that runs when its module is imported: the whole
+    tree, less what a function body holds and what the body of an `if TYPE_CHECKING:` holds. A
+    class body, a `try`, a `with`, an `else` of `if TYPE_CHECKING:` and an `if` of any other test
+    all run on import."""
+    found: list[ast.Import | ast.ImportFrom] = []
+    for node in nodes:
+        if isinstance(node, _FUNCTIONS):
+            continue
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            found.append(node)
+        elif isinstance(node, ast.If) and _type_checking(node.test):
+            found += _imports_run_on_import(node.orelse)
+        else:
+            found += _imports_run_on_import(ast.iter_child_nodes(node))
+    return found
+
+
 def test_an_areas_doctor_module_imports_only_inside_its_functions() -> None:
     # CONTRIBUTING, "Areas": in an area's `doctor.py`, as in a `hooks.py`, every import sits
     # inside a function body. The module is imported by discovery, for every `doctor` run, so a
     # module-level import there is paid before the report has asked anything. Only `typing` and
-    # what `TYPE_CHECKING` guards stand at module level. Mutation (oracle): `mutations/`'s "an
-    # area's doctor.py imports stayfixed at module level".
+    # what `TYPE_CHECKING` guards stand at module level. The walk is the whole tree, because a
+    # walk of the top-level statements let an import nested in a `try` through, which runs on
+    # import all the same. Mutations (oracle): `mutations/`'s "an area's doctor.py imports
+    # stayfixed at module level" and "an area's doctor.py imports stayfixed at module level
+    # inside a try".
     source = ROOT / "src" / "stayfixed"
     found = sorted(source.glob("*/doctor.py"))
     # The three delivery areas carry one each, and the walk says so before it judges them.
     assert [path.parent.name for path in found] == ["attach", "memory", "overlay"]
     offences: list[str] = []
     for path in found:
-        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        for node in _imports_run_on_import([ast.parse(path.read_text(encoding="utf-8"))]):
             if isinstance(node, ast.ImportFrom) and node.module in ("__future__", "typing"):
                 continue
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                offences.append(f"{path.parent.name}/doctor.py:{node.lineno}")
+            offences.append(f"{path.parent.name}/doctor.py:{node.lineno}")
     assert offences == []
 
 
@@ -612,3 +647,189 @@ def test_the_delivery_rule_judges_the_importer_and_the_imported() -> None:
     assert _delivery_offences(
         "setup/run.py", "from stayfixed.overlay.api import create, target_root\n", delivery
     ) == [("setup/run.py", "stayfixed.overlay.api", frozenset({"create", "target_root"}))]
+
+
+# The two names through which a module is imported from a string rather than by a statement, which
+# the delivery rule above reads no more than discovery's caller does.
+DYNAMIC_IMPORTS = frozenset({"import_module", "__import__"})
+
+# The one core module whose job is importing modules by name: discovery, which imports
+# `stayfixed.<area>.<submodule>` for the submodules `area_modules` is called with (held below), and
+# is how every area, delivery included, plugs into the core.
+DISCOVERY_MODULE = "areas.py"
+
+# Every other place a core module imports by a string, one row per reference: the file relative to
+# `src/stayfixed/`, the innermost function, and the name it reaches. Held as a multiset and by
+# equality in both directions, as `CORE_TO_DELIVERY` is.
+#
+# One row, meant to stay. `profiles/hints.py`'s `_hint` imports `stayfixed.profiles.<name>.hygiene`
+# for a `name` that `hint_modules` listed from this package's own shipped profiles through
+# `importlib.resources` — profile discovery, which CONTRIBUTING's "Areas" describes beside area
+# discovery. It names no area and no repository path, so it is pinned here rather than moved into
+# `areas.py`, which knows nothing of profiles.
+DYNAMIC_IMPORTERS = (("profiles/hints.py", "_hint", "import_module"),)
+
+
+def _dynamic_imports(tree: ast.AST) -> list[tuple[str, str]]:
+    """Every reference in `tree` to `importlib.import_module` or `__import__`, as `(function,
+    name)`, `function` being the innermost enclosing `def` or `<module>`.
+
+    Read as: either name as an attribute of anything (`importlib.import_module`, the same through
+    an alias of `importlib`, `builtins.__import__`), `__import__` by its bare name, any name a
+    `from importlib import` binds either to, under its alias, that `from` statement itself and a
+    `from importlib import *`, and either name as a string constant, which is how
+    `getattr(importlib, "import_module")` spells it.
+    """
+    bound = {"__import__"} | {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "importlib"
+        for alias in node.names
+        if alias.name in DYNAMIC_IMPORTS
+    }
+    found: list[tuple[str, str]] = []
+
+    def visit(node: ast.AST, function: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.Attribute) and child.attr in DYNAMIC_IMPORTS:
+                found.append((function, child.attr))
+            elif isinstance(child, ast.Name) and child.id in bound:
+                found.append((function, child.id))
+            elif isinstance(child, ast.Constant) and child.value in DYNAMIC_IMPORTS:
+                found.append((function, str(child.value)))
+            elif (
+                isinstance(child, ast.ImportFrom)
+                and child.module == "importlib"
+                and any(alias.name in DYNAMIC_IMPORTS | {"*"} for alias in child.names)
+            ):
+                found.append((function, "from importlib import"))
+            inner = function
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner = child.name
+            visit(child, inner)
+
+    visit(tree, "<module>")
+    return found
+
+
+def _core_files(source: Path) -> list[tuple[str, Path]]:
+    """Every core file under `source`, relative to it: each module outside the delivery areas,
+    `cli.py` and the subpackages that are not areas included."""
+    return [
+        (path.relative_to(source).as_posix(), path)
+        for path in sorted(source.rglob("*.py"))
+        if path.relative_to(source).parts[0] not in stayfixed.areas.DELIVERY_AREAS
+    ]
+
+
+def test_no_core_module_imports_by_a_string_but_discovery() -> None:
+    # The delivery rule reads import statements, so a function-level
+    # `importlib.import_module("stayfixed.memory.store")` or `__import__(...)` in a core file
+    # crossed into the private layer with every boundary test green. A string import in the core
+    # is discovery's alone, and the one other one — profile discovery — is pinned with its reason.
+    #
+    # Mutations (declared): `mutations/`'s "a core function imports the note store through
+    # importlib", "a core function imports the note store through __import__" and "a core function
+    # imports the note store through an alias of import_module".
+    source = ROOT / "src" / "stayfixed"
+    rows: list[tuple[str, str, str]] = []
+    discovery: list[tuple[str, str]] = []
+    for where, path in _core_files(source):
+        found = _dynamic_imports(ast.parse(path.read_text(encoding="utf-8")))
+        if where == DISCOVERY_MODULE:
+            discovery += found
+        else:
+            rows += [(where, function, name) for function, name in found]
+    # The walk reads discovery's own `importlib.import_module`, so a reader that stopped seeing
+    # the spelling the pardon is written in cannot keep the equality below green by finding nothing.
+    assert ("area_modules", "import_module") in discovery, discovery
+    found_rows, pinned = Counter(rows), Counter(DYNAMIC_IMPORTERS)
+    assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
+
+
+def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) -> list[str]:
+    """Every reference to `area_modules` in `tree` that is not a call with one literal argument
+    out of `allowed`: a call naming any other submodule, a computed argument, and the function
+    handed on as a value, which would call it out of sight. Read by any name a `from … import`
+    binds it to and as an attribute of anything (`stayfixed.areas.area_modules`)."""
+    bound = {"area_modules"} | {
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name == "area_modules" and alias.asname
+    }
+    literal: set[int] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and not node.keywords
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in allowed
+        ):
+            literal.add(id(node.func))
+    lines = [
+        node.lineno
+        for node in ast.walk(tree)
+        if (
+            (isinstance(node, ast.Name) and node.id in bound)
+            or (isinstance(node, ast.Attribute) and node.attr == "area_modules")
+        )
+        and id(node) not in literal
+    ]
+    return [f"{where}:{line}" for line in sorted(lines)]
+
+
+def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
+    # `area_modules` imports `stayfixed.<area>.<submodule>` for every area that has one, so a core
+    # caller asking for `"api"` loads every area's surface, the private layer's included, through
+    # the one door the delivery rule leaves open. Every call under `src/stayfixed/` names one of
+    # the three submodules discovery is for, as a literal.
+    #
+    # Mutation (declared): `mutations/`'s "a core module asks discovery for every area's api.py".
+    source = ROOT / "src" / "stayfixed"
+    allowed = frozenset(name.removesuffix(".py") for name in DISCOVERED_SUBMODULES)
+    offences: list[str] = []
+    asked: set[str] = set()
+    for path in sorted(source.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offences += _area_module_offences(path.relative_to(source).as_posix(), tree, allowed)
+        asked |= {
+            str(node.args[0].value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "area_modules"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        }
+    assert offences == []
+    # Each reader's call was seen, so a walk that stopped finding calls cannot pass by finding
+    # no offence.
+    assert asked == {"commands", "hooks", "doctor"}
+
+
+def test_the_string_import_rules_read_every_spelling() -> None:
+    # The walks above can only show the rules holding for the spellings the tree carries, so they
+    # are put in front of the ones it does not. Measured by hand: reading `from importlib import`
+    # aliases no more reddens the first assertion, dropping the string-constant arm the second,
+    # and dropping the attribute arm of `_area_module_offences` the third.
+    aliased = "from importlib import import_module as load\ndef f():\n    load('x')\n"
+    assert _dynamic_imports(ast.parse(aliased)) == [
+        ("<module>", "from importlib import"),
+        ("f", "load"),
+    ]
+    reflected = "import importlib\ndef f():\n    getattr(importlib, 'import_module')('x')\n"
+    assert _dynamic_imports(ast.parse(reflected)) == [("f", "import_module")]
+    allowed = frozenset({"commands", "hooks", "doctor"})
+    spellings = (
+        "import stayfixed.areas\nstayfixed.areas.area_modules('api')\n"
+        "from stayfixed.areas import area_modules as found\nfound(name)\nkept = found\n"
+        "found('hooks')\n"
+    )
+    assert _area_module_offences("x.py", ast.parse(spellings), allowed) == [
+        "x.py:2",
+        "x.py:4",
+        "x.py:5",
+    ]

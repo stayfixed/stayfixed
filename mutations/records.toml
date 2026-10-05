@@ -1966,6 +1966,17 @@ reddens = [
   "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
 
+# The same import nested in a `try`, which runs on import all the same: a walk of the module's
+# top-level statements saw only the `try`.
+[[mutation]]
+name = "an area's doctor.py imports stayfixed at module level inside a try"
+file = "src/stayfixed/memory/doctor.py"
+before = "from typing import TYPE_CHECKING\n"
+after = "from typing import TYPE_CHECKING\n\ntry:\n    from stayfixed.memory.bundles import SLOTS\nexcept ImportError:\n    pass\n"
+reddens = [
+  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
 # A note's backticked path is resolved to ask whether it lies inside the store, and Python 3.11 and
 # 3.12 raise `RuntimeError` resolving a path through a symlink loop; the note and the loop are both
 # bytes a clone can commit, so the answer is a finding and never an internal error.

@@ -157,8 +157,12 @@ functions that use it, and those rows stay until the step leaves `setup`. A row 
 statement and the names it takes, held as a multiset in both directions, so
 `test_core_never_imports_delivery` refuses a new crossing, a second statement beside a pinned one,
 a pinned statement that takes one more name and a pinned row whose import has gone alike. The rule
-reads source, as discovery does, so a module named to `importlib.import_module` is invisible to
-it; `scripts/` is repository tooling and stays under the `api.py` rule alone. What source cannot
+reads import statements, so a module named to `importlib.import_module` is invisible to it, and a
+rule of its own holds that door: no core module but `areas.py` imports by a string — through
+`importlib.import_module` or `__import__`, under any alias — except the profile discovery
+`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason, and every call of
+`area_modules` names `commands`, `hooks` or `doctor` as a literal. `scripts/` is repository
+tooling and stays under the `api.py` rule alone. What source cannot
 show is when a pardoned statement runs, so `test_in_isolation_no_core_module_loads_a_delivery_area`
 imports every core module in a clean interpreter and refuses any delivery module among what it
 loaded: the core loads the private layer only when a command asks for it.

@@ -2342,6 +2342,47 @@ before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overl
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
 reddens = ["tests/test_areas.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
 
+# The delivery rule reads import statements, so the core reaching the private layer by a string —
+# inside a function, where no import-time probe sees it run — crossed with every boundary test
+# green. A string import in the core is discovery's alone, under each spelling of it.
+[[mutation]]
+name = "a core function imports the note store through importlib"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import importlib
+
+    importlib.import_module("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through __import__"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    __import__("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store through an alias of import_module"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import import_module as load
+
+    load("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
+# it is for walks every area through it, the private layer's included.
+[[mutation]]
+name = "a core module asks discovery for every area's api.py"
+file = "src/stayfixed/hooks/registry.py"
+before = "                raise UnknownHookEvent("
+after = '''                area_modules("api")
+                raise UnknownHookEvent('''
+reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
 # could not run" and the session handler's backstop swallows along with every other line of the
