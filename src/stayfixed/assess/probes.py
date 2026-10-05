@@ -27,7 +27,6 @@ read.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Callable
@@ -41,7 +40,7 @@ from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import Severity
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.scaffold import EntriesError, marker_id, owned_ids
+from stayfixed.scaffold import EntriesError, entry_commands, marker_id
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -70,9 +69,9 @@ _UNOWNED = f"{_WORKFLOWS}/"
 # workflows directory, or more. `stayfixed*` or `*.yml` owned a single `stayfixed-….yml` probe.
 _ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))
 # What reading a file the repository wrote can raise: a path through a symlink, a file that
-# cannot be opened, bytes that are not UTF-8 (a `ValueError`), a settings shape the engine
-# refuses, and JSON nested past the parser's depth, which `json` answers with `RecursionError`.
-_UNREADABLE = (PathEscape, OSError, ValueError, EntriesError, RecursionError)
+# cannot be opened, bytes that are not UTF-8 (a `ValueError`), and a settings document the engine
+# refuses, JSON nested past the parser's depth included (`scaffold.ParserLimitError`).
+_UNREADABLE = (PathEscape, OSError, ValueError, EntriesError)
 
 
 @dataclass(frozen=True)
@@ -161,7 +160,8 @@ def _memory_history(context: ProbeContext) -> Looked:
 
 def _foreign_hooks(context: ProbeContext) -> Looked:
     """Settings files of the selected harnesses that hold a hook entry without stayfixed's
-    marker. The engine's own shape check runs first, and every way repository content can make
+    marker, read by the walk `doctor`'s `hook-entries` reads them with: a file one names and the
+    other cannot read would be two answers about one file. Every way repository content can make
     reading fail is "could not look"."""
     from stayfixed.harnesses import select
 
@@ -172,18 +172,11 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
         try:
             path = contained(context.root, relative)
             text = path.read_text(encoding="utf-8") if path.is_file() else ""
-            owned_ids(text)  # raises EntriesError for a shape `doctor` would name
-            hooks = json.loads(text).get("hooks", {}) if text.strip() else {}
+            commands = entry_commands(text)  # raises EntriesError for a shape `doctor` names
         except _UNREADABLE:
             unread.append(relative)
             continue
-        entries = [
-            e for groups in hooks.values() for group in groups for e in group.get("hooks", [])
-        ]
-        if any(
-            not isinstance(e.get("command"), str) or marker_id(e["command"]) is None
-            for e in entries
-        ):
+        if any(marker_id(command) is None for command in commands):
             found.append(relative)
     return Looked(tuple(found), tuple(unread))
 
