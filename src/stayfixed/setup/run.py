@@ -113,6 +113,7 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
+from stayfixed.jsonobject import json_object
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
@@ -265,13 +266,10 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
         raise Failure(f"{path} is not UTF-8 text") from None
     if not text.strip():
         return {}, text
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{path} is not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise Failure(f"{path} is not a JSON object")
-    return raw, text
+    # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is
+    # refused as a `Failure` naming it rather than read, and rather than ending setup in an
+    # internal error.
+    return json_object(text, str(path), error=Failure), text
 
 
 def _write_user_settings(
