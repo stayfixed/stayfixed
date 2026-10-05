@@ -5,6 +5,13 @@ marketplace's one plugin has `source` `./`, and `test_the_plugin_folder_is_the_r
 reddens the day it moves, so that this walk changes with the move instead of going on passing over
 the wrong tree. The tree and not the working tree, because the directory reads a commit: a local
 edit, a line-ending conversion or a file deleted on disk is not what it scans.
+
+Every rule holds the tree on every pull request but one, the file count. This repository is more
+than the plugin, and a pull request may carry it past `FILES_MAX`; what must not pass the count is
+a release, so `scripts/release.py check --tag` refuses one whose plugin folder holds more, and
+RELEASING.md says how a release gets under it: the plugin is published from a repository of its
+own whose root is the plugin. `payload_findings` still reports the count, and the tree's test
+drops that one finding by its exact spelling and no other.
 """
 
 from __future__ import annotations
@@ -12,12 +19,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from tests.gitfixture import git, git_bytes, needs_git
+from tests.scriptload import release
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,9 +38,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # repository root, because the marketplace's `source` is `./`, so every rule below reads every path.
 #
 # Held: a file that is not an image or a font at `FILE_MAX_BYTES` or more, and more than
-# `FILES_MAX` files.
+# `FILES_MAX` files. The count is the release script's `PLUGIN_FILES_MAX`, read rather than
+# restated: its `check --tag` refuses a release over it, and this rule and that refusal must not
+# name two numbers.
 FILE_MAX_BYTES = 256 * 1024
-FILES_MAX = 512
+FILES_MAX: int = release().PLUGIN_FILES_MAX
 # Held: a binary file other than the images and fonts the page names. It admits "text files, SVG
 # included, complete PNG, JPEG, GIF, and WebP images, and font files" and names an `.ico`, a `.pdf`
 # and a `.zip` file and a compiled executable as held. The same suffixes are the ones the size rule
@@ -113,7 +124,7 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
     listed = list(entries)
     findings = []
     if len(listed) > FILES_MAX:
-        findings.append(f"{len(listed)} files, over the {FILES_MAX} the directory lists unheld")
+        findings.append(count_finding(len(listed)))
     findings.extend(_name_findings([path for path, _, _ in listed]))
     for path, size, mode in listed:
         components = path.split("/")
@@ -149,6 +160,27 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
                 if attribute in REFUSED_ATTRIBUTES
             )
     return findings
+
+
+def count_finding(files: int) -> str:
+    """The one finding the file count makes, spelled once: `payload_findings` makes it and
+    `findings_but_the_count` drops it, so the two cannot come apart over a reworded message."""
+    return f"{files} files, over the {FILES_MAX} the directory lists unheld"
+
+
+def findings_but_the_count(entries: list[Entry], *, read: Callable[[str], bytes]) -> list[str]:
+    """`payload_findings` without the file count's finding, which a release checks and a pull
+    request does not (the module docstring says why).
+
+    Refused rather than answered when the count's finding is missing over `FILES_MAX` or present
+    at or under it: dropping a finding by its spelling must not also hide a count rule that went
+    quiet, or one that speaks early.
+    """
+    findings = payload_findings(entries, read=read)
+    count = count_finding(len(entries))
+    if (count in findings) != (len(entries) > FILES_MAX):
+        raise AssertionError(f"the file count's finding is wrong for {len(entries)}: {findings}")
+    return [finding for finding in findings if finding != count]
 
 
 def _attributes(line: str) -> list[str]:
@@ -361,6 +393,39 @@ def test_one_file_past_the_count_is_a_finding() -> None:
     assert payload_findings(entries[:FILES_MAX], read=_text) == []
 
 
+def test_the_tree_rule_excludes_the_count_and_nothing_else() -> None:
+    # A pull request may carry the tree past `FILES_MAX` (the release script's `check --tag`
+    # refuses there instead), so the tree's rule drops the count's finding by its exact spelling
+    # and keeps every other. The second assertion is what makes the first mean it: the count's
+    # finding was there to drop. Mutation (declared): the filter drops every finding -> the
+    # symlink's finding goes and this reddens.
+    entries = [(f"f{i}", 1, "100644") for i in range(FILES_MAX)] + [("link", 4, SYMLINK_MODE)]
+    assert findings_but_the_count(entries, read=_text) == ["link: a tracked symlink"]
+    assert payload_findings(entries, read=_text) == [
+        count_finding(FILES_MAX + 1),
+        "link: a tracked symlink",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("files", "answer"),
+    [
+        pytest.param(FILES_MAX + 1, [], id="silent-over-the-limit"),
+        pytest.param(FILES_MAX, [count_finding(FILES_MAX)], id="speaking-at-the-limit"),
+    ],
+)
+def test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded(
+    monkeypatch: pytest.MonkeyPatch, files: int, answer: list[str]
+) -> None:
+    # The exclusion must not hide a count rule gone wrong: over the limit its finding has to be
+    # there to be dropped, and at the limit it must not be. Mutation (declared): that check
+    # dropped -> nothing raises and both cases redden.
+    monkeypatch.setattr(sys.modules[__name__], "payload_findings", lambda _, *, read: answer)
+    entries = [(f"f{i}", 1, "100644") for i in range(files)]
+    with pytest.raises(AssertionError, match="the file count's finding"):
+        findings_but_the_count(entries, read=_text)
+
+
 def test_a_symlink_is_a_finding() -> None:
     # Mutation (declared): the mode comparison becomes `!=` -> the symlink passes, and this
     # reddens; so does every other case here, each built of regular files.
@@ -564,6 +629,11 @@ def test_a_gitattributes_line_carrying_no_refused_attribute_is_not_a_finding(lin
 def test_the_plugin_folder_is_the_repository_root() -> None:
     # If the plugin moves into a subfolder, the payload is that folder and this module's walk
     # is wrong; it must change with the move rather than go on passing over the wrong tree.
+    # Today's layout, and the one a release changes: before a release whose tree is over
+    # `FILES_MAX`, the plugin is published from a repository of its own whose root is the plugin
+    # (RELEASING.md, "Cutting a release"), and this module goes with it. A subfolder here is not
+    # the way out, because the directory holds a subfolder plugin whose hook runs a script that
+    # calls other files, and `hooks/run-hook.sh` runs the Python launcher.
     # Mutation: the marketplace's `source` becomes `./plugin` -> this reddens.
     market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text("utf-8"))
     assert [p["source"] for p in market["plugins"]] == ["./"]
@@ -610,9 +680,12 @@ def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> N
 @needs_git
 @pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
 def test_the_tree_is_inside_the_directory_limits() -> None:
-    # No mutation of the code: the subject is the tree. Watched red by lowering `FILES_MAX`
-    # below the tracked count, which is what the tree outgrowing it looks like from here.
+    # Every rule but the file count, which `scripts/release.py check --tag` holds at a release
+    # instead. No mutation of the code: the subject is the tree. Watched red, before the count
+    # left it, on a scratch clone carrying one committed file past `FILES_MAX`; and red today on a
+    # committed symlink, or on the count's `>` becoming `>=` while the tree holds exactly
+    # `FILES_MAX` files, which `findings_but_the_count` refuses.
     entries, blobs = tracked_payload()
     # A walk-based assertion states its walk is non-empty, and this one that it walked this plugin.
     assert PLUGIN_MANIFEST in {path for path, _, _ in entries}, len(entries)
-    assert payload_findings(entries, read=blobs.__getitem__) == []
+    assert findings_but_the_count(entries, read=blobs.__getitem__) == []

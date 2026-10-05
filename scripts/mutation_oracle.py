@@ -71,8 +71,9 @@ DECLARATIONS = ROOT / "mutations"
 # would be about twenty files where these are eight. The plugin directory holds the version for a
 # reviewer past 512 files as well as at a file of 256 KiB, and with the repository root as the
 # plugin folder every tracked file counts against the 512 (`tests/test_payload.py` holds the tree
-# to both), so the groups are as coarse as the size limit lets them be. A group that outgrows its
-# file is split by its largest area, which is an edit to this table.
+# to the size, and `scripts/release.py check --tag` a release to the count), so the groups are as
+# coarse as the size limit lets them be. A group that outgrows its file is split by its largest
+# area, which is an edit to this table.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),

@@ -2782,6 +2782,27 @@ before = "    if len(listed) > FILES_MAX:"
 after = "    if len(listed) >= FILES_MAX:"
 reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
 
+# The tree's test drops the count's finding, which a release checks instead, and nothing else; a
+# filter that drops more passes a tree the directory would hold.
+[[mutation]]
+name = "the tree's rule drops every payload finding with the count's"
+file = "tests/test_payload.py"
+before = "    return [finding for finding in findings if finding != count]"
+after = "    return []"
+reddens = ["tests/test_payload.py::test_the_tree_rule_excludes_the_count_and_nothing_else"]
+
+# Dropped by its spelling, the count's finding must still be there to drop over the limit and absent
+# at it, or the exclusion hides a count rule gone quiet.
+[[mutation]]
+name = "the tree's rule stops asking whether the count's finding is the right one"
+file = "tests/test_payload.py"
+before = "    if (count in findings) != (len(entries) > FILES_MAX):"
+after = "    if False:"
+reddens = [
+  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[silent-over-the-limit]",
+  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[speaking-at-the-limit]",
+]
+
 # A tracked symlink blocks the listing wherever the plugin loads it, and every path of a plugin at
 # the repository root is one it may load, so the payload guard must name one.
 [[mutation]]

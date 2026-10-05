@@ -68,6 +68,11 @@ SOURCES = (
     "CHANGELOG.md",
 )
 MARKETPLACE = ".claude-plugin/marketplace.json"
+# The most files a plugin folder holds without the Claude plugin directory holding the listing for
+# a reviewer: "Keep the plugin to 512 files or fewer", its pre-submission checklist says
+# (https://claude.com/docs/plugins/pre-submission-checklist, read 2026-10-05). The number is the
+# page's and no file's here; `tests/test_payload.py` reads it as its `FILES_MAX`.
+PLUGIN_FILES_MAX = 512
 START = "<!-- towncrier release notes start -->"
 _INIT = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 _HEADING = re.compile(r"^## (\S+)", re.MULTILINE)
