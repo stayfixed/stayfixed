@@ -418,6 +418,22 @@ before = "    if report.findings:"
 after = "    if report.findings or report.notices:"
 reddens = ["tests/memory/test_graph.py::test_refs_reports_graph_notices_without_changing_its_exit"]
 
+# Nor does advice excuse: a stale path fails `memory refs` whatever notices sit beside it, and the
+# failing line still counts them.
+[[mutation]]
+name = "an advisory memory-graph notice clears a stale path's failure"
+file = "src/stayfixed/memory/commands.py"
+before = '    return Result("; ".join([*parts, *advice]), data, exit_code=1)'
+after = '    return Result("; ".join([*parts, *advice]), data, exit_code=0 if report.notices else 1)'
+reddens = ["tests/memory/test_refs.py::test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both"]
+
+[[mutation]]
+name = "the failing memory refs line stops counting the graph's notices"
+file = "src/stayfixed/memory/commands.py"
+before = '    return Result("; ".join([*parts, *advice]), data, exit_code=1)'
+after = '    return Result("; ".join(parts), data, exit_code=1)'
+reddens = ["tests/memory/test_refs.py::test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both"]
+
 # `memory refs` reads the store once: the graph's notices come from the walk made for the stale
 # paths. A second walk reached through the note module's own name, rather than through the name
 # `memory.refs` binds, is a second read of every note all the same.
