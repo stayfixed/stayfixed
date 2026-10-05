@@ -840,8 +840,8 @@ reddens = [
 [[mutation]]
 name = "a broken machine file is blamed on stayfixed.toml again"
 file = "src/stayfixed/config/loader.py"
-before = '        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
-after = '        raise ConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
+before = '        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
@@ -1561,9 +1561,9 @@ reddens = [
 name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
 file = "src/stayfixed/config/loader.py"
 before = """    except UnicodeDecodeError:
-        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 after = """    except KeyError:
-        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None"""
 reddens = [
   "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
@@ -1687,14 +1687,15 @@ name = "a machine file nested past the parser is an internal error"
 file = "src/stayfixed/config/loader.py"
 before = """
     except UNPARSEABLE as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 """
 after = """
     except tomllib.TOMLDecodeError as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 """
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
 ]
 
 [[mutation]]
@@ -2309,18 +2310,6 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
 ]
 
-# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
-# an internal error": every reader of a document somebody else wrote answers one nested past the
-# parser as one that does not parse.
-[[mutation]]
-name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/config/overlay.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
-]
-
 # The overlay root anchors where the note store may resolve, so with no file named it is read from
 # the one path no variable can move, even from a terminal.
 [[mutation]]
@@ -2360,14 +2349,15 @@ reddens = [
 
 # A machine file the overlay root's reader cannot open is the loader's `MachineConfigError`, in the
 # loader's words, so it reaches every caller as the `Failure` they catch rather than as a bare
-# `PermissionError`.
+# `PermissionError`. The reader is the loader's own, which `[personal]` is read through too.
 [[mutation]]
 name = "the overlay root's reader lets a machine file it cannot read raise past its callers"
-file = "src/stayfixed/config/overlay.py"
+file = "src/stayfixed/config/loader.py"
 before = "    except OSError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(UNREADABLE.format("
 reddens = [
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
 ]
 
 # A retired artifact whose file was already gone read as unchanged and kept its record for good:
