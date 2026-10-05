@@ -17,6 +17,7 @@ from stayfixed.memory.store import (
     resolve,
 )
 from tests.gitfixture import git
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -523,16 +524,6 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 # `GIT_ENV_KEEP` scrubs `DEVELOPER_DIR` — and was told to run `stayfixed attach`.
 
 
-def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The one seam the store reaches `git` through: `gitenv.git_run`, which `git_answer`,
-    `origin_remote` and `git_is_usable` all call inside `gitenv`."""
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
-
-
 def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -542,7 +533,7 @@ def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
     a_tree(root, overlay)
     config = a_config(root, "overlay")
     machine = a_machine_file(tmp_path, overlay)
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable) as excinfo:
         resolve(root, config, machine=machine)
     assert "stayfixed attach" not in str(excinfo.value)
@@ -557,7 +548,7 @@ def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_check
     # "nothing to do", every memory bundle empty, and nothing reporting a failure.
     root = tmp_path / "project"
     a_repo(root)
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable):
         main_checkout(root)
 

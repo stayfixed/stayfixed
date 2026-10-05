@@ -26,6 +26,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import LONG_NUMBER, NESTED, SETTINGS
 from tests.gitfixture import git
+from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -327,21 +328,6 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
     assert not (root / SETTINGS).exists()
 
 
-def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at the one seam the store runs it through:
-    `gitenv`'s `git_run`, which `git_answer` and `origin_remote` call.
-
-    The state `GitUnavailable` exists for, and its own docstring names the machine that is in it.
-    Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
-    whole process.
-    """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
-
-
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -365,7 +351,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
-    _a_git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(Failure):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)

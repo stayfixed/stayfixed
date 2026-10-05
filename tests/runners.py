@@ -6,6 +6,10 @@ private runner class of its own unless the question it asks is not "record the a
 from a script": `tests/guards/test_attribute.py`'s `_Coded` (answers by the tree it is run in) and
 `tests/overlay/test_publish.py`'s `_GitHub` (models a repository's state) are the two that are
 not, and each says why.
+
+`git_that_cannot_run` is here too, though it is no `Runner`: the product runs `git` through
+`gitenv.git_run` rather than a `Runner`, and a `git` that cannot be launched is a double every
+module asking about one needs alike.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import pytest
 
 from stayfixed.release.pins import NO_MATCH
 from stayfixed.runner import Completed
@@ -78,3 +84,19 @@ class LsRemote(Recorder):
     def __post_init__(self) -> None:
         if self.code == _FROM_LISTING:
             self.code = 0 if self.stdout else NO_MATCH
+
+
+def git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `git` that cannot be launched at all, the state `gitenv.GitUnavailable` is about, patched
+    at the one seam the product runs it through: `gitenv.git_run`, which `git_answer`,
+    `origin_remote` and `git_is_usable` all call inside `gitenv`.
+
+    Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
+    whole process. A repository with no `origin` remote is a different state — `git` ran and
+    answered nothing — and it is the ordinary "not bound" one rather than a machine fault.
+    """
+
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
+
+    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)

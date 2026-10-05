@@ -26,6 +26,7 @@ from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -53,21 +54,6 @@ mode = "overlay"
 groups = ["developer", "project-stable"]
 index_extra = []
 """
-
-
-def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, which is what `GitUnavailable` is about.
-
-    The same helper `tests/memory/test_store.py` carries, and patched at the same seam:
-    `gitenv`'s `git_run`, which `git_answer` and `origin_remote` call. A repository with *no*
-    `origin` remote is a different state — `git` ran and answered nothing — and it is the
-    ordinary "not bound" one rather than a machine fault.
-    """
-
-    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
-        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
-
-    monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
 def _project_and_store(
@@ -224,7 +210,7 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
 
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
     machine = _machine(tmp_path, overlay=store.parents[2])
-    _git_that_cannot_run(monkeypatch)
+    git_that_cannot_run(monkeypatch)
     with pytest.raises(GitUnavailable):
         read_binding(root, store=store, machine=machine)
 

@@ -30,7 +30,6 @@ from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
-from tests.attach.test_binding import _git_that_cannot_run
 from tests.attach.test_write import LONG_NUMBER, NESTED
 from tests.doctor.test_checks import (
     LOCAL_ONLY,
@@ -49,6 +48,7 @@ from tests.doctor.test_checks import (
 )
 from tests.floor import is_developers
 from tests.gitfixture import git as _git
+from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -798,7 +798,7 @@ def _table_row(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ch
         )
     elif case == "owner-git-cannot-run":
         root = _attached(tmp_path)
-        _git_that_cannot_run(monkeypatch)
+        git_that_cannot_run(monkeypatch)
     elif case == "forged-foreign-store":
         root = _forged_clone(tmp_path, store=tmp_path / "somewhere-else" / "memory")
     elif case == "owner-moved-store":
@@ -953,7 +953,7 @@ def _unreadable_row(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             json.dumps({"hooks": {"PreToolUse": "not a list"}}), encoding="utf-8"
         )
     elif where == "git-cannot-run":
-        _git_that_cannot_run(monkeypatch)
+        git_that_cannot_run(monkeypatch)
     else:
         assert where == "overlay", case
     return _by_name(_checks(tmp_path, root, machine=machine), "hook-entries")
