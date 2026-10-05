@@ -19,11 +19,13 @@ from pathlib import Path
 import pytest
 
 from stayfixed.attach.api import LOCAL_SETTINGS
+from stayfixed.attach.permissions import check as attach_check
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor import checks as doctor_checks
 from stayfixed.doctor.api import OK, SKIP, WARN, Check
+from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE
@@ -1784,6 +1786,31 @@ BORROWED = Check(
     f"overlay does not grant them: {LOCAL_SETTINGS} entry 2 of 2",
     NOT_GRANTED,
 )
+# The same entry where the record under the borrowed name binds another remote: the overlay may
+# grant entry 2 to the checkout that record binds, so the row says the binding is what is wrong
+# and hands on the `attached` row's remedy, rather than that the overlay refused it.
+MISMATCHED = Check(
+    "hook-entries",
+    "red",
+    f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and the "
+    f"overlay grants this checkout only what it grants every project, because its record binds "
+    f"this project to a remote other than this checkout's `origin`: {LOCAL_SETTINGS} entry 2 of 2",
+    "settle the binding, as the `attached` row says: run `stayfixed attach --check`, and "
+    "`--trust-remote` only if it should be; then run `stayfixed doctor` again",
+)
+# And where that record cannot be read: the row says so, and names the command that says why.
+RECORD_UNREADABLE = Check(
+    "hook-entries",
+    "red",
+    f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and the "
+    f"overlay grants this checkout only what it grants every project, because its binding record "
+    f"for this project cannot be read: {LOCAL_SETTINGS} entry 2 of 2",
+    "run `stayfixed attach --check`, which reports why the binding record cannot be read; repair "
+    "it, then run `stayfixed doctor` again",
+)
+# What `hook-entries` makes of the borrowing clone, by binding state: red in every one, told as a
+# refused grant where nothing in the overlay grants this checkout more than `common/` does.
+BORROWED_ROWS = {"mismatch": MISMATCHED, "unbound": BORROWED, "no-origin": BORROWED}
 # What `attached` makes of the same checkout, by binding state: the binding the name borrows is
 # not this checkout's, and the row says so in its own words.
 BORROWED_ATTACHED = {"mismatch": "red", "unbound": "warn", "no-origin": "red"}
@@ -1818,7 +1845,7 @@ def test_a_repository_named_after_another_project_borrows_none_of_its_grants(
     # `mutations/`'s "doctor counts a project's grants for a checkout its record does not bind" ->
     # every case is "all accounted for".
     rows = _checks(tmp_path, _borrowing(tmp_path, state), machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries") == BORROWED
+    assert _by_name(rows, "hook-entries") == BORROWED_ROWS[state]
     attached = _by_name(rows, "attached")
     assert attached.status == BORROWED_ATTACHED[state], attached
     assert "attached;" not in attached.detail
@@ -1838,7 +1865,7 @@ def test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red(
     # a warning.
     root = _borrowing(tmp_path, state, grants='{"hooks": {"PreToolUse": "not a list"}}')
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries") == BORROWED
+    assert _by_name(rows, "hook-entries") == BORROWED_ROWS[state]
 
 
 # A binding record that will not parse, as an owner's mistake or a broken disk leaves one.
@@ -1869,7 +1896,7 @@ def test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_r
     record_path = tmp_path / "overlay" / PROJECTS / BORROWED_NAME / PROJECT_RECORD
     record_path.write_text(UNPARSEABLE_RECORD, encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries") == BORROWED
+    assert _by_name(rows, "hook-entries") == RECORD_UNREADABLE
     assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
 
 
@@ -1880,13 +1907,49 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     # per-project entry cannot be read, so the entry is red rather than a warning — a record the
     # repository's name picks out may not soften the verdict, whoever's it is. `common/`'s entry is
     # still accounted for, and the two rows together say what to do: `attached` that the overlay
-    # could not be asked, `hook-entries` which entry nothing vouches for. Pinned whole, so the cost
-    # is a decision rather than a drift. Mutation (oracle): `mutations/`'s "an unreadable binding
-    # record makes the overlay one that could not be asked" -> a warning.
+    # could not be asked, `hook-entries` that the binding record cannot be read and which command
+    # says why, and that command does. Pinned whole, so the cost is a decision rather than a drift.
+    # Mutations (oracle): `mutations/`'s "an unreadable binding record makes the overlay one that
+    # could not be asked" -> a warning; "attach tells a checkout whose binding record cannot be read
+    # that the overlay refused its entries" -> the refused grant's sentence and remedy.
     root = _granting_project(tmp_path, OWN_NAME)
     record_path = tmp_path / "overlay" / PROJECTS / OWN_NAME / PROJECT_RECORD
     assert record_path.is_file()
     record_path.write_text(UNPARSEABLE_RECORD, encoding="utf-8")
-    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
-    assert _by_name(rows, "hook-entries") == BORROWED
+    machine = _machine(tmp_path)
+    rows = _checks(tmp_path, root, machine=machine)
+    assert _by_name(rows, "hook-entries") == RECORD_UNREADABLE
     assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
+    # What `attach --check` stops on, which is the message its command line prints.
+    store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
+    with pytest.raises(Failure, match=f"/{PROJECT_RECORD} is not valid TOML"):
+        attach_check(root, store=store, machine=machine)
+
+
+# The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this
+# project to the ssh remote, so the binding is a mismatch.
+HTTPS_ORIGIN = "https://github.com/owner/p.git"
+
+
+def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong(
+    tmp_path: Path,
+) -> None:
+    # An owner switches `origin` from ssh to https, so the overlay's record no longer binds this
+    # checkout and its per-project entry is red. The row said "the overlay does not grant them",
+    # which is false — the overlay grants that entry to the checkout its record binds — and its
+    # remedy, `attach --store …`, is one `attach` refuses on a mismatch without `--trust-remote`.
+    # The binding is what is wrong, so the row says so and hands on the `attached` row's remedy;
+    # the verdict stays red, as a clone named after another project is. Mutation (oracle):
+    # `mutations/`'s "attach tells a checkout its record does not bind that the overlay refused its
+    # entries" -> the old sentence and remedy.
+    root = _granting_project(tmp_path, OWN_NAME)
+    _git(root, "remote", "set-url", "origin", HTTPS_ORIGIN)
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == MISMATCHED
+    assert _by_name(rows, "attached") == Check(
+        "attached",
+        "red",
+        "the overlay records a different remote URL under this project's name (the same "
+        "repository under another URL form, https or ssh, counts as different too)",
+        "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
+    )

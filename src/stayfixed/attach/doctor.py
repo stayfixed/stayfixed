@@ -36,6 +36,13 @@ NO_LEDGER: Final = "no-ledger"
 # Also the fourth of `_binding_answer`'s reasons, below: the same fact, and it is about the
 # repository rather than about this machine.
 UNREADABLE_LEDGER: Final = "unreadable-ledger"
+# Why the overlay grants this checkout only what `common/` grants, where saying it refused would be
+# false: the record under `projects/<name>/` binds another remote, or cannot be read. Not a state
+# of `memory.store`'s: the record's own failure is this area's question, asked only here.
+UNREADABLE_RECORD: Final = "unreadable-record"
+# The `attached` row's remedy for a record that binds another remote, which `hook-entries` hands on
+# for the entries that mismatch leaves red: one spelling, so the two rows cannot disagree.
+_REBIND = "run `stayfixed attach --check`, and `--trust-remote` only if it should be"
 
 
 def _ledger_state(root: Path) -> AttachLedger | str:
@@ -184,11 +191,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     if state == NO_ORIGIN:
         return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
     if state == MISMATCH:
-        return Row(
-            RED,
-            DIFFERENT_REMOTE,
-            "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
-        )
+        return Row(RED, DIFFERENT_REMOTE, _REBIND)
     status, shape, remedy = _harness_shape(context, answers, harness)
     return Row(
         status, f"attached; the harness memory path is {shape}; the binding is {state}", remedy
@@ -360,8 +363,10 @@ def _binding_answer(context: Context, answers: Answers, ledger: _Ledger) -> Bind
         return UNASKABLE
 
 
-def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
-    """Every marked command the overlay grants this repository **right now**, or `None`.
+def _granted_commands(context: Context, answers: Answers) -> tuple[set[str] | None, str | None]:
+    """Every marked command the overlay grants this repository **right now**, or `None`; and,
+    beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
+    be false: `MISMATCH` or `UNREADABLE_RECORD`, else `None` (`_wording` says what each changes).
 
     The overlay is what `attach` merges from, and it is trusted by construction: its root comes
     from the machine configuration, which `config/machine.py` keeps unselectable by a repository.
@@ -406,6 +411,13 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     entries read red rather than warn, because the record that would vouch for them is the one
     that cannot be read, and the `attached` row says the overlay could not be asked.
 
+    **A mismatch and an unreadable record are named beside the grant, and nothing else is.** For
+    either, `projects/<name>/` may grant an entry `common/` does not — to the checkout the record
+    binds, or would bind if it read — so "the overlay does not grant them" is false, and the
+    rebuild it offers is one `attach` refuses. With no record, or no `origin`, nothing in the
+    overlay grants this checkout more than `common/` does, and the overlay refusing is what
+    happened.
+
     **Nor does a `project.name` no directory under the overlay can carry make the overlay
     unaskable.** One that a file under `projects/` holds, or one longer than the filesystem
     allows, has no binding record — `binding.cannot_exist`'s paths are records the overlay does
@@ -417,44 +429,75 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     from stayfixed.attach.binding import UnreadableRecord, binding_for
     from stayfixed.attach.permissions import common_entries, overlay_entries
     from stayfixed.errors import Failure, Refusal
-    from stayfixed.memory.api import BOUND
+    from stayfixed.memory.api import BOUND, MISMATCH
 
     overlay = answers.overlay(context)
     if overlay is None:
-        return set()
+        return set(), None
+    narrowed: str | None = None
     try:
         try:
             binding: Binding | None = binding_for(
                 context.root, context.config, machine=context.machine
             )
         except UnreadableRecord:
-            binding = None
+            binding, narrowed = None, UNREADABLE_RECORD
         if binding is not None and binding.state == BOUND:
             wanted = overlay_entries(binding)
         else:
             wanted = common_entries(overlay)
     except (Failure, Refusal, OSError):
-        return None
-    return {
+        return None, None
+    if binding is not None and binding.state == MISMATCH:
+        narrowed = MISMATCH
+    commands = {
         entry["command"]
         for groups in wanted.values()
         for group in groups
         for entry in group["hooks"]
         if isinstance(entry.get("command"), str)
     }
+    return commands, narrowed
 
 
-def _wording() -> Wording:
+def _wording(narrowed: str | None = None) -> Wording:
     """How `hook-entries` names this area's ledger, the overlay that grants, and the commands that
     repair them: stayfixed's own fixed strings, as `Wording` requires, none of them read from the
     repository or the machine.
+
+    `narrowed` is `_granted_commands`' reason the grant stops at `common/`. For `MISMATCH` the
+    entries it leaves red are told that the binding is what is wrong, not the grant, and handed
+    the `attached` row's remedy: the rebuild `vouch` names is one `attach` refuses on a mismatch
+    without `--trust-remote`. For `UNREADABLE_RECORD` they are told the record cannot be read, and
+    pointed at the command that says why. Both are fixed text: neither names the project or a
+    remote, which are the repository's.
 
     A function and not a module-level constant only because building the value imports the doctor
     area's surface and the ledger's path, and an import in this module sits inside a function body
     (the module docstring says why)."""
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import Wording
+    from stayfixed.memory.api import MISMATCH
 
+    # Said of a checkout whose grant stops at `common/` for a reason other than a refusal.
+    only_common = "the overlay grants this checkout only what it grants every project, because its"
+    ungranted: str | None = None
+    regrant: str | None = None
+    if narrowed == MISMATCH:
+        ungranted = (
+            f"{only_common} record binds this project to a remote other than this checkout's "
+            f"`origin`"
+        )
+        regrant = (
+            f"settle the binding, as the `attached` row says: {_REBIND}; then run `stayfixed "
+            f"doctor` again"
+        )
+    elif narrowed == UNREADABLE_RECORD:
+        ungranted = f"{only_common} binding record for this project cannot be read"
+        regrant = (
+            "run `stayfixed attach --check`, which reports why the binding record cannot be "
+            "read; repair it, then run `stayfixed doctor` again"
+        )
     return Wording(
         record=ATTACH_LEDGER,
         unreadable=(
@@ -470,6 +513,8 @@ def _wording() -> Wording:
         diagnose="run `stayfixed attach --check`, which reports why the overlay cannot be read",
         setup="run `stayfixed setup --overlay <path>` to record the overlay that grants them",
         vouch="`stayfixed attach --store <overlay>/projects/<project>/memory`",
+        ungranted=ungranted,
+        regrant=regrant,
     )
 
 
@@ -491,12 +536,14 @@ def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
     from stayfixed.doctor.api import Claims
 
     found = _attach_ledger_entries(ledger.state(context.root))
-    granted = _granted_commands(context, answers) if found is None or found else set()
+    granted, narrowed = (
+        _granted_commands(context, answers) if found is None or found else (set(), None)
+    )
     return Claims(
         found,
         None if granted is None else frozenset(granted),
         sourced=answers.overlay(context) is not None,
-        wording=_wording(),
+        wording=_wording(narrowed),
     )
 
 

@@ -104,6 +104,11 @@ class Wording:
     that could not be asked, and `diagnose` the remedy for that; `setup` is the remedy that records
     a source, and `vouch` the command, quoted as the row prints it, that writes the area's entries
     and its record anew from its source, taking out every marked entry the source no longer grants.
+    `ungranted` and `regrant` are for a source that answered and does not grant *this checkout*
+    what it grants the one it is for, where "{source} does not grant them" would be false and
+    `vouch` may be refused: the clause that says why, in place of that one, and the remedy for the
+    entries it leaves red, in place of the ones built from `vouch`. `None` keeps those, because
+    then the source refusing is what happened.
 
     **These are stayfixed's own fixed strings, never repository bytes.** The row prints them
     unquoted into `Check.detail`, `--json` and the remedy a skill relays verbatim, so an area must
@@ -121,6 +126,8 @@ class Wording:
     diagnose: str
     setup: str
     vouch: str
+    ungranted: str | None = None
+    regrant: str | None = None
 
 
 @dataclass(frozen=True)

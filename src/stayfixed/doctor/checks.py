@@ -583,6 +583,12 @@ def _rebuild(words: Wording) -> str:
     return f"remove {words.record} and run {words.vouch} to write a new one"
 
 
+def _refused(words: Wording) -> str:
+    """The clause saying an area's source does not vouch for entries it was asked about: that it
+    does not grant them, or the area's own `ungranted` where that would be false."""
+    return words.ungranted or f"{words.source} does not grant them"
+
+
 def _by_area(
     answers: Sequence[Claims], told: Sequence[tuple[Claims, str]]
 ) -> list[tuple[Claims, list[str]]]:
@@ -832,9 +838,9 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
         words = answer.wording
         parts.append(
             f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{words.record}, and {words.source} does not grant them: {listed(wheres)}"
+            f"{words.record}, and {_refused(words)}: {listed(wheres)}"
         )
-        remedy = (
+        remedy = words.regrant or (
             f"run {words.vouch}, which takes out every marked entry {words.source} no longer "
             f"grants; open any that survive it"
         )
@@ -854,13 +860,13 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
         status = RED
         words = answer.wording
         parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.source} does not "
-            f"grant them, so whatever {words.record} records, nothing on this machine vouches "
-            f"for them: {listed(wheres)}"
+            f"{len(wheres)} entr(ies) claim the stayfixed marker and {_refused(words)}, so "
+            f"whatever {words.record} records, nothing on this machine vouches for them: "
+            f"{listed(wheres)}"
         )
         remedy = (
             "open each entry named above and remove the ones you did not install; then "
-            f"{_rebuild(words)}"
+            f"{words.regrant or _rebuild(words)}"
         )
     if unchecked:
         status = RED

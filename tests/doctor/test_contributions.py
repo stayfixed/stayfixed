@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
@@ -473,6 +474,60 @@ def test_an_id_an_area_records_and_nothing_grants_is_never_absolved(
     assert row.status == RED
     assert "alpha's source does not grant" in row.detail
     assert f"{SETTINGS} entry 1 of 1" in row.detail
+
+
+# Alpha's words for a checkout its source does not grant what it grants the one it is for, where
+# "alpha's source does not grant them" would be false and `alpha vouch` refused.
+NARROWED_WORDING = replace(
+    ALPHA_WORDING,
+    ungranted="alpha's source grants this checkout less than the one it is for",
+    regrant="settle the checkout with `alpha rebind`",
+)
+# The row for one entry alpha's source left red, by whether alpha's record could be read: the
+# sentence and remedy are alpha's own clause and remedy, in each of the two arms that tell it.
+NARROWED_ROWS = {
+    "readable": Check(
+        "hook-entries",
+        RED,
+        f"1 stayfixed entr(ies), 0 foreign; 1 entr(ies) claim the stayfixed marker and are "
+        f"recorded in .alpha/record.json, and alpha's source grants this checkout less than the "
+        f"one it is for: {SETTINGS} entry 1 of 1",
+        "settle the checkout with `alpha rebind`",
+    ),
+    "unreadable": Check(
+        "hook-entries",
+        RED,
+        f"1 stayfixed entr(ies), 0 foreign; .alpha/record.json is there and cannot be read as "
+        f"alpha's record, so which of those entries alpha wrote could not be established; 1 "
+        f"entr(ies) claim the stayfixed marker and alpha's source grants this checkout less than "
+        f"the one it is for, so whatever .alpha/record.json records, nothing on this machine "
+        f"vouches for them: {SETTINGS} entry 1 of 1",
+        "open each entry named above and remove the ones you did not install; then settle the "
+        "checkout with `alpha rebind`",
+    ),
+}
+
+
+@pytest.mark.parametrize("record", sorted(NARROWED_ROWS))
+def test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record: str
+) -> None:
+    # An area whose source answered and does not grant *this checkout* what it grants the one it
+    # is for — `attach`'s overlay, for a checkout its record binds to another remote — knows that
+    # "its source does not grant them" is false and its `vouch` may be refused. Its `ungranted`
+    # and `regrant` stand in for both, the verdict unchanged, beside a readable record and an
+    # unreadable one. Mutations (oracle): `mutations/`'s "hook-entries says a source refused what
+    # its area says it grants elsewhere" -> the old clause; "hook-entries offers the vouch an area
+    # says may be refused" and "hook-entries offers the rebuild an area says may be refused,
+    # beside an unreadable record" -> the old remedies.
+    _hooked(_initialised(tmp_path), ALPHA)
+    recorded = {"alpha-1": "PreToolUse"} if record == "readable" else None
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming(recorded, frozenset(), wording=NARROWED_WORDING)),
+    )
+    assert row == NARROWED_ROWS[record]
 
 
 # How the row tells an owner to get an unreadable record back, in each fake area's words.

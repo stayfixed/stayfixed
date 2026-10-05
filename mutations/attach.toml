@@ -1473,13 +1473,9 @@ reddens = [
 name = "an unreadable overlay falls back to trusting the ledger"
 file = "src/stayfixed/attach/doctor.py"
 before = '''    except (Failure, Refusal, OSError):
-        return None
-    return {
-        entry["command"]'''
+        return None, None'''
 after = '''    except (Failure, Refusal, OSError):
-        return set()
-    return {
-        entry["command"]'''
+        return set(), None'''
 reddens = [
   "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-overlay-unreadable]",
@@ -1491,11 +1487,11 @@ reddens = [
 name = "a git that cannot run costs the hook-entries row"
 file = "src/stayfixed/attach/doctor.py"
 before = '''    except (Failure, Refusal, OSError):
-        return None
-    return {'''
+        return None, None
+    if binding'''
 after = '''    except (Refusal, OSError):
-        return None
-    return {'''
+        return None, None
+    if binding'''
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-git-cannot-run]",
 ]
@@ -1506,8 +1502,8 @@ reddens = [
 [[mutation]]
 name = "a machine with no overlay reads as one whose overlay could not be asked"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if overlay is None:\n        return set()"
-after = "    if overlay is None:\n        return None"
+before = "    if overlay is None:\n        return set(), None"
+after = "    if overlay is None:\n        return None, None"
 reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
@@ -1572,8 +1568,35 @@ reddens = [
 [[mutation]]
 name = "an unreadable binding record makes the overlay one that could not be asked"
 file = "src/stayfixed/attach/doctor.py"
-before = "        except UnreadableRecord:\n            binding = None"
-after = "        except UnreadableRecord:\n            return None"
+before = "        except UnreadableRecord:\n            binding, narrowed = None, UNREADABLE_RECORD"
+after = "        except UnreadableRecord:\n            return None, None"
+reddens = [
+  "tests/attach/test_doctor.py::test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_red",
+  "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look",
+]
+
+# For a checkout the overlay's record binds to another remote, `projects/<name>/` may grant an entry
+# `common/` does not, to the checkout the record does bind: "the overlay does not grant them" is
+# false there, and the rebuild it offers is one `attach` refuses on a mismatch. An owner who moved
+# `origin` from ssh to https was told both.
+[[mutation]]
+name = "attach tells a checkout its record does not bind that the overlay refused its entries"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if binding is not None and binding.state == MISMATCH:\n        narrowed = MISMATCH\n"
+after = ""
+reddens = [
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+  "tests/attach/test_doctor.py::test_a_repository_named_after_another_project_borrows_none_of_its_grants[mismatch]",
+  "tests/attach/test_doctor.py::test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red[mismatch]",
+]
+
+# The same for a binding record that cannot be read: the record that would say what this checkout
+# is granted is the one missing, and the rebuild `attach` would refuse on it.
+[[mutation]]
+name = "attach tells a checkout whose binding record cannot be read that the overlay refused its entries"
+file = "src/stayfixed/attach/doctor.py"
+before = "            binding, narrowed = None, UNREADABLE_RECORD"
+after = "            binding = None"
 reddens = [
   "tests/attach/test_doctor.py::test_another_projects_binding_record_that_will_not_parse_cannot_soften_the_red",
   "tests/attach/test_doctor.py::test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look",
@@ -1650,8 +1673,8 @@ reddens = [
 [[mutation]]
 name = "attach asks the overlay about a ledger that records nothing"
 file = "src/stayfixed/attach/doctor.py"
-before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
-after = "    granted = _granted_commands(context, answers)"
+before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
+after = "        _granted_commands(context, answers)"
 reddens = [
   "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
 ]
@@ -1663,8 +1686,8 @@ reddens = [
 [[mutation]]
 name = "attach does not ask the overlay about a ledger it cannot read"
 file = "src/stayfixed/attach/doctor.py"
-before = "    granted = _granted_commands(context, answers) if found is None or found else set()"
-after = "    granted = _granted_commands(context, answers) if found else set()"
+before = "        _granted_commands(context, answers) if found is None or found else (set(), None)"
+after = "        _granted_commands(context, answers) if found else (set(), None)"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",

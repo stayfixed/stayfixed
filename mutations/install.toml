@@ -697,6 +697,41 @@ reddens = [
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
 ]
 
+# An area whose source answered and grants this checkout less than the one it is for says why, in
+# its own clause: "its source does not grant them" is false there. `attach`'s overlay, for a
+# checkout its record binds to another remote, grants the entry to the checkout it does bind.
+[[mutation]]
+name = "hook-entries says a source refused what its area says it grants elsewhere"
+file = "src/stayfixed/doctor/checks.py"
+before = '    return words.ungranted or f"{words.source} does not grant them"'
+after = '    return f"{words.source} does not grant them"'
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+]
+
+# And in its own remedy: the area's `vouch` may be one it refuses there, as `attach --store` is on a
+# mismatch without `--trust-remote`.
+[[mutation]]
+name = "hook-entries offers the vouch an area says may be refused"
+file = "src/stayfixed/doctor/checks.py"
+before = "        remedy = words.regrant or ("
+after = "        remedy = ("
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+]
+
+[[mutation]]
+name = "hook-entries offers the rebuild an area says may be refused, beside an unreadable record"
+file = "src/stayfixed/doctor/checks.py"
+before = '            f"{words.regrant or _rebuild(words)}"'
+after = '            f"{_rebuild(words)}"'
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+]
+
 [[mutation]]
 name = "a blind settings file softens an entry nothing on this machine vouches for"
 file = "src/stayfixed/doctor/checks.py"
