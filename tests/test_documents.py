@@ -584,7 +584,9 @@ def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> 
     # guard judges only backgrounded commands, so the same command run in the foreground passes;
     # nothing turns a guard off; and a false block is a defect to report. Each clause is one
     # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
-    # too. Mutation (declared): the foreground sentence deleted -> this reddens.
+    # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
+    # "only" dropped, the guards given a switch, and the false block no longer called a defect ->
+    # each reddens this.
     match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
     assert match, "README.md has no ## What each agent enforces section"
     section = " ".join(match.group(1).split())

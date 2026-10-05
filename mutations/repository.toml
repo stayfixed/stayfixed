@@ -1228,6 +1228,38 @@ reddens = [
   "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
 ]
 
+# The other three clauses of the same section, each a promise a user acts on. The scope: a guard
+# described as judging every command would send an agent looking for a way past one it never meets.
+[[mutation]]
+name = "the README stops saying the blocking guard judges only backgrounded commands"
+file = "README.md"
+before = "it judges only a command the agent runs in the"
+after = "it judges a command the agent runs in the"
+reddens = [
+  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+]
+
+# The one a user relies on most: no configuration key or flag turns a guard off, so a block is
+# either right or a bug. A README that offered a switch would invite the workaround.
+[[mutation]]
+name = "the README gives the guards a switch that turns them off"
+file = "README.md"
+before = "stayfixed has no switch that turns a guard off"
+after = "stayfixed has a setting that turns a guard off"
+reddens = [
+  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+]
+
+# And where a false block goes: called a defect, it is reported rather than worked around.
+[[mutation]]
+name = "the README stops calling a false block a defect"
+file = "README.md"
+before = "so a false block is a defect: report it in"
+after = "so report a false block in"
+reddens = [
+  "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
+]
+
 # The harness guard for the sweep. `main` deletes every `stayfixed-oracle-*` directory under
 # `TEMPDIR`, so a test module that loads this script without redirecting it swept the
 # developer's own temporary directory — measured with a canary, which the suite removed — and
