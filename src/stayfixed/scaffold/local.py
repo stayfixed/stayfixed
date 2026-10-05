@@ -40,6 +40,7 @@ from pathlib import Path
 from stayfixed.config.schema import PATH_VALUE
 from stayfixed.errors import Refusal
 from stayfixed.fsops import open_within, remove_within, write_within
+from stayfixed.jsonobject import json_object
 
 LOCAL_ROOT = ".stayfixed/local"
 # `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry
@@ -90,10 +91,10 @@ def _entries(raw: bytes) -> Entries | None:
     if len(raw) > MAX_BYTES:
         return None
     try:
-        data = json.loads(raw.decode("utf-8"))
-    except (ValueError, RecursionError):
+        data = json_object(raw.decode("utf-8"), LOCAL_DIGESTS, error=ValueError)
+    except ValueError:  # bytes that are not UTF-8 too: `UnicodeDecodeError` is a `ValueError`
         return None
-    if not isinstance(data, dict) or data.get("format") != FORMAT:
+    if data.get("format") != FORMAT:
         return None
     artifacts = data.get("artifacts")
     if not isinstance(artifacts, dict):
