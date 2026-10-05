@@ -102,10 +102,10 @@ Codex.
 | methodology | instructions only | instructions only |
 
 One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
-background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins
-with `sleep`, is refused before it starts, and the refusal names the remedy. The same command run
-in the foreground passes. stayfixed has no switch that turns a guard off, in configuration or on
-the command line, so a false block is a defect: report it in
+background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
+`sleep`, is refused before it starts, and the refusal names the remedy. The same command run in the
+foreground passes. stayfixed has no switch that turns a guard off, in configuration or on the
+command line, so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured

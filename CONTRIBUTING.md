@@ -228,17 +228,16 @@ hint by discovery, and that test refuses an import of it without pardon. That di
 so adding a stack's advice is adding its profile's file, and no core module learns the stack's
 name.
 
-The agents are core knowledge too, held in one place. A harness — Claude Code, Codex — is a value
-in `harnesses.HARNESSES`, and the `hooks` area answers through it:
-`stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
-that value's `render`, and the event a handler reads does not say which value that was. That is
-all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
-positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
-the tier each enforcement surface holds at under it — and nothing that reads those needs an
-edit: `doctor` walks the settings files every value names, and the README's table of what each
-agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a
-new harness still touches outside the registry is listed in the module docstring of
-`src/stayfixed/harnesses.py`.
+The agents are core knowledge too, held in one place. A harness — Claude Code, Codex — is a value in
+`harnesses.HARNESSES`, and the `hooks` area answers through it: `stayfixed hook` asks
+`harnesses.detect` which value it runs under and shapes its stdout with that value's `render`, and
+the event a handler reads does not say which value that was. That is all detection decides, and
+`detect`'s docstring says why. Adding a harness is adding a value — a positive `detects`, its
+project-root variable, its `render`, its settings files and its `reach`, the tier each enforcement
+surface holds at under it — and nothing that reads those needs an edit: `doctor` walks the settings
+files every value names, and the README's table of what each agent enforces is held equal to every
+value's `reach` by a test. It is not only a value: what a new harness still touches outside the
+registry is listed in the module docstring of `src/stayfixed/harnesses.py`.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their
