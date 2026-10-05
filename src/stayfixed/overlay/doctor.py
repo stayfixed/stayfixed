@@ -46,13 +46,6 @@ OVERLAY_GONE_REMEDY = (
     "--preset recommended --overlay <path>` to record where it is now"
 )
 
-# The overlay's commit-time secret scan, and the hook `pre-commit install` writes. The hook's
-# *name* only: where it lives is `guards.hooks_dir`'s answer, because an overlay with
-# `core.hooksPath` set, or one that is a worktree or a submodule, keeps its hooks nowhere near
-# `.git/hooks` -- and this row would then warn permanently with a remedy that cannot clear it.
-PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-PRE_COMMIT_HOOK = "pre-commit"
-
 
 def _overlay_absent(overlay: Path | None) -> Row:
     """Why there is no overlay to measure, told apart into the two states that are not alike.
@@ -89,6 +82,7 @@ def _pre_commit(context: Context) -> Row:
     from stayfixed.doctor.api import OK, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.guards.api import hooks_dir
+    from stayfixed.overlay.layout import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 
     overlay = context.overlay_root
     if overlay is None or not overlay.is_dir():
@@ -178,7 +172,7 @@ def register() -> Contribution:
 
     return Contribution(
         checks=(
-            (PRE_COMMIT_HOOK, _pre_commit),
+            ("pre-commit", _pre_commit),
             ("overlay-requires", _overlay_requires),
         )
     )

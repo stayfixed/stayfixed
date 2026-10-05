@@ -104,6 +104,7 @@ from stayfixed.memory.api import (
     require_readable_record,
     resolve,
 )
+from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
@@ -121,14 +122,6 @@ from stayfixed.scaffold import (
 
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
-PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-# The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
-# overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is a
-# worktree or a submodule, where `.git` is a file, has its hooks somewhere else entirely, and a
-# hardcoded path finds the scan missing on every attach and shells out to `pre-commit install`
-# every time. `docs/cli.md`'s `setup --git-hooks` section states the rule this now follows:
-# `git rev-parse --git-path hooks`, never `core.hooksPath`.
-PRE_COMMIT_HOOK = "pre-commit"
 # `attach`'s fallback for the one link that leaves stayfixed's own channel: a settings-file value
 # is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
