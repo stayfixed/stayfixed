@@ -2210,7 +2210,7 @@ reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
   "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
-  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[nested]",
   "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
   "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
@@ -2229,7 +2229,7 @@ after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
-  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[long-number]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
   "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",

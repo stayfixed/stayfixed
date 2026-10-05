@@ -1474,7 +1474,7 @@ file = "src/stayfixed/attach/doctor.py"
 before = "        return None if state == UNREADABLE_LEDGER else {}"
 after = "        return {}"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[not-json]",
 ]
 
 # The overlay that `hook-entries` asks, beside the ledger, which commands it grants — in the arm
@@ -1489,7 +1489,6 @@ before = '''    except (Failure, Refusal, OSError):
 after = '''    except (Failure, Refusal, OSError):
         return set(), None'''
 reddens = [
-  "tests/attach/test_doctor.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-overlay-unreadable]",
 ]
 
@@ -1692,6 +1691,24 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
 ]
 
+# On a machine that records no overlay, `hook-entries` is the one red row, and only for the entries
+# nothing here vouches for: a second red row would fail the report on the machine's state rather
+# than on anything the repository holds. This entry holds the report-wide assertion; the row's own
+# skip is held by `mutations/`'s "a machine with no overlay recorded is blamed on the repository".
+[[mutation]]
+name = "the attached row reddens a ledger no overlay is recorded to check"
+file = "src/stayfixed/attach/doctor.py"
+before = """    if reason == NO_OVERLAY:
+        return Row(
+            SKIP,"""
+after = """    if reason == NO_OVERLAY:
+        return Row(
+            "red","""
+reddens = [
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+]
+
 # A ledger that will not parse is the repository's doing, and answering it as an overlay that
 # could not be asked makes the `attached` row a `skip` that blames `git`. `skip` never reaches the
 # exit code, so this is not only a wrong sentence: a clone's own committed, malformed ledger was
@@ -1730,7 +1747,7 @@ before = "    granted, narrowed = _granted_commands(context) if found is None or
 after = "    granted, narrowed = _granted_commands(context) if found else (set(), None)"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
-  "tests/attach/test_doctor.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[not-json]",
   "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
 ]
 
