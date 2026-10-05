@@ -50,9 +50,9 @@ from pathlib import Path
 
 # The mode a file stayfixed creates asks for. It is a request, not a decision: the temporary is
 # created with it and the kernel subtracts the process umask, exactly as `open()` does for any
-# other program. Forcing it with `fchmod` — which this module did — wrote a world-readable
-# `trust.json` into `~/.config` under `umask 077`, overriding a choice the machine owner had
-# made deliberately. A file that already exists keeps its own mode instead; see `_mode_of`.
+# other program. Forced with `fchmod`, it would write a world-readable `trust.json` into
+# `~/.config` under `umask 077`, overriding a choice the machine owner made deliberately. A file
+# that already exists keeps its own mode instead; see `_mode_of`.
 NEW_FILE_MODE = 0o644
 _DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _PARENT = ".."
@@ -180,15 +180,14 @@ def names_regular_file(path: Path) -> bool:
 def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
 
-    **Public, and the one place this rule lives.** `config.paths.contained()` used to carry a
-    second copy of it, written against `Path(relative).parts` — and the two agreed only about
-    the values nobody had to think about. Those parts are normalised, so `docs//x.md`,
-    `docs/x/` and `./docs` reached `contained()` as `('docs', 'x.md')`, `('docs', 'x')` and
-    `('docs',)`: a configured path that `plan()` reported no refusal for and that the walk below
-    then refused at the write, part-way through a pass, with earlier artifacts already on disk.
-    Two spellings of one rule is the defect; there is one spelling now, and `contained()` calls
-    it. That is also why this is not private: `contained()` is in a subpackage and this is a
-    leaf module, so the call goes this way and the leaf stays a leaf.
+    **Public, and the one place this rule lives.** `config.paths.contained()` calls it rather
+    than carrying a copy, because a copy written against `Path(relative).parts` agrees with it
+    only about the values nobody has to think about. Those parts are normalised, so `docs//x.md`,
+    `docs/x/` and `./docs` would reach such a copy as `('docs', 'x.md')`, `('docs', 'x')` and
+    `('docs',)`: a configured path that `plan()` reports no refusal for and that the walk below
+    then refuses at the write, part-way through a pass, with earlier artifacts already on disk.
+    That is also why this is not private: `contained()` is in a subpackage and this is a leaf
+    module, so the call goes this way and the leaf stays a leaf.
 
     The split is on the **raw string**, not on `PurePosixPath(relative).parts`. Those parts are
     already normalised — `.` and empty segments are dropped, a trailing slash disappears — so a

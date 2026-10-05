@@ -47,8 +47,8 @@ PRE_COMMIT_HOOK = "pre-commit"
 # has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
 # because a hash match is not consent for a permission or a hook entry. Named once, unpacked
 # into OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is
-# a rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
-# spelling of the two names, under a comment claiming they were not spelled twice.
+# a rename everywhere, where a list derived by filtering OVERLAY_FILES against a second spelling
+# of the two names would let the two drift apart.
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 
 # A directory's own documentation rather than a file in its own right: `overlay create`

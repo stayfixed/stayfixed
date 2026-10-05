@@ -1058,17 +1058,17 @@ def _ci_ref(context: Context) -> Row:
         return row
     workflow = context.root / WORKFLOW
     # **A regular file, and a bounded read of it — the two guards its siblings in this module
-    # already have.** `_hook_entries` asks `is_file()` of every settings file before it opens one
-    # and `_diagnostics` reads its log to a cap; this path had neither, and it is
-    # repository-authored in the same sense: a clone chooses what sits at
-    # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there makes `read_text`
-    # block with nothing to read, so without this guard `doctor` — one line, documented as a
-    # diagnostic — would never return at all.
+    # already have.** `_hook_entries` asks whether every settings file is a regular file before
+    # it opens one and `_diagnostics` reads its log to a cap, and this path is repository-authored
+    # in the same sense: a clone chooses what sits at `.github/workflows/stayfixed.yml`. A
+    # committed symlink to a FIFO there makes an unguarded `read_text` block with nothing to read,
+    # so `doctor` — one line, documented as a diagnostic — never returns at all; measured on a
+    # real FIFO, the row did not come back.
     #
     # None of the file's bytes is printed on any arm, so this is containment hygiene rather than a
-    # leak, which is why it is a guard here and not a refusal. A directory reaches this arm and
-    # not the `OSError` one below, which would name `IsADirectoryError`: this arm's own sentence
-    # says what a reader needs and carries no platform's spelling of the fault.
+    # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
+    # rather than the `OSError` one below, which would name `IsADirectoryError`; the arm's own
+    # sentence says what a reader needs and carries no platform's spelling of the fault.
     if not workflow.is_file():
         if workflow.exists() or workflow.is_symlink():
             return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)

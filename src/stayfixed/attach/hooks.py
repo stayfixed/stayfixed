@@ -198,9 +198,8 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
         elif binding.state == MISMATCH:
             lines.append(REMOTE_MISMATCH)
         elif binding.state == NO_ORIGIN_STATE:
-            # The sentence every other surface says for this state: it used to be read as a
-            # mismatch here too, and the line sent the reader to `--check` about a different
-            # remote that was not there.
+            # The sentence every other surface says for this state, and never a mismatch's: that
+            # line would send the reader to `--check` about a different remote that is not there.
             lines.append(NO_ORIGIN)
         try:
             real = unlinked_groups(root, config)

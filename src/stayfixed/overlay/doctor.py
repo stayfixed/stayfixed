@@ -98,8 +98,8 @@ def _pre_commit(context: Context) -> Row:
         hooks = hooks_dir(overlay)
     except Refusal:
         # `git` is invoked, never imported, and a `git` that cannot answer is a reported finding
-        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is the thing
-        # this row was getting wrong.
+        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is wrong for an
+        # overlay that keeps its hooks elsewhere (`overlay.layout.PRE_COMMIT_HOOK` says when).
         return Row(
             WARN,
             "`git` could not name the overlay's hooks directory, so whether its commit-time "
