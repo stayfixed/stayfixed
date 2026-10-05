@@ -319,14 +319,6 @@ def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path
     assert "Error" not in row.detail + row.remedy
 
 
-def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
-    # An initialised project with no overlay, no machine file, no gh, no Codex and no network.
-    # A check that raises takes the whole report with it, and a report that cannot run is worth
-    # less than a report with one skip line in it.
-    checks = _checks(tmp_path, _initialised(tmp_path))
-    assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
-
-
 # The report's sixteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
@@ -355,9 +347,13 @@ def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # sixteen are the same sixteen, once each. A literal tuple and not the registry read back, so
     # a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
-    # missing.
+    # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
+    # no machine file, no gh, no Codex and no network -- so the same run holds that every check
+    # survives that, each with a status of the closed four: a check that raised would take the
+    # report with it, and one skip line is worth more than no report.
     rows = _checks(tmp_path, _initialised(tmp_path))
     assert tuple(row.name for row in rows) == REPORT
+    assert {row.status for row in rows} <= {OK, WARN, RED, SKIP}
 
 
 def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Path) -> None:
