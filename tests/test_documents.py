@@ -583,7 +583,7 @@ def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> 
     section = " ".join(match.group(1).split())
     assert "judges only a command the agent runs in the background" in section
     assert "The same command run in the foreground passes." in section
-    assert "There is no switch that turns a guard off" in section
+    assert "stayfixed has no switch that turns a guard off" in section
     assert "a false block is a defect" in section
 
 

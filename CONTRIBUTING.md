@@ -117,7 +117,10 @@ overlay, binding a repository to it, and the note store — named in `DELIVERY_A
 `src/stayfixed/areas.py`. `overlay` renders and upgrades the private overlay, `attach` binds a
 repository to one and unbinds it again, and `memory` keeps the notes and their trust gate. Every
 other module under `src/stayfixed/`, `cli.py` and the subpackages that are not areas included, is
-the **core**: the gates and the records they check. `project` holds the shipped project templates
+the **core**: the gates and the records they check. `ledger` keeps the bug ledger, `docs` the
+documentation and plan lints, `guards` the session guard, the commit-message rules and the
+test-run checks, `hooks` the dispatcher every hook event goes through, and `setup` a machine's
+configuration. `project` holds the shipped project templates
 and `init`, the command that writes a repository's footprint from them; `assess` runs the gates
 and the inventory over a repository as it is, judges a change's `stayfixed.toml` against what its
 base branch enforces (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project

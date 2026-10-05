@@ -18,14 +18,15 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > areas carry what belongs to a person rather than to a repository: `memory`, the note store and
 > its trust gate; `overlay`, the private overlay — `overlay create`, `overlay init`,
 > `overlay upgrade`, `overlay publish-template`; and `attach`, whose `attach`/`detach` bind a
-> repository to the overlay and unbind it again. The core imports none of them, and a test holds
-> that ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says how). The core is language-neutral, and a
-> stack is a **profile**: one stack's test runner, build artifacts and package manager belong to
-> its profile — data, and optionally the advice to give after that stack's test runner fails — so
-> a repository in several languages gets each stack's advice with no configuration. The first
-> profile, `python`, ships: every agent is handed its rules, `stayfixed assess` runs its checks,
-> and the stale-bytecode line of the note after a failing pytest run is its own. The hooks file
-> that wires all of it into a session
+> repository to the overlay and unbind it again. The core imports none of them except at one
+> pinned step, `stayfixed setup --overlay`, which records the overlay on a machine, and a test
+> holds that ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says how). The core is language-neutral,
+> and a stack is a **profile**: one stack's test runner, build artifacts and package manager
+> belong to its profile — data, and optionally the advice to give after that stack's test runner
+> fails — so a repository in several languages gets each stack's advice with no configuration.
+> The first profile, `python`, ships: every agent is handed its rules, `stayfixed assess` runs its
+> checks, and the stale-bytecode line of the note after a failing pytest run is its own. The hooks
+> file that wires all of it into a session
 > ships too, so on Claude Code installing the plugin is enough to make the guards fire and the
 > memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
 > skills ship with them, and so does one command meant for a machine rather than for you —
@@ -105,8 +106,8 @@ Codex.
 One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
 background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins
 with `sleep`, is refused before it starts, and the refusal names the remedy. The same command run
-in the foreground passes. There is no switch that turns a guard off, in configuration or on the
-command line, so a false block is a defect: report it in
+in the foreground passes. stayfixed has no switch that turns a guard off, in configuration or on
+the command line, so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured
@@ -436,8 +437,9 @@ stayfixed hook SessionStart                            # dispatch one harness ho
 
 Every command that reads a project takes `--root` (default: the current directory) and
 `--machine` (read a machine configuration file other than the default) — all of them but
-`guard bg-cleanup`, `commit strip` and `hook`, which read only what they are handed, and the two
-below; `memory` commands take `--store` as well.
+`guard bg-cleanup` and `commit strip`, which read only what they are handed, `hook`, which finds
+the project from the harness's own event, and the two below; `memory` commands and `attach` take
+`--store` as well.
 `stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
 or the overlay itself, not a project root, and it reads no `stayfixed.toml`; `stayfixed setup`
 writes the `--machine` file rather than reading it. `--json` is accepted
