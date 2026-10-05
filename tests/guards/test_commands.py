@@ -622,6 +622,25 @@ def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
 
 
 @needs_git
+def test_test_hygiene_reads_a_count_named_undetermined_as_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "Could not tell" is a report of `None`, not a key in the counts: a key is a count name a
+    # hint chose, and `undetermined` matches that grammar like any other, so carried in the counts
+    # it turned a hint's real count into a refusal of the whole tree. Here it is a count, listed
+    # and reported as the finding the note makes of it. Oracle: `mutations/`'s "test hygiene reads
+    # a walk cut short as a judged tree" holds the refusal on a report of `None`.
+    redrun.ship(monkeypatch, {"alpha": redrun.NamedUndeterminedHint("x", "alpha says")})
+    detected_everywhere(monkeypatch)
+    root = committed_project(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["profiles"] == {"alpha": {"found": 1, "undetermined": 1}}
+    assert out["summary"] == "alpha: alpha says (1)"
+
+
+@needs_git
 def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -9,6 +9,7 @@ import py_compile
 import struct
 import sys
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,6 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.guards.hygiene import simple_commands
 from stayfixed.guards.roots import contained_roots
-from stayfixed.profiles.hints import UNDETERMINED
 from stayfixed.profiles.python import hygiene as python_hygiene
 from stayfixed.profiles.python.hygiene import HINT
 from tests.gitfixture import git, needs_git
@@ -56,8 +56,15 @@ def config(root: Path) -> Config:
     return load(root, machine=root.parent / "absent.toml")
 
 
+def counted(root: Path) -> Mapping[str, int]:
+    """The hint's counts for a walk that finished; a test that wants `None` asks `report`."""
+    report = HINT.report(root, config(root))
+    assert report is not None
+    return report
+
+
 def stale(root: Path) -> int:
-    return HINT.report(root, config(root))["stale"]
+    return counted(root)["stale"]
 
 
 def runs_pytest(command: str) -> bool:
@@ -115,7 +122,7 @@ def test_a_walk_cut_short_by_its_cap_could_not_tell(
     assert HINT.report(root, config(root)) == {"stale": 1, "roots": 1}
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 7)
     counts = HINT.report(root, config(root))
-    assert counts == {UNDETERMINED: 1, "roots": 1}
+    assert counts is None
     # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
     assert HINT.note(counts) == UNTOLD.format(entries=7, files=READ_FILES)
 
@@ -140,7 +147,7 @@ def test_bytecode_past_the_read_cap_could_not_tell(
     assert HINT.report(root, config(root)) == {"stale": 3, "roots": 1}
     monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 2)
     counts = HINT.report(root, config(root))
-    assert counts == {UNDETERMINED: 1, "roots": 1}
+    assert counts is None
     assert HINT.note(counts) == UNTOLD.format(entries=ENTRIES, files=2)
 
 
@@ -162,7 +169,7 @@ def test_the_entry_cap_is_one_total_across_the_code_roots(
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 6)
     assert HINT.report(root, config(root)) == {"stale": 1, "roots": 2}
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 4)
-    assert HINT.report(root, config(root)) == {UNDETERMINED: 1, "roots": 2}
+    assert HINT.report(root, config(root)) is None
 
 
 def test_bytecode_under_a_hidden_directory_is_judged(tmp_path: Path) -> None:
@@ -469,7 +476,7 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert contained_roots(root, config(root)) == [root / "src"]
-    assert HINT.report(root, config(root))["roots"] == 1
+    assert counted(root)["roots"] == 1
 
 
 @pytest.mark.parametrize(

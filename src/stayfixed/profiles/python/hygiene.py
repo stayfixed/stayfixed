@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed.guards.api import contained_roots
-from stayfixed.profiles.hints import UNDETERMINED
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -241,15 +240,15 @@ class PythonHint:
             current == "-m" and following == _PYTEST for current, following in pairwise(argv)
         )
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
         roots = contained_roots(root, config)
         stale = _stale_bytecode(roots)
         if stale is None:
-            return {UNDETERMINED: 1, ROOTS_KEY: len(roots)}
+            return None
         return {STALE_KEY: stale, ROOTS_KEY: len(roots)}
 
-    def note(self, counts: Mapping[str, int]) -> str | None:
-        if counts.get(UNDETERMINED):
+    def note(self, counts: Mapping[str, int] | None) -> str | None:
+        if counts is None:
             return UNTOLD.format(entries=BYTECODE_WALK_ENTRIES, files=BYTECODE_READ_FILES)
         stale = counts.get(STALE_KEY, 0)
         if not stale:
