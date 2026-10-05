@@ -1062,10 +1062,28 @@ reddens = [
 [[mutation]]
 name = "the manifest reader lets undecodable bytes out as a crash again"
 file = "src/stayfixed/scaffold/manifest.py"
-before = "        except (OSError, ValueError, RecursionError) as exc:"
-after = "        except (OSError, json.JSONDecodeError) as exc:"
+before = "        except (OSError, UnicodeDecodeError) as exc:"
+after = "        except OSError as exc:"
 reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The ledger is tracked, so a clone can commit one nested past the parser or holding an integer
+# longer than Python converts. Read through `jsonobject`, each is a refusal in the reader's own
+# words; quoted, the refusal told the owner to raise an interpreter limit.
+[[mutation]]
+name = "the manifest reader quotes the parser's exception for a document past its reach"
+file = "src/stayfixed/scaffold/manifest.py"
+before = "        raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)"
+after = """        try:
+            raw = json.loads(text)
+        except (ValueError, RecursionError) as exc:
+            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc"""
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-uninstall]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-uninstall]",
 ]
 
 # The one list four places report as a count, and the one fault none of those areas can fix for
