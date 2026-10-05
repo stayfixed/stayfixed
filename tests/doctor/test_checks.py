@@ -1243,8 +1243,8 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
 
 def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: Path) -> None:
     # A file the walk is blind to warns only where nothing else has made the row red, and a file it
-    # cannot check has. Mutation (oracle): `mutations/`'s "a blind settings file softens a settings
-    # file nothing can check" -> a warning.
+    # cannot check has. Mutation (oracle): `mutations/`'s "a blind settings file softens a red row"
+    # -> a warning.
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.json").write_text(

@@ -758,9 +758,9 @@ def test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red(
 ) -> None:
     # A settings file the walk is blind to downgrades a row with nothing else to say to a warning,
     # and must not downgrade one that has a red entry to report, whether or not the record that
-    # might hold it could be read. Mutations (oracle): `mutations/`'s "a blind settings file softens
-    # an entry nothing on this machine vouches for" -> `readable` is a warning; "a blind settings
-    # file softens an entry beside an unreadable record that nothing grants" -> `unreadable` is.
+    # might hold it could be read; nor may its remedy displace the red entry's. Mutations (oracle):
+    # `mutations/`'s "a blind settings file softens a red row" -> both cases are a warning; "a
+    # blind settings file's remedy displaces a red entry's" -> both are told to check the file.
     root = _initialised(tmp_path)
     _hooked(root, ALPHA)
     (root / ".codex").mkdir()
@@ -873,15 +873,102 @@ def test_two_unaskable_sources_each_get_their_own_part_and_remedy(
     )
 
 
+@pytest.mark.parametrize("unreadable", ["alpha", "omega"])
+def test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unreadable: str
+) -> None:
+    # One area's record cannot be read and the other's source cannot be asked: two things the row
+    # withholds judgement for, each its own area's to repair, so each gets its part and its remedy,
+    # whichever area comes first. The row used to tell the unaskable source only where no record
+    # was unreadable, so the second fact and its remedy were dropped: nothing said why the other
+    # area's entries were never compared against a grant.
+    _hooked(_initialised(tmp_path), ALPHA, OMEGA)
+    unasked = "omega" if unreadable == "alpha" else "alpha"
+    own = {"alpha": ({"alpha-1": "PreToolUse"}, ALPHA), "omega": ({"omega-1": "PreToolUse"}, OMEGA)}
+
+    def claims(area: str) -> Contribution:
+        recorded, command = own[area]
+        if area == unreadable:
+            return _claiming(None, frozenset({command}), wording=WORDING[area])
+        return _claiming(recorded, None, wording=WORDING[area])
+
+    row = _hook_entries(
+        tmp_path, monkeypatch, _area("alpha", claims("alpha")), _area("omega", claims("omega"))
+    )
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"2 stayfixed entr(ies), 0 foreign; {UNREADABLE[unreadable]}; {unasked}'s source could "
+        f"not be asked which entries it grants, so nothing here vouches for the ones claiming the "
+        f"marker",
+        f"{REBUILD[unreadable]}; run `{unasked} diagnose`",
+    )
+    _speaks_no_attach(row)
+
+
+@pytest.mark.parametrize("sourced", [True, False], ids=["sourced", "unsourced"])
+def test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sourced: bool
+) -> None:
+    # Each area's red entries are told in its own part, and the way out of them is that area's
+    # command, so the remedy carries every area's, joined as the warnings' are. The row used to
+    # keep only the last area's remedy for a red part, so the first area's entries were named with
+    # no way out of them: `alpha vouch` never reached the reader of alpha's entry.
+    _hooked(_initialised(tmp_path), ALPHA, OMEGA)
+    row = _hook_entries(
+        tmp_path,
+        monkeypatch,
+        _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset(), sourced=sourced)),
+        _area(
+            "omega",
+            _claiming(
+                {"omega-1": "PreToolUse"}, frozenset(), sourced=sourced, wording=OMEGA_WORDING
+            ),
+        ),
+    )
+    if sourced:
+        parts = [
+            f"1 entr(ies) claim the stayfixed marker and are recorded in .{area}/record.json, and "
+            f"{area}'s source does not grant them: {SETTINGS} entry {n} of 2"
+            for n, area in enumerate(("alpha", "omega"), start=1)
+        ]
+        remedies = [
+            f"run `{area} vouch`, which takes out every marked entry {area}'s source no longer "
+            f"grants; open any that survive it"
+            for area in ("alpha", "omega")
+        ]
+    else:
+        parts = [
+            f"1 entr(ies) claim the stayfixed marker and are recorded in .{area}/record.json, and "
+            f"this machine records no {area} source, so nothing on this machine vouches for them: "
+            f"{SETTINGS} entry {n} of 2"
+            for n, area in enumerate(("alpha", "omega"), start=1)
+        ]
+        remedies = [
+            "open each entry named above and remove the ones you did not install; if you did "
+            f"install them, run `{area} setup` to record {area}'s source, then `{area} vouch`"
+            for area in ("alpha", "omega")
+        ]
+    assert row == Check(
+        "hook-entries",
+        RED,
+        "; ".join(["2 stayfixed entr(ies), 0 foreign", *parts]),
+        "; ".join(remedies),
+    )
+    _speaks_no_attach(row)
+
+
 @pytest.mark.parametrize("omega", ["sourced", "unsourced"])
 def test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, omega: str
 ) -> None:
     # An entry a record holds and nothing vouches for is told in the holding area's words: its
     # record, its source, and the command that rewrites its entries. `STRAY` is alpha's and
-    # `OMEGA` is omega's, so each gets a part of its own, categories in the row's order and areas
-    # in area order, and the remedy is the last part's. Told in one area's words, the other's
-    # entry sent a reader to a record that does not hold it and a command that does not touch it.
+    # `OMEGA` is omega's, so each gets a part of its own, kinds in the row's order and areas in
+    # area order, and the remedy is every part's of the row's highest step: both areas' where
+    # both refused, alpha's alone where omega's entry is of a lower step. Told in one area's words,
+    # the other's entry sent a reader to a record that does not hold it and a command that does not
+    # touch it.
     # The first area holds neither, so "the first area" and "the area that holds it" differ for
     # both entries. Mutations (oracle): `mutations/`'s "hook-entries tells a refused grant in the
     # first area's words" -> both cases tell an entry in nobody's words; "hook-entries tells an
@@ -916,8 +1003,8 @@ def test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it(
         parts, remedy = (
             [alpha_part, omega_part],
             (
-                "run `omega vouch`, which takes out every marked entry omega's source no longer "
-                "grants; open any that survive it"
+                f"{alpha_remedy}; run `omega vouch`, which takes out every marked entry omega's "
+                "source no longer grants; open any that survive it"
             ),
         )
     else:

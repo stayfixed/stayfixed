@@ -3,10 +3,10 @@
 A core check, listed in `checks.CHECKS` and asked through the run's guard like the others, and
 the only one that reads what the areas contribute besides rows: each area's `Claims`, the ids it
 recorded and the commands it grants, told in the area's own `Wording`. The walk over the settings
-files, the rules for which area vouches for an entry, and the sentences each red list is told in
-are one unit that no other check reads, so they sit in a module of their own and `checks.py`
-stays the list of checks and the run. It imports nothing of the run's, so `checks.py` can import
-it without a cycle.
+files, the rules for which area vouches for an entry, and the sentences each kind of finding is
+told in are one unit that no other check reads, so they sit in a module of their own and
+`checks.py` stays the list of checks and the run. It imports nothing of the run's, so `checks.py`
+can import it without a cycle.
 
 What it may print is held to `checks.py`'s module docstring, and this row is where that ruling is
 most tempting to break: an entry is named by its position in its file, never by the marker id it
@@ -15,7 +15,8 @@ claims, and that docstring says why.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
@@ -45,8 +46,8 @@ class UnansweredClaims(RuntimeError):
     reads it as the red it is and not as the machine's warning."""
 
 
-def _claimed(context: Context) -> tuple[list[Claims], bool, bool]:
-    """Every area's `Claims`, and whether every record could be read and every source asked.
+def _claimed(context: Context) -> list[Claims]:
+    """Every area's `Claims`, in area order.
 
     An area's own record is the only thing that can say what it put into settings files, so the
     core asks each area that has one — `context.claims` — with this report's context and under
@@ -67,12 +68,9 @@ def _claimed(context: Context) -> tuple[list[Claims], bool, bool]:
     never printed, because an area may have built it from repository bytes.
     """
     try:
-        answers = [ask(context) for ask in context.claims]
+        return [ask(context) for ask in context.claims]
     except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
         raise UnansweredClaims(type(exc).__name__) from exc
-    readable = all(answer.recorded is not None for answer in answers)
-    askable = all(answer.granted is not None for answer in answers)
-    return answers, readable, askable
 
 
 def _rebuild(words: Wording) -> str:
@@ -88,13 +86,326 @@ def _refused(words: Wording) -> str:
     return words.ungranted or f"{words.source} does not grant them"
 
 
-def _by_area(
-    answers: Sequence[Claims], told: Sequence[tuple[Claims, str]]
-) -> list[tuple[Claims, list[str]]]:
-    """`told`'s entries gathered under the area whose words tell them, in area order, leaving out
-    an area with none."""
-    gathered = [(answer, [where for owner, where in told if owner is answer]) for answer in answers]
-    return [(answer, wheres) for answer, wheres in gathered if wheres]
+# What a red entry's remedy opens with wherever the reader is the one to tell an entry they
+# installed from one they did not.
+_OPEN = "open each entry named above and remove the ones you did not install"
+
+
+@dataclass(frozen=True)
+class _Kind:
+    """One kind of finding `hook-entries` reports, and how it is told.
+
+    `status` is what a finding of the kind makes the row: red where any finding is red, a warning
+    where any is a warning, and ok with none. `tell` is the part the row prints for one finding,
+    given the areas it speaks for and the entries or files it names; `remedy` is the way out of
+    that finding. `step` says which remedies the row carries: those of every finding of the
+    highest step among its findings.
+
+    Each takes the areas whose words the finding is told in — the one area whose record, source
+    or entries it is about, or every area, for a finding about none of them in particular — so a
+    sentence about an area's record or source is in that area's own words, never another's.
+    """
+
+    status: Status
+    step: int
+    tell: Callable[[Sequence[Claims], list[str]], str]
+    remedy: Callable[[Sequence[Claims]], str]
+
+
+def _one(areas: Sequence[Claims]) -> Claims:
+    """The one area a finding about one area's record, source or entries is told for."""
+    (area,) = areas
+    return area
+
+
+def _unreadable(areas: Sequence[Claims], wheres: list[str]) -> str:
+    words = _one(areas).wording
+    return f"{words.record} is there and {words.unreadable}"
+
+
+def _rebuilt(areas: Sequence[Claims]) -> str:
+    # Rebuilding needs the source the area writes from, so where that area's source cannot be
+    # asked the remedy stays with the file.
+    area = _one(areas)
+    return _rebuild(area.wording) if area.granted is not None else area.wording.inspect
+
+
+def _unaskable(areas: Sequence[Claims], wheres: list[str]) -> str:
+    unaskable = _one(areas).wording.unaskable
+    return f"{unaskable}, so nothing here vouches for the ones claiming the marker"
+
+
+def _unrecorded(areas: Sequence[Claims], wheres: list[str]) -> str:
+    # Every record was read and none holds these, so the sentence names each of them; with no
+    # area claiming anything there is no record to name, and nothing records them.
+    records = list(dict.fromkeys(area.wording.record for area in areas))
+    missing = f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere"
+    return f"{len(wheres)} entr(ies) claim the stayfixed marker and {missing}: {listed(wheres)}"
+
+
+def _unvouched(areas: Sequence[Claims], wheres: list[str]) -> str:
+    words = _one(areas).wording
+    return (
+        f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
+        f"{words.record}, and {words.unsourced}, so nothing on this machine vouches for them: "
+        f"{listed(wheres)}"
+    )
+
+
+def _sourced(areas: Sequence[Claims]) -> str:
+    words = _one(areas).wording
+    return f"{_OPEN}; if you did install them, {words.setup}, then {words.vouch}"
+
+
+def _ungranted(areas: Sequence[Claims], wheres: list[str]) -> str:
+    words = _one(areas).wording
+    return (
+        f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
+        f"{words.record}, and {_refused(words)}: {listed(wheres)}"
+    )
+
+
+def _vouched(areas: Sequence[Claims]) -> str:
+    words = _one(areas).wording
+    return words.regrant or (
+        f"run {words.vouch}, which takes out every marked entry {words.source} no longer "
+        f"grants; open any that survive it"
+    )
+
+
+def _unread_unvouched(areas: Sequence[Claims], wheres: list[str]) -> str:
+    words = _one(areas).wording
+    return (
+        f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.unsourced}, so "
+        f"whatever {words.record} records, nothing on this machine vouches for them: "
+        f"{listed(wheres)}"
+    )
+
+
+def _sourced_and_rebuilt(areas: Sequence[Claims]) -> str:
+    words = _one(areas).wording
+    return f"{_OPEN}; if you did install them, {words.setup}; then {_rebuild(words)}"
+
+
+def _unread_ungranted(areas: Sequence[Claims], wheres: list[str]) -> str:
+    words = _one(areas).wording
+    return (
+        f"{len(wheres)} entr(ies) claim the stayfixed marker and {_refused(words)}, so "
+        f"whatever {words.record} records, nothing on this machine vouches for them: "
+        f"{listed(wheres)}"
+    )
+
+
+def _regranted(areas: Sequence[Claims]) -> str:
+    words = _one(areas).wording
+    return f"{_OPEN}; then {words.regrant or _rebuild(words)}"
+
+
+def _unchecked(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} settings file(s) are nested deeper than this check can follow, so "
+        f"nothing here can check the entries in them: {listed(wheres)}"
+    )
+
+
+def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} settings file(s) exist and could not be read as hook entries, so "
+        f"nothing here accounts for what is in them: {listed(wheres)}"
+    )
+
+
+# Each kind of finding, in the order the row tells them. A record that cannot be read and a source
+# that cannot be asked withhold judgement and warn; the kinds after them, up to the last, are an
+# entry nothing vouches for or a file nothing can check, and red; and the last, a file the walk
+# cannot read, warns, so it softens a row with nothing else to say and never a red one.
+#
+# The steps keep the order the row has always preferred remedies in — of two red kinds, the later
+# one's — so a row with one claimant reads as it did. The two kinds that withhold judgement share a
+# step, because each is one area's, one area's record may be unreadable while another's source
+# cannot be asked, and each needs its own way out; a file the walk is blind to is the lowest, its
+# remedy offered only where no other finding has one.
+_UNREADABLE = _Kind(WARN, 1, _unreadable, _rebuilt)
+_UNASKABLE = _Kind(WARN, 1, _unaskable, lambda areas: _one(areas).wording.diagnose)
+_UNRECORDED = _Kind(RED, 2, _unrecorded, lambda areas: _OPEN)
+_UNVOUCHED = _Kind(RED, 3, _unvouched, _sourced)
+_UNGRANTED = _Kind(RED, 4, _ungranted, _vouched)
+_UNREAD_UNVOUCHED = _Kind(RED, 5, _unread_unvouched, _sourced_and_rebuilt)
+_UNREAD_UNGRANTED = _Kind(RED, 6, _unread_ungranted, _regranted)
+_UNCHECKED = _Kind(
+    RED,
+    7,
+    _unchecked,
+    lambda areas: (
+        "open each file named above and remove what you did not put there; stayfixed writes "
+        "no settings file nested that deep"
+    ),
+)
+_BLIND = _Kind(
+    WARN,
+    0,
+    _blind,
+    lambda areas: "check that each file named above is readable and is valid JSON",
+)
+_KINDS = (
+    _UNREADABLE,
+    _UNASKABLE,
+    _UNRECORDED,
+    _UNVOUCHED,
+    _UNGRANTED,
+    _UNREAD_UNVOUCHED,
+    _UNREAD_UNGRANTED,
+    _UNCHECKED,
+    _BLIND,
+)
+
+
+@dataclass(frozen=True)
+class _Finding:
+    """What the row tells of one kind for one area: the areas whose words tell it (`_Kind`'s), and
+    the entries or files it names, in the order the walk met them."""
+
+    kind: _Kind
+    areas: tuple[Claims, ...]
+    wheres: list[str]
+
+
+# One finding as the walk makes it: its kind, the area whose words tell it — `None` for a finding
+# that is no one area's — and the entry or file it names, `None` for a finding about an area's
+# record or source, which names none.
+_Found = tuple[_Kind, Claims | None, str | None]
+
+
+def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Finding]:
+    """`found` as one finding per kind and area, kinds in `_KINDS`' order and areas in area order:
+    each part of the row is one kind told in one area's words. An area is matched by identity,
+    because two areas' claims may be equal and are still two areas' to tell."""
+    gathered = []
+    for kind in _KINDS:
+        for area in (None, *answers):
+            mine = [where for each, told, where in found if each is kind and told is area]
+            if mine:
+                areas = tuple(answers) if area is None else (area,)
+                wheres = [where for where in mine if where is not None]
+                gathered.append(_Finding(kind, areas, wheres))
+    return gathered
+
+
+def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
+    """How many entries claim the marker, how many are foreign, and every finding about them.
+
+    The verdicts are `_hook_entries`'; this decides each finding's kind and the area it is told
+    for, and `_told` prints them.
+    """
+    answers = _claimed(context)
+    # An area whose record could not be read may hold any id, and nothing here can say which. It
+    # is not an empty record: judged as one, every entry its area installed would read as
+    # recorded nowhere, red, with a remedy telling the owner to remove it.
+    unread = [answer for answer in answers if answer.recorded is None]
+    askable = all(answer.granted is not None for answer in answers)
+    found: list[_Found] = []
+    for answer in answers:
+        # An unreadable record is the area's finding whether or not its source can be asked: its
+        # remedy says which way out is left.
+        if answer.recorded is None:
+            found.append((_UNREADABLE, answer, None))
+        elif answer.granted is None:
+            found.append((_UNASKABLE, answer, None))
+    claimed = 0
+    foreign = 0
+    walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
+    if context.home is not None:
+        walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
+    for base, relative, label in walked:
+        path = base / relative
+        # Asked of `fsops.names_regular_file`, for the reason `fsops.NAMES_NO_FILE` gives: a path
+        # this walk cannot ask about is a file it is blind to, and one that names no file is
+        # skipped, since there is nothing there for a harness to read either.
+        try:
+            regular = names_regular_file(path)
+        except OSError:
+            found.append((_BLIND, None, label))
+            continue
+        if not regular:
+            continue
+        try:
+            # Replaced rather than refused: the marker and every command it marks are ASCII, so a
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
+            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            found.append((_BLIND, None, label))
+            continue
+        try:
+            # The engine's own reader, so a document `apply_entries` would refuse is one this walk
+            # names rather than silently tolerates.
+            commands = entry_commands(document)
+        except ParserLimitError:
+            found.append((_UNCHECKED, None, label))
+            continue
+        except Refusal:
+            found.append((_BLIND, None, label))
+            continue
+        for position, command in enumerate(commands, start=1):
+            entry_id = marker_id(command)
+            if entry_id is None:
+                foreign += 1
+                continue
+            claimed += 1
+            where = f"{label} entry {position} of {len(commands)}"
+            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
+            if not holders and not unread:
+                # Needs the records alone, so a source that cannot be asked does not withhold
+                # it: a committed record beside a committed entry it does not hold is red
+                # whether or not this machine records a source.
+                found.append((_UNRECORDED, None, where))
+            elif askable and not any(command in (answer.granted or ()) for answer in holders):
+                # Needs the sources too, and only a holder's own grant vouches for its record:
+                # absolving an entry on a record alone, or on one area's record and another's
+                # grant, is what this row may never do. Without a grant to compare, the entry is
+                # neither absolved nor accused.
+                if any(command in (answer.granted or ()) for answer in unread):
+                    # An area whose record is unreadable grants it, so it may be that area's: the
+                    # record that would say is the one missing, and the row warns that it is.
+                    continue
+                if not holders:
+                    # Only an unreadable record could hold it and no grant covers it, so whatever
+                    # that record says, nothing vouches: red, and said without claiming to know
+                    # whether the record holds it. A record is a file a clone can commit, and an
+                    # unreadable one withholding this verdict would turn a forged entry's red into
+                    # a warning and an exit of 0.
+                    # Told in the words of the first unreadable area whose source was asked and
+                    # refused it, or, with none, of the first unreadable area.
+                    asked = [answer for answer in unread if answer.sourced]
+                    if asked:
+                        found.append((_UNREAD_UNGRANTED, asked[0], where))
+                    else:
+                        found.append((_UNREAD_UNVOUCHED, unread[0], where))
+                elif refusing := [answer for answer in holders if answer.sourced]:
+                    # Told in the words of the first holder whose source refused it.
+                    found.append((_UNGRANTED, refusing[0], where))
+                else:
+                    # No holder's machine records a source to grant from, so nothing could vouch
+                    # for the entry: red as surely as a refused grant, said differently, because
+                    # the way out is to record one rather than to re-run what it grants.
+                    found.append((_UNVOUCHED, holders[0], where))
+    return claimed, foreign, _gathered(answers, found)
+
+
+def _told(claimed: int, foreign: int, findings: Sequence[_Finding]) -> Row:
+    """The row for `findings`: every finding's part, in order, after the count; red where any
+    finding is red, a warning where any is one, and "all accounted for" where there is none; and
+    the remedy of every finding of the highest step, each said once, joined as the parts are."""
+    parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
+    parts.extend(finding.kind.tell(finding.areas, finding.wheres) for finding in findings)
+    statuses = {finding.kind.status for finding in findings}
+    status: Status = RED if RED in statuses else WARN if statuses else OK
+    if status == OK:
+        parts.append("all accounted for")
+    step = max((finding.kind.step for finding in findings), default=None)
+    chosen = (
+        finding.kind.remedy(finding.areas) for finding in findings if finding.kind.step == step
+    )
+    return Row(status, "; ".join(parts), "; ".join(dict.fromkeys(chosen)))
 
 
 def _hook_entries(context: Context) -> Row:
@@ -135,7 +446,7 @@ def _hook_entries(context: Context) -> Row:
     answers `None` rather than raising, so a committed file the area cannot parse never costs this
     row's guard.
 
-    The red lists are kept apart because their remedies differ. An entry in no record is one to
+    The red kinds are kept apart because their remedies differ. An entry in no record is one to
     open and delete; an entry a record holds and its source no longer grants is either a checkout
     that has drifted from the source or a forged record, and the area's `vouch` command settles
     which — it takes out every marked entry the source no longer grants, so anything surviving it
@@ -147,13 +458,14 @@ def _hook_entries(context: Context) -> Row:
     **Every sentence about a record or a source is in its area's own words** — `Claims.wording`,
     whose `Wording` says what each phrase is — because the record the row names is the file a
     reader opens and the command it names is the one they run: an area's entry told in another
-    area's words sends them to a record that does not hold it. So each red list is told one part
-    per area, in area order: an entry a record holds by the first holder whose source refused it,
-    or the first holder where none records a source; an entry only an unreadable record could
-    hold by the first such area whose source refused it, or the first such area; and the remedy
-    is the last part's. An unreadable record or an unaskable source is a part of its own per area,
-    and their remedies are joined. An entry no record holds names every record it is missing
-    from, and with no area claiming anything, none.
+    area's words sends them to a record that does not hold it. So the row is one table, `_KINDS`:
+    each kind is told one part per area, in area order, and every kind's parts and remedies are
+    joined the same way — an entry a record holds by the first holder whose source refused it, or
+    the first holder where none records a source; an entry only an unreadable record could hold by
+    the first such area whose source refused it, or the first such area; an unreadable record or an
+    unaskable source by its own area. The remedy is every part's of the highest step, each said
+    once, so two areas' entries of one kind each get their area's way out. An entry no record holds
+    names every record it is missing from, and with no area claiming anything, none.
 
     **Entries are counted, never keys.** `scaffold.entry_commands` answers one command per entry,
     in document order, so N entries sharing one id are N entries and one id under two events is
@@ -185,204 +497,4 @@ def _hook_entries(context: Context) -> Row:
     interpreter converts is not refused at all: `entry_commands` reads it as its text, and the
     entries beside it are judged as they would be without it.
     """
-    answers, readable, askable = _claimed(context)
-    claimed = 0
-    foreign = 0
-    unrecorded: list[str] = []
-    # Each red entry a record holds, or only an unreadable record could, beside the area whose
-    # words tell it: a record and a remedy are an area's, so each list is told one part per area.
-    unvouched: list[tuple[Claims, str]] = []
-    ungranted: list[tuple[Claims, str]] = []
-    unread_unvouched: list[tuple[Claims, str]] = []
-    unread_ungranted: list[tuple[Claims, str]] = []
-    unchecked: list[str] = []
-    blind: list[str] = []
-    walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
-    if context.home is not None:
-        walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
-    for base, relative, label in walked:
-        path = base / relative
-        # Asked of `fsops.names_regular_file`, for the reason `fsops.NAMES_NO_FILE` gives: a path
-        # this walk cannot ask about is a file it is blind to, and one that names no file is
-        # skipped, since there is nothing there for a harness to read either.
-        try:
-            regular = names_regular_file(path)
-        except OSError:
-            blind.append(label)
-            continue
-        if not regular:
-            continue
-        try:
-            # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
-            document = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            blind.append(label)
-            continue
-        try:
-            # The engine's own reader, so a document `apply_entries` would refuse is one this walk
-            # names rather than silently tolerates.
-            commands = entry_commands(document)
-        except ParserLimitError:
-            unchecked.append(label)
-            continue
-        except Refusal:
-            blind.append(label)
-            continue
-        for position, command in enumerate(commands, start=1):
-            entry_id = marker_id(command)
-            if entry_id is None:
-                foreign += 1
-                continue
-            claimed += 1
-            where = f"{label} entry {position} of {len(commands)}"
-            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
-            # An area whose record could not be read may hold this id or may not, and nothing
-            # here can say which. It is not an empty record: judged as one, every entry its area
-            # installed would read as recorded nowhere, red, with a remedy telling the owner to
-            # remove it.
-            unread = [answer for answer in answers if answer.recorded is None]
-            if not holders and not unread:
-                # Needs the records alone, so a source that cannot be asked does not withhold
-                # it: a committed record beside a committed entry it does not hold is red
-                # whether or not this machine records a source.
-                unrecorded.append(where)
-            elif askable and not any(command in (answer.granted or ()) for answer in holders):
-                # Needs the sources too, and only a holder's own grant vouches for its record:
-                # absolving an entry on a record alone, or on one area's record and another's
-                # grant, is what this row may never do. Without a grant to compare, the entry is
-                # neither absolved nor accused.
-                if any(command in (answer.granted or ()) for answer in unread):
-                    # An area whose record is unreadable grants it, so it may be that area's: the
-                    # record that would say is the one missing, and the row warns that it is.
-                    continue
-                if not holders:
-                    # Only an unreadable record could hold it and no grant covers it, so whatever
-                    # that record says, nothing vouches: red, and said without claiming to know
-                    # whether the record holds it. A record is a file a clone can commit, and an
-                    # unreadable one withholding this verdict would turn a forged entry's red into
-                    # a warning and an exit of 0.
-                    # Told in the words of the first unreadable area whose source was asked and
-                    # refused it, or, with none, of the first unreadable area.
-                    asked = [answer for answer in unread if answer.sourced]
-                    if asked:
-                        unread_ungranted.append((asked[0], where))
-                    else:
-                        unread_unvouched.append((unread[0], where))
-                elif refusing := [answer for answer in holders if answer.sourced]:
-                    # Told in the words of the first holder whose source refused it.
-                    ungranted.append((refusing[0], where))
-                else:
-                    # No holder's machine records a source to grant from, so nothing could vouch
-                    # for the entry: red as surely as a refused grant, said differently, because
-                    # the way out is to record one rather than to re-run what it grants.
-                    unvouched.append((holders[0], where))
-    parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
-    status: Status = OK
-    remedy = ""
-    # Every sentence and remedy below about an area's record or source is told in that area's
-    # `Wording`, never in one area's words for another's: a record the row names is the one the
-    # reader opens, and a command it names is the one they run.
-    if not readable:
-        status = WARN
-        unreadable = [answer for answer in answers if answer.recorded is None]
-        parts.extend(
-            f"{answer.wording.record} is there and {answer.wording.unreadable}"
-            for answer in unreadable
-        )
-        # Rebuilding needs the source the area writes from, so where that area's source cannot
-        # be asked the remedy stays with the file.
-        remedy = "; ".join(
-            _rebuild(answer.wording) if answer.granted is not None else answer.wording.inspect
-            for answer in unreadable
-        )
-    elif not askable:
-        status = WARN
-        unasked = [answer for answer in answers if answer.granted is None]
-        parts.extend(
-            f"{answer.wording.unaskable}, so nothing here vouches for the ones claiming the marker"
-            for answer in unasked
-        )
-        remedy = "; ".join(answer.wording.diagnose for answer in unasked)
-    if unrecorded:
-        status = RED
-        # Every record was read and none holds these, so the sentence names each of them; with
-        # no area claiming anything there is no record to name, and nothing records them.
-        records = list(dict.fromkeys(answer.wording.record for answer in answers))
-        missing = (
-            f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere"
-        )
-        parts.append(
-            f"{len(unrecorded)} entr(ies) claim the stayfixed marker and {missing}: "
-            f"{listed(unrecorded)}"
-        )
-        remedy = "open each entry named above and remove the ones you did not install"
-    for answer, wheres in _by_area(answers, unvouched):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{words.record}, and {words.unsourced}, so nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; if you did "
-            f"install them, {words.setup}, then {words.vouch}"
-        )
-    for answer, wheres in _by_area(answers, ungranted):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{words.record}, and {_refused(words)}: {listed(wheres)}"
-        )
-        remedy = words.regrant or (
-            f"run {words.vouch}, which takes out every marked entry {words.source} no longer "
-            f"grants; open any that survive it"
-        )
-    for answer, wheres in _by_area(answers, unread_unvouched):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.unsourced}, so "
-            f"whatever {words.record} records, nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; if you did "
-            f"install them, {words.setup}; then {_rebuild(words)}"
-        )
-    for answer, wheres in _by_area(answers, unread_ungranted):
-        status = RED
-        words = answer.wording
-        parts.append(
-            f"{len(wheres)} entr(ies) claim the stayfixed marker and {_refused(words)}, so "
-            f"whatever {words.record} records, nothing on this machine vouches for them: "
-            f"{listed(wheres)}"
-        )
-        remedy = (
-            "open each entry named above and remove the ones you did not install; then "
-            f"{words.regrant or _rebuild(words)}"
-        )
-    if unchecked:
-        status = RED
-        parts.append(
-            f"{len(unchecked)} settings file(s) are nested deeper than this check can follow, so "
-            f"nothing here can check the entries in them: {listed(unchecked)}"
-        )
-        remedy = (
-            "open each file named above and remove what you did not put there; stayfixed writes "
-            "no settings file nested that deep"
-        )
-    if blind:
-        # A file this walk cannot read softens a row with nothing else to say, never a red one.
-        red = (unrecorded, unvouched, ungranted, unread_unvouched, unread_ungranted, unchecked)
-        status = RED if any(red) else WARN
-        parts.append(
-            f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "
-            f"nothing here accounts for what is in them: {listed(blind)}"
-        )
-        remedy = remedy or "check that each file named above is readable and is valid JSON"
-    if status == OK:
-        parts.append("all accounted for")
-    return Row(status, "; ".join(parts), remedy)
+    return _told(*_classify(context))
