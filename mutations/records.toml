@@ -1912,19 +1912,6 @@ reddens = [
   "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[gone]",
 ]
 
-# The note store a delivery row reads is resolved once per area per report, and a resolution
-# that refuses is the row's skip. A `Refusal` that escaped it would reach the report's guard and
-# turn both store rows red, "this check could not run", for a `stayfixed.toml` the repository is
-# entitled to write.
-[[mutation]]
-name = "the delivery rows let a refusing store escape"
-file = "src/stayfixed/memory/answers.py"
-before = "            except (Failure, Refusal, OSError):"
-after = "            except (Failure, OSError):"
-reddens = [
-  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
-]
-
 # An area's `doctor.py` is imported by discovery and imports nothing of stayfixed at module level,
 # as CONTRIBUTING's "Areas" says. The mutation adds one module-level import to one of them.
 [[mutation]]

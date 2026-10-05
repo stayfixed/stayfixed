@@ -2163,6 +2163,20 @@ reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
 
+# The note store a delivery row reads is resolved once per area per report, and a resolution
+# that refuses is the row's skip, by the one rule `errors.resolved_or_none` holds for every answer a
+# row reads and does not own. A `Refusal` that escaped it would reach the report's guard and turn
+# both store rows red, "this check could not run", for a `stayfixed.toml` the repository is
+# entitled to write.
+[[mutation]]
+name = "the delivery rows let a refusing store escape"
+file = "src/stayfixed/errors.py"
+before = "    except (Failure, Refusal, OSError):"
+after = "    except (Failure, OSError):"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_store_that_refuses_skips_the_store_checks[resolver-raises]",
+]
+
 # A document nested past what `json.loads` follows raises `RecursionError` on every supported
 # Python, and every caller of the shared reader catches its refusal and nothing else: the settings
 # engine's (`doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an

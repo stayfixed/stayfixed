@@ -20,7 +20,7 @@ from typing import Final, Literal
 
 from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import resolved_or_none
 from stayfixed.runner import Runner
 
 OK: Final = "ok"
@@ -116,15 +116,12 @@ class Context:
         as well. A fresh `Context` per report is a fresh answer per report, so nothing one run
         resolved reaches the next.
 
-        A `Failure`, a `Refusal` or an `OSError` is `None`, as a machine that records no overlay
-        is: a machine file that names an overlay nothing can read is a row's skip, never "this
-        check could not run", which is red and gates the exit code for something the repository
-        did not do wrong.
+        A resolution that fails is `None`, as a machine that records no overlay is
+        (`errors.resolved_or_none`): a machine file that names an overlay nothing can read is a
+        row's skip, never "this check could not run", which is red and gates the exit code for
+        something the repository did not do wrong.
         """
-        try:
-            return recorded_overlay_root(self.machine)
-        except (Failure, Refusal, OSError):
-            return None
+        return resolved_or_none(lambda: recorded_overlay_root(self.machine))
 
 
 @dataclass(frozen=True)

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import resolved_or_none
 from stayfixed.memory.store import Store, resolve
 
 if TYPE_CHECKING:
@@ -42,14 +42,14 @@ class Answers:
     def store(self, context: Context) -> Store | None:
         """The note store this project resolves to, or `None` when it does not resolve.
 
-        A `Failure`, a `Refusal` or an `OSError` is `None`: a `stayfixed.toml` that makes the
-        store refuse is a row's skip, never "this check could not run", which is red and gates
-        the exit code for something the repository did not do wrong.
+        A resolution that fails is `None` (`errors.resolved_or_none`): a `stayfixed.toml` that
+        makes the store refuse is a row's skip, never "this check could not run", which is red
+        and gates the exit code for something the repository did not do wrong.
         """
         if self._store is None:
-            try:
-                store = resolve(context.root, context.config, machine=context.machine)
-            except (Failure, Refusal, OSError):
-                store = None
-            self._store = (store,)
+            self._store = (
+                resolved_or_none(
+                    lambda: resolve(context.root, context.config, machine=context.machine)
+                ),
+            )
         return self._store[0]
