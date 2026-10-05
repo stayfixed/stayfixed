@@ -8,6 +8,7 @@ from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
     apply_entries,
+    entry_commands,
     mark,
     marker_id,
     owned,
@@ -184,6 +185,38 @@ def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge(
     assert owned_ids(long) == {"bg-cleanup": "PreToolUse"}
     with pytest.raises(ParserLimitError, match="number longer"):
         apply_entries(long, {})
+
+
+def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_refuses() -> None:
+    # `doctor`'s `hook-entries` names an entry by its position in this list, so every entry holds
+    # a place: two entries sharing one id are two, and one whose command is absent or not a string
+    # is `""`, which no marker matches. An integer is read as its text, as every number is here.
+    # Mutation (oracle): `mutations/`'s "doctor counts hook entries by marker id rather than by
+    # position" -> the second `shared` entry vanishes; the entry names the row's own tests, and
+    # this one reddens under it too, measured by hand.
+    shared = mark("a.sh", "same-id")
+    raw = {
+        "permissions": {"allow": ["Bash(ls)"]},
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": shared}, {"type": "command"}]},
+                {"hooks": [{"command": None}, {"command": 7}, {"command": "plain.sh"}]},
+            ],
+            "SessionStart": [{"hooks": [{"command": shared}]}],
+        },
+    }
+    assert entry_commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
+    assert entry_commands("") == []
+    assert entry_commands(json.dumps({"permissions": {}})) == []
+    # The walk is the engine's strict one: a shape `apply_entries` would refuse is refused here,
+    # as `owned_ids` refuses it, and a number past the parser's reach is read as its text.
+    for refused in ("not json", "[]", '{"hooks": []}', '{"hooks": {"Stop": [1]}}'):
+        with pytest.raises(EntriesError):
+            owned_ids(refused)
+        with pytest.raises(EntriesError):
+            entry_commands(refused)
+    long = json.dumps(raw)[:-1] + ', "n": ' + LONG_NUMBER + "}"
+    assert entry_commands(long) == [shared, "", "", "7", "plain.sh", shared]
 
 
 def test_an_empty_document_gains_the_wanted_entries() -> None:

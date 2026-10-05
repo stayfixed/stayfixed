@@ -107,7 +107,7 @@ from stayfixed.release.api import (
     released,
 )
 from stayfixed.runner import Runner
-from stayfixed.scaffold import ParserLimitError, marker_id, owned_ids
+from stayfixed.scaffold import ParserLimitError, entry_commands, marker_id
 from stayfixed.semver import later
 from stayfixed.setup.api import USER_SETTINGS
 
@@ -493,33 +493,6 @@ def _wrapper(context: Context) -> Row:
     return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
 
 
-def _entry_commands(document: str) -> list[str]:
-    """Every hook entry's command, in document order, **one element per entry**.
-
-    One per entry and not one per readable command: the position in this list is what the report
-    names, so an entry whose `command` is absent or is not a string still occupies its place and
-    contributes `""`, which `marker_id` reads as unmarked — which it certainly is.
-
-    Called only after `scaffold.owned_ids` has accepted the document, so the shapes this walk
-    tolerates are the shapes the engine already vouched for, and it reads integers as their text as
-    that reader does: a number past the interpreter's conversion is no part of any command. What it
-    must not do is *raise*: `doctor` is what a user has left when everything else is broken.
-    """
-    try:
-        raw = json.loads(document, parse_int=str) if document.strip() else {}
-    except json.JSONDecodeError:
-        return []
-    hooks = raw.get("hooks") if isinstance(raw, dict) else None
-    found: list[str] = []
-    for groups in hooks.values() if isinstance(hooks, dict) else []:
-        for group in groups if isinstance(groups, list) else []:
-            entries = group.get("hooks") if isinstance(group, dict) else None
-            for entry in entries if isinstance(entries, list) else []:
-                command = entry.get("command") if isinstance(entry, dict) else None
-                found.append(command if isinstance(command, str) else "")
-    return found
-
-
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
 # would type. The project-relative members of `SETTINGS_FILES` name themselves.
@@ -642,19 +615,18 @@ def _hook_entries(context: Context) -> Row:
     and their remedies are joined. An entry no record holds names every record it is missing
     from, and with no area claiming anything, none.
 
-    **Entries are counted, never keys.** `owned_ids` answers a `dict[str, str]`, so N
-    entries sharing one id yield one key and the same id under two events keeps only the last —
-    which deflates the claimed count and inflates `foreign` by exactly the difference. The count
-    comes from `marker_id` over the positional walk, which is the same predicate `owned_ids` is
-    built on and the one `attach.write` already keys its ledger with.
+    **Entries are counted, never keys.** `scaffold.entry_commands` answers one command per entry,
+    in document order, so N entries sharing one id are N entries and one id under two events is
+    two. Keyed by id, as `owned_ids` answers, the claimed count would deflate and `foreign` inflate
+    by exactly the difference. The count comes from `marker_id`, the predicate `owned_ids` is built
+    on and the one `attach.write` keys its ledger with.
 
     **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
-    read, a `json.JSONDecodeError` inside the walk and a `Refusal` out of `owned_ids` each make the
-    file blind, because any of them swallowed would produce "all accounted for" from the one check
-    whose entire purpose is that nobody's entries go unlisted. `owned_ids` is asked here for its
-    *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
-    `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
-    admit it cannot account for. The report names the file and never its contents.
+    read and a document the engine refuses are each named, because "all accounted for" is the one
+    answer this check must never give about entries it did not see. `entry_commands` reads the
+    document with the engine's own strict walk, the one `apply_entries` rewrites through, so a
+    shape the merge would refuse is exactly the shape this walk admits it cannot account for. The
+    report names the file and never its contents.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
     byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
@@ -667,11 +639,11 @@ def _hook_entries(context: Context) -> Row:
     is a warning, which is right for a file this machine will not let anything read and for one
     that will not parse, because the harness cannot load either. Valid JSON nested deeper than the
     parser follows is neither: a harness may read it (Claude Code's parser does), so the hooks in
-    it may run, and a warning there let a clone commit a marked entry beside such nesting and keep
-    the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may leave
-    unknown the provenance of an entry a harness may run. A number longer than the interpreter
-    converts is not refused at all: it is read as its text, by `owned_ids` and by the walk, and
-    the entries beside it are judged as they would be without it.
+    it may run, and a warning there would let a clone commit a marked entry beside such nesting and
+    keep the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may
+    leave unknown the provenance of an entry a harness may run. A number longer than the
+    interpreter converts is not refused at all: `entry_commands` reads it as its text, and the
+    entries beside it are judged as they would be without it.
     """
     answers, readable, askable = _claimed(context)
     claimed = 0
@@ -708,17 +680,15 @@ def _hook_entries(context: Context) -> Row:
             blind.append(label)
             continue
         try:
-            # Called for its *strictness* and not for its answer, so the discarded return value
-            # is the point rather than an oversight: this is the engine's own reader, and a
-            # document `apply_entries` would refuse is one this walk must not silently tolerate.
-            owned_ids(document)
+            # The engine's own reader, so a document `apply_entries` would refuse is one this walk
+            # names rather than silently tolerates.
+            commands = entry_commands(document)
         except ParserLimitError:
             unchecked.append(label)
             continue
         except Refusal:
             blind.append(label)
             continue
-        commands = _entry_commands(document)
         for position, command in enumerate(commands, start=1):
             entry_id = marker_id(command)
             if entry_id is None:

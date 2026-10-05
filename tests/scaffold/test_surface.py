@@ -33,6 +33,7 @@ EXPORTED = [
     "digest",
     "drop",
     "effective_target",
+    "entry_commands",
     "extract",
     "left_copies",
     "local_copies",

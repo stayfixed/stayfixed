@@ -2436,3 +2436,25 @@ after = "        if True:"
 reddens = [
   "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
 ]
+
+# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
+# id yield one key and the same id under two events keeps only the last -- which deflates the
+# claimed count and inflates `foreign` by exactly the difference. `entry_commands` walks
+# positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
+# walk key by id instead of counting entries, which is precisely the defect positional counting
+# exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
+# sees the command hung on the borrowed id.
+[[mutation]]
+name = "doctor counts hook entries by marker id rather than by position"
+file = "src/stayfixed/scaffold/entries.py"
+before = """        command = entry.get("command")
+        found.append(command if isinstance(command, str) else "")"""
+after = """        command = entry.get("command")
+        text = command if isinstance(command, str) else ""
+        here = marker_id(text)
+        if here is None or here not in {marker_id(seen) for seen in found}:
+            found.append(text)"""
+reddens = [
+  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]

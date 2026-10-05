@@ -444,28 +444,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
 
-# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
-# id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `_entry_commands` walks
-# positionally for that reason, and the walk had a test and no entry. The mutation makes the walk
-# key by id instead of counting entries, which is precisely the defect positional counting exists to
-# prevent: the second entry vanishes, so the count is wrong AND the grant comparison never sees the
-# command hung on the borrowed id.
-[[mutation]]
-name = "doctor counts hook entries by marker id rather than by position"
-file = "src/stayfixed/doctor/checks.py"
-before = """                command = entry.get("command") if isinstance(entry, dict) else None
-                found.append(command if isinstance(command, str) else "")"""
-after = """                command = entry.get("command") if isinstance(entry, dict) else None
-                text = command if isinstance(command, str) else ""
-                here = marker_id(text)
-                if here is None or here not in {marker_id(seen) for seen in found}:
-                    found.append(text)"""
-reddens = [
-  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
-  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
-]
-
 # `red` is what gates the exit code. A directory this process cannot list is a fact about the
 # machine, not about the installation.
 [[mutation]]
@@ -2399,20 +2377,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.claude]",
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.codex/hooks.json]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.claude/settings.local.json-overlay]",
-]
-
-# The walk's own reader reads integers as `owned_ids` does. With the interpreter's limit it raised
-# a plain `ValueError` on a document `owned_ids` had accepted, past the walk to `_guarded`: "this
-# check could not run".
-[[mutation]]
-name = "hook-entries counts entries with the interpreter's limit on numbers"
-file = "src/stayfixed/doctor/checks.py"
-before = "        raw = json.loads(document, parse_int=str) if document.strip() else {}"
-after = "        raw = json.loads(document) if document.strip() else {}"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[long-number-none-no-overlay]",
-  "tests/attach/test_doctor.py::test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for",
 ]
 
 # Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from stayfixed.errors import Refusal
@@ -153,21 +153,46 @@ def _without_marked(group: dict[str, Any]) -> dict[str, Any] | None:
     return {**group, "hooks": kept}
 
 
-def owned_ids(document: str) -> dict[str, str]:
-    """Every id stayfixed claims in this document, mapped to its event — `doctor`'s provenance.
+def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Every hook entry in the document with its event, in document order, read as strictly as
+    `apply_entries` reads it: a shape the merge would refuse is refused here too, so a reader
+    reporting on a settings file never accounts for one the engine could not rewrite.
 
-    Integers are read as their text: an id and an event are strings, so no number is part of the
-    answer, and one longer than the interpreter converts must not keep a reader from the entries
-    beside it. A settings file is one a clone can commit, and the harness reads such a number.
+    Integers are read as their text: no entry's id, event or marker is a number, and one longer
+    than the interpreter converts must not keep a reader from the entries beside it. A settings
+    file is one a clone can commit, and the harness reads such a number.
     """
     raw = _load(document, numbers=str)
+    for event in _hooks_table(raw):
+        for group in _groups(raw, event):
+            for entry in _entries_of(group):
+                yield event, entry
+
+
+def owned_ids(document: str) -> dict[str, str]:
+    """Every id stayfixed claims in this document, mapped to its event."""
     return {
         claimed: event
-        for event in _hooks_table(raw)
-        for group in _groups(raw, event)
-        for entry in _entries_of(group)
+        for event, entry in _read_entries(document)
         if (claimed := _claimed(entry)) is not None
     }
+
+
+def entry_commands(document: str) -> list[str]:
+    """Every hook entry's command, in document order, **one element per entry** — `doctor`'s
+    provenance.
+
+    One per entry and not one per readable command, and never keyed by id: the position in this
+    list is what the report names, and two entries sharing one id are two entries. So an entry
+    whose `command` is absent or is not a string still occupies its place and contributes `""`,
+    which `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
+    refuses, read by the same walk.
+    """
+    found: list[str] = []
+    for _, entry in _read_entries(document):
+        command = entry.get("command")
+        found.append(command if isinstance(command, str) else "")
+    return found
 
 
 def owned(document: str) -> str:
