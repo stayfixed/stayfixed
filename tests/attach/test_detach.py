@@ -24,8 +24,9 @@ from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, 
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
-from tests.attach.test_write import LONG_NUMBER, NESTED, SETTINGS
+from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -628,7 +629,7 @@ def _not_utf8(manifest: Path, outside: Path) -> None:
 
 
 def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
-    manifest.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+    manifest.write_text(NESTED, encoding="utf-8")
 
 
 def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:

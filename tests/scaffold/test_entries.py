@@ -14,6 +14,7 @@ from stayfixed.scaffold.entries import (
     owned,
     owned_ids,
 )
+from tests.parserlimits import LONG_NUMBER, NESTED
 
 
 def document(*commands: tuple[str, str]) -> str:
@@ -148,11 +149,6 @@ def test_a_malformed_document_refuses() -> None:
         apply_entries("{not json", {})
 
 
-# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
-# Python, and a settings document is a file a clone can commit.
-NESTED = "[" * 200_000 + "]" * 200_000
-
-
 def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() -> None:
     # `RecursionError` used to leave the engine past every caller's catch: `doctor`'s
     # `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a
@@ -165,11 +161,6 @@ def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() 
         owned_ids(nested)
     with pytest.raises(ParserLimitError, match="nested deeper"):
         apply_entries(nested, {})
-
-
-# An integer literal longer than the interpreter converts, 4,300 digits by default on every
-# supported Python: `json.loads` raises a plain `ValueError` for it, not a `JSONDecodeError`.
-LONG_NUMBER = "1" * 5_000
 
 
 def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge() -> None:
