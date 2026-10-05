@@ -1428,7 +1428,7 @@ def test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command(tmp_pat
     # comparison is on the marked *command* rather than on the id. `overlay-PreToolUse-1` is an
     # id this overlay really does grant; the command hung on it here is not the one it grants it
     # for. The comparison is the core's and the grants it reads are `attach`'s, so
-    # `tests/doctor/test_contributions.py`'s
+    # `tests/doctor/test_entries.py`'s
     # `test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved` proves the
     # comparison again with grants it injects. Mutation (oracle): `mutations/`'s "hook-entries
     # compares a grant by its id rather than its command".

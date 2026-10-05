@@ -553,7 +553,7 @@ def test_one_report_resolves_the_overlay_root_once_for_every_area(
 #
 # `hook-entries` is the core's row, and the provenance it prints is this area's answer: which marker
 # ids the attach ledger records and which marked commands the overlay grants (`_claims`). How the
-# core reads a `Claims` is proven in `tests/doctor/test_contributions.py` with injected answers;
+# core reads a `Claims` is proven in `tests/doctor/test_entries.py` with injected answers;
 # these cases prove the answers this area gives, through the whole report.
 
 
