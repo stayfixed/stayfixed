@@ -288,7 +288,12 @@ coarse on purpose. The plugin directory holds the version for a reviewer when a 
 256 KiB and when the plugin passes 512 files, and the plugin folder is this repository's root, so
 every tracked file counts: one file per area would need no table, and would spend about twenty of
 those 512 where eight do. That trade is why `GROUP_OF` is a table kept by hand, the exception to
-"no shared registry" under "Areas". `tests/scripts/test_mutation_oracle.py` reddens on an entry in
+"no shared registry" under "Areas". The size is checked on every pull request
+(`tests/test_payload.py`) and the count only at a release, where `scripts/release.py check --tag`
+refuses a plugin folder holding more than 512 files: this repository is more than the plugin, so
+a pull request may carry it past the count, and a release past it publishes the plugin from a
+repository of its own whose root is the plugin ([RELEASING.md](RELEASING.md), section 2, says
+why not from a subfolder of this one). `tests/scripts/test_mutation_oracle.py` reddens on an entry in
 the wrong file and on a file that reaches its cap, three quarters of the directory's; a group that
 does is split by its largest area, which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
