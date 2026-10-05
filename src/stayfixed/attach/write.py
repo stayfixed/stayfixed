@@ -476,7 +476,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
         # is the engine's *removal* path, and an overlay that has had its last hook entry taken
         # out reaches here with `wanted` empty — so without this the marked entry stays in the
         # file and goes on firing, while the ledger (built from the overlay, not unioned) loses
-        # it. `doctor._hook_entries` then reads an entry claiming the marker and named in no
+        # it. `doctor.entries.hook_entries` then reads an entry claiming the marker and named in no
         # ledger, goes RED, and tells the owner to remove an entry stayfixed installed. This is
         # the twin of the case already fixed for `rules`, answered on the settings side rather
         # than in the ledger, because the honest repair is to take the entry back out.
