@@ -747,17 +747,23 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
     assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
 
 
+# The two functions through which discovery imports `stayfixed.<area>.<submodule>`: the one the CLI
+# frame and the hook registry ask, which lets an import failure raise, and the one `doctor` asks,
+# which hands it back so it costs one row.
+DISCOVERY_FUNCTIONS = frozenset({"area_modules", "area_imports"})
+
+
 def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) -> list[str]:
-    """Every reference to `area_modules` in `tree` that is not a call with one literal argument
-    out of `allowed`: a call naming any other submodule, a computed argument, and the function
-    handed on as a value, which would call it out of sight. Read by any name a `from … import`
-    binds it to and as an attribute of anything (`stayfixed.areas.area_modules`)."""
-    bound = {"area_modules"} | {
+    """Every reference to a discovery function in `tree` that is not a call with one literal
+    argument out of `allowed`: a call naming any other submodule, a computed argument, and the
+    function handed on as a value, which would call it out of sight. Read by any name a `from …
+    import` binds it to and as an attribute of anything (`stayfixed.areas.area_modules`)."""
+    bound = set(DISCOVERY_FUNCTIONS) | {
         alias.asname
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
-        if alias.name == "area_modules" and alias.asname
+        if alias.name in DISCOVERY_FUNCTIONS and alias.asname
     }
     literal: set[int] = set()
     for node in ast.walk(tree):
@@ -774,7 +780,7 @@ def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) ->
         for node in ast.walk(tree)
         if (
             (isinstance(node, ast.Name) and node.id in bound)
-            or (isinstance(node, ast.Attribute) and node.attr == "area_modules")
+            or (isinstance(node, ast.Attribute) and node.attr in DISCOVERY_FUNCTIONS)
         )
         and id(node) not in literal
     ]
@@ -782,10 +788,10 @@ def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) ->
 
 
 def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
-    # `area_modules` imports `stayfixed.<area>.<submodule>` for every area that has one, so a core
-    # caller asking for `"api"` loads every area's surface, the private layer's included, through
-    # the one door the delivery rule leaves open. Every call under `src/stayfixed/` names one of
-    # the three submodules discovery is for, as a literal.
+    # `area_modules` and `area_imports` import `stayfixed.<area>.<submodule>` for every area that
+    # has one, so a core caller asking for `"api"` loads every area's surface, the private layer's
+    # included, through the one door the delivery rule leaves open. Every call under
+    # `src/stayfixed/` names one of the three submodules discovery is for, as a literal.
     #
     # Mutation (declared): `mutations/`'s "a core module asks discovery for every area's api.py".
     source = ROOT / "src" / "stayfixed"
@@ -800,7 +806,7 @@ def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "area_modules"
+            and node.func.id in DISCOVERY_FUNCTIONS
             and node.args
             and isinstance(node.args[0], ast.Constant)
         }
@@ -827,9 +833,11 @@ def test_the_string_import_rules_read_every_spelling() -> None:
         "import stayfixed.areas\nstayfixed.areas.area_modules('api')\n"
         "from stayfixed.areas import area_modules as found\nfound(name)\nkept = found\n"
         "found('hooks')\n"
+        "from stayfixed.areas import area_imports\narea_imports('api')\narea_imports('doctor')\n"
     )
     assert _area_module_offences("x.py", ast.parse(spellings), allowed) == [
         "x.py:2",
         "x.py:4",
         "x.py:5",
+        "x.py:8",
     ]
