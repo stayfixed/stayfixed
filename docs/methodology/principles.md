@@ -148,10 +148,9 @@ commit-message hook git runs locally never fails a commit — its gate is `stayf
 in CI. The guarantee lives in a shell wrapper rather than in Python, because a Python process
 cannot fail closed about its own absence: every entry in `hooks/hooks.json` runs
 `hooks/run-hook.sh` with its policy, and the wrapper looks for a `python3` of 3.11 or newer
-outside the project root. On every fault it can see before stayfixed answers — no interpreter, no
-`git`, a project root it cannot enter, a launcher it cannot read, an exit other than `0` or `2` —
-it prints its reason and refuses with the blocking exit under `closed`, or continues under
-`open`.
+outside the project root. On every fault it can see — no interpreter, no `git`, a project root
+it cannot enter, a launcher it cannot read, and afterwards an exit other than `0` or `2` — it
+prints its reason and refuses with the blocking exit under `closed`, or continues under `open`.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
 runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
@@ -201,9 +200,10 @@ else, private by construction, and never a prerequisite for the public tool to b
 without it. `stayfixed overlay create` makes a private overlay repository from the template
 repository, or renders one locally. `overlay init` names it after its owner, `overlay upgrade`
 refreshes the files nobody edited, `stayfixed setup --overlay` records it on a machine, and
-`stayfixed attach` binds a repository to it in `overlay` mode (`detach` undoes that). The memory
-store honours an overlay link only when its target lies inside this project's share of the
-recorded overlay root and the overlay's record binds this repository's `origin`.
+`stayfixed attach` binds a repository to it in `overlay` mode; `detach` takes back what `attach`
+wrote and keeps the overlay's record of the binding. The memory store honours an overlay link
+only when its target lies inside this project's share of the recorded overlay root and the
+overlay's record binds this repository's `origin`.
 
 **Why.** A plugin with a declared dependency and a manifest is now a specified, portable
 unit [S15]; one plugin root serves both harnesses, because each reads its own manifest from
