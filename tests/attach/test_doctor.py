@@ -856,6 +856,46 @@ def test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warni
     assert _table_row(case, tmp_path, monkeypatch) == TABLE[case]
 
 
+@pytest.mark.parametrize("machine", ["overlay", "no-overlay"])
+def test_hook_entries_names_attachs_ledger_and_commands_as_it_always_has(
+    tmp_path: Path, machine: str
+) -> None:
+    # `hook-entries` is the core's row and the words in it are this area's, handed over with its
+    # claims: the ledger, the overlay and the commands that repair them. The tables above compare
+    # against `LEDGER`, which is the constant this area hands over, so they cannot see it change;
+    # these bytes are pasted from the row as it printed before the words moved into this area, and
+    # read nothing from the code under test; with `LEDGER` pinned, the tables' whole rows are
+    # pasted bytes too. Mutation: editing the record, the unsourced phrase, `setup` or `vouch` in
+    # `attach/doctor.py`'s wording reddens a case here; its other phrases redden `TABLE` and
+    # `UNREADABLE_TABLE` cases.
+    assert LEDGER == ".stayfixed/local/attach.json"
+    root = _attached(tmp_path)
+    _with_extra_entry(root, FORGED)
+    if machine == "overlay":
+        check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+        assert check == Check(
+            "hook-entries",
+            "red",
+            "2 stayfixed entr(ies), 0 foreign; 1 entr(ies) claim the stayfixed marker and are not "
+            "recorded in .stayfixed/local/attach.json: .claude/settings.local.json entry 2 of 2",
+            "open each entry named above and remove the ones you did not install",
+        )
+    else:
+        rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
+        assert _by_name(rows, "hook-entries") == Check(
+            "hook-entries",
+            "red",
+            "2 stayfixed entr(ies), 0 foreign; 1 entr(ies) claim the stayfixed marker and are not "
+            "recorded in .stayfixed/local/attach.json: .claude/settings.local.json entry 2 of 2; "
+            "1 entr(ies) claim the stayfixed marker and are recorded in "
+            ".stayfixed/local/attach.json, and this machine records no overlay, so nothing on "
+            "this machine vouches for them: .claude/settings.local.json entry 1 of 2",
+            "open each entry named above and remove the ones you did not install; if you did "
+            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
+            "grants them, then `stayfixed attach --store <overlay>/projects/<project>/memory`",
+        )
+
+
 # Ledgers a clone can commit that `ledger()` refuses, one per way it refuses: not JSON, a field of a
 # shape `attach` never writes, valid JSON nested past what the parser follows, and valid JSON
 # holding a number longer than the interpreter converts.

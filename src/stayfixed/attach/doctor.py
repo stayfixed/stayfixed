@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from stayfixed.attach.binding import Binding
     from stayfixed.attach.write import AttachLedger
-    from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status
+    from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status, Wording
     from stayfixed.memory.api import Answers
 
 
@@ -415,6 +415,35 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     }
 
 
+def _wording() -> Wording:
+    """How `hook-entries` names this area's ledger, the overlay that grants, and the commands that
+    repair them: stayfixed's own fixed strings, as `Wording` requires, none of them read from the
+    repository or the machine.
+
+    A function and not a module-level constant only because building the value imports the doctor
+    area's surface and the ledger's path, and an import in this module sits inside a function body
+    (the module docstring says why)."""
+    from stayfixed.config.layout import ATTACH_LEDGER
+    from stayfixed.doctor.api import Wording
+
+    return Wording(
+        record=ATTACH_LEDGER,
+        unreadable=(
+            "cannot be read as a ledger, so which of those entries `stayfixed attach` installed "
+            "could not be established"
+        ),
+        inspect=f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote",
+        source="the overlay",
+        unsourced="this machine records no overlay",
+        unaskable=(
+            "the overlay this repository is bound to could not be asked which entries it grants"
+        ),
+        diagnose="run `stayfixed attach --check`, which reports why the overlay cannot be read",
+        setup="run `stayfixed setup --overlay <path>` to record the overlay that grants them",
+        vouch="`stayfixed attach --store <overlay>/projects/<project>/memory`",
+    )
+
+
 def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
     """What `attach` put into settings files, for `hook-entries`' provenance column.
 
@@ -438,6 +467,7 @@ def _claims(context: Context, answers: Answers, ledger: _Ledger) -> Claims:
         found,
         None if granted is None else frozenset(granted),
         sourced=answers.overlay(context) is not None,
+        wording=_wording(),
     )
 
 

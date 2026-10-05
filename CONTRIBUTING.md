@@ -180,7 +180,10 @@ loaded: the core loads the private layer only when a command asks for it.
   commands it still grants there, which the core's `hook-entries` row asks with the same `Context`,
   so an entry the area put there is told apart from a repository claiming it did. The record may be
   repository bytes and the grants may not, and an entry is absolved only by an area that both
-  records its id and grants its command, never by one area's record and another's grant.
+  records its id and grants its command, never by one area's record and another's grant. `Claims`
+  also carries the area's `Wording`, the phrases the row tells its record, its source and their
+  remedies in, so the core names no area's files or commands of its own; they are printed
+  verbatim, so they are stayfixed's own fixed strings and never built from repository bytes.
   `register()` is called once per report, so anything it creates for its checks — each delivery
   area creates a value that resolves the overlay root and the note store at most once — is fresh
   for every report.

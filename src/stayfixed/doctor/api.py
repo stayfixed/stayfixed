@@ -21,6 +21,9 @@ with no explanation is what made the trim necessary:
   and answers a `Row`, and `Claims` is what the area put into settings files. They are defined in
   `doctor/model.py`, which imports nothing of any area, and published here because an area's
   `doctor.py` is a consumer like any other.
+- `Wording` is the type of `Claims.wording`: an area that hands over claims hands over the words
+  `hook-entries` tells them in — its record, its source and the commands that repair them — and
+  a field whose type it could not import is one it could not fill.
 - `Status` is the type `Row.status` declares, for a check that decides its status before it
   builds its row: `attach`'s `attached` row and `overlay`'s `overlay-requires` do, and an
   annotation they could not import would be a type they could hold and not declare.
@@ -45,6 +48,7 @@ from stayfixed.doctor.model import (
     Contribution,
     Row,
     Status,
+    Wording,
 )
 
 __all__ = [
@@ -59,5 +63,6 @@ __all__ = [
     "Contribution",
     "Row",
     "Status",
+    "Wording",
     "run_checks",
 ]

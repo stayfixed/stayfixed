@@ -668,8 +668,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant"
 file = "src/stayfixed/doctor/checks.py"
-before = "                elif any(answer.sourced for answer in holders):"
-after = "                elif True:"
+before = "                elif refusing := [answer for answer in holders if answer.sourced]:"
+after = "                elif refusing := holders:"
 reddens = [
   "tests/doctor/test_contributions.py::test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so",
   "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
@@ -752,8 +752,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside an unreadable record"
 file = "src/stayfixed/doctor/checks.py"
-before = "                    sourced = any(answer.sourced for answer in unread)"
-after = "                    sourced = True"
+before = "                    asked = [answer for answer in unread if answer.sourced]"
+after = "                    asked = unread"
 reddens = [
   "tests/doctor/test_contributions.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-no-overlay]",
@@ -766,8 +766,8 @@ reddens = [
 [[mutation]]
 name = "the rebuild remedy is offered where the overlay cannot be asked"
 file = "src/stayfixed/doctor/checks.py"
-before = "            rebuild\n            if askable\n"
-after = "            rebuild\n            if True\n"
+before = "_rebuild(answer.wording) if answer.granted is not None else"
+after = "_rebuild(answer.wording) if True else"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay-unreadable]",
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-git-cannot-run]",
@@ -779,12 +779,93 @@ reddens = [
 [[mutation]]
 name = "an unreadable ledger is never told how to rebuild it"
 file = "src/stayfixed/doctor/checks.py"
-before = "            rebuild\n            if askable\n"
-after = "            rebuild\n            if False\n"
+before = "_rebuild(answer.wording) if answer.granted is not None else"
+after = "_rebuild(answer.wording) if False else"
 reddens = [
   "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
   "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
   "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
+]
+
+# `hook-entries` tells each area's record, source and remedies in that area's own `Wording`, so a
+# reader opens the record that could hold an entry and runs the command that touches it. Each entry
+# below puts one sentence back in the wrong area's words, or in words no claimant gave.
+[[mutation]]
+name = "hook-entries names a record where no area claims one"
+file = "src/stayfixed/doctor/checks.py"
+before = """f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere\""""
+after = """f"are not recorded in {' or '.join(records)}\""""
+reddens = [
+  "tests/doctor/test_contributions.py::test_with_no_area_claiming_anything_an_entry_claiming_the_marker_is_recorded_nowhere",
+]
+
+[[mutation]]
+name = "hook-entries names only the first area's record of an entry no record holds"
+file = "src/stayfixed/doctor/checks.py"
+before = "        records = list(dict.fromkeys(answer.wording.record for answer in answers))"
+after = "        records = list(dict.fromkeys(answer.wording.record for answer in answers[:1]))"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_entry_no_record_holds_names_every_record_it_is_missing_from",
+]
+
+[[mutation]]
+name = "hook-entries names the first area's record wherever a record could not be read"
+file = "src/stayfixed/doctor/checks.py"
+before = "        unreadable = [answer for answer in answers if answer.recorded is None]"
+after = "        unreadable = answers[:1]"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_unreadable_record_is_named_in_its_own_areas_words[second]",
+  "tests/doctor/test_contributions.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
+]
+
+[[mutation]]
+name = "hook-entries names only the first source that could not be asked"
+file = "src/stayfixed/doctor/checks.py"
+before = "        unasked = [answer for answer in answers if answer.granted is None]"
+after = "        unasked = [answer for answer in answers if answer.granted is None][:1]"
+reddens = [
+  "tests/doctor/test_contributions.py::test_two_unaskable_sources_each_get_their_own_part_and_remedy",
+]
+
+[[mutation]]
+name = "hook-entries tells a refused grant in the first area's words"
+file = "src/stayfixed/doctor/checks.py"
+before = "                    ungranted.append((refusing[0], where))"
+after = "                    ungranted.append((answers[0], where))"
+reddens = [
+  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[sourced]",
+  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+]
+
+[[mutation]]
+name = "hook-entries tells an unvouched entry in the first area's words"
+file = "src/stayfixed/doctor/checks.py"
+before = "                    unvouched.append((holders[0], where))"
+after = "                    unvouched.append((answers[0], where))"
+reddens = [
+  "tests/doctor/test_contributions.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+]
+
+[[mutation]]
+name = "hook-entries tells an entry beside unreadable records in the first one's words"
+file = "src/stayfixed/doctor/checks.py"
+before = "                        unread_ungranted.append((asked[0], where))"
+after = "                        unread_ungranted.append((unread[0], where))"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_areas_words",
+]
+
+# An area answers what it cannot read as a `None` field, so claims that raise are a defect in its
+# code and red, as `Contribution.claims` promises. Reaching the report's guard as an `OSError` they
+# read as the machine's warning, and a forged entry the row would have listed kept the exit code 0.
+[[mutation]]
+name = "claims that raise an OSError reach the guard as one"
+file = "src/stayfixed/doctor/checks.py"
+before = "        raise UnansweredClaims(type(exc).__name__) from exc"
+after = "        raise"
+reddens = [
+  "tests/doctor/test_contributions.py::test_claims_that_raise_an_os_error_are_red_and_never_a_warning",
+  "tests/doctor/test_command.py::test_claims_that_raise_an_os_error_fail_the_report",
 ]
 
 # An area's `register()` is its own code as its checks are, so it gets their guard: one that raises,

@@ -75,7 +75,6 @@ from typing import TypeGuard
 import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.areas import area_modules
-from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
@@ -90,6 +89,7 @@ from stayfixed.doctor.model import (
     Contribution,
     Row,
     Status,
+    Wording,
 )
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
@@ -539,10 +539,15 @@ NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
 _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 
+class UnansweredClaims(RuntimeError):
+    """An area's claims raised. Never an `OSError`, whatever they raised, so the report's guard
+    reads it as the red it is and not as the machine's warning."""
+
+
 def _claimed(
     context: Context, claims: Sequence[Callable[[Context], Claims]]
 ) -> tuple[list[Claims], bool, bool]:
-    """Every area's `Claims`, and whether every record could be read and every overlay asked.
+    """Every area's `Claims`, and whether every record could be read and every source asked.
 
     An area's own record is the only thing that can say what it put into settings files, so the
     core asks each area that has one, with this report's context and under this row's guard. The
@@ -550,14 +555,41 @@ def _claimed(
     both records its id and grants its command, because a record is a file a repository can
     write, and one area's record standing on another area's grant vouches for an entry neither
     area put there whole. A `None` is still one for the whole: an id one record could not be read
-    for, or a command one overlay could not be asked about, is not one the rest can vouch for.
+    for, or a command one source could not be asked about, is not one the rest can vouch for.
     With no area claiming anything, nothing is recorded and nothing granted, so every entry
     claiming the marker is one no area put there.
+
+    **Claims that raise are red, whatever they raise.** An area answers what it cannot read as a
+    `None` field, so one that raises is a defect in its code, and `Contribution.claims` promises
+    red for it. The guard reads an `OSError` as the machine's and warns, so a `PermissionError` out
+    of an area's claims turned the row — and every forged entry it would have listed — into a
+    warning and an exit of 0. It is raised on as `UnansweredClaims`, which the guard names in the
+    row; the exception it chains carries the original, whose message is never printed, because an
+    area may have built it from repository bytes.
     """
-    answers = [ask(context) for ask in claims]
+    try:
+        answers = [ask(context) for ask in claims]
+    except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
+        raise UnansweredClaims(type(exc).__name__) from exc
     readable = all(answer.recorded is not None for answer in answers)
     askable = all(answer.granted is not None for answer in answers)
     return answers, readable, askable
+
+
+def _rebuild(words: Wording) -> str:
+    """How an owner gets an area's unreadable record back: remove it, and have the area write a
+    new one from its source — an area that writes a record refuses to write over one it cannot
+    read."""
+    return f"remove {words.record} and run {words.vouch} to write a new one"
+
+
+def _by_area(
+    answers: Sequence[Claims], told: Sequence[tuple[Claims, str]]
+) -> list[tuple[Claims, list[str]]]:
+    """`told`'s entries gathered under the area whose words tell them, in area order, leaving out
+    an area with none."""
+    gathered = [(answer, [where for owner, where in told if owner is answer]) for answer in answers]
+    return [(answer, wheres) for answer, wheres in gathered if wheres]
 
 
 def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]] = ()) -> Row:
@@ -580,32 +612,43 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     grant is the *marked command* and not the id, because an id that is granted with a different
     command hung on it is the same attack one step down.
 
-    Where an overlay this machine records cannot be asked, the answer is the one this check gives a
+    Where a source this machine records cannot be asked, the answer is the one this check gives a
     file it could not parse: report it, never absolve it. That withholds the grant comparison and
     nothing more. Whether a record holds an entry's id needs only the records, so an entry no record
-    holds is red whether or not the overlay can be asked: withholding that too let a clone that
-    commits a ledger beside its entry turn the row into a warning on any machine with no overlay. A
-    machine that records no overlay at all is not one whose overlay could not be asked: there is
-    nothing to ask and nothing vouches, so an entry a record holds is red there too. A warning there
-    let a clone whose committed ledger records its own entry keep the exit code at 0. Where a record
-    cannot be read, the row warns and names it, and withholds judgement only of an entry that
-    record's own area grants: that entry may be one the record holds. An unreadable record is not an
-    empty one, and judged as one it would report every entry `attach` installed as recorded nowhere,
-    with a remedy telling the owner to remove it. But it is not a vouching one either: an entry no
-    grant covers is red whatever the record would have said, because a clone can commit a ledger
-    that will not parse as easily as one that does, and withholding the verdict there turned a
+    holds is red whether or not a source can be asked: withholding that too would let a clone that
+    commits a record beside its entry turn the row into a warning on any machine with no source. A
+    machine that records no source at all is not one whose source could not be asked: there is
+    nothing to ask and nothing vouches, so an entry a record holds is red there too, or a clone
+    whose committed record holds its own entry would keep the exit code at 0. Where a record cannot
+    be read, the row warns and names it, and withholds judgement only of an entry that record's own
+    area grants: that entry may be one the record holds. An unreadable record is not an empty one,
+    and judged as one it would report every entry its area installed as recorded nowhere, with a
+    remedy telling the owner to remove it. But it is not a vouching one either: an entry no grant
+    covers is red whatever the record would have said, because a clone can commit a record that
+    will not parse as easily as one that does, and withholding the verdict there would turn a
     forged entry's red into a warning on every machine. Reading the record is the area's, which
     answers `None` rather than raising, so a committed file the area cannot parse never costs this
     row's guard.
 
     The red lists are kept apart because their remedies differ. An entry in no record is one to
-    open and delete; an entry a record holds and its overlay no longer grants is either a checkout
-    that has drifted from the overlay or a forged ledger, and `stayfixed attach` settles which — it
-    takes out every marked entry the overlay no longer grants, so anything surviving it was never
-    stayfixed's; an entry a record holds on a machine that records no overlay is either the owner's
-    checkout on a machine `setup --overlay` has not reached or a forged ledger, and recording the
-    overlay and then attaching settles which; and the last two again, for an entry only an
-    unreadable record could hold, whose way out also writes the record anew.
+    open and delete; an entry a record holds and its source no longer grants is either a checkout
+    that has drifted from the source or a forged record, and the area's `vouch` command settles
+    which — it takes out every marked entry the source no longer grants, so anything surviving it
+    was never stayfixed's; an entry a record holds on a machine that records no source is either
+    the owner's checkout on a machine that has not recorded one yet or a forged record, and
+    recording the source and then vouching settles which; and the last two again, for an entry
+    only an unreadable record could hold, whose way out also writes the record anew.
+
+    **Every sentence about a record or a source is in its area's own words** — `Claims.wording`,
+    whose `Wording` says what each phrase is — because the record the row names is the file a
+    reader opens and the command it names is the one they run: an area's entry told in another
+    area's words sends them to a record that does not hold it. So each red list is told one part
+    per area, in area order: an entry a record holds by the first holder whose source refused it,
+    or the first holder where none records a source; an entry only an unreadable record could
+    hold by the first such area whose source refused it, or the first such area; and the remedy
+    is the last part's. An unreadable record or an unaskable source is a part of its own per area,
+    and their remedies are joined. An entry no record holds names every record it is missing
+    from, and with no area claiming anything, none.
 
     **Entries are counted, never keys.** `owned_ids` answers a `dict[str, str]`, so N
     entries sharing one id yield one key and the same id under two events keeps only the last —
@@ -642,10 +685,12 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
-    unvouched: list[str] = []
-    ungranted: list[str] = []
-    unread_unvouched: list[str] = []
-    unread_ungranted: list[str] = []
+    # Each red entry a record holds, or only an unreadable record could, beside the area whose
+    # words tell it: a record and a remedy are an area's, so each list is told one part per area.
+    unvouched: list[tuple[Claims, str]] = []
+    ungranted: list[tuple[Claims, str]] = []
+    unread_unvouched: list[tuple[Claims, str]] = []
+    unread_ungranted: list[tuple[Claims, str]] = []
     unchecked: list[str] = []
     blind: list[str] = []
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
@@ -691,17 +736,17 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
             where = f"{label} entry {position} of {len(commands)}"
             holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
             # An area whose record could not be read may hold this id or may not, and nothing
-            # here can say which. It is not an empty record: judged as one, every entry `attach`
+            # here can say which. It is not an empty record: judged as one, every entry its area
             # installed would read as recorded nowhere, red, with a remedy telling the owner to
             # remove it.
             unread = [answer for answer in answers if answer.recorded is None]
             if not holders and not unread:
-                # Needs the records alone, so an overlay that cannot be asked does not withhold
-                # it: a committed ledger beside a committed entry it does not record is red
-                # whether or not this machine records an overlay.
+                # Needs the records alone, so a source that cannot be asked does not withhold
+                # it: a committed record beside a committed entry it does not hold is red
+                # whether or not this machine records a source.
                 unrecorded.append(where)
             elif askable and not any(command in (answer.granted or ()) for answer in holders):
-                # Needs the overlays too, and only a holder's own grant vouches for its record:
+                # Needs the sources too, and only a holder's own grant vouches for its record:
                 # absolving an entry on a record alone, or on one area's record and another's
                 # grant, is what this row may never do. Without a grant to compare, the entry is
                 # neither absolved nor accused.
@@ -715,94 +760,107 @@ def _hook_entries(context: Context, claims: Sequence[Callable[[Context], Claims]
                     # whether the record holds it. A record is a file a clone can commit, and an
                     # unreadable one withholding this verdict turned a forged entry's red into a
                     # warning and an exit of 0.
-                    sourced = any(answer.sourced for answer in unread)
-                    (unread_ungranted if sourced else unread_unvouched).append(where)
-                elif any(answer.sourced for answer in holders):
-                    ungranted.append(where)
+                    # Told in the words of the first unreadable area whose source was asked and
+                    # refused it, or, with none, of the first unreadable area.
+                    asked = [answer for answer in unread if answer.sourced]
+                    if asked:
+                        unread_ungranted.append((asked[0], where))
+                    else:
+                        unread_unvouched.append((unread[0], where))
+                elif refusing := [answer for answer in holders if answer.sourced]:
+                    # Told in the words of the first holder whose source refused it.
+                    ungranted.append((refusing[0], where))
                 else:
                     # No holder's machine records a source to grant from, so nothing could vouch
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
-                    unvouched.append(where)
+                    unvouched.append((holders[0], where))
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     status: Status = OK
     remedy = ""
-    # How an owner gets an unreadable record back: `attach` refuses to write over a ledger it
-    # cannot read, and writes a new one from the overlay once it is gone.
-    rebuild = (
-        f"remove {ATTACH_LEDGER} and run `stayfixed attach --store "
-        f"<overlay>/projects/<project>/memory` to write a new one"
-    )
+    # Every sentence and remedy below about an area's record or source is told in that area's
+    # `Wording`, never in one area's words for another's: a record the row names is the one the
+    # reader opens, and a command it names is the one they run.
     if not readable:
         status = WARN
-        parts.append(
-            f"{ATTACH_LEDGER} is there and cannot be read as a ledger, so which of those entries "
-            f"`stayfixed attach` installed could not be established"
+        unreadable = [answer for answer in answers if answer.recorded is None]
+        parts.extend(
+            f"{answer.wording.record} is there and {answer.wording.unreadable}"
+            for answer in unreadable
         )
-        # Rebuilding needs the overlay `attach` installs from, so where it cannot be asked the
-        # remedy stays with the file.
-        remedy = (
-            rebuild
-            if askable
-            else f"check that {ATTACH_LEDGER} is readable and is the file your last attach wrote"
+        # Rebuilding needs the source the area writes from, so where that area's source cannot
+        # be asked the remedy stays with the file.
+        remedy = "; ".join(
+            _rebuild(answer.wording) if answer.granted is not None else answer.wording.inspect
+            for answer in unreadable
         )
     elif not askable:
         status = WARN
-        parts.append(
-            "the overlay this repository is bound to could not be asked which entries it "
-            "grants, so nothing here vouches for the ones claiming the marker"
+        unasked = [answer for answer in answers if answer.granted is None]
+        parts.extend(
+            f"{answer.wording.unaskable}, so nothing here vouches for the ones claiming the marker"
+            for answer in unasked
         )
-        remedy = "run `stayfixed attach --check`, which reports why the overlay cannot be read"
+        remedy = "; ".join(answer.wording.diagnose for answer in unasked)
     if unrecorded:
         status = RED
+        # Every record was read and none holds these, so the sentence names each of them; with
+        # no area claiming anything there is no record to name, and nothing records them.
+        records = list(dict.fromkeys(answer.wording.record for answer in answers))
+        missing = (
+            f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere"
+        )
         parts.append(
-            f"{len(unrecorded)} entr(ies) claim the stayfixed marker and are not recorded in "
-            f"{ATTACH_LEDGER}: {listed(unrecorded)}"
+            f"{len(unrecorded)} entr(ies) claim the stayfixed marker and {missing}: "
+            f"{listed(unrecorded)}"
         )
         remedy = "open each entry named above and remove the ones you did not install"
-    if unvouched:
+    for answer, wheres in _by_area(answers, unvouched):
         status = RED
+        words = answer.wording
         parts.append(
-            f"{len(unvouched)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{ATTACH_LEDGER}, and this machine records no overlay, so nothing on this machine "
-            f"vouches for them: {listed(unvouched)}"
+            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
+            f"{words.record}, and {words.unsourced}, so nothing on this machine vouches for them: "
+            f"{listed(wheres)}"
         )
         remedy = (
             "open each entry named above and remove the ones you did not install; if you did "
-            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
-            "grants them, then `stayfixed attach --store <overlay>/projects/<project>/memory`"
+            f"install them, {words.setup}, then {words.vouch}"
         )
-    if ungranted:
+    for answer, wheres in _by_area(answers, ungranted):
         status = RED
+        words = answer.wording
         parts.append(
-            f"{len(ungranted)} entr(ies) claim the stayfixed marker and are recorded in "
-            f"{ATTACH_LEDGER}, and the overlay does not grant them: {listed(ungranted)}"
+            f"{len(wheres)} entr(ies) claim the stayfixed marker and are recorded in "
+            f"{words.record}, and {words.source} does not grant them: {listed(wheres)}"
         )
         remedy = (
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory`, which takes out "
-            "every marked entry the overlay no longer grants; open any that survive it"
+            f"run {words.vouch}, which takes out every marked entry {words.source} no longer "
+            f"grants; open any that survive it"
         )
-    if unread_unvouched:
+    for answer, wheres in _by_area(answers, unread_unvouched):
         status = RED
+        words = answer.wording
         parts.append(
-            f"{len(unread_unvouched)} entr(ies) claim the stayfixed marker and this machine "
-            f"records no overlay, so whatever {ATTACH_LEDGER} records, nothing on this machine "
-            f"vouches for them: {listed(unread_unvouched)}"
+            f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.unsourced}, so "
+            f"whatever {words.record} records, nothing on this machine vouches for them: "
+            f"{listed(wheres)}"
         )
         remedy = (
             "open each entry named above and remove the ones you did not install; if you did "
-            "install them, run `stayfixed setup --overlay <path>` to record the overlay that "
-            f"grants them; then {rebuild}"
+            f"install them, {words.setup}; then {_rebuild(words)}"
         )
-    if unread_ungranted:
+    for answer, wheres in _by_area(answers, unread_ungranted):
         status = RED
+        words = answer.wording
         parts.append(
-            f"{len(unread_ungranted)} entr(ies) claim the stayfixed marker and the overlay does "
-            f"not grant them, so whatever {ATTACH_LEDGER} records, nothing on this machine "
-            f"vouches for them: {listed(unread_ungranted)}"
+            f"{len(wheres)} entr(ies) claim the stayfixed marker and {words.source} does not "
+            f"grant them, so whatever {words.record} records, nothing on this machine vouches "
+            f"for them: {listed(wheres)}"
         )
         remedy = (
-            f"open each entry named above and remove the ones you did not install; then {rebuild}"
+            "open each entry named above and remove the ones you did not install; then "
+            f"{_rebuild(words)}"
         )
     if unchecked:
         status = RED
