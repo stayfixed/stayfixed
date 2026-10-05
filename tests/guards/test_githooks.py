@@ -237,6 +237,43 @@ def test_install_is_idempotent_over_its_own_hook(tmp_path: Path) -> None:
     assert not again.path.with_name(HOOK_NAME + ".local").exists()
 
 
+def test_a_hook_an_earlier_release_wrote_is_still_ours(tmp_path: Path) -> None:
+    # The hook's text changes between releases, and every repository keeps the bytes the release
+    # that installed it wrote. The marker line, not the text, is what makes a hook stayfixed's:
+    # an install over an earlier text rewrites it in place rather than preserving it as a
+    # stranger's `.local` and chaining to it, and an uninstall removes it rather than leaving it
+    # orphaned. The earlier text is the one that said no subcommand installed the hook.
+    # Mutation (declared): a hook is ours only when its bytes equal today's text -> this reddens.
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    current = (
+        "Written by `stayfixed setup --git-hooks`, and removed again, with the hook it\n"
+        "# chains to put back, by `stayfixed setup --git-hooks --uninstall`.\n"
+    )
+    earlier = (
+        "Written, and removed again, by stayfixed's git-hook installer; no `stayfixed`\n"
+        "# subcommand offers it yet, so today it is reached from Python as"
+        " `guards.api.install(root)`.\n"
+    )
+    assert current in HOOK_TEXT
+    old_text = HOOK_TEXT.replace(current, earlier)
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(old_text, encoding="utf-8")
+    hook.chmod(0o755)
+
+    again = install(root)
+    assert again.replaced is True and again.preserved is None
+    assert hook.read_text(encoding="utf-8") == HOOK_TEXT
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
+
+    hook.write_text(old_text, encoding="utf-8")
+    removed = uninstall(root)
+    assert removed.restored is None
+    assert not hook.exists()
+
+
 def test_install_refuses_to_overwrite_a_stale_local_hook(tmp_path: Path) -> None:
     # Two foreign hooks cannot both be preserved under one name; refusing beats losing one.
     root = repo(tmp_path)

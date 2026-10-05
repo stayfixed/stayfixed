@@ -48,8 +48,8 @@ HOOK_TEXT = f"""#!/usr/bin/env bash
 # prepare-commit-msg rather than commit-msg on purpose: `git commit --no-verify` bypasses
 # pre-commit and commit-msg, but not this hook. It is still only the local convenience layer;
 # the authoritative gate is `stayfixed commit check` in CI, which sees commits this machine
-# never produced. Written, and removed again, by stayfixed's git-hook installer; no `stayfixed`
-# subcommand offers it yet, so today it is reached from Python as `guards.api.install(root)`.
+# never produced. Written by `stayfixed setup --git-hooks`, and removed again, with the hook it
+# chains to put back, by `stayfixed setup --git-hooks --uninstall`.
 #
 # Chains to whatever hook was here before, kept beside this one as `<hook>.local`, so
 # installing this never silently disables husky, pre-commit, or what the repository had.
