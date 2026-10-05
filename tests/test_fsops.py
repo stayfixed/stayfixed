@@ -197,6 +197,16 @@ def test_a_parent_component_anywhere_along_the_path_is_refused(tmp_path: Path) -
         pass
 
 
+def test_a_component_holding_a_nul_is_refused(tmp_path: Path) -> None:
+    # A NUL names no file on any system, and a path call meets it with `ValueError`, which no
+    # caller of this rule catches: refused here, it is the `UnsafePath` every caller already turns
+    # into its own refusal. Mutation (oracle): `mutations/`'s "a path component holding a NUL
+    # passes the containment rule".
+    with pytest.raises(UnsafePath):
+        checked_components("memory/a\x00b")
+    assert not (tmp_path / "memory").exists()
+
+
 def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
     # `os.open` ignores `dir_fd` for an absolute path, so without this the walk restarts at the
     # filesystem root. This is the case that succeeds on Linux, where CI runs.

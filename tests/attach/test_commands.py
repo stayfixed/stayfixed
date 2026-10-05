@@ -490,6 +490,42 @@ def test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_
     assert not (projects / name).exists()
 
 
+def test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `memory.groups` entry holding a NUL names no path anywhere, and every path call meets it
+    # with `ValueError: embedded null character`: `--check` and `attach` both ended in an internal
+    # error. It is a group no directory can be, so it is refused as one leaving the share is,
+    # above every write and without being quoted back.
+    #
+    # Mutation (oracle): `mutations/`'s "a path component holding a NUL passes the containment
+    # rule" -> both commands end in the internal error again.
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    text = CONFIG.format(name="p").replace(
+        'groups = ["developer", "project-stable"]', 'groups = ["developer", "a\\u0000b"]'
+    )
+    assert "\\u0000" in text
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    for said in (checked, attached):
+        assert said.err.startswith("stayfixed: refused: ")
+        assert "memory.groups" in said.err
+        assert "internal error" not in said.err
+        assert "\x00" not in said.out + said.err
+    assert_snapshot_unchanged(tmp_path, before)
+
+
 def test_attach_reads_each_of_its_two_documents_once_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

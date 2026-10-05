@@ -175,6 +175,10 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
                 raise Refusal(
                     PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)
                 ) from None
+        except ValueError:
+            # A group holding a NUL, which no path can: not a question of length, and the
+            # `memory.groups` containment both callers ask next refuses it by name of the key.
+            continue
 
 
 def not_overlay(config: Config) -> str | None:

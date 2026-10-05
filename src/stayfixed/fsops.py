@@ -202,6 +202,8 @@ def checked_components(relative: str) -> tuple[str, ...]:
       trailing slash), which are merely odd rather than dangerous — refused because this
       function's answer is what every caller reads as "contained", and a surface that quietly
       rewrites its argument is a surface whose guarantee has to be restated per caller;
+    * a component holding a NUL, which names no file anywhere and which every path call meets
+      with a `ValueError` rather than an `OSError`;
     * and git's control directory, at any depth and in any case — see `CONTROL_DIRECTORY`.
       Staying inside the root is not the whole of containment for a repository-scoped tool:
       `.git/hooks/pre-commit` is inside every root stayfixed is ever handed, and a clone that
@@ -219,6 +221,10 @@ def checked_components(relative: str) -> tuple[str, ...]:
     for part in parts:
         if part == "":
             raise UnsafePath(f"{relative!r} has an empty path component")
+        if "\x00" in part:
+            # A NUL names no file on any system, and every path call meets it with a
+            # `ValueError` no caller of this rule catches.
+            raise UnsafePath(f"{relative!r} holds a NUL, which no path can")
         if part in (_PARENT, _HERE):
             raise UnsafePath(
                 f"{relative!r} contains {part!r}; a path here must stay inside the root"

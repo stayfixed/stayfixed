@@ -2538,3 +2538,16 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
 ]
+
+# A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,
+# which no caller of the containment rule catches, so `attach` and `attach --check` ended in an
+# internal error. The rule refuses the component, and each caller's own refusal follows.
+[[mutation]]
+name = "a path component holding a NUL passes the containment rule"
+file = "src/stayfixed/fsops.py"
+before = "        if \"\\x00\" in part:"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
+  "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
+]
