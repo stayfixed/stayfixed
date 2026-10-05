@@ -111,63 +111,51 @@ report discover by name — there is no shared registry to edit. One table does 
 until its entries outgrow the group they fall into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
-`ledger`, `memory`, `overlay`, `project` and `setup`. Three arrived with the install
-path: `overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
-unbinds it again, and `doctor` reports on what every other area left behind and repairs none
-of it. `project` holds the shipped project templates and `init`, the command that writes a
-repository's footprint from them, and `assess` runs the gates and the inventory over a
-repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
-(`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
-(`stayfixed adopt promote`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
+`ledger`, `memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line.
+Three of them are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the
+overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
+`src/stayfixed/areas.py`. `overlay` renders and upgrades the private overlay, `attach` binds a
+repository to one and unbinds it again, and `memory` keeps the notes and their trust gate. Every
+other module under `src/stayfixed/`, `cli.py` and the subpackages that are not areas included, is
+the **core**: the gates and the records they check. `project` holds the shipped project templates
+and `init`, the command that writes a repository's footprint from them; `assess` runs the gates
+and the inventory over a repository as it is, judges a change's `stayfixed.toml` against what its
+base branch enforces (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project
+promotes its gates (`stayfixed adopt promote`); and `doctor` reports on what every other area left
+behind and repairs none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
 outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
 areas, and `harnesses` is a module — area discovery does not find them, because they carry none
-of `commands.py`, `hooks.py` and `doctor.py`. `profiles` has a discovery convention of its own,
-inside the package: `stayfixed.profiles.hints.hint_modules` lists each profile directory that
-ships a `hygiene.py`. `release` still publishes an `api.py`, which holds what an installed
-stayfixed reads about its own releases: the tags it pins and the record of the files
-a release ships.)
+of `commands.py`, `hooks.py` and `doctor.py`. `release` still publishes an `api.py`, which holds
+what an installed stayfixed reads about its own releases: the tags it pins and the record of the
+files a release ships.)
 
-A harness is a value in `harnesses.HARNESSES`, and the hooks core answers through it:
-`stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
-that value's `render`, and the event a handler reads does not say which value that was. That is
-all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
-positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
-the tier each enforcement surface holds at under it — and nothing that reads those needs an
-edit: `doctor` walks the settings files every value names, and the README's table of what each
-agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a
-new harness still touches outside the registry is listed in the module docstring of
-`src/stayfixed/harnesses.py`.
-
-Three of the areas are **delivery**: `overlay`, `attach` and `memory`, the private layer's code
-— the overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
-`src/stayfixed/areas.py`. Every other module under `src/stayfixed/`, `cli.py` and the subpackages
-that are not areas included, is the **core**, and the rule runs one way: delivery may import the
-core, and the core may not import delivery, through an `api.py` or not, at module level or inside
-a function, so the private layer can be reworked without touching the core. The core may name
-delivery's paths and configuration keys — the `.stayfixed/` namespace and the machine file's keys
-are the core's — and may not import delivery's code or call its behaviour except through discovery,
-which is how any area plugs into the core: the CLI frame, the hook registry and `doctor`'s report
-import an area's `commands.py`, `hooks.py` and `doctor.py` by name and call the `register()` each
-publishes, without knowing which area it is, and the bullets below are that contract. One crossing still
-exists, and it is pinned in `CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to
-stay rather than be cut: `stayfixed setup --overlay` creates or records the overlay as the last
-step of machine setup, so `setup/run.py` imports the overlay area's `api.py`, inside the two
-functions that use it, and those rows stay until the step leaves `setup`. A row is one import
-statement and the names it takes, held as a multiset in both directions, so
-`test_core_never_imports_delivery` refuses a new crossing, a second statement beside a pinned one,
-a pinned statement that takes one more name and a pinned row whose import has gone alike. The rule
-reads import statements, so a module named to `importlib.import_module` is invisible to it, and two
-rules of their own hold that door. No core module but `areas.py` imports by a string through
-`importlib.import_module` or `__import__`, under any alias, except the profile discovery
-`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
-that can import by a string any other way (`importlib` beyond `importlib.resources`, `pkgutil`,
-`runpy`, `zipimport`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
-Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
-`scripts/` is repository tooling and stays under the `api.py` rule alone. What source cannot show is
-when a pardoned statement runs, so `test_in_isolation_no_core_module_loads_a_delivery_area` imports
-every core module in a clean interpreter and refuses any delivery module among what it loaded: the
-core loads the private layer only when a command asks for it.
+The rule between the two runs one way: delivery may import the core, and the core may not import
+delivery, through an `api.py` or not, at module level or inside a function, so the private layer
+can be reworked without touching the core. The core may name delivery's paths and configuration
+keys — the `.stayfixed/` namespace and the machine file's keys are the core's — and may not import
+delivery's code or call its behaviour except through discovery, which is how any area plugs into
+the core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
+`hooks.py` and `doctor.py` by name and call the `register()` each publishes, without knowing which
+area it is, and the bullets below are that contract. One crossing still exists, and it is pinned in
+`CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to stay rather than be cut:
+`stayfixed setup --overlay` creates or records the overlay as the last step of machine setup, so
+`setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and those
+rows stay until the step leaves `setup`. A row is one import statement and the names it takes,
+held as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new
+crossing, a second statement beside a pinned one, a pinned statement that takes one more name and
+a pinned row whose import has gone alike. The rule reads import statements, so a module named to
+`importlib.import_module` is invisible to it, and two rules of their own hold that door. No core
+module but `areas.py` imports by a string through `importlib.import_module` or `__import__`, under
+any alias, except the profile discovery `DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its
+reason; and the core imports the modules that can import by a string any other way (`importlib`
+beyond `importlib.resources`, `pkgutil`, `runpy`, `zipimport`) only where `MACHINERY_IMPORTERS`
+pins it, with what each file reaches in them. Every call of `area_modules` or `area_imports` names
+`commands`, `hooks` or `doctor` as a literal. `scripts/` is repository tooling and stays under the
+`api.py` rule alone. What source cannot show is when a pardoned statement runs, so
+`test_in_isolation_no_core_module_loads_a_delivery_area` imports every core module in a clean
+interpreter and refuses any delivery module among what it loaded: the core loads the private
+layer only when a command asks for it.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
@@ -231,7 +219,23 @@ runner, build artifacts and package manager belong: no module outside a profile'
 names a stack — the machinery directly under `profiles/` included — except the pardons
 `tests/test_language_neutral.py` lists, each with its reason, and a new mention either moves into
 its profile or joins that list with one. None imports a profile's code either: the core finds a
-hint by discovery, and that test refuses an import of it without pardon.
+hint by discovery, and that test refuses an import of it without pardon. That discovery is the
+`profiles` package's own convention, in the style of an area's:
+`stayfixed.profiles.hints.hint_modules` lists each profile directory that ships a `hygiene.py`,
+so adding a stack's advice is adding its profile's file, and no core module learns the stack's
+name.
+
+The agents are core knowledge too, held in one place. A harness — Claude Code, Codex — is a value
+in `harnesses.HARNESSES`, and the hooks core answers through it:
+`stayfixed hook` asks `harnesses.detect` which value it runs under and shapes its stdout with
+that value's `render`, and the event a handler reads does not say which value that was. That is
+all detection decides, and `detect`'s docstring says why. Adding a harness is adding a value — a
+positive `detects`, its project-root variable, its `render`, its settings files and its `reach`,
+the tier each enforcement surface holds at under it — and nothing that reads those needs an
+edit: `doctor` walks the settings files every value names, and the README's table of what each
+agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a
+new harness still touches outside the registry is listed in the module docstring of
+`src/stayfixed/harnesses.py`.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their

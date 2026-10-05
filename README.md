@@ -6,19 +6,26 @@ the platform lets them, and an adoption state machine that runs each gate adviso
 repository has earned it. One plugin for Claude Code and Codex, one Python package with
 **no runtime dependencies**.
 
-> **Pre-1.0.** What ships: the memory store and its trust gate; the scaffolding engine that
-> writes files into a repository; the guards over a shell call, a commit message and a test
-> run; the bug ledger; the documentation and plan lints; `stayfixed setup`, which configures a
-> machine from a preset; the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade`, `overlay publish-template` — and `attach`/`detach`, which bind a
-> repository to it and unbind it
-> again; `stayfixed init`, which writes a repository's footprint from the shipped project
+> **Pre-1.0.** What ships is a core and three delivery areas. The **core** is the methodology's
+> gates and the records they check: the bug ledger; the documentation and plan lints; the guards
+> over a shell call, a commit message and a test run; the scaffolding engine that writes files into
+> a repository; `stayfixed init`, which writes a repository's footprint from the shipped project
 > templates, `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it
-> back; `stayfixed doctor`, which reports on the result; `stayfixed assess`, which inventories
-> what stands between a repository and enforcement; `stayfixed gate`, which judges a change
-> against what its base branch enforces; `stayfixed adopt`, which enforces a repository's gates
-> as each one passes; and the first stack profile, `python`, whose rules every agent is handed
-> and whose checks `stayfixed assess` runs. The hooks file that wires all of it into a session
+> back; `stayfixed assess`, which inventories what stands between a repository and enforcement;
+> `stayfixed gate`, which judges a change against what its base branch enforces; `stayfixed adopt`,
+> which enforces a repository's gates as each one passes; `stayfixed setup`, which configures a
+> machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery**
+> areas carry what belongs to a person rather than to a repository: `memory`, the note store and
+> its trust gate; `overlay`, the private overlay — `overlay create`, `overlay init`,
+> `overlay upgrade`, `overlay publish-template`; and `attach`, whose `attach`/`detach` bind a
+> repository to the overlay and unbind it again. The core imports none of them, and a test holds
+> that ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says how). The core is language-neutral, and a
+> stack is a **profile**: one stack's test runner, build artifacts and package manager belong to
+> its profile — data, and optionally the advice to give after that stack's test runner fails — so
+> a repository in several languages gets each stack's advice with no configuration. The first
+> profile, `python`, ships: every agent is handed its rules, `stayfixed assess` runs its checks,
+> and the stale-bytecode line of the note after a failing pytest run is its own. The hooks file
+> that wires all of it into a session
 > ships too, so on Claude Code installing the plugin is enough to make the guards fire and the
 > memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
 > skills ship with them, and so does one command meant for a machine rather than for you —
@@ -94,6 +101,13 @@ Codex.
 | session notices | context only | does not run |
 | repository gates | CI only | CI only |
 | methodology | instructions only | instructions only |
+
+One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
+background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins
+with `sleep`, is refused before it starts, and the refusal names the remedy. The same command run
+in the foreground passes. There is no switch that turns a guard off, in configuration or on the
+command line, so a false block is a defect: report it in
+[an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured
 (Claude Code 2.1.261). Where a surface does not reach an agent in the session, the repository
@@ -420,11 +434,13 @@ stayfixed doctor --json                                # every check with its st
 stayfixed hook SessionStart                            # dispatch one harness hook event (internal)
 ```
 
-Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
-`--root` (default: the current directory) and `--machine` (read a machine configuration file
-other than the default); `memory` commands take `--store` as well.
+Every command that reads a project takes `--root` (default: the current directory) and
+`--machine` (read a machine configuration file other than the default) — all of them but
+`guard bg-cleanup`, `commit strip` and `hook`, which read only what they are handed, and the two
+below; `memory` commands take `--store` as well.
 `stayfixed overlay` is the exception: its `--root` names the directory an overlay is created in
-or the overlay itself, not a project root, and it reads no `stayfixed.toml`. `--json` is accepted
+or the overlay itself, not a project root, and it reads no `stayfixed.toml`; `stayfixed setup`
+writes the `--machine` file rather than reading it. `--json` is accepted
 anywhere and prints one machine-readable object instead of one line.
 The commands that report a list of
 findings — `bugs check`, `docs check`, `memory refs`, `plan check` —

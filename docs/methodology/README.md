@@ -64,3 +64,12 @@ model: the tools, the context, the guards, the memory. stayfixed uses the word t
 and narrows it to the part of the harness that encodes *how a particular person works* —
 which is the part none of those four covers, and the part that does not travel between
 machines unless something carries it.
+
+The code splits that part along the same line. Its **core** holds the methodology's gates and the
+records they check, which live in a repository and travel with it; what belongs to a person
+rather than to a repository — the note store, the private overlay and the binding between the two
+— is the **delivery** layer, which the core never imports
+([CONTRIBUTING.md](../../CONTRIBUTING.md#areas) says how that is held). The code also uses the
+word in a narrower sense of its own: there, a harness is the agent a session runs in, Claude Code
+or Codex, one value each in the registry the README's table of what each agent enforces is read
+from.

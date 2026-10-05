@@ -571,6 +571,22 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 
+def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> None:
+    # A blocked agent's first question is how to get past the block, and a user's is how to turn
+    # it off. The section answers both where the table says a guard blocks: the one blocking
+    # guard judges only backgrounded commands, so the same command run in the foreground passes;
+    # nothing turns a guard off; and a false block is a defect to report. Each clause is one
+    # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
+    # too. Mutation (declared): the foreground sentence deleted -> this reddens.
+    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What each agent enforces section"
+    section = " ".join(match.group(1).split())
+    assert "judges only a command the agent runs in the background" in section
+    assert "The same command run in the foreground passes." in section
+    assert "There is no switch that turns a guard off" in section
+    assert "a false block is a defect" in section
+
+
 # A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table
 # runs to the next table header or the end of the block, so a `version` key in another table
 # is not taken for it.

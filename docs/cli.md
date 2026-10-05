@@ -22,8 +22,10 @@ Three things hold everywhere:
   continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
   reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than six
-  times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command, and `assess`, `gate` and `adopt`, takes them with the same meaning.
+  times below. `--root` and `--machine` are not memory's alone: every command that reads a project
+  takes them with the same meaning — all but `guard bg-cleanup`, `commit strip` and `hook`, which
+  take neither, and the `overlay` commands and `setup`, which mean something else by either one
+  they take ([Shared flags](#shared-flags)) — whether or not its heading spells them.
 
 | Option | Meaning |
 |---|---|
