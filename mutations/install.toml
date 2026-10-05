@@ -1266,8 +1266,8 @@ reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_e
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/stayfixed/setup/run.py"
-before = "        home, deny_rules, _existing_personal(machine), settings=settings"
-after = "        home, deny_rules, personal, settings=settings"
+before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), settings=settings)"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal, settings=settings)"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far

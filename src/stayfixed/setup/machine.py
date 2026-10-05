@@ -89,15 +89,15 @@ def read_machine(path: Path) -> dict[str, Any]:
     return read_machine_toml(path) or {}
 
 
-def _existing(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    return read_machine(path)
-
-
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name)
     return dict(value) if isinstance(value, dict) else {}
+
+
+def read_personal(path: Path) -> dict[str, Any]:
+    """The machine file's `[personal]` table, and `{}` where there is no file, no such table, or
+    a `personal` that is not a table: what an earlier run or the owner already set there."""
+    return _table(read_machine(path), "personal")
 
 
 def write_machine(
@@ -119,7 +119,7 @@ def write_machine(
     Everything else in the file — a table this writer has never heard of, a key at the top
     level — is carried through untouched, in the order it was written in.
     """
-    existing = _existing(path)
+    existing = read_machine(path)
 
     merged_personal = {**_table(existing, "personal"), **personal}
     # All three spread over the existing table, `overlay` included: replaced outright, a
