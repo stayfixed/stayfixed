@@ -316,10 +316,6 @@ class GitAnswer:
     value: str | None
     ran: bool = True
 
-    @property
-    def unavailable(self) -> bool:
-        return not self.ran
-
     def require(self, refusal: str) -> str | None:
         """The answer, raising `GitUnavailable(refusal)` rather than answering `None` when `git`
         could not be asked. The words are the caller's, because only the caller knows what went

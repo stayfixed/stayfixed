@@ -165,7 +165,7 @@ def _registered_worktree(root: Path) -> Path | None:
     """
     common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     private = git_answer(root, "rev-parse", "--path-format=absolute", "--git-dir")
-    if common.unavailable or private.unavailable:
+    if not (common.ran and private.ran):
         raise GitUnavailable(
             "`git` could not answer whether this is a registered worktree; stayfixed cannot "
             "fall back to the checkout that owns the store without it — check that `git` "
