@@ -28,6 +28,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the overlay's per-project layout: attach writes it, overlay renders it
         "PROJECTS",
         "PROJECT_RECORD",
+        "STORE_DIR",
         "COMMON_GROUP",
         # the one reader of the binding record, which attach reads with a policy of its own
         "read_binding_record",

@@ -67,6 +67,10 @@ LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
 # the surface.
 PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
+# The one directory under `projects/<name>/` that holds notes, named once: `permitted_roots`
+# builds the path with it, and `attach` states the path's shape with it where it may not print
+# the project's name, and lays out the group directories under it.
+STORE_DIR = "memory"
 COMMON = Path("common") / "memory"
 
 
@@ -311,7 +315,7 @@ def _inside(candidate: Path, parent: Path) -> bool:
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
     """This project's whole share of the overlay: the common notes and its own."""
-    return overlay / COMMON, overlay / PROJECTS / project / "memory"
+    return overlay / COMMON, overlay / PROJECTS / project / STORE_DIR
 
 
 # The one group whose notes are not this project's, and `common/memory` *is* its store rather

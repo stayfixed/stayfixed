@@ -91,6 +91,7 @@ from stayfixed.memory.api import (
     NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     Links,
     PartialLink,
     approval_recorded,
@@ -758,7 +759,7 @@ def _group_directories(binding: Binding, config: Config) -> list[str]:
     create` ships it — and skipping it in one of the two would be the first way they drift.
     """
     return [
-        f"{PROJECTS}/{binding.project}/memory/{group}/{_INSIDE}"
+        f"{PROJECTS}/{binding.project}/{STORE_DIR}/{group}/{_INSIDE}"
         for group in config.memory.groups
         if group != COMMON_GROUP
     ]

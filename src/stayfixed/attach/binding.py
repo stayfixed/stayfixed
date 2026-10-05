@@ -39,6 +39,7 @@ from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
+    STORE_DIR,
     binding_state,
     permitted_roots,
     read_binding_record,
@@ -47,10 +48,6 @@ from stayfixed.memory.api import (
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
 # decides between them (`binding_state`): this module answered the same question with a copy of
 # its own that called a checkout with no `origin` a mismatch.
-# The one directory under `projects/<name>/` that holds notes. `permitted_roots` is what names
-# it; this spelling exists so the `--store` refusal below can state the shape of the path it
-# wants without printing the project name it would otherwise embed.
-STORE_DIR = "memory"
 # One sentence, said by both `binding_for` and `read_binding`: neither reads an overlay root
 # that was not recorded through `stayfixed setup`.
 NO_OVERLAY = (
