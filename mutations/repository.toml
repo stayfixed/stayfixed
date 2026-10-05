@@ -3552,6 +3552,60 @@ reddens = [
   "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
 ]
 
+# At a tag the plugin folder the marketplace names may hold no more files than the plugin directory
+# lists unheld: a pull request may carry the tree past them, and a release is what it lists.
+[[mutation]]
+name = "release check stops refusing a plugin folder over the directory's count"
+file = "scripts/release.py"
+before = "        if count > PLUGIN_FILES_MAX:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count",
+  "tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names",
+]
+
+[[mutation]]
+name = "release check refuses a plugin folder at the directory's count"
+file = "scripts/release.py"
+before = "        if count > PLUGIN_FILES_MAX:"
+after = "        if count >= PLUGIN_FILES_MAX:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+]
+
+[[mutation]]
+name = "release check counts the plugin folder in the index instead of HEAD"
+file = "scripts/release.py"
+before = '"ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder'
+after = '"ls-files", "-z", "--", folder'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+]
+
+[[mutation]]
+name = "release check counts the plugin folder without a tag"
+file = "scripts/release.py"
+before = "    if tag is not None:\n        problems += plugin_folder_counts(root)"
+after = "    if True:\n        problems += plugin_folder_counts(root)"
+reddens = ["tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count"]
+
+[[mutation]]
+name = "release check counts the repository root whatever the marketplace source names"
+file = "scripts/release.py"
+before = "        folder = str(PurePosixPath(source))"
+after = '        folder = "."'
+reddens = ["tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names"]
+
+# A gate that cannot count does not pass: read as an empty listing, a git that failed is nought files.
+[[mutation]]
+name = "release check reads a plugin folder git could not list as empty"
+file = "scripts/release.py"
+before = "        if code != 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
+]
+
 # --- The release script returns its findings as every command does ---------------------------
 # While these were the installed CLI's `release` group, it was the one area reporting a finding
 # by raising `Failure`, and the cost was in `--json`: the frame (which the script still runs

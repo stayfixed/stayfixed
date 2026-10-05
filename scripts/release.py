@@ -34,7 +34,7 @@ import json
 import re
 import sys
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from stayfixed import fsops
@@ -42,6 +42,8 @@ from stayfixed.cli import JSON_EPILOG, run
 from stayfixed.command import CHECK_HELP, ROOT_HELP
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import git_run
+from stayfixed.printed import quoted
 from stayfixed.release.api import (
     FORMAT,
     HASHED_FILES,
@@ -77,7 +79,10 @@ START = "<!-- towncrier release notes start -->"
 _INIT = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 _HEADING = re.compile(r"^## (\S+)", re.MULTILINE)
 
-TAG_HELP = "the tag this run was created from; the six sources and the changelog must agree with it"
+TAG_HELP = (
+    "the tag this run was created from; the six sources and the changelog must agree with it, "
+    "and the plugin folder must hold no more files than the plugin directory lists unheld"
+)
 
 
 # --- One version string everywhere --------------------------------------------------------------
@@ -295,7 +300,43 @@ def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str,
     # with no record yet is told to write one.
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         problems += drift(root)
+    # At a tag and never on a pull request: a pull request may carry the tree past the count, and
+    # a release is what the directory lists.
+    if tag is not None:
+        problems += plugin_folder_counts(root)
     return problems, found
+
+
+def plugin_folder_counts(root: Path) -> list[str]:
+    """Each plugin folder the marketplace names in this tree that holds more files than the
+    plugin directory lists without holding the listing for a reviewer.
+
+    Counted in `HEAD`'s tree, as the directory reads a commit: a file on disk or only staged is
+    not in what it scans. A `source` that is not a path fetches the plugin from elsewhere, so this
+    tree holds none of it. A folder git cannot list is a problem rather than nought files: the
+    gate that cannot count does not pass.
+    """
+    problems = []
+    for entry in _marketplace_entries(root):
+        source = entry.get("source")
+        if not isinstance(source, str):
+            continue
+        folder = str(PurePosixPath(source))
+        code, listing = git_run(root, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder)
+        if code != 0:
+            problems.append(
+                f"the plugin folder {quoted(source)} could not be counted in HEAD's tree "
+                f"(git exited {code}); run the check in the git checkout the tag names"
+            )
+            continue
+        count = listing.count("\0")
+        if count > PLUGIN_FILES_MAX:
+            problems.append(
+                f"the plugin folder {quoted(source)} holds {count} files, over the "
+                f"{PLUGIN_FILES_MAX} the plugin directory lists unheld; publish the plugin "
+                "from its own repository first (RELEASING.md, section 2)"
+            )
+    return problems
 
 
 # --- The changelog ------------------------------------------------------------------------------
