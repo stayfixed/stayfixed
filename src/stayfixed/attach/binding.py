@@ -41,6 +41,7 @@ from stayfixed.memory.api import (
     PROJECTS,
     STORE_DIR,
     binding_state,
+    link_sources,
     permitted_roots,
     read_binding_record,
 )
@@ -99,12 +100,15 @@ SHARE_CANNOT_EXIST = (
     "record this binding or keep this project's notes; choose another `name` under [project] in "
     "stayfixed.toml"
 )
-# The refusal for a `project.name` whose directory fits under the longest path while the binding
-# record inside it does not. The shape again and never the name, for the reason above.
-RECORD_CANNOT_EXIST = (
-    "{projects}/<this project's name>/" + PROJECT_RECORD + " would be longer than a path may be "
-    "on this machine, so the binding would be recorded where nothing can read it back; choose a "
-    "shorter `name` under [project] in stayfixed.toml"
+# The refusal for a `project.name` whose directory fits under the longest path while a path
+# `attach` creates or links inside it does not. The shape again and never the name, for the reason
+# above, and never a group either: `memory.groups` is the repository's too, and a long entry is
+# the other way to reach it.
+PATH_CANNOT_EXIST = (
+    "{projects}/<this project's name>/ would hold a path longer than this machine allows -- the "
+    "binding record " + PROJECT_RECORD + ", the notes index or a memory group's directory -- so "
+    "attach could not record the binding or link the notes there; choose a shorter `name` under "
+    "[project] in stayfixed.toml, or shorter memory.groups entries"
 )
 
 
@@ -122,7 +126,7 @@ def cannot_exist(exc: OSError) -> bool:
     return isinstance(exc, NotADirectoryError) or exc.errno == errno.ENAMETOOLONG
 
 
-def refuse_unless_share_can_exist(binding: Binding) -> None:
+def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     """Refuse a `project.name` no directory under the overlay's `projects/` can carry.
 
     `attach` writes the binding record and the group directories under `projects/<name>/`, and
@@ -131,13 +135,21 @@ def refuse_unless_share_can_exist(binding: Binding) -> None:
     ignore region, the rule copies, the settings merge and the ledger. Above every write, then,
     and in `--check` as well. A share that is absent is fine: `attach` creates it.
 
-    **Nor a name whose directory fits under the longest path while the record inside it does
-    not.** `attach` writes the record through descriptors, which no path length bounds, so the
-    write succeeds; but every reader of the record names it by its whole path, and `_recorded`
-    answers a path past the longest one with "no record" -- so the binding would be written and
-    then read as unbound for ever, and the run itself ended in an internal error building the link
-    tree after its writes. Asked of the record's own path, whether or not the share is there yet:
-    a path past the longest one is refused before anything below it is looked up.
+    **Nor a name whose directory fits under the longest path while a path `attach` makes inside it
+    does not** -- the binding record, and every path the link tree points at there
+    (`link_sources`: the index, which the first attach writes, and each group's directory, which
+    it creates). Each is written or created through descriptors, which no path length bounds, so
+    the write succeeds; but every reader names it by its whole path. `_recorded` answers a record
+    past the longest one with "no record", so the binding would be written and then read as
+    unbound for ever; and the system refuses a link whose target is that long, so building the
+    link tree ended in an internal error (`PartialLink`, "File name too long") after the ignore
+    region, the settings merge, the ledger and the record -- with `--check` answering 0 before it,
+    because the overlay's sources it reads are shorter than a long group's directory. The paths
+    are the ones the tree is built from, and not suffix lengths counted here, so a group added to
+    the tree is asked about without a second list to keep. Each is asked with `lstat`, whether or
+    not the share is there yet: the system refuses a path past the longest one before it looks
+    anything up, so the answer is about the spelling and never about what the overlay holds.
+    `common/memory` is outside the share and its length is not the name's, so it is not asked.
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
@@ -151,13 +163,18 @@ def refuse_unless_share_can_exist(binding: Binding) -> None:
         mode = 0
     if mode is not None and not stat.S_ISDIR(mode):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
-    try:
-        (share / PROJECT_RECORD).stat()
-    except OSError as exc:
-        # Only the length decides here: an absent record is a first attach, and a record that
-        # is there and cannot be read was already refused by `_recorded` on the way to `binding`.
-        if exc.errno == errno.ENAMETOOLONG:
-            raise Refusal(RECORD_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)) from None
+    made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
+    for path in (path for path in made if path.is_relative_to(share)):
+        try:
+            path.lstat()
+        except OSError as exc:
+            # Only the length decides here: an absent path is a first attach, and a record that
+            # is there and cannot be read was already refused by `_recorded` on the way to
+            # `binding`.
+            if exc.errno == errno.ENAMETOOLONG:
+                raise Refusal(
+                    PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)
+                ) from None
 
 
 def not_overlay(config: Config) -> str | None:

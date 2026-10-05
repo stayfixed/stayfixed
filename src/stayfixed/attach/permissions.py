@@ -375,7 +375,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
-    refuse_unless_share_can_exist(binding)
+    refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the

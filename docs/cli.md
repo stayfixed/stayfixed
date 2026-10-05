@@ -2042,8 +2042,10 @@ then refuses. A `[project] name` no directory can carry there — the name of a 
 keeps under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name
 longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
 well, and the refusal names the shape of the path and never the name. So is a name whose directory
-there fits under the longest path the system allows while the `project.toml` that records the
-binding inside it does not, because nothing could read that record back.
+there fits under the longest path the system allows while a path `attach` makes inside it does
+not — the `project.toml` that records the binding, the notes index `MEMORY.md`, or the directory
+of one of `memory.groups` — because nothing could read that record back or link the notes to that
+path; a long `memory.groups` entry reaches it as a long name does, and the refusal names neither.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes

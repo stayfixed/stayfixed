@@ -1921,7 +1921,7 @@ reddens = [
 [[mutation]]
 name = "attach writes for a project name the overlay has no directory for"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_share_can_exist(binding)\n"
+before = "    refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
@@ -1931,7 +1931,7 @@ reddens = [
 [[mutation]]
 name = "attach --check previews a project name the overlay has no directory for"
 file = "src/stayfixed/attach/permissions.py"
-before = "    refuse_unless_share_can_exist(binding)\n"
+before = "    refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
@@ -1958,17 +1958,35 @@ reddens = [
   "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
 ]
 
-# A name whose directory fits under the longest path while its binding record does not: `attach`
-# wrote the record through descriptors and every later reader took it for no record, and the run
-# ended in an internal error after its writes, while `--check` answered 0. Both refuse it above
-# every write, and one predicate is that refusal for both.
+# A name whose directory fits under the longest path while a path `attach` makes inside it does
+# not -- the binding record, the index or a group's directory: `attach` wrote through descriptors,
+# every later reader took the record for no record, and the run ended in an internal error linking
+# the tree after its writes, while `--check` answered 0. Both refuse it above every write, and one
+# predicate, asked of the paths the link tree is built from, is that refusal for both.
 [[mutation]]
-name = "attach and --check go on for a name whose binding record is past the longest path"
+name = "attach and --check go on for a name whose share holds a path past the longest one"
 file = "src/stayfixed/attach/binding.py"
-before = "        if exc.errno == errno.ENAMETOOLONG:\n            raise Refusal(RECORD_CANNOT_EXIST"
-after = "        if False:\n            raise Refusal(RECORD_CANNOT_EXIST"
+before = "            if exc.errno == errno.ENAMETOOLONG:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
+after = "            if False:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
 reddens = [
   "tests/attach/test_commands.py::test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-group]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-long-group]",
+]
+
+# The paths asked are the link tree's own, and the record alone is the shortest of them: asked of
+# the record only, a name whose record fits while the index or a group's directory does not went on
+# to an internal error after every write, which is the gap the record's own refusal left.
+[[mutation]]
+name = "attach and --check ask only the binding record whether it can exist"
+file = "src/stayfixed/attach/binding.py"
+before = "    made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))\n"
+after = "    made = (share / PROJECT_RECORD,)\n"
+reddens = [
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-group]",
+  "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-long-group]",
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file

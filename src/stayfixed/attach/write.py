@@ -1177,7 +1177,7 @@ def _plan(
     # Beside the binding too: a `project.name` no directory under the overlay can carry leaves the
     # binding record and the group directories nowhere to go, and the overlay's sources read under
     # it answer "none" rather than refusing, so nothing below would ask before writing.
-    refuse_unless_share_can_exist(binding)
+    refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
     if diff.widens and not confirmed:
         raise Refusal(

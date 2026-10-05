@@ -108,6 +108,31 @@ def linked_names(config: Config) -> tuple[str, ...]:
     return (INDEX_NAME, *config.memory.groups)
 
 
+def link_sources(overlay: Path, config: Config) -> tuple[Path, ...]:
+    """Every path in the overlay an overlay-mode link tree points at, in `linked_names` order.
+
+    `_link_source`'s rule, the one `attach_main` builds the tree by and `detach_main` reads it
+    back by, applied to every name the tree holds. `attach` asks each of these paths, above its
+    first write, whether a path that long can exist on this machine
+    (`attach.binding.refuse_unless_share_can_exist`): the index's is where `_render_missing_index`
+    writes the first index and every group's but the common one is a directory `attach` creates,
+    so a project's share that fits while one of these does not ended the run in a `PartialLink`
+    after every write before it. One list, so the check and the tree cannot come to disagree
+    about which paths they are.
+    """
+    return tuple(_link_source(overlay, config.project.name, name) for name in linked_names(config))
+
+
+def _link_source(overlay: Path, project: str, name: str) -> Path:
+    """Where the link tree's entry `name` points in the overlay: the index inside this project's
+    own store, and a group where `overlay_group_target` routes it. `attach_main` links the index
+    at the `--store` it was handed, which it has just held to that same store (`permitted_roots`).
+    """
+    if name == INDEX_NAME:
+        return permitted_roots(overlay, project)[1] / INDEX_NAME
+    return overlay_group_target(overlay, project, name)
+
+
 def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, str]:
     """The root the harness link is written under, and the link's path inside it.
 
@@ -589,9 +614,7 @@ def _detach_source(config: Config, machine: Path | None, name: str) -> Path | No
     overlay = overlay_root(machine)
     if overlay is None:
         return None
-    if name == INDEX_NAME:
-        return permitted_roots(overlay, config.project.name)[1] / INDEX_NAME
-    return overlay_group_target(overlay, config.project.name, name)
+    return _link_source(overlay, config.project.name, name)
 
 
 def detach_main(

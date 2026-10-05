@@ -12,14 +12,16 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-one names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-two names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
 and answers its own way when it cannot (`read_binding_record`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
-`harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
-every name the tree holds from git), whether the machine records any approval for a store that
+`harness_memory_path`, `Links`, `PartialLink`, `linked_names`, which `attach` reads to hide
+every name the tree holds from git, and `link_sources`, every path the tree points at in the
+overlay, which `attach` asks the length of before its first write), whether the machine records
+any approval for a store that
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
@@ -137,6 +139,7 @@ from stayfixed.memory.worktree import (
     harness_link_needed,
     harness_memory_path,
     link,
+    link_sources,
     linked_names,
 )
 
@@ -172,6 +175,7 @@ __all__ = [
     "harness_link_needed",
     "harness_memory_path",
     "link",
+    "link_sources",
     "linked_names",
     "main_checkout",
     "markers",

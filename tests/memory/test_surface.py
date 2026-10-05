@@ -42,6 +42,9 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
         "linked_names",  # every name the tree holds, which attach hides from git
+        # every path the tree points at in the overlay, which attach asks the length of before
+        # its first write
+        "link_sources",
         # the note store a doctor row reads, resolved once per area per report, for the attach
         # area's row
         "Answers",
