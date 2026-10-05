@@ -82,6 +82,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
+from stayfixed.jsonobject import json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
@@ -321,7 +322,7 @@ def ledger(root: Path) -> AttachLedger:
     """
     path = root / ATTACH_LEDGER
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise Failure(
             f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added to "
@@ -331,25 +332,17 @@ def ledger(root: Path) -> AttachLedger:
         raise Failure(f"{path} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{path} is not valid JSON: {exc}") from exc
-    except RecursionError:
-        # Valid JSON nested past what the parser follows, which a clone can commit: unreadable,
-        # like the arms above, rather than an exception past every reader's catch.
-        raise Failure(
-            f"{path} is not a ledger `stayfixed attach` wrote: it is nested deeper than this "
-            f"reader follows"
-        ) from None
-    except ValueError:
-        # Valid JSON holding an integer literal longer than the interpreter converts, which
-        # `json.loads` meets with a plain `ValueError`: unreadable, for the reason the arm above
-        # gives. `UnicodeDecodeError` and `JSONDecodeError` are `ValueError`s too, caught above.
-        raise Failure(
-            f"{path} is not a ledger `stayfixed attach` wrote: it holds a number longer than "
-            f"this reader converts"
-        ) from None
-    if not isinstance(raw, dict):
-        raise Failure(f"{path} is not a JSON object")
+    # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
+    # JSON past the parser's reach, which a clone can commit, is unreadable like the arms above,
+    # and said in the words every other refusal of a ledger here uses: not one `attach` wrote.
+    raw = json_object(
+        text,
+        str(path),
+        error=Failure,
+        limit=lambda clause: Failure(
+            f"{path} is not a ledger `stayfixed attach` wrote: it {clause}"
+        ),
+    )
     rules, keys, directories = _checked(raw, path)
     store = raw.get("store", "")
     if not isinstance(store, str):
@@ -597,7 +590,7 @@ def _absent_directories(root: Path) -> tuple[str, ...]:
     """Which of `CREATED_DIRS` this repository does not have, asked before the first write.
 
     Asked *before*, because after the ledger is written `.stayfixed/local/` exists and the answer
-    is no longer the one `detach` needs. `attach` therefore takes it at the top of the run and
+    is not the one `detach` needs. `attach` therefore takes it at the top of the run and
     hands it down, the same way it hands down `previous`.
 
     `is_dir()` and not `exists()`: a path of this name that is a file, or a symlink to one, is
@@ -902,11 +895,10 @@ def _link_everywhere(
 
     That accumulation is the whole of the re-raise below. `link` builds its own `.created` per
     call, so an exception let out untouched carries the failing checkout's links and not the
-    owning checkout's — which are on disk, made by `attach_main` one call earlier. This
-    docstring claimed "`.created` intact" while that was false, and a list missing the links
-    that were actually made defeats the type: a caller repairing from it is told nothing was
-    made. `attach_main` itself is the first call, so its own `.created` is already the whole of
-    what this run made and needs no wrapping.
+    owning checkout's — which are on disk, made by `attach_main` one call earlier — and a list
+    missing the links that were actually made defeats the type: a caller repairing from it is told
+    nothing was made. `attach_main` itself is the first call, so its own `.created` is already the
+    whole of what this run made and needs no wrapping.
 
     **`attach_main` is applied to the owning checkout and never to `--root`.** The loop below
     skips `main_checkout(root)` unconditionally, so applied to whatever `--root` names, `stayfixed
@@ -997,8 +989,8 @@ def _harness_fallback(
     one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
     A settings value is exactly such state, and this is the same channel that module calls "the
     one hop that leaves stayfixed's gate" — the harness's own native reader, outside every
-    delimiter and every trust record this area controls. `_apply_harness_link` already revokes
-    the *symlink* when the record lapses; this key outlived it, so a `git pull` that added one
+    delimiter and every trust record this area controls. `_apply_harness_link` revokes the
+    *symlink* when the record lapses; a key that outlived it would let a `git pull` that added one
     note shut every channel except the one pointing the harness straight at the new bytes.
 
     The two arms that return without writing are the two that would otherwise leak: the link is
@@ -1534,9 +1526,9 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
     """Remove the directories this repository did not have before the attach, and only those.
 
     The last step of a detach, after the ledger itself is gone, because `.stayfixed/local/` holds
-    it. `docs/cli.md` promises "an attach and a detach leave the tree byte-for-byte as it was";
-    that was false for directories and the test that backed it could not see it, because
-    `_snapshot` filters on `is_file()`. Four directories survived every round trip.
+    it. `docs/cli.md` promises "an attach and a detach leave the tree byte-for-byte as it was",
+    and directories are part of the tree, though a snapshot that filters on `is_file()` cannot
+    see them.
 
     **Three things keep this from deleting somebody's directory.** It walks `CREATED_DIRS`, a
     closed list, and keeps only what the ledger named — so a committed ledger can shorten the
@@ -1544,7 +1536,7 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
     the first write, so a directory that was already there is never on it. And the removal is
     `rmdir`: a directory holding anything else at all — the owner's own `.claude/settings.json`,
     a `.codex/rules/` file they wrote by hand, a file some other tool left — survives, and its
-    parents then survive with it because they are no longer empty either.
+    parents then survive with it because they are not empty either.
 
     `ENOTEMPTY` is therefore an ordinary outcome and not a failure, and it is the one this
     `except OSError` is written for: `fsops.rmdir_within` already contains the walk to `root` and
@@ -1768,10 +1760,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     #
     # The anchor for each checkout's harness link is the same shape and is asked in the same
     # breath, with this list as its argument: `detach_main` asks it per checkout from inside the
-    # withdrawal, so a home whose `.claude` became a symlink after the attach — a dotfiles
-    # manager adopting it is the ordinary way — let a raw `UnsafePath` out of `detach` as
-    # `internal error`, with the rule files already deleted and every later run failing at the
-    # same line.
+    # withdrawal, so left to it, a home whose `.claude` became a symlink after the attach — a
+    # dotfiles manager adopting it is the ordinary way — would let a raw `UnsafePath` out of
+    # `detach` as `internal error`, with the rule files already deleted and every later run
+    # failing at the same line.
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)

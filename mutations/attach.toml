@@ -1775,30 +1775,6 @@ reddens = [
   "tests/attach/test_binding.py::test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_not_it",
 ]
 
-# A committed ledger nested past what `json.loads` follows raises `RecursionError` on every
-# supported Python. Read as the unreadable ledger it is, `doctor` warns and `attach` and `detach`
-# fail before they write; let through, all three ended in an exception past every reader's catch.
-[[mutation]]
-name = "the attach ledger's reader lets a nested ledger raise"
-file = "src/stayfixed/attach/write.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, which a clone can commit"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
-  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
-  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
-]
-
-# The same parse in the settings file `attach` merges into.
-[[mutation]]
-name = "attach's settings reader lets a nested document raise"
-file = "src/stayfixed/attach/permissions.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows, in a file"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows, in a file"
-reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
-]
-
 # `project.name` is committed and spells the one free part of the paths read under the overlay's
 # `projects/<name>/`. A path the name rules out is one the overlay has no file at. `doctor` reads
 # such a name's binding record as absent, so the checkout is never bound and is granted what
@@ -1968,33 +1944,6 @@ before = "    except FileNotFoundError:\n        return\n"
 after = "    except FileNotFoundError:\n        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))\n"
 reddens = [
   "tests/attach/test_write.py::test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_one",
-]
-
-# A committed ledger holding an integer literal longer than the interpreter converts makes
-# `json.loads` raise a plain `ValueError`, which no reader of the ledger caught: `doctor` read red,
-# "this check could not run", in the `attached` and `hook-entries` rows, and `attach` and `detach`
-# ended in an internal error. Read as the unreadable ledger it is, all four answer as they do for a
-# ledger that does not parse.
-[[mutation]]
-name = "the attach ledger's reader lets a number past the parser's reach raise"
-file = "src/stayfixed/attach/write.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`: unreadable"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
-  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
-  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
-]
-
-# The same number in the settings file `attach` merges into.
-[[mutation]]
-name = "attach's settings reader lets a number past the parser's reach raise"
-file = "src/stayfixed/attach/permissions.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts, which\n        # `json.loads` meets with a plain `ValueError`, in a file"
-reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file

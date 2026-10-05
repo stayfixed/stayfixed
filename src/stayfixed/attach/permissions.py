@@ -25,7 +25,6 @@ subtract with them, and `check` reports only how many there were.
 
 from __future__ import annotations
 
-import json
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +41,7 @@ from stayfixed.attach.binding import (
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
 from stayfixed.harnesses import CLAUDE
+from stayfixed.jsonobject import json_object
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
@@ -89,20 +89,9 @@ class PermissionDiff:
 def _object(text: str, label: str) -> dict[str, Any]:
     if not text.strip():
         return {}
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise EntriesError(f"{label} is not valid JSON: {exc}") from exc
-    except RecursionError:
-        # Valid JSON nested past what the parser follows, in a file a clone may have committed.
-        raise EntriesError(f"{label} is nested deeper than this reader follows") from None
-    except ValueError:
-        # Valid JSON holding an integer literal longer than the interpreter converts, which
-        # `json.loads` meets with a plain `ValueError`, in a file a clone may have committed.
-        raise EntriesError(f"{label} holds a number longer than this reader converts") from None
-    if not isinstance(raw, dict):
-        raise EntriesError(f"{label} is not a JSON object")
-    return raw
+    # Valid JSON past the parser's reach, in a file a clone may have committed, is the same
+    # `EntriesError` as a malformed one: every caller here refuses both alike.
+    return json_object(text, label, error=EntriesError)
 
 
 def settings_document(text: str) -> dict[str, Any]:

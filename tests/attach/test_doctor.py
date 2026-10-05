@@ -446,8 +446,8 @@ def test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable(
     # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
     # Python, and it reached `_guarded` from both rows that read the ledger: red, "this check
     # could not run", on a file a clone chose. It is a ledger that cannot be read. Mutation
-    # (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" -> both
-    # rows are red again.
+    # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
+    # raise" -> both rows are red again.
     root = _attached(tmp_path)
     (root / LEDGER).write_text('{"entries": ' + NESTED + "}", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -469,8 +469,8 @@ def test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unr
     # `ValueError`, which reached `_guarded` from both rows that read the ledger: red, "this check
     # could not run", exit 1, on a file a clone chose and with nothing wrong on the machine. The
     # owner's checkout, whose overlay grants every entry, reads as the unreadable ledger it is.
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the
-    # parser's reach raise" -> both rows are red again.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
+    # reach raise" -> both rows are red again.
     root = _attached(tmp_path)
     (root / LEDGER).write_text('{"entries": {"x": ' + LONG_NUMBER + "}}", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))

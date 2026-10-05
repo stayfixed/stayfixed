@@ -895,8 +895,8 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
     tmp_path: Path,
 ) -> None:
     # The ledger is the unreadable ledger it is, and the attach that reads it back answers so
-    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the attach
-    # ledger's reader lets a nested ledger raise" -> both raise `RecursionError`.
+    # rather than ending in an internal error. Mutation (oracle): `mutations/`'s "the JSON object
+    # reader lets a document nested past the parser raise" -> both raise `RecursionError`.
     root, store, machine = _attachable(tmp_path)
     attach(
         root,
@@ -924,8 +924,8 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
 
 def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
     # The settings file `attach` merges into, read first by `permissions.settings_document`.
-    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a nested document raise"
-    # -> both raise `RecursionError`.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> both raise `RecursionError`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text('{"hooks": ' + NESTED + "}", encoding="utf-8")
@@ -953,7 +953,7 @@ LONG_NUMBER = "1" * 5_000
 def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error(
     tmp_path: Path,
 ) -> None:
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a number past the parser's
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
     # reach raise" -> both raise `ValueError`.
     root, store, machine = _attachable(tmp_path)
     attach(
@@ -981,7 +981,7 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
 
 
 def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_path: Path) -> None:
-    # Mutation (oracle): `mutations/`'s "attach's settings reader lets a number past the parser's
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a number past the parser's
     # reach raise" -> both raise `ValueError`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()

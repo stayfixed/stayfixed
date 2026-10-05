@@ -245,8 +245,8 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
 def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
     # A committed ledger nested deeper than `json.loads` follows ended `detach` in an internal
     # error. It is a ledger that cannot be read, so the run fails before it withdraws anything.
-    # Mutation (oracle): `mutations/`'s "the attach ledger's reader lets a nested ledger raise" ->
-    # `RecursionError`.
+    # Mutation (oracle): `mutations/`'s "the JSON object reader lets a document nested past the
+    # parser raise" -> `RecursionError`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -262,7 +262,7 @@ def test_a_ledger_nested_past_the_parsers_reach_removes_nothing(tmp_path: Path) 
 def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_path: Path) -> None:
     # A committed ledger holding an integer literal longer than the interpreter converts ended
     # `detach` in an internal error, `ValueError`. It is a ledger that cannot be read, so the run
-    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the attach ledger's
+    # fails before it withdraws anything. Mutation (oracle): `mutations/`'s "the JSON object
     # reader lets a number past the parser's reach raise" -> `ValueError`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])

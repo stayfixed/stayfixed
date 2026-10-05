@@ -24,9 +24,12 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from stayfixed.errors import Refusal
+from stayfixed.jsonobject import json_object
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
+# What every refusal of a settings document calls it: the engine is handed text, never a path.
+_DOCUMENT = "settings document"
 
 
 class EntriesError(Refusal):
@@ -83,28 +86,16 @@ def _load(document: str, *, numbers: Callable[[str], object] = int) -> dict[str,
     """The document as an object, with each integer literal handed to `numbers`."""
     if not document.strip():
         return {}
-    try:
-        raw = json.loads(document, parse_int=numbers)
-    except json.JSONDecodeError as exc:
-        raise EntriesError(f"settings document is not valid JSON: {exc}") from exc
-    except RecursionError:
-        # Valid JSON nested past what the parser follows. A settings document may be one a clone
-        # committed, so it is refused rather than left to escape the callers that catch the
-        # refusal, and refused as a limit and not as a shape: see `ParserLimitError`.
-        raise ParserLimitError(
-            "settings document is nested deeper than this reader follows"
-        ) from None
-    except ValueError:
-        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits
-        # by default), which `json.loads` meets with a plain `ValueError`. Refused for the reason
-        # the arm above gives; the message is not the interpreter's, which tells the reader to
-        # raise a limit.
-        raise ParserLimitError(
-            "settings document holds a number longer than this reader converts"
-        ) from None
-    if not isinstance(raw, dict):
-        raise EntriesError("settings document is not a JSON object")
-    return raw
+    # A settings document may be one a clone committed, so valid JSON past the parser's reach is
+    # refused rather than left to escape the callers that catch the refusal, and refused as a
+    # limit and not as a shape: see `ParserLimitError`.
+    return json_object(
+        document,
+        _DOCUMENT,
+        error=EntriesError,
+        limit=lambda clause: ParserLimitError(f"{_DOCUMENT} {clause}"),
+        numbers=numbers,
+    )
 
 
 def _hooks_table(raw: dict[str, Any]) -> dict[str, Any]:

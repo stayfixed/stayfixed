@@ -1225,9 +1225,9 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
     # Python, and a harness may read it (Claude Code's parser does), so the hooks in it may run.
     # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
     # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
-    # (oracle): `mutations/`'s "the settings engine lets a nested document raise past its refusal"
-    # -> the row reads "this check could not run"; "hook-entries reads a settings file past the
-    # parser's reach as one it is blind to" -> it warns.
+    # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
+    # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
+    # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
     _walked(tmp_path, root, label).write_text(
         '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"

@@ -2162,30 +2162,43 @@ reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
 
-# A settings document nested past what `json.loads` follows raises `RecursionError` on every
-# supported Python, and every caller of the engine catches its refusal and nothing else: `doctor`'s
-# `hook-entries` read "this check could not run" and `attach` ended in an internal error, on a file
-# a clone can commit.
+# A document nested past what `json.loads` follows raises `RecursionError` on every supported
+# Python, and every caller of the shared reader catches its refusal and nothing else: the settings
+# engine's (`doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an
+# internal error), `attach`'s reader of the settings file it merges into, and its reader of the
+# ledger it wrote (`doctor` warns and `attach` and `detach` fail before they write), each on a file
+# a clone can commit. One line serves all three readers, so one entry names a test of each.
 [[mutation]]
-name = "the settings engine lets a nested document raise past its refusal"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    except RecursionError:\n        # Valid JSON nested past what the parser follows. A settings document"
-after = "    except ZeroDivisionError:\n        # Valid JSON nested past what the parser follows. A settings document"
+name = "the JSON object reader lets a document nested past the parser raise"
+file = "src/stayfixed/jsonobject.py"
+before = "    except RecursionError:"
+after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
+  "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_nested_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
 ]
 
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
-# raises a plain `ValueError`, which is neither of the two errors above. The merge refuses it, as it
-# refuses the nesting; `owned_ids` reads the number as its text, below, so `doctor` never meets it.
+# raises a plain `ValueError`, which is neither of the two errors above. Each reader refuses it as
+# it refuses the nesting — a committed ledger holding one read red, "this check could not run", in
+# `doctor`'s `attached` and `hook-entries` rows — and `owned_ids` reads the number as its text,
+# below, so `doctor` never meets it in a settings file.
 [[mutation]]
-name = "the settings engine lets a number past the parser's reach raise past its refusal"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    except ValueError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
-after = "    except ZeroDivisionError:\n        # Valid JSON holding an integer literal longer than the interpreter converts (4,300 digits"
+name = "the JSON object reader lets a number past the parser's reach raise"
+file = "src/stayfixed/jsonobject.py"
+before = "    except ValueError:"
+after = "    except ZeroDivisionError:"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
+  "tests/attach/test_write.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_holding_a_number_past_the_parsers_reach_reads_as_unreadable",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[long-number-overlay]",
+  "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
+  "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
 ]
 
 # A document past a limit of the parser is refused as its own kind of `EntriesError`, so `doctor` can
