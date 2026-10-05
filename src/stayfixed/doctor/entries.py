@@ -2,7 +2,7 @@
 
 A core check, listed in `checks.CHECKS` and asked through the run's guard like the others, and
 the only one that reads what the areas contribute besides rows: each area's `Claims`, the ids it
-recorded and the commands it grants, told in the area's own `Wording`. The walk over the settings
+recorded and the entries it grants, told in the area's own `Wording`. The walk over the settings
 files, the rules for which area vouches for an entry, and the sentences each kind of finding is
 told in are one unit that no other check reads, so they sit in a module of their own and
 `checks.py` stays the list of checks and the run. It imports nothing of the run's, so `checks.py`
@@ -23,7 +23,7 @@ from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import names_regular_file
 from stayfixed.harnesses import HARNESSES
-from stayfixed.scaffold import ParserLimitError, entry_commands, marker_id
+from stayfixed.scaffold import ParserLimitError, Placed, marker_id, placed_entries
 from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
@@ -55,7 +55,7 @@ def _area_claims(context: Context) -> list[Claims]:
     An area's own record is the only thing that can say what it put into settings files, so the
     core asks each area that has one — `context.claims` — with this report's context and under
     this row's guard. The answers are kept apart rather than pooled: an entry is vouched for only
-    by the one area that both records its id and grants its command, because a record is a file a
+    by the one area that both records its id and grants it, because a record is a file a
     repository can write, and one area's record standing on another area's grant vouches for an
     entry neither area put there whole. A `None` is still one for the whole: an id one record could
     not be read for, or a command one source could not be asked about, is not one the rest can
@@ -74,6 +74,23 @@ def _area_claims(context: Context) -> list[Claims]:
         return [ask(context) for ask in context.claims]
     except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
         raise UnansweredClaims from exc
+
+
+def _grants(area: Claims, placed: Placed) -> bool:
+    """Whether `area` grants the entry `placed` is, where it is: its command, under its event, in a
+    group with its matcher.
+
+    All three, because a granted command under another event or matcher is a hook the area never
+    put there — the harness runs it at another time, or for other tools — and vouching for it
+    would let a repository hang the owner's command anywhere it liked and read "all accounted
+    for". Told, where the area records the entry's id, as an entry its source does not grant,
+    which it does not."""
+    return any(
+        grant.command == placed.command
+        and grant.event == placed.event
+        and grant.matcher == placed.matcher
+        for grant in area.granted or ()
+    )
 
 
 def _rebuild(words: Wording) -> str:
@@ -341,32 +358,32 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
         try:
             # The engine's own reader, so a document `apply_entries` would refuse is one this walk
             # names rather than silently tolerates.
-            commands = entry_commands(document)
+            entries = placed_entries(document)
         except ParserLimitError:
             found.append((_UNCHECKED, None, label))
             continue
         except Refusal:
             found.append((_BLIND, None, label))
             continue
-        for position, command in enumerate(commands, start=1):
-            entry_id = marker_id(command)
+        for position, placed in enumerate(entries, start=1):
+            entry_id = marker_id(placed.command)
             if entry_id is None:
                 foreign += 1
                 continue
             claimed += 1
-            where = f"{label} entry {position} of {len(commands)}"
+            where = f"{label} entry {position} of {len(entries)}"
             holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
             if not holders and not unread:
                 # Needs the records alone, so a source that cannot be asked does not withhold
                 # it: a committed record beside a committed entry it does not hold is red
                 # whether or not this machine records a source.
                 found.append((_UNRECORDED, None, where))
-            elif askable and not any(command in (answer.granted or ()) for answer in holders):
+            elif askable and not any(_grants(answer, placed) for answer in holders):
                 # Needs the sources too, and only a holder's own grant vouches for its record:
                 # absolving an entry on a record alone, or on one area's record and another's
                 # grant, is what this row may never do. Without a grant to compare, the entry is
                 # neither absolved nor accused.
-                if any(command in (answer.granted or ()) for answer in unread):
+                if any(_grants(answer, placed) for answer in unread):
                     # An area whose record is unreadable grants it, so it may be that area's: the
                     # record that would say is the one missing, and the row warns that it is.
                     continue
@@ -415,7 +432,7 @@ def hook_entries(context: Context) -> Row:
     """Every entry in every settings file, with provenance.
 
     Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
-    marker id one area records *and* whose command that same area still grants is that area's;
+    marker id one area records *and* that same area still grants where it sits is that area's;
     an entry with no marker is foreign and is left alone by every merge this project ships; an
     entry that **claims** the marker and cannot be vouched for is a repository saying it is
     stayfixed, which is a stronger statement than "foreign" and the one a reader needs. It is
@@ -429,7 +446,9 @@ def hook_entries(context: Context) -> Row:
     answer "all accounted for". An id is credible only beside a grant from a source the repository
     cannot choose, and only the same area's grant, so one area's record never borrows another's. The
     grant is the *marked command* and not the id, because an id that is granted with a different
-    command hung on it is the same attack one step down.
+    command hung on it is the same attack one step down; and it is that command *where the area
+    puts it*, under its event and its group's matcher (`_grants`), because the granted command
+    hung under another event or matcher is the same attack one step further.
 
     Where a source this machine records cannot be asked, the answer is the one this check gives a
     file it could not parse: report it, never absolve it. That withholds the grant comparison and
@@ -470,7 +489,7 @@ def hook_entries(context: Context) -> Row:
     once, so two areas' entries of one kind each get their area's way out. An entry no record holds
     names every record it is missing from, and with no area claiming anything, none.
 
-    **Entries are counted, never keys.** `scaffold.entry_commands` answers one command per entry,
+    **Entries are counted, never keys.** `scaffold.placed_entries` answers one element per entry,
     in document order, so N entries sharing one id are N entries and one id under two events is
     two. Keyed by id, as `owned_ids` answers, the claimed count would deflate and `foreign` inflate
     by exactly the difference. The count comes from `marker_id`, the predicate `owned_ids` is built
@@ -478,7 +497,7 @@ def hook_entries(context: Context) -> Row:
 
     **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
     read and a document the engine refuses are each named, because "all accounted for" is the one
-    answer this check must never give about entries it did not see. `entry_commands` reads the
+    answer this check must never give about entries it did not see. `placed_entries` reads the
     document with the engine's own strict walk, the one `apply_entries` rewrites through, so a
     shape the merge would refuse is exactly the shape this walk admits it cannot account for. The
     report names the file and never its contents.
@@ -497,7 +516,7 @@ def hook_entries(context: Context) -> Row:
     it may run, and a warning there would let a clone commit a marked entry beside such nesting and
     keep the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may
     leave unknown the provenance of an entry a harness may run. A number longer than the
-    interpreter converts is not refused at all: `entry_commands` reads it as its text, and the
+    interpreter converts is not refused at all: `placed_entries` reads it as its text, and the
     entries beside it are judged as they would be without it.
     """
     return _told(*_classify(context))

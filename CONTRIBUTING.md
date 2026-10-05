@@ -179,11 +179,11 @@ loaded: the core loads the private layer only when a command asks for it.
   area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
   settings files as one nothing records, and goes red too when there is one. A `Contribution`
   may also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings
-  files and the commands it still grants there, which the core's `hook-entries` row asks with the
-  same `Context`, so an entry the area put there is told apart from a repository claiming it did.
-  The record may be repository bytes and the grants may not, and an entry is absolved only by an
-  area that both records its id and grants its command, never by one area's record and another's
-  grant. `Claims` also carries the area's `Wording`, the phrases the row tells its record, its
+  files and the commands it still grants there, each under the event and the matcher it grants it
+  under, which the core's `hook-entries` row asks with the same `Context`, so an entry the area put
+  there is told apart from a repository claiming it did. The record may be repository bytes and
+  the grants may not, and an entry is absolved only by an area that both records its id and grants
+  its command where the entry sits, never by one area's record and another's grant. `Claims` also carries the area's `Wording`, the phrases the row tells its record, its
   source and their remedies in, so the core names no area's files or commands of its own; they are
   printed verbatim, so they are stayfixed's own fixed strings and never built from repository
   bytes.

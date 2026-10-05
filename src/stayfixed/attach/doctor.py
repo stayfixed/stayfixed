@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from stayfixed.attach.write import AttachLedger
     from stayfixed.doctor.api import Claims, Context, Contribution, Row, Status, Wording
     from stayfixed.memory.api import Answers
+    from stayfixed.scaffold import Placed
 
 
 # What `_ledger_state` answers beside a ledger: no file at the ledger's path, and a file there that
@@ -361,8 +362,9 @@ def _binding_answer(context: Context, ledger: _Ledger) -> Binding | str:
         return UNASKABLE
 
 
-def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
-    """Every marked command the overlay grants this repository **right now**, or `None`; and,
+def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]:
+    """Every marked command the overlay grants this repository **right now**, where it grants it,
+    or `None`; and,
     beside it, why that grant stops at `common/` where "the overlay does not grant" an entry would
     be false: `MISMATCH` or `UNREADABLE_RECORD`, else `None` (`_wording` says what each changes).
 
@@ -375,6 +377,9 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
     `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
     the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
     still let a repository take an id the overlay does grant and hang a different command on it.
+    And each is where `attach` would write it — its event and its group's matcher, read back by
+    `scaffold.wanted_placements` as the `hook-entries` walk reads the settings file — because the
+    granted command hung under another event or matcher is a hook the overlay never granted.
 
     **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
     this machine records and the project's name, the same one `attach` would install from, and
@@ -426,9 +431,10 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
     other.
     """
     from stayfixed.attach.binding import UnreadableRecord, binding_for
-    from stayfixed.attach.permissions import common_entries, marked_commands, overlay_entries
+    from stayfixed.attach.permissions import common_entries, overlay_entries
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
+    from stayfixed.scaffold import wanted_placements
 
     overlay = context.overlay_root
     if overlay is None:
@@ -445,11 +451,12 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
             wanted = overlay_entries(binding)
         else:
             wanted = common_entries(overlay)
+        granted = set(wanted_placements(wanted))
     except (Failure, Refusal, OSError):
         return None, None
     if binding is not None and binding.state == MISMATCH:
         narrowed = MISMATCH
-    return {command for _, command in marked_commands(wanted)}, narrowed
+    return granted, narrowed
 
 
 def _wording(narrowed: str | None = None) -> Wording:
@@ -515,12 +522,13 @@ def _claims(context: Context, ledger: _Ledger) -> Claims:
     """What `attach` put into settings files, for `hook-entries`' provenance column.
 
     The ledger says which marker ids the last `attach` recorded, and the overlay says which
-    marked commands it grants right now; the row needs both, because the ledger is a file a clone
-    can commit. The overlay is asked unless the ledger is readable and records nothing, because
-    then nothing can be absolved and asking it costs a `git` call: an empty ledger keeps its old
-    answer, every entry claiming the marker is one no attach recorded. A ledger that cannot be read
-    is not that: the grant is what decides whether an entry beside it may be the owner's (a warning)
-    or is one nothing on this machine vouches for (red), so the overlay is asked for it too.
+    marked commands it grants right now, and where; the row needs both, because the ledger is a
+    file a clone can commit. The overlay is asked unless the ledger is readable and records
+    nothing, because then nothing can be absolved and asking it costs a `git` call: an empty
+    ledger keeps its old answer, every entry claiming the marker is one no attach recorded. A
+    ledger that cannot be read is not that: the grant is what decides whether an entry beside it
+    may be the owner's (a warning) or is one nothing on this machine vouches for (red), so the
+    overlay is asked for it too.
 
     `sourced` is whether this machine records an overlay at all, read from the machine file and
     nothing else: without one the grant is empty because nothing could grant, and the row says

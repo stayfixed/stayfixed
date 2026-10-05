@@ -678,6 +678,58 @@ NOT_GRANTED = (
 )
 NOT_ASKED = "run `stayfixed attach --check`, which reports why the overlay cannot be read"
 
+# Where a clone hangs the marked command `common/` grants under `PreToolUse` with matcher `Bash`
+# (`_overlay`'s grant, which `_attached` installs), as `(event, group fields besides hooks)`:
+# another event and another matcher at once, as the defect was reported; another event alone;
+# another matcher alone; and no matcher at all, which a harness reads as matching everything.
+ELSEWHERE = {
+    "another-event-and-matcher": ("SessionStart", {"matcher": "*"}),
+    "another-event": ("SessionStart", {"matcher": "Bash"}),
+    "another-matcher": ("PreToolUse", {"matcher": "*"}),
+    "no-matcher": ("PreToolUse", {}),
+}
+
+
+@pytest.mark.parametrize("binding", ["bound", "unbound"])
+@pytest.mark.parametrize("placement", sorted(ELSEWHERE))
+def test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for(
+    tmp_path: Path, placement: str, binding: str
+) -> None:
+    # The overlay grants an entry where it puts it: `common/` grants `echo hi` under `PreToolUse`,
+    # for the `Bash` matcher, and `attach` installs it there and nowhere else. A clone that hung
+    # that exact marked command under `SessionStart` with matcher `*`, beside a ledger recording
+    # its id, read "all accounted for", because the row compared the id and the command and never
+    # where the entry sits — and where it sits is when the harness runs it. Unbound as reported,
+    # and bound too, because the grant `common/` makes is the same to both.
+    #
+    # Mutations (oracle): `mutations/`'s "hook-entries vouches for a granted command under any
+    # event" -> the `another-event` cases are absolved; "hook-entries vouches for a granted
+    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and the walk
+    # dropping either from what it reads ("the hook entry walk reads every entry under one event",
+    # "the hook entry walk reads every entry without its matcher") absolves them on both sides.
+    root = _attached(tmp_path)
+    if binding == "unbound":
+        (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).unlink()
+    # The vacuity guard, per case: the same command where `common/` grants it is accounted for.
+    assert _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries") == Check(
+        "hook-entries", "ok", f"{ONE_ENTRY}all accounted for", ""
+    )
+    event, fields = ELSEWHERE[placement]
+    document = json.loads((root / LOCAL_SETTINGS).read_text(encoding="utf-8"))
+    granted = document["hooks"]["PreToolUse"][0]["hooks"][0]
+    document["hooks"].setdefault(event, []).append({**fields, "hooks": [dict(granted)]})
+    (root / LOCAL_SETTINGS).write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == Check(
+        "hook-entries",
+        "red",
+        f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and "
+        f"the overlay does not grant them: {LOCAL_SETTINGS} entry 2 of 2",
+        NOT_GRANTED,
+    )
+    # By position: the event and the matcher are repository bytes, and the row names neither.
+    assert "SessionStart" not in check.detail + check.remedy
+
 
 def test_a_committed_ledger_cannot_silence_an_entry_it_does_not_record_where_no_overlay_is(
     tmp_path: Path,

@@ -22,6 +22,7 @@ from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.errors import resolved_or_none
 from stayfixed.runner import Runner
+from stayfixed.scaffold import Placed
 
 OK: Final = "ok"
 WARN: Final = "warn"
@@ -168,13 +169,16 @@ class Claims:
     """What an area put into settings files, for `hook-entries`' provenance column.
 
     `recorded` is the marker ids the area's record says it wrote, by event, and may be repository
-    bytes: `attach`'s record is a file a clone can commit. `granted` is the marked commands the area
-    grants right now, and **must come from a source the repository cannot choose** — `attach` asks
-    the overlay whose root the machine file records — because it is the half that vouches. An entry
-    is absolved only when one area both records its id and grants its command; one area's record
-    never stands on another area's grant. `wording` is how the row names that record, that source
-    and the commands that repair them, and holds `Wording`'s invariant: stayfixed's own fixed
-    strings, never anything a repository authored.
+    bytes: `attach`'s record is a file a clone can commit. `granted` is the entries the area
+    grants right now, each a marked command **where the area puts it** — its event and its group's
+    matcher, as `scaffold.Placed` holds them — and **must come from a source the repository cannot
+    choose** — `attach` asks the overlay whose root the machine file records — because it is the
+    half that vouches. An entry is absolved only when one area both records its id and grants it
+    there: its command, under its event, in a group with its matcher. A granted command anywhere
+    else is a hook the area never installed, because the event is when a harness runs it and the
+    matcher for which tools. One area's record never stands on another area's grant. `wording` is
+    how the row names that record, that source and the commands that repair them, and holds
+    `Wording`'s invariant: stayfixed's own fixed strings, never anything a repository authored.
 
     Every answer the two sources can give is carried, their `None`s included: `recorded is None` is
     "the record could not be read" (the row warns and says so, and withholds judgement only of an
@@ -193,7 +197,7 @@ class Claims:
     which changes the row's sentence and remedy and never its verdict."""
 
     recorded: Mapping[str, str] | None
-    granted: frozenset[str] | None
+    granted: frozenset[Placed] | None
     sourced: bool = True
     # Keyword-only and required: an area's claims without its own words would be told in some
     # other area's, which is the defect this field exists to end.

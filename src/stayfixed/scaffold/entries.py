@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from stayfixed.errors import Refusal
@@ -152,10 +153,11 @@ def _without_marked(group: dict[str, Any]) -> dict[str, Any] | None:
     return {**group, "hooks": kept}
 
 
-def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Every hook entry in the document with its event, in document order, read as strictly as
-    `apply_entries` reads it: a shape the merge would refuse is refused here too, so a reader
-    reporting on a settings file never accounts for one the engine could not rewrite.
+def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Every hook entry in the document with its event and the group holding it, in document
+    order, read as strictly as `apply_entries` reads it: a shape the merge would refuse is refused
+    here too, so a reader reporting on a settings file never accounts for one the engine could not
+    rewrite.
 
     Integers are read as their text: no entry's id, event or marker is a number, and one longer
     than the interpreter converts must not keep a reader from the entries beside it. A settings
@@ -165,21 +167,51 @@ def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any]]]:
     for event in _hooks_table(raw):
         for group in _groups(raw, event):
             for entry in _entries_of(group):
-                yield event, entry
+                yield event, group, entry
 
 
 def owned_ids(document: str) -> dict[str, str]:
     """Every id stayfixed claims in this document, mapped to its event."""
     return {
         claimed: event
-        for event, entry in _read_entries(document)
+        for event, _, entry in _read_entries(document)
         if (claimed := _claimed(entry)) is not None
     }
 
 
-def entry_commands(document: str) -> list[str]:
-    """Every hook entry's command, in document order, **one element per entry** — `doctor`'s
-    provenance.
+@dataclass(frozen=True)
+class Placed:
+    """One hook entry where a harness reads it: its event, its group's matcher, and its command.
+
+    All three, because each decides what the entry does: the event is when the harness runs the
+    command and the matcher is for which tools, so one command under another event or matcher is
+    another hook. That is why `doctor` compares a grant as a `Placed` and never as a command alone
+    — a repository that hung a granted command somewhere it was not granted would otherwise be
+    vouched for.
+
+    `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
+    each integer in it as its text, as `_read_entries` reads it: a string and anything else a
+    clone may commit there are each one value, and a matcher that is absent stays apart from one
+    that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
+    never guesses what a harness makes of it. Never printed: an event and a matcher are bytes a
+    repository chose.
+    """
+
+    event: str
+    matcher: str | None
+    command: str
+
+
+def _matcher(group: dict[str, Any]) -> str | None:
+    """A group's matcher as `Placed` holds it."""
+    if "matcher" not in group:
+        return None
+    return json.dumps(group["matcher"], sort_keys=True)
+
+
+def placed_entries(document: str) -> list[Placed]:
+    """Every hook entry in the document where it is, in document order, **one element per entry**
+    — `doctor`'s provenance.
 
     One per entry and not one per readable command, and never keyed by id: the position in this
     list is what the report names, and two entries sharing one id are two entries. So an entry
@@ -188,11 +220,29 @@ def entry_commands(document: str) -> list[str]:
     is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
-    found: list[str] = []
-    for _, entry in _read_entries(document):
+    found: list[Placed] = []
+    for event, group, entry in _read_entries(document):
         command = entry.get("command")
-        found.append(command if isinstance(command, str) else "")
+        text = command if isinstance(command, str) else ""
+        found.append(Placed(event, _matcher(group), text))
     return found
+
+
+def entry_commands(document: str) -> list[str]:
+    """`placed_entries`' commands alone, in its order, for a reader that asks only whether an
+    entry claims the marker."""
+    return [placed.command for placed in placed_entries(document)]
+
+
+def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
+    """Where `apply_entries` puts each entry of `wanted`, as `placed_entries` reads it back.
+
+    Read back through the document `apply_entries` would write and not off `wanted` itself,
+    because what a grant is compared with is what the walk reads out of a settings file: an
+    integer in a matcher is its text there, and a grant that kept it a number would never equal
+    the entry it installed. Refuses what `placed_entries` refuses.
+    """
+    return placed_entries(json.dumps({"hooks": wanted}))
 
 
 def owned(document: str) -> str:

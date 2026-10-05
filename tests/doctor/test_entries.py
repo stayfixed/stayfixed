@@ -15,7 +15,7 @@ import shutil
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 
 import pytest
 
@@ -31,6 +31,7 @@ from stayfixed.doctor.api import (
     Wording,
 )
 from stayfixed.doctor.entries import SETTINGS_FILES
+from stayfixed.scaffold import Placed, wanted_placements
 from tests.doctor.test_checks import _checks, _initialised
 from tests.doctor.test_registry import CORE, _area, _contribute
 
@@ -87,20 +88,33 @@ def _speaks_no_attach(row: Check) -> None:
         assert word not in row.detail + row.remedy, (word, row)
 
 
-def _hooked(root: Path, *commands: str) -> None:
-    """`root`'s `SETTINGS`, holding one `PreToolUse` hook entry per command, in order."""
+def _hooked(
+    root: Path,
+    *commands: str,
+    event: str = "PreToolUse",
+    fields: Mapping[str, str] = MappingProxyType({"matcher": "Bash"}),
+) -> None:
+    """`root`'s `SETTINGS`, holding one hook entry per command, in order, in one group under
+    `event` whose fields besides its entries are `fields`: by default where `_granting` grants."""
     assert SETTINGS in SETTINGS_FILES, "the walk would never open this file"
     entries = [{"type": "command", "command": command} for command in commands]
     (root / SETTINGS).parent.mkdir(parents=True, exist_ok=True)
     (root / SETTINGS).write_text(
-        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": entries}]}}),
+        json.dumps({"hooks": {event: [{**fields, "hooks": entries}]}}),
         encoding="utf-8",
     )
 
 
+def _granting(*commands: str) -> frozenset[Placed]:
+    """A grant of each command where `_hooked` puts it by default, as an area answers one: read
+    back by the walk out of the entries `apply_entries` would install, never spelled by hand."""
+    entries = [{"type": "command", "command": command} for command in commands]
+    return frozenset(wanted_placements({"PreToolUse": [{"matcher": "Bash", "hooks": entries}]}))
+
+
 def _claiming(
     recorded: Mapping[str, str] | None,
-    granted: frozenset[str] | None,
+    granted: frozenset[Placed] | None,
     *,
     sourced: bool = True,
     wording: Wording = ALPHA_WORDING,
@@ -113,8 +127,8 @@ def _claiming(
     )
 
 
-ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}))
-OMEGA_CLAIMS = _claiming({"omega-1": "PreToolUse"}, frozenset({OMEGA}), wording=OMEGA_WORDING)
+ALPHA_CLAIMS = _claiming({"alpha-1": "PreToolUse"}, _granting(ALPHA))
+OMEGA_CLAIMS = _claiming({"omega-1": "PreToolUse"}, _granting(OMEGA), wording=OMEGA_WORDING)
 
 
 def _hook_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *areas: ModuleType) -> Check:
@@ -161,13 +175,46 @@ def test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_togethe
         tmp_path,
         monkeypatch,
         _area("alpha", _claiming({"alpha-1": "PreToolUse"}, frozenset())),
-        _area("omega", _claiming({}, frozenset({ALPHA}), wording=OMEGA_WORDING)),
+        _area("omega", _claiming({}, _granting(ALPHA), wording=OMEGA_WORDING)),
     )
     assert row.status == RED, row
     assert (
         f"1 entr(ies) claim the stayfixed marker and are recorded in .alpha/record.json, and "
         f"alpha's source does not grant them: {SETTINGS} entry 1 of 1"
     ) in row.detail
+    _speaks_no_attach(row)
+
+
+@pytest.mark.parametrize(
+    ("event", "fields"),
+    [
+        pytest.param("SessionStart", {"matcher": "*"}, id="another-event-and-matcher"),
+        pytest.param("SessionStart", {"matcher": "Bash"}, id="another-event"),
+        pytest.param("PreToolUse", {"matcher": "*"}, id="another-matcher"),
+        pytest.param("PreToolUse", {}, id="no-matcher"),
+    ],
+)
+def test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str, fields: Mapping[str, str]
+) -> None:
+    # A grant is an entry where the area puts it: alpha grants `ALPHA` under `PreToolUse`, for the
+    # `Bash` matcher (`_hooked`'s), and the same marked command under another event or matcher is
+    # one alpha never put there — the harness runs it at another time, or for other tools. It is
+    # told as a refused grant, the kind a command the area does not grant at all is. Mutations
+    # (oracle): `mutations/`'s "hook-entries vouches for a granted command under any event" ->
+    # `another-event` is absolved; "hook-entries vouches for a granted command under any matcher"
+    # -> `another-matcher` and `no-matcher` are.
+    _hooked(_initialised(tmp_path), ALPHA, event=event, fields=fields)
+    row = _hook_entries(tmp_path, monkeypatch, _area("alpha", ALPHA_CLAIMS))
+    assert row == Check(
+        "hook-entries",
+        RED,
+        f"1 stayfixed entr(ies), 0 foreign; 1 entr(ies) claim the stayfixed marker and are "
+        f"recorded in .alpha/record.json, and alpha's source does not grant them: {SETTINGS} "
+        f"entry 1 of 1",
+        "run `alpha vouch`, which takes out every marked entry alpha's source no longer grants; "
+        "open any that survive it",
+    )
     _speaks_no_attach(row)
 
 
@@ -298,9 +345,9 @@ def test_a_none_from_any_area_is_none_for_the_pool(
     def claims(area: str) -> Contribution:
         wording = WORDING[area]
         if area == known:
-            return _claiming({"alpha-1": "PreToolUse"}, frozenset({ALPHA}), wording=wording)
+            return _claiming({"alpha-1": "PreToolUse"}, _granting(ALPHA), wording=wording)
         if unknown == "recorded":
-            return _claiming(None, frozenset({ALPHA, NOBODYS}), wording=wording)
+            return _claiming(None, _granting(ALPHA, NOBODYS), wording=wording)
         return _claiming({"alpha-1": "PreToolUse"}, None, wording=wording)
 
     row = _hook_entries(
@@ -373,7 +420,7 @@ def test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say
     # recorded; "hook-entries says the overlay does not grant what no overlay was recorded to grant,
     # beside an unreadable record" -> `unsourced` reads the sentence for a recorded overlay.
     _hooked(_initialised(tmp_path), ALPHA, NOBODYS)
-    granted = frozenset({ALPHA}) if sourced else frozenset()
+    granted = _granting(ALPHA) if sourced else frozenset()
     row = _hook_entries(
         tmp_path, monkeypatch, _area("alpha", _claiming(None, granted, sourced=sourced))
     )
@@ -520,12 +567,10 @@ def test_an_unreadable_record_is_named_in_its_own_areas_words(
         alpha = ALPHA_CLAIMS
         detail, remedy = UNREADABLE["omega"], REBUILD["omega"]
     else:
-        alpha = _claiming(None, frozenset({ALPHA}))
+        alpha = _claiming(None, _granting(ALPHA))
         detail = f"{UNREADABLE['alpha']}; {UNREADABLE['omega']}"
         remedy = f"{REBUILD['alpha']}; check that .omega/record.json is readable"
-    omega = _claiming(
-        None, frozenset({OMEGA}) if which == "second" else None, wording=OMEGA_WORDING
-    )
+    omega = _claiming(None, _granting(OMEGA) if which == "second" else None, wording=OMEGA_WORDING)
     row = _hook_entries(tmp_path, monkeypatch, _area("alpha", alpha), _area("omega", omega))
     assert row == Check("hook-entries", WARN, f"2 stayfixed entr(ies), 0 foreign; {detail}", remedy)
     _speaks_no_attach(row)
@@ -572,7 +617,7 @@ def test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both(
     def claims(area: str) -> Contribution:
         recorded, command = own[area]
         if area == unreadable:
-            return _claiming(None, frozenset({command}), wording=WORDING[area])
+            return _claiming(None, _granting(command), wording=WORDING[area])
         return _claiming(recorded, None, wording=WORDING[area])
 
     row = _hook_entries(
@@ -717,7 +762,7 @@ def test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_area
         tmp_path,
         monkeypatch,
         _area("alpha", _claiming(None, frozenset(), sourced=False)),
-        _area("omega", _claiming(None, frozenset({OMEGA}), wording=OMEGA_WORDING)),
+        _area("omega", _claiming(None, _granting(OMEGA), wording=OMEGA_WORDING)),
     )
     assert row == Check(
         "hook-entries",

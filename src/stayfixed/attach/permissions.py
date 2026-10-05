@@ -286,8 +286,9 @@ def _numbered(
 
 def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, str]]:
     """Every marked command in `overlay_entries`' or `common_entries`' answer, with its event, in
-    its order: the grants flattened once, for the diff, the ledger and `doctor`, which each ask
-    only for commands. Each is a string, because `_numbered` refuses an entry without one."""
+    its order: the grants flattened once, for the diff and the ledger, which each ask only for
+    commands. Each is a string, because `_numbered` refuses an entry without one. `doctor` asks
+    where each one sits too, and reads that through `scaffold.wanted_placements`."""
     return [
         (event, entry["command"])
         for event, groups in wanted.items()

@@ -2486,14 +2486,37 @@ reddens = [
 [[mutation]]
 name = "doctor counts hook entries by marker id rather than by position"
 file = "src/stayfixed/scaffold/entries.py"
-before = """        command = entry.get("command")
-        found.append(command if isinstance(command, str) else "")"""
-after = """        command = entry.get("command")
-        text = command if isinstance(command, str) else ""
+before = """        text = command if isinstance(command, str) else ""
+        found.append(Placed(event, _matcher(group), text))"""
+after = """        text = command if isinstance(command, str) else ""
         here = marker_id(text)
-        if here is None or here not in {marker_id(seen) for seen in found}:
-            found.append(text)"""
+        if here is None or here not in {marker_id(seen.command) for seen in found}:
+            found.append(Placed(event, _matcher(group), text))"""
 reddens = [
   "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# The walk says where each entry sits, and `doctor` reads a grant back through the same walk, so
+# an entry is vouched for only under the event and the matcher it was granted under. A walk that
+# dropped either would drop it from both sides at once, and the owner's own command hung under
+# another event or matcher would read "all accounted for".
+[[mutation]]
+name = "the hook entry walk reads every entry under one event"
+file = "src/stayfixed/scaffold/entries.py"
+before = "        found.append(Placed(event, _matcher(group), text))"
+after = '        found.append(Placed("", _matcher(group), text))'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
+]
+
+[[mutation]]
+name = "the hook entry walk reads every entry without its matcher"
+file = "src/stayfixed/scaffold/entries.py"
+before = '    if "matcher" not in group:'
+after = "    if True:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
 ]
