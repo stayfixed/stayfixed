@@ -16,6 +16,7 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.setup.api import SetupReport
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
 
@@ -207,8 +208,8 @@ def test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are(
 # Two manifests that are valid JSON past this interpreter's parser: nested deeper than it follows,
 # and holding an integer longer than it converts (4,300 digits by default).
 PAST_THE_PARSER = {
-    "nested": "[" * 200_000 + "]" * 200_000,
-    "long-number": '{"name": ' + "1" * 5_000 + "}",
+    "nested": NESTED,
+    "long-number": '{"name": ' + LONG_NUMBER + "}",
 }
 
 

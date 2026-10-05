@@ -20,6 +20,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.project.commands import CI_LEFT, CI_PINNED
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
+from tests import parserlimits
 from tests.gitfixture import git, needs_git
 from tests.project.repos import forge_record, initialised, tree
 from tests.runners import LsRemote
@@ -78,8 +79,8 @@ def test_a_current_footprint_says_so_and_exits_zero(tmp_path: Path) -> None:
 # each: nested deeper than it follows, and an integer longer than it converts (4,300 digits by
 # default).
 PAST_THE_PARSER = {
-    "nested": ("[" * 200_000 + "]" * 200_000, NESTED),
-    "long-number": ('{"format": ' + "1" * 5_000 + "}", LONG_NUMBER),
+    "nested": (parserlimits.NESTED, NESTED),
+    "long-number": ('{"format": ' + parserlimits.LONG_NUMBER + "}", LONG_NUMBER),
 }
 
 

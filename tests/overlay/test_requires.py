@@ -6,6 +6,7 @@ from pathlib import Path
 from stayfixed.overlay.api import requires_of, satisfies
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.overlay.template import template_root
+from tests.parserlimits import LONG_NUMBER, NESTED
 
 
 def overlay_with(root: Path, requires: object) -> Path:
@@ -65,7 +66,7 @@ def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -
     # the nested case raises and this reddens.
     root = tmp_path / "overlay"
     (root / ".claude-plugin").mkdir(parents=True)
-    for body in ("[" * 200_000 + "]" * 200_000, '{"n": ' + "1" * 5_000 + "}"):
+    for body in (NESTED, '{"n": ' + LONG_NUMBER + "}"):
         (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
         assert requires_of(root) is None, body[:8]
 

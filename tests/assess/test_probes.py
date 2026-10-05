@@ -42,6 +42,7 @@ from stayfixed.project.api import CI_WORKFLOW
 from tests.assess.baserepo import commit
 from tests.assess.smoke import smoke_repo
 from tests.gitfixture import git, needs_git, plant_path, run_git
+from tests.parserlimits import LONG_NUMBER
 
 pytestmark = needs_git
 
@@ -250,7 +251,7 @@ def test_a_number_past_the_parser_s_reach_does_not_hide_the_foreign_entry_beside
     _write(
         root,
         ".claude/settings.json",
-        _settings("echo foreign")[:-1] + ', "n": ' + "1" * 5_000 + "}",
+        _settings("echo foreign")[:-1] + ', "n": ' + LONG_NUMBER + "}",
     )
     assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
         ("foreign-hooks", (".claude/settings.json",))
