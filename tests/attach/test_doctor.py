@@ -1174,10 +1174,11 @@ def test_a_ledger_path_that_names_no_file_is_no_ledger_as_before(
     tmp_path: Path, shape: str
 ) -> None:
     # The vacuity guard for the case above: asking with `stat` must not turn every path that holds
-    # no ledger into one that cannot be read. Mutations (oracle): `mutations/`'s "a ledger path
-    # that names no file reads as one that cannot be read" -> the dangling link and the loop say
-    # the ledger cannot be read; "doctor reads a ledger path that is no regular file" -> the
-    # directory does.
+    # no ledger into one that cannot be read. The probe is the one `hook-entries` asks, so its
+    # entries are named for that row and prove this reader too. Mutations (oracle): `mutations/`'s
+    # "hook-entries is blind to a settings path that names no file" -> the dangling link and the
+    # loop say the ledger cannot be read; "hook-entries reads a settings path that is no regular
+    # file" -> the directory does.
     root = _forged_clone(tmp_path)
     path = root / LEDGER
     path.unlink()

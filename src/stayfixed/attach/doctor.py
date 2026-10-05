@@ -60,34 +60,30 @@ def _ledger_state(root: Path) -> AttachLedger | str:
 
     Three answers and not two. `ledger()` raises on a file that is not JSON, is not an object,
     or names something `attach` could not have written — and `.stayfixed/local/attach.json` is a
-    path a clone can commit, because `.gitignore` does not untrack a committed file. Letting
-    that reach the report's guard made a repository able to force a row red with the detail
-    "this check could not run: Failure" and a remedy that cannot help, on an installation with
-    nothing wrong with it. The rows report the file instead.
+    path a clone can commit, because `.gitignore` does not untrack a committed file. Let through to
+    the report's guard, that would let a repository force a row red with the detail "this check
+    could not run: Failure" and a remedy that cannot help, on an installation with nothing wrong
+    with it. The rows report the file instead.
 
-    **Whether it is there is asked with `stat`, and a path it cannot answer about is unreadable.**
-    A clone can commit the ledger, or a directory above it, as a symbolic link to a name longer
-    than a file name may be. `is_file()` raises there on Python 3.11 to 3.13, and the error reached
-    `_guarded`, whose warning stood in for the whole row: a forged entry beside the link lost its
-    red in `hook-entries`, and a real directory at the harness memory path lost its red in
-    `attached`. From 3.14 `is_file()` answers `False`, which reads a file that is there as no
-    ledger. A path that names no file — nothing there, a dangling link or a loop, or something
-    other than a regular file — is no ledger, as `is_file()` always answered.
+    **Whether it is there is `fsops.names_regular_file`'s answer, and a path it cannot answer
+    about is unreadable.** A clone can commit the ledger, or a directory above it, as a symbolic
+    link to a name longer than a file name may be. Raised past this function to `_guarded`, the
+    error's warning would stand in for the whole row, so a forged entry beside the link would lose
+    its red in `hook-entries` and a real directory at the harness memory path its red in
+    `attached`; read as no ledger, a file that is there would be skipped. A path that names no file
+    — nothing there, a dangling link or a loop, or something other than a regular file — is no
+    ledger.
     """
-    import errno
-    import stat
-
     from stayfixed.attach.write import ledger
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.errors import Failure, Refusal
+    from stayfixed.fsops import names_regular_file
 
     try:
-        mode = (root / ATTACH_LEDGER).stat().st_mode
-    except OSError as exc:
-        names_no_file = exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
-        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER
-    if not stat.S_ISREG(mode):
-        return NO_LEDGER
+        if not names_regular_file(root / ATTACH_LEDGER):
+            return NO_LEDGER
+    except OSError:
+        return UNREADABLE_LEDGER
     try:
         return ledger(root)
     except (Failure, Refusal):

@@ -2386,40 +2386,19 @@ reddens = [
 ]
 
 # A settings file, or the directory holding it, can be committed as a symbolic link to a name longer
-# than a file name may be. `Path.is_file()` raised `ENAMETOOLONG` there on Python 3.11 to 3.13, and
-# `_guarded`'s warning stood in for all of `hook-entries`: a forged entry beside the link lost its red
-# and the report exited 0. From 3.14 it answered `False` and the walk skipped a file that is there.
-# Asked with `stat`, such a path is a file the walk is blind to.
+# than a file name may be. Raised past the walk, `ENAMETOOLONG` puts `_guarded`'s warning in place of
+# all of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0; read
+# as no file, the walk skips a file that is there. `fsops.names_regular_file` raises it, and the walk
+# reads such a path as a file it is blind to.
 [[mutation]]
 name = "hook-entries skips a settings file it cannot ask about"
 file = "src/stayfixed/doctor/checks.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                blind.append(label)"
-after = "            if False:\n                blind.append(label)"
+before = "            regular = names_regular_file(path)\n        except OSError:\n            blind.append(label)"
+after = "            regular = names_regular_file(path)\n        except OSError:\n            pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.claude]",
   "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.codex/hooks.json]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.claude/settings.local.json-overlay]",
-]
-
-# The other half: a path that names no file is skipped, as `is_file()` always answered, and is not a
-# file the walk is blind to.
-[[mutation]]
-name = "hook-entries is blind to a settings path that names no file"
-file = "src/stayfixed/doctor/checks.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                blind.append(label)"
-after = "            if True:\n                blind.append(label)"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
-]
-
-[[mutation]]
-name = "hook-entries reads a settings path that is no regular file"
-file = "src/stayfixed/doctor/checks.py"
-before = "        if not stat.S_ISREG(mode):\n            continue"
-after = "        if False:\n            continue"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
 ]
 
 # The walk's own reader reads integers as `owned_ids` does. With the interpreter's limit it raised
@@ -2456,8 +2435,12 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
 file = "src/stayfixed/doctor/checks.py"
-before = "        except OSError:\n            blind.append(label)"
-after = "        except OSError:\n            unchecked.append(label)"
+before = """            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            blind.append(label)"""
+after = """            document = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            unchecked.append(label)"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[recording-it-overlay]",
   "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[none-no-overlay]",

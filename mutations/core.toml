@@ -2395,3 +2395,44 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
 ]
+
+# `fsops.names_regular_file` is the one place a path that names no file is told from one that cannot
+# be asked about, for `hook-entries`' walk over settings files and for `attach`'s ledger reader, so
+# one entry per decision proves it for both. A path a clone can commit that names no file -- nothing
+# there, a dangling link, a loop -- is skipped by the walk and is no ledger to the reader: there is
+# nothing there for a harness to read either. Neither reader may call it one it cannot read.
+[[mutation]]
+name = "hook-entries is blind to a settings path that names no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
+  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
+]
+
+# Something other than a regular file -- a directory -- names no file to read, whichever reader asks.
+[[mutation]]
+name = "hook-entries reads a settings path that is no regular file"
+file = "src/stayfixed/fsops.py"
+before = "    return stat.S_ISREG(mode)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
+  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
+]
+
+# Any other fault is the caller's to classify, and the probe raises it rather than answering for
+# the caller: read as no file, a symbolic link to a name longer than a file name may be hides a
+# settings file from `hook-entries` and a ledger from `attached`.
+[[mutation]]
+name = "the regular-file probe reads a path it cannot ask about as no file"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in NAMES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
+]

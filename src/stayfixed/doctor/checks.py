@@ -57,12 +57,10 @@ does.
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import re
 import shutil
-import stat
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -91,6 +89,7 @@ from stayfixed.doctor.model import (
 )
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
+from stayfixed.fsops import names_regular_file
 from stayfixed.harnesses import CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
@@ -521,16 +520,6 @@ def _entry_commands(document: str) -> list[str]:
     return found
 
 
-# The faults of a `stat` that say its path names no file: nothing there, a component that is not
-# a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
-# faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
-# clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
-# raised, it would reach `_guarded`, whose warning would stand in for `hook-entries` whole, so a
-# marked entry nothing vouches for would lose its red beside it; answered `False`, it would skip a
-# file that is there. So `stat` is asked, these three are no file, and any other fault is a file
-# the walk cannot read.
-NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
-
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
 # would type. The project-relative members of `SETTINGS_FILES` name themselves.
@@ -701,15 +690,15 @@ def _hook_entries(context: Context) -> Row:
         walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
     for base, relative, label in walked:
         path = base / relative
-        # Asked with `stat`, for the reason `NAMES_NO_FILE` gives: a path this walk cannot ask
-        # about is a file it is blind to, and one that names no file is skipped as it always was.
+        # Asked of `fsops.names_regular_file`, for the reason `fsops.NAMES_NO_FILE` gives: a path
+        # this walk cannot ask about is a file it is blind to, and one that names no file is
+        # skipped, since there is nothing there for a harness to read either.
         try:
-            mode = path.stat().st_mode
-        except OSError as exc:
-            if exc.errno not in NAMES_NO_FILE:
-                blind.append(label)
+            regular = names_regular_file(path)
+        except OSError:
+            blind.append(label)
             continue
-        if not stat.S_ISREG(mode):
+        if not regular:
             continue
         try:
             # Replaced rather than refused: the marker and every command it marks are ASCII, so a

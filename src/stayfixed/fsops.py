@@ -150,6 +150,33 @@ def utf_8_name(name: str) -> bool:
     return True
 
 
+# The faults of a `stat` that say its path names no file: nothing there, a component that is not
+# a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
+# faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
+# clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
+# raised past a caller's catch, it costs a `doctor` row its verdict, so an entry nothing vouches for
+# loses its red beside it; answered `False`, it skips a file that is there. So `stat` is asked,
+# these three are no file, and any other fault is a file the caller cannot read.
+NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
+
+def names_regular_file(path: Path) -> bool:
+    """Whether `path`, followed through symbolic links, names a regular file.
+
+    `False` when it names no file — one of `NAMES_NO_FILE`, or something other than a regular
+    file, such as a directory — and any other `OSError` raised, because what a path that cannot
+    be asked about means is the caller's to say: a reader that must account for every file calls
+    it one it is blind to, and one reading a record a clone can commit calls the record unreadable.
+    """
+    try:
+        mode = path.stat().st_mode
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return False
+        raise
+    return stat.S_ISREG(mode)
+
+
 def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
 

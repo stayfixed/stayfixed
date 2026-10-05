@@ -1998,41 +1998,19 @@ reddens = [
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file
-# name may be. `Path.is_file()` raised `ENAMETOOLONG` there on Python 3.11 to 3.13, past every catch
-# to `_guarded`, whose warning stood in for all of `hook-entries`: a forged entry beside the link lost
-# its red and the report exited 0. `stat` raises it on every interpreter, and the ledger reads as one
-# that cannot be read.
+# name may be. Raised past every catch to `_guarded`, `ENAMETOOLONG` puts its warning in place of all
+# of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0.
+# `fsops.names_regular_file` raises it on every interpreter, and the ledger reads as one that cannot
+# be read.
 [[mutation]]
 name = "a ledger doctor cannot ask about reads as no ledger"
 file = "src/stayfixed/attach/doctor.py"
-before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
-after = "        return NO_LEDGER"
+before = "    except OSError:\n        return UNREADABLE_LEDGER"
+after = "    except OSError:\n        return NO_LEDGER"
 reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[the-ledger-forged-overlay]",
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_is_one_that_cannot_be_read[its-directory-forged-no-overlay]",
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.stayfixed/local/attach.json-overlay]",
-]
-
-# The other half: a path that names no file is no ledger, as `is_file()` always answered, and an
-# entry beside it is one no record holds.
-[[mutation]]
-name = "a ledger path that names no file reads as one that cannot be read"
-file = "src/stayfixed/attach/doctor.py"
-before = "        return NO_LEDGER if names_no_file else UNREADABLE_LEDGER"
-after = "        return UNREADABLE_LEDGER"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
-  "tests/attach/test_doctor.py::test_a_marked_entry_with_no_ledger_at_all_is_still_reported",
-]
-
-[[mutation]]
-name = "doctor reads a ledger path that is no regular file"
-file = "src/stayfixed/attach/doctor.py"
-before = "    if not stat.S_ISREG(mode):\n        return NO_LEDGER\n    try:\n        return ledger(root)"
-after = "    if False:\n        return NO_LEDGER\n    try:\n        return ledger(root)"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
 ]
 
 # `attached` asks whether there is a ledger the way `hook-entries` does, through the one reading
