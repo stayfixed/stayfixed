@@ -178,8 +178,9 @@ step 1, because every step after it releases from the tree it names.
      say what the user would see, or say the thing in the words the commands print.
 
    - **Contract changes are not fixes.** For a 0.x minor, which may break what the one before
-     it did, call out what a script or a habit can depend on, under `Changed` or in a short
-     "Upgrading from 0.X" lead above the entries, because a `Fixed` entry hides it. Two of
+     it did, call out what a script or a habit can depend on, because a `Fixed` entry hides
+     it: an `upgrading` fragment holds it as a list, one bullet per thing a caller relies on,
+     each pointing at its full entry, and the notes render it first, as **Upgrading**. Two of
      0.2.0's sat under `Fixed` and are what that hides: `stayfixed attach --check` exiting `2`
      instead of `0` for a repository whose `memory.mode` is not `overlay` (`docs/cli.md`
      documents the exit codes as the way a caller tells a finding from a refusal, so a CI
