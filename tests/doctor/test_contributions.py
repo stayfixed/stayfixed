@@ -291,6 +291,50 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     assert [each.claims for each in checks.contributions()] == [None, None]
 
 
+def test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The red row an area that could not contribute gets is a name in the report like any other, so
+    # a later area that contributes a check under that name repeats it. Recorded only in the row
+    # and not among the names the report already has, the later area's check joined, and the
+    # report printed two rows named `alpha`: one red, one green, which nothing keyed on the name
+    # can tell apart. Mutation (oracle): `mutations/`'s "an area's failure row is not counted among
+    # the report's names" -> two rows named `alpha`.
+    _contribute(
+        monkeypatch,
+        _registering(_raises),
+        _area("omega", Contribution(checks=(("alpha", _answer),), claims=_claims)),
+    )
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    assert [row.name for row in rows] == [*CORE, "alpha", "omega"]
+    assert rows[-1] == Check(
+        "omega",
+        RED,
+        "stayfixed.omega.doctor could not contribute its rows: its check 'alpha' repeats a name "
+        "stayfixed.alpha.doctor already reports",
+        "report this, with the command you ran",
+    )
+
+
+def test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An area whose second check repeats a core name contributes none of its rows, so its first
+    # name is not in the report, and a later area may use it. Asking whether the area repeats a
+    # name must not write the area's names among the report's: written there, the turned-away
+    # area's first name was taken by nobody's row, and the later area was turned away too, for
+    # repeating a name "it" already reports. Mutation (oracle): `mutations/`'s "asking whether an
+    # area repeats a name records its names in the report" -> omega's row is red.
+    _contribute(
+        monkeypatch,
+        _area("alpha", Contribution(checks=(("shared", _answer), (CORE[1], _answer)))),
+        _area("omega", Contribution(checks=(("shared", _answer),))),
+    )
+    rows = _checks(tmp_path, _initialised(tmp_path))
+    assert [row.name for row in rows] == [*CORE, "alpha", "shared"]
+    assert rows[-1] == Check("shared", OK, "answered", "")
+
+
 def test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

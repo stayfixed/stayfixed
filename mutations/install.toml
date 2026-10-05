@@ -558,6 +558,29 @@ reddens = [
   "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
 ]
 
+# The failure row's name is one of the report's names once it is chosen: left out of them, a later
+# area that contributes a check under it joins, and the report prints two rows named after the area.
+[[mutation]]
+name = "an area's failure row is not counted among the report's names"
+file = "src/stayfixed/doctor/checks.py"
+before = "    owners[name] = qualified\n"
+after = "    pass\n"
+reddens = [
+  "tests/doctor/test_contributions.py::test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row",
+]
+
+# Whether an area repeats a name is asked of a copy of the report's names: asked of the names
+# themselves, an area turned away leaves its first names taken by no row, and a later area that uses
+# one is turned away too.
+[[mutation]]
+name = "asking whether an area repeats a name records its names in the report"
+file = "src/stayfixed/doctor/checks.py"
+before = "    named = dict(owners)"
+after = "    named = owners"
+reddens = [
+  "tests/doctor/test_contributions.py::test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free",
+]
+
 # The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
 # field over. `.stayfixed/local/attach.json` is a path a clone can commit, so a repository that
 # commits a marked hook entry *and* a ledger recording that entry's id got `hook-entries` to answer
