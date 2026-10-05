@@ -289,14 +289,16 @@ def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_pat
         read_document(tmp_path)
 
 
-@pytest.mark.parametrize("which", ["machine", "overlay-root", CONFIG_FILE])
+@pytest.mark.parametrize("which", ["machine", "overlay-root", "setup", CONFIG_FILE])
 def test_a_file_without_read_permission_cannot_be_read_and_says_so(
     tmp_path: Path, which: str
 ) -> None:
     # `overlay-root` is the machine file again, through the one reader of its `[overlay] root`
     # key. Its `PermissionError` escaped as itself, past the `Failure` every caller of the overlay
-    # root catches — the memory hooks among them. Mutation (oracle): `mutations/`'s "the overlay
-    # root's reader lets a machine file it cannot read raise past its callers".
+    # root catches — the memory hooks among them. `setup` is the same file through the reader
+    # `stayfixed setup` merges into: without the arm, setup ended in an internal error quoting the
+    # operating system's message. Mutation (oracle): `mutations/`'s "the overlay root's reader lets
+    # a machine file it cannot read raise past its callers".
     if os.geteuid() == 0:
         pytest.skip("root reads everything")
     (tmp_path / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
@@ -311,6 +313,9 @@ def test_a_file_without_read_permission_cannot_be_read_and_says_so(
         elif which == "overlay-root":
             with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
                 overlay_root(machine)
+        elif which == "setup":
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+                read_machine(machine)
         else:
             with pytest.raises(Failure, match=r"cannot be read \(PermissionError\)"):
                 _existing(tmp_path)

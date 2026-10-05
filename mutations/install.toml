@@ -1923,17 +1923,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
 
-# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
-# an internal error": every reader of a document somebody else wrote answers one nested past the
-# parser as one that does not parse.
-[[mutation]]
-name = "setup meets a machine file nested past the parser as an internal error"
-file = "src/stayfixed/setup/machine.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
-]
 
 # git's exit 128 inside a checkout is a repository it will not describe — another user's under
 # `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the

@@ -1696,6 +1696,7 @@ after = """
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
 ]
 
 [[mutation]]
@@ -2371,6 +2372,7 @@ after = "    except FileNotFoundError as exc:\n        raise MachineConfigError(
 reddens = [
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[setup]",
 ]
 
 # A retired artifact whose file was already gone read as unchanged and kept its record for good:
