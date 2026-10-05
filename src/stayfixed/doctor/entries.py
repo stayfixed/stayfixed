@@ -43,10 +43,13 @@ _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 class UnansweredClaims(RuntimeError):
     """An area's claims raised. Never an `OSError`, whatever they raised, so the report's guard
-    reads it as the red it is and not as the machine's warning."""
+    reads it as the red it is and not as the machine's warning.
+
+    It carries no message: the guard prints an exception's type and never its message, so the
+    type is all of it the report shows, and the exception it is raised from carries the rest."""
 
 
-def _claimed(context: Context) -> list[Claims]:
+def _area_claims(context: Context) -> list[Claims]:
     """Every area's `Claims`, in area order.
 
     An area's own record is the only thing that can say what it put into settings files, so the
@@ -70,7 +73,7 @@ def _claimed(context: Context) -> list[Claims]:
     try:
         return [ask(context) for ask in context.claims]
     except Exception as exc:  # an area's own code: red, never the guard's warning for `OSError`
-        raise UnansweredClaims(type(exc).__name__) from exc
+        raise UnansweredClaims from exc
 
 
 def _rebuild(words: Wording) -> str:
@@ -294,10 +297,10 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
     """How many entries claim the marker, how many are foreign, and every finding about them.
 
-    The verdicts are `_hook_entries`'; this decides each finding's kind and the area it is told
+    The verdicts are `hook_entries`'; this decides each finding's kind and the area it is told
     for, and `_told` prints them.
     """
-    answers = _claimed(context)
+    answers = _area_claims(context)
     # An area whose record could not be read may hold any id, and nothing here can say which. It
     # is not an empty record: judged as one, every entry its area installed would read as
     # recorded nowhere, red, with a remedy telling the owner to remove it.
@@ -408,7 +411,7 @@ def _told(claimed: int, foreign: int, findings: Sequence[_Finding]) -> Row:
     return Row(status, "; ".join(parts), "; ".join(dict.fromkeys(chosen)))
 
 
-def _hook_entries(context: Context) -> Row:
+def hook_entries(context: Context) -> Row:
     """Every entry in every settings file, with provenance.
 
     Three provenances, and the third is the one a hostile clone makes necessary. An entry whose
@@ -419,7 +422,7 @@ def _hook_entries(context: Context) -> Row:
     reported by position — see `checks.py`'s module docstring for why not by name.
 
     What each area recorded and what it grants are the areas' to answer, because the areas wrote
-    them: each hands its `Claims` to this row (`_claimed`), and the contract is the one `Claims`
+    them: each hands its `Claims` to this row (`_area_claims`), and the contract is the one `Claims`
     states. A record may be repository bytes — `attach`'s is `.stayfixed/local/attach.json`, a
     path a clone can commit — so **a record alone may never turn an entry green**: otherwise a
     repository that committed a marked entry and a ledger recording its id would get this row to

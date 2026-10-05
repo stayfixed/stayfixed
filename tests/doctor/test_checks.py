@@ -1187,7 +1187,7 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
     context = _context(root, load(root, machine=_machine(tmp_path)))
-    row = entries._hook_entries(context)
+    row = entries.hook_entries(context)
     assert "could not be read as hook entries" in row.detail
 
 

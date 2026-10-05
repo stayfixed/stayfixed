@@ -18,13 +18,16 @@ from types import ModuleType
 from typing import TypeGuard
 
 from stayfixed.areas import area_imports
-from stayfixed.doctor.model import RED, REPORT_THIS, SKIP, Check, Context, Contribution, Row
+from stayfixed.doctor.model import RED, REPORT_THIS, Context, Contribution, Row
 
 
 @dataclass(frozen=True)
-class _Unregistered:
+class Unregistered:
     """The one check an area gets in place of its own when it could not contribute them: a red row
-    saying why, named after the area and sitting where its rows would have been."""
+    saying why, named after the area and sitting where its rows would have been.
+
+    Public within the package because the run's early report (`checks._early`) tells it apart
+    from every other check: it is about stayfixed's own code, so it is red there too."""
 
     detail: str
 
@@ -129,7 +132,7 @@ def _unregistered(answer: _Answer, owners: Mapping[str, str]) -> Contribution:
     while name in owners:
         number += 1
         name = f"{area} ({number})"
-    return Contribution(checks=((name, _Unregistered(answer.refused)),))
+    return Contribution(checks=((name, Unregistered(answer.refused)),))
 
 
 def discover_contributors() -> list[tuple[str, ModuleType | Exception]]:
@@ -174,13 +177,3 @@ def contributions(core: Sequence[tuple[str, Callable[[Context], Row]]]) -> list[
         answer.contribution if answer.contribution is not None else _unregistered(answer, owners)
         for answer in answers
     ]
-
-
-def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
-    """A row of the report that is built before any check can be asked: a skip giving `reason`,
-    because every check would be asked with no configuration to read — except the row of an area
-    that could not contribute, which is about stayfixed's own code, which no configuration
-    changes, and so is red here as everywhere."""
-    if isinstance(check, _Unregistered):
-        return Check(name, RED, check.detail, REPORT_THIS)
-    return Check(name, SKIP, reason, "")

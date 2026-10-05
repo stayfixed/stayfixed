@@ -71,7 +71,7 @@ from stayfixed import REPOSITORY_URL
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
-from stayfixed.doctor.entries import _hook_entries
+from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     OK,
     RED,
@@ -83,7 +83,7 @@ from stayfixed.doctor.model import (
     Contribution,
     Row,
 )
-from stayfixed.doctor.registry import _early, contributions
+from stayfixed.doctor.registry import Unregistered, contributions
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
 from stayfixed.harnesses import CODEX, Tier
@@ -689,7 +689,7 @@ def _ci_ref(context: Context) -> Row:
         return row
     workflow = context.root / WORKFLOW
     # **A regular file, and a bounded read of it — the two guards its siblings in this area
-    # already have.** `entries._hook_entries` asks whether every settings file is a regular file
+    # already have.** `entries.hook_entries` asks whether every settings file is a regular file
     # before it opens one and `_diagnostics` reads its log to a cap, and this path is
     # repository-authored in the same sense: a clone chooses what sits at
     # `.github/workflows/stayfixed.yml`. A committed symlink to a FIFO there makes an unguarded
@@ -879,7 +879,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("versions", _versions),
     ("files", _files),
     ("wrapper", _wrapper),
-    ("hook-entries", _hook_entries),
+    ("hook-entries", hook_entries),
     ("codex-trust", _codex_trust),
     ("budgets", _budgets),
     ("cli-path", _cli_path),
@@ -922,9 +922,21 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     return Check(name, row.status, row.detail, row.remedy)
 
 
-def _registry(contributed: list[Contribution]) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
+def _report_checks(
+    contributed: list[Contribution],
+) -> tuple[tuple[str, Callable[[Context], Row]], ...]:
     """The report's checks in the report's order: the core's, then each area's."""
     return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)
+
+
+def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
+    """A row of the report that is built before any check can be asked: a skip giving `reason`,
+    because every check would be asked with no configuration to read — except the row of an area
+    that could not contribute, which is about stayfixed's own code, which no configuration
+    changes, and so is red here as everywhere."""
+    if isinstance(check, Unregistered):
+        return Check(name, RED, check.detail, REPORT_THIS)
+    return Check(name, SKIP, reason, "")
 
 
 def _context(
@@ -977,12 +989,12 @@ def run_checks(
     # Discovered before anything is read, so the early reports below have a row for every check
     # an area contributes too, and for every area that could not contribute.
     contributed = contributions(CHECKS)
-    registry = _registry(contributed)
-    # The registry is the only place a name is spelled, and these two rows are built before a
-    # check function runs, so they read the first key out of it rather than repeating the word:
+    report_checks = _report_checks(contributed)
+    # The list of checks is the only place a name is spelled, and these two rows are built before
+    # a check function runs, so they read the first key out of it rather than repeating the word:
     # a row that disagreed with its key would be a typo nothing could see.
-    first, *rest = [name for name, _ in registry]
-    asked = dict(registry)
+    first, *rest = [name for name, _ in report_checks]
+    asked = dict(report_checks)
     # Asked of the name before `is_file`, which follows a link: a symlinked `stayfixed.toml` goes
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
@@ -1057,4 +1069,4 @@ def run_checks(
         config=config,
         contributed=contributed,
     )
-    return [_guarded(name, check, context) for name, check in registry]
+    return [_guarded(name, check, context) for name, check in report_checks]

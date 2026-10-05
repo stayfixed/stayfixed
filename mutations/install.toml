@@ -496,8 +496,8 @@ reddens = [
 [[mutation]]
 name = "doctor asks its checks without the guard"
 file = "src/stayfixed/doctor/checks.py"
-before = "    return [_guarded(name, check, context) for name, check in registry]"
-after = "    return [Check(name, **vars(check(context))) for name, check in registry]"
+before = "    return [_guarded(name, check, context) for name, check in report_checks]"
+after = "    return [Check(name, **vars(check(context))) for name, check in report_checks]"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_contribution_that_raises_costs_one_row",
   "tests/doctor/test_contributions.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
@@ -971,7 +971,7 @@ reddens = [
 [[mutation]]
 name = "claims that raise an OSError reach the guard as one"
 file = "src/stayfixed/doctor/entries.py"
-before = "        raise UnansweredClaims(type(exc).__name__) from exc"
+before = "        raise UnansweredClaims from exc"
 after = "        raise"
 reddens = [
   "tests/doctor/test_contributions.py::test_claims_that_raise_an_os_error_are_red_and_never_a_warning",
@@ -1020,8 +1020,8 @@ reddens = [
 # early report too, where every other check after the first skips for want of a configuration.
 [[mutation]]
 name = "the early report skips an area that could not register"
-file = "src/stayfixed/doctor/registry.py"
-before = "    if isinstance(check, _Unregistered):"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if isinstance(check, Unregistered):"
 after = "    if False:"
 reddens = [
   "tests/doctor/test_contributions.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
@@ -1035,7 +1035,7 @@ reddens = [
 [[mutation]]
 name = "the early report names the core's checks alone"
 file = "src/stayfixed/doctor/checks.py"
-before = "    first, *rest = [name for name, _ in registry]"
+before = "    first, *rest = [name for name, _ in report_checks]"
 after = "    first, *rest = [name for name, _ in CHECKS]"
 reddens = [
   "tests/doctor/test_contributions.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
@@ -1878,7 +1878,7 @@ reddens = [
 
 # The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
 # `.github/workflows/stayfixed.yml`. This row read it with neither of the guards its two siblings in
-# the same module have -- `_hook_entries` asks `is_file()` of every settings file before it opens
+# the same module have -- `hook_entries` asks `is_file()` of every settings file before it opens
 # one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
 # `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
 # timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
