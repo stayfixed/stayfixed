@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import errno
 import stat
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +41,7 @@ from stayfixed.memory.api import (
     PROJECTS,
     binding_state,
     permitted_roots,
+    read_binding_record,
 )
 
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
@@ -218,7 +218,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
     if not stat.S_ISREG(found):
         return None
     try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        recorded = read_binding_record(record)
     except OSError as exc:
         raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
     except UnicodeDecodeError:
@@ -234,8 +234,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
         # `toml_position` bounds it to the suffix, and `from None` because a chained `__cause__`
         # would print the message a traceback away.
         raise UnreadableRecord(f"{where} is not valid TOML {toml_position(exc)}") from None
-    value = raw.get("remote")
-    return value if isinstance(value, str) and value else None
+    return recorded.get("remote")
 
 
 def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:

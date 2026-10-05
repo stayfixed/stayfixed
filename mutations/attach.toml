@@ -773,7 +773,7 @@ reddens = [
 name = "attach meets an overlay record nested past the parser as an internal error"
 file = "src/stayfixed/attach/binding.py"
 before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
+after = "    except UNPARSEABLE[0] as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
 ]
@@ -782,7 +782,7 @@ reddens = [
 name = "attach's first-attach date meets an overlay record nested past the parser as an internal error"
 file = "src/stayfixed/attach/write.py"
 before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
-after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
+after = "    except (OSError, UnicodeDecodeError, UNPARSEABLE[0]):"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[first-attach]",
 ]

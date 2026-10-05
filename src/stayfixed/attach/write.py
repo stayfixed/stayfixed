@@ -44,7 +44,6 @@ from __future__ import annotations
 import datetime
 import json
 import os
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,6 +102,7 @@ from stayfixed.memory.api import (
     link,
     linked_names,
     main_checkout,
+    read_binding_record,
     require_readable_record,
     resolve,
 )
@@ -547,11 +547,9 @@ def _first_attach(record: Path) -> str | None:
     if not record.is_file():
         return None
     try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        return read_binding_record(record).get("first_attach")
     except (OSError, UnicodeDecodeError, *UNPARSEABLE):
         return None
-    value = raw.get("first_attach")
-    return value if isinstance(value, str) and value else None
 
 
 def _secret_scan(binding: Binding, runner: Runner) -> str | None:

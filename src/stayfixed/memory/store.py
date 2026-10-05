@@ -264,6 +264,22 @@ def binding_state(recorded: str | None, origin: str | None) -> str:
     return BOUND if recorded == origin else MISMATCH
 
 
+def read_binding_record(record: Path) -> dict[str, str]:
+    """The binding record at `record`, `projects/<name>/project.toml`: each key whose value is a
+    non-empty string, mapped to it.
+
+    The one reader of that file, and no failure policy: an `OSError`, a `UnicodeDecodeError` and
+    each of `UNPARSEABLE` are raised as met, because what a record that cannot be read means is
+    each caller's to say, and its three callers say three things, each at its own `except`.
+    `_bound` answers the hook path "unreadable", which degrades closed; `attach`'s `_recorded`
+    stops the run, so a broken record never becomes a first attach; and `attach`'s
+    `_first_attach` keeps today's date, which is a note and binds nothing. Whether there is a
+    record at all is the caller's question too, asked before this.
+    """
+    raw = tomllib.loads(record.read_text(encoding="utf-8"))
+    return {key: value for key, value in raw.items() if isinstance(value, str) and value}
+
+
 def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
 
@@ -274,13 +290,11 @@ def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     recorded = None
     if record.is_file():
         try:
-            raw = tomllib.loads(record.read_text(encoding="utf-8"))
+            recorded = read_binding_record(record).get("remote")
         except (OSError, UnicodeDecodeError, *UNPARSEABLE):
             # The path and never the exception: a TOML error's message quotes the file's own
             # text, and this file holds a remote URL.
             return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
-        value = raw.get("remote")
-        recorded = value if isinstance(value, str) and value else None
     cause = _UNBOUND_CAUSES.get(binding_state(recorded, origin_remote(root)))
     return None if cause is None else Unresolved(cause, f"project {quoted(project)}")
 
