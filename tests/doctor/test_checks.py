@@ -1291,6 +1291,8 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
     # (`RecursionError`). Either reached `_guarded`: `diagnostics` red, "this check could not run",
     # and an exit of 1. A line the parser cannot read is not a record. Mutation (oracle):
     # `mutations/`'s "doctor's hook sink reader lets a line past the parser's reach raise" -> red.
+    # Not `NESTED`: its 400,000 bytes are past `DIAGNOSTICS_MAX_BYTES`, so the read would stop at
+    # the bound before the parser saw a whole line; 100,000 levels fit and still raise.
     text = (
         '{"error": ' + LONG_NUMBER + "}" if line == "long-number" else "[" * 100_000 + "]" * 100_000
     )
