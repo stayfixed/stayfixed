@@ -581,6 +581,24 @@ def _imports_run_on_import(nodes: Iterable[ast.AST]) -> list[ast.Import | ast.Im
     return found
 
 
+# The modules an area's `doctor.py` may import at module level: neither costs the report anything,
+# and `typing` is what `TYPE_CHECKING` is read from, bare or as `typing.TYPE_CHECKING`.
+MODULE_LEVEL = frozenset({"__future__", "typing"})
+
+
+def _doctor_offences(where: str, tree: ast.AST) -> list[str]:
+    """Every import that runs when `tree` is imported, as `where:line`, less those of
+    `MODULE_LEVEL` modules alone, in either spelling (`from typing import …`, `import typing`)."""
+    offences: list[str] = []
+    for node in _imports_run_on_import([tree]):
+        if isinstance(node, ast.ImportFrom) and node.module in MODULE_LEVEL:
+            continue
+        if isinstance(node, ast.Import) and all(a.name in MODULE_LEVEL for a in node.names):
+            continue
+        offences.append(f"{where}:{node.lineno}")
+    return offences
+
+
 def test_an_areas_doctor_module_imports_only_inside_its_functions() -> None:
     # CONTRIBUTING, "Areas": in an area's `doctor.py`, as in a `hooks.py`, every import sits
     # inside a function body. The module is imported by discovery, for every `doctor` run, so a
@@ -596,11 +614,27 @@ def test_an_areas_doctor_module_imports_only_inside_its_functions() -> None:
     assert [path.parent.name for path in found] == ["attach", "memory", "overlay"]
     offences: list[str] = []
     for path in found:
-        for node in _imports_run_on_import([ast.parse(path.read_text(encoding="utf-8"))]):
-            if isinstance(node, ast.ImportFrom) and node.module in ("__future__", "typing"):
-                continue
-            offences.append(f"{path.parent.name}/doctor.py:{node.lineno}")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offences += _doctor_offences(f"{path.parent.name}/doctor.py", tree)
     assert offences == []
+
+
+def test_the_doctor_import_rule_reads_both_spellings_of_type_checking() -> None:
+    # `if typing.TYPE_CHECKING:` needs a module-level `import typing`, which the rule once flagged,
+    # so the guard's second spelling could never be used. Both spellings are allowed, and what
+    # either guards; an `import typing` that carries any other module is not. Measured by hand:
+    # dropping the `ast.Import` arm of `_doctor_offences` reddens the first assertion, and
+    # dropping the `typing.TYPE_CHECKING` arm of `_type_checking` reddens it too.
+    guarded = (
+        "import typing\nif typing.TYPE_CHECKING:\n    from stayfixed.memory.store import Store\n"
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import stayfixed.errors\n"
+    )
+    assert _doctor_offences("x.py", ast.parse(guarded)) == []
+    carried = (
+        "import typing, os\nimport os.path\nif typing.TYPE_CHECKING:\n    pass\n"
+        "else:\n    import json\n"
+    )
+    assert _doctor_offences("x.py", ast.parse(carried)) == ["x.py:1", "x.py:2", "x.py:6"]
 
 
 def test_the_delivery_areas_are_attach_memory_and_overlay() -> None:
@@ -727,6 +761,8 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
     # `importlib.import_module("stayfixed.memory.store")` or `__import__(...)` in a core file
     # crossed into the private layer with every boundary test green. A string import in the core
     # is discovery's alone, and the one other one — profile discovery — is pinned with its reason.
+    # This reads the two names; the standard library's other ways to import by a string are held
+    # where they must be imported from, by `test_no_core_module_reaches_the_import_machinery_…`.
     #
     # Mutations (declared): `mutations/`'s "a core function imports the note store through
     # importlib", "a core function imports the note store through __import__" and "a core function
@@ -745,6 +781,129 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
     assert ("area_modules", "import_module") in discovery, discovery
     found_rows, pinned = Counter(rows), Counter(DYNAMIC_IMPORTERS)
     assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
+
+
+# The standard modules that import a module named by a string without either name the rule above
+# reads: `pkgutil.resolve_name`, `importlib.util`'s `find_spec` and `module_from_spec` with a
+# loader's `exec_module`, `runpy`'s `run_module` and `run_path`, a `zipimporter`. Reading every
+# such function by name is a list that grows with the standard library, so the rule below reads
+# the door instead: which core files import these modules at all, and what each reaches in them.
+# `importlib.resources` reads package data and imports nothing, so it is outside the rule.
+MACHINERY = frozenset({"importlib", "pkgutil", "runpy", "zipimport"})
+DATA_ONLY = "importlib.resources"
+
+# Every core import of `MACHINERY`, one row per statement: the file relative to `src/stayfixed/`,
+# the module the statement names, and what the file reaches through it -- the names a `from`
+# statement takes, or each attribute path read off the name an `import` binds (`<value>` when the
+# name itself is handed on, where anything could be read off it). Held as a multiset and by
+# equality in both directions, as `DYNAMIC_IMPORTERS` is.
+MACHINERY_IMPORTERS = (
+    # Discovery: imports `stayfixed.<area>.<submodule>` by name, and lists the areas.
+    ("areas.py", "importlib", frozenset({"import_module"})),
+    ("areas.py", "pkgutil", frozenset({"iter_modules"})),
+    # Profile discovery: imports `stayfixed.profiles.<name>.hygiene`, pinned in `DYNAMIC_IMPORTERS`.
+    ("profiles/hints.py", "importlib", frozenset({"import_module"})),
+    # Reads the running interpreter's bytecode magic, the first four bytes of every `.pyc` it would
+    # open; it imports nothing.
+    ("profiles/python/hygiene.py", "importlib.util", frozenset({"util.MAGIC_NUMBER"})),
+)
+
+
+def _attribute_path(node: ast.AST, parents: dict[int, ast.AST]) -> str:
+    """The dotted attributes read off the name `node`, outermost last (`util.MAGIC_NUMBER` for
+    `importlib.util.MAGIC_NUMBER`), or `<value>` when the name is used as anything but the root
+    of an attribute read."""
+    path: list[str] = []
+    while isinstance(parent := parents.get(id(node)), ast.Attribute) and parent.value is node:
+        path.append(parent.attr)
+        node = parent
+    return ".".join(path) or "<value>"
+
+
+def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
+    """Every statement in `tree` that imports a `MACHINERY` module other than `DATA_ONLY`, as
+    `(module, reach)`: for `from m import a, b` the names taken (`resources` dropped from
+    `from importlib import`), for `import m.n [as x]` every attribute path read off the name it
+    binds, anywhere in the file."""
+    parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    found: list[tuple[str, frozenset[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            module = node.module
+            if module.split(".")[0] not in MACHINERY or module.startswith(DATA_ONLY):
+                continue
+            names = {alias.name for alias in node.names}
+            if module == "importlib":
+                names -= {"resources"}
+            if names:
+                found.append((module, frozenset(names)))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] not in MACHINERY:
+                    continue
+                data_only = alias.name.startswith(DATA_ONLY)
+                if data_only and alias.asname:
+                    continue
+                bound = alias.asname or alias.name.split(".")[0]
+                reach = {
+                    _attribute_path(name, parents)
+                    for name in ast.walk(tree)
+                    if isinstance(name, ast.Name) and name.id == bound
+                }
+                # `import importlib.resources` binds `importlib` itself, and what is read off it
+                # past `resources` is the machinery all the same.
+                if data_only:
+                    reach = {path for path in reach if path.split(".")[0] != "resources"}
+                    if not reach:
+                        continue
+                found.append((alias.name, frozenset(reach)))
+    return found
+
+
+def test_no_core_module_reaches_the_import_machinery_but_where_pinned() -> None:
+    # The rule above reads two names, and `pkgutil.resolve_name("stayfixed.memory.store")`, or
+    # `importlib.util.find_spec` and a loader's `exec_module`, in a core function crossed into the
+    # private layer with every boundary test green. So the core's imports of the modules that
+    # can import by name are pinned, each with what it reaches: a new importer is a new row, and
+    # a pinned importer reaching one more name changes its row. What stays unread is a module
+    # reached without an import statement of its own -- `__import__`, which the rule above
+    # reads, or `sys.modules` -- and code built from text, which no rule here reads.
+    #
+    # Mutations (declared): `mutations/`'s "a core function imports the note store through
+    # pkgutil.resolve_name" and "profile discovery reaches importlib.util as well".
+    source = ROOT / "src" / "stayfixed"
+    rows = [
+        (where, module, reach)
+        for where, path in _core_files(source)
+        for module, reach in _machinery_imports(ast.parse(path.read_text(encoding="utf-8")))
+    ]
+    found_rows, pinned = Counter(rows), Counter(MACHINERY_IMPORTERS)
+    assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
+
+
+def test_the_machinery_rule_reads_every_spelling() -> None:
+    # The walk above can show the rule holding only for the spellings the tree carries, so it is
+    # put in front of the ones it does not: a `from` import of a submodule, an aliased `import`,
+    # the name handed on as a value, and `importlib.resources` in each spelling left alone, though
+    # not what is read off the `importlib` its `import` binds. Measured by hand: dropping the
+    # `resources` subtraction, the `<value>` fallback, or that filter each reddens it.
+    spellings = (
+        "from importlib import resources\nfrom importlib.resources.abc import Traversable\n"
+        "import importlib.resources\nimportlib.resources.files('x')\n"
+        "importlib.import_module('x')\nfrom importlib import resources, util\n"
+        "from importlib.util import find_spec\nimport pkgutil as p\np.resolve_name('x')\n"
+        "import runpy\nf(runpy)\nrunpy.run_module('x')\n"
+    )
+    assert sorted(_machinery_imports(ast.parse(spellings)), key=str) == sorted(
+        [
+            ("importlib.resources", frozenset({"import_module"})),
+            ("importlib", frozenset({"util"})),
+            ("importlib.util", frozenset({"find_spec"})),
+            ("pkgutil", frozenset({"resolve_name"})),
+            ("runpy", frozenset({"<value>", "run_module"})),
+        ],
+        key=str,
+    )
 
 
 # The two functions through which discovery imports `stayfixed.<area>.<submodule>`: the one the CLI

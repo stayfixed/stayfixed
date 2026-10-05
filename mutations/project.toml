@@ -1844,6 +1844,17 @@ reddens = [
   "tests/profiles/test_hints.py::test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line",
 ]
 
+# A pinned importer is pinned to what it reaches: profile discovery's `import importlib` gives
+# `importlib.util.find_spec` as well, and a loader's `exec_module` after it, with no new import
+# statement for the rule to see.
+[[mutation]]
+name = "profile discovery reaches importlib.util as well"
+file = "src/stayfixed/profiles/hints.py"
+before = '        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
+after = '''        importlib.util.find_spec("stayfixed.memory.store")
+        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
 # Only a regular `.pyc` is read, and it is judged by the descriptor that reads it. Following a
 # symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
 # waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a

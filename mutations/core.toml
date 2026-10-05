@@ -2373,6 +2373,19 @@ after = '''    from importlib import import_module as load
     return [module.register for module in area_modules("commands")]'''
 reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
+# The standard library imports by a string without either name that rule reads:
+# `pkgutil.resolve_name` crossed with all of `test_areas.py` and `test_import_boundary.py` green.
+# So the core's imports of the import machinery are pinned, each with what it reaches.
+[[mutation]]
+name = "a core function imports the note store through pkgutil.resolve_name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pkgutil
+
+    pkgutil.resolve_name("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
 # Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
 # it is for walks every area through it, the private layer's included.
 [[mutation]]
