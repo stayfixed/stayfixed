@@ -114,8 +114,9 @@ Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `h
 `ledger`, `memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line.
 Three of them are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the
 overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
-`src/stayfixed/areas.py`. `overlay` renders and upgrades the private overlay, `attach` binds a
-repository to one and unbinds it again, and `memory` keeps the notes and their trust gate. Every
+`src/stayfixed/areas.py`. `overlay` renders and upgrades the private overlay; `attach` binds a
+repository to one, and its `detach` takes back what `attach` wrote while the overlay keeps its
+record of the binding; and `memory` keeps the notes and their trust gate. Every
 other module under `src/stayfixed/`, `cli.py` and the subpackages that are not areas included, is
 the **core**: the gates and the records they check. `ledger` keeps the bug ledger, `docs` the
 documentation and plan lints, `guards` the session guard, the commit-message rules and the

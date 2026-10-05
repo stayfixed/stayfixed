@@ -1,4 +1,5 @@
-"""The `attach` and `detach` groups: bind a repository to the overlay, and unbind it.
+"""The `attach` and `detach` groups: `attach` binds a repository to the overlay, and `detach`
+takes back what `attach` wrote and leaves the overlay's record of the binding in place.
 
 Two top-level commands and not one group with two subcommands, because that is how
 `docs/cli.md` lists them and the shape the skills already invoke.

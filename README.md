@@ -17,8 +17,9 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery**
 > areas carry what belongs to a person rather than to a repository: `memory`, the note store and
 > its trust gate; `overlay`, the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade`, `overlay publish-template`; and `attach`, whose `attach`/`detach` bind a
-> repository to the overlay and unbind it again. The core imports none of them except at one
+> `overlay upgrade`, `overlay publish-template`; and `attach`, whose `attach` binds a repository
+> to the overlay and whose `detach` takes back what `attach` wrote, keeping the overlay's record
+> of the binding. The core imports none of them except at one
 > pinned step, `stayfixed setup --overlay`, which records the overlay on a machine, and a test
 > holds that ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says how). The core is language-neutral,
 > and a stack is a **profile**: one stack's test runner, build artifacts and package manager
