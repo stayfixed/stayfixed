@@ -52,6 +52,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
 
@@ -1229,9 +1230,7 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
     # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
     # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
-    _walked(tmp_path, root, label).write_text(
-        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
-    )
+    _walked(tmp_path, root, label).write_text('{"hooks": ' + NESTED + "}", "utf-8")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
         "hook-entries",
@@ -1247,9 +1246,7 @@ def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: 
     # -> a warning.
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
-    (root / ".claude" / "settings.json").write_text(
-        '{"hooks": ' + "[" * 200_000 + "]" * 200_000 + "}", "utf-8"
-    )
+    (root / ".claude" / "settings.json").write_text('{"hooks": ' + NESTED + "}", "utf-8")
     (root / LOCAL_SETTINGS).write_text("this is not json", "utf-8")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
@@ -1260,12 +1257,6 @@ def test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red(tmp_path: 
         f"is in them: {LOCAL_SETTINGS}",
         UNCHECKABLE_REMEDY,
     )
-
-
-# An integer literal longer than the interpreter converts to an `int`, 4,300 digits by default on
-# every supported Python. `json.loads` meets it with a plain `ValueError`, which is not the
-# `JSONDecodeError` a reader of malformed JSON catches.
-LONG_NUMBER = "1" * 5_000
 
 
 @pytest.mark.parametrize("label", sorted(WALKED))
