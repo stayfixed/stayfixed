@@ -64,6 +64,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from stayfixed.attach.doctor import ATTACH_STORE
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ NO_OVERLAY = (
 NOT_ASKABLE = "stayfixed: the overlay binding could not be checked on this machine"
 NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    f"run `{ATTACH_STORE} --check`"
 )
 REMOTE_MISMATCH = (
     "stayfixed: the overlay records a different remote under this project's name; "

@@ -115,6 +115,23 @@ def test_an_unattached_overlay_project_is_told_to_attach(
     assert _run(root, machine, None) == NOT_ATTACHED
 
 
+def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
+    # One spelling of `stayfixed attach --store ...` serves the session-start line and every row
+    # of `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
+    # constant, a change to it would otherwise reach the session unread. The constant spells the
+    # overlay's `projects` directory out, because this module is imported by discovery and must
+    # not import the memory area, so it is held to the memory area's name for it. No mutation: a
+    # changed spelling on either side reddens one of the two lines.
+    from stayfixed.attach.doctor import ATTACH_STORE
+    from stayfixed.memory.api import PROJECTS
+
+    assert f"stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory" == ATTACH_STORE
+    assert NOT_ATTACHED == (
+        "stayfixed: this repository is not attached to the overlay this machine records; "
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`"
+    )
+
+
 @needs_git
 def test_a_mismatched_record_and_a_missing_overlay_each_get_their_own_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

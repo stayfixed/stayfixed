@@ -45,6 +45,14 @@ UNREADABLE_RECORD: Final = "unreadable-record"
 # for the entries that mismatch leaves red: one spelling, so the two rows cannot disagree.
 _REBIND = "run `stayfixed attach --check`, and `--trust-remote` only if it should be"
 
+# The command that binds this checkout to its share of the overlay, which every remedy of this area
+# names, so a reader is never sent to two spellings of one command. `<overlay>` and `<project>` and
+# never `config.project.name`: the name is repository-authored, and a remedy is as much output as a
+# detail is. `projects` is `memory.api.PROJECTS`, spelled out because this module imports nothing
+# at module level and `hooks.py`, which discovery imports, must not import the memory area;
+# `tests/attach/test_hooks.py` holds the two equal.
+ATTACH_STORE: Final = "stayfixed attach --store <overlay>/projects/<project>/memory"
+
 
 def _ledger_state(root: Path) -> AttachLedger | str:
     """This repository's attach ledger, `NO_LEDGER` when the path names no file, or
@@ -142,7 +150,6 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         NO_ORIGIN,
         NO_ORIGIN_CAUSE,
         NO_ORIGIN_WAY_OUT,
-        PROJECTS,
         UNBOUND,
         harness_memory_path,
     )
@@ -159,17 +166,14 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             RED,
             "the harness memory path is a real directory rather than a link to the store, so "
             "this checkout looks attached and behaves like nothing",
-            # `<project>` and not `config.project.name`: the name is repository-authored, and a
-            # remedy is as much output as a detail is.
-            f"remove {harness} and run "
-            f"`stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`",
+            f"remove {harness} and run `{ATTACH_STORE}`",
         )
     if ledger.state(context.root) == NO_LEDGER:
         return Row(
             WARN,
             f"memory.mode is overlay and {ATTACH_LEDGER} does not exist, so nothing records an "
             f"attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`",
+            f"run `{ATTACH_STORE} --check`",
         )
     answer = _binding_answer(context, ledger)
     # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
@@ -185,8 +189,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
             f"binding for this project — a clone can commit that file, so it is not evidence of "
             f"an attach",
-            "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-            "checkout was never attached on this machine, remove the ledger",
+            _RE_ATTACH,
         )
     if state == NO_ORIGIN:
         return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
@@ -205,14 +208,15 @@ UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
 # The fourth is `UNREADABLE_LEDGER`, above, and it is about the repository rather than about this
-# machine. A ledger that is there and will not parse used to answer `UNASKABLE` with the other two,
-# so the row said "no `git`, or a record this process could not read" and the remedy said "run
-# `stayfixed doctor` again where `git` runs" — about a file in the checkout the reader is standing
-# in. `skip` never reaches the exit code, so a repository's own committed, malformed ledger was
-# also silent.
+# machine: a ledger that is there and will not parse is a file in the checkout the reader is
+# standing in. Told with the other two, the row would blame `git` or an unreadable record and send
+# the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
+# reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
+#
+# The remedy for a ledger the overlay does not corroborate.
 _RE_ATTACH = (
-    "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
-    "checkout was never attached on this machine, remove the ledger"
+    f"run `{ATTACH_STORE} --check`; if this checkout was never attached on this machine, remove "
+    "the ledger"
 )
 
 
@@ -249,8 +253,7 @@ def _uncorroborated(reason: str) -> Row:
             WARN,
             f"{ATTACH_LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
             f"corroborated and this checkout's attach state is unknown — {not_evidence}",
-            f"remove {ATTACH_LEDGER}, then run `stayfixed attach --store "
-            f"<overlay>/projects/<project>/memory --check`",
+            f"remove {ATTACH_LEDGER}, then run `{ATTACH_STORE} --check`",
         )
     if reason == NO_OVERLAY:
         return Row(
@@ -283,12 +286,11 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     asserting what was not checked.
     """
     from stayfixed.doctor.api import OK, RED, WARN
-    from stayfixed.memory.api import PROJECTS, harness_link_needed
+    from stayfixed.memory.api import harness_link_needed
 
     # The remedy every arm but the green ones carries: one command puts the link back where
-    # `attach` puts it, whatever the wrong shape was. `<overlay>` and `<project>` and never
-    # `config.project.name`, for the reason `_attached`'s real-directory row gives.
-    relink = f"run `stayfixed attach --store <overlay>/{PROJECTS}/<project>/memory`"
+    # `attach` puts it, whatever the wrong shape was.
+    relink = f"run `{ATTACH_STORE}`"
     store = answers.store(context)
     if harness.is_symlink():
         if store is None:
@@ -513,7 +515,7 @@ def _wording(narrowed: str | None = None) -> Wording:
         ),
         diagnose="run `stayfixed attach --check`, which reports why the overlay cannot be read",
         setup="run `stayfixed setup --overlay <path>` to record the overlay that grants them",
-        vouch="`stayfixed attach --store <overlay>/projects/<project>/memory`",
+        vouch=f"`{ATTACH_STORE}`",
         ungranted=ungranted,
         regrant=regrant,
     )
