@@ -45,14 +45,6 @@ UNREADABLE_RECORD: Final = "unreadable-record"
 # for the entries that mismatch leaves red: one spelling, so the two rows cannot disagree.
 _REBIND = "run `stayfixed attach --check`, and `--trust-remote` only if it should be"
 
-# The command that binds this checkout to its share of the overlay, which every remedy of this area
-# names, so a reader is never sent to two spellings of one command. `<overlay>` and `<project>` and
-# never `config.project.name`: the name is repository-authored, and a remedy is as much output as a
-# detail is. `projects` is `memory.api.PROJECTS`, spelled out because this module imports nothing
-# at module level and `hooks.py`, which discovery imports, must not import the memory area;
-# `tests/attach/test_hooks.py` holds the two equal.
-ATTACH_STORE: Final = "stayfixed attach --store <overlay>/projects/<project>/memory"
-
 
 def _ledger_state(root: Path) -> AttachLedger | str:
     """This repository's attach ledger, `NO_LEDGER` when the path names no file, or
@@ -138,6 +130,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.memory.api import (
@@ -185,7 +178,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             f"{ATTACH_LEDGER} records an attach, but the overlay this machine records has no "
             f"binding for this project — a clone can commit that file, so it is not evidence of "
             f"an attach",
-            _RE_ATTACH,
+            _re_attach(),
         )
     if state == NO_ORIGIN:
         return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
@@ -208,12 +201,17 @@ UNASKABLE: Final = "unaskable"
 # standing in. Told with the other two, the row would blame `git` or an unreadable record and send
 # the reader to run `stayfixed doctor` where `git` runs, which cannot fix it, and its `skip` never
 # reaches the exit code, so a repository's own committed, malformed ledger would go unreported.
-#
-# The remedy for a ledger the overlay does not corroborate.
-_RE_ATTACH = (
-    f"run `{ATTACH_STORE} --check`; if this checkout was never attached on this machine, remove "
-    "the ledger"
-)
+
+
+def _re_attach() -> str:
+    """The remedy for a ledger the overlay does not corroborate. A function only because the
+    command it names is imported, and an import here sits inside a function body."""
+    from stayfixed.attach import ATTACH_STORE
+
+    return (
+        f"run `{ATTACH_STORE} --check`; if this checkout was never attached on this machine, "
+        "remove the ledger"
+    )
 
 
 def _uncorroborated(reason: str) -> Row:
@@ -229,6 +227,7 @@ def _uncorroborated(reason: str) -> Row:
     two, its row would blame `git` for a malformed file in the reader's own checkout and offer a
     remedy — run this somewhere `git` works — that could not fix it.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import SKIP, WARN, Row
 
@@ -242,7 +241,7 @@ def _uncorroborated(reason: str) -> Row:
             WARN,
             f"{ATTACH_LEDGER} records an attach, and the store it names is not this project's "
             f"directory inside the overlay this machine records — {not_evidence}",
-            _RE_ATTACH,
+            _re_attach(),
         )
     if reason == UNREADABLE_LEDGER:
         return Row(
@@ -281,6 +280,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     at all, which is a warning naming what could not be asked rather than a green sentence
     asserting what was not checked.
     """
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.memory.api import harness_link_needed
 
@@ -474,6 +474,7 @@ def _wording(narrowed: str | None = None) -> Wording:
     A function and not a module-level constant only because building the value imports the doctor
     area's surface and the ledger's path, and an import in this module sits inside a function body
     (the module docstring says why)."""
+    from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import Wording
     from stayfixed.memory.api import MISMATCH

@@ -1975,3 +1975,15 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[the-ledger-nothing-there]",
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[its-directory-nothing-there]",
 ]
+
+# Discovery imports every area's `hooks.py` unguarded, because a hook fails fast, so what that module
+# imports at module level is on every hook's path: an edge to the report's module lets a defect
+# confined to `doctor.py` stop every hook, and loads the report on each one.
+[[mutation]]
+name = "attach's hooks import the area's doctor module"
+file = "src/stayfixed/attach/hooks.py"
+before = "from stayfixed.attach import ATTACH_STORE\n"
+after = "from stayfixed.attach import ATTACH_STORE\nfrom stayfixed.attach.doctor import NO_LEDGER\n"
+reddens = [
+  "tests/attach/test_hooks.py::test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module",
+]

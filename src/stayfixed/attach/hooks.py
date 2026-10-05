@@ -64,7 +64,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from stayfixed.attach.doctor import ATTACH_STORE
+from stayfixed.attach import ATTACH_STORE
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
