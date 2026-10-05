@@ -536,15 +536,21 @@ reddens = [
   "tests/doctor/test_contributions.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
 ]
 
-# The failure row's name is one of the report's names once it is chosen: left out of them, a later
-# area that contributes a check under it joins, and the report prints two rows named after the area.
+# A failure row stands in for rows an area could not give, so it is named only once every
+# contribution's names are known: named as each area was met, it took a name a healthy later area's
+# check had, and that area was turned away for repeating it, its row gone from the report.
 [[mutation]]
-name = "an area's failure row is not counted among the report's names"
+name = "an area's failure row is named before every contribution's names are known"
 file = "src/stayfixed/doctor/registry.py"
-before = "    owners[name] = qualified\n"
-after = "    pass\n"
+before = """    answers = [
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    ]"""
+after = """    answers = (
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    )"""
 reddens = [
-  "tests/doctor/test_contributions.py::test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row",
+  "tests/doctor/test_contributions.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[register]",
+  "tests/doctor/test_contributions.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[import]",
 ]
 
 # Whether an area repeats a name is asked of a copy of the report's names: asked of the names

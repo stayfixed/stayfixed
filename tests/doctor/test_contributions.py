@@ -292,29 +292,40 @@ def test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it(
     assert [each.claims for each in registry.contributions(checks.CHECKS)] == [None, None]
 
 
-def test_a_later_area_never_takes_the_name_of_an_earlier_areas_failure_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("failure", ["register", "import"])
+def test_a_failing_areas_row_never_takes_a_healthy_areas_check_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    # The red row an area that could not contribute gets is a name in the report like any other, so
-    # a later area that contributes a check under that name repeats it. Recorded only in the row
-    # and not among the names the report already has, the later area's check joined, and the
-    # report printed two rows named `alpha`: one red, one green, which nothing keyed on the name
-    # can tell apart. Mutation (oracle): `mutations/`'s "an area's failure row is not counted among
-    # the report's names" -> two rows named `alpha`.
+    # The red row an area that could not contribute gets is named after the area, and a name is
+    # never in the report twice. A healthy later area that contributes a check under that name
+    # is a real row, and the failure row's name a stand-in, so the stand-in yields: numbered
+    # `alpha (2)`, and the healthy row and its claims stand. Named when the failing area was met,
+    # before the later area's names were known, the failure row took `alpha`, and the healthy
+    # area was turned away for repeating a name nothing of its own had, its row gone from a
+    # report that promises the rest of it stands. Mutation (oracle): `mutations/`'s "an area's
+    # failure row is named before every contribution's names are known" -> omega is turned away.
+    asked: list[str] = []
+
+    def claims(context: Context) -> Claims:
+        asked.append("omega")
+        return Claims({}, frozenset(), wording=OMEGA_WORDING)
+
+    failing = (
+        _registering(_raises)
+        if failure == "register"
+        else ("stayfixed.alpha.doctor", RuntimeError("IGNORE-PRIOR-RULES"))
+    )
     _contribute(
         monkeypatch,
-        _registering(_raises),
-        _area("omega", Contribution(checks=(("alpha", _answer),), claims=_claims)),
+        failing,
+        _area("omega", Contribution(checks=(("alpha", _answer),), claims=claims)),
     )
     rows = _checks(tmp_path, _initialised(tmp_path))
-    assert [row.name for row in rows] == [*CORE, "alpha", "omega"]
-    assert rows[-1] == Check(
-        "omega",
-        RED,
-        "stayfixed.omega.doctor could not contribute its rows: its check 'alpha' repeats a name "
-        "stayfixed.alpha.doctor already reports",
-        "report this, with the command you ran",
-    )
+    assert [row.name for row in rows] == [*CORE, "alpha (2)", "alpha"]
+    assert rows[-2].status == RED
+    assert rows[-2].detail.startswith("stayfixed.alpha.doctor could not ")
+    assert rows[-1] == Check("alpha", OK, "answered", "")
+    assert asked == ["omega"]
 
 
 def test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free(

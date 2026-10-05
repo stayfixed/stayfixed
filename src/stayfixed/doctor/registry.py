@@ -53,9 +53,23 @@ def _well_formed(contribution: object) -> TypeGuard[Contribution]:
     )
 
 
-def _registered(qualified: str, found: ModuleType | Exception) -> Contribution | str:
-    """What the area's `doctor.py` contributes, or why it could not: the import's failure, or a
-    `register()` that raised or answered something that is not a `Contribution`.
+@dataclass(frozen=True)
+class _Answer:
+    """What one area's `doctor.py` answered: the `Contribution` it hands the report, or, where
+    `contribution` is `None`, why it hands none — `refused`, the detail of the one red row the area
+    gets in its rows' place. One type for both, so the report's two passes read each area's answer
+    the same way whichever it was."""
+
+    qualified: str
+    contribution: Contribution | None
+    refused: str = ""
+
+
+def _registered(qualified: str, found: ModuleType | Exception, owners: dict[str, str]) -> _Answer:
+    """What the area's `doctor.py` contributes, or why it could not: the import's failure, a
+    `register()` that raised or answered something that is not a `Contribution`, or one that
+    repeats a name `owners` already maps to who reports it. A contribution let in has its names
+    recorded in `owners`.
 
     The module and its `register()` are an area's code as its checks are, so they get their
     guard, and the reason names the exception's type and never its message, for
@@ -63,15 +77,25 @@ def _registered(qualified: str, found: ModuleType | Exception) -> Contribution |
     repository-authored, so it prints.
     """
     if isinstance(found, Exception):
-        return f"{qualified} could not be imported: {type(found).__name__}"
+        return _Answer(
+            qualified, None, f"{qualified} could not be imported: {type(found).__name__}"
+        )
     reason = f"{qualified} could not contribute its rows"
     try:
         contribution: object = found.register()
     except Exception as exc:  # an area's own code, guarded as its checks are
-        return f"{reason}: {type(exc).__name__}"
+        return _Answer(qualified, None, f"{reason}: {type(exc).__name__}")
     if not _well_formed(contribution):
-        return f"{reason}: its register() did not return a Contribution of (name, check) pairs"
-    return contribution
+        return _Answer(
+            qualified,
+            None,
+            f"{reason}: its register() did not return a Contribution of (name, check) pairs",
+        )
+    repeated = _repeated(contribution, owners)
+    if repeated is not None:
+        return _Answer(qualified, None, f"{reason}: {repeated}")
+    owners.update((name, qualified) for name, _ in contribution.checks)
+    return _Answer(qualified, contribution)
 
 
 def _repeated(contribution: Contribution, owners: Mapping[str, str]) -> str | None:
@@ -85,24 +109,27 @@ def _repeated(contribution: Contribution, owners: Mapping[str, str]) -> str | No
     return None
 
 
-def _unregistered(qualified: str, detail: str, owners: dict[str, str]) -> Contribution:
-    """The one red row an area that could not contribute gets, recorded in `owners`.
+def _unregistered(answer: _Answer, owners: Mapping[str, str]) -> Contribution:
+    """The one red row an area that could not contribute gets, named against `owners`, every name
+    the report's checks have.
 
     The row is named after the area. When the report already has that name — a core check's,
-    or a check an earlier area contributed — it is the area's name numbered from 2, `<area> (2)`,
+    or a check an area contributed — it is the area's name numbered from 2, `<area> (2)`,
     `<area> (3)` and so on, the first that is free: the row is a name in the report like any
-    other, and a name is never in it twice. The row carries no claims, because the area's claims
-    go with its rows: `hook-entries` then reads every entry that area put into settings files as
-    one nothing records, which is red, since an area that cannot say what it wrote vouches for
-    nothing.
+    other, and a name is never in it twice. It is named only once every contribution's names are
+    known (`contributions`), because it stands in for rows the area could not give, and a stand-in
+    that took a name first would turn away the healthy area whose row it is. No other failure row
+    can take the same name: each is named after its own area, and no two areas share one. The row
+    carries no claims, because the area's claims go with its rows: `hook-entries` then reads every
+    entry that area put into settings files as one nothing records, which is red, since an area
+    that cannot say what it wrote vouches for nothing.
     """
-    area = qualified.removesuffix(".doctor").rpartition(".")[2]
+    area = answer.qualified.removesuffix(".doctor").rpartition(".")[2]
     name, number = area, 1
     while name in owners:
         number += 1
         name = f"{area} ({number})"
-    owners[name] = qualified
-    return Contribution(checks=((name, _Unregistered(detail)),))
+    return Contribution(checks=((name, _Unregistered(answer.refused)),))
 
 
 def discover_contributors() -> list[tuple[str, ModuleType | Exception]]:
@@ -138,18 +165,15 @@ def contributions(core: Sequence[tuple[str, Callable[[Context], Row]]]) -> list[
     resolves lazily for its checks is resolved afresh for each report.
     """
     owners = dict.fromkeys((name for name, _ in core), "the core")
-    found: list[Contribution] = []
-    for qualified, imported in discover_contributors():
-        contribution = _registered(qualified, imported)
-        if isinstance(contribution, Contribution):
-            repeated = _repeated(contribution, owners)
-            if repeated is None:
-                owners.update((name, qualified) for name, _ in contribution.checks)
-                found.append(contribution)
-                continue
-            contribution = f"{qualified} could not contribute its rows: {repeated}"
-        found.append(_unregistered(qualified, contribution, owners))
-    return found
+    # Two passes: every area's answer first, which records every name a contribution brings, and
+    # only then the failure rows' names, so a stand-in never takes a real row's name.
+    answers = [
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    ]
+    return [
+        answer.contribution if answer.contribution is not None else _unregistered(answer, owners)
+        for answer in answers
+    ]
 
 
 def _early(name: str, check: Callable[[Context], Row], reason: str) -> Check:
