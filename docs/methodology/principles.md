@@ -144,13 +144,14 @@ A guard that cannot fail closed must say so rather than pretend.
 **What stayfixed does today.** Every handler declares its policy, `open` or `closed`, and one is
 closed: `bg-cleanup`, the guard over a backgrounded shell call, which runs before the tool call.
 The note after a failing test run and the session-start handlers are open, and the
-commit-message hook git runs locally never fails a commit — its gate is `stayfixed commit check`
-in CI. The guarantee lives in a shell wrapper rather than in Python, because a Python process
-cannot fail closed about its own absence: every entry in `hooks/hooks.json` runs
-`hooks/run-hook.sh` with its policy, and the wrapper looks for a `python3` of 3.11 or newer
-outside the project root. On every fault it can see — no interpreter, no `git`, a project root
-it cannot enter, a launcher it cannot read, and afterwards an exit other than `0` or `2` — it
-prints its reason and refuses with the blocking exit under `closed`, or continues under `open`.
+commit-message hook git runs locally never fails a commit itself, though a hook it chains to can
+— its gate is `stayfixed commit check` in CI. The guarantee lives in a shell wrapper rather than
+in Python, because a Python process cannot fail closed about its own absence: every entry in
+`hooks/hooks.json` runs `hooks/run-hook.sh` with its policy, and the wrapper looks for a
+`python3` of 3.11 or newer outside the project root. On every fault it can see — no interpreter,
+no `git`, a project root it cannot enter, a launcher it cannot read, and afterwards an exit
+other than `0` or `2` — it prints its reason and refuses with the blocking exit under `closed`,
+or continues under `open`.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
 runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
