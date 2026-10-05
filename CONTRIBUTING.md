@@ -134,31 +134,34 @@ area discovery does not find them, because they carry none of `commands.py`, `ho
 about its own releases: the tags it pins and the record of the files a release ships.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
-delivery, through an `api.py` or not, at module level or inside a function, so the private layer
-can be reworked without touching the core. The core may name delivery's paths and configuration
-keys — the `.stayfixed/` namespace and the machine file's keys are the core's — and may not import
-delivery's code or call its behaviour except through discovery, which is how any area plugs into
-the core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
+delivery, through an `api.py` or not, at module level or inside a function, so the private layer can
+be reworked without touching the core. The core may name delivery's paths and configuration keys —
+the `.stayfixed/` namespace and the machine file's keys are the core's — and may not import
+delivery's code or call its behaviour except through discovery, which is how any area plugs into the
+core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
 `hooks.py` and `doctor.py` by name and call the `register()` each publishes, without knowing which
 area it is, and the bullets below are that contract. One crossing still exists, and it is pinned in
 `CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to stay rather than be cut:
 `stayfixed setup --overlay` creates or records the overlay as the last step of machine setup, so
 `setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and those
-rows stay until the step leaves `setup`. A row is one import statement and the names it takes,
-held as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new
-crossing, a second statement beside a pinned one, a pinned statement that takes one more name and
-a pinned row whose import has gone alike. The rule reads import statements, so a module named to
-`importlib.import_module` is invisible to it, and two rules of their own hold that door. No core
-module but `areas.py` imports by a string through `importlib.import_module` or `__import__`, under
-any alias, except the profile discovery `DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its
-reason; and the core imports the modules that can import by a string any other way (`importlib`
-beyond `importlib.resources`, `pkgutil`, `runpy`, `zipimport`) only where `MACHINERY_IMPORTERS`
-pins it, with what each file reaches in them. Every call of `area_modules` or `area_imports` names
-`commands`, `hooks` or `doctor` as a literal. `scripts/` is repository tooling and stays under the
-`api.py` rule alone. What source cannot show is when a pardoned statement runs, so
+rows stay until the step leaves `setup`. A row is one import statement and the names it takes, held
+as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing, a
+second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
+whose import has gone alike. `scripts/` is repository tooling and stays under the `api.py` rule
+alone.
+
+That rule reads import statements, so a module named to `importlib.import_module` is invisible to
+it, and two rules of their own hold that door. No core module but `areas.py` imports by a string
+through `importlib.import_module` or `__import__`, under any alias, except the profile discovery
+`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
+that can import by a string any other way (`importlib` beyond `importlib.resources`, `pkgutil`,
+`runpy`, `zipimport`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
+Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
+
+What source cannot show is when a pardoned statement runs, so
 `test_in_isolation_no_core_module_loads_a_delivery_area` imports every core module in a clean
-interpreter and refuses any delivery module among what it loaded: the core loads the private
-layer only when a command asks for it.
+interpreter and refuses any delivery module among what it loaded: the core loads the private layer
+only when a command asks for it.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
