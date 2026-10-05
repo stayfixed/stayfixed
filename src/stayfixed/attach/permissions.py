@@ -41,11 +41,10 @@ from stayfixed.attach.binding import (
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
 from stayfixed.harnesses import CLAUDE
-from stayfixed.jsonobject import json_object
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
-from stayfixed.scaffold import EntriesError, mark
+from stayfixed.scaffold import EntriesError, mark, settings_object
 
 # The project-local file `attach` owns outright, as the harness registry names it: the one file
 # Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
@@ -86,14 +85,6 @@ class PermissionDiff:
         return bool(self.added_allow or self.added_hooks)
 
 
-def _object(text: str, label: str) -> dict[str, Any]:
-    if not text.strip():
-        return {}
-    # Valid JSON past the parser's reach, in a file a clone may have committed, is the same
-    # `EntriesError` as a malformed one: every caller here refuses both alike.
-    return json_object(text, label, error=EntriesError)
-
-
 def settings_document(text: str) -> dict[str, Any]:
     """The local settings file as an object, refusing a shape the merge could not read back.
 
@@ -102,7 +93,7 @@ def settings_document(text: str) -> dict[str, Any]:
     this cannot read is refused rather than filtered, because what a filter drops here is
     somebody's own setting and nothing would say it went.
     """
-    return _object(text, LOCAL_SETTINGS)
+    return settings_object(text, LOCAL_SETTINGS)
 
 
 def _read(path: Path, *, share: Path | None = None) -> str:
@@ -171,7 +162,7 @@ def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     file the real run then refused.
     """
     label = str(path)
-    permissions = _object(document, label).get("permissions")
+    permissions = settings_object(document, label).get("permissions")
     if permissions is None:
         return ()
     if not isinstance(permissions, dict):
@@ -191,7 +182,7 @@ def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, 
     reason: what is dropped silently here is an entry the owner put in their overlay on
     purpose, and nothing would say it never arrived. `share` is `_read`'s.
     """
-    hooks = _object(_read(path, share=share), str(path)).get("hooks", {})
+    hooks = settings_object(_read(path, share=share), str(path)).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{path}: 'hooks' is not an object")
     found: dict[str, list[dict[str, Any]]] = {}
@@ -300,7 +291,7 @@ def local_document(root: Path) -> str:
 
 def _commands(document: str, label: str) -> set[str]:
     """Every hook command already in a settings document, whoever wrote it."""
-    hooks = _object(document, label).get("hooks", {})
+    hooks = settings_object(document, label).get("hooks", {})
     if not isinstance(hooks, dict):
         raise EntriesError(f"{label}: 'hooks' is not an object")
     found: set[str] = set()

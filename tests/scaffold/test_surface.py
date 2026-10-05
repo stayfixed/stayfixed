@@ -45,6 +45,7 @@ EXPORTED = [
     "plan",
     "printable",
     "render_report",
+    "settings_object",
     "unlinks",
     "upsert",
     "validate_sources",

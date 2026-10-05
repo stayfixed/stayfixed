@@ -2239,8 +2239,8 @@ reddens = [
 [[mutation]]
 name = "the settings engine reads a number past the parser's reach in the document doctor walks"
 file = "src/stayfixed/scaffold/entries.py"
-before = "    raw = _load(document, numbers=str)"
-after = "    raw = _load(document)"
+before = "    raw = settings_object(document, numbers=str)"
+after = "    raw = settings_object(document)"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",

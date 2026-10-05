@@ -43,6 +43,7 @@ from stayfixed.scaffold.entries import (
     marker_id,
     owned,
     owned_ids,
+    settings_object,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from stayfixed.scaffold.manifest import (
@@ -98,6 +99,7 @@ __all__ = [
     "plan",
     "printable",
     "render_report",
+    "settings_object",
     "unlinks",
     "upsert",
     "validate_sources",

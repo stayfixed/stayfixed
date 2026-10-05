@@ -82,8 +82,16 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
     return found
 
 
-def _load(document: str, *, numbers: Callable[[str], object] = int) -> dict[str, Any]:
-    """The document as an object, with each integer literal handed to `numbers`."""
+def settings_object(
+    document: str, label: str = _DOCUMENT, *, numbers: Callable[[str], object] = int
+) -> dict[str, Any]:
+    """The document as an object, with each integer literal handed to `numbers`, and empty text
+    as an empty one. `label` names it in every refusal.
+
+    Public because `attach` reads the settings file it merges into, and the overlay's files it
+    merges from, by this rule: one reader, so a document the engine would refuse is one `attach`
+    refuses too.
+    """
     if not document.strip():
         return {}
     # A settings document may be one a clone committed, so valid JSON past the parser's reach is
@@ -91,9 +99,9 @@ def _load(document: str, *, numbers: Callable[[str], object] = int) -> dict[str,
     # limit and not as a shape: see `ParserLimitError`.
     return json_object(
         document,
-        _DOCUMENT,
+        label,
         error=EntriesError,
-        limit=lambda clause: ParserLimitError(f"{_DOCUMENT} {clause}"),
+        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
         numbers=numbers,
     )
 
@@ -153,7 +161,7 @@ def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any]]]:
     than the interpreter converts must not keep a reader from the entries beside it. A settings
     file is one a clone can commit, and the harness reads such a number.
     """
-    raw = _load(document, numbers=str)
+    raw = settings_object(document, numbers=str)
     for event in _hooks_table(raw):
         for group in _groups(raw, event):
             for entry in _entries_of(group):
@@ -189,7 +197,7 @@ def entry_commands(document: str) -> list[str]:
 
 def owned(document: str) -> str:
     """A canonical rendering of only the entries stayfixed claims — what the manifest stamps."""
-    raw = _load(document)
+    raw = settings_object(document)
     claimed: dict[str, list[dict[str, Any]]] = {}
     for event in sorted(_hooks_table(raw)):
         for group in _groups(raw, event):
@@ -200,7 +208,7 @@ def owned(document: str) -> str:
 
 
 def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str:
-    raw = _load(document)
+    raw = settings_object(document)
     hooks = dict(_hooks_table(raw))
     for event in sorted(set(hooks) | set(wanted)):
         foreign = [kept for group in _groups(raw, event) if (kept := _without_marked(group))]
