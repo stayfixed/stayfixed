@@ -27,6 +27,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
 from tests.cli import subparsers
+from tests.gitfixture import git, needs_git
 from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
@@ -52,6 +53,9 @@ directory = "change"
 INIT = '__version__ = "{v}"\n'
 LOCK = '[[package]]\nname = "stayfixed"\nversion = "{v}"\nsource = {{ editable = "." }}\n'
 MARKETPLACE = {"name": "stayfixed-marketplace", "plugins": [{"name": "stayfixed", "source": "./"}]}
+# The plugin directory's count, written out rather than read from the script: the number is the
+# page's ("Keep the plugin to 512 files or fewer"), and `tests/test_payload.py` reads the script's.
+FILES_LIMIT = 512
 
 
 def repo(
@@ -480,13 +484,41 @@ def _at(tmp_path: Path, version: str) -> Path:
     )
 
 
+def _committed(root: Path, *, files: int = 0, under: str = "padding") -> Path:
+    """`root` as a git checkout whose `HEAD` tracks every file it holds, padded with one-line
+    files in `under` until it tracks `files`, when `files` is more than it already holds.
+
+    `check --tag` counts the plugin folder in `HEAD`'s tree, so a tree it judges whole is a
+    committed one; outside a checkout there is nothing to count, and that is a problem too.
+    """
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    held = git(root, "ls-files", "-z").count("\0")
+    (root / under).mkdir(parents=True, exist_ok=True)
+    for index in range(files - held):
+        (root / under / f"{index}.md").write_text("x\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "tree")
+    return root
+
+
+def _over(source: str, count: int) -> str:
+    """The count's refusal, written out."""
+    return (
+        f"the plugin folder {source} holds {count} files, over the {FILES_LIMIT} the plugin "
+        "directory lists unheld; publish the plugin from its own repository first "
+        "(RELEASING.md, section 2)"
+    )
+
+
+@needs_git
 def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     # The release workflow used to compare the tag to the package in shell; the gate that
     # exists to say "one version everywhere" now takes the tag as a seventh source. Both
     # tag shapes are accepted — `vX.Y.Z` (the workflow's trigger) and the platform's
     # `stayfixed--vX.Y.Z` — because either may be the one the run was created from.
     # Mutation (declared): accept any tag -> the first assertion reddens.
-    root = _at(tmp_path, "1.2.3")
+    root = _committed(_at(tmp_path, "1.2.3"))
     assert release.check(root, tag="v1.2.4") == [
         "tag v1.2.4 is neither v1.2.3 nor stayfixed--v1.2.3; pyproject.toml says '1.2.3'"
     ]
@@ -494,6 +526,7 @@ def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     assert release.check(root, tag="stayfixed--v1.2.3") == []
 
 
+@needs_git
 def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version(
     tmp_path: Path,
 ) -> None:
@@ -512,7 +545,7 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
     # earlier one, so the split happened to be right and the tests passed for that reason.
     #
     # Mutation (declared): the derived `named` comes back -> all three assertions redden.
-    root = _at(tmp_path, "1.2.3")
+    root = _committed(_at(tmp_path, "1.2.3"))
     # A bare version, which is the tag `git tag 1.2.3` makes and the one that read as agreeing
     # with itself.
     assert release.check(root, tag="1.2.3") == [
@@ -529,12 +562,13 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
     ]
 
 
+@needs_git
 def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
     # Without `--tag`, pending fragments let CHANGELOG.md lag, because a change's fragment is
     # written before the release assembles it. AT a tag there is nothing left to assemble:
     # a fragment still pending means the changelog the users read is not the one the tag
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
-    root = _at(tmp_path, "1.2.3")
+    root = _committed(_at(tmp_path, "1.2.3"))
     (root / "changelog.d" / "late.feature.md").write_text("late\n", encoding="utf-8")
     assert release.check(root) == []
     problems = release.check(root, tag="v1.2.3")
@@ -542,6 +576,77 @@ def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
         "changelog.d still holds 1 fragment(s); run "
         "`uv run python scripts/release.py notes --version 1.2.3` before tagging"
     ]
+
+
+@needs_git
+def test_a_tag_refuses_a_plugin_folder_over_the_directory_count(tmp_path: Path) -> None:
+    # The plugin directory holds a plugin past 512 files for a reviewer, and the plugin folder is
+    # the repository root, so a pull request may carry the tree past it and a release may not.
+    # Plain `check` runs on every pull request and never counts. Mutation (declared): the count
+    # never refuses -> the first assertion reddens. Mutation (declared): the count asked without
+    # `--tag` too -> the second reddens.
+    root = _committed(_at(tmp_path, "1.2.3"), files=FILES_LIMIT + 1)
+    assert release.check(root, tag="v1.2.3") == [_over("'./'", FILES_LIMIT + 1)]
+    assert release.check(root) == []
+
+
+@needs_git
+def test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds(tmp_path: Path) -> None:
+    # 512 files is inside the limit, and the count is `HEAD`'s, as the directory reads a commit:
+    # a file only staged and one only on disk are not in it. Mutation (declared): `>` becomes
+    # `>=` -> this reddens. Mutation (declared): the listing read from the index -> the staged
+    # file counts and this reddens.
+    root = _committed(_at(tmp_path, "1.2.3"), files=FILES_LIMIT)
+    (root / "staged.md").write_text("x\n", encoding="utf-8")
+    git(root, "add", "staged.md")
+    (root / "loose.md").write_text("x\n", encoding="utf-8")
+    assert release.check(root, tag="v1.2.3") == []
+
+
+@needs_git
+def test_the_count_reads_the_folder_the_marketplace_source_names(tmp_path: Path) -> None:
+    # A `./plugin` source is that subtree and nothing beside it: 512 files in it pass however many
+    # the rest of the repository holds, and the 513th in it is refused. Mutation (declared): the
+    # count reads the repository root whatever the source says -> the first assertion reddens.
+    nested = {"name": "m", "plugins": [{"name": "stayfixed", "source": "./plugin"}]}
+    root = _at(tmp_path, "1.2.3")
+    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(nested), encoding="utf-8")
+    _committed(root, files=FILES_LIMIT + 100)
+    (root / "plugin").mkdir()
+    for index in range(FILES_LIMIT):
+        (root / "plugin" / f"{index}.md").write_text("x\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "the plugin")
+    assert release.check(root, tag="v1.2.3") == []
+    (root / "plugin" / "one-more.md").write_text("x\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "one more")
+    assert release.check(root, tag="v1.2.3") == [_over("'./plugin'", FILES_LIMIT + 1)]
+
+
+def test_a_plugin_the_marketplace_fetches_from_elsewhere_is_not_counted(tmp_path: Path) -> None:
+    # A `source` object names a plugin in another repository, which this tree holds none of: the
+    # owner's way past the count is that repository. Not a git checkout, so a count asked here
+    # would be a problem. Mutation (declared): every source taken for a path -> reddens.
+    elsewhere = {
+        "name": "m",
+        "plugins": [{"name": "stayfixed", "source": {"source": "github", "repo": "o/stayfixed"}}],
+    }
+    root = _at(tmp_path, "1.2.3")
+    marketplace = root / ".claude-plugin" / "marketplace.json"
+    marketplace.write_text(json.dumps(elsewhere), encoding="utf-8")
+    assert release.check(root, tag="v1.2.3") == []
+
+
+def test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count(tmp_path: Path) -> None:
+    # A release gate that cannot count does not pass: release.yml runs it in the checkout the tag
+    # names, and anywhere else there is no committed tree to read. Mutation (declared): git's
+    # failure read as an empty listing -> the count is nought and this reddens.
+    root = _at(tmp_path, "1.2.3")
+    problems = release.check(root, tag="v1.2.3")
+    assert len(problems) == 1 and problems[0].startswith(
+        "the plugin folder './' could not be counted in HEAD's tree"
+    ), problems
 
 
 def test_every_command_opens_its_own_help_with_what_it_does() -> None:

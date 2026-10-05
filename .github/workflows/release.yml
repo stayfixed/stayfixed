@@ -50,7 +50,8 @@ jobs:
         # The tag is the claim; the six sources, the changelog and the hash record are what
         # the claim has to agree with, and `scripts/release.py check --tag` holds all of them. A
         # tag that names a version no source carries is the one release mistake PyPI will not let
-        # you undo.
+        # you undo. It also refuses a plugin folder over the plugin directory's file count, which
+        # no pull request is held to (RELEASING.md, section 2).
         run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q

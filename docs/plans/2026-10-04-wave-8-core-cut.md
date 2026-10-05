@@ -1423,7 +1423,14 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 - [ ] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
   request's review could see: the boundary as a whole, the README against the code, the lifecycle
   matrix end to end. Each finding is reproduced before it is acted on.
-- [ ] **Step 3: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
+- [ ] **Step 3: Publish the plugin from its own repository** (the owner's decision of
+  2026-10-05). Before the release, the plugin is published from a repository of its own whose
+  root is the plugin, and the marketplace entry names it: `scripts/release.py check --tag` refuses
+  a plugin folder of more than 512 files in `HEAD`'s tree, the repository root held 512 on
+  2026-10-05 with pull requests free to add more, and moving the plugin into a subfolder here does not help, because the plugin
+  directory holds a subfolder plugin whose hook runs a script that calls other files, as
+  `hooks/run-hook.sh` does. `RELEASING.md`, section 2, is the step as the release process states it.
+- [ ] **Step 4: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
   `0.3.0`, naming the changed release step (`scripts/release.py`).
 
 ## Findings

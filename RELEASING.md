@@ -31,9 +31,11 @@ holds no credential that can write a second repository → from `1.0.0` on, the 
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
 
-`scripts/release.py check --tag vX.Y.Z` adds the tag as a further source and tightens one rule:
-a fragment still pending in `changelog.d/` is a finding rather than a licence for `CHANGELOG.md`
-to lag. That is the form `release.yml` runs. Section 6 is the script's own reference.
+`scripts/release.py check --tag vX.Y.Z` adds the tag as a further source, tightens one rule and
+adds one: a fragment still pending in `changelog.d/` is a finding rather than a licence for
+`CHANGELOG.md` to lag, and a plugin folder holding more than 512 files is refused (section 2
+says why and what to do instead). That is the form `release.yml` runs. Section 6 is the script's
+own reference.
 
 ## 2. Cutting a release
 
@@ -44,6 +46,20 @@ So a first release run top to bottom without section 3 waits for nobody — `pub
 unapproved and fails on Trusted Publishing for want of a pending publisher, and
 `github-release` runs unapproved and creates a public GitHub Release. Section 3 is what makes
 step 7's sentence true.
+
+**If the tree holds more than 512 files, publish the plugin from a repository of its own first.**
+The Claude plugin directory holds a plugin of more than 512 files for a reviewer ("Keep the
+plugin to 512 files or fewer", in its
+[pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)), and the
+plugin folder is this repository's root — the marketplace entry's `source` is `./` — so every
+tracked file counts. A pull request may carry the tree past 512; a release may not:
+`scripts/release.py check --tag` refuses one while the folder the marketplace entry's `source`
+names holds more files than that in `HEAD`'s tree, and `release.yml` runs that check before it
+builds. A subfolder of this repository is not the way under the count: the same page holds every
+version of a plugin in a subfolder whose hook runs a non-shell file or a shell script that calls
+other files, and `hooks/run-hook.sh` runs the Python launcher. Its own remedy is the one to take:
+a repository whose root is the plugin, which the marketplace entry then names. Settle that before
+step 1, because every step after it releases from the tree it names.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything
    not merged is not in the release.
@@ -406,9 +422,12 @@ disagrees. Its `--json` object carries `summary`, `versions` (every source and w
 `problems` (empty on a clean run), and it carries all three whether or not there is drift — the
 drift is in `problems`, not in the shape. A source it cannot parse at all is still a failure and
 prints `error` instead. `--tag` accepts both tag shapes, `vX.Y.Z` and `stayfixed--vX.Y.Z`,
-because either may be the ref a run was created from. It writes nothing; it reads the sources,
-the fragments pending in `changelog.d/`, and `hooks/hashes.json` beside the three files it
-records.
+because either may be the ref a run was created from. Under `--tag` it also counts the files in
+`HEAD`'s tree under each folder the marketplace entries' `source` names, and refuses one past the
+512 the plugin directory lists unheld (section 2); plain `check`, which CI runs on every pull
+request, never counts. It writes nothing; it reads the sources, the fragments pending in
+`changelog.d/`, `hooks/hashes.json` beside the three files it records, and under `--tag` the
+committed tree.
 
 **`notes`** is a wrapper around towncrier, which does the rendering while `[tool.towncrier]` in
 `pyproject.toml` owns the format. A `--version` that is not the project's is refused (`2`) before

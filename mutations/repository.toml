@@ -2782,6 +2782,27 @@ before = "    if len(listed) > FILES_MAX:"
 after = "    if len(listed) >= FILES_MAX:"
 reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
 
+# The tree's test drops the count's finding, which a release checks instead, and nothing else; a
+# filter that drops more passes a tree the directory would hold.
+[[mutation]]
+name = "the tree's rule drops every payload finding with the count's"
+file = "tests/test_payload.py"
+before = "    return [finding for finding in findings if finding != count]"
+after = "    return []"
+reddens = ["tests/test_payload.py::test_the_tree_rule_excludes_the_count_and_nothing_else"]
+
+# Dropped by its spelling, the count's finding must still be there to drop over the limit and absent
+# at it, or the exclusion hides a count rule gone quiet.
+[[mutation]]
+name = "the tree's rule stops asking whether the count's finding is the right one"
+file = "tests/test_payload.py"
+before = "    if (count in findings) != (len(entries) > FILES_MAX):"
+after = "    if False:"
+reddens = [
+  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[silent-over-the-limit]",
+  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[speaking-at-the-limit]",
+]
+
 # A tracked symlink blocks the listing wherever the plugin loads it, and every path of a plugin at
 # the repository root is one it may load, so the payload guard must name one.
 [[mutation]]
@@ -3529,6 +3550,69 @@ after = """
             problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")"""
 reddens = [
   "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
+]
+
+# At a tag the plugin folder the marketplace names may hold no more files than the plugin directory
+# lists unheld: a pull request may carry the tree past them, and a release is what it lists.
+[[mutation]]
+name = "release check stops refusing a plugin folder over the directory's count"
+file = "scripts/release.py"
+before = "        if count > PLUGIN_FILES_MAX:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count",
+  "tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names",
+]
+
+[[mutation]]
+name = "release check refuses a plugin folder at the directory's count"
+file = "scripts/release.py"
+before = "        if count > PLUGIN_FILES_MAX:"
+after = "        if count >= PLUGIN_FILES_MAX:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+]
+
+[[mutation]]
+name = "release check counts the plugin folder in the index instead of HEAD"
+file = "scripts/release.py"
+before = '"ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder'
+after = '"ls-files", "-z", "--", folder'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+]
+
+[[mutation]]
+name = "release check counts the plugin folder without a tag"
+file = "scripts/release.py"
+before = "    if tag is not None:\n        problems += plugin_folder_counts(root)"
+after = "    if True:\n        problems += plugin_folder_counts(root)"
+reddens = ["tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count"]
+
+[[mutation]]
+name = "release check counts the repository root whatever the marketplace source names"
+file = "scripts/release.py"
+before = "        folder = str(PurePosixPath(source))"
+after = '        folder = "."'
+reddens = ["tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names"]
+
+[[mutation]]
+name = "release check counts a plugin the marketplace fetches from elsewhere"
+file = "scripts/release.py"
+before = "        if not isinstance(source, str):\n            continue"
+after = "        if False:\n            continue"
+reddens = [
+  "tests/scripts/test_release.py::test_a_plugin_the_marketplace_fetches_from_elsewhere_is_not_counted",
+]
+
+# A gate that cannot count does not pass: read as an empty listing, a git that failed is nought files.
+[[mutation]]
+name = "release check reads a plugin folder git could not list as empty"
+file = "scripts/release.py"
+before = "        if code != 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
 ]
 
 # --- The release script returns its findings as every command does ---------------------------
