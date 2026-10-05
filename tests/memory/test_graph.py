@@ -6,6 +6,7 @@ finds. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -139,9 +140,12 @@ def test_refs_walks_the_store_once_for_its_findings_and_the_graph(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The graph's notices are read from the walk `memory refs` made for its own findings, so a
-    # store is read once per command, whatever the graph finds. Counted at the one walk
-    # `check_refs` calls; the graph has no walk of its own to call. No entry in `mutations/`: a
-    # second walk is an import and a call in `memory/graph.py`, not one substituted line.
+    # store is read once per command, whatever the graph finds. Counted at every name the walk is
+    # reachable by — the note module's own and each loaded `stayfixed` module's binding of it —
+    # because a spy on the one name `memory.refs` binds left green a second walk the graph made
+    # through `stayfixed.memory.notes.walk` (`mutations/`'s "the memory graph walks the store a
+    # second time").
+    import stayfixed.memory.notes as notes
     import stayfixed.memory.refs as refs
 
     root, config = project(tmp_path)
@@ -152,7 +156,13 @@ def test_refs_walks_the_store_once_for_its_findings_and_the_graph(
         calls.append(path)
         return walk(path, groups)
 
-    monkeypatch.setattr(refs, "walk", counted)
+    for module in [m for name, m in sys.modules.items() if name.startswith("stayfixed.")]:
+        if getattr(module, "walk", None) is walk:
+            monkeypatch.setattr(module, "walk", counted)
+    # The spy reached the name `check_refs` calls and the note module's own, so a count of one is
+    # not a count of none.
+    assert vars(refs)["walk"] is counted
+    assert notes.walk is counted
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
     report = refs.check_refs(root, config, store)
