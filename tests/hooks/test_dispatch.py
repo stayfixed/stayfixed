@@ -608,8 +608,8 @@ def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
 def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `memory.store._git` scrubbed and said why — "it must be a real git answer, not one an
-    # inherited `GIT_DIR` produced" — while this one passed no `env=` at all. The checkout root
+    # The memory store's git helper scrubbed and said why — "it must be a real git answer, not one
+    # an inherited `GIT_DIR` produced" — while this one passed no `env=` at all. The checkout root
     # feeds *every* hook decision, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
     # handler in the process answer for a different repository than the session is in.
     #

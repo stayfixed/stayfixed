@@ -58,16 +58,15 @@ index_extra = []
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """A `git` that cannot be launched at all, which is what `GitUnavailable` is about.
 
-    The same helper `tests/memory/test_store.py` carries, and patched at the same two seams:
-    `memory.store`'s own `git_run`, and `gitenv`'s, which `origin_remote` calls. A
-    repository with *no* `origin` remote is a different state — `git` ran and answered
-    nothing — and it is the ordinary "not bound" one rather than a machine fault.
+    The same helper `tests/memory/test_store.py` carries, and patched at the same seam:
+    `gitenv`'s `git_run`, which `git_answer` and `origin_remote` call. A repository with *no*
+    `origin` remote is a different state — `git` ran and answered nothing — and it is the
+    ordinary "not bound" one rather than a machine fault.
     """
 
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
     monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 

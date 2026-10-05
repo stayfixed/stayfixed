@@ -328,10 +328,10 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
 
 
 def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `git` that cannot be launched at all, at both seams the store runs it through: its own
-    `git_run`, and `gitenv`'s, which `origin_remote` calls.
+    """A `git` that cannot be launched at all, at the one seam the store runs it through:
+    `gitenv`'s `git_run`, which `git_answer` and `origin_remote` call.
 
-    The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
+    The state `GitUnavailable` exists for, and its own docstring names the machine that is in it.
     Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
     whole process.
     """
@@ -339,7 +339,6 @@ def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
     monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 

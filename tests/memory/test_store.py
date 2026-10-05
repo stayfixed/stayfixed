@@ -305,8 +305,8 @@ def test_an_inherited_git_dir_never_reaches_the_git_helper(
     # One of two locks, pinned on its own. Asked through `resolve`, this property is guarded
     # twice over — `_registered_worktree` refuses a root that is nobody's registered worktree
     # whatever git answered — so a single test there dies only when *both* locks are broken and
-    # pins neither. `main_checkout` is the same scrubbed `_git` with nothing behind it, and it
-    # is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
+    # pins neither. `main_checkout` is the same scrubbed `git_answer` with nothing behind it, and
+    # it is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
     # `GIT_DIR` reaching it would make a worktree look like the checkout that owns the store.
     victim = tmp_path / "victim"
     a_repo(victim)
@@ -517,21 +517,19 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 
 # --- "could not ask" is not "the answer is nothing" -----------------------------------------
 #
-# `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty stdout alike, so every
-# caller read a broken `git` as a fact about the repository. The review machine hit exactly that
-# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `GIT_ENV_KEEP`
-# scrubs `DEVELOPER_DIR` — and was told to run `stayfixed attach`.
+# The store's git helper returned `None` for an `OSError`, a non-zero exit *and* an empty stdout
+# alike, so every caller read a broken `git` as a fact about the repository. The review machine hit
+# exactly that state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and
+# `GIT_ENV_KEEP` scrubs `DEVELOPER_DIR` — and was told to run `stayfixed attach`.
 
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Both seams the store reaches `git` through: its own `_git`, which binds `git_run` in, and
-    `gitenv.origin_remote` and `gitenv.git_is_usable`, which call it inside `gitenv`. Patching
-    one would leave the other asking a working `git`."""
+    """The one seam the store reaches `git` through: `gitenv.git_run`, which `git_answer`,
+    `origin_remote` and `git_is_usable` all call inside `gitenv`."""
 
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
     monkeypatch.setattr("stayfixed.gitenv.git_run", refuse)
 
 
@@ -554,8 +552,8 @@ def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
 def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `main_checkout` answered `root` when `_git` failed, so `worktree.link` opened with "this
-    # is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
+    # `main_checkout` answered `root` when its git query failed, so `worktree.link` opened with
+    # "this is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
     # "nothing to do", every memory bundle empty, and nothing reporting a failure.
     root = tmp_path / "project"
     a_repo(root)
@@ -607,11 +605,10 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
 def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The same broken `git`, asked the store's own question rather than the origin remote, which
-    # `gitenv` answers with a discriminator of its own: `main_checkout` reads git through the
-    # store's `_git`, and a broken `git` read as one that answered nothing made it answer `root`,
-    # the silent no-op `worktree.link` turns that into. Mutation (declared): `mutations/`'s "a
-    # broken git reads as a repository that answered".
+    # The same broken `git`, asked the store's own question rather than the origin remote:
+    # `main_checkout` reads git through the three-valued `git_answer`, and a broken `git` read as
+    # one that answered nothing made it answer `root`, the silent no-op `worktree.link` turns that
+    # into. Mutation (declared): `mutations/`'s "a broken git reads as a repository that answered".
     root = tmp_path / "project"
     a_repo(root)
 
