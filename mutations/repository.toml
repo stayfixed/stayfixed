@@ -1189,12 +1189,12 @@ reddens = [
 # entry's `before` back out of its file and counting. Re-pointed again when the profile adapters
 # rewrote the sentence to eight items that each leave it in the change that ships them, and again as
 # `upgrade` and then `uninstall` shipped and left it, and again as `assess` shipped, and again as
-# the state machine shipped, and again when the release commands left the sentence before it; the
-# mutation cuts it back to one.
+# the state machine shipped, and again when the release commands left the sentence before it, and
+# again when the paragraph around it was rewrapped; the mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "**Not yet:** the memory MCP server,\n> a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each"
+before = "**Not yet:** the memory MCP server, a hold-the-line baseline,\n> the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each"
 after = "**Not yet:** the memory MCP server \u2014 each"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",

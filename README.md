@@ -6,42 +6,39 @@ the platform lets them, and an adoption state machine that runs each gate adviso
 repository has earned it. One plugin for Claude Code and Codex, one Python package with
 **no runtime dependencies**.
 
-> **Pre-1.0.** What ships is a core and three delivery areas. The **core** is the methodology's
-> gates and the records they check: the bug ledger; the documentation and plan lints; the guards
-> over a shell call, a commit message and a test run; the scaffolding engine that writes files into
-> a repository; `stayfixed init`, which writes a repository's footprint from the shipped project
-> templates, `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it
-> back; `stayfixed assess`, which inventories what stands between a repository and enforcement;
+> **Pre-1.0.** What ships is a core and three delivery areas. The **core** is what stayfixed does
+> without its private layer: the methodology's gates, the records they check, and a machine's setup.
+> It holds the bug ledger; the documentation and plan lints; the guards over a shell call, a commit
+> message and a test run; the scaffolding engine that writes files into a repository;
+> `stayfixed init`, which writes a repository's footprint from the shipped project templates,
+> `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it back;
+> `stayfixed assess`, which inventories what stands between a repository and enforcement;
 > `stayfixed gate`, which judges a change against what its base branch enforces; `stayfixed adopt`,
 > which enforces a repository's gates as each one passes; `stayfixed setup`, which configures a
-> machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery**
-> areas carry what belongs to a person rather than to a repository: `memory`, the note store and
-> its trust gate; `overlay`, the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade`, `overlay publish-template`; and `attach`, whose `attach` binds a repository
-> to the overlay and whose `detach` takes back what `attach` wrote, keeping the overlay's record
-> of the binding. The core imports none of them except at one
-> pinned step, `stayfixed setup --overlay`, which records the overlay on a machine, and a test
-> holds that ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says how). The core is language-neutral,
-> and a stack is a **profile**: one stack's test runner, build artifacts and package manager
-> belong to its profile — data, and optionally the advice to give after that stack's test runner
-> fails — so a repository in several languages gets each stack's advice with no configuration.
-> The first profile, `python`, ships: every agent is handed its rules, `stayfixed assess` runs its
-> checks, and the stale-bytecode line of the note after a failing pytest run is its own. The hooks
-> file that wires all of it into a session
-> ships too, so on Claude Code installing the plugin is enough to make the guards fire and the
-> memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
-> skills ship with them, and so does one command meant for a machine rather than for you —
-> `hook`, which dispatches one harness event. **Not yet:** the memory MCP server,
-> a hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
-> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three keys
-> that are enough to start a project by hand, which `init` reads as your answers — a run that
-> writes the file itself writes `[stayfixed] version`, `state` and `agents`, and `profile` when
-> the repository carries a shipped profile's markers or `--profile` names one, beside
-> `[project] name`, `base_branch` and `release_branch`, a `[ci]` table only when it has a released
-> commit to pin or `--no-ci` asks for none, a `[memory]` table only when `--memory-mode` answers
-> it, and an `[artifacts]` table only when `--local` does.
-> [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
-> by a test, so it is complete for what ships.
+> machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery** areas
+> are the private layer: `memory`, the note store and its trust gate; `overlay`, the private overlay
+> — `overlay create`, `overlay init`, `overlay upgrade`, `overlay publish-template`; and `attach`,
+> whose `attach` binds a repository to the overlay and whose `detach` takes back what `attach`
+> wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](CONTRIBUTING.md#areas) says
+> where the line between the two runs). The core is language-neutral, and a stack is a **profile**:
+> one stack's test runner, build artifacts and package manager belong to its profile — data, and
+> optionally the advice to give after that stack's test runner fails — so a repository in several
+> languages gets each stack's advice with no configuration. The first profile, `python`, ships:
+> every agent is handed its rules, `stayfixed assess` runs its checks, and the stale-bytecode line
+> of the note after a failing pytest run is its own. The hooks file that wires all of it into a
+> session ships too, so on Claude Code installing the plugin is enough to make the guards fire and
+> the memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
+> skills ship with them, and so does one command meant for a machine rather than for you — `hook`,
+> which dispatches one harness event. **Not yet:** the memory MCP server, a hold-the-line baseline,
+> the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this list in the
+> change that ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start
+> a project by hand, which `init` reads as your answers — a run that writes the file itself writes
+> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a shipped
+> profile's markers or `--profile` names one, beside `[project] name`, `base_branch` and
+> `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks for
+> none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]` table only
+> when `--local` does. [docs/cli.md](docs/cli.md) is the reference; the command list below is held
+> to the parser by a test, so it is complete for what ships.
 
 ## What this is, and what it is not
 

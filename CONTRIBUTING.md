@@ -110,29 +110,28 @@ report discover by name — there is no shared registry to edit. One table does 
 ("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there
 until its entries outgrow the group they fall into.
 
-Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
-`ledger`, `memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line.
-Three of them are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the
-overlay, binding a repository to it, and the note store — named in `DELIVERY_AREAS` in
-`src/stayfixed/areas.py`. `overlay` renders and upgrades the private overlay; `attach` binds a
-repository to one, and its `detach` takes back what `attach` wrote while the overlay keeps its
-record of the binding; and `memory` keeps the notes and their trust gate. Every
-other module under `src/stayfixed/`, `cli.py` and the subpackages that are not areas included, is
-the **core**: the gates and the records they check. `ledger` keeps the bug ledger, `docs` the
-documentation and plan lints, `guards` the session guard, the commit-message rules and the
-test-run checks, `hooks` the dispatcher every hook event goes through, and `setup` a machine's
-configuration. `project` holds the shipped project templates
-and `init`, the command that writes a repository's footprint from them; `assess` runs the gates
-and the inventory over a repository as it is, judges a change's `stayfixed.toml` against what its
-base branch enforces (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project
-promotes its gates (`stayfixed adopt promote`); and `doctor` reports on what every other area left
-behind and repairs none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
-outside it imports it, and tests reach its modules directly, as they do every area's.
-(`config`, `presets`, `profiles`, `release`, `scaffold` and `templates` are subpackages and not
-areas, and `harnesses` is a module — area discovery does not find them, because they carry none
-of `commands.py`, `hooks.py` and `doctor.py`. `release` still publishes an `api.py`, which holds
-what an installed stayfixed reads about its own releases: the tags it pins and the record of the
-files a release ships.)
+Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
+`memory`, `overlay`, `project` and `setup`, and they fall on two sides of one line. Three of them
+are **delivery**: `overlay`, `attach` and `memory`, the private layer's code — the overlay, binding
+a repository to it, and the note store — named in `DELIVERY_AREAS` in `src/stayfixed/areas.py`.
+`overlay` renders and upgrades the private overlay; `attach` binds a repository to one, and its
+`detach` takes back what `attach` wrote while the overlay keeps its record of the binding; and
+`memory` keeps the notes and their trust gate. Every other module under `src/stayfixed/`, `cli.py`
+and the subpackages that are not areas included, is the **core**: what stayfixed does without its
+private layer — the gates, the records they check and a machine's setup. `ledger` keeps the bug
+ledger, `docs` the documentation and plan lints, `guards` the session guard, the commit-message
+rules and the test-run checks, `hooks` the dispatcher every hook event goes through, and `setup` a
+machine's configuration. `project` holds the shipped project templates and `init`, the command that
+writes a repository's footprint from them; `assess` runs the gates and the inventory over a
+repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
+(`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
+(`stayfixed adopt promote`); and `doctor` reports on what every other area left behind and repairs
+none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside it imports
+it, and tests reach its modules directly, as they do every area's. (`config`, `presets`, `profiles`,
+`release`, `scaffold` and `templates` are subpackages and not areas, and `harnesses` is a module —
+area discovery does not find them, because they carry none of `commands.py`, `hooks.py` and
+`doctor.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
+about its own releases: the tags it pins and the record of the files a release ships.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
 delivery, through an `api.py` or not, at module level or inside a function, so the private layer
