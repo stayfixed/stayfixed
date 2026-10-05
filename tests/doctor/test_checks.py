@@ -18,6 +18,7 @@ import json
 import os
 import pty
 import shutil
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -1773,6 +1774,42 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
     assert all(row.status == SKIP for row in rows[1:]), [
         (row.name, row.status) for row in rows[1:] if row.status != SKIP
     ]
+
+
+def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `load` reads the machine file with `interactive=False`, which honours neither
+    # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and the row named the file through the terminal
+    # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
+    # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
+    # variable names — which is fine, and was never read.
+    #
+    # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
+    # the one where no `--machine` was given. `HOME` is this test's, so the file `load` reads is
+    # under it, and the variable names a well-formed file beside it.
+    #
+    # Mutation: `run_checks`' `machine_config_path(interactive=False)` without its argument -> the
+    # file read and named is the variable's, which loads, and the first assertion reddens. The
+    # file is resolved once for both, so no mutation can make them differ again.
+    root = _initialised(tmp_path)
+    home = tmp_path / "owner-home"
+    read = home / ".config" / "stayfixed" / "config.toml"
+    read.parent.mkdir(parents=True)
+    read.write_text("[personal\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.toml"
+    elsewhere.write_text("[personal]\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("STAYFIXED_CONFIG", str(elsewhere))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    rows = run_checks(
+        root, home=tmp_path / "home", machine=None, runner=Recorder(), env=_env(tmp_path)
+    )
+    first = rows[0]
+
+    assert "the machine configuration file does not load" in first.detail
+    assert str(read) in first.remedy
+    assert str(elsewhere) not in first.remedy
 
 
 def test_no_case_here_can_read_the_developers_own_machine_configuration(

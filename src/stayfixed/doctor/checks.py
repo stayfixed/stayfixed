@@ -1013,8 +1013,14 @@ def run_checks(
                 for name in rest
             ),
         ]
+    # The machine file, resolved once and handed to `load`, so the file the row below names when
+    # it does not load is the file that was read. `load` resolves no `--machine` with
+    # `interactive=False`, which honours neither variable that can name another file; naming it
+    # through the terminal check instead told an owner at a terminal with `STAYFIXED_CONFIG` set
+    # to fix the file the variable names, which nothing had read.
+    read = machine_config_path(interactive=False) if machine is None else machine
     try:
-        config = load(root, machine=machine)
+        config = load(root, machine=read)
     except MachineConfigError:
         # **Not `stayfixed.toml`'s fault, and the row says whose it is.** `load` reads two files,
         # and blaming the first for either would tell an owner whose
@@ -1025,7 +1031,6 @@ def run_checks(
         #
         # The machine file's path is the machine owner's own and may be printed: it is not
         # repository-authored, and `stayfixed setup --machine`'s own help spells the default.
-        where = machine if machine is not None else machine_config_path()
         blamed = "the machine configuration file"
         return [
             Check(
@@ -1033,7 +1038,7 @@ def run_checks(
                 RED,
                 f"{blamed} does not load, so nothing here can be checked against a "
                 f"configuration — {CONFIG_FILE} itself was not the problem",
-                f"run `stayfixed doctor` again after fixing {where}",
+                f"run `stayfixed doctor` again after fixing {read}",
             ),
             *(_early(name, asked[name], f"{blamed} does not load") for name in rest),
         ]
