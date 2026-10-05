@@ -211,13 +211,16 @@ _NO_GIT = "git could not report the tree's status, so this tree cannot be judged
 _UNLOADED = "the {name} profile's red-run hint could not be loaded"
 _WORDLESS = "the {name} profile's red-run hint answered in something other than text"
 _FAILED = "the {name} profile's red-run hint failed: {kind}"
+# And for a hint whose walk stopped at its bound (`hints.UNDETERMINED`): it has not seen the tree,
+# so neither its count nor its silence is an answer, and a refusal is the one that says so.
+_UNTOLD = "the {name} profile's red-run hint stopped its walk at a bound and could not tell"
 _UNJUDGED = ", so this tree cannot be judged"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
     from stayfixed.guards.hygiene import dirty_count
     from stayfixed.profiles import detects, load_profile
-    from stayfixed.profiles.hints import NotText, answer, shipped_hints
+    from stayfixed.profiles.hints import UNDETERMINED, NotText, answer, shipped_hints
 
     root, config = _root_and_config(args)
     dirty = dirty_count(root)
@@ -244,6 +247,8 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
         except Exception as exc:
             kind = type(exc).__name__
             raise Refusal(_FAILED.format(name=name, kind=kind) + _UNJUDGED) from None
+        if report.get(UNDETERMINED):
+            raise Refusal(_UNTOLD.format(name=name) + _UNJUDGED)
         if note is None and not detects(load_profile(name), root):
             continue
         reports[name] = report

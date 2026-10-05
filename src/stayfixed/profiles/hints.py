@@ -48,6 +48,10 @@ COUNT_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
 # rather than a count, and an unbounded one makes `json.dumps` raise past 4300 digits. No shipped
 # file changes with it.
 COUNT_LIMIT = 2**63
+# The count a hint reports, as 1, when its walk stopped at a bound before it had seen the tree, so
+# its other counts are no answer either way. `stayfixed test hygiene` refuses on it rather than
+# reading the tree as judged, and the hint's own note says it could not tell.
+UNDETERMINED = "undetermined"
 
 
 class RedRunHint(Protocol):
@@ -68,7 +72,8 @@ class RedRunHint(Protocol):
 
     def report(self, root: Path, config: Config) -> Mapping[str, int]:
         """The one walk: counts of what could have falsified the run, under `root`, each under a
-        name `COUNT_NAME` matches; `counts` drops anything else."""
+        name `COUNT_NAME` matches; `counts` drops anything else. A walk that stopped at a bound
+        reports `UNDETERMINED` as 1 in place of the counts it did not finish."""
         ...
 
     def note(self, counts: Mapping[str, int]) -> str | None:

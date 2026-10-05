@@ -985,6 +985,18 @@ reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_refuses_a_failing_hint_without_printing_its_message[True]",
 ]
 
+# A hint whose walk stopped at its bound has not seen the tree, which is "I do not know" too: read
+# as judged, the command exits 1 as for a tree with a fault, where it cannot judge the tree at all.
+[[mutation]]
+name = "test hygiene reads a walk cut short as a judged tree"
+file = "src/stayfixed/guards/commands.py"
+before = "        if report.get(UNDETERMINED):"
+after = "        if False:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[False]",
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish[True]",
+]
+
 # A repository in two stacks gets two entries, and each carries counts only.
 [[mutation]]
 name = "test hygiene reports the first stack and stops"

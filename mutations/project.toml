@@ -1881,6 +1881,23 @@ before = "                if not source.is_file():"
 after = "                if not source.is_file() or source.is_symlink():"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
 
+# The walk for `.pyc` files stops at its named cap and then says it could not tell: unbounded, a
+# large code root ran it past the hook's timeout, which delivers nothing and banks no once-key.
+[[mutation]]
+name = "the stale-bytecode walk ignores its cap"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "                        if visited > BYTECODE_WALK_ENTRIES:"
+after = "                        if False:"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_walk_cut_short_by_its_cap_could_not_tell"]
+
+# Nor does it enter a symlinked directory, which can lead out of every code root.
+[[mutation]]
+name = "the stale-bytecode walk follows a symlinked directory"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "                        if entry.is_dir(follow_symlinks=False):"
+after = "                        if entry.is_dir():"
+reddens = ["tests/profiles/python/test_hygiene.py::test_a_symlinked_directory_under_a_code_root_is_never_entered"]
+
 # Both callers ask a hint through `answer`, so a note's shape is judged once. A note that is
 # neither text nor `None` is outside the protocol: passed on, it raises in the hook's join after
 # every per-hint guard has returned and costs the whole notice, and `test hygiene` prints it as a

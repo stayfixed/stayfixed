@@ -485,11 +485,20 @@ something to report, `2` when git cannot report the tree or a shipped profile's 
 loaded, answers in something other than text or fails; a failure is named by the profile and the
 exception's type alone.
 
+A profile's walk is bounded: Python's visits at most 500,000 directory entries under the code
+roots, every entry and not only the bytecode, so that it finishes well inside the hook's
+timeout. A walk that stops there has not seen the tree and reports no count, stale or clean:
+the command exits `2` with `the python profile's red-run hint stopped its walk at a bound and
+could not tell, so this tree cannot be judged`, which `--json` carries as its `summary` beside
+`"error": "refused"`.
+
 The `PostToolUse` `Bash` hook delivers the same note once per context after a red test run,
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
-delivered together. A red command no profile recognises gets no note.
+delivered together. A red command no profile recognises gets no note. When Python's walk stopped
+at its bound, its line says the walk could not tell whether a stale build was imported, and
+names neither stale bytecode nor its absence.
 
 **Writes** nothing.
 

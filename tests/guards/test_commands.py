@@ -486,11 +486,13 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     capsys: pytest.CaptureFixture[str],
     as_json: bool,
 ) -> None:
-    # An exception's message can carry what the hint walked: on Python 3.11 `rglob` lets an
-    # `OSError` for a name too long to open escape with the full path, and a repository chooses
-    # its directories' names. Printed as an internal error, that text reached whoever ran this
-    # command, the agent the shipped skills send here included. The refusal names the profile
-    # and the exception's type and nothing the exception carried, in either output. Oracle:
+    # An exception's message can carry what the hint walked: an `OSError` names the path it
+    # failed on, in full, and a repository chooses its directories' names. The failure is
+    # injected into the walk itself, since the walk passes over what it cannot list and so
+    # raises for no tree a test can build. Printed as an internal error, that text reached
+    # whoever ran this command, the agent the shipped skills send here included. The refusal
+    # names the profile and the exception's type and nothing the exception carried, in either
+    # output. Oracle:
     # `mutations/`, "test hygiene prints a failing hint's own message".
     root = repo(tmp_path)
     (root / "src").mkdir()
@@ -501,16 +503,54 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "chore: code")
 
-    def broken(self: Path, pattern: str) -> object:
+    def broken(roots: object) -> object:
         raise OSError("<injected text>")
 
-    monkeypatch.setattr(Path, "rglob", broken)
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene._bytecode", broken)
     json_flag = ["--json"] if as_json else []
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke([*argv, *json_flag]) == 2
     captured = capsys.readouterr()
     assert "<injected text>" not in captured.out + captured.err
     assert "the python profile's red-run hint failed: OSError" in captured.out + captured.err
+
+
+@needs_git
+@pytest.mark.parametrize("as_json", [False, True])
+def test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    as_json: bool,
+) -> None:
+    # A walk that stopped at its cap has not seen the tree, so this command cannot call it clean
+    # and cannot name a stale count: it refuses, as it does for a tree git cannot report on, and
+    # says the profile could not tell. The tree is committed with its stale `.pyc` ignored, so
+    # an uncut walk answers exit 1 with that count. Oracle: `mutations/`'s "test hygiene reads a
+    # walk cut short as a judged tree".
+    root = repo(tmp_path)
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "chore: code")
+    compile_module(module)
+    make_stale(module)
+    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 1)
+    json_flag = ["--json"] if as_json else []
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke([*argv, *json_flag]) == 2
+    captured = capsys.readouterr()
+    said = json.loads(captured.out)["summary"] if as_json else captured.err
+    assert said.strip() == (
+        ("refused: " if as_json else "stayfixed: refused: ")
+        + "the python profile's red-run hint stopped its walk at a bound and could not tell, "
+        "so this tree cannot be judged"
+    )
 
 
 def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,6 +17,8 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.guards.hygiene import simple_commands
 from stayfixed.guards.roots import contained_roots
+from stayfixed.profiles.hints import UNDETERMINED
+from stayfixed.profiles.python import hygiene as python_hygiene
 from stayfixed.profiles.python.hygiene import HINT
 from tests.gitfixture import git, needs_git
 from tests.profiles.python.bytecode import compile_module, make_stale
@@ -73,6 +75,47 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
     compile_module(module)
     make_stale(module)
     assert stale(root) == 1
+
+
+UNTOLD = (
+    "the configured code roots hold more than {cap} directory entries, so the walk for .pyc files "
+    "stopped there and could not tell whether the interpreter imported a build older than its "
+    "source. If the failure could be a stale build, delete the `__pycache__` directories under "
+    "those roots and re-run before attributing anything."
+)
+
+
+def a_stale_tree_of_eight_entries(tmp_path: Path) -> Path:
+    """`src` holding eight directory entries: one stale `.pyc` in its `__pycache__`, the source
+    beside it, and five files that are no bytecode at all."""
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    compile_module(module)
+    make_stale(module)
+    for index in range(5):
+        (root / "src" / f"data{index}.txt").write_text("", encoding="utf-8")
+    return root
+
+
+def test_a_walk_cut_short_by_its_cap_could_not_tell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk had no bound of its own: about 0.37 s per 100k directory entries, stopped only by
+    # the harness's hook timeout, and a hook that times out never banks its once-key, so every
+    # later red run in the context paid the whole walk again. Bounded, a walk that reached its
+    # cap has not seen the tree, so its count is no answer either way: the report carries no
+    # `stale` and says it could not tell, and the note claims neither stale bytecode nor its
+    # absence. The cap counts every entry visited and not only `.pyc` files: here one `.pyc`
+    # among eight entries is over a cap of seven. Oracle: `mutations/`'s "the stale-bytecode walk
+    # ignores its cap".
+    root = a_stale_tree_of_eight_entries(tmp_path)
+    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 8)
+    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 1}
+    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 7)
+    counts = HINT.report(root, config(root))
+    assert counts == {UNDETERMINED: 1, "roots": 1}
+    # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
+    assert HINT.note(counts) == UNTOLD.format(cap=7)
 
 
 def test_a_normally_compiled_pyc_is_not_stale(tmp_path: Path) -> None:
@@ -134,7 +177,7 @@ def test_a_source_mtime_past_2106_is_compared_the_way_cpython_compares_it(tmp_pa
 
 
 def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
-    """Every consumer of `contained_roots` walks each entry with `rglob` and adds up what it
+    """Every consumer of `contained_roots` walks each entry and adds up what it
     finds, so a repeated or nested entry double-counts. Measured before the pruning: with
     `code_roots = ["src", "src", "src/pkg"]` the one stale `.pyc` under `src/pkg` was reported
     three times and the one under `src` twice — `stale == 5` for two stale files, in a notice
@@ -230,6 +273,26 @@ def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
     cache.symlink_to(target)
     make_stale(module, real, linked)
     assert stale(root) == 2
+
+
+def test_a_symlinked_directory_under_a_code_root_is_never_entered(tmp_path: Path) -> None:
+    # The walk enters no symlinked directory below a root, a `__pycache__` included, as
+    # `rglob` entered none on 3.11 to 3.13: a link a tree commits can name a directory outside
+    # every code root, or an ancestor, which walks the same entries again until the cap. Both
+    # links here name stale bytecode outside the tree, so a walk that followed either counts it.
+    # Oracle: `mutations/`'s "the stale-bytecode walk follows a symlinked directory".
+    root = repo(tmp_path)
+    outside = tmp_path / "outside"
+    (outside / "pkg").mkdir(parents=True)
+    module = outside / "pkg" / "mod.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    cache = compile_module(module)
+    make_stale(module)
+    (root / "src" / "pkg").symlink_to(outside / "pkg")
+    (root / "src" / "other").mkdir()
+    (root / "src" / "other" / "mod.py").symlink_to(module)
+    (root / "src" / "other" / "__pycache__").symlink_to(cache.parent)
+    assert stale(root) == 0
 
 
 needs_mkfifo = pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes")
@@ -400,6 +463,20 @@ def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
     result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
     assert result.decision is None
     assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
+
+
+@needs_git
+def test_a_red_pytest_run_over_a_walk_cut_short_is_told_it_could_not_tell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same faulty tree with the walk's cap below its size: the notice still names the dirty
+    # tree, and the Python line says the walk could not tell instead of naming a count it never
+    # finished, so a stale `.pyc` the walk did not reach is not reported as absent. Reddened by
+    # disabling the cap check, which puts the stale line here; measured.
+    root = faulty_python_tree(tmp_path)
+    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 2)
+    result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
+    assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(cap=2)}"
 
 
 @needs_git
