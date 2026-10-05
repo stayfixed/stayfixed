@@ -386,24 +386,34 @@ def _granted_commands(context: Context, answers: Answers) -> set[str] | None:
     can grant, which is the empty set, and `_claims` says why it is empty. An empty set is "the
     overlay grants nothing", which is an answer.
 
-    **Nor is a `project.name` no directory under the overlay can carry.** The name is committed,
-    and it picks `projects/<name>/` out of the overlay; one that a file there already holds, or
-    one longer than the filesystem allows, used to make the read fail and so answer `None`, which
-    let a clone turn this row's red into a warning with nothing on the machine broken.
-    `binding.cannot_exist` reads such a path as one the overlay has no file at, so the answer is
-    what `common/` grants, the same as for a name the overlay has no project for. Only where the
-    name picks out no directory: below one it does, the name chooses nothing, and a file where
-    `claude/` goes is the owner's overlay failing to answer, `None` like any other.
+    **`projects/<name>/` grants only a checkout the overlay's record binds.** The name is
+    committed, so it can name another project of this machine's overlay, and what that project's
+    directory grants is that project's: a clone naming itself after it, with an entry equal to
+    one granted there and a ledger recording its id, would read "all accounted for". So for a
+    binding that is not `bound` — no record, a record of another remote, or no `origin` to compare
+    — the answer is what `common/` grants, and `projects/<name>/` is not opened at all. Opened and
+    then dropped, a hook file there that will not parse would answer `None`, and a clone could
+    pick a project whose file is broken to turn this row's red into a warning. Whether the binding
+    is right is the `attached` row's question, and it says so there.
+
+    **Nor does a `project.name` no directory under the overlay can carry make the overlay
+    unaskable.** One that a file under `projects/` holds, or one longer than the filesystem
+    allows, has no binding record — `binding.cannot_exist`'s paths are records the overlay does
+    not have — so it is never bound and the answer is what `common/` grants. A failure there
+    would answer `None`, and a clone could turn this row's red into a warning with nothing on the
+    machine broken. Below a directory the name does pick out, the name chooses nothing, and a
+    file where `claude/` goes is the owner's overlay failing to answer, `None` like any other.
     """
     from stayfixed.attach.binding import binding_for
     from stayfixed.attach.permissions import overlay_entries
     from stayfixed.errors import Failure, Refusal
+    from stayfixed.memory.api import BOUND
 
     if answers.overlay(context) is None:
         return set()
     try:
         binding = binding_for(context.root, context.config, machine=context.machine)
-        wanted = overlay_entries(binding)
+        wanted = overlay_entries(binding, project=binding.state == BOUND)
     except (Failure, Refusal, OSError):
         return None
     return {

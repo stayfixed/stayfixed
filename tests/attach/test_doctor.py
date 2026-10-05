@@ -1459,17 +1459,16 @@ def _unshared(tmp_path: Path, case: str, *, ledger: str) -> Path:
 def test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants(
     tmp_path: Path, case: str, ledger: str
 ) -> None:
-    # `project.name` is committed, and it spells the one free part of the path the grant question
-    # reads under the overlay, `projects/<name>/claude/`. A name that path cannot exist for is an
-    # overlay with no source for that project, so nothing project-specific grants and the forged
-    # entry is red, the row it gets under a name the overlay simply has no project for. It used to
-    # read as an overlay that could not be asked: a warning, beside either ledger.
+    # `project.name` is committed, and it spells the one free part of the paths read under the
+    # overlay's `projects/<name>/`. A name those paths cannot exist for is one the overlay keeps no
+    # binding record for, so the checkout is not bound, nothing project-specific grants, and the
+    # forged entry is red, the row it gets under a name the overlay simply has no project for. It
+    # used to read as an overlay that could not be asked: a warning, beside either ledger.
     #
-    # Mutations (oracle): `mutations/`'s "a source the project's name rules out is an overlay that
-    # cannot be asked" -> every case warns; "a name longer than the filesystem allows is an overlay
+    # Mutations (oracle): `mutations/`'s "a name longer than the filesystem allows is an overlay
     # that cannot be asked" and "a binding record the project's name rules out cannot be read" ->
-    # the `longer-than-a-file-name` cases do; "a file where the project's directory would be is an
-    # overlay that cannot be asked" -> the `a-file-holds-it` cases do.
+    # the `longer-than-a-file-name` cases warn; "a file where the project's directory would be is
+    # an overlay that cannot be asked" -> the `a-file-holds-it` cases do.
     root = _unshared(tmp_path, case, ledger=ledger)
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     expected = (
@@ -1485,8 +1484,10 @@ def test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    # The attack whole, through `stayfixed doctor --json`: it used to exit 0. Mutation (oracle):
-    # `mutations/`'s "a source the project's name rules out is an overlay that cannot be asked".
+    # The attack whole, through `stayfixed doctor --json`: it used to exit 0. Mutations (oracle):
+    # `mutations/`'s "a name longer than the filesystem allows is an overlay that cannot be asked"
+    # -> `longer-than-a-file-name` exits 0; "a file where the project's directory would be is an
+    # overlay that cannot be asked" -> `a-file-holds-it` does.
     root = _unshared(tmp_path, case, ledger="readable")
     code = _invoke_doctor(tmp_path, monkeypatch, root, _machine(tmp_path))
     report = json.loads(capsys.readouterr().out)
@@ -1504,12 +1505,13 @@ def test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_
 def test_a_project_name_whose_sources_pass_the_longest_path_grants_only_what_common_grants(
     tmp_path: Path, ledger: str
 ) -> None:
-    # The third spelling the name rules a source out by: a directory the overlay has none of yet,
-    # whose path fits while the hook file under it is longer than a path may be. Nothing is under
-    # an absent directory, so the answer is the one an absent hook file gives -- even though the
-    # fault is a path too long, which below a directory the owner made would be theirs. Mutation
-    # (oracle): `mutations/`'s "a source past the longest path under a project the overlay has no
-    # directory for cannot be asked" -> a warning.
+    # The third spelling the name rules a path out by: a directory the overlay has none of yet,
+    # whose path fits while the binding record and the hook file under it are longer than a path
+    # may be. The overlay has no record there, so the checkout is not bound and `projects/<name>/`
+    # is not asked; read as a fault of the overlay's, the record turned the red into a warning.
+    # Mutation (oracle): `mutations/`'s "a binding record the project's name rules out cannot be
+    # read" -> a warning. `--check`'s own answer for such a name is `tests/attach/test_write.py`'s
+    # `test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source`.
     longest = os.pathconf(tmp_path, "PC_PATH_MAX")
     deep = tmp_path
     # Room under the longest path for the fixture's own files, overlay and checkout alike, with
@@ -1549,10 +1551,10 @@ def test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only
 ) -> None:
     # An overlay need not keep `projects/`, and nothing is below a directory that is not there, so
     # nothing there can be the owner's: a name past the longest path is one the overlay has no
-    # project for, as it is beside a `projects/` that is there. Reading the absent `projects/` as a
-    # fault of the overlay's turned the red into a warning. Mutation (oracle): `mutations/`'s "an
-    # overlay with no projects/ directory cannot be asked about a name past the longest path" ->
-    # a warning.
+    # project for, as it is beside a `projects/` that is there. Reading it as a fault of the
+    # overlay's turned the red into a warning. Mutations (oracle): `mutations/`'s "a name longer
+    # than the filesystem allows is an overlay that cannot be asked" and "a binding record the
+    # project's name rules out cannot be read" -> a warning.
     root = _past_the_longest_path_with_no_projects(tmp_path, ledger=ledger)
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     expected = (
@@ -1564,7 +1566,7 @@ def test_a_name_past_the_longest_path_in_an_overlay_with_no_projects_grants_only
 def test_a_forged_entry_under_a_name_past_the_longest_path_with_no_projects_fails_the_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The same case through `stayfixed doctor --json`: it exited 0. Mutation (oracle): the one
+    # The same case through `stayfixed doctor --json`: it exited 0. Mutations (oracle): the two
     # named above.
     root = _past_the_longest_path_with_no_projects(tmp_path, ledger="readable")
     code = _invoke_doctor(tmp_path, monkeypatch, root, _machine(tmp_path))
@@ -1627,18 +1629,12 @@ def test_an_owner_whose_common_sources_cannot_be_read_keeps_a_warning(
 
 
 # The owner's own `projects/p/claude/` in a state this machine cannot read: no permission to enter
-# it, a hook file that is a directory, a file where the `claude` directory goes, and a file where
-# `projects/` itself goes. Each is the overlay failing to answer, which is this machine's state and
-# never a repository's, so the row warns as it does for a hook file that will not parse. The last
-# two are paths that cannot exist, as one under a name a file in `projects/` holds is, but the
-# component that is not a directory is not the name's: `project.name` holds no `/`, so it chooses
-# nothing below its own directory, and `projects/` is spelled by the overlay alone.
-OWN_SOURCES_UNREADABLE = (
-    "no-permission",
-    "hook-file-is-a-directory",
-    "claude-is-a-file",
-    "projects-is-a-file",
-)
+# it, a hook file that is a directory, and a file where the `claude` directory goes. Each is the
+# overlay failing to answer, which is this machine's state and never a repository's, so the row
+# warns as it does for a hook file that will not parse. The last is a path that cannot exist, as one
+# under a name a file in `projects/` holds is, but the component that is not a directory is not the
+# name's: `project.name` holds no `/`, so it chooses nothing below its own directory.
+OWN_SOURCES_UNREADABLE = ("no-permission", "hook-file-is-a-directory", "claude-is-a-file")
 
 
 @pytest.mark.parametrize("ledger", ["readable", "unreadable"])
@@ -1649,9 +1645,7 @@ def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
     # Mutations (oracle): `mutations/`'s "every fault reading the overlay's sources reads as no
     # source" -> every case is green or red rather than a warning; "a fault below the
     # project's own directory reads as no source" -> `claude-is-a-file` is red: the grant was in the
-    # file the fault hides, and read as absent the owner's own entry was one nothing grants; "a
-    # projects/ that is a file is a name the overlay has no directory for" -> `projects-is-a-file`
-    # is green, out of what `common/` grants.
+    # file the fault hides, and read as absent the owner's own entry was one nothing grants.
     if fault == "no-permission" and os.geteuid() == 0:
         pytest.skip("root enters a directory it has no permission for")
     root = _attached(tmp_path)
@@ -1663,10 +1657,6 @@ def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
         own.chmod(0)
     elif fault == "hook-file-is-a-directory":
         (own / "hooks.json").mkdir(parents=True)
-    elif fault == "projects-is-a-file":
-        projects = tmp_path / "overlay" / PROJECTS
-        shutil.rmtree(projects)
-        projects.write_text("not a directory\n", encoding="utf-8")
     else:
         # The grant moves from `common/` to the project's own hook file, which is where an owner
         # keeps an entry for one project. Non-vacuous: with it readable the entry is accounted for.
@@ -1694,3 +1684,158 @@ def test_an_owner_whose_own_project_sources_cannot_be_read_keeps_a_warning(
     )
     assert _by_name(rows, "hook-entries") == expected
     assert not [row.name for row in rows if row.status == "red"]
+
+
+@pytest.mark.parametrize("ledger", ["readable", "unreadable"])
+def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants(
+    tmp_path: Path, ledger: str
+) -> None:
+    # A file where the overlay's `projects/` goes holds no record of this checkout, so its binding
+    # is unbound: `attached` warns that the overlay has no binding for it, and `hook-entries` counts
+    # what `common/` grants and never opens `projects/`. The owner's one entry, which `common/`
+    # grants, is accounted for. While every binding was granted its project's sources, this row
+    # warned that the overlay could not be asked; the `attached` row is the one that now says what
+    # is wrong. Mutation (oracle): `mutations/`'s "a file where the project's directory would be is
+    # an overlay that cannot be asked" -> the record cannot be read, and `hook-entries` says the
+    # overlay could not be asked.
+    root = _attached(tmp_path)
+    if ledger == "unreadable":
+        (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
+    projects = tmp_path / "overlay" / PROJECTS
+    shutil.rmtree(projects)
+    projects.write_text("not a directory\n", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    expected = (
+        Check("hook-entries", "ok", f"{ONE_ENTRY}all accounted for", "")
+        if ledger == "readable"
+        else UNREADABLE_TABLE["owner-overlay"]
+    )
+    assert _by_name(rows, "hook-entries") == expected
+    attached = _by_name(rows, "attached")
+    if ledger == "readable":
+        assert attached.status == WARN, attached
+        assert "has no binding for this project" in attached.detail
+    assert not [row.name for row in rows if row.status == "red"]
+
+
+# What `projects/<name>/claude/hooks.json` grants beside `common/`'s one entry, and the id
+# `permissions.overlay_entries` composes for it: `common/` is read first, so its entry is
+# `overlay-PreToolUse-1` and this one `overlay-PreToolUse-2`.
+PROJECT_GRANT = "echo project"
+PROJECT_ENTRY = "overlay-PreToolUse-2"
+# This checkout as the overlay binds it, and the project a clone names itself after.
+OWN_NAME = "p"
+BORROWED_NAME = "neighbour"
+OTHER_ORIGIN = "git@github.com:owner/neighbour.git"
+
+
+def _granting_project(tmp_path: Path, name: str, *, grants: str | None = None) -> Path:
+    """`_attached`, with `project.name` set to `name` and the ledger's store that name's, and
+    with `projects/<name>/claude/hooks.json` granting a second `PreToolUse` entry that the
+    settings carry and the ledger records. `grants` replaces that file's text when given."""
+    root = _attached(tmp_path)
+    overlay = tmp_path / "overlay"
+    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    if name != OWN_NAME:
+        _named(root, name)
+        recorded["store"] = str(overlay / PROJECTS / name / "memory")
+    own = overlay / PROJECTS / name / "claude"
+    own.mkdir(parents=True)
+    hooks = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": PROJECT_GRANT}]}
+            ]
+        }
+    }
+    (own / "hooks.json").write_text(
+        json.dumps(hooks) if grants is None else grants, encoding="utf-8"
+    )
+    _with_extra_entry(root, f"{PROJECT_GRANT}  # stayfixed:{PROJECT_ENTRY}")
+    recorded["entries"][PROJECT_ENTRY] = "PreToolUse"
+    (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    return root
+
+
+def _borrowing(tmp_path: Path, state: str, *, grants: str | None = None) -> Path:
+    """A clone that names itself after another project of this machine's overlay, whose
+    `projects/<that name>/claude/hooks.json` grants the entry the clone commits, in binding
+    `state`."""
+    root = _granting_project(tmp_path, BORROWED_NAME, grants=grants)
+    record_path = tmp_path / "overlay" / PROJECTS / BORROWED_NAME / PROJECT_RECORD
+    if state in ("mismatch", "no-origin"):
+        # The other project's own record, binding its own remote.
+        record_path.write_text(
+            f'remote = "{OTHER_ORIGIN}"\nfirst_attach = "2026-09-18"\n', encoding="utf-8"
+        )
+    if state == "no-origin":
+        _git(root, "remote", "remove", "origin")
+    assert record_path.is_file() == (state != "unbound")
+    return root
+
+
+TWO_ENTRIES = "2 stayfixed entr(ies), 0 foreign; "
+# The row for the clone's entry the other project's grant would have vouched for: the overlay
+# grants this checkout only what `common/` grants, so entry 2 is one nothing grants it.
+BORROWED = Check(
+    "hook-entries",
+    "red",
+    f"{TWO_ENTRIES}1 entr(ies) claim the stayfixed marker and are recorded in {LEDGER}, and the "
+    f"overlay does not grant them: {LOCAL_SETTINGS} entry 2 of 2",
+    NOT_GRANTED,
+)
+# What `attached` makes of the same checkout, by binding state: the binding the name borrows is
+# not this checkout's, and the row says so in its own words.
+BORROWED_ATTACHED = {"mismatch": "red", "unbound": "warn", "no-origin": "red"}
+
+
+def test_a_bound_checkouts_own_project_grants_account_for_its_entries(tmp_path: Path) -> None:
+    # The owner's side of the case below: a checkout the overlay's record binds is granted what
+    # its own `projects/<name>/claude/` grants as well as what `common/` grants, so an entry out of
+    # the project's own hook file is accounted for. Without this, refusing a borrowed project's
+    # grants could become refusing every project's, and every owner's per-project entry would
+    # read red. Mutation (oracle): `mutations/`'s "doctor counts no project's grants, even for the
+    # checkout its record binds" -> entry 2 of 2 is red.
+    rows = _checks(tmp_path, _granting_project(tmp_path, OWN_NAME), machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == Check(
+        "hook-entries", "ok", f"{TWO_ENTRIES}all accounted for", ""
+    )
+    attached = _by_name(rows, "attached")
+    assert attached.status == OK, attached
+    assert "the binding is bound" in attached.detail
+
+
+@pytest.mark.parametrize("state", sorted(BORROWED_ATTACHED))
+def test_a_repository_named_after_another_project_borrows_none_of_its_grants(
+    tmp_path: Path, state: str
+) -> None:
+    # `project.name` is committed, and it picks the overlay's `projects/<name>/` the grant is read
+    # from. A clone that named itself after another project of this machine's overlay, committed a
+    # marked entry equal to one that project's hook file grants and a ledger recording its id, read
+    # "all accounted for": the binding's state was computed and never asked. A checkout the
+    # overlay's record does not bind -- no record, a record of another remote, or no `origin` to
+    # compare -- is granted only what `common/` grants every project. Mutation (oracle):
+    # `mutations/`'s "doctor counts a project's grants for a checkout its record does not bind" ->
+    # every case is "all accounted for".
+    rows = _checks(tmp_path, _borrowing(tmp_path, state), machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == BORROWED
+    attached = _by_name(rows, "attached")
+    assert attached.status == BORROWED_ATTACHED[state], attached
+    assert "attached;" not in attached.detail
+    printed = json.dumps([[row.detail, row.remedy] for row in rows])
+    assert BORROWED_NAME not in printed and "owner/neighbour" not in printed
+
+
+@pytest.mark.parametrize("state", sorted(BORROWED_ATTACHED))
+def test_another_projects_hook_file_that_will_not_parse_cannot_soften_the_red(
+    tmp_path: Path, state: str
+) -> None:
+    # The other project's hook file is not this checkout's to ask about. Read and its grants then
+    # dropped, a hook file there that does not parse made the overlay one that "could not be
+    # asked", and the borrowed entry's red became a warning: a clone could pick a project whose
+    # owner left a broken file and exit 0. Not read at all, it changes nothing. Mutation (oracle):
+    # `mutations/`'s "doctor counts a project's grants for a checkout its record does not bind" ->
+    # a warning.
+    root = _borrowing(tmp_path, state, grants='{"hooks": {"PreToolUse": "not a list"}}')
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(rows, "hook-entries") == BORROWED
