@@ -52,9 +52,9 @@ The Claude plugin directory holds a plugin of more than 512 files for a reviewer
 plugin to 512 files or fewer", in its
 [pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)), and the
 plugin folder is this repository's root — the marketplace entry's `source` is `./` — so every
-tracked file counts. A pull request may carry the tree past 512; a release may not, and
+tracked file counts. A pull request may carry the tree past 512; a release may not:
 `scripts/release.py check --tag` refuses one while the folder the marketplace entry's `source`
-names holds more files than that in `HEAD`'s tree, which is what `release.yml` runs before it
+names holds more files than that in `HEAD`'s tree, and `release.yml` runs that check before it
 builds. A subfolder of this repository is not the way under the count: the same page holds every
 version of a plugin in a subfolder whose hook runs a non-shell file or a shell script that calls
 other files, and `hooks/run-hook.sh` runs the Python launcher. Its own remedy is the one to take:

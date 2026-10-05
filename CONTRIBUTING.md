@@ -293,9 +293,9 @@ those 512 where eight do. That trade is why `GROUP_OF` is a table kept by hand, 
 refuses a plugin folder holding more than 512 files: this repository is more than the plugin, so
 a pull request may carry it past the count, and a release past it publishes the plugin from a
 repository of its own whose root is the plugin ([RELEASING.md](RELEASING.md), section 2, says
-why not from a subfolder of this one). `tests/scripts/test_mutation_oracle.py` reddens on an entry in
-the wrong file and on a file that reaches its cap, three quarters of the directory's; a group that
-does is split by its largest area, which is an edit to `GROUP_OF`.
+why not from a subfolder of this one). `tests/scripts/test_mutation_oracle.py` reddens on an
+entry in the wrong file and on a file that reaches its cap, three quarters of the directory's; a
+group that does is split by its largest area, which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
 true. That makes a name a reference, and two things hold it to one: the oracle refuses a name
