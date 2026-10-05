@@ -284,6 +284,18 @@ def _numbered(
     return wanted
 
 
+def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, str]]:
+    """Every marked command in `overlay_entries`' or `common_entries`' answer, with its event, in
+    its order: the grants flattened once, for the diff, the ledger and `doctor`, which each ask
+    only for commands. Each is a string, because `_numbered` refuses an entry without one."""
+    return [
+        (event, entry["command"])
+        for event, groups in wanted.items()
+        for group in groups
+        for entry in group["hooks"]
+    ]
+
+
 def local_document(root: Path) -> str:
     """The project's own `settings.local.json`, or an empty string when it has none."""
     return _read(root / LOCAL_SETTINGS)
@@ -321,11 +333,9 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))
     added_hooks = tuple(
-        entry["command"]
-        for groups in overlay_entries(binding).values()
-        for group in groups
-        for entry in group["hooks"]
-        if entry["command"] not in present
+        command
+        for _, command in marked_commands(overlay_entries(binding))
+        if command not in present
     )
     return PermissionDiff(added_allow, added_hooks, already)
 

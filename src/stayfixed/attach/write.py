@@ -66,6 +66,7 @@ from stayfixed.attach.permissions import (
     codex_rules,
     diff_permissions,
     local_document,
+    marked_commands,
     overlay_entries,
     settings_document,
 )
@@ -722,10 +723,8 @@ def _write_ledger(root: Path, planned: AttachPlan, settings_keys: tuple[str, ...
     # ledger recorded a marker id as a permission rule.
     entries = {
         found: event
-        for event, groups in overlay_entries(binding).items()
-        for group in groups
-        for entry in group["hooks"]
-        for found in (marker_id(entry["command"]),)
+        for event, command in marked_commands(overlay_entries(binding))
+        for found in (marker_id(command),)
         if found is not None
     }
     # The same union as `allow` and `rules`, for the same reason sharpened once more: the second

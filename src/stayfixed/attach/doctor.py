@@ -426,7 +426,7 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
     other.
     """
     from stayfixed.attach.binding import UnreadableRecord, binding_for
-    from stayfixed.attach.permissions import common_entries, overlay_entries
+    from stayfixed.attach.permissions import common_entries, marked_commands, overlay_entries
     from stayfixed.errors import Failure, Refusal
     from stayfixed.memory.api import BOUND, MISMATCH
 
@@ -449,14 +449,7 @@ def _granted_commands(context: Context) -> tuple[set[str] | None, str | None]:
         return None, None
     if binding is not None and binding.state == MISMATCH:
         narrowed = MISMATCH
-    commands = {
-        entry["command"]
-        for groups in wanted.values()
-        for group in groups
-        for entry in group["hooks"]
-        if isinstance(entry.get("command"), str)
-    }
-    return commands, narrowed
+    return {command for _, command in marked_commands(wanted)}, narrowed
 
 
 def _wording(narrowed: str | None = None) -> Wording:
