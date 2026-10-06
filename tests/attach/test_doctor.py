@@ -1685,7 +1685,15 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     assert not [row.name for row in rows if row.status == "red"]
 
 
-@pytest.mark.parametrize("shape", ["projects-is-a-file", "overlay-root-is-a-file"])
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "projects-is-a-file",
+        "overlay-root-is-a-file",
+        "projects-is-a-dangling-link",
+        "overlay-root-is-a-dangling-link",
+    ],
+)
 def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger(
     tmp_path: Path, shape: str
 ) -> None:
@@ -1698,9 +1706,12 @@ def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removi
     # nothing about the overlay's shape -> "has no binding" comes back.
     root = _attached(tmp_path)
     overlay = tmp_path / "overlay"
-    broken = overlay / PROJECTS if shape == "projects-is-a-file" else overlay
+    broken = overlay / PROJECTS if shape.startswith("projects") else overlay
     shutil.rmtree(broken)
-    broken.write_text("not a directory\n", encoding="utf-8")
+    if shape.endswith("dangling-link"):
+        broken.symlink_to(broken.parent / "nowhere")
+    else:
+        broken.write_text("not a directory\n", encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     attached = _by_name(rows, "attached")
     assert attached == Check(
@@ -1712,7 +1723,11 @@ def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removi
         f"then run `stayfixed doctor` again",
     )
     assert "remove the ledger" not in attached.remedy
-    assert not [row.name for row in rows if row.status == "red"]
+    # A root that names nothing leaves no `common/` to grant the owner's entry, which
+    # `hook-entries` judges as it judges an overlay that is gone, red; every other shape keeps
+    # `common/`'s grant, and no row turns red.
+    red = [row.name for row in rows if row.status == "red"]
+    assert red == (["hook-entries"] if shape == "overlay-root-is-a-dangling-link" else [])
 
 
 # What `projects/<name>/claude/hooks.json` grants beside `common/`'s one entry, and the id

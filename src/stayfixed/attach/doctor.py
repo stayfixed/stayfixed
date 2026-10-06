@@ -174,7 +174,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         return _uncorroborated(answer)
     state = answer.state
     if state == UNBOUND:
-        from stayfixed.attach.binding import damaged_overlay
+        from stayfixed.attach.binding import OVERLAY_REPAIR, damaged_overlay
 
         # An overlay whose root or `projects/` is a file holds no record of any binding, so a
         # bound project reads as unbound there; the remedy for that is the overlay's repair, and
@@ -186,8 +186,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
                 f"{ATTACH_LEDGER} records an attach, but {damaged} is not a directory, so the "
                 f"overlay this machine records is damaged and cannot say whether this checkout is "
                 f"bound",
-                f"repair the overlay so that {damaged} is a directory again (or clone the overlay "
-                f"afresh), then run `stayfixed doctor` again",
+                OVERLAY_REPAIR.format(path=damaged, command="`stayfixed doctor`"),
             )
         return Row(
             WARN,

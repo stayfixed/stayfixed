@@ -2260,3 +2260,22 @@ reddens = [
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[copy]",
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[compare]",
 ]
+
+# In the block led by "attach blames the project's name for an overlay whose projects/ or root is a
+# file": a link at the overlay root or `projects/` that names nothing is damage too, and asked with
+# `stat` alone it read as an overlay with no `projects/` yet.
+[[mutation]]
+name = "the damaged-overlay probe follows a link that names nothing"
+file = "src/stayfixed/attach/binding.py"
+before = """
+            except OSError:
+                return path
+"""
+after = """
+            except OSError:
+                return None
+"""
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged[projects-is-a-dangling-link-check]",
+  "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-dangling-link]",
+]

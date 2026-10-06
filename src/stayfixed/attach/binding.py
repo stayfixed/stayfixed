@@ -117,10 +117,15 @@ PATH_CANNOT_EXIST = (
 # That is the owner's overlay in a broken state and never a name the repository chose, so it names
 # the path — the owner's, from the machine file, holding no project's name — and asks for the
 # overlay to be repaired, never for another `name`.
+# The way out of a damaged overlay, one sentence for `attach`'s refusal and `doctor`'s row.
+OVERLAY_REPAIR = (
+    "repair the overlay so that {path} is a directory again (or clone the overlay afresh), then "
+    "run {command} again"
+)
 OVERLAY_DAMAGED = (
     "{path} is not a directory, so the overlay this machine records is damaged: no project's "
-    "binding record or notes can be kept under it; repair the overlay so that path is a "
-    "directory again (or clone the overlay afresh), then run the command again"
+    "binding record or notes can be kept under it; "
+    + OVERLAY_REPAIR.replace("{command}", "the command")
 )
 
 
@@ -133,12 +138,22 @@ def damaged_overlay(overlay: Path) -> Path | None:
     repository's name and sent a bound project's owner to choose another one. A path that is
     not there, or cannot be asked about, is not this answer: an overlay with no `projects/` yet
     is a fresh one, and the callers have their own answers for the rest.
+
+    Asked with `lstat` first: a symbolic link there is followed, as a link to a directory is the
+    owner's to make, but one that names nothing is damage, not absence. Asked with `stat` alone,
+    it answered "no such file", so `--check` read a fresh overlay and `attach` blamed a
+    `memory.groups` entry.
     """
     for path in (overlay, overlay / PROJECTS):
         try:
-            mode = path.stat().st_mode
+            mode = path.lstat().st_mode
         except OSError:
             return None
+        if stat.S_ISLNK(mode):
+            try:
+                mode = path.stat().st_mode
+            except OSError:
+                return path
         if not stat.S_ISDIR(mode):
             return path
     return None

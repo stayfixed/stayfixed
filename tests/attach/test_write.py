@@ -2295,7 +2295,27 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
 # The two shapes of an overlay that is damaged rather than one a project's name rules out: its
 # `projects/` a file, and the overlay root itself a file. Each is the owner's own state, and no
 # `project.name` could be chosen that a directory would exist for.
-DAMAGED = {"projects-is-a-file": "projects", "overlay-root-is-a-file": ""}
+DAMAGED = {
+    "projects-is-a-file": ("projects", "file"),
+    "overlay-root-is-a-file": ("", "file"),
+    # A link that names nothing, at `projects/` or the root: `stat` answers it as "no such file",
+    # which read as an overlay with no `projects/` yet, so `--check` passed and `attach` blamed a
+    # `memory.groups` entry.
+    "projects-is-a-dangling-link": ("projects", "dangling"),
+    "overlay-root-is-a-dangling-link": ("", "dangling"),
+}
+
+
+def _damage(overlay: Path, shape: str) -> Path:
+    """Break `overlay` the way `DAMAGED[shape]` says, and answer the path that broke."""
+    where, how = DAMAGED[shape]
+    broken = overlay / where if where else overlay
+    shutil.rmtree(broken)
+    if how == "file":
+        broken.write_text("not a directory\n", encoding="utf-8")
+    else:
+        broken.symlink_to(broken.parent / "nowhere")
+    return broken
 
 
 @pytest.mark.parametrize("command", ["attach", "check"])
@@ -2308,7 +2328,8 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
     # choose another, for a bound project whose overlay is what broke. It names the path that is
     # not a directory, says the overlay is damaged, and never asks for another name; and it is
     # still made before the first write. The name is the repository's and is never printed.
-    # Mutation (declared): the damaged-overlay check skipped -> the name is blamed again.
+    # Mutations (declared): the damaged-overlay check skipped -> the name is blamed again; "the
+    # damaged-overlay probe follows a link that names nothing" -> the dangling cases pass `--check`.
     name = "a-distinctive-project-name"
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     overlay = store.parents[2]
@@ -2316,9 +2337,7 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
     store = overlay / "projects" / name / "memory"
     store.mkdir(parents=True)
     _attach_it(root, store, machine, tmp_path / "home")
-    broken = overlay / DAMAGED[shape] if DAMAGED[shape] else overlay
-    shutil.rmtree(broken)
-    broken.write_text("not a directory\n", encoding="utf-8")
+    broken = _damage(overlay, shape)
     before = _everything(tmp_path)
     with pytest.raises(Refusal) as refused:
         if command == "attach":
