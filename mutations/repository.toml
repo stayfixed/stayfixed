@@ -2301,3 +2301,11 @@ after = '        [sys.executable, "-m", "stayfixed", "hook", event],'
 reddens = [
   "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
 ]
+
+# The seam guard reads `-m stayfixed` wherever it stands in an argv, `-I -m stayfixed` included.
+[[mutation]]
+name = "the seam guard stops reading python -m stayfixed"
+file = "tests/test_owner_home_seam.py"
+before = '    return any(a == "-m" and b == "stayfixed" for a, b in itertools.pairwise(_words(elements)))'
+after = '    return False'
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
