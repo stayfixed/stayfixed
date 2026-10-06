@@ -1953,8 +1953,8 @@ reddens = [
 [[mutation]]
 name = "the project's own settings file is read as leniently as an overlay source"
 file = "src/stayfixed/attach/permissions.py"
-before = "    return _read(root / LOCAL_SETTINGS)"
-after = "    return _read(root / LOCAL_SETTINGS, share=root / \".claude\")"
+before = "    return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)"
+after = "    return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS, share=root / \".claude\")"
 reddens = [
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[attach]",
   "tests/attach/test_write.py::test_a_claude_path_that_is_a_file_is_refused_before_the_first_write[check]",
@@ -2276,4 +2276,34 @@ after = """
 reddens = [
   "tests/attach/test_write.py::test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged[projects-is-a-dangling-link-check]",
   "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-dangling-link]",
+]
+
+# In the block led by "the settings refusal prints the path it opened": a refusal of a file the
+# project names names it as the project does, never by the machine's absolute path.
+[[mutation]]
+name = "the settings refusal prints the path it opened"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)"
+after = "    return _read(root / LOCAL_SETTINGS)"
+reddens = [
+  "tests/attach/test_write.py::test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read",
+  "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
+]
+
+[[mutation]]
+name = "the settings refusal of a file that is not UTF-8 prints the path it opened"
+file = "src/stayfixed/attach/permissions.py"
+before = '        raise Failure(f"{label or path} is not UTF-8 text") from None'
+after = '        raise Failure(f"{path} is not UTF-8 text") from None'
+reddens = [
+  "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
+]
+
+[[mutation]]
+name = "the ledger refusal of a file that is not UTF-8 prints the path it opened"
+file = "src/stayfixed/attach/write.py"
+before = '        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None'
+after = '        raise Failure(f"{path} is not UTF-8 text") from None'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
 ]

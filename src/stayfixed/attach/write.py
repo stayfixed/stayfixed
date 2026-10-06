@@ -338,7 +338,7 @@ def ledger(root: Path) -> AttachLedger:
     except OSError as exc:
         raise Failure(f"{ATTACH_LEDGER} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None
     # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
     # JSON past the parser's reach, which a clone can commit, is unreadable like the arms above,
     # and said in the words every other refusal of a ledger here uses: not one `attach` wrote.

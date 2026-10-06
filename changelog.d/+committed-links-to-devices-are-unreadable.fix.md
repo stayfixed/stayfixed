@@ -12,6 +12,7 @@ those read as they did.
 `stayfixed attach`, `attach --check` and `stayfixed detach` likewise stop, before anything is
 written or removed, on a committed `.gitignore`, `.claude/settings.local.json` or
 `.stayfixed/local/attach.json` that links to a device or a pipe, as on one they cannot read; before,
-`/dev/zero` there read until memory ran out and a FIFO waited for good. Every one of these files is
-also read only up to 64 MiB, and a longer one is refused as too large, because some regular files
-never end.
+`/dev/zero` there read until memory ran out and a FIFO waited for good. Each of these refusals, and
+the one for such a file that is not UTF-8, now names the file as the project does rather than by its
+absolute path on this machine. Every one of these files is also read only up to 64 MiB, and a longer
+one is refused as too large, because some regular files never end.

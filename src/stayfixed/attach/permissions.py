@@ -97,8 +97,12 @@ def settings_document(text: str) -> dict[str, Any]:
     return settings_object(text, LOCAL_SETTINGS)
 
 
-def _read(path: Path, *, share: Path | None = None) -> str:
+def _read(path: Path, *, share: Path | None = None, label: str | None = None) -> str:
     """A file's text, or an empty string when there is no such file.
+
+    `label` is how a refusal names the file, for one the project names: the project's own
+    `.claude/settings.local.json` is named as such and never by the machine's absolute path,
+    as `attach.write` names `.gitignore` and the ledger. An overlay source keeps its path.
 
     `share` is for the overlay's sources under `projects/<name>/` and nothing else, and names that
     directory: a path its spelling rules out (`binding.cannot_exist`) is a file the overlay does not
@@ -123,9 +127,9 @@ def _read(path: Path, *, share: Path | None = None) -> str:
     except OSError as exc:
         if share is not None and cannot_exist(exc) and _names_no_directory(share):
             return ""
-        raise Failure(f"{path} cannot be read: {said(exc)}") from exc
+        raise Failure(f"{label or path} cannot be read: {said(exc)}") from exc
     except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+        raise Failure(f"{label or path} is not UTF-8 text") from None
 
 
 def _names_no_directory(share: Path) -> bool:
@@ -303,7 +307,7 @@ def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, 
 
 def local_document(root: Path) -> str:
     """The project's own `settings.local.json`, or an empty string when it has none."""
-    return _read(root / LOCAL_SETTINGS)
+    return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)
 
 
 def _commands(document: str, label: str) -> set[str]:

@@ -1453,6 +1453,22 @@ def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Pa
     assert_snapshot_unchanged(root, before)
 
 
+def test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it(tmp_path: Path) -> None:
+    # The ledger's other refusal, held to the rule its first one keeps: the project's own name for
+    # the file, never the machine's path. Mutation (oracle): `mutations/`'s "the ledger refusal of
+    # a file that is not UTF-8 prints the path it opened".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_bytes(b'{"entries": {"\xff": "PreToolUse"}}')
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} is not UTF-8 text"
+    assert_snapshot_unchanged(root, before)
+
+
 class _ComparedTooDeep(dict[str, object]):
     """A parsed settings document whose comparison overflows, as `==` does on Python 3.14 for a
     document a few thousand levels deep under a reduced stack (`ulimit -s 2048`)."""
