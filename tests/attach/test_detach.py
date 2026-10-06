@@ -11,6 +11,7 @@ import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
@@ -1445,4 +1446,52 @@ def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Pa
     with pytest.raises(Failure) as refused:
         _detach(root, machine, home)
     assert str(refused.value) == f"{LEDGER} cannot be read (not a regular file)"
+    assert_snapshot_unchanged(root, before)
+
+
+class _ComparedTooDeep(dict[str, object]):
+    """A parsed settings document whose comparison overflows, as `==` does on Python 3.14 for a
+    document a few thousand levels deep under a reduced stack (`ulimit -s 2048`)."""
+
+    def __eq__(self, other: object) -> bool:
+        raise RecursionError
+
+    __hash__ = None
+
+
+@pytest.mark.parametrize("step", ["copy", "compare"])
+def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    # `detach` copies the parsed settings document through `json.dumps` and compares what is
+    # left with it, and neither step was guarded: on Python 3.14 under a reduced stack a document
+    # the parser read raised `RecursionError` at either, an internal error. Forced at each step
+    # here; both are the reader's refusal of a document nested too deep. Mutation (declared):
+    # "detach copies and compares the settings document unguarded".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    if step == "copy":
+        real_dumps = json.dumps
+
+        def dumps(value: object, *args: Any, **kwargs: Any) -> str:
+            if not args and not kwargs:
+                raise RecursionError
+            return real_dumps(value, *args, **kwargs)
+
+        monkeypatch.setattr(json, "dumps", dumps)
+    else:
+        real_loads = json.loads
+
+        def loads(text: str, **kwargs: Any) -> object:
+            loaded = real_loads(text, **kwargs)
+            return _ComparedTooDeep(loaded) if isinstance(loaded, dict) else loaded
+
+        monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)

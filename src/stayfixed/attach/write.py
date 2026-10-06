@@ -82,7 +82,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
@@ -113,6 +113,7 @@ from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     EntriesError,
     Manifest,
+    ParserLimitError,
     RegionError,
     Style,
     apply_entries,
@@ -1419,18 +1420,26 @@ def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
     if not document.strip():
         return SettingsWithdrawal((), None)
     raw = settings_document(document)
-    held = json.loads(json.dumps(raw))
-    permissions, allow = _allow_list(raw)
-    removed = tuple(rule for rule in recorded.allow if rule in allow)
-    if permissions:
-        permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
-        raw["permissions"] = permissions
-    for key in recorded.settings_keys:
-        raw.pop(key, None)
-    # Through `settings_text`, as every write-back of a parsed settings document: on Python 3.12
-    # an indented encode stops near 994 levels, under what the parser read.
-    remaining = json.loads(apply_entries(settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n", {}))
-    if remaining == held:
+    try:
+        # The copy and the comparison recurse as the encoder does, and on Python 3.14 under a
+        # reduced stack either overflows for a document the parser read: the reader's refusal of
+        # one nested too deep, never an internal error.
+        held = json.loads(json.dumps(raw))
+        permissions, allow = _allow_list(raw)
+        removed = tuple(rule for rule in recorded.allow if rule in allow)
+        if permissions:
+            permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
+            raw["permissions"] = permissions
+        for key in recorded.settings_keys:
+            raw.pop(key, None)
+        # Through `settings_text`, as every write-back of a parsed settings document: on Python
+        # 3.12 an indented encode stops near 994 levels, under what the parser read.
+        emptied = settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n"
+        remaining = json.loads(apply_entries(emptied, {}))
+        unchanged = remaining == held
+    except RecursionError:
+        raise ParserLimitError(f"{LOCAL_SETTINGS} {NESTED}") from None
+    if unchanged:
         return SettingsWithdrawal(removed, None)
     # `{}` is not what the file looked like before `attach`; a file holding nothing is one this
     # command created and is the last thing it takes away.
