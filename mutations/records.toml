@@ -2549,8 +2549,8 @@ reddens = [
 [[mutation]]
 name = "the trust digest follows a note or index linked to a device"
 file = "src/stayfixed/memory/trust.py"
-before = "        content = read_regular_bytes(path)"
-after = "        content = path.read_bytes()"
+before = "        with open_regular(path) as stream:"
+after = "        with path.open(\"rb\") as stream:"
 reddens = [
   "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
 ]
@@ -2562,4 +2562,13 @@ before = "        return read_regular_text(path)"
 after = '        return path.read_text(encoding="utf-8")'
 reddens = [
   "tests/docs/test_hygiene.py::test_a_document_linked_to_a_device_is_a_failure_naming_it",
+]
+
+[[mutation]]
+name = "a file past the cap digests as the unreadable marker"
+file = "src/stayfixed/memory/trust.py"
+before = "            content = _TOO_LARGE + content"
+after = "            content = _UNREADABLE"
+reddens = [
+  "tests/memory/test_trust.py::test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant",
 ]

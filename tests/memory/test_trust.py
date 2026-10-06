@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
@@ -463,3 +464,25 @@ def test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_link
         (linked / "developer" / "a.md", note),
     ):
         assert _content_digest(path) == hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Hashed as the unreadable marker, every `MEMORY.md` or note past the reader's cap digested
+    # alike, so a store trusted with one and its first lines rewritten afterwards -- the part a
+    # session loads -- kept its trust. What was read is hashed, framed as too large: two such
+    # files differing in their first line digest apart, and neither as the unreadable marker nor
+    # as a file inside the cap. The cap is lowered so the case is small. Mutation (oracle):
+    # `mutations/`'s "a file past the cap digests as the unreadable marker" -> the two agree.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 64)
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_bytes(b"one\n" + b"x" * 100)
+    second.write_bytes(b"two\n" + b"x" * 100)
+    inside = tmp_path / "inside.md"
+    inside.write_bytes(b"one\n" + b"x" * 60)
+    digests = {_content_digest(path) for path in (first, second, inside)}
+    assert len(digests) == 3
+    assert hashlib.sha256(_UNREADABLE).hexdigest() not in digests
+    assert _content_digest(first) == _content_digest(first)
