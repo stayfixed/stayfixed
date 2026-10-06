@@ -453,8 +453,8 @@ def test_command_words_strips_uv_run_with_nothing_before_the_program() -> None:
         ("uv run -p 3.11 pytest", ["pytest"]),
         ("uv run -p3.11 pytest", ["pytest"]),
         ("uv run -np3.11 pytest", ["pytest"]),
-        # Stacked short flags are one word, and `-m` is a flag: uv runs the module.
-        ("uv run -qq -m pytest", ["pytest"]),
+        # Stacked short flags are one word.
+        ("uv run -qq --frozen pytest", ["pytest"]),
         # The first word that is not an option is the program, and every later word is its own.
         ("uv run --frozen echo --locked", ["echo", "--locked"]),
         ("uv run env FOO=1 pytest", ["pytest"]),
@@ -474,17 +474,18 @@ def test_command_words_strips_uv_run_past_uvs_own_options(command: str, program:
 @pytest.mark.parametrize(
     "command", ["uv run -m pytest -q", "uv run -qm pytest", "uv run --script tests/run.py"]
 )
-def test_a_module_or_script_uv_runs_is_a_program_only_when_the_caller_asks_for_one(
+def test_a_module_or_script_uv_runs_is_the_program_only_to_a_caller_that_asks(
     command: str,
 ) -> None:
-    """`-m pytest` runs the pytest module, so a hint asking which runner ran reads `pytest`;
-    but the word after `-m` or `--script` is a module or a file, never a program on the path,
-    so a caller asking for the program (`programs_only`) gets the command whole. Oracle:
-    `mutations/`, "a module or script name reads as the program for every caller", "a module
-    or script name is never read as what uv runs"."""
+    """The word after `-m` or `--script` is a module or a file, never a program on the path,
+    so by default the command stays whole: the conservative reading, which a guard that judges
+    the program inherits without having to remember a flag. A caller asking which runner ran
+    (`modules_as_programs=True`, the red-run hint) reads `-m pytest` as `pytest`. Oracle:
+    `mutations/`, "a module or script name reads as the program by default", "a module or
+    script name is never read as what uv runs"."""
     words = command.split()
-    assert bashscan.command_words(words) == words[3:]
-    assert bashscan.command_words(words, programs_only=True) == words
+    assert bashscan.command_words(words) == words
+    assert bashscan.command_words(words, modules_as_programs=True) == words[3:]
 
 
 @pytest.mark.parametrize(

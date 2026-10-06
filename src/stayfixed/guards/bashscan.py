@@ -264,10 +264,10 @@ _UV_RUN_FLAGS = _UV_GLOBAL_FLAGS | frozenset(
     }
 )
 # `-m pytest` runs the pytest module and `--script x` the file `x`: flags, whose next word is a
-# module or a script uv hands to Python rather than a program on the path. A caller asking which
-# test runner ran reads that word as what runs (`uv run -m pytest` is a pytest run); a caller
-# asking for the program (`command_words`' `programs_only`) leaves such a command whole, so the
-# background guard never refuses `uv run -m sleep 30` as a `sleep`.
+# module or a script uv hands to Python rather than a program on the path. So by default such
+# a command stays whole, and the background guard never refuses `uv run -m sleep 30` as a
+# `sleep`; a caller asking which test runner ran passes `command_words` its
+# `modules_as_programs`, and reads `uv run -m pytest` as a pytest run.
 _UV_RUN_TARGETS = frozenset({"-m", "--module", "-s", "--script", "--gui-script"})
 _UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
     {
@@ -901,7 +901,7 @@ def segments(tokens: list[str]) -> list[list[str]]:
     return result
 
 
-def command_words(segment: list[str], *, programs_only: bool = False) -> list[str]:
+def command_words(segment: list[str], *, modules_as_programs: bool = False) -> list[str]:
     """This segment's own command and arguments, with any leading environment-assignment
     tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and `uv run` with uv's options --
     stripped off the front, repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run --locked
@@ -912,9 +912,9 @@ def command_words(segment: list[str], *, programs_only: bool = False) -> list[st
     entirely, and neither is contrived: an assignment prefix is the ordinary way to run a
     suite against a checkout that has no venv of its own.
 
-    `programs_only` is for a caller that judges the program itself rather than which runner
-    ran: it leaves whole a `uv run` whose next word is a module or a script
-    (`_UV_RUN_TARGETS`), since that word names no program.
+    A `uv run` whose next word is a module or a script (`-m`, `--script`) is left whole,
+    since that word names no program, unless `modules_as_programs` asks for it: a caller
+    asking which runner ran, as the red-run hint does, reads `uv run -m pytest` as `pytest`.
 
     THE UNDER-REPORT IS DOCUMENTED, not accidental: a `uv` command with an option outside
     `_UV_GLOBAL_FLAGS`, `_UV_GLOBAL_VALUED`, `_UV_RUN_FLAGS`, `_UV_RUN_TARGETS` and
@@ -933,7 +933,7 @@ def command_words(segment: list[str], *, programs_only: bool = False) -> list[st
             continue
         name = Path(token).name
         if name == _UV:
-            launched = _past_uv_run(segment, index + 1, programs_only=programs_only)
+            launched = _past_uv_run(segment, index + 1, modules_as_programs=modules_as_programs)
             if launched is None:
                 break
             index = launched
@@ -945,7 +945,7 @@ def command_words(segment: list[str], *, programs_only: bool = False) -> list[st
     return segment[index:]
 
 
-def _past_uv_run(segment: list[str], index: int, *, programs_only: bool) -> int | None:
+def _past_uv_run(segment: list[str], index: int, *, modules_as_programs: bool) -> int | None:
     """Where the program `uv run` launches starts in `segment`, read from `index`, just past
     the word `uv`; `None` when these words are not a `uv run` the tables can read whole.
 
@@ -957,7 +957,7 @@ def _past_uv_run(segment: list[str], index: int, *, programs_only: bool) -> int 
     while index < len(segment):
         word = segment[index]
         if not running and word == _UV_RUN:
-            flags = _UV_RUN_FLAGS if programs_only else _UV_RUN_FLAGS | _UV_RUN_TARGETS
+            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS
             valued = _UV_RUN_VALUED
             running = True
             index += 1

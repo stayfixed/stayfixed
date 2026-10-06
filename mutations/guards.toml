@@ -165,26 +165,37 @@ reddens = [
   "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
 ]
 
-# `-m sleep` names a module and `--script sleep` a file: read as the program, a
+# `-m sleep` names a module and `--script sleep` a file: read as the program by default, a
 # backgrounded `uv run -m sleep 30` is refused as a `sleep` by the closed-policy guard.
 [[mutation]]
-name = "a module or script name reads as the program for every caller"
+name = "a module or script name reads as the program by default"
 file = "src/stayfixed/guards/bashscan.py"
-before = '            flags = _UV_RUN_FLAGS if programs_only else _UV_RUN_FLAGS | _UV_RUN_TARGETS'
+before = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS'
 after = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS'
 reddens = [
-  "tests/guards/test_bashscan.py::test_a_module_or_script_uv_runs_is_a_program_only_when_the_caller_asks_for_one",
+  "tests/guards/test_bashscan.py::test_a_module_or_script_uv_runs_is_the_program_only_to_a_caller_that_asks",
   "tests/guards/test_bgcleanup.py::test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep",
+  "tests/guards/test_bgcleanup.py::test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo",
 ]
 
 # The other side: `uv run -m pytest` is a pytest run, which the runner's hint must still see.
 [[mutation]]
 name = "a module or script name is never read as what uv runs"
 file = "src/stayfixed/guards/bashscan.py"
-before = '            flags = _UV_RUN_FLAGS if programs_only else _UV_RUN_FLAGS | _UV_RUN_TARGETS'
+before = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS'
 after = '            flags = _UV_RUN_FLAGS'
 reddens = [
-  "tests/guards/test_bashscan.py::test_a_module_or_script_uv_runs_is_a_program_only_when_the_caller_asks_for_one",
+  "tests/guards/test_bashscan.py::test_a_module_or_script_uv_runs_is_the_program_only_to_a_caller_that_asks",
+  "tests/profiles/python/test_hygiene.py::test_a_real_pytest_invocation_is_recognised",
+]
+
+# The red-run hint is the one caller that reads a module uv runs as the runner that ran.
+[[mutation]]
+name = "the red-run hint stops reading a module uv runs as the runner"
+file = "src/stayfixed/guards/hygiene.py"
+before = '        words = bashscan.command_words(segment, modules_as_programs=True)'
+after = '        words = bashscan.command_words(segment)'
+reddens = [
   "tests/profiles/python/test_hygiene.py::test_a_real_pytest_invocation_is_recognised",
 ]
 
@@ -249,37 +260,6 @@ before = '    if len(command) > MAX_COMMAND_CHARS:'
 after = '    if False:'
 reddens = [
   "tests/guards/test_bgcleanup.py::test_a_command_past_the_size_cap_is_allowed_unread",
-]
-
-# Each of the background guard's questions is about the program, so each asks for it with
-# `programs_only`; dropping it at one call site reads a module name as that program.
-[[mutation]]
-name = "the sleep rule reads a module or script name as the program"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    words = bashscan.command_words(segment, programs_only=True)'
-after = '    words = bashscan.command_words(segment)'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep",
-]
-
-# A module named `echo` after a `;` is no echo, and hides no exit code.
-[[mutation]]
-name = "the exit-echo hint reads a module name as the trailing echo"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    words = bashscan.command_words(tail, programs_only=True)'
-after = '    words = bashscan.command_words(tail)'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo",
-]
-
-# A module named `echo` before a `; echo` is a command whose exit code that echo hides.
-[[mutation]]
-name = "the exit-echo hint reads a module name as the masked command"
-file = "src/stayfixed/guards/bgcleanup.py"
-before = '    head = bashscan.command_words(masked, programs_only=True)'
-after = '    head = bashscan.command_words(masked)'
-reddens = [
-  "tests/guards/test_bgcleanup.py::test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo",
 ]
 
 # The leading-`(` skip must drop a leading RUN, not every `(` in the segment: filtering the
@@ -759,7 +739,7 @@ reddens = [
 [[mutation]]
 name = "the exit-code hint reads the echo's program from the raw first token"
 file = "src/stayfixed/guards/bgcleanup.py"
-before = '    words = bashscan.command_words(tail, programs_only=True)'
+before = '    words = bashscan.command_words(tail)'
 after = '    words = tail'
 reddens = [
   "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
