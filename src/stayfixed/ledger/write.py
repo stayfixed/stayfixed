@@ -36,6 +36,16 @@ if TYPE_CHECKING:
 FETCH_TIMEOUT_SECONDS = 10
 
 _ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
+# What `renumber` says of an occupied target it cannot tell from this move half-done. Built from
+# the two identifiers alone, which the identifier grammar has held, and the register's command
+# group, which is stayfixed's: nothing the repository wrote reaches the line.
+OCCUPIED = (
+    "{new} already has an entry file, and it is not the half-done state of this move — {old}'s "
+    "entry with only its `id:` line rewritten, with {old} untouched or left as the void "
+    "pointer to it — so it is an entry of its own; pick a free identifier. If an interrupted "
+    "`stayfixed {name} renumber {old} {new}` wrote it and it was edited since, make it {old}'s "
+    "text again with only its `id:` line changed, and run this again"
+)
 _VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
@@ -283,26 +293,39 @@ def _endpoints_written(
     There is no journal, and each write is atomic on its own, so a kill between two of them
     leaves one of two states, and each is told by the bytes alone. Killed after the first write,
     the target is exactly the old entry's text with its `id:` line rewritten while the old file
-    is untouched, and finishing leaves it as it is. Killed after the second, the old file is the
-    void pointer toward this target, which is what a finished move leaves too — so a re-run of a
+    is untouched, and finishing leaves it as it is. Killed after the second, the old file is,
+    byte for byte, the void pointer this move writes toward this target — its title naming the
+    moved entry's, its date its own — which is what a finished move leaves too, so a re-run of a
     finished move sweeps again, and finds nothing to rewrite unless a mention of `old` was
     written since. Anything else at the target is an entry of its own, which the move would
-    destroy, and is refused as it always was. A symlink there is refused before it is read, as
+    destroy, and is refused as it always was, saying how to finish by hand a move whose target
+    was edited after the kill. A symlink there is refused before it is read, as
     anything but a regular file is: the move writes its target, it never adopts one.
     """
     if not target.exists():
         return 0
-    occupied = LedgerError(f"{new} already has an entry file; pick a free identifier")
+    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name))
     if target.is_symlink() or not target.is_file():
         raise occupied
     where = Path(register.directory) / f"{new}.md"
+    where_old = Path(register.directory) / f"{old}.md"
     held = read_ledger_text(target, where=where)
     if held == moved:
         return 1
-    pointer = parse_entry(
-        source_text, path=Path(register.directory) / f"{old}.md", register=register
+    # The pointer this move writes, rebuilt from the two files as they are: its title names the
+    # moved entry's, and its date is the one it carries. A pointer anyone wrote by hand toward a
+    # genuine `new`, and a live entry that merely relates to it, differ from it in their bytes.
+    try:
+        moved_entry = parse_entry(held, path=where, register=register)
+        carried = parse_entry(source_text, path=where_old, register=register)
+    except LedgerError:
+        raise occupied from None
+    schema = register.schema
+    day = next((carried.fields.get(key, "") for key in schema.dates if key in schema.required), "")
+    pointer = _void_pointer(
+        register, old=old, new=new, title=f"renumbered to {new} — {moved_entry.title}", today=day
     )
-    if pointer.status == register.schema.void and pointer.related == (new,):
+    if source_text == pointer:
         return 2
     raise occupied
 
@@ -350,6 +373,11 @@ def renumber(
     ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
         raise LedgerError(f"both identifiers must look like {ids.shape}")
+    # Before anything is read: with the two the same, the target is the source, which is exactly
+    # its own text with its `id:` line rewritten, and the resumption below would overwrite the
+    # entry with a void pointer to itself.
+    if old == new:
+        raise LedgerError(f"there is nothing to move: {old} to itself")
     directory = register.directory
     source = root / directory / f"{old}.md"
     target = root / directory / f"{new}.md"

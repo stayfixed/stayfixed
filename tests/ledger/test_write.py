@@ -749,3 +749,78 @@ def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
     assert _snapshot(root) == before
     assert (bugs / "BR-009.md").is_symlink()
+
+
+def test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    # With `old == new` the target is the source itself, so it is exactly the source's text with
+    # its `id:` line rewritten, and the resumption read it as a move killed after its first write:
+    # it overwrote the entry with a void pointer to itself and exited 0, and an entry filed and
+    # not yet committed was gone. Refused before anything is read. Mutation: `mutations/`,
+    # "renumber moves an entry onto its own identifier".
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="BR-001 to itself"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-001")
+    assert _snapshot(root) == before
+
+
+@pytest.mark.parametrize("status", ["void", "open"])
+def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
+    tmp_path: Path, status: str
+) -> None:
+    # The pointer a move leaves is told by its bytes, as the moved text is: an `old` entry voided
+    # by hand as a duplicate of a genuine `new`, or a live one that merely relates to it, is not
+    # this move half-done, and resuming would sweep every mention of `old` over to `new`.
+    # Mutations: `mutations/`, "a renumber resumes from any void entry toward its target" (the
+    # `void` case) and "a renumber resumes from any entry that relates to its target" (both).
+    root, config = project(tmp_path)
+    seed(root, config, 3)
+    bugs = root / "docs" / "bugs"
+    (bugs / "BR-001.md").write_text(
+        entry(1, related="[BR-003]").replace("status: open", f"status: {status}"),
+        encoding="utf-8",
+    )
+    (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-003")
+    assert _snapshot(root) == before
+
+
+def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Killed after the first write, and the moved file then touched — an end-of-file fixer, an
+    # editor's save: the target is no longer the moved text, so the re-run cannot tell it from
+    # an entry of its own and refuses. The refusal says so and how to finish, naming only the two
+    # identifiers, which the identifier grammar has already held: nothing the repository wrote.
+    # Mutation: `mutations/`, "the occupied-target refusal says nothing of an interrupted move".
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    from stayfixed import fsops
+
+    real = fsops.write_within
+
+    def killed(within: Path, target: str, text: str, **kwargs: Any) -> None:
+        if target.endswith("BR-001.md"):
+            raise _Killed(target)
+        real(within, target, text, **kwargs)
+
+    monkeypatch.setattr(fsops, "write_within", killed)
+    with pytest.raises(_Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    monkeypatch.setattr(fsops, "write_within", real)
+    moved = root / "docs" / "bugs" / "BR-009.md"
+    moved.write_text(moved.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(LedgerError) as raised:
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert str(raised.value) == (
+        "BR-009 already has an entry file, and it is not the half-done state of this move — "
+        "BR-001's entry with only its `id:` line rewritten, with BR-001 untouched or left as the "
+        "void pointer to it — so it is an entry of its own; pick a free identifier. If an "
+        "interrupted `stayfixed bugs renumber BR-001 BR-009` wrote it and it was edited since, "
+        "make it BR-001's text again with only its `id:` line changed, and run this again"
+    )

@@ -680,9 +680,11 @@ a `void` pointer at the new number, every scanned file that mentions `OLD` is re
 index is regenerated — both endpoints first, then the sweep, so an interruption leaves `OLD`
 resolving to the pointer rather than to nothing. A run that was killed part-way is finished by
 running the same move again: it recognises its own half-done state — `NEW` holding exactly
-`OLD`'s text with the `id:` rewritten, or `OLD` already the pointer to `NEW` — makes the writes
-still missing and leaves the tree an uninterrupted run would have, and a re-run of a move that
-finished only sweeps again. Rejects any other occupied `NEW` or a missing `OLD`
+`OLD`'s text with the `id:` rewritten, or `OLD` byte for byte the pointer this move writes to
+`NEW` — makes the writes still missing and leaves the tree an uninterrupted run would have, and a
+re-run of a move that finished only sweeps again. Rejects `OLD` equal to `NEW`, any other
+occupied `NEW` — saying how to finish by hand a move whose `NEW` was edited after the kill, which
+the re-run can no longer tell from an entry of its own — or a missing `OLD`
 (`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
 exists a stale mention in that file looks intentional to `bugs check` forever. The line counts

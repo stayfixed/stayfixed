@@ -558,10 +558,46 @@ reddens = [
 [[mutation]]
 name = "a renumber resumes from a void pointer toward another identifier"
 file = "src/stayfixed/ledger/write.py"
-before = "    if pointer.status == register.schema.void and pointer.related == (new,):"
-after = "    if pointer.status == register.schema.void:"
+before = "    if source_text == pointer:"
+after = "    if carried.status == register.schema.void:"
 reddens = [
   "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
+]
+
+[[mutation]]
+name = "a renumber resumes from any void entry toward its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if source_text == pointer:"
+after = "    if carried.status == register.schema.void and carried.related == (new,):"
+reddens = [
+  "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[void]",
+]
+
+[[mutation]]
+name = "a renumber resumes from any entry that relates to its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if source_text == pointer:"
+after = "    if carried.related == (new,):"
+reddens = [
+  "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[open]",
+]
+
+[[mutation]]
+name = "renumber moves an entry onto its own identifier"
+file = "src/stayfixed/ledger/write.py"
+before = "    if old == new:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothing",
+]
+
+[[mutation]]
+name = "the occupied-target refusal says nothing of an interrupted move"
+file = "src/stayfixed/ledger/write.py"
+before = "    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name))"
+after = '    occupied = LedgerError(f"{new} already has an entry file; pick a free identifier")'
+reddens = [
+  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand",
 ]
 
 [[mutation]]
