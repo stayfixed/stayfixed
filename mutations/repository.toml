@@ -2289,3 +2289,15 @@ after = '                if keyword.arg in OVERRIDING'
 reddens = [
   "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[keywords-spread]",
 ]
+
+# A `stayfixed` a test starts off a terminal reads the password database's home, so one that
+# forgets the seam reads, or writes, the developer's own `~/.config/stayfixed` and still passes.
+# The static guard is what notices.
+[[mutation]]
+name = "a test starts stayfixed without the owner-home seam"
+file = "tests/guards/test_hooks.py"
+before = '        [*stayfixed_argv(home), "hook", event],'
+after = '        [sys.executable, "-m", "stayfixed", "hook", event],'
+reddens = [
+  "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
+]
