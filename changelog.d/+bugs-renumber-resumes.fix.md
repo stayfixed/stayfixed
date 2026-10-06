@@ -8,5 +8,6 @@ of a title that starts `renumbered to NEW — `. It makes the writes still missi
 tree an uninterrupted run would have, even when `NEW` was retitled in between. Any other entry
 already at `NEW` is still refused, and the refusal says how to finish by hand a move whose `NEW`
 was edited after it was interrupted. A re-run of a move that finished changes nothing and says
-so, leaving any mention of `OLD` written since as it was. `stayfixed bugs renumber X X` is refused
-outright.
+so, leaving any mention of `OLD` written since as it was. `stayfixed bugs check` now names that
+re-run, `stayfixed bugs renumber OLD NEW`, rather than `stayfixed bugs index`, when the stale
+index is the one an interrupted move left. `stayfixed bugs renumber X X` is refused outright.

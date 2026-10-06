@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -26,6 +24,7 @@ from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
 from tests.gitfixture import git, plant_path, run_git
+from tests.ledger.kills import Killed, killed_at
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
@@ -643,11 +642,6 @@ def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
     assert near.stat().st_mtime_ns == before
 
 
-class _Killed(BaseException):
-    """A kill between two writes: a `BaseException`, so no `except Exception` on the way out can
-    swallow it, as none swallows the `KeyboardInterrupt` of a real interrupt."""
-
-
 def _renumber_tree(root: Path) -> None:
     # The tree every kill-point case starts from: a sibling that relates to the moved entry and
     # two files that mention it, so the move makes six writes — the two endpoints, three sweeps
@@ -657,26 +651,6 @@ def _renumber_tree(root: Path) -> None:
     )
     (root / "src" / "a.py").write_text("x = 1  # see BR-001\n", encoding="utf-8")
     (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
-
-
-@contextmanager
-def _killed_at(monkeypatch: pytest.MonkeyPatch, write: int) -> Iterator[list[str]]:
-    """`fsops.write_within` raising `_Killed` in place of its `write`-th call while the block
-    runs, and as it was after; yields the targets written before the kill, in order."""
-    from stayfixed import fsops
-
-    real = fsops.write_within
-    writes: list[str] = []
-
-    def counted(within: Path, target: str, text: str, **kwargs: Any) -> None:
-        if len(writes) + 1 == write:
-            raise _Killed(target)
-        writes.append(target)
-        real(within, target, text, **kwargs)
-
-    with monkeypatch.context() as patched:
-        patched.setattr(fsops, "write_within", counted)
-        yield writes
 
 
 # Which of the move's six writes each case kills before, in the order `_renumber_tree`'s move
@@ -692,9 +666,9 @@ KILL_POINTS = {
 }
 
 
-@pytest.mark.parametrize("killed_at", KILL_POINTS.values(), ids=KILL_POINTS.keys())
+@pytest.mark.parametrize("kill", KILL_POINTS.values(), ids=KILL_POINTS.keys())
 def test_a_renumber_killed_at_any_write_is_finished_by_running_it_again(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, killed_at: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kill: int
 ) -> None:
     # The reproduction: there is no journal and each of the six writes is atomic on its own, so
     # a kill between two of them left a tree a re-run refused ("BR-009 already has an entry
@@ -717,14 +691,14 @@ def test_a_renumber_killed_at_any_write_is_finished_by_running_it_again(
     root, config = project(tmp_path / "killed")
     seed(root, config, 1, 2)
     _renumber_tree(root)
-    with _killed_at(monkeypatch, killed_at) as writes:
-        if killed_at <= 6:
-            with pytest.raises(_Killed):
+    with killed_at(monkeypatch, kill) as writes:
+        if kill <= 6:
+            with pytest.raises(Killed):
                 renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
         else:
             renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
     # Each case is the kill point it names: the writes before it are on disk and no other.
-    assert len(writes) == min(killed_at - 1, 6)
+    assert len(writes) == min(kill - 1, 6)
     renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
     assert_snapshot_unchanged(root, expected)
     assert register_gate(root, config, bug_register(config)) == []
@@ -823,7 +797,7 @@ def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
     # Mutation: `mutations/`, "the occupied-target refusal says nothing of an interrupted move".
     root, config = project(tmp_path)
     seed(root, config, 1)
-    with _killed_at(monkeypatch, KILL_POINTS["before-pointer"]), pytest.raises(_Killed):
+    with killed_at(monkeypatch, KILL_POINTS["before-pointer"]), pytest.raises(Killed):
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
     moved = root / "docs" / "bugs" / "BR-009.md"
     moved.write_text(moved.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -850,7 +824,7 @@ def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finish
     root, config = project(tmp_path)
     seed(root, config, 1, 2)
     _renumber_tree(root)
-    with _killed_at(monkeypatch, KILL_POINTS["before-sibling-sweep"]), pytest.raises(_Killed):
+    with killed_at(monkeypatch, KILL_POINTS["before-sibling-sweep"]), pytest.raises(Killed):
         renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
     moved = root / "docs" / "bugs" / "BR-009.md"
     moved.write_text(

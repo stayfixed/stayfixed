@@ -13,6 +13,7 @@ from stayfixed import fsops
 from stayfixed.gitenv import NO_ANSWER, QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
 from stayfixed.identifiers import DIGITS
 from stayfixed.ledger.entries import (
+    ID_LINE,
     LedgerError,
     entry_dir,
     field_line,
@@ -35,7 +36,6 @@ if TYPE_CHECKING:
 # (CONTRIBUTING.md#named-caps), and no shipped file changes with it.
 FETCH_TIMEOUT_SECONDS = 10
 
-_ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
 # What `renumber` says of an occupied target it cannot tell from this move half-done. Built from
 # the two identifiers alone, which the identifier grammar has held, and the register's command
 # group, which is stayfixed's: nothing the repository wrote reaches the line.
@@ -396,7 +396,7 @@ def renumber(
     # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
     # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
     # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
-    moved = _ID_LINE.sub(f"id: {new}", source_text, count=1)
+    moved = ID_LINE.sub(f"id: {new}", source_text, count=1)
     written = _endpoints_written(register, source_text, moved, target, old=old, new=new)
     # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
     # renders the index from every entry file in the directory, so one malformed sibling — a

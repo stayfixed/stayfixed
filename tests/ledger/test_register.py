@@ -737,7 +737,10 @@ def test_a_second_registers_findings_name_its_own_paths_and_commands(tmp_path: P
     # directory's name, for mentions and citations -> neither `TD-404` is found.
     root, config, base = committed_debt(tmp_path)
     directory, index = root / "docs" / "debt", root / "docs" / "tech-debt.md"
+    # A new entry of its own: one byte-identical to TD-002 but for its `id:` is the tree a
+    # `renumber` killed after its first write leaves, whose stale index names that renumber.
     copied = (directory / "TD-002.md").read_text(encoding="utf-8").replace("TD-002", "TD-003")
+    copied = copied.replace("\n---\n", "\n---\n\nfiled on its own\n", 1)
     (directory / "TD-003.md").write_text(copied, encoding="utf-8")
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text("# workaround for TD-404\n", encoding="utf-8")
@@ -970,7 +973,10 @@ def test_the_bug_ledgers_refusals_are_unchanged(tmp_path: Path, case: str) -> No
         (root / "docs" / "bugs" / "BR-002.md").unlink()
         regenerate(root, bugs)
     else:
-        (root / "docs" / "bugs" / "BR-003.md").write_text(bug_entry(3), encoding="utf-8")
+        # Its own body: byte-identical to another entry but for its `id:`, it is the tree a
+        # killed `renumber` leaves, whose stale index names that renumber instead.
+        third = bug_entry(3) + "\nfiled on its own\n"
+        (root / "docs" / "bugs" / "BR-003.md").write_text(third, encoding="utf-8")
         base = ""
     found = bugs_gate(root, config, base)
     assert [(f.rule, f.path, f.line, f.detail) for f in found] == BUG_REFUSALS[case]

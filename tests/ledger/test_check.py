@@ -24,6 +24,7 @@ from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
 from stayfixed.ledger.write import renumber
 from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, needs_git
+from tests.ledger.kills import Killed, killed_at
 
 CONFIG = """
 [stayfixed]
@@ -815,10 +816,54 @@ def test_foreign_index_content_is_reported_and_staleness_is_not_named_beside_it(
 def test_a_stale_index_is_reported_with_the_command_that_repairs_it(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
-    (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2), encoding="utf-8")
+    # Its own body: one byte-identical to BR-001 but for its `id:` is the tree a `renumber` killed
+    # after its first write leaves, whose stale index names that renumber.
+    own = entry(2, body="its own body\n")
+    (root / "docs" / "bugs" / "BR-002.md").write_text(own, encoding="utf-8")
     found = register_gate(root, config, bug_register(config))
     assert [p.rule for p in found] == ["stale-index"]
     assert "stayfixed bugs index" in found[0].detail
+
+
+@pytest.mark.parametrize(
+    "kill", [2, 3, 4], ids=["before-pointer", "before-sibling-sweep", "before-second-sweep"]
+)
+def test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kill: int
+) -> None:
+    # A renumber killed part-way leaves the index it found, so `check` reported it stale and
+    # sent the operator to `bugs index` — the remedy that turned the check green over two live
+    # entries for one bug, or over mentions of the old number the sweep never reached. When the
+    # stale index is exactly the one the move found, the line names the move that finishes it.
+    # Mutation: `mutations/`, "a stale index a killed renumber left is sent to bugs index".
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2, related="[BR-001]")})
+    (root / "src" / "a.py").write_text("# see BR-001\n", encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
+    with killed_at(monkeypatch, kill), pytest.raises(Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    stale = [
+        p.detail
+        for p in register_gate(root, config, bug_register(config))
+        if p.rule == "stale-index"
+    ]
+    assert stale == ["is stale; run: stayfixed bugs renumber BR-001 BR-009"]
+
+
+def test_a_stale_index_beside_a_finished_renumber_is_sent_to_bugs_index(tmp_path: Path) -> None:
+    # The legitimate user: a move that finished, and an entry edited since without the index.
+    # Re-running that move would change nothing, so the line still names `bugs index`.
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    sibling = root / "docs" / "bugs" / "BR-002.md"
+    sibling.write_text(entry(2).replace("title: a title", "title: retitled"), encoding="utf-8")
+    stale = [
+        p.detail
+        for p in register_gate(root, config, bug_register(config))
+        if p.rule == "stale-index"
+    ]
+    assert stale == ["is stale; run: stayfixed bugs index"]
 
 
 def test_a_mention_with_no_entry_is_reported_at_its_first_location(tmp_path: Path) -> None:

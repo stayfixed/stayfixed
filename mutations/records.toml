@@ -603,6 +603,18 @@ reddens = [
   "tests/ledger/test_commands.py::test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_mention",
 ]
 
+# A stale index a killed renumber left is the one the move found: `check` names the renumber that
+# finishes it, since `bugs index` turned the check green over a half-moved ledger.
+[[mutation]]
+name = "a stale index a killed renumber left is sent to bugs index"
+file = "src/stayfixed/ledger/check.py"
+before = '        remedy = f"renumber {move[0]} {move[1]}" if move else "index"'
+after = '        remedy = "index"'
+reddens = [
+  "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-pointer]",
+  "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-sibling-sweep]",
+]
+
 [[mutation]]
 name = "renumber moves an entry onto its own identifier"
 file = "src/stayfixed/ledger/write.py"
@@ -2157,8 +2169,8 @@ reddens = [
 [[mutation]]
 name = "a stale index is sent to the bug ledger's index command whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = '        stale = f"is stale; run: stayfixed {register.name} index"'
-after = '        stale = "is stale; run: stayfixed bugs index"'
+before = '        stale = f"is stale; run: stayfixed {register.name} {remedy}"'
+after = '        stale = f"is stale; run: stayfixed bugs {remedy}"'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]

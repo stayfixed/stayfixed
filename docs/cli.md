@@ -678,7 +678,10 @@ fetch the whole history (`fetch-depth: 0`). Without `--base` the tree alone is j
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
 walk stands in elsewhere. A file whose first 2 KiB carry `stayfixed:ledger:fixtures` holds sample
-identifiers and is neither scanned nor swept.
+identifiers and is neither scanned nor swept. A stale index is sent to `bugs index`, except the one
+a `bugs renumber OLD NEW` killed before its last write leaves: when `NEW` holds `OLD`'s text, or
+`OLD` is the pointer that move titles toward `NEW`, and the index is exactly the one rendered before
+the move, the line names `run: stayfixed bugs renumber OLD NEW`, which finishes it.
 
 **Writes** nothing.
 
@@ -697,7 +700,8 @@ missing and leaves the tree an uninterrupted run would have left, when resumed t
 pointer written by the resume carries the day it is written. A re-run of a move that finished —
 the pointer in place and the index fresh — changes nothing and says `OLD was already moved to
 NEW; nothing to do`, and `--json`'s `moved` is `false`, so a mention of `OLD` written since stays
-as it was written.
+as it was written. While an interrupted move is what left the index stale, `bugs check` names this
+command, `run: stayfixed bugs renumber OLD NEW`, where it would name `bugs index`.
 
 Rejects `OLD` equal to `NEW`, a missing `OLD`, and any other occupied `NEW` (`1`); the last says
 how to finish by hand a move whose `NEW` was edited after the kill, which the re-run can no longer

@@ -38,6 +38,11 @@ _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 _NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")
 
 
+# An entry's `id:` line, whatever its spacing or quoting: what `renumber` rewrites to move an entry,
+# and what `check` rewrites back to tell a move half done.
+ID_LINE = re.compile(r"^id:.*$", re.MULTILINE)
+
+
 class LedgerError(Failure):
     """A ledger file that cannot be read, or a rule that has been broken.
 

@@ -11,12 +11,14 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding, listed
 from stayfixed.gitenv import ForkUnknown, answer_bytes, fork_points, git_run
 from stayfixed.ledger.entries import (
+    ID_LINE,
     Entry,
     LedgerError,
     entry_dir,
@@ -42,7 +44,6 @@ from stayfixed.ledger.scan import code_mentions, entry_citations
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from stayfixed.config.schema import Config
 
@@ -387,6 +388,7 @@ def register_gate(
         return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
+    texts: dict[str, str] = {}
     required = set(register.evidence_boundary_for)
     restated = _body_state_bullet(register)
     for path in sorted(directory.glob(f"{ids.prefix}-*.md")):
@@ -434,6 +436,7 @@ def register_gate(
                 )
             )
         entries.append(entry)
+        texts.setdefault(entry.id, text)
 
     known = {entry.id for entry in entries}
     by_id: defaultdict[str, list[Entry]] = defaultdict(list)
@@ -480,7 +483,9 @@ def register_gate(
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        stale = f"is stale; run: stayfixed {register.name} index"
+        move = _half_done_move(register, entries, texts, current)
+        remedy = f"renumber {move[0]} {move[1]}" if move else "index"
+        stale = f"is stale; run: stayfixed {register.name} {remedy}"
         found.append(Finding("stale-index", index_name, None, stale))
 
     found.extend(_dangling_mentions(root, config, register, known))
@@ -489,6 +494,49 @@ def register_gate(
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
     # one behind, and it lands in a docs-only commit.
     return found + _dangling_citations(root, config, register, known)
+
+
+def _half_done_move(
+    register: Register, entries: list[Entry], texts: dict[str, str], current: str
+) -> tuple[str, str] | None:
+    """The renumber, `(old, new)`, whose interruption explains the stale index `current`
+    exactly, or `None`.
+
+    A `renumber` writes the index last, so a run killed before it leaves the index it found:
+    rendered from the ledger as it stood before the move. That state is recognised as
+    `renumber` recognises it — `new` holding `old`'s text with its `id:` line rewritten, or
+    `old` the void pointer the move titles toward `new` — and confirmed by the index alone: the
+    entries with `new`'s text restored to `old` render it byte for byte. Sent to `bugs index`
+    instead, the operator turned the check green over two live entries for one bug or over
+    mentions the sweep never reached. Anything else stale, a finished move's neighbour edited
+    since included, is `bugs index`'s.
+    """
+    by_text: defaultdict[str, list[str]] = defaultdict(list)
+    for identifier, text in texts.items():
+        by_text[ID_LINE.sub("id:", text, count=1)].append(identifier)
+    pairs = [(old, new) for same in by_text.values() for old in same for new in same if old != new]
+    void = register.schema.void
+    pairs += [
+        (entry.id, entry.related[0])
+        for entry in entries
+        if entry.status == void
+        and len(entry.related) == 1
+        and entry.title.startswith(f"renumbered to {entry.related[0]} — ")
+    ]
+    for old, new in pairs:
+        if new not in texts:
+            continue
+        restored = ID_LINE.sub(f"id: {old}", texts[new], count=1)
+        try:
+            moved = parse_entry(
+                restored, path=Path(register.directory) / f"{old}.md", register=register
+            )
+        except LedgerError:
+            continue
+        before = [entry for entry in entries if entry.id not in (old, new)] + [moved]
+        if render_index(sorted(before, key=lambda e: e.number), register) == current:
+            return old, new
+    return None
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
