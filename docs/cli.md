@@ -690,7 +690,8 @@ index is regenerated — both endpoints first, then the sweep, so an interruptio
 resolving to the pointer rather than to nothing. A run that was killed part-way is finished by
 running the same move again: it recognises its own half-done state — `NEW` holding exactly
 `OLD`'s text with the `id:` rewritten, or `OLD` byte for byte the pointer this move writes to
-`NEW` — makes the writes still missing and leaves the tree an uninterrupted run would have, and a
+`NEW`, its title only held to start `renumbered to NEW — `, so a `NEW` retitled since is still
+finished — makes the writes still missing and leaves the tree an uninterrupted run would have, and a
 re-run of a move that finished only sweeps again. Rejects `OLD` equal to `NEW`, any other
 occupied `NEW` — saying how to finish by hand a move whose `NEW` was edited after the kill, which
 the re-run can no longer tell from an entry of its own — or a missing `OLD`

@@ -294,8 +294,9 @@ def _endpoints_written(
     leaves one of two states, and each is told by the bytes alone. Killed after the first write,
     the target is exactly the old entry's text with its `id:` line rewritten while the old file
     is untouched, and finishing leaves it as it is. Killed after the second, the old file is,
-    byte for byte, the void pointer this move writes toward this target — its title naming the
-    moved entry's, its date its own — which is what a finished move leaves too, so a re-run of a
+    byte for byte, the void pointer this move writes toward this target — its title only held to
+    start as the move writes it, since the target may be retitled since, its date its own —
+    which is what a finished move leaves too, so a re-run of a
     finished move sweeps again, and finds nothing to rewrite unless a mention of `old` was
     written since. Anything else at the target is an entry of its own, which the move would
     destroy, and is refused as it always was, saying how to finish by hand a move whose target
@@ -312,19 +313,20 @@ def _endpoints_written(
     held = read_ledger_text(target, where=where)
     if held == moved:
         return 1
-    # The pointer this move writes, rebuilt from the two files as they are: its title names the
-    # moved entry's, and its date is the one it carries. A pointer anyone wrote by hand toward a
-    # genuine `new`, and a live entry that merely relates to it, differ from it in their bytes.
+    # The pointer this move writes, rebuilt with the title and the date it carries and compared
+    # byte for byte, its title held only to the prefix the move writes: the target's own title is
+    # the owner's to change after the move, and a pointer rebuilt from it stopped matching then. A
+    # pointer anyone wrote by hand toward a genuine `new`, and a live entry that merely relates to
+    # it, still differ from it in their other bytes — the status, the related list, the body.
     try:
-        moved_entry = parse_entry(held, path=where, register=register)
         carried = parse_entry(source_text, path=where_old, register=register)
     except LedgerError:
         raise occupied from None
+    if not carried.title.startswith(f"renumbered to {new} — "):
+        raise occupied
     schema = register.schema
     day = next((carried.fields.get(key, "") for key in schema.dates if key in schema.required), "")
-    pointer = _void_pointer(
-        register, old=old, new=new, title=f"renumbered to {new} — {moved_entry.title}", today=day
-    )
+    pointer = _void_pointer(register, old=old, new=new, title=carried.title, today=day)
     if source_text == pointer:
         return 2
     raise occupied
@@ -374,8 +376,9 @@ def renumber(
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
         raise LedgerError(f"both identifiers must look like {ids.shape}")
     # Before anything is read: with the two the same, the target is the source, which is exactly
-    # its own text with its `id:` line rewritten, and the resumption below would overwrite the
-    # entry with a void pointer to itself.
+    # its own text with its `id:` line rewritten, and `_endpoints_written` would read it as a move
+    # killed after its first write, so the entry would be overwritten with a void pointer to
+    # itself.
     if old == new:
         raise LedgerError(f"there is nothing to move: {old} to itself")
     directory = register.directory

@@ -722,8 +722,12 @@ def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own
     # toward another identifier, are each an entry the move would destroy, and each is refused
     # with nothing written; so is a symlink at the target, even to the moved text itself, which
     # the move would otherwise adopt as its new entry. Mutations: `mutations/`, "a renumber
-    # resumes over a target that is not the moved text", "a renumber resumes from a void
-    # pointer toward another identifier" and "a renumber adopts a symlink at its target".
+    # resumes over a target that is not the moved text" and "a renumber adopts a symlink at its
+    # target". The pointer toward another identifier is refused twice over — its title does not
+    # start "renumbered to BR-009 — " and its related list and body name BR-007 — so no single
+    # mutation reddens that case; each guard is pinned on its own by
+    # `test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused` and
+    # `test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer`.
     root, config = project(tmp_path)
     seed(root, config, 1, 3)
     bugs = root / "docs" / "bugs"
@@ -773,14 +777,17 @@ def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
 ) -> None:
     # The pointer a move leaves is told by its bytes, as the moved text is: an `old` entry voided
     # by hand as a duplicate of a genuine `new`, or a live one that merely relates to it, is not
-    # this move half-done, and resuming would sweep every mention of `old` over to `new`.
-    # Mutations: `mutations/`, "a renumber resumes from any void entry toward its target" (the
-    # `void` case) and "a renumber resumes from any entry that relates to its target" (both).
+    # this move half-done, and resuming would sweep every mention of `old` over to `new`. Each is
+    # titled as the move titles its pointer, so its other bytes are what refuse it. Mutations:
+    # `mutations/`, "a renumber resumes from any void entry toward its target" (the `void` case)
+    # and "a renumber resumes from any entry that relates to its target" (both).
     root, config = project(tmp_path)
     seed(root, config, 3)
     bugs = root / "docs" / "bugs"
     (bugs / "BR-001.md").write_text(
-        entry(1, related="[BR-003]").replace("status: open", f"status: {status}"),
+        entry(1, related="[BR-003]")
+        .replace("status: open", f"status: {status}")
+        .replace("title: a title", 'title: "renumbered to BR-003 — a title"'),
         encoding="utf-8",
     )
     (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
@@ -824,3 +831,64 @@ def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
         "interrupted `stayfixed bugs renumber BR-001 BR-009` wrote it and it was edited since, "
         "make it BR-001's text again with only its `id:` line changed, and run this again"
     )
+
+
+def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Retitling an entry is ordinary upkeep, after a kill or after a finished move. The pointer
+    # was recognised by rebuilding it from the target's current title, so a retitled target made
+    # the re-run refuse, with advice nobody could follow — the old entry's text is already the
+    # pointer — and the mention the sweep never reached stayed silent for good. The pointer's
+    # title is held only to the prefix the move writes; every other byte is compared. Mutation:
+    # `mutations/`, "the void pointer is recognised by the target's current title".
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    _renumber_tree(root)
+    from stayfixed import fsops
+
+    real = fsops.write_within
+    writes: list[str] = []
+
+    def killed(within: Path, target: str, text: str, **kwargs: Any) -> None:
+        if len(writes) == 2:
+            raise _Killed(target)
+        writes.append(target)
+        real(within, target, text, **kwargs)
+
+    monkeypatch.setattr(fsops, "write_within", killed)
+    with pytest.raises(_Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    monkeypatch.setattr(fsops, "write_within", real)
+    moved = root / "docs" / "bugs" / "BR-009.md"
+    moved.write_text(
+        moved.read_text(encoding="utf-8").replace("title: a title", "title: a better title"),
+        encoding="utf-8",
+    )
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-03")
+    assert (root / "docs" / "notes.md").read_text(encoding="utf-8") == "BR-009 is the first one.\n"
+    assert "title: a better title" in moved.read_text(encoding="utf-8")
+    assert register_gate(root, config, bug_register(config)) == []
+
+
+def test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused(
+    tmp_path: Path,
+) -> None:
+    # The other side of the relaxed title: every other byte of the pointer is the move's, and
+    # its title is not "renumbered to <new> — …", so it is not this move's pointer and the
+    # mentions of the old number are not swept onto the new one. Mutation: `mutations/`, "the
+    # void pointer's title is not held to the prefix the move writes".
+    from stayfixed.ledger.write import _void_pointer
+
+    root, config = project(tmp_path)
+    seed(root, config, 3)
+    register = bug_register(config)
+    pointer = _void_pointer(
+        register, old="BR-001", new="BR-003", title="a duplicate", today="2026-01-02"
+    )
+    (root / "docs" / "bugs" / "BR-001.md").write_text(pointer, encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, register, "BR-001", "BR-003")
+    assert _snapshot(root) == before
