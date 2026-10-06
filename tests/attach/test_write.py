@@ -15,6 +15,7 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -42,7 +43,7 @@ from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
-from tests.parserlimits import LONG_NUMBER, NESTED, overflowing_indent
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
@@ -2357,14 +2358,23 @@ def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_fi
     # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
     # deep `settings.local.json` was read and then ended `attach` in `RecursionError` while the
     # merge was encoded. Forced here on every interpreter: the merge refuses as the reader refuses
-    # a document nested too deep, before anything is written. Mutation (declared): the merge
-    # encodes the settings document with a bare `json.dumps` again -> `RecursionError`.
+    # a document nested too deep, before anything is written. The overflow is forced only for the
+    # merged document, the one holding the overlay's rule, so the earlier write-back probe of the
+    # file as it stands encodes it and the merge's own encode is the one met. Mutation (oracle):
+    # `mutations/`'s "attach encodes the settings merge with a bare json.dumps" -> `RecursionError`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / SETTINGS).parent.mkdir(exist_ok=True)
     (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
     before = _everything(tmp_path)
-    monkeypatch.setattr(jsonobject, "_encode", overflowing_indent)
-    monkeypatch.setattr(json, "dumps", overflowing_indent)
+    real = json.dumps
+
+    def overflowing_merge(value: object, *args: Any, indent: int | None = None, **kw: Any) -> str:
+        if indent is not None and RULE in real(value):
+            raise RecursionError
+        return real(value, *args, indent=indent, **kw)
+
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_merge)
+    monkeypatch.setattr(json, "dumps", overflowing_merge)
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
         _attach_it(root, store, machine, tmp_path / "home")
     assert _everything(tmp_path) == before
