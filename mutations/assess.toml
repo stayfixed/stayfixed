@@ -205,16 +205,6 @@ before = '    if base.startswith("refs/"):'
 after = "    if False:"
 reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself"]
 
-[[mutation]]
-name = "git failing to read the base is read as the base having no stayfixed.toml"
-file = "src/stayfixed/assess/rule.py"
-before = "        raise Failure(BASE_UNREADABLE.format(branch=branch))"
-after = '        return ""'
-reddens = [
-  "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
-  "tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself",
-]
-
 # git hands the base's blob over losslessly, a surrogate escape for each byte that is not UTF-8,
 # and `tomllib` parses those: without the refusal, bytes the loader refuses in the tree's own
 # copy would govern the run.
@@ -227,58 +217,6 @@ reddens = [
   "tests/assess/test_read_base.py::test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap",
   "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
 ]
-
-# The refusal once looked for surrogate escapes in the text `git_run` decoded, which only a
-# UTF-8 locale leaves: under latin-1 every byte decodes, so a copy that is not UTF-8 was parsed
-# and a valid one read as mojibake. The bytes git printed are decoded as UTF-8 instead.
-[[mutation]]
-name = "the base copy is read in the locale's codec rather than as UTF-8"
-file = "src/stayfixed/assess/rule.py"
-before = '        return answer_bytes(text).decode("utf-8")'
-after = """        text.encode("utf-8")
-        return text"""
-reddens = [
-  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[utf-8]",
-  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
-]
-
-# Where the project sits in the repository is asked of git, and the base's copy is read there: a
-# root reached through a symlink, or a component linked back to the top, is refused rather than read
-# at a path the base never had; a project in a subdirectory keeps its prefix; and a root outside any
-# repository is a failure, not an answer.
-[[mutation]]
-name = "a project root reached through a symlink reads the base at a path it never had"
-file = "src/stayfixed/assess/rule.py"
-before = '    if linked or spelled != prefix.rstrip("\n"):'
-after = "    if False:"
-reddens = [
-  "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
-  "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
-  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_before_the_bugs_gate_runs",
-]
-
-[[mutation]]
-name = "the ancestor that resolves to the top is looked for from the nearest end"
-file = "src/stayfixed/assess/rule.py"
-before = "    chain = (*reversed(lexical.parents), lexical)"
-after = "    chain = (lexical, *lexical.parents)"
-reddens = ["tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused"]
-
-[[mutation]]
-name = "a project in a subdirectory reads the base's copy at the repository's top"
-file = "src/stayfixed/assess/rule.py"
-before = '    path = f"{prefix}{CONFIG_FILE}"'
-after = "    path = CONFIG_FILE"
-reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path"]
-
-[[mutation]]
-name = "a root outside any repository is judged as if git had answered"
-file = "src/stayfixed/assess/rule.py"
-before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
-    if code != 0:"""
-after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
-    if False:"""
-reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
 
 # The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
 # govern its run, so each guard that says `refused`, and each that picks the configuration and the
@@ -417,35 +355,11 @@ reddens = [
 # Reading the base's copy: each git argument and refusal whose removal lets a change reach "no
 # copy on the base" — the bootstrap — held by a case that runs on every platform.
 [[mutation]]
-name = "a project under a directory named like pathspec magic reads no copy on the base"
-file = "src/stayfixed/assess/rule.py"
-before = '        "--literal-pathspecs",'
-after = '        "--no-pager",'
-reddens = ["tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy"]
-
-[[mutation]]
-name = "the base's copy is listed relative to the project root rather than the repository's top"
-file = "src/stayfixed/assess/rule.py"
-before = '        "--full-tree",'
-after = '        "--name-only",'
-reddens = [
-  "tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path",
-  "tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy",
-]
-
-[[mutation]]
 name = "a base id that names a tree is read as if it named a commit"
 file = "src/stayfixed/assess/rule.py"
 before = '        f"{base}^{{commit}}",'
 after = '        base,'
 reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]
-
-[[mutation]]
-name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
-file = "src/stayfixed/assess/rule.py"
-before = '    if linked or spelled != prefix.rstrip("\n"):'
-after = "    if linked:"
-reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
 
 # The base's copy governs the change, so one that does not load fails the run: read as "no copy", it
 # would be the bootstrap, and the change would judge itself. `mutations/`'s "any error loading the
@@ -871,15 +785,6 @@ file = "src/stayfixed/assess/state.py"
 before = "    except UnparsedDocument:"
 after = "    except ():"
 reddens = ["tests/assess/test_state.py::test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml"]
-
-# `--root ..` was refused in the symlink sentence with nothing linked. Still refused, since `..`
-# after a linked component is not what the spelling names, and now for what it is.
-[[mutation]]
-name = "a root spelled with '..' is refused as a symlink"
-file = "src/stayfixed/assess/rule.py"
-before = '    if ".." in lexical.parts:'
-after = "    if False:"
-reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
 
 # A refusal from the base's own load (a symlink the change planted on a path only the base's
 # `[paths]` names) still fails the run, and says it is the base's configuration that met it.

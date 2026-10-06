@@ -115,14 +115,13 @@ overlay mode a symlinked index is refused outright; in overlay mode only a link 
 project's own share of the recorded overlay is honoured).
 
 **When the trust gate is shut, the line says so**, on `--check` and on the write path alike, and
-`--json`'s `trusted` is `false`. The question is the one the harness memory link asks: a note, or
-the store's own directory, inside the repository with no `stayfixed memory trust
---in-repo-memory` record matching it — which in overlay mode, where the store's directory is a
-real directory in the repository, is every store until that record is made. When the notes or a
-committed `MEMORY.md` are themselves repository data, the line says none of it reaches a session;
-when only the directory is — an overlay store whose notes all live in the overlay — it says the
-link waits for a record while the standing-rules and volatile-notes bundles still deliver the
-notes.
+`--json`'s `trusted` is `false`. The question is the one the harness memory link asks: is a note,
+or the store's own directory, inside the repository with no record from `stayfixed memory trust
+--in-repo-memory` matching it? In overlay mode, where the store's directory is a real directory in
+the repository, that is every store until the record is made. When the notes or a committed
+`MEMORY.md` are themselves repository data, the line says none of it reaches a session. When only
+the directory is — an overlay store whose notes all live in the overlay — it says the link waits
+for a record while the standing-rules and volatile-notes bundles still deliver the notes.
 
 **One store however it is named.** In overlay mode `--store <overlay>/projects/<name>/memory` —
 this project's own share, the far end of the link tree — resolves exactly as the plain run
@@ -647,41 +646,47 @@ regenerating the index deletes the ledger as surely as removing it, and renaming
 alone deletes it too, on a filesystem that folds case as on one that does not. Other files under
 the directory — a `README.md`, a subdirectory's notes — are not entries and may go. An entry
 moves with `bugs renumber`, which leaves a `void` entry at the old number and so removes nothing.
+
 What the change forked with is the ledger at every commit `git merge-base --all <ref> HEAD`
-names, their entries taken together: an entry the base filed after the branch forked is not one
-the branch deleted, and a deletion is still named on a branch behind its base, on the merge
-commit CI checks out, and on a history with several merge bases, where the one git would pick
-alone can predate the entry while a merge deletes it all the same. Entries are append-only, so on
-a base that kept its entries taking them together refuses no branch that deleted nothing; an entry
+names, their entries taken together. An entry the base filed after the branch forked is not one
+the branch deleted. A deletion is still named on a branch behind its base, on the merge commit CI
+checks out, and on a history with several merge bases, where the one git would pick alone can
+predate the entry while a merge deletes it all the same. Entries are append-only, so on a base
+that kept its entries, taking them together refuses no branch that deleted nothing. An entry
 removed from the base itself, by a direct push, is still named on a criss-crossed branch whose
-merge bases include one from before the removal: restore it on the base. Each of those commits'
-ledger is read where that commit's own `stayfixed.toml` put it (its `[paths] bugs`, `bug_index`
-and `[ledger] id_prefix`, and nothing of how it judges an entry, so a base carrying an
-`evidence_boundary_required_for` level the ledger now refuses does not stop the change that
-corrects it), loaded through the loader against the tree's disk as `stayfixed gate` loads the
-base's copy, and compared by file name with the tree's directory: a change that moves the ledger
-by `[paths]` answers for every entry it did not carry along, and one that changes `id_prefix` for
-every entry under the old prefix, and a deleted ledger is named at the paths the base kept it
-at. A commit with no `stayfixed.toml` at the project's path is read at the tree's paths, as the
-change that adds the configuration decides for itself under `stayfixed gate`; a copy that does not
-load fails (`1`), and one whose load meets a refusal, or whose `id_prefix` the identifiers refuse,
-refuses (`2`), rather than read as a base with no ledger. The copy is found where git puts the
-root, which is not quite how `stayfixed gate` finds the base's: the gate first refuses a root
-reached through a symlink or spelled otherwise than git spells it, and `bugs check --base` does
-not, so a root that a change made a symlink is judged at the directory the link names — under
-`stayfixed gate` that root is refused before any gate runs. `--base` is what the
-`bugs` gate passes, the base it judges against; a base git cannot list, one that shares no commit
-with `HEAD`, any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
-the merge base git sees be an older one, and any base in a clone git cannot say is shallow or
-not, fail (`1`) rather than read as a base with no ledger, and under a gate that is the gate not running:
-fetch the whole history (`fetch-depth: 0`). Without `--base` the tree alone is judged.
+merge bases include one from before the removal: restore it on the base.
+
+Each of those commits' ledger is read where that commit's own `stayfixed.toml` put it: its
+`[paths] bugs`, `bug_index` and `[ledger] id_prefix`, and nothing of how it judges an entry, so a
+base carrying an `evidence_boundary_required_for` level the ledger now refuses does not stop the
+change that corrects it. The copy is found and loaded as `stayfixed gate` finds and loads the
+base's: at the project root's path inside the repository, through the loader, against the tree's
+disk. So a root reached through a symlink, or spelled otherwise than git spells it, is refused
+(`2`) here as it is there. The entries are compared by file name with the tree's directory. A
+change that moves the ledger by `[paths]` answers for every entry it did not carry along, one that
+changes `id_prefix` answers for every entry under the old prefix, and a deleted ledger is named at
+the paths the base kept it at. A commit with no `stayfixed.toml` at the project's path is read at
+the tree's paths, as the change that adds the configuration decides for itself under `stayfixed
+gate`. A copy that does not load fails (`1`); one whose load meets a refusal, or whose `id_prefix`
+the identifiers refuse, refuses (`2`); neither is read as a base with no ledger. A refusal prints
+the base as data, and a refused prefix clipped to its first 120 characters and its length.
+
+`--base` is what the `bugs` gate passes, the base it judges against. A base git cannot list, one
+that shares no commit with `HEAD`, any base in a shallow clone, where the commits `HEAD` forked
+from can be cut off and the merge base git sees be an older one, and any base in a clone git
+cannot say is shallow or not, fail (`1`) rather than read as a base with no ledger; under a gate
+that is the gate not running: fetch the whole history (`fetch-depth: 0`). Without `--base` the
+tree alone is judged.
+
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
 walk stands in elsewhere. A file whose first 2 KiB carry `stayfixed:ledger:fixtures` holds sample
-identifiers and is neither scanned nor swept. A stale index is sent to `bugs index`, except the one
-a `bugs renumber OLD NEW` killed before its last write leaves: when `NEW` holds `OLD`'s text, or
-`OLD` is the pointer that move titles toward `NEW`, and the index is exactly the one rendered before
-the move, the line names `run: stayfixed bugs renumber OLD NEW`, which finishes it.
+identifiers and is neither scanned nor swept.
+
+A stale index is sent to `bugs index`, except the one a `bugs renumber OLD NEW` killed before its
+last write leaves: when `NEW` holds `OLD`'s text, or `OLD` is the pointer that move titles toward
+`NEW`, and the index is exactly the one rendered before the move, the line names `run: stayfixed
+bugs renumber OLD NEW`, which finishes it.
 
 **Writes** nothing.
 
@@ -3181,11 +3186,10 @@ are the trees `bugs check` sweeps for mentions of an identifier, each of which m
 entry behind it; `evidence_boundary_required_for` names the severities whose entries must carry
 a filled `**What this evidence does not establish:**` line, the template's placeholder not
 counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
-severities, `high`, `medium` and `low`, spelled as the table below spells it: a value that names
-none would require the line of no entry, so it is a refusal (`2`) of every command that reads the
-ledger, `bugs`, `plan check`, `memory refs`, `init` and `upgrade` among them, and never of
-`uninstall`, counted and not quoted. An empty list
-is the project asking it of no severity.
+severities, `high`, `medium` and `low`, spelled as the table below spells it. A value that names
+none would require the line of no entry, so it is a refusal (`2`), counted and not quoted, of
+every command that reads the ledger — `bugs`, `plan check`, `memory refs`, `init` and `upgrade`
+among them — and never of `uninstall`. An empty list is the project asking it of no severity.
 
 **The two ledger vocabularies**, neither of them configurable — they are the entry contract, and
 a value outside either is a finding (`1`) naming the file:

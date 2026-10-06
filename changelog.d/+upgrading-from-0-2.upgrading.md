@@ -40,7 +40,7 @@ differently. Each has its own entry in these notes, with the detail:
     `stayfixed.toml` kept it, so a change that moves the ledger by `[paths]` or changes
     `[ledger] id_prefix` answers for every base entry it does not carry along, and a base whose
     `stayfixed.toml` does not load fails the check (exit 1), and one whose load meets a refusal or
-    whose `id_prefix` the ledger refuses refuses it (exit 2), where both passed (Fixed,
+    whose `id_prefix` the ledger refuses is refused (exit 2), where both passed (Fixed,
     "`stayfixed bugs check --base`, and the `bugs` gate under `stayfixed gate`, now read").
   - A `[ledger] evidence_boundary_required_for` value that is not `high`, `medium` or `low`,
     which 0.2.0 loaded and enforced nothing for, is refused (exit 2) by `stayfixed bugs`, `plan

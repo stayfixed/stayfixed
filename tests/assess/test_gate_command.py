@@ -860,14 +860,14 @@ def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
     )
 
 
-def test_a_project_root_a_change_made_a_symlink_is_refused_before_the_bugs_gate_runs(
+def test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check(
     tmp_path: Path,
 ) -> None:
-    # `bugs check --base` finds the base's `stayfixed.toml` where git puts the root, so a change
-    # that turns the project's directory into a link to a copy without an entry is judged at the
-    # copy, where the base has nothing: that run passes. Under `stayfixed gate` the root is asked
-    # about first, and one reached through a symlink is refused before any gate runs, so the
-    # deletion cannot pass the workflow. `docs/cli.md` says which of the two does what. Mutation:
+    # A change that turns the project's directory into a link to a copy without an entry: read
+    # where git puts the root, the base's `stayfixed.toml` is looked for at the copy, where the
+    # base has none, and `bugs check --base` passed the deletion as the bootstrap. Both readers
+    # find the copy the one way now (`committed.committed_document`), and a root reached through
+    # a symlink is refused by `stayfixed gate` and `bugs check --base` alike. Mutation:
     # `mutations/`, "a project root reached through a symlink reads the base at a path it never
     # had".
     enforced = BASE.replace('["docs"]', '["bugs"]')
@@ -896,6 +896,8 @@ def test_a_project_root_a_change_made_a_symlink_is_refused_before_the_bugs_gate_
     (project / "proj").symlink_to("other", target_is_directory=True)
     commit(project, "chore: the project as a link to a copy without BR-002")
     code, out, err = cli(project / "proj", tmp_path, "gate", "--builtin", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
+    code, out, err = cli(project / "proj", tmp_path, "bugs", "check", "--base", base)
     assert code == 2 and "symlink" in err, (out, err)
 
 

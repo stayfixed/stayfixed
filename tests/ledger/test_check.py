@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import committed
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -376,20 +377,75 @@ def test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_th
 ) -> None:
     # A listing that failed listed nothing, which is what a fork with no `stayfixed.toml` lists:
     # read that way, the base would be compared at the tree's paths, which is the bootstrap's
-    # answer and not this one. Mutation: `mutations/`, "a listing of the base's stayfixed.toml
-    # git refused reads as the bootstrap".
+    # answer and not this one. The failure names the file it could not read, not the ledger's
+    # paths. Mutations: `mutations/`, "git failing to read the base is read as the base having no
+    # stayfixed.toml" and "an unread fork configuration is named by the ledger's paths".
     root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
     config = _moved(root, tmp_path, ("BR-001",))
     real = git_run
 
     def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        if args[:1] == ("ls-tree",) and args[-1] == "stayfixed.toml":
+        if "ls-tree" in args and args[-1] == "stayfixed.toml":
+            return 128, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(committed, "git_run", refused)
+    with pytest.raises(Failure, match="proved nothing") as raised:
+        check.bugs_gate(root, config, base)
+    assert "hold of stayfixed.toml is unknown" in str(raised.value)
+
+
+@needs_git
+def test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledger_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # After a `[paths]` move the failing listing asked about the base's paths, not the tree's,
+    # and the message names what it asked about. Mutation: `mutations/`, "an unread fork
+    # listing is named by the tree's paths".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    config = _moved(root, tmp_path, ("BR-001",))
+    real = git_run
+
+    def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("ls-tree", "-r"):
             return 128, ""
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(check, "git_run", refused)
-    with pytest.raises(Failure, match="proved nothing"):
+    with pytest.raises(Failure) as raised:
         check.bugs_gate(root, config, base)
+    assert "hold of docs/bugs and docs/bug-reports.md is unknown" in str(raised.value)
+
+
+@needs_git
+def test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal(tmp_path: Path) -> None:
+    # `--base` is the caller's, and a ref holding an escape sequence reached the terminal raw.
+    # It is printed through `printed.quoted`, as every name in a refusal is. Mutation:
+    # `mutations/`, "an unread base is named raw".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    with pytest.raises(Failure) as raised:
+        check.bugs_gate(root, config, "nowhere\x1b[31m")
+    assert "\x1b" not in str(raised.value)
+    assert "'nowhere\\x1b[31m'" in str(raised.value)
+
+
+@needs_git
+def test_a_base_prefix_the_ledger_refuses_is_clipped_where_it_is_named(tmp_path: Path) -> None:
+    # The base's prefix is the base's own text, of any length: named in full, five thousand
+    # characters of it reached the line. It is clipped as every repository-chosen name in a
+    # refusal is. Mutation: `mutations/`, "a base prefix the ledger refuses is named whole".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    long = "B" * 5000
+    (root / "stayfixed.toml").write_text(
+        CONFIG + f'\n[ledger]\nid_prefix = "{long}"\n', encoding="utf-8"
+    )
+    git(root, "commit", "-qam", "a prefix the ledger refuses")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    with pytest.raises(Refusal) as raised:
+        check.bugs_gate(root, config, base)
+    assert "…(5000 chars)" in str(raised.value)
+    assert long not in str(raised.value)
 
 
 @needs_git

@@ -1222,7 +1222,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return register_gate(root, config, bug_register(config), base, registered=located_bug_register)"
+before = "    return register_gate(root, config, bug_register(config), base, locate=located_bug_register)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -1381,7 +1381,7 @@ reddens = ["tests/docs/test_hygiene.py::test_a_text_of_unclosed_links_is_read_in
 [[mutation]]
 name = "the uninitialised arm ignores the base's ledger"
 file = "src/stayfixed/ledger/check.py"
-before = "    if base is not None and base.carried:"
+before = "    if base is not None and base.place is not None:"
 after = "    if False:"
 reddens = [
   "tests/ledger/test_check.py::test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding",
@@ -1476,14 +1476,10 @@ reddens = [
 [[mutation]]
 name = "bugs check answers beside the bugs gate rather than through it"
 file = "src/stayfixed/ledger/commands.py"
-before = '''    from stayfixed.ledger.check import bugs_gate, uninitialised
-
-    root, config = root_and_config(args)
-    # The `bugs` gate itself, so this command and a gate run cannot disagree.
+before = '''    # The `bugs` gate itself, so this command and a gate run cannot disagree.
     found = bugs_gate(root, config, args.base or "")'''
-after = '''    from stayfixed.ledger.check import register_gate, uninitialised
+after = '''    from stayfixed.ledger.check import register_gate
 
-    root, config = root_and_config(args)
     found = register_gate(root, config, bug_register(config), args.base or "")'''
 reddens = [
   "tests/ledger/test_commands.py::test_check_answers_with_the_bugs_gate_s_own_function",
@@ -1881,11 +1877,9 @@ reddens = [
 name = "the base's ledger is listed at its tip, not where the change forked from it"
 file = "src/stayfixed/ledger/check.py"
 before = """    forks = fork_points(root, base)
-    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+    if isinstance(forks, ForkUnknown):"""
 after = """    forks = [base]
-    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+    if isinstance(forks, ForkUnknown):"""
 reddens = [
   "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
   "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_had_a_ledger_deleted_none",
@@ -1912,9 +1906,9 @@ reddens = [
 name = "a fork point that is not known reads as a base with no ledger"
 file = "src/stayfixed/ledger/check.py"
 before = """    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+        raise _unread(register, base, root, forks.cause, _paths(register))"""
 after = """    if isinstance(forks, ForkUnknown):
-        return _BaseLedger(False, ())"""
+        return _BaseLedger((), None)"""
 reddens = [
   "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
   "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
@@ -1927,9 +1921,9 @@ reddens = [
 name = "a listing git refuses reads as a base with no ledger"
 file = "src/stayfixed/ledger/check.py"
 before = """        if code != 0:
-            raise unread(ForkUnknown.of(code))"""
+            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"""
 after = """        if False:
-            raise unread(ForkUnknown.of(code))"""
+            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"""
 reddens = [
   "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger",
 ]
@@ -2160,8 +2154,8 @@ reddens = [
 [[mutation]]
 name = "an unread base names the bugs gate whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "                name=register.name,"
-after = '                name="bugs",'
+before = '            what=what, name=register.name, base=quoted(base), root=root, cause=cause'
+after = '            what=what, name="bugs", base=quoted(base), root=root, cause=cause'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]
@@ -2289,8 +2283,8 @@ reddens = [
 [[mutation]]
 name = "the base's entries are listed at the tree's paths again"
 file = "src/stayfixed/ledger/check.py"
-before = "        if registered is not None:"
-after = "        if False:"
+before = "        held = register if locate is None else locate(fork)"
+after = "        held = register"
 reddens = [
   "tests/ledger/test_check.py::test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it",
   "tests/assess/test_gate_command.py::test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs",
@@ -2310,10 +2304,11 @@ reddens = [
 [[mutation]]
 name = "a base copy whose load meets a refusal is read at the tree's paths"
 file = "src/stayfixed/ledger/check.py"
-before = '''    except Refusal as exc:
-        raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None'''
-after = '''    except Refusal:
-        return register'''
+before = """    except Refusal as exc:
+        refused = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=exc)
+        raise Refusal(refused) from None"""
+after = """    except Refusal:
+        return register"""
 reddens = [
   "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[refused]",
 ]
@@ -2321,10 +2316,10 @@ reddens = [
 [[mutation]]
 name = "a fork point with no stayfixed.toml fails the ledger's base comparison"
 file = "src/stayfixed/ledger/check.py"
-before = '''    if not listed:
-        return register'''
-after = '''    if not listed:
-        raise unread(ForkUnknown.of(1))'''
+before = """    if raw is None:
+        return register"""
+after = """    if raw is None:
+        raise failed(1)"""
 reddens = [
   "tests/ledger/test_check.py::test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths",
 ]
@@ -2341,21 +2336,10 @@ reddens = [
 [[mutation]]
 name = "a base copy whose prefix is refused is said to have met a refusal on load"
 file = "src/stayfixed/ledger/check.py"
-before = "        raise Refusal(FORK_UNPLACED.format(base=base, name=register.name, reason=exc)) from None"
-after = "        raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None"
+before = "        unplaced = FORK_UNPLACED.format(base=quoted(base), name=register.name, prefix=prefix_named)"
+after = "        unplaced = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=prefix_named)"
 reddens = [
   "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[prefix-refused]",
-]
-
-[[mutation]]
-name = "a listing of the base's stayfixed.toml git refused reads as the bootstrap"
-file = "src/stayfixed/ledger/check.py"
-before = '''    code, listed = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", CONFIG_FILE)
-    if code != 0:
-        raise unread(ForkUnknown.of(code))'''
-after = '''    code, listed = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", CONFIG_FILE)'''
-reddens = [
-  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
 ]
 
 # Locating the base's ledger needs its paths and identifiers and nothing of how it judges an
@@ -2364,8 +2348,8 @@ reddens = [
 [[mutation]]
 name = "the base's ledger is located by a register that judges entries"
 file = "src/stayfixed/ledger/check.py"
-before = "    return register_gate(root, config, bug_register(config), base, registered=located_bug_register)"
-after = "    return register_gate(root, config, bug_register(config), base, registered=bug_register)"
+before = "    return register_gate(root, config, bug_register(config), base, locate=located_bug_register)"
+after = "    return register_gate(root, config, bug_register(config), base, locate=bug_register)"
 reddens = [
   "tests/ledger/test_check.py::test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_that_corrects_it",
 ]
@@ -2373,16 +2357,63 @@ reddens = [
 [[mutation]]
 name = "a removed ledger is named at the tree's paths"
 file = "src/stayfixed/ledger/check.py"
-before = "        directory, index = base.place or (register.directory, register.index)"
+before = "        directory, index = base.place"
 after = "        directory, index = register.directory, register.index"
 reddens = [
   "tests/ledger/test_check.py::test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it",
 ]
 
 [[mutation]]
+name = "bugs check --base judges a root reached through a symlink at the link's target"
+file = "src/stayfixed/ledger/commands.py"
+before = "        repository_prefix(Path(args.root).absolute())"
+after = "        pass"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check",
+]
+
+# What a base refusal prints is the caller's base through `printed.quoted`, the base's own prefix
+# through `printed.clipped`, and the paths the failing read asked about.
+[[mutation]]
+name = "an unread base is named raw"
+file = "src/stayfixed/ledger/check.py"
+before = "            what=what, name=register.name, base=quoted(base), root=root, cause=cause"
+after = "            what=what, name=register.name, base=base, root=root, cause=cause"
+reddens = [
+  "tests/ledger/test_check.py::test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal",
+]
+
+[[mutation]]
+name = "a base prefix the ledger refuses is named whole"
+file = "src/stayfixed/ledger/check.py"
+before = "        prefix_named = clipped(copy.ledger.id_prefix)"
+after = "        prefix_named = copy.ledger.id_prefix"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_prefix_the_ledger_refuses_is_clipped_where_it_is_named",
+]
+
+[[mutation]]
+name = "an unread fork configuration is named by the ledger's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "        return _unread(register, base, root, ForkUnknown.of(code).cause, CONFIG_FILE)"
+after = "        return _unread(register, base, root, ForkUnknown.of(code).cause, _paths(register))"
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
+]
+
+[[mutation]]
+name = "an unread fork listing is named by the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"
+after = "            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(register))"
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledger_at",
+]
+
+[[mutation]]
 name = "the base's copy reads the default machine file"
 file = "src/stayfixed/ledger/check.py"
-before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=config.personal)"
+before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)"
 after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)"
 reddens = [
   "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
