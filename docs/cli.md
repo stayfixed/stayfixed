@@ -2697,8 +2697,26 @@ command, the file is also reported as one that could not be read, since that sha
 measured; so is an entry object where a group goes, and a command claiming the stayfixed marker
 inside any such part is `red`. That is a conservative reading and not a measurement: whether a
 harness runs a command there is not known. An entry is named by its place among every element
-of its list, skipped scalars included, so `entry 5 of 5` is where you find it. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no
-measurement covers, is read as strictly as the merge that rewrites it.
+of its list, skipped scalars included, so `entry 5 of 5` is where you find it. Only Claude Code's
+settings files are read this way: `.codex/hooks.json`, which no measurement covers, is read as
+strictly as the merge that rewrites it.
+
+`hook-entries` walks settings files and nothing else, and Claude Code can load hooks from three
+more places a repository can commit. What was measured of each, with Claude Code 2.1.288 on macOS
+(2026-10-05, `claude -p` in a scratch project under a configuration directory of its own, with no
+login, so no model call ran):
+
+| Source | What ran |
+|---|---|
+| A plugin a committed `.claude/settings.json` requests, through `extraKnownMarketplaces` (a local directory) and `enabledPlugins` | no hook of the plugin ran, in two sessions, and nothing was installed |
+| A project skill's `SKILL.md` frontmatter `hooks` | none on a plain prompt; its `UserPromptSubmit` hook ran when the prompt invoked the skill by name (`/<skill>`) |
+| A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
+
+So a skill a repository commits does run its own hooks once it is invoked, and `hook-entries`
+does not read them; whether the model can invoke a skill, and so run them, without a person
+asking was not measured, because no model call ran. The plugin and agent rows held under that
+same limit, and say nothing about a logged-in session that has accepted the repository's trust
+prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
