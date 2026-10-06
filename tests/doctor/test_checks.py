@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed import REPOSITORY_URL
+from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -317,6 +317,21 @@ def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path
     )
     assert "stayfixed docs check" in row.remedy
     assert "Error" not in row.detail + row.remedy
+
+
+def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path: Path) -> None:
+    # `tomllib` raises a plain `ValueError` for an integer longer than the interpreter converts,
+    # and the loader caught only `TOMLDecodeError` and `RecursionError`: the whole report ended in
+    # `internal error: ValueError`, exit 2. It is a file that does not load, like any other.
+    # Mutation (declared): `ValueError` dropped from `UNPARSEABLE`.
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(f"[stayfixed]\nx = {LONG_NUMBER}\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root), "not-initialised")
+    assert (row.status, row.detail) == (
+        "red",
+        "stayfixed.toml is here and does not load, so nothing else can be checked against it",
+    )
 
 
 # The report's sixteen names in the report's order, written out rather than read back from the
@@ -1346,11 +1361,38 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
     _past_a_name(tmp_path, root / link)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     blinded = UNCHECKABLE_SETTINGS[link]
+    # A `.claude` past a name hides the project's skills too, and the row names them as well.
+    skills = f"; 1 {SKILL_UNREAD}: .claude/skills" if link == ".claude" else ""
+    remedy = f"; {SKILL_UNREAD_REMEDY}" if link == ".claude" else ""
     assert row == Check(
         "hook-entries",
         WARN,
         f"0 stayfixed entr(ies), 0 foreign; {len(blinded)} settings file(s) exist and could not be "
-        f"read as hook entries, so nothing here accounts for what is in them: {', '.join(blinded)}",
+        f"read as hook entries, so nothing here accounts for what is in them: {', '.join(blinded)}"
+        f"{skills}",
+        f"check that each file named above is readable and is valid JSON{remedy}",
+    )
+
+
+def test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Read through `fsops.read_regular_bytes`, as every other reader of a committed file is, so a
+    # regular file that never ends is refused at the cap rather than read until memory runs out,
+    # and named as a file the walk could not read. The cap is lowered so the case is small.
+    # Mutation (oracle): `mutations/`'s "hook-entries reads a settings file past the cap" -> the
+    # file is read and the row is green.
+    limit = 32 * 1024
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text('{"hooks": {}, "pad": "' + "x" * limit + '"}')
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        "0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as hook "
+        "entries, so nothing here accounts for what is in them: .claude/settings.json",
         "check that each file named above is readable and is valid JSON",
     )
 
@@ -1380,6 +1422,205 @@ def test_a_settings_path_that_names_no_file_is_skipped_as_before(
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
         "hook-entries", OK, "0 stayfixed entr(ies), 0 foreign; all accounted for", ""
+    )
+
+
+def test_an_entry_is_numbered_across_every_list_in_its_file(tmp_path: Path) -> None:
+    # The place an entry is named by counts every element of every group's `hooks` list in the
+    # file, in document order, and `docs/cli.md` says so: a marked entry that is the only one of
+    # a second event's list is entry 2 of 2, not 1 of 1. Mutation (oracle): `mutations/`'s "the
+    # live walk numbers each list from one" -> it is named entry 1 of 1.
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [{"hooks": [{"type": "command", "command": "echo hi"}]}],
+                    "PostToolUse": [
+                        {"hooks": [{"type": "command", "command": "true  # stayfixed:forged-1"}]}
+                    ],
+                }
+            }
+        ),
+        "utf-8",
+    )
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row.status == RED
+    assert row.detail.endswith(": .claude/settings.json entry 2 of 2"), row.detail
+
+
+# What the row says of a project skill whose frontmatter declares hooks, and of one it could not
+# read, and the way out of each.
+SKILL_HOOKS = "project skill(s) declare hooks in their frontmatter, which this row does not judge"
+SKILL_HOOKS_REMEDY = (
+    "open each skill named above and check the hooks its frontmatter declares: Claude Code runs "
+    "them once the skill is invoked"
+)
+SKILL_UNREAD = (
+    "project skill file(s) could not be read, so this row cannot say whether they declare hooks"
+)
+SKILL_UNREAD_REMEDY = "check that each skill file named above is a readable regular file"
+NO_SKILL_ENTRIES = "0 stayfixed entr(ies), 0 foreign"
+
+
+def _skill(root: Path, name: str, content: str | bytes) -> Path:
+    path = root / ".claude" / "skills" / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, str):
+        path.write_text(content, "utf-8")
+    else:
+        path.write_bytes(content)
+    return path
+
+
+SKILL_WITH_HOOKS = (
+    "---\nname: probe\ndescription: a probe\nhooks:\n  UserPromptSubmit:\n    - hooks:\n"
+    "        - type: command\n          command: touch ran\n---\nThe body.\n"
+)
+
+
+def test_a_project_skill_declaring_hooks_is_a_warning_naming_it(tmp_path: Path) -> None:
+    # Claude Code ran a hook a project skill's frontmatter declared once the skill was invoked
+    # (measured on 2.1.288, 2026-10-06), and this row judges settings files alone, so a skill
+    # declaring hooks is named as one it does not judge: a warning, never a red. Mutations
+    # (oracle): `mutations/`'s "hook-entries reads no project skill" -> the row is green; "a
+    # skill declaring hooks makes hook-entries red" -> red.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", SKILL_WITH_HOOKS)
+    _skill(root, "plain", "---\nname: plain\ndescription: no hooks\n---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_a_skill_declaring_hooks_never_softens_a_red_row(tmp_path: Path) -> None:
+    # A warning beside a red finding: the row stays red, its remedy the red finding's. Mutation
+    # (oracle): `mutations/`'s "a skill declaring hooks outranks a red finding's remedy" -> the
+    # remedy is the skill's.
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text('{"hooks": ' + NESTED + "}", "utf-8")
+    _skill(root, "probe", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        RED,
+        f"{NO_SKILL_ENTRIES}; 1 {UNCHECKABLE}: .claude/settings.json; 1 {SKILL_HOOKS}: "
+        ".claude/skills/probe/SKILL.md",
+        UNCHECKABLE_REMEDY,
+    )
+
+
+def test_a_skill_name_outside_the_path_grammar_is_withheld(tmp_path: Path) -> None:
+    # The directory name is the repository's, so it prints through `printed.printable`: a line
+    # break followed by `::error::` in it is a workflow command in a CI log. Mutation (oracle):
+    # `mutations/`'s "hook-entries prints a skill's name whole" -> the name is printed.
+    root = _initialised(tmp_path)
+    _skill(root, "probe\n::error::forged", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: a skill whose name this row does not print",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+# Skills this row says nothing about: the frontmatter declares no hooks, `hooks:` sits where no
+# top-level key does, or the frontmatter is not one (unterminated, absent, not text), and a skill
+# directory with no `SKILL.md`.
+NO_DECLARED_HOOKS: dict[str, str | bytes] = {
+    "no-hooks": "---\nname: plain\ndescription: hooks: in a value\n---\nThe body.\n",
+    "nested-key": "---\nname: plain\nmetadata:\n  hooks: x\n---\nThe body.\n",
+    "a-longer-key": "---\nname: plain\nhooksmith: x\n---\nThe body.\n",
+    "in-the-body": "---\nname: plain\n---\nhooks:\n  UserPromptSubmit: []\n",
+    "unterminated": "---\nname: plain\nhooks:\n  UserPromptSubmit: []\n",
+    "no-frontmatter": "hooks:\n  UserPromptSubmit: []\n---\n",
+    "a-fence-not-first": "\n---\nhooks: x\n---\n",
+    "empty": "",
+    "a-lone-fence": "---",
+    "not-text": b"\xff\xfe\x00---\nname\xff\n---\n",
+}
+
+
+@pytest.mark.parametrize("shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file"])
+def test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was(tmp_path: Path, shape: str) -> None:
+    # The vacuity guard for the warning: only a top-level `hooks:` key line inside a frontmatter
+    # closed by its second `---` line is one. Mutations (oracle): `mutations/`'s "a skill's
+    # frontmatter runs past its closing fence" -> "in-the-body"; "a skill's frontmatter reads an
+    # indented hooks key" -> "nested-key"; "a skill's frontmatter reads any key opening with
+    # hooks" -> "a-longer-key"; "an unterminated frontmatter is read to the end" ->
+    # "unterminated"; "a skill directory without SKILL.md is unreadable" -> "no-skill-file".
+    root = _initialised(tmp_path)
+    if shape == "no-skill-file":
+        (root / ".claude" / "skills" / "empty").mkdir(parents=True)
+    else:
+        _skill(root, "plain", NO_DECLARED_HOOKS[shape])
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -> None:
+    # Read past what a text editor puts there, so a skill saved on Windows is not one this row
+    # passes over. Mutation (oracle): `mutations/`'s "a skill's frontmatter keeps its byte-order
+    # mark" -> the row is green.
+    root = _initialised(tmp_path)
+    content = chr(0xFEFF) + SKILL_WITH_HOOKS.replace("\n", "\r\n")
+    _skill(root, "probe", content)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+    )
+
+
+@pytest.mark.parametrize("target", ["/dev/zero", "a-directory"])
+def test_a_skill_file_that_is_no_regular_file_is_refused_and_named(
+    tmp_path: Path, target: str
+) -> None:
+    # Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to
+    # `/dev/zero` is refused unread, not read forever, and named as a skill file this row could not
+    # read, a warning. Mutation (oracle): `mutations/`'s "hook-entries passes over a skill file
+    # it cannot read" -> the row is green.
+    root = _initialised(tmp_path)
+    path = root / ".claude" / "skills" / "probe" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    if target == "a-directory":
+        path.mkdir()
+    else:
+        path.symlink_to(target)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills/probe/SKILL.md",
+        SKILL_UNREAD_REMEDY,
+    )
+
+
+def test_a_skills_directory_that_cannot_be_listed_is_named(tmp_path: Path) -> None:
+    # A directory this row cannot list may hold any skill, so it is named in the skill files' own
+    # words, and one that names nothing is passed over (the "empty" and "no-skill-file" cases).
+    # Mutation (oracle): `mutations/`'s "hook-entries passes over a skills directory it cannot
+    # list" -> the row is green.
+    root = _initialised(tmp_path)
+    skills = root / ".claude" / "skills"
+    _skill(root, "probe", SKILL_WITH_HOOKS)
+    skills.chmod(0)
+    try:
+        row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    finally:
+        skills.chmod(0o755)
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills",
+        SKILL_UNREAD_REMEDY,
     )
 
 

@@ -43,7 +43,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.presets import load_preset
+from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
 # Where `tomllib` stopped, and nothing else it had to say. Every `TOMLDecodeError` this
@@ -62,9 +62,16 @@ NO_POSITION = "(at a position tomllib did not report)"
 # `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
 # thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
 # Uncaught, that is an internal error, the class stayfixed keeps for its own defects, and in a
-# gate run it ended every gate. Every reader of a document somebody else wrote catches both.
-UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)
+# gate run it ended every gate. And an integer literal longer than the interpreter converts
+# (4,300 digits by default, `sys.get_int_max_str_digits`) is valid TOML that `tomllib` answers with
+# a plain `ValueError`, which is not a `TOMLDecodeError`: one line of a committed file ended
+# `doctor`, `gate` and `init` the same way. Every reader of a document somebody else wrote catches
+# all three. `ValueError` is caught whole, `TOMLDecodeError` being one: no reader's `try` holds
+# anything else that raises it but a decode, whose `UnicodeDecodeError` it catches first or
+# answers as it answers a record that does not parse.
+UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)
 TOO_DEEP = "(nested deeper than the parser reads)"
+TOO_LONG = "(holds a number longer than the parser converts)"
 SECTIONS = (
     "stayfixed",
     "project",
@@ -108,6 +115,16 @@ GATES_PARTIAL = (
 
 T = TypeVar("T")
 
+# A named cap: every integer a configuration key holds is below it. `tomllib` converts a hex,
+# octal or binary literal of any length (a power-of-two base is exempt from the interpreter's
+# 4,300-digit limit), and a decimal of 401 digits is inside that limit, so a key checked only for
+# `<= 0` handed its reader a number no `str` could print or no `float` could hold: `[gates]
+# custom_timeout_seconds` ended `assess` and `gate` in an internal error. 2**31 is what a signed
+# 32-bit count holds, far above any budget, cap or timeout a project writes (the preset's largest
+# integer is `memory_index_bytes = 25600`), and below what every reader of one handles: `str`,
+# `float`, a comparison. No shipped file states it.
+INTEGER_LIMIT = 2**31
+
 
 class ConfigError(Failure):
     """A stayfixed.toml that cannot be trusted as written."""
@@ -133,7 +150,7 @@ class MachineConfigError(ConfigError):
     """
 
 
-def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
+def toml_position(exc: tomllib.TOMLDecodeError | RecursionError | ValueError) -> str:
     """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
 
     One extractor for every caller in this package that reports a document it did not write,
@@ -144,10 +161,14 @@ def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
     A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
     stopped appending a position would otherwise take this guard with it silently, which is the
     shape every other bounded value in this file refuses. A document nested past the parser's
-    recursion has no position, and says so.
+    recursion has no position, and says so; so does one holding a number past the conversion
+    limit, whose own message would tell the reader to raise a process-wide limit rather than fix a
+    file somebody else wrote.
     """
     if isinstance(exc, RecursionError):
         return TOO_DEEP
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
     found = _TOML_POSITION.search(str(exc))
     return found.group(0) if found is not None else NO_POSITION
 
@@ -280,9 +301,7 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 raise ConfigError(f"{name}.{key} must be true or false")
             coerced[key] = value
         elif annotation is int:
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ConfigError(f"{name}.{key} must be a positive integer")
-            coerced[key] = value
+            coerced[key] = _positive(f"{name}.{key}", value)
         elif annotation is str:
             if not isinstance(value, str):
                 raise ConfigError(f"{name}.{key} must be a string")
@@ -294,6 +313,16 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 "the loader coerces tuple[str, ...], bool, int and str"
             )
     return cls(**coerced)
+
+
+def _positive(key: str, value: object) -> int:
+    """`value` when it is a positive integer below `INTEGER_LIMIT`; a `ConfigError` naming `key`
+    otherwise. Never the value: a number that large is the one no message could print."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{key} must be a positive integer")
+    if value >= INTEGER_LIMIT:
+        raise ConfigError(f"{key} must be a positive integer below {INTEGER_LIMIT:,}")
+    return value
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -420,8 +449,7 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     if unknown:
         raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
     for key, value in configured.items():
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise ConfigError(f"budgets.{key} must be a positive integer")
+        _positive(f"budgets.{key}", value)
     return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
 
 
@@ -533,7 +561,11 @@ def loads(
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "stayfixed")
-    preset_name = str(head.get("preset", "recommended"))
+    # Asked before anything spells it: a hex literal of any length converts, and its `str`
+    # raises past 4,300 digits.
+    preset_name = head.get("preset", "recommended")
+    if not isinstance(preset_name, str):
+        raise ConfigError(f"stayfixed.preset must be a string; {available()}")
     preset = load_preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}

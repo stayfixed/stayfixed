@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from stayfixed import fsops
 from stayfixed.attach.binding import (
     Binding,
     cannot_exist,
@@ -40,11 +41,13 @@ from stayfixed.attach.binding import (
 )
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.harnesses import CLAUDE
+from stayfixed.jsonobject import WRITTEN_PAST
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
-from stayfixed.scaffold import EntriesError, mark, settings_object
+from stayfixed.scaffold import EntriesError, ParserLimitError, mark, settings_object, settings_text
 
 # The project-local file `attach` owns outright, as the harness registry names it: the one file
 # Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
@@ -96,8 +99,12 @@ def settings_document(text: str) -> dict[str, Any]:
     return settings_object(text, LOCAL_SETTINGS)
 
 
-def _read(path: Path, *, share: Path | None = None) -> str:
+def _read(path: Path, *, share: Path | None = None, label: str | None = None) -> str:
     """A file's text, or an empty string when there is no such file.
+
+    `label` is how a refusal names the file, for one the project names: the project's own
+    `.claude/settings.local.json` is named as such and never by the machine's absolute path,
+    as `attach.write` names `.gitignore` and the ledger. An overlay source keeps its path.
 
     `share` is for the overlay's sources under `projects/<name>/` and nothing else, and names that
     directory: a path its spelling rules out (`binding.cannot_exist`) is a file the overlay does not
@@ -113,15 +120,18 @@ def _read(path: Path, *, share: Path | None = None) -> str:
     of that file.
     """
     try:
-        return path.read_text(encoding="utf-8")
+        # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a path
+        # a clone can commit, and a link there to `/dev/zero` read until memory ran out, one to a
+        # FIFO waited for a writer. Anything else is a file that cannot be read.
+        return read_regular_text(path)
     except FileNotFoundError:
         return ""
     except OSError as exc:
         if share is not None and cannot_exist(exc) and _names_no_directory(share):
             return ""
-        raise Failure(f"{path} cannot be read: {exc}") from exc
+        raise Failure(f"{label or path} cannot be read: {said(exc)}") from exc
     except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+        raise Failure(f"{label or path} is not UTF-8 text") from None
 
 
 def _names_no_directory(share: Path) -> bool:
@@ -299,7 +309,7 @@ def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, 
 
 def local_document(root: Path) -> str:
     """The project's own `settings.local.json`, or an empty string when it has none."""
-    return _read(root / LOCAL_SETTINGS)
+    return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)
 
 
 def _commands(document: str, label: str) -> set[str]:
@@ -318,6 +328,27 @@ def _commands(document: str, label: str) -> set[str]:
     return found
 
 
+# Room for the one key the settings fallback adds to the text `attach` writes back after the merge:
+# the key's name and a path, and no path a filesystem resolves passes 4,096 bytes.
+_FALLBACK_ROOM = 8 * 1024
+
+
+def _refuse_unless_written_back(document: str) -> None:
+    """Refuse a settings document whose write-back the next read would refuse.
+
+    `attach` writes the file back indented -- the merge, and the settings fallback after the
+    links -- and a short document many levels deep grows by its depth on every line: 12 KB six
+    thousand lists deep is 72 MB, past `fsops.REGULAR_READ_LIMIT`, so the read after the write
+    refused, after every other write of the run, and so did every `detach` after it. Asked where
+    `attach` and `--check` both read the file, so the two answer alike and `attach` answers before
+    its first write; and of every document, whether or not this run writes it back, since a later
+    run that adds one rule would.
+    """
+    text = settings_text(settings_document(document), LOCAL_SETTINGS)
+    if len(text) + _FALLBACK_ROOM > fsops.REGULAR_READ_LIMIT:
+        raise ParserLimitError(f"{LOCAL_SETTINGS} {WRITTEN_PAST}")
+
+
 def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     """What attaching `binding` would add to `root`, without writing a byte."""
     # This line is the whole of the committed-settings rule in the module docstring:
@@ -329,7 +360,9 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
         for rule in _allow_rules(_read(source, share=share), source)
     ]
     document = local_document(root)
-    held = set(_allow_rules(document, root / LOCAL_SETTINGS))
+    _refuse_unless_written_back(document)
+    # Named by its project path, as every refusal of the project's own settings file is.
+    held = set(_allow_rules(document, Path(LOCAL_SETTINGS)))
     present = _commands(document, LOCAL_SETTINGS)
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))

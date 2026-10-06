@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from stayfixed.errors import Refusal
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import json_object, json_text
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
@@ -83,6 +83,12 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
     return found
 
 
+def _past_parser(label: str) -> Callable[[str], ParserLimitError]:
+    """The refusal for a settings document past a limit of the parser, named by `label`: a kind of
+    its own, for the reason `ParserLimitError` gives."""
+    return lambda clause: ParserLimitError(f"{label} {clause}")
+
+
 def settings_object(
     document: str, label: str = _DOCUMENT, *, numbers: Callable[[str], object] = int
 ) -> dict[str, Any]:
@@ -102,8 +108,23 @@ def settings_object(
         document,
         label,
         error=EntriesError,
-        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
+        limit=_past_parser(label),
         numbers=numbers,
+    )
+
+
+def settings_text(raw: dict[str, Any], label: str = _DOCUMENT, *, sort_keys: bool = False) -> str:
+    """A settings document `settings_object` read, as the indented text written back, or the
+    refusal `settings_object` gives a document nested past the parser: see `jsonobject.json_text`
+    for why one the parser read can still be too deep to write. Public for `attach`, which writes
+    the settings file it merges into by this rule too."""
+    return json_text(
+        raw,
+        label,
+        error=EntriesError,
+        limit=_past_parser(label),
+        indent=2,
+        sort_keys=sort_keys,
     )
 
 
@@ -163,11 +184,17 @@ def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any], dict[str
     than the interpreter converts must not keep a reader from the entries beside it. A settings
     file is one a clone can commit, and the harness reads such a number.
     """
-    raw = settings_object(document, numbers=str)
+    raw = _entry_document(document)
     for event in _hooks_table(raw):
         for group in _groups(raw, event):
             for entry in _entries_of(group):
                 yield event, group, entry
+
+
+def _entry_document(document: str) -> dict[str, Any]:
+    """The settings document as every walk for entries reads it: integers as their text, for the
+    reason `_read_entries` gives."""
+    return settings_object(document, numbers=str)
 
 
 def owned_ids(document: str) -> dict[str, str]:
@@ -220,18 +247,112 @@ def placed_entries(document: str) -> list[Placed]:
     is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
-    found: list[Placed] = []
-    for event, group, entry in _read_entries(document):
-        command = entry.get("command")
-        text = command if isinstance(command, str) else ""
-        found.append(Placed(event, _matcher(group), text))
-    return found
+    return [_placed(event, group, entry) for event, group, entry in _read_entries(document)]
 
 
-def entry_commands(document: str) -> list[str]:
-    """`placed_entries`' commands alone, in its order, for a reader that asks only whether an
-    entry claims the marker."""
-    return [placed.command for placed in placed_entries(document)]
+def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
+    """One entry as `Placed` holds it: one place for every walk, so a grant read back through
+    `placed_entries` and an entry `live_entries` reads are compared in the same terms."""
+    command = entry.get("command")
+    text = command if isinstance(command, str) else ""
+    return Placed(event, _matcher(group), text)
+
+
+@dataclass(frozen=True)
+class Walked:
+    """What a walk for live hook entries read out of a settings document.
+
+    `entries` holds each entry it read with its place, 1-based, among `places`: every element of
+    every group's `hooks` list, read or skipped, in document order, so a reader names an entry
+    where a person opening the file finds it. `partly` is whether it skipped a part that could
+    hold a command; `hidden`, whether a command claiming the stayfixed marker sits in such a part.
+    """
+
+    entries: tuple[tuple[int, Placed], ...]
+    places: int
+    partly: bool
+    hidden: bool
+
+
+def _admitted(value: object, kind: type, skipped: list[object]) -> bool:
+    """Whether `value` is the `kind` the walk reads at its place in the `hooks` section.
+
+    The measured rule, stated once: a scalar where a list or an object belongs holds no command
+    and is skipped, as Claude Code skipped it (`harnesses.LENIENT_SETTINGS` says what, where
+    and when that was measured); a container of the wrong kind was not measured and may hold a
+    command, so it is skipped and kept in `skipped`, for the reader to say so.
+    """
+    if isinstance(value, kind):
+        return True
+    if isinstance(value, dict | list):
+        skipped.append(value)
+    return False
+
+
+def _claims_the_marker(skipped: list[object]) -> bool:
+    """Whether any string anywhere inside `skipped` is a command claiming the stayfixed marker,
+    asked without recursion: a skipped part may be nested as deep as the parser follows."""
+    pending = list(skipped)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            if marker_id(node) is not None:
+                return True
+        elif isinstance(node, dict):
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    return False
+
+
+def live_entries(document: str) -> Walked:
+    """Every hook entry a harness runs out of the document, as `placed_entries` places it.
+
+    `placed_entries` reads as strictly as `apply_entries` writes, because a merge must not rewrite
+    a shape it cannot read; that is the wrong question for which entries are live. What is
+    skipped is `_admitted`'s rule. One shape more is set aside without a measurement: an object
+    where a group goes that carries a `command` or a `type`, as an entry does, and no `hooks` list
+    -- a reader may run it as an entry, so it is kept with the skipped parts. A command claiming
+    the stayfixed marker in any skipped part is `hidden`, which a reader judges as the
+    conservative answer, not a measured one: whether a harness runs it is not known. Refuses what
+    `placed_entries` refuses above the events -- a document that is not a JSON object, and a
+    `hooks` that is not an object -- which was not measured either.
+    """
+    raw = _entry_document(document)
+    found: list[tuple[int, Placed]] = []
+    skipped: list[object] = []
+    places = 0
+    for event, groups in _hooks_table(raw).items():
+        if not _admitted(groups, list, skipped):
+            continue
+        for group in groups:
+            if not _admitted(group, dict, skipped):
+                continue
+            if "command" in group or "type" in group:
+                skipped.append({key: value for key, value in group.items() if key != "hooks"})
+            entries = group.get("hooks", [])
+            if not _admitted(entries, list, skipped):
+                continue
+            for entry in entries:
+                places += 1
+                if _admitted(entry, dict, skipped):
+                    found.append((places, _placed(event, group, entry)))
+    return Walked(tuple(found), places, bool(skipped), _claims_the_marker(skipped))
+
+
+def judged_entries(document: str, *, lenient: bool) -> Walked:
+    """The hook entries a reader judges in a settings file, and what it skipped.
+
+    `lenient` for a file a harness was measured running partly malformed (`harnesses.
+    LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
+    `placed_entries`, which refuses every shape the merge would, so it skips nothing. One
+    spelling, for `doctor`'s `hook-entries` and `assess`'s `foreign-hooks`, so the two never
+    give two answers about one file.
+    """
+    if lenient:
+        return live_entries(document.removeprefix("\ufeff"))
+    placed = placed_entries(document)
+    return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
 
 
 def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
@@ -254,7 +375,7 @@ def owned(document: str) -> str:
             mine = [entry for entry in _entries_of(group) if _claimed(entry) is not None]
             if mine:
                 claimed.setdefault(event, []).append({**group, "hooks": mine})
-    return json.dumps(claimed, indent=2, sort_keys=True)
+    return settings_text(claimed, sort_keys=True)
 
 
 def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str:
@@ -271,4 +392,4 @@ def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str
         raw["hooks"] = hooks
     else:
         raw.pop("hooks", None)
-    return json.dumps(raw, indent=2) + "\n"
+    return settings_text(raw) + "\n"

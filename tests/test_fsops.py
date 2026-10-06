@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ from stayfixed import fsops
 from stayfixed.fsops import (
     NEW_FILE_MODE,
     NotASymlink,
+    NotRegularFile,
     UnsafePath,
     _mode_of,
     checked_components,
@@ -591,3 +594,132 @@ def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_calle
     with pytest.raises(OSError) as raised:
         fsops.names_regular_file(tmp_path / "past-a-name")
     assert raised.value.errno not in fsops.NAMES_NO_FILE
+
+
+def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(
+    tmp_path: Path,
+) -> None:
+    # The readers of `*.md` a repository commits followed a committed link to whatever it named:
+    # `/dev/zero` grew `bugs check` to 9 GB in 2 s, and `/dev/stdin` or a FIFO waited forever.
+    # A link to a regular file is still read, because `attach` links each memory group and
+    # `MEMORY.md` into the overlay; a link to `/dev/null` is refused, and it is the case that tells
+    # the guard apart without being able to hang: unguarded, it reads as empty. Mutation
+    # (declared): the regular-file check before the open dropped -> `/dev/null` reads as b"".
+    regular = tmp_path / "regular.md"
+    regular.write_bytes(b"a\r\nb\n")
+    (tmp_path / "to-regular.md").symlink_to(regular)
+    with fsops.open_regular(tmp_path / "to-regular.md") as stream:
+        assert stream.read() == b"a\r\nb\n"
+    assert fsops.read_regular_text(regular, newline="") == "a\r\nb\n"
+    assert fsops.read_regular_text(regular) == "a\nb\n"
+    assert fsops.read_regular_bytes(tmp_path / "to-regular.md") == b"a\r\nb\n"
+    (tmp_path / "null.md").symlink_to("/dev/null")
+    (tmp_path / "directory.md").mkdir()
+    for path in (tmp_path / "null.md", tmp_path / "directory.md"):
+        with pytest.raises(NotRegularFile) as refused:
+            fsops.open_regular(path)
+        assert isinstance(refused.value, OSError)
+        assert refused.value.strerror == "not a regular file"
+
+
+def test_a_file_swapped_after_the_check_is_judged_by_what_was_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The check before the open names a path, and a path can be repointed between the two: what
+    # is read is judged again by its descriptor, and must be the file that was checked, whatever
+    # was put there instead. Mutation (declared): the descriptor's own check dropped -> the
+    # swapped-in file is read.
+    regular = tmp_path / "regular.md"
+    regular.write_bytes(b"x")
+    (tmp_path / "other.md").write_bytes(b"y")
+    real_open = os.open
+
+    def swapping_open(path: str | Path, flags: int, *args: int) -> int:
+        return real_open(tmp_path / "other.md", flags, *args)
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    with pytest.raises(NotRegularFile):
+        fsops.open_regular(regular)
+
+
+def test_a_fifo_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
+    # A FIFO cannot be committed, but a local process can leave one where a reader globs, and an
+    # open for reading waits for a writer that never comes. Run in a child under a timeout, so a
+    # regression fails this case rather than hanging the suite.
+    fifo = tmp_path / "pipe.md"
+    os.mkfifo(fifo)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "try:\n"
+        "    fsops.open_regular(Path(sys.argv[1]))\n"
+        "except fsops.NotRegularFile:\n"
+        "    print('refused')\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(fifo)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting(tmp_path: Path) -> None:
+    # The check before the open is about a path, which a local process can repoint at a FIFO in
+    # between: the open must not wait on a writer that never comes, and the descriptor is then
+    # refused as not the file that was checked. In a child under a timeout, so a regression fails
+    # this case rather than hanging. Mutation (declared): `O_NONBLOCK` dropped from the open ->
+    # the child waits and this times out.
+    regular = tmp_path / "regular.md"
+    regular.write_bytes(b"x")
+    fifo = tmp_path / "pipe.md"
+    os.mkfifo(fifo)
+    probe = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "real = os.open\n"
+        "os.open = lambda path, flags, *rest: real(sys.argv[2], flags, *rest)\n"
+        "try:\n"
+        "    fsops.open_regular(Path(sys.argv[1]))\n"
+        "except fsops.NotRegularFile:\n"
+        "    print('refused')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(regular), str(fifo)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the open waited on the FIFO swapped in after the check")
+    assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A regular file can be endless: on Linux `/proc/self/pagemap` is `S_ISREG` with a size of 0
+    # and reads on for as long as anyone asks, so the read stops one byte past the limit and
+    # refuses a file that has it. The limit lowered here, so a file at it and one past it are
+    # cheap. Mutations (declared): "the regular-file reader reads past its limit" -> the longer
+    # file is read; "the regular-file reader refuses a file at its limit" -> the shorter is not.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 4)
+    (tmp_path / "at.md").write_bytes(b"abcd")
+    (tmp_path / "past.md").write_bytes(b"abcde")
+    assert fsops.read_regular_bytes(tmp_path / "at.md") == b"abcd"
+    with pytest.raises(fsops.TooLarge) as refused:
+        fsops.read_regular_bytes(tmp_path / "past.md")
+    assert isinstance(refused.value, OSError)
+    assert refused.value.strerror == "larger than this reader reads"
+
+
+def test_the_read_limit_sits_far_above_every_file_its_readers_take() -> None:
+    # The legitimate readers' files are a few kilobytes -- `MEMORY.md`'s own budget is 25,600
+    # bytes -- so the bound must be far above them and still far under a machine's memory.
+    assert 1024 * 1024 <= fsops.REGULAR_READ_LIMIT <= 1024 * 1024 * 1024

@@ -82,7 +82,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     COMMON_GROUP,
     DIFFERENT_REMOTE,
@@ -113,6 +113,7 @@ from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     EntriesError,
     Manifest,
+    ParserLimitError,
     RegionError,
     Style,
     apply_entries,
@@ -120,6 +121,7 @@ from stayfixed.scaffold import (
     mark,
     marker_id,
     owned_ids,
+    settings_text,
     upsert,
 )
 
@@ -324,16 +326,19 @@ def ledger(root: Path) -> AttachLedger:
     """
     path = root / ATTACH_LEDGER
     try:
-        text = path.read_text(encoding="utf-8")
+        # A regular file only (`fsops.read_regular_text`): a clone can commit the ledger, and
+        # `detach` read it with no other check first, so a link to `/dev/zero` read until memory
+        # ran out.
+        text = fsops.read_regular_text(path)
     except FileNotFoundError as exc:
         raise Failure(
             f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added to "
             f"this repository; there is no safe way to guess it from the settings file"
         ) from exc
     except OSError as exc:
-        raise Failure(f"{path} cannot be read: {exc}") from exc
+        raise Failure(f"{ATTACH_LEDGER} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None
     # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
     # JSON past the parser's reach, which a clone can commit, is unreadable like the arms above,
     # and said in the words every other refusal of a ledger here uses: not one `attach` wrote.
@@ -413,7 +418,12 @@ def _planned_ignore_region(root: Path) -> str | None:
     """
     path = root / GITIGNORE
     try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        # A regular file only: `exists()` and `read_text` followed a committed link, so
+        # `.gitignore -> /dev/zero` read until memory ran out and a FIFO there waited for a
+        # writer. Anything else is a `.gitignore` that cannot be read.
+        text = fsops.read_regular_text(path)
+    except FileNotFoundError:
+        text = ""
     except UnicodeDecodeError:
         raise Refusal(
             f"{GITIGNORE} is not UTF-8 text, so `.stayfixed/local/` cannot be made untracked — and "
@@ -422,8 +432,8 @@ def _planned_ignore_region(root: Path) -> str | None:
         ) from None
     except OSError as exc:
         raise Refusal(
-            f"{GITIGNORE} cannot be read ({exc}), so `.stayfixed/local/` cannot be made "
-            f"untracked — and writing the attach ledger into a tracked path would publish "
+            f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "
+            f"made untracked — and writing the attach ledger into a tracked path would publish "
             f"your personal allow rules to every collaborator"
         ) from exc
     updated = _in_gitignore(upsert, text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
@@ -487,7 +497,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
     if allow or permissions:
         permissions["allow"] = allow
         raw["permissions"] = permissions
-    return apply_entries(json.dumps(raw, indent=2) + "\n", wanted)
+    return apply_entries(settings_text(raw, LOCAL_SETTINGS) + "\n", wanted)
 
 
 def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
@@ -1015,7 +1025,7 @@ def _harness_fallback(
     else:
         document[FALLBACK_KEY] = wanted
     if document:
-        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
+        fsops.write_within(root, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
     else:
         # `{}` is not what the file looked like before the fallback was taken, and a document
         # holding only this key is one `attach` created — the same rule `_withdraw_settings`
@@ -1410,20 +1420,31 @@ def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
     if not document.strip():
         return SettingsWithdrawal((), None)
     raw = settings_document(document)
-    held = json.loads(json.dumps(raw))
-    permissions, allow = _allow_list(raw)
-    removed = tuple(rule for rule in recorded.allow if rule in allow)
-    if permissions:
-        permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
-        raw["permissions"] = permissions
-    for key in recorded.settings_keys:
-        raw.pop(key, None)
-    remaining = json.loads(apply_entries(json.dumps(_emptied(raw), indent=2) + "\n", {}))
-    if remaining == held:
+    try:
+        # The copy and the comparison recurse as the encoder does, and on Python 3.14 under a
+        # reduced stack either overflows for a document the parser read: the reader's refusal of
+        # one nested too deep, never an internal error.
+        held = json.loads(json.dumps(raw))
+        permissions, allow = _allow_list(raw)
+        removed = tuple(rule for rule in recorded.allow if rule in allow)
+        if permissions:
+            permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
+            raw["permissions"] = permissions
+        for key in recorded.settings_keys:
+            raw.pop(key, None)
+        # Through `settings_text`, as every write-back of a parsed settings document: on Python
+        # 3.12 an indented encode stops near 994 levels, under what the parser read.
+        emptied = settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n"
+        remaining = json.loads(apply_entries(emptied, {}))
+        unchanged = remaining == held
+    except RecursionError:
+        raise ParserLimitError(f"{LOCAL_SETTINGS} {NESTED}") from None
+    if unchanged:
         return SettingsWithdrawal(removed, None)
     # `{}` is not what the file looked like before `attach`; a file holding nothing is one this
     # command created and is the last thing it takes away.
-    return SettingsWithdrawal(removed, json.dumps(remaining, indent=2) + "\n" if remaining else "")
+    text = settings_text(remaining, LOCAL_SETTINGS) + "\n" if remaining else ""
+    return SettingsWithdrawal(removed, text)
 
 
 def _withdraw_settings(root: Path, planned: SettingsWithdrawal) -> tuple[str, ...]:

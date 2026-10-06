@@ -21,7 +21,6 @@ becomes one. `gh` decides the protocol and carries the token; this module only n
 
 from __future__ import annotations
 
-import json
 import re
 import tempfile
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from pathlib import Path
 import stayfixed
 from stayfixed import fsops
 from stayfixed.errors import Failure, Refusal
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay.create import TEMPLATE_REPOSITORY, _render_locally
 from stayfixed.overlay.identity import segment
 from stayfixed.overlay.layout import OVERLAY_FILES
@@ -149,12 +149,17 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
                 f"{slug} exists is not known; authenticate gh, or retry"
             )
         return Existing(False, False, "", DEFAULT_BRANCH)
-    try:
-        document = json.loads(view.stdout or "{}")
-    except json.JSONDecodeError as exc:
-        raise Failure(f"`gh repo view {slug}` did not answer with JSON: {exc}") from None
-    if not isinstance(document, dict):
-        raise Failure(f"`gh repo view {slug}` answered with JSON that is not an object")
+    # Through `jsonobject`, the one reader of a JSON object: valid JSON past the parser, its
+    # depth bound or the integers it converts is one more answer this cannot read.
+    document = json_object(
+        view.stdout or "{}",
+        f"what `gh repo view {slug}` answered",
+        error=Failure,
+        limit=lambda _: Failure(
+            f"`gh repo view {slug}` answered with JSON past what this reader follows"
+        ),
+        shape=lambda _: Failure(f"`gh repo view {slug}` answered with JSON that is not an object"),
+    )
     branch = document.get("defaultBranchRef")
     named = branch.get("name") if isinstance(branch, dict) else None
     return Existing(

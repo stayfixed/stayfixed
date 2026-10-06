@@ -22,10 +22,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import write_atomically
+from stayfixed.fsops import open_regular, write_atomically
 from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
@@ -101,6 +102,12 @@ def changed(state: TrustState) -> bool:
 # these bytes collides with an unreadable one — it buys nothing, since both states are chosen
 # by whoever can already write the file, and the marker's own content is inert.
 _UNREADABLE = b"\0stayfixed:unreadable\0"
+# What leads the bytes of a file longer than the reader's cap, ahead of the part of it that was
+# read. A constant in its place would digest every such file alike, and a store trusted with one
+# would keep its trust when its first lines -- the part a session loads -- were rewritten. Framed,
+# what was read moves the digest, and no file inside the cap digests as one past it: the framed
+# bytes are longer than any file the cap admits.
+_TOO_LARGE = b"\0stayfixed:too-large\0"
 
 
 def _content_digest(path: Path) -> str:
@@ -113,9 +120,17 @@ def _content_digest(path: Path) -> str:
     state, included.
     """
     try:
-        content = path.read_bytes()
+        # A regular file only, followed through a link: `MEMORY.md` is one in overlay mode and
+        # is hashed through it. Anything else is unreadable, and still moves the digest. Read to
+        # one byte past the cap, as `fsops.read_regular_bytes` reads, and a file that has that
+        # byte is hashed as what was read under `_TOO_LARGE`, never as one constant.
+        with open_regular(path) as stream:
+            content = stream.read(fsops.REGULAR_READ_LIMIT + 1)
     except OSError:
         content = _UNREADABLE
+    else:
+        if len(content) > fsops.REGULAR_READ_LIMIT:
+            content = _TOO_LARGE + content
     return hashlib.sha256(content).hexdigest()
 
 

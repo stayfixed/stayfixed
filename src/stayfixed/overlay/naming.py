@@ -15,7 +15,6 @@ overlay, and the Codex one is absent from an overlay generated before the Codex 
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
@@ -24,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Failure
+from stayfixed.jsonobject import json_object, json_text
 from stayfixed.overlay.layout import CODEX_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
 if TYPE_CHECKING:
@@ -94,10 +94,14 @@ def owner_of(root: Path) -> str | None:
     """
     for row in NAMED:
         try:
-            document = json.loads((root / row.path).read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            # Through `jsonobject`, the one reader of a JSON object: a manifest that is not one,
+            # or is past the parser or its depth bound, is one this cannot read, and the next is
+            # asked. `UnicodeDecodeError` is a `ValueError` too.
+            text = (root / row.path).read_text(encoding="utf-8")
+            document = json_object(text, row.path, error=ValueError)
+        except (OSError, ValueError):
             continue
-        name = document.get("name") if isinstance(document, dict) else None
+        name = document.get("name")
         if (owner := owner_in(name, row.name)) is not None:
             return owner
     return None
@@ -117,12 +121,10 @@ def renamed(text: str, relative: str, suffix: str) -> str | None:
     what goes to disk — reading the file back to hash it would hash whatever is there then.
     Nothing is written here: every manifest is decided before any is written.
     """
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{relative} is not valid JSON: {exc}") from exc
-    if not isinstance(document, dict):
-        raise Failure(f"{relative} is not a JSON object")
+    # Through `json_object`, whose sentences for a manifest that is not JSON or not an object are
+    # the two this used to say, and which also answers valid JSON past the parser's reach: a bare
+    # `json.loads` let `RecursionError` and the long-integer `ValueError` end `overlay init`.
+    document = json_object(text, relative, error=Failure)
     changed = False
     if (name := _suffixed(document.get("name"), suffix)) is not None:
         document["name"] = name
@@ -139,7 +141,7 @@ def renamed(text: str, relative: str, suffix: str) -> str | None:
                 changed = True
     if not changed:
         return None
-    return json.dumps(document, indent=2) + "\n"
+    return json_text(document, relative, error=Failure, indent=2) + "\n"
 
 
 def _named_for(document: dict[str, object], key: str, account: str) -> bool:

@@ -28,6 +28,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX, LONG_NUMBER, PAST_FLOAT
 
 pytestmark = needs_git
 
@@ -516,6 +517,38 @@ def test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side(
     assert "internal error" not in err
     assert "not valid TOML (nested deeper than the parser reads)" in err
     assert ("the base's stayfixed.toml" in err) is (side == "base")
+
+
+@pytest.mark.parametrize("side", ["tree", "base"])
+def test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side(
+    tmp_path: Path, side: str
+) -> None:
+    # An integer longer than the interpreter converts is valid TOML that `tomllib` answers with a
+    # plain `ValueError`: the gate ended in `internal error: ValueError`, exit 2, instead of
+    # failing closed on the configuration's own error. Mutation (declared): `ValueError` dropped
+    # from `UNPARSEABLE`.
+    long = BASE + f"\n[gates]\nx = {LONG_NUMBER}\n"
+    project = clone(tmp_path, long if side == "base" else BASE)
+    _change(project, long if side == "tree" else BASE)
+    code, out, err = cli(project, tmp_path, "gate", "--builtin")
+    assert (code, out) == (1, ""), err
+    assert "internal error" not in err
+    assert "not valid TOML (holds a number longer than the parser converts)" in err
+    assert ("the base's stayfixed.toml" in err) is (side == "base")
+
+
+def test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run(
+    tmp_path: Path,
+) -> None:
+    # A `ValueError` out of `read_trail` ended the whole run, as a `RecursionError` once did: one
+    # advisory gate's input ended every gate. Mutation (declared): `ValueError` dropped from
+    # `UNPARSEABLE`.
+    project = clone(tmp_path, BASE, also={"docs/roadmap.md": "# Roadmap\n"})
+    (project / "docs" / "trail.toml").write_text(f"x = {LONG_NUMBER}\n", encoding="utf-8")
+    commit(project, "docs: a trail holding a number past the parser")
+    code, out, err = cli(project, tmp_path, "gate", "--builtin")
+    assert code == 0, err
+    assert "trail: advisory, could not run" in out.splitlines()
 
 
 def test_a_tree_without_stayfixed_toml_fails_and_names_the_file(tmp_path: Path) -> None:
@@ -1034,3 +1067,22 @@ def test_a_local_run_without_the_workflow_sha_refuses_a_moved_pin(
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 1
     assert "ci.ref" in out
+
+
+@pytest.mark.parametrize("shape", ["hex", "decimal"])
+def test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error(
+    tmp_path: Path, shape: str
+) -> None:
+    # A hex literal of any length converts, and a decimal of 401 digits is inside the parser's
+    # limit, so each reached the custom gate and ended `gate` in an internal error. The loader
+    # refuses it, so the gate fails closed on the configuration's own error. Mutation (declared):
+    # the bound on a schema integer dropped -> exit 2.
+    large = LONG_HEX if shape == "hex" else PAST_FLOAT
+    config = BASE + f"\n[gates]\ncustom_timeout_seconds = {large}\n" + MARKER
+    # On both sides, so the configuration the gate runs under holds it whichever side it judges.
+    project = clone(tmp_path, config)
+    _change(project, config, agents="# Agents\n")
+    code, out, err = cli(project, tmp_path, "gate", "--custom")
+    assert code == 1, err
+    assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
+    assert "internal error" not in out + err

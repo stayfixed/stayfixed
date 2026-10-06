@@ -15,6 +15,9 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
+from stayfixed.jsonobject import LONG_NUMBER as LONG_CLAUSE
+from stayfixed.jsonobject import NESTED as NESTED_CLAUSE
 from stayfixed.release.hashes import (
     FORMAT,
     HASHED_FILES,
@@ -23,6 +26,7 @@ from stayfixed.release.hashes import (
     digests,
     read_record,
 )
+from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
 
 
 def hashed_plugin(tmp_path: Path) -> Path:
@@ -108,6 +112,21 @@ def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
         read_record(root)
 
 
+@pytest.mark.parametrize("encoding", ["utf-8-sig", "utf-16", "utf-32-le"])
+def test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did(
+    tmp_path: Path, encoding: str
+) -> None:
+    # 0.2.0 handed the record's bytes to `json.loads`, which detects UTF-8 with a byte-order mark,
+    # UTF-16 and UTF-32 and reads each, so a record saved that way read. Reading it through the
+    # one JSON object reader must keep that. Mutation (oracle): `mutations/`'s "the release
+    # record is decoded as UTF-8 alone" -> each of these is refused.
+    root = hashed_plugin(tmp_path)
+    written = {relative: f"{index:064x}" for index, relative in enumerate(HASHED_FILES)}
+    body = json.dumps({"format": FORMAT, "files": written})
+    (root / RECORD).write_bytes(body.encode(encoding))
+    assert read_record(root) == written
+
+
 def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
     tmp_path: Path,
 ) -> None:
@@ -153,4 +172,38 @@ def test_a_record_of_the_wrong_shape_is_unreadable(tmp_path: Path, body: str) ->
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_text(body + "\n", encoding="utf-8")
     with pytest.raises(UnreadableRecord):
+        read_record(root)
+
+
+@pytest.mark.parametrize(
+    ("body", "said"),
+    [
+        pytest.param(NESTED, NESTED_CLAUSE, id="nested"),
+        pytest.param(f'{{"format": {LONG_NUMBER}}}', LONG_CLAUSE, id="long-number"),
+    ],
+)
+def test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error(
+    tmp_path: Path, body: str, said: str
+) -> None:
+    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`, neither
+    # of them `JSONDecodeError`: either reached `doctor`'s `files` row as "this check could not
+    # run". The record is present and cannot be read, which is red. Mutation (declared): the arm
+    # for valid JSON past the parser removed -> it escapes.
+    root = hashed_plugin(tmp_path)
+    (root / RECORD).write_text(body, encoding="utf-8")
+    with pytest.raises(UnreadableRecord, match=said):
+        read_record(root)
+
+
+def test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record goes through the one JSON object reader, so the depth bound every other reader of
+    # a JSON document applies holds here too: on Python 3.14 a bare `json.loads` followed 20,000
+    # levels. The bound lowered, so a shallow document meets it. Mutation (declared): "the hash
+    # record is parsed with a bare json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    root = hashed_plugin(tmp_path)
+    (root / RECORD).write_text(DEEPER_THAN_FOUR, encoding="utf-8")
+    with pytest.raises(UnreadableRecord, match=NESTED_CLAUSE):
         read_record(root)

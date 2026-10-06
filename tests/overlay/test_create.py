@@ -6,10 +6,12 @@ from typing import NoReturn
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
-from stayfixed.overlay.create import RETRY_WAIT_SECONDS
+from stayfixed.overlay.create import RETRY_WAIT_SECONDS, _is_template
 from stayfixed.runner import Completed
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
 # What `gh repo view <slug> --json isTemplate` really prints, measured against gh 2.101.0: a
@@ -723,3 +725,23 @@ def test_a_local_render_over_an_existing_repository_runs_no_git_init(tmp_path: P
     runner = Recorder()
     create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
     assert runner.calls == []
+
+
+@pytest.mark.parametrize(
+    "printed", [NESTED, f'{{"isTemplate": {LONG_NUMBER}}}'], ids=["nested", "long"]
+)
+def test_a_template_probe_past_the_parser_is_no_answer(printed: str) -> None:
+    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`: the
+    # probe caught only `JSONDecodeError`, so either ended `overlay create` in an internal error
+    # where an answer that is not JSON reads as no answer. Mutation (declared): the catch narrowed
+    # to `JSONDecodeError` again.
+    assert _is_template(printed) is None
+
+
+def test_a_template_probe_past_the_depth_bound_is_no_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The probe's answer goes through the one JSON object reader and its depth bound. Mutation
+    # (declared): "the template probe parses with a bare json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    assert _is_template('{"isTemplate": true, "a": [[[[]]]]}') is None

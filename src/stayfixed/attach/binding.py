@@ -105,11 +105,57 @@ SHARE_CANNOT_EXIST = (
 # above, and never a group either: `memory.groups` is the repository's too, and a long entry is
 # the other way to reach it.
 PATH_CANNOT_EXIST = (
-    "{projects}/<this project's name>/ would hold a path longer than this machine allows -- the "
-    "binding record " + PROJECT_RECORD + ", the notes index or a memory group's directory -- so "
-    "attach could not record the binding or link the notes there; choose a shorter `name` under "
-    "[project] in stayfixed.toml, or shorter memory.groups entries"
+    "{projects}/<this project's name>/ would hold a path, or a name in one, longer than this "
+    "machine allows -- the binding record " + PROJECT_RECORD + ", the notes index or a memory "
+    "group's directory -- so attach could not record the binding or link the notes there; "
+    "choose a shorter `name` under [project] in stayfixed.toml, or shorter memory.groups entries"
 )
+
+
+# The refusal for an overlay whose root, or whose `projects/`, is there and is not a directory.
+# That is the owner's overlay in a broken state and never a name the repository chose, so it names
+# the path — the owner's, from the machine file, holding no project's name — and asks for the
+# overlay to be repaired, never for another `name`.
+# The way out of a damaged overlay, one sentence for `attach`'s refusal and `doctor`'s row.
+OVERLAY_REPAIR = (
+    "repair the overlay so that {path} is a directory again (or clone the overlay afresh), then "
+    "run {command} again"
+)
+OVERLAY_DAMAGED = (
+    "{path} is not a directory, so the overlay this machine records is damaged: no project's "
+    "binding record or notes can be kept under it; "
+    + OVERLAY_REPAIR.replace("{command}", "the command")
+)
+
+
+def damaged_overlay(overlay: Path) -> Path | None:
+    """The overlay root, or its `projects/`, when it is there and is not a directory; else `None`.
+
+    Asked of the owner's own paths and never of anything `project.name` spells, so it answers
+    the same for every project: an overlay in this state holds no project's binding, and a
+    reader that took its `NotADirectoryError` for a name no directory can carry blamed the
+    repository's name and sent a bound project's owner to choose another one. A path that is
+    not there, or cannot be asked about, is not this answer: an overlay with no `projects/` yet
+    is a fresh one, and the callers have their own answers for the rest.
+
+    Asked with `lstat` first: a symbolic link there is followed, as a link to a directory is the
+    owner's to make, but one that names nothing is damage, not absence. Asked with `stat` alone,
+    it answered "no such file", so `--check` read a fresh overlay and `attach` blamed a
+    `memory.groups` entry.
+    """
+    for path in (overlay, overlay / PROJECTS):
+        try:
+            mode = path.lstat().st_mode
+        except OSError:
+            return None
+        if stat.S_ISLNK(mode):
+            try:
+                mode = path.stat().st_mode
+            except OSError:
+                return path
+        if not stat.S_ISDIR(mode):
+            return path
+    return None
 
 
 def cannot_exist(exc: OSError) -> bool:
@@ -153,6 +199,19 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
+    # The overlay's own shape first: a root or a `projects/` that is a file is the owner's to
+    # repair, whatever the name, and every question below would blame the name for it.
+    damaged = damaged_overlay(binding.overlay)
+    if damaged is not None:
+        raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
+    # A name, or a group, longer than a file name may be is asked of the nearest directory that is
+    # there and not of the path it will have: an overlay with no `projects/` yet answers every path
+    # under it with "no such file", the over-long name included, so a 300-character name read as a
+    # first attach and the run failed at the record's write, after the ignore region and the
+    # ledger, printing the name.
+    there = _nearest_directory(binding.overlay / PROJECTS)
+    if _name_too_long(there, binding.project):
+        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     try:
         mode: int | None = share.stat().st_mode
     except FileNotFoundError:
@@ -165,20 +224,52 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
     for path in (path for path in made if path.is_relative_to(share)):
+        if any(_name_too_long(there, part) for part in path.relative_to(share).parts):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+        # The whole path too: only its length decides here, since an absent path is a first
+        # attach, and a record that is there and cannot be read was already refused by
+        # `_recorded` on the way to `binding`.
+        if _too_long(path):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
+
+
+def _nearest_directory(path: Path) -> Path | None:
+    """`path` or the nearest of its ancestors that is a directory, or `None` when none is."""
+    for there in (path, *path.parents):
         try:
-            path.lstat()
-        except OSError as exc:
-            # Only the length decides here: an absent path is a first attach, and a record that
-            # is there and cannot be read was already refused by `_recorded` on the way to
-            # `binding`.
-            if exc.errno == errno.ENAMETOOLONG:
-                raise Refusal(
-                    PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)
-                ) from None
-        except ValueError:
-            # A group holding a NUL, which no path can: not a question of length, and the
-            # `memory.groups` containment both callers ask next refuses it by name of the key.
+            if stat.S_ISDIR(there.stat().st_mode):
+                return there
+        except OSError:
             continue
+    return None
+
+
+def _name_too_long(directory: Path | None, component: str) -> bool:
+    """Whether the filesystem holding `directory` refuses `component` as a name too long to be one.
+
+    Asked of the kernel with an `lstat` of the name directly under `directory`, which is there, and
+    never counted here: Linux filesystems limit a name to 255 bytes and macOS APFS to 255
+    characters, so 200 x "é" (400 bytes) is a name on one and not the other, and `PC_NAME_MAX`
+    says 255 on both. A lookup that answers anything but `ENAMETOOLONG` -- the usual "no such
+    file", or a name that is there -- says the name fits.
+    """
+    if directory is None:
+        return False
+    return _too_long(directory / component)
+
+
+def _too_long(path: Path) -> bool:
+    """Whether the kernel refuses `path` as too long -- a name in it, or the whole path -- asked
+    with an `lstat`, which answers that before it looks anything up. A NUL, which no path can
+    hold, is not a question of length: the `memory.groups` containment both callers ask next
+    refuses it by name of the key."""
+    try:
+        path.lstat()
+    except OSError as exc:
+        return exc.errno == errno.ENAMETOOLONG
+    except ValueError:
+        return False
+    return False
 
 
 def not_overlay(config: Config) -> str | None:

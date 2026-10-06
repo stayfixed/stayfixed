@@ -7,14 +7,17 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.store import Store, resolve
 from stayfixed.memory.trust import (
+    _UNREADABLE,
     DELIMITER,
     UnreadableTrustRecord,
     UnsafeNote,
+    _content_digest,
     _entry,
     changed,
     is_repository_data,
@@ -416,3 +419,70 @@ def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> N
     raw["/somewhere/else"] = {"not": "a digest"}
     broken.write_text(_json.dumps(raw), encoding="utf-8")
     assert may_inject(store, config) is True
+
+
+def test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target(
+    tmp_path: Path,
+) -> None:
+    # The digest read a committed link to whatever it named: a note or `MEMORY.md` linked to
+    # `/dev/stdin` hung `memory index --check` and every trust-gated command, and `/dev/zero`
+    # would read until memory ran out. Only a regular file is read now; anything else hashes as
+    # the unreadable marker. `MEMORY.md` is asked by name and not by the glob, so it is a case of
+    # its own: linked to `/dev/null`, unguarded, it hashed exactly as an empty index does.
+    # Mutation (declared): the digest reads with `read_bytes` again -> the index case reddens.
+    store, config, _ = a_store(tmp_path, "in-repo")
+    index = store.path / "MEMORY.md"
+    index.write_text("", encoding="utf-8")
+    empty = store_digest(store, config)
+    index.unlink()
+    index.symlink_to("/dev/null")
+    assert store_digest(store, config) != empty
+    (store.groups["developer"] / "null.md").symlink_to("/dev/null")
+    assert _content_digest(store.groups["developer"] / "null.md") == (
+        hashlib.sha256(_UNREADABLE).hexdigest()
+    )
+
+
+def test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links(
+    tmp_path: Path,
+) -> None:
+    # The legitimate user the regular-file rule must not refuse: in overlay mode `attach` makes
+    # `MEMORY.md` and each memory group a symlink into the overlay, and the digest is of what
+    # they name. A reader that refused a link outright would hash every such store as unreadable.
+    # Mutation (declared): "the regular-file reader refuses a link to a regular file".
+    overlay = tmp_path / "overlay"
+    (overlay / "developer").mkdir(parents=True)
+    note = overlay / "developer" / "a.md"
+    note.write_text("---\nname: a\ndescription: d\n---\n\nbody\n", encoding="utf-8")
+    (overlay / "MEMORY.md").write_text("# Memory Index\n", encoding="utf-8")
+    linked = tmp_path / "project" / "docs" / "memory"
+    linked.mkdir(parents=True)
+    (linked / "developer").symlink_to(overlay / "developer", target_is_directory=True)
+    (linked / "MEMORY.md").symlink_to(overlay / "MEMORY.md")
+    for path, target in (
+        (linked / "MEMORY.md", overlay / "MEMORY.md"),
+        (linked / "developer" / "a.md", note),
+    ):
+        assert _content_digest(path) == hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Hashed as the unreadable marker, every `MEMORY.md` or note past the reader's cap digested
+    # alike, so a store trusted with one and its first lines rewritten afterwards -- the part a
+    # session loads -- kept its trust. What was read is hashed, framed as too large: two such
+    # files differing in their first line digest apart, and neither as the unreadable marker nor
+    # as a file inside the cap. The cap is lowered so the case is small. Mutation (oracle):
+    # `mutations/`'s "a file past the cap digests as the unreadable marker" -> the two agree.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 64)
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_bytes(b"one\n" + b"x" * 100)
+    second.write_bytes(b"two\n" + b"x" * 100)
+    inside = tmp_path / "inside.md"
+    inside.write_bytes(b"one\n" + b"x" * 60)
+    digests = {_content_digest(path) for path in (first, second, inside)}
+    assert len(digests) == 3
+    assert hashlib.sha256(_UNREADABLE).hexdigest() not in digests
+    assert _content_digest(first) == _content_digest(first)

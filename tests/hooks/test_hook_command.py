@@ -18,6 +18,7 @@ from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from stayfixed.hooks.commands import LINKED, _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
+from tests.parserlimits import LONG_NUMBER
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -290,11 +291,22 @@ def _unparseable_project(tmp_path: Path) -> Path:
     return project
 
 
+def _long_number_project(tmp_path: Path) -> Path:
+    """A `stayfixed.toml` holding an integer longer than the interpreter converts: valid TOML that
+    `tomllib` answers with a plain `ValueError`, which the loader once missed, so the hook said
+    "internal error" where it says "does not load" of any other file it cannot parse."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "stayfixed.toml").write_text(CONFIG + f"\n{CHOSEN} = {LONG_NUMBER}\n", "utf-8")
+    return project
+
+
 TOOL_CALL = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
 UNLOADABLE_CASES = [
     pytest.param(_escaping_project, "a path that leaves the project", id="escaping-path"),
     pytest.param(_refused_value_project, "a file or value the loader refuses", id="refused-value"),
     pytest.param(_unparseable_project, "a file or value the loader refuses", id="unparseable"),
+    pytest.param(_long_number_project, "a file or value the loader refuses", id="long-number"),
 ]
 
 

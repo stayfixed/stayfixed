@@ -833,8 +833,14 @@ reddens = [
 [[mutation]]
 name = "a record that is not JSON reads as no record at all"
 file = "src/stayfixed/release/hashes.py"
-before = '        raise UnreadableRecord(f"{RECORD} is not valid JSON: {exc}") from None'
-after = "        return None"
+before = """
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
+after = """
+    if text.count("{") != text.count("}"):
+        return None
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
 reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unreadable_rather_than_absent"]
 
 # Valid JSON of the wrong shape decodes cleanly, so the decoder catch never sees it — the same
@@ -842,8 +848,14 @@ reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unre
 [[mutation]]
 name = "a record of another format is read as this one"
 file = "src/stayfixed/release/hashes.py"
-before = '        or document.get("format") != FORMAT'
-after = "        or False"
+before = """
+        document.get("format") != FORMAT
+        or not isinstance(files, dict)
+"""
+after = """
+        False
+        or not isinstance(files, dict)
+"""
 reddens = [
   "tests/release/test_hashes.py::test_a_record_of_the_wrong_shape_is_unreadable[another-format]",
 ]
@@ -1754,11 +1766,51 @@ reddens = [
 [[mutation]]
 name = "the TOML readers answer a document nested past the parser as an internal error"
 file = "src/stayfixed/config/loader.py"
-before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
-after = "UNPARSEABLE = (tomllib.TOMLDecodeError,)"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, ValueError)"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+]
+
+# An integer literal longer than the interpreter converts is valid TOML that `tomllib` answers
+# with a plain `ValueError`, not a `TOMLDecodeError`: `doctor` and `gate` ended in an internal
+# error, a hook said "internal error" where it says "does not load", and three `doctor` rows went
+# red "could not run" on an overlay record holding one. Every reader shares the one tuple.
+[[mutation]]
+name = "the TOML readers answer a number past the parser as an internal error"
+file = "src/stayfixed/config/loader.py"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
+  "tests/config/test_deep_toml.py::test_a_profile_document_holding_a_number_past_the_parser_resolves_to_nothing",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/assess/test_gate_command.py::test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run",
+  "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[long-number]",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_leaves_a_session_open_in_its_own_words[long-number]",
+  "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
+]
+
+# The same document refused in stayfixed's words: the interpreter's message tells the reader to
+# raise a process-wide limit, which is no remedy for a file somebody else wrote.
+[[mutation]]
+name = "a TOML number past the parser is refused with no reason given"
+file = "src/stayfixed/config/loader.py"
+before = """
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
+"""
+after = """
+    if False:
+        return TOO_LONG
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpreters",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
 ]
 
 [[mutation]]
@@ -1776,6 +1828,7 @@ reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
 ]
 
 [[mutation]]
@@ -1793,6 +1846,9 @@ reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[machine]",
 ]
 
 [[mutation]]
@@ -1808,6 +1864,7 @@ after = """
 """
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[owned-rewrite]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[owned-rewrite]",
 ]
 
 # Two readers of `stayfixed.toml` followed two rules: `read_document` refuses a symlink, and
@@ -1840,8 +1897,8 @@ reddens = [
 [[mutation]]
 name = "an integer setting at or below zero loads"
 file = "src/stayfixed/config/loader.py"
-before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
-after = "            if isinstance(value, bool) or not isinstance(value, int):"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if isinstance(value, bool) or not isinstance(value, int):"
 reddens = [
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[no-time-at-all]",
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[negative-time]",
@@ -1850,8 +1907,8 @@ reddens = [
 [[mutation]]
 name = "a bool loads as an integer setting"
 file = "src/stayfixed/config/loader.py"
-before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
-after = "            if not isinstance(value, int) or value <= 0:"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if not isinstance(value, int) or value <= 0:"
 reddens = [
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[time-as-a-bool]",
 ]
@@ -2282,8 +2339,16 @@ reddens = [
 [[mutation]]
 name = "the JSON object reader lets a document nested past the parser raise"
 file = "src/stayfixed/jsonobject.py"
-before = "    except RecursionError:"
-after = "    except ZeroDivisionError:"
+before = """
+    except RecursionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
+after = """
+    except ZeroDivisionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
 reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
@@ -2349,8 +2414,8 @@ reddens = [
 [[mutation]]
 name = "the settings engine reads a number past the parser's reach in the document doctor walks"
 file = "src/stayfixed/scaffold/entries.py"
-before = "    raw = settings_object(document, numbers=str)"
-after = "    raw = settings_object(document)"
+before = "    return settings_object(document, numbers=str)"
+after = "    return settings_object(document)"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
   "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
@@ -2628,7 +2693,7 @@ reddens = [
 
 # Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
 # id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `entry_commands` walks
+# claimed count and inflates `foreign` by exactly the difference. `placed_entries` walks
 # positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
 # walk key by id instead of counting entries, which is precisely the defect positional counting
 # exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
@@ -2636,12 +2701,11 @@ reddens = [
 [[mutation]]
 name = "doctor counts hook entries by marker id rather than by position"
 file = "src/stayfixed/scaffold/entries.py"
-before = """        text = command if isinstance(command, str) else ""
-        found.append(Placed(event, _matcher(group), text))"""
-after = """        text = command if isinstance(command, str) else ""
-        here = marker_id(text)
-        if here is None or here not in {marker_id(seen.command) for seen in found}:
-            found.append(Placed(event, _matcher(group), text))"""
+before = "                    found.append((places, _placed(event, group, entry)))"
+after = """                    placed = _placed(event, group, entry)
+                    here = marker_id(placed.command)
+                    if here is None or here not in {marker_id(seen.command) for _, seen in found}:
+                        found.append((places, placed))"""
 reddens = [
   "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
@@ -2654,8 +2718,8 @@ reddens = [
 [[mutation]]
 name = "the hook entry walk reads every entry under one event"
 file = "src/stayfixed/scaffold/entries.py"
-before = "        found.append(Placed(event, _matcher(group), text))"
-after = '        found.append(Placed("", _matcher(group), text))'
+before = "    return Placed(event, _matcher(group), text)"
+after = '    return Placed("", _matcher(group), text)'
 reddens = [
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
@@ -2682,6 +2746,365 @@ after = "        if False:"
 reddens = [
   "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
   "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
+]
+
+# A release's hash record is read where the plugin is installed, through the one JSON object
+# reader, so a record nested past the parser or its depth bound, or holding an integer longer than
+# the interpreter converts, is present and unreadable; parsed with a bare `json.loads`, either
+# escaped the record's reader and `doctor`'s `files` row read "this check could not run".
+[[mutation]]
+name = "the hash record is parsed with a bare json.loads"
+file = "src/stayfixed/release/hashes.py"
+before = "    document = json_object(text, RECORD, error=UnreadableRecord, shape=lambda _: not_a_record)"
+after = "    document = json.loads(text)"
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[nested]",
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
+  "tests/release/test_hashes.py::test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser",
+]
+
+# Python 3.14's JSON parser follows about 57,800 levels, further than its own `json.dumps` and
+# `str` do, so a document 3.13 refuses as nested too deep was read on 3.14 and then ended `detach`
+# and the settings engine in an internal error when they wrote it back. The object reader bounds
+# the depth it follows; the cases lower the bound, so they run on every interpreter.
+[[mutation]]
+name = "the JSON object reader follows whatever depth the parser does"
+file = "src/stayfixed/jsonobject.py"
+before = """
+    if _deeper_than(raw, DEPTH_CAP):
+        raise _past(label, NESTED, error, limit)
+"""
+after = """
+    if False:
+        raise _past(label, NESTED, error, limit)
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+  "tests/attach/test_detach.py::test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing[cap-forced]",
+]
+
+# And the bound is the deepest a document may hold, not one less: a document at it is read.
+[[mutation]]
+name = "the JSON object reader refuses a document at its depth bound"
+file = "src/stayfixed/jsonobject.py"
+before = "        if depth > cap:"
+after = "        if depth >= cap:"
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+]
+
+# The readers of files a repository commits and a reader globs (bug ledger entries, notes, the
+# trust digest's notes and `MEMORY.md`, plans) followed a committed link to whatever it named: a
+# link to `/dev/zero` read until memory ran out, in CI too, and one to `/dev/stdin` or a FIFO
+# waited forever. `open_regular` reads a regular file only, through a link as before.
+[[mutation]]
+name = "the regular-file reader opens whatever a path names"
+file = "src/stayfixed/fsops.py"
+before = """
+    if not stat.S_ISREG(checked.st_mode):
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+after = """
+    if False:
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/test_fsops.py::test_a_fifo_is_refused_without_waiting_for_a_writer",
+]
+
+# And what it opened is the file it checked: a path repointed between the check and the open is
+# judged by the descriptor.
+[[mutation]]
+name = "the regular-file reader reads a file swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = "        if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_file_swapped_after_the_check_is_judged_by_what_was_opened",
+]
+
+# The entries a harness runs out of a settings file, for `doctor`'s `hook-entries`: Claude Code
+# 2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section
+# held a scalar where an event's list, a group, a group's `hooks` or an entry belongs. Read with
+# the engine's strict walk, one such scalar made the file one the row was blind to, a warning, and
+# a forged entry beside it lost its red. `_admitted` states the rule once, for every place.
+[[mutation]]
+name = "the live-entry walk refuses a scalar where a list or an object belongs"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+    if isinstance(value, dict | list):
+        skipped.append(value)
+    return False
+"""
+after = """
+    if isinstance(value, dict | list):
+        skipped.append(value)
+        return False
+    raise EntriesError("not the kind this place holds")
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[event-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-not-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-hooks-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[entry-not-an-object]",
+]
+
+# A container in one of those places was not measured, and may hold a command a harness runs: the
+# walk keeps it, so the row still names the file as one it could not account for.
+[[mutation]]
+name = "the live-entry walk skips a container without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+    if isinstance(value, dict | list):
+        skipped.append(value)
+"""
+after = """
+    if isinstance(value, dict | list):
+        pass
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[group-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-a-list]",
+]
+
+# Not measured, and read conservatively: an object where a group goes that carries an entry's
+# `command` or `type` and no `hooks` list is kept with the skipped parts, and a command claiming the
+# stayfixed marker in any skipped part is red, since a harness may run what nothing here can check.
+[[mutation]]
+name = "the live-entry walk reads an entry where a group goes as no entry"
+file = "src/stayfixed/scaffold/entries.py"
+before = '            if "command" in group or "type" in group:'
+after = "            if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
+]
+
+[[mutation]]
+name = "the live-entry walk overlooks a marked command it skipped"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+            if marker_id(node) is not None:
+                return True
+"""
+after = """
+            if False:
+                return True
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
+]
+
+# Every element of an entry list holds a place, so the row names an entry where a person opening
+# the file finds it, scalars beside it included.
+[[mutation]]
+name = "the live-entry walk numbers only the entries it reads"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+                places += 1
+                if _admitted(entry, dict, skipped):
+"""
+after = """
+                if _admitted(entry, dict, skipped):
+                    places += 1
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_an_entry_is_named_by_its_place_among_every_element_beside_it",
+]
+
+# Read is not written: Python 3.12's C encoder does not handle `indent`, so an indented encode runs
+# the pure-Python encoder, which stops near 994 levels while the parser follows about 9,996. A
+# document between the two was read and then ended its writer in an internal error. The writer
+# answers it as the reader answers a document nested past the parser.
+[[mutation]]
+name = "the JSON writer lets an encode past the interpreter's recursion escape"
+file = "src/stayfixed/jsonobject.py"
+before = """
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
+    except RecursionError:
+"""
+after = """
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
+    except ZeroDivisionError:
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
+]
+
+[[mutation]]
+name = "the settings engine writes a merge back with a bare encode"
+file = "src/stayfixed/scaffold/entries.py"
+before = '    return settings_text(raw) + "\n"'
+after = '    return json.dumps(raw, indent=2) + "\n"'
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
+]
+
+[[mutation]]
+name = "the settings engine renders its own entries with a bare encode"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    return settings_text(claimed, sort_keys=True)"
+after = "    return json.dumps(claimed, indent=2, sort_keys=True)"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[owned]",
+]
+
+# The depth bound sits where every interpreter can write back what it read: above what a harness
+# writes, and under what Python 3.14, whose parser follows past it, still encodes.
+[[mutation]]
+name = "the JSON object reader's depth bound is raised past what 3.14 encodes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 1_000_000"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+[[mutation]]
+name = "the JSON object reader's depth bound is lowered under what a harness writes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 999"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+# A hex, octal or binary literal of any length converts, and so does a decimal under 4,300 digits,
+# so a configuration integer checked only for `<= 0` handed its reader a number no `str` could
+# print or no `float` could hold: `[gates] custom_timeout_seconds` ended `assess` and `gate` in an
+# internal error. Every integer key is bounded by `INTEGER_LIMIT`.
+[[mutation]]
+name = "a configuration integer is bounded only below"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[hex]",
+  "tests/assess/test_command.py::test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error[hex]",
+  "tests/assess/test_gate_command.py::test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error[decimal]",
+]
+
+[[mutation]]
+name = "the schema's integer keys are taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '            coerced[key] = _positive(f"{name}.{key}", value)'
+after = "            coerced[key] = value"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
+]
+
+[[mutation]]
+name = "a `[budgets]` value is taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '        _positive(f"budgets.{key}", value)'
+after = "        pass"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
+]
+
+# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": a file a harness
+# was measured running is read past a leading byte-order mark too.
+[[mutation]]
+name = "hook-entries is blind to a settings file opening with a byte-order mark"
+file = "src/stayfixed/scaffold/entries.py"
+before = 'return live_entries(document.removeprefix("\ufeff"))'
+after = 'return live_entries(document)'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": the open never waits,
+# so a FIFO swapped in after the check cannot block it, and it follows a link at the last
+# component, because `attach` links each memory group and `MEMORY.md` into the overlay and those
+# are read and hashed through the link.
+[[mutation]]
+name = "the regular-file reader waits on a FIFO swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NOCTTY | os.O_CLOEXEC"
+reddens = [
+  "tests/test_fsops.py::test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a link to a regular file"
+file = "src/stayfixed/fsops.py"
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
+  "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]
+
+# `tomllib` converts a hex, octal or binary literal of any length, and `str` of one past 4,300
+# digits raises: `init --yes` re-rendering an adopted `stayfixed.toml`, and `setup` rewriting the
+# owner's machine file, ended in an internal error on one such line. The serialiser spells it in
+# hexadecimal, which TOML reads back.
+[[mutation]]
+name = "the TOML writer spells every integer in decimal"
+file = "src/stayfixed/tomlout.py"
+before = "        return _integer(value, where)"
+after = "        return str(value)"
+reddens = [
+  "tests/test_tomlout.py::test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[integer-key]",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[string-key]",
+  "tests/setup/test_machine.py::test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite",
+]
+
+[[mutation]]
+name = "the TOML writer spells a negative integer past the limit in hexadecimal"
+file = "src/stayfixed/tomlout.py"
+before = "        if value < 0:"
+after = "        if False:"
+reddens = [
+  "tests/test_tomlout.py::test_a_negative_integer_no_toml_spelling_holds_is_refused",
+]
+
+# A preset's name was spelled with `str()` before it was checked, so a hex literal there ended
+# every command that loads the file in an internal error.
+[[mutation]]
+name = "the loader spells a preset that is not a string with str"
+file = "src/stayfixed/config/loader.py"
+before = '    preset_name = head.get("preset", "recommended")'
+after = '    preset_name = str(head.get("preset", "recommended"))'
+reddens = [
+  "tests/config/test_loader.py::test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name",
+]
+
+# The bound is the first integer refused, not one under it: the largest value it admits loads.
+[[mutation]]
+name = "a configuration integer one under the bound is refused"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if value > INTEGER_LIMIT - 2:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": the read stops one
+# byte past `REGULAR_READ_LIMIT`, because a regular file can be endless (`/proc/self/pagemap`), and
+# a file at the limit is read.
+[[mutation]]
+name = "the regular-file reader reads past its limit"
+file = "src/stayfixed/fsops.py"
+before = "    if len(content) > REGULAR_READ_LIMIT:"
+after = "    if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a file at its limit"
+file = "src/stayfixed/fsops.py"
+before = "    if len(content) > REGULAR_READ_LIMIT:"
+after = "    if len(content) >= REGULAR_READ_LIMIT:"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
 ]
 
 # A commit's copy of a document at the project's own path (`committed.py`), read one way for the
@@ -2778,3 +3201,30 @@ file = "src/stayfixed/committed.py"
 before = '    if ".." in lexical.parts:'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+
+[[mutation]]
+name = "the live walk numbers each list from one"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            for entry in entries:\n                places += 1\n"
+after = "            places = 0\n            for entry in entries:\n                places += 1\n"
+reddens = [
+  "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
+]
+
+[[mutation]]
+name = "the release record is decoded as UTF-8 alone"
+file = "src/stayfixed/release/hashes.py"
+before = '        text = raw.decode(json.detect_encoding(raw), "surrogatepass")'
+after = '        text = raw.decode("utf-8")'
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did",
+]
+
+[[mutation]]
+name = "the JSON writer writes back a text past the read cap"
+file = "src/stayfixed/jsonobject.py"
+before = "    if len(text) > fsops.REGULAR_READ_LIMIT:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+after = "    if False:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
+]

@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from stayfixed.errors import Failure
+from stayfixed.jsonobject import json_object
 
 # The three files the harness runs on its own, with no interpreter of ours in front of them:
 # the wrapper every hook entry executes, the entry table that names it, and the launcher the
@@ -73,17 +74,22 @@ def read_record(root: Path) -> dict[str, str] | None:
     # Neither reached the `except UnreadableRecord` arm whose sentence is "present and
     # unreadable", which is the arm this class exists to select.
     try:
-        document = json.loads(path.read_bytes())
-    except json.JSONDecodeError as exc:
-        raise UnreadableRecord(f"{RECORD} is not valid JSON: {exc}") from None
+        raw = path.read_bytes()
+        # Decoded as `json.loads` decodes bytes, which is how 0.2.0 read the record: UTF-8, with
+        # or without a byte-order mark, UTF-16 or UTF-32, as the first bytes say.
+        text = raw.decode(json.detect_encoding(raw), "surrogatepass")
     except UnicodeDecodeError as exc:
         raise UnreadableRecord(f"{RECORD} is present and is not UTF-8 text: {exc}") from None
     except OSError as exc:
         raise UnreadableRecord(f"{RECORD} is present and could not be read: {exc}") from None
-    files = document.get("files") if isinstance(document, dict) else None
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+    # not JSON, nested past the parser or its depth bound, an integer longer than the interpreter
+    # converts -- is this record's refusal in the words every reader uses.
+    not_a_record = UnreadableRecord(f"{RECORD} is present and is not a format-{FORMAT} record")
+    document = json_object(text, RECORD, error=UnreadableRecord, shape=lambda _: not_a_record)
+    files = document.get("files")
     if (
-        not isinstance(document, dict)
-        or document.get("format") != FORMAT
+        document.get("format") != FORMAT
         or not isinstance(files, dict)
         or not all(isinstance(value, str) for value in files.values())
     ):

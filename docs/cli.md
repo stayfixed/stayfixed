@@ -303,8 +303,13 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
-is a destination and is honoured. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
-candidate only to exit `0` for a trivial `-I -c`, so an unguarded list picks the interpreter that
+is a destination and is honoured, and a committed `env` block does not choose it: measured in Claude
+Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming another
+`CLAUDE_PROJECT_DIR` reached neither a project hook nor a plugin hook on `UserPromptSubmit`, nor
+a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
+set the real project root over it, while the block's other keys were applied.
+`STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a candidate only to exit `0` for a trivial
+`-I -c`, so an unguarded list picks the interpreter that
 runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
 gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
@@ -2108,6 +2113,11 @@ there fits under the longest path the system allows while a path `attach` makes 
 not — the `project.toml` that records the binding, the notes index `MEMORY.md`, or the directory
 of one of `memory.groups` — because nothing could read that record back or link the notes to that
 path; a long `memory.groups` entry reaches it as a long name does, and the refusal names neither.
+Both hold where the overlay has no directory for the project yet, `projects/` included. An overlay
+whose root, or whose `projects/`, is there and is not a directory is refused (`2`) as damaged, by
+`--check` as well, with that path named and the overlay's repair as the way out; no name is blamed
+for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than offering to
+remove the ledger.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
@@ -2640,7 +2650,7 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every project skill whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; `.claude/skills/<name>/SKILL.md` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -2727,7 +2737,44 @@ unlisted, so "all accounted for" must never mean "could not look". One that is v
 deeper than Python's parser follows is reported by path as `red`: a harness may still read it, as
 Claude Code does, so the hooks in it may run, and nothing here can check them. A number longer
 than Python converts to an integer is read as its text, and the entries beside it are judged as
-usual.
+usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
+beside valid entries, a value that is not a list where an event's list goes, a group that is not an
+object, a group whose `hooks` is not a list, or an entry that is not an object: Claude Code 2.1.288
+still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are judged
+like any other. Where such a misplaced value is itself an object or a list, which could hold a
+command, the file is also reported as one that could not be read, since that shape was not
+measured; so is an entry object where a group goes, and a command claiming the stayfixed marker
+inside any such part is `red`. That is a conservative reading and not a measurement: whether a
+harness runs a command there is not known. An entry is named by its place in the whole file:
+every element of every group's `hooks` list, in every event, counted in document order, skipped
+scalars included, so `entry 2 of 2` may be the only entry of the second event's list. Only
+Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
+is read as strictly as the merge that rewrites it.
+
+`hook-entries` judges the entries of settings files and nothing else. Three more places a
+repository can commit were measured for whether Claude Code runs a hook from them, and one of the
+three did. What was measured of each, with Claude Code 2.1.288 on macOS (2026-10-06, `claude -p`
+in a scratch project under a configuration directory of its own, with no login, so no model call
+ran):
+
+| Source | What ran |
+|---|---|
+| A plugin a committed `.claude/settings.json` requests, through `extraKnownMarketplaces` (a local directory) and `enabledPlugins` | no hook of the plugin ran, in two sessions, and nothing was installed |
+| A project skill's `SKILL.md` frontmatter `hooks` | none on a plain prompt; its `UserPromptSubmit` hook ran when the prompt invoked the skill by name (`/<skill>`) |
+| A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
+
+So a skill a repository commits does run its own hooks once it is invoked. `hook-entries` does
+not judge them, and says so: each project skill whose `.claude/skills/<name>/SKILL.md` opens with
+a frontmatter (the lines between a first `---` line and the next one) holding a `hooks:` key at
+the start of a line is named as one whose hooks the row does not judge, a `warn` that never makes
+the row `red`. Nothing else of the YAML is parsed, and a frontmatter with no closing `---` is
+none. A `SKILL.md` the row cannot read, such as a link to a device or a directory, is named as
+one it cannot say anything about, also a `warn`. A skill's directory
+name is the repository's, so one outside the path grammar is named as a skill whose name the row
+does not print. Agents are not read. Whether the model can invoke a skill, and so run its hooks,
+without a person asking was not measured, because no model call ran. The plugin and agent rows
+held under that same limit, and say nothing about a logged-in session that has accepted the
+repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
@@ -3098,7 +3145,8 @@ gate_branch = "main"     # the branch the workflow gates; left out, [project] ba
 
 [gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
-custom_timeout_seconds = 600  # how long one of your own gates may run: a whole number above 0
+custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole number above 0
+                              # and below 2,147,483,648
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
 

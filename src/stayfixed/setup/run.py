@@ -100,7 +100,6 @@ exits 0 into a file no reader reads is the defect one door over.
 from __future__ import annotations
 
 import datetime
-import json
 import os
 import shutil
 from collections.abc import Mapping, Sequence
@@ -113,7 +112,7 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import load_preset
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
@@ -308,7 +307,9 @@ def _write_user_settings(
     plugin_configs[PLUGIN_ID] = entry
     document["pluginConfigs"] = plugin_configs
 
-    new_text = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    # Written back through `json_text`, which answers a document the parser read and the
+    # indenting encoder cannot follow (Python 3.12) as the reader answers one nested too deep.
+    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"
     if new_text == text:
         return False
     root, relative = (

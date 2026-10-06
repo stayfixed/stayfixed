@@ -11,19 +11,25 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from stayfixed import fsops
+from stayfixed import fsops, jsonobject
 from stayfixed.attach.api import ledger
+from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.permissions import check, settings_document
 from stayfixed.attach.write import (
+    GITIGNORE,
     GROUP_ESCAPES,
     HARNESS_WAITS,
     REAL_DIRECTORIES,
     Attached,
+    _planned_ignore_region,
     attach,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -2285,3 +2291,295 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     assert result.exit_code == 0, result.summary
     assert result.data["added_allow"] == [RULE]
     assert result.data["added_hooks"] == ["echo hello  # stayfixed:overlay-PreToolUse-1"]
+
+
+# The two shapes of an overlay that is damaged rather than one a project's name rules out: its
+# `projects/` a file, and the overlay root itself a file. Each is the owner's own state, and no
+# `project.name` could be chosen that a directory would exist for.
+DAMAGED = {
+    "projects-is-a-file": ("projects", "file"),
+    "overlay-root-is-a-file": ("", "file"),
+    # A link that names nothing, at `projects/` or the root: `stat` answers it as "no such file",
+    # which read as an overlay with no `projects/` yet, so `--check` passed and `attach` blamed a
+    # `memory.groups` entry.
+    "projects-is-a-dangling-link": ("projects", "dangling"),
+    "overlay-root-is-a-dangling-link": ("", "dangling"),
+}
+
+
+def _damage(overlay: Path, shape: str) -> Path:
+    """Break `overlay` the way `DAMAGED[shape]` says, and answer the path that broke."""
+    where, how = DAMAGED[shape]
+    broken = overlay / where if where else overlay
+    shutil.rmtree(broken)
+    if how == "file":
+        broken.write_text("not a directory\n", encoding="utf-8")
+    else:
+        broken.symlink_to(broken.parent / "nowhere")
+    return broken
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("shape", sorted(DAMAGED))
+def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged(
+    tmp_path: Path, shape: str, command: str
+) -> None:
+    # `share.stat()` raised `NotADirectoryError` for both shapes, which `cannot_exist` reads as a
+    # name no directory can carry: the refusal blamed the project's name and told the owner to
+    # choose another, for a bound project whose overlay is what broke. It names the path that is
+    # not a directory, says the overlay is damaged, and never asks for another name; and it is
+    # still made before the first write. The name is the repository's and is never printed.
+    # Mutations (declared): the damaged-overlay check skipped -> the name is blamed again; "the
+    # damaged-overlay probe follows a link that names nothing" -> the dangling cases pass `--check`.
+    name = "a-distinctive-project-name"
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    overlay = store.parents[2]
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    store = overlay / "projects" / name / "memory"
+    store.mkdir(parents=True)
+    _attach_it(root, store, machine, tmp_path / "home")
+    broken = _damage(overlay, shape)
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    said = str(refused.value)
+    assert said == OVERLAY_DAMAGED.format(path=broken)
+    assert "choose another" not in said
+    assert name not in said
+    assert _everything(tmp_path) == before
+
+
+def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
+    # deep `settings.local.json` was read and then ended `attach` in `RecursionError` while the
+    # merge was encoded. Forced here on every interpreter: the merge refuses as the reader refuses
+    # a document nested too deep, before anything is written. The overflow is forced only for the
+    # merged document, the one holding the overlay's rule, so the earlier write-back probe of the
+    # file as it stands encodes it and the merge's own encode is the one met. Mutation (oracle):
+    # `mutations/`'s "attach encodes the settings merge with a bare json.dumps" -> `RecursionError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = _everything(tmp_path)
+    real = json.dumps
+
+    def overflowing_merge(value: object, *args: Any, indent: int | None = None, **kw: Any) -> str:
+        if indent is not None and RULE in real(value):
+            raise RecursionError
+        return real(value, *args, indent=indent, **kw)
+
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_merge)
+    monkeypatch.setattr(json, "dumps", overflowing_merge)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _attach_it(root, store, machine, tmp_path / "home")
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "plan"])
+def test_a_gitignore_linked_to_a_device_is_refused_and_never_read(
+    tmp_path: Path, command: str
+) -> None:
+    # `attach` read `.gitignore` with `exists()` and `read_text`, both of which follow a link: a
+    # committed `.gitignore -> /dev/zero` read until memory ran out, and one to a FIFO waited for
+    # a writer. It is read only when it is a regular file, and anything else is a `.gitignore` that
+    # cannot be read, which stops the run before its first write. `/dev/null` is the case that
+    # cannot hang and still tells the guard apart: read, it is an empty `.gitignore`. Mutation
+    # (declared): `.gitignore` read with `read_text` again -> the run goes on.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    gitignore = root / GITIGNORE
+    if gitignore.exists():
+        gitignore.unlink()
+    gitignore.symlink_to("/dev/null")
+    before = _everything(tmp_path)
+    with pytest.raises(
+        Refusal, match=r"\.gitignore cannot be read \(not a regular file\)"
+    ) as raised:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            _planned_ignore_region(root)
+    # The machine's own absolute path is not the reader's business: the refusal says why, and
+    # names the file as the project names it. Mutation (declared): "the .gitignore refusal prints
+    # the path it opened".
+    assert str(tmp_path) not in str(raised.value)
+    assert _everything(tmp_path) == before
+
+
+def test_a_gitignore_that_is_a_fifo_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
+    # A FIFO cannot be committed, but a local process can leave one: the read must refuse it, not
+    # wait. In a child under a timeout, so a regression fails this case rather than hanging.
+    root = tmp_path / "project"
+    root.mkdir()
+    os.mkfifo(root / GITIGNORE)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.attach.write import _planned_ignore_region\n"
+        "from stayfixed.errors import Refusal\n"
+        "try:\n"
+        "    _planned_ignore_region(Path(sys.argv[1]))\n"
+        "except Refusal:\n"
+        "    print('refused')\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(root)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert done.stdout == "refused\n", done.stderr
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
+    tmp_path: Path, command: str
+) -> None:
+    # `attach` and `--check` read `.claude/settings.local.json` with `read_text`, which follows a
+    # link: a committed link to `/dev/zero` read until memory ran out, and one to a FIFO waited for
+    # a writer. It is read only when it is a regular file, and anything else is a settings file
+    # that cannot be read, before the first write. `/dev/null` tells the guard apart without
+    # hanging: read, it is an empty settings file. Mutation (declared): "the settings reader reads
+    # a file through any link".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    if settings.exists():
+        settings.unlink()
+    settings.symlink_to("/dev/null")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    # Named as the project names it, never by the machine's absolute path, as the `.gitignore`
+    # refusal is. Mutation (oracle): `mutations/`'s "the settings refusal prints the path it
+    # opened" -> the message carries the temporary directory.
+    assert str(refused.value) == f"{SETTINGS} cannot be read: not a regular file"
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it(
+    tmp_path: Path, command: str
+) -> None:
+    # The refusal's other arm, held to the same rule. Mutation (oracle): `mutations/`'s "the
+    # settings refusal of a file that is not UTF-8 prints the path it opened".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_bytes(b'{"hooks": {}, "x": "\xff"}')
+    before = _everything(tmp_path)
+    with pytest.raises(Failure) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert str(refused.value) == f"{SETTINGS} is not UTF-8 text"
+    assert _everything(tmp_path) == before
+
+
+def test_a_local_settings_file_that_is_a_fifo_is_refused_without_waiting(tmp_path: Path) -> None:
+    # A FIFO left where the settings file goes: the read refuses it, never waits. In a child under
+    # a timeout, so a regression fails this case rather than hanging.
+    root = tmp_path / "project"
+    (root / ".claude").mkdir(parents=True)
+    os.mkfifo(root / SETTINGS)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.attach.permissions import local_document\n"
+        "from stayfixed.errors import Failure\n"
+        "try:\n"
+        "    local_document(Path(sys.argv[1]))\n"
+        "except Failure:\n"
+        "    print('refused')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the settings read waited on a FIFO")
+    assert done.stdout == "refused\n", done.stderr
+
+
+def _wide(siblings: int) -> str:
+    """A settings document ten lists deep holding `siblings` empty lists: about 3 bytes each as
+    written, and about 26 once written back indented, which is the growth the cap is about."""
+    return '{"a": ' + "[" * 10 + ",".join(["[]"] * siblings) + "]" * 10 + "}"
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write(
+    tmp_path: Path, command: str
+) -> None:
+    # 12 KB, 6,000 lists deep: written back indented it is 72 MB, past the regular-file reader's
+    # cap, so `attach` wrote it, the ignore files, the ledger and `MEMORY.md`, then refused its own
+    # read of the file, and every `detach` after refused the same way. It is refused while nothing
+    # is written, and `--check` refuses it too. On an interpreter whose indenting encoder stops
+    # short of that depth the refusal is the one for nesting; elsewhere the one for length.
+    # Mutation (oracle): `mutations/`'s "attach plans a settings write-back the next read refuses"
+    # -> `--check` passes. `attach` is refused by two layers, that one and the merge's own
+    # write-back through `jsonobject.json_text`, so no single mutation reddens its case: the
+    # second is proven alone by `mutations/`'s "the JSON writer writes back a text past the read
+    # cap", in `tests/attach/test_detach.py`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_text('{"deep": ' + "[" * 6_000 + "]" * 6_000 + "}", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(EntriesError) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert str(refused.value) in (
+        f"{SETTINGS} {jsonobject.WRITTEN_PAST}",
+        f"{SETTINGS} {jsonobject.NESTED}",
+    )
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("siblings", [1_000, 100])
+def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, siblings: int
+) -> None:
+    # The same rule on every interpreter, with the cap lowered so the document is small: a
+    # document whose write-back, with room for the one key the settings fallback adds, would pass
+    # the cap is refused before anything is written, by `attach` and `--check` alike, and one
+    # inside it is merged as before. Mutation (oracle): `mutations/`'s "attach plans a settings
+    # write-back the next read refuses" -> `--check` passes the 1,000 case; `attach`'s two
+    # layers are the case above's.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_text(_wide(siblings), encoding="utf-8")
+    before = _everything(tmp_path)
+
+    def run() -> object:
+        if command == "attach":
+            return _attach_it(root, store, machine, tmp_path / "home")
+        return check(root, store=store, machine=machine)
+
+    if siblings == 100:
+        run()
+        if command == "attach":
+            assert RULE in settings.read_text(encoding="utf-8")
+        return
+    with pytest.raises(EntriesError) as refused:
+        run()
+    assert str(refused.value) == f"{SETTINGS} {jsonobject.WRITTEN_PAST}"
+    assert _everything(tmp_path) == before

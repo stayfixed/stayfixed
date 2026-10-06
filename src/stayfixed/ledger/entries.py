@@ -20,6 +20,7 @@ from pathlib import Path
 
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
+from stayfixed.fsops import read_regular_text
 from stayfixed.identifiers import Identifiers
 from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
@@ -247,7 +248,9 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     raising, because it has a whole tree to get through where this has one file.
     """
     try:
-        return path.read_text(encoding="utf-8")
+        # Entries are globbed and a clone commits them: see `fsops.open_regular` for what a
+        # link to a device or a FIFO did. A refusal is an `OSError`, an entry not read.
+        return read_regular_text(path)
     except UnicodeDecodeError as error:
         raise LedgerError(f"{_where(where)}: is not valid UTF-8 ({error.reason})") from error
     except OSError as error:

@@ -9,6 +9,7 @@ import pytest
 
 from stayfixed.config.loader import (
     CONFIG_FILE,
+    INTEGER_LIMIT,
     ConfigError,
     MachineConfigError,
     _build,
@@ -758,3 +759,53 @@ def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> N
         f"[paths] has unknown key(s): {shown} and 3 more plain name(s); "
         "1 more that is not a plain key name"
     )
+
+
+@pytest.mark.parametrize(
+    "rest",
+    [
+        "\n[gates]\ncustom_timeout_seconds = 0x" + "f" * 5_000 + "\n",
+        "\n[gates]\ncustom_timeout_seconds = 0o" + "7" * 6_000 + "\n",
+        "\n[gates]\ncustom_timeout_seconds = 0b" + "1" * 15_000 + "\n",
+        f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT}\n",
+        f"\n[budgets]\nagents_md_lines = {'9' * 401}\n",
+    ],
+    ids=["hex", "octal", "binary", "at-the-bound", "budget"],
+)
+def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
+    tmp_path: Path, rest: str
+) -> None:
+    # A power-of-two literal of any length converts, and so does a decimal under 4,300 digits, so
+    # the loader's own bound is what keeps a number no reader can print or hold out of `Config`.
+    # The refusal names the bound and never the value. Mutations (declared): "a configuration
+    # integer is bounded only below" -> every case loads; "the schema's integer keys are taken
+    # unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" -> `budget`.
+    with pytest.raises(ConfigError) as refused:
+        _gated(tmp_path, rest=rest)
+    assert str(refused.value).endswith(f"must be a positive integer below {INTEGER_LIMIT:,}")
+
+
+def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
+    # The legitimate side, and the bound's exact edge: one under it is a value like any other.
+    # Mutation (declared): "a configuration integer one under the bound is refused".
+    config = _gated(tmp_path, rest=f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT - 1}\n")
+    assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
+
+
+@pytest.mark.parametrize("value", ["0x" + "f" * 5_000, "5", "true"], ids=["long-hex", "5", "true"])
+def test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name(
+    tmp_path: Path, value: str
+) -> None:
+    # `[stayfixed] preset` was spelled with `str()` before it was checked, and `tomllib` converts
+    # a hex literal of any length, whose `str` raises past 4,300 digits: every command loading
+    # the file ended in an internal error. A value that is not a string is refused as the
+    # configuration's own error, before anything spells it, and still lists the presets this
+    # build ships, as 0.2.0's refusal of `5` or `true` did. Mutation (declared): the preset
+    # spelled with `str` again -> `ValueError` for the long one, and a refusal of a name this
+    # build does not ship for the others.
+    text = '[stayfixed]\nversion = "0.1.0"\npreset = ' + value + "\n"
+    text += '\n[project]\nname = "sample"\n'
+    with pytest.raises(
+        ConfigError, match=r"^stayfixed\.preset must be a string; available: recommended$"
+    ):
+        loads(text, tmp_path, machine=tmp_path / "no-machine.toml")

@@ -9,9 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from tests.gitfixture import git
+from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
 from tests.profiles import redrun
 from tests.profiles.python.bytecode import compile_module, make_stale
 
@@ -842,3 +844,38 @@ def test_commit_check_names_at_most_the_listed_limit_of_offences(
     assert line.startswith(f"FAIL: {LISTED_LIMIT + 2} of {LISTED_LIMIT + 2} commit message(s)")
     assert line.count("[attribution trailer naming an AI tool]") == LISTED_LIMIT
     assert "[attribution trailer naming an AI tool], and 2 more. " in line
+
+
+@pytest.mark.parametrize(
+    ("stdin", "said"),
+    [
+        pytest.param(NESTED, "is nested deeper than this reader follows", id="nested"),
+        pytest.param(f'{{"command": "ls", "n": {LONG_NUMBER}}}', "holds a number", id="long"),
+    ],
+)
+def test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], stdin: str, said: str
+) -> None:
+    # Valid JSON past the parser: nesting raised `RecursionError` past the `ValueError` arm and
+    # read `internal error`, and a long integer refused with the interpreter's advice to raise a
+    # process-wide limit. Both refuse as stdin the guard cannot read. Mutation (declared): the
+    # `RecursionError` arm removed -> `nested` is an internal error.
+    feed(monkeypatch, stdin)
+    assert invoke(["guard", "bg-cleanup"]) == 2
+    err = capsys.readouterr().err
+    assert "refused" in err
+    assert said in err
+    assert "internal error" not in err
+    assert "set_int_max_str_digits" not in err
+
+
+def test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Stdin goes through the one JSON object reader, so its depth bound holds here as it does for
+    # every other JSON document. Mutation (declared): "guard bg-cleanup parses stdin with a bare
+    # json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    feed(monkeypatch, DEEPER_THAN_FOUR)
+    assert invoke(["guard", "bg-cleanup"]) == 2
+    assert "nested deeper than this reader follows" in capsys.readouterr().err

@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1267,19 +1268,15 @@ def test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report(
 
 # Bytes a clone can commit in its settings file that are not plain UTF-8: one Latin-1 byte in a
 # string no entry reads, beside the forged entry and beside an unmarked one, and a UTF-8 byte-order
-# mark ahead of the document.
+# mark ahead of the document. The byte-order mark's row was a warning, the file one the walk could
+# not read, until Claude Code 2.1.288 was measured running the hooks of such a file (macOS,
+# 2026-10-05): its forged entry is live, and red like any other.
 SETTINGS_BYTES = {
     "latin-1-beside-a-forged-entry": TABLE["forged-right-store"],
     "latin-1-beside-no-marked-entry": Check(
         "hook-entries", OK, "0 stayfixed entr(ies), 1 foreign; all accounted for", ""
     ),
-    "byte-order-mark": Check(
-        "hook-entries",
-        WARN,
-        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
-        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
-        "check that each file named above is readable and is valid JSON",
-    ),
+    "byte-order-mark": TABLE["forged-right-store"],
 }
 
 
@@ -1288,10 +1285,12 @@ def test_a_byte_that_is_not_utf8_changes_no_entrys_verdict(tmp_path: Path, case:
     # The marker and every command it marks are ASCII, so one byte that is not UTF-8 elsewhere in
     # the file is no part of any entry's provenance. Refused, it made the whole file one the walk
     # was blind to, a warning, and a forged entry in it lost its red: the report exited 0. Node's
-    # parser reads such a file with the byte replaced, and so does the walk now. The byte-order
-    # mark is the other side: `json.loads` refuses it, as Node's `JSON.parse` does, so that file
-    # is still one the walk cannot read. Mutation (oracle): `mutations/`'s "hook-entries is blind
-    # to a settings file holding a byte that is not UTF-8" -> both `latin-1-` cases warn.
+    # parser reads such a file with the byte replaced, and so does the walk now. A byte-order mark
+    # ahead of the document is read past too: `json.loads` refuses it, and Claude Code 2.1.288
+    # runs the hooks of such a file (measured on macOS, 2026-10-05). Mutations (oracle):
+    # `mutations/`'s "hook-entries is blind to a settings file holding a byte that is not UTF-8"
+    # -> both `latin-1-` cases warn; "hook-entries is blind to a settings file opening with a
+    # byte-order mark" -> `byte-order-mark` warns.
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     if case == "latin-1-beside-no-marked-entry":
@@ -1655,13 +1654,14 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     tmp_path: Path, ledger: str
 ) -> None:
     # A file where the overlay's `projects/` goes holds no record of this checkout, so its binding
-    # is unbound: `attached` warns that the overlay has no binding for it, and `hook-entries` counts
-    # what `common/` grants and never opens `projects/`. The owner's one entry, which `common/`
-    # grants, is accounted for. While every binding was granted its project's sources, this row
-    # warned that the overlay could not be asked; the `attached` row is the one that now says what
-    # is wrong. Mutation (oracle): `mutations/`'s "a file where the project's directory would be is
-    # an overlay that cannot be asked" -> the record cannot be read, and `hook-entries` says the
-    # overlay could not be asked.
+    # is unbound: `attached` warns that the overlay is damaged, naming `projects/`, and
+    # `hook-entries` counts what `common/` grants and never opens `projects/`. The owner's one
+    # entry, which `common/` grants, is accounted for. While every binding was granted its
+    # project's sources, this row warned that the overlay could not be asked; the `attached` row
+    # is the one that now says what is wrong. Mutation (oracle): `mutations/`'s "a file where the
+    # project's directory would be is an overlay that cannot be asked" -> the record cannot be
+    # read, and `hook-entries` says the overlay could not be asked (the `readable` case: with the
+    # ledger unreadable the row says that whatever the overlay answers).
     root = _attached(tmp_path)
     if ledger == "unreadable":
         (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
@@ -1676,10 +1676,59 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     )
     assert _by_name(rows, "hook-entries") == expected
     attached = _by_name(rows, "attached")
+    # It said "has no binding for this project", sending the owner of a bound project to remove
+    # the ledger; it names the path that is not a directory instead, as
+    # `test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger`
+    # pins whole.
     if ledger == "readable":
         assert attached.status == WARN, attached
-        assert "has no binding for this project" in attached.detail
+        assert f"{projects} is not a directory" in attached.detail
     assert not [row.name for row in rows if row.status == "red"]
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "projects-is-a-file",
+        "overlay-root-is-a-file",
+        "projects-is-a-dangling-link",
+        "overlay-root-is-a-dangling-link",
+    ],
+)
+def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger(
+    tmp_path: Path, shape: str
+) -> None:
+    # A bound project whose overlay's `projects/`, or whose overlay root, became a file. The
+    # overlay holds no record of the binding it does have, so the row warned that the overlay "has
+    # no binding for this project" and offered to remove the ledger, which is the one remedy that
+    # destroys this checkout's record of a real attach. It names the path that is not a directory
+    # and says to repair the overlay; it stays a warning and no row turns red, since `hook-entries`
+    # still counts what `common/` grants where it can. Mutation (declared): the attached row asks
+    # nothing about the overlay's shape -> "has no binding" comes back.
+    root = _attached(tmp_path)
+    overlay = tmp_path / "overlay"
+    broken = overlay / PROJECTS if shape.startswith("projects") else overlay
+    shutil.rmtree(broken)
+    if shape.endswith("dangling-link"):
+        broken.symlink_to(broken.parent / "nowhere")
+    else:
+        broken.write_text("not a directory\n", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    attached = _by_name(rows, "attached")
+    assert attached == Check(
+        "attached",
+        WARN,
+        f"{LEDGER} records an attach, but {broken} is not a directory, so the overlay this "
+        f"machine records is damaged and cannot say whether this checkout is bound",
+        f"repair the overlay so that {broken} is a directory again (or clone the overlay afresh), "
+        f"then run `stayfixed doctor` again",
+    )
+    assert "remove the ledger" not in attached.remedy
+    # A root that names nothing leaves no `common/` to grant the owner's entry, which
+    # `hook-entries` judges as it judges an overlay that is gone, red; every other shape keeps
+    # `common/`'s grant, and no row turns red.
+    red = [row.name for row in rows if row.status == "red"]
+    assert red == (["hook-entries"] if shape == "overlay-root-is-a-dangling-link" else [])
 
 
 # What `projects/<name>/claude/hooks.json` grants beside `common/`'s one entry, and the id
@@ -1888,6 +1937,28 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
         attach_check(root, store=store, machine=machine)
 
 
+def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse(
+    tmp_path: Path,
+) -> None:
+    # Valid TOML that `tomllib` answers with a plain `ValueError`, which none of the record's
+    # readers caught: `attached`, `bundles` and `store-debris` each went red "this check could
+    # not run: ValueError", and `attach --check` ended in an internal error. Each now answers as
+    # it answers `UNPARSEABLE_RECORD`, a record that does not parse. Mutation (declared):
+    # `ValueError` dropped from `UNPARSEABLE`.
+    root = _granting_project(tmp_path, OWN_NAME)
+    record_path = tmp_path / "overlay" / PROJECTS / OWN_NAME / PROJECT_RECORD
+    record_path.write_text(f"x = {LONG_NUMBER}\n", encoding="utf-8")
+    machine = _machine(tmp_path)
+    rows = _checks(tmp_path, root, machine=machine)
+    assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
+    assert _by_name(rows, "hook-entries") == RECORD_UNREADABLE
+    for name in ("bundles", "store-debris"):
+        assert "could not run" not in _by_name(rows, name).detail
+    store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
+    with pytest.raises(Failure, match="is not valid TOML \\(holds a number longer"):
+        attach_check(root, store=store, machine=machine)
+
+
 # The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this
 # project to the ssh remote, so the binding is a mismatch.
 HTTPS_ORIGIN = "https://github.com/owner/p.git"
@@ -1915,3 +1986,146 @@ def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wr
         "repository under another URL form, https or ssh, counts as different too)",
         "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
     )
+
+
+# A committed `.claude/settings.json` whose `hooks` section is partly malformed, beside the forged
+# entry: each shape measured in a live Claude Code 2.1.288 session (macOS, 2026-10-05), where the
+# valid hooks beside it still ran. Each malformed part is a scalar where an event's list, a group, a
+# group's `hooks` list or an entry belongs, so nothing in it is a command anything could run.
+PARTLY_MALFORMED = {
+    "event-not-a-list": lambda hooks: hooks.update({"Stop": "notalist"}),
+    "group-not-an-object": lambda hooks: hooks.update({"Stop": [5]}),
+    "group-hooks-not-a-list": lambda hooks: hooks["PreToolUse"].append({"hooks": "x"}),
+    "entry-not-an-object": lambda hooks: hooks["PreToolUse"][0]["hooks"].append("str"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PARTLY_MALFORMED))
+def test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red(
+    tmp_path: Path, case: str
+) -> None:
+    # The row read the file with the engine's strict walk, so one malformed part made the whole
+    # file one it was blind to, a warning, and the forged entry beside it lost its red. Claude
+    # Code 2.1.288 (measured on macOS, 2026-10-05) still runs the valid hooks of such a file, so
+    # the forged entry is live and is judged like any other; the malformed part, a scalar, holds
+    # nothing that could run. Mutation (declared): hook-entries reads the file with the strict
+    # walk again -> every case warns.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    PARTLY_MALFORMED[case](document["hooks"])
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    expected = TABLE["forged-right-store"]
+    if case == "entry-not-an-object":
+        # The scalar beside the forged entry holds a place in its list, so the file holds two.
+        expected = replace(expected, detail=expected.detail.replace("entry 1 of 1", "entry 1 of 2"))
+    assert check == expected
+
+
+def test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for(
+    tmp_path: Path,
+) -> None:
+    # A malformed part that is a container — here an object where a group's `hooks` list goes —
+    # was not measured, and could hold a command a harness runs: the walk still judges the live
+    # entry beside it and says it could not account for the rest. Mutation (declared): a
+    # container in the wrong place is skipped like a scalar -> the clause about the unread part
+    # goes.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["hooks"]["PreToolUse"].append(
+        {"hooks": {"x": {"type": "command", "command": "echo hidden"}}}
+    )
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    readable = TABLE["forged-right-store"]
+    assert check == Check(
+        "hook-entries",
+        "red",
+        f"{readable.detail}; 1 settings file(s) exist and could not be read as hook entries, "
+        f"so nothing here accounts for what is in them: {COMMITTED}",
+        readable.remedy,
+    )
+
+
+# A container where the `hooks` section expects an event's list, a group or an entry, holding the
+# forged entry, and the forged entry itself where a group goes, with no `hooks` list of its own:
+# none of these shapes was measured, and each could hold a command a harness runs.
+CONTAINED_FORGERIES = {
+    "event-an-object": lambda hooks, group: hooks.update({"Stop": {"wrapped": [group]}}),
+    "group-a-list": lambda hooks, group: hooks.update({"Stop": [[group]]}),
+    "entry-a-list": lambda hooks, group: hooks.update({"Stop": [{"hooks": [group["hooks"]]}]}),
+    "entry-where-a-group-goes": lambda hooks, group: hooks.update({"Stop": group["hooks"]}),
+}
+# What the row says of a file holding a marked command where the walk reads no hook entry.
+HIDDEN = Check(
+    "hook-entries",
+    "red",
+    f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) hold a command claiming the stayfixed "
+    f"marker where this check reads no hook entry, so nothing here can check it: {COMMITTED}; 1 "
+    f"settings file(s) exist and could not be read as hook entries, so nothing here accounts for "
+    f"what is in them: {COMMITTED}",
+    "open each file named above and remove what you did not put there; stayfixed writes no "
+    "marked command outside an event's list of entry groups",
+)
+
+
+@pytest.mark.parametrize("case", sorted(CONTAINED_FORGERIES))
+def test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread(
+    tmp_path: Path, case: str
+) -> None:
+    # The live-entry walk skips a misplaced container, and an entry object where a group goes,
+    # neither of which was measured. A command claiming the stayfixed marker inside one is red
+    # rather than the warning a file the walk cannot read gets: a conservative reading, since
+    # whether a harness runs it is not known, and a clone could otherwise hide a forged entry
+    # there and keep the exit code at 0. Mutations (declared): "the live-entry walk skips a
+    # container without saying so" and "the live-entry walk reads an entry where a group goes as
+    # no entry" -> the row warns or reads "all accounted for"; "the live-entry walk overlooks a
+    # marked command it skipped" -> it warns.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    group = document["hooks"].pop("PreToolUse")[0]
+    CONTAINED_FORGERIES[case](document["hooks"], group)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == HIDDEN
+
+
+def test_an_entry_is_named_by_its_place_among_every_element_beside_it(tmp_path: Path) -> None:
+    # The row named an entry by its place among the entries it judged, so with scalars beside it
+    # -- skipped, as Claude Code skips them -- a forged entry fifth in its list was named "entry 2
+    # of 2", a place a reader opening the file would not find. Every element of an entry list
+    # holds a place. Mutation (declared): "the live-entry walk numbers only the entries it reads".
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    forged = document["hooks"]["PreToolUse"][0]["hooks"][0]
+    ok = {"type": "command", "command": "echo ok"}
+    document["hooks"]["PreToolUse"][0]["hooks"] = [1, "s", None, ok, forged]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check.status == "red"
+    assert check.detail.endswith(f"{COMMITTED} entry 5 of 5")
+
+
+@pytest.mark.parametrize("shape", ["scalar-event", "byte-order-mark"])
+def test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # The lenient walk and the byte-order mark are what Claude Code 2.1.288 was measured to run;
+    # no such measurement covers Codex's `.codex/hooks.json`, so a file there with a misplaced
+    # scalar or a leading byte-order mark stays one the row could not read. Mutation (declared):
+    # every settings file read leniently -> the Codex file is counted.
+    root = _attached(tmp_path)
+    codex = root / ".codex" / "hooks.json"
+    codex.parent.mkdir(parents=True, exist_ok=True)
+    hooks = {"PreToolUse": [{"hooks": [{"type": "command", "command": "echo foreign"}]}]}
+    if shape == "scalar-event":
+        codex.write_text(json.dumps({"hooks": {**hooks, "Stop": "notalist"}}), encoding="utf-8")
+    else:
+        codex.write_bytes(b"\xef\xbb\xbf" + json.dumps({"hooks": hooks}).encode())
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert "could not be read as hook entries" in check.detail
+    assert check.detail.endswith(": .codex/hooks.json")

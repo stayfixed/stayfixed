@@ -4,17 +4,18 @@ import json
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
     apply_entries,
-    entry_commands,
     mark,
     marker_id,
     owned,
     owned_ids,
+    placed_entries,
 )
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing
 
 
 def document(*commands: tuple[str, str]) -> str:
@@ -163,6 +164,41 @@ def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() 
         apply_entries(nested, {})
 
 
+def test_a_document_past_the_encoder_refuses_as_one_nested_past_the_parser() -> None:
+    # On Python 3.14 this parses, and `apply_entries`'s `json.dumps` of it raised `RecursionError`
+    # past every caller's catch, where 3.11 to 3.13 refuse it at the parse. The reader bounds the
+    # depth it follows, so every interpreter refuses it as nested too deep; the bound itself is
+    # proven on every interpreter by `test_the_object_reader_refuses_a_value_past_its_depth_bound`.
+    with pytest.raises(ParserLimitError, match="nested deeper"):
+        apply_entries('{"x": ' + PAST_ENCODING + "}", {})
+
+
+def test_the_object_reader_refuses_a_value_past_its_depth_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The bound lowered, so a document every parser follows meets it: one level past refuses in
+    # the parser's own words, and a document at the bound is read. Mutation (declared): the
+    # bound never refuses -> the deeper document is read.
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    with pytest.raises(ParserLimitError, match="nested deeper than this reader follows"):
+        apply_entries('{"x": [[[[]]]]}', {})
+    assert json.loads(apply_entries('{"x": [[[]]]}', {})) == {"x": [[[]]]}
+
+
+def test_a_real_settings_document_sits_far_inside_the_depth_bound() -> None:
+    # The legitimate document the bound must never refuse: hooks -> event -> group -> hooks ->
+    # entry is five levels, and the bound is a named cap far above any settings file a harness
+    # writes. Under it too, and pinned, because only the oracle's interpreters see this test run
+    # the cap: on 3.14 (the one interpreter whose parser follows past it) nested objects stopped
+    # encoding at about 21,700 levels of `==` and 28,900 of `json.dumps(indent=2)` (measured on
+    # 3.14.7), so a cap raised past 20,000 would let 3.14 read what it cannot write back.
+    # Mutations (declared): "the JSON object reader's depth bound is raised past what 3.14
+    # encodes" and "the JSON object reader's depth bound is lowered under what a harness writes".
+    marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
+    assert 1_000 <= jsonobject.DEPTH_CAP < 20_000
+    assert json.loads(apply_entries(marked, {})) == {}
+
+
 def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge() -> None:
     # `owned_ids` answers ids and events, which no number can be part of, so it reads a number as
     # its text and answers for the entries beside one. `apply_entries` writes the document back,
@@ -176,6 +212,12 @@ def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge(
     assert owned_ids(long) == {"bg-cleanup": "PreToolUse"}
     with pytest.raises(ParserLimitError, match="number longer"):
         apply_entries(long, {})
+
+
+def _commands(document: str) -> list[str]:
+    """The strict walk's commands, in its order: the walk `doctor` reads a file no measurement
+    covers with, and `attach`'s grants are read back through."""
+    return [placed.command for placed in placed_entries(document)]
 
 
 def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_refuses() -> None:
@@ -196,18 +238,18 @@ def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_r
             "SessionStart": [{"hooks": [{"command": shared}]}],
         },
     }
-    assert entry_commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
-    assert entry_commands("") == []
-    assert entry_commands(json.dumps({"permissions": {}})) == []
+    assert _commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
+    assert _commands("") == []
+    assert _commands(json.dumps({"permissions": {}})) == []
     # The walk is the engine's strict one: a shape `apply_entries` would refuse is refused here,
     # as `owned_ids` refuses it, and a number past the parser's reach is read as its text.
     for refused in ("not json", "[]", '{"hooks": []}', '{"hooks": {"Stop": [1]}}'):
         with pytest.raises(EntriesError):
             owned_ids(refused)
         with pytest.raises(EntriesError):
-            entry_commands(refused)
+            _commands(refused)
     long = json.dumps(raw)[:-1] + ', "n": ' + LONG_NUMBER + "}"
-    assert entry_commands(long) == [shared, "", "", "7", "plain.sh", shared]
+    assert _commands(long) == [shared, "", "", "7", "plain.sh", shared]
 
 
 def test_an_empty_document_gains_the_wanted_entries() -> None:
@@ -321,3 +363,56 @@ def test_event_keys_apply_entries_adds_land_in_sorted_order() -> None:
         },
     )
     assert list(json.loads(after)["hooks"]) == ["Zed", "Alpha", "Beta", "Mid"]
+
+
+# Valid JSON 3,000 levels deep: inside every supported parser's reach but 3.11's, and past the
+# reach of 3.12's encoder whenever it indents. 3.12's C encoder does not handle `indent`, so
+# `json.dumps(indent=2)` runs the pure-Python one, which stops near 994 levels.
+ENCODER_DEEP = '{"x": ' + "[" * 3_000 + "]" * 3_000 + "}"
+
+
+def test_a_document_read_and_then_too_deep_to_write_back_is_refused_never_an_internal_error() -> (
+    None
+):
+    # On Python 3.12 the engine read this document and then ended in `RecursionError` writing it
+    # back, an internal error; 3.11 refuses it at the parse, and 3.13 and 3.14 read and write it.
+    # Every interpreter now either writes it back or refuses it as nested too deep. Real depth, so
+    # it reddens on 3.12 in CI; `test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested`
+    # forces the same arm on every interpreter, for the oracle.
+    try:
+        written = apply_entries(ENCODER_DEEP, {})
+    except ParserLimitError as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+    else:
+        assert json.loads(written) == json.loads(ENCODER_DEEP)
+
+
+@pytest.mark.parametrize("call", ["apply-entries", "owned"])
+def test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested(
+    monkeypatch: pytest.MonkeyPatch, call: str
+) -> None:
+    # The encoder stops where an interpreter's recursion does, which differs by interpreter and
+    # by `indent`; forced here, the engine's two encodes of a parsed document answer it as the
+    # reader answers a document nested past the parser. Mutations (declared): either encode made
+    # with a bare `json.dumps` again -> `RecursionError` escapes.
+    monkeypatch.setattr(jsonobject, "_encode", overflowing)
+    marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
+    with pytest.raises(ParserLimitError, match="nested deeper than this reader follows"):
+        if call == "apply-entries":
+            apply_entries(marked, {})
+        else:
+            owned(marked)
+
+
+def test_a_document_at_the_depth_bound_is_written_back_or_refused_on_this_interpreter() -> None:
+    # The bound is only as good as what the rest of the interpreter follows: a document exactly at
+    # it either round-trips through the engine here or is refused in the reader's words, never an
+    # internal error -- on 3.11 to 3.13 the parser refuses it; on 3.14 it is read and encoded,
+    # and refused because, indented, it is longer than the regular-file reader reads.
+    deep = '{"x": ' + "[" * (jsonobject.DEPTH_CAP - 1) + "]" * (jsonobject.DEPTH_CAP - 1) + "}"
+    try:
+        written = apply_entries(deep, {})
+    except ParserLimitError as refused:
+        assert jsonobject.NESTED in str(refused) or jsonobject.WRITTEN_PAST in str(refused)
+    else:
+        assert written.startswith('{\n  "x": [')

@@ -1127,3 +1127,56 @@ def test_git_log_all_on_a_repository_with_no_commit_answers_zero(tmp_path: Path)
     root = _repo(tmp_path)
     done = run_git(root, "log", "--all", "--format=%H", "-1", "--", MEMORY)
     assert (done.returncode, done.stdout) == (0, "")
+
+
+@pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
+def test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # The probe reads by the walk `doctor`'s `hook-entries` reads with, and after `doctor` began to
+    # read past a leading byte-order mark and a misplaced scalar -- the shapes Claude Code 2.1.288
+    # was measured running the hooks of (macOS, 2026-10-05) -- the probe still read both as files
+    # it could not look at, while `doctor` counted the foreign entry in each. Mutation (declared):
+    # the probe reads every file strictly -> "could not look".
+    root = _repo(tmp_path, 'agents = ["claude"]')
+    plain = _settings("echo foreign")
+    bom = chr(0xFEFF)
+    text = plain[:-2] + ', "Stop": "notalist"}}' if shape == "scalar-event" else bom + plain
+    _write(root, ".claude/settings.json", text)
+    assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
+        ("foreign-hooks", (".claude/settings.json",))
+    ]
+
+
+def test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found(
+    tmp_path: Path,
+) -> None:
+    # An object where an event's list goes was not measured and could hold a command, so the walk
+    # skips it and says so: the probe names the foreign entry it did read and says it could not
+    # look at the rest, as `doctor` does. Mutation (declared): the probe drops the walk's word
+    # that it skipped a part -> only the foreign entry is named.
+    root = _repo(tmp_path, 'agents = ["claude"]')
+    plain = _settings("echo foreign")
+    _write(root, ".claude/settings.json", plain[:-2] + ', "Stop": {"x": []}}}')
+    assert sorted(_shapes(_items(root, tmp_path, "foreign-hooks"))) == [
+        (COULD_NOT_LOOK, (".claude/settings.json",)),
+        ("foreign-hooks", (".claude/settings.json",)),
+    ]
+
+
+@pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
+def test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # The lenient walk is for the files Claude Code was measured running partly malformed, and no
+    # measurement covers Codex's `.codex/hooks.json`, which `doctor` reads strictly: the probe
+    # reads it strictly too, so the two give one answer about one file. Mutation (declared): the
+    # probe reads every file leniently -> the foreign entry is named.
+    root = _repo(tmp_path, 'agents = ["codex"]')
+    plain = _settings("echo foreign")
+    bom = chr(0xFEFF)
+    text = plain[:-2] + ', "Stop": "notalist"}}' if shape == "scalar-event" else bom + plain
+    _write(root, ".codex/hooks.json", text)
+    assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
+        (COULD_NOT_LOOK, (".codex/hooks.json",))
+    ]

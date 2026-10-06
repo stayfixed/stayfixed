@@ -276,8 +276,8 @@ reddens = [
 [[mutation]]
 name = "an undecodable ledger file is silently mangled instead of reported"
 file = "src/stayfixed/ledger/entries.py"
-before = '        return path.read_text(encoding="utf-8")'
-after = '        return path.read_text(encoding="utf-8", errors="replace")'
+before = "        return read_regular_text(path)"
+after = '        return path.read_bytes().decode("utf-8", errors="replace")'
 reddens = [
   "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
   "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
@@ -1357,6 +1357,7 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[trail]",
 ]
 
 [[mutation]]
@@ -1366,6 +1367,7 @@ before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
 after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[store-bound]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
 ]
 
 # A `trail.toml` theme pattern is repository-authored, and `re` backtracks exponentially on some:
@@ -2521,4 +2523,52 @@ before = "    return _UNTRUSTED if _holds_repository_data(store, config) else _L
 after = "    return _LINK_WAITS"
 reddens = [
   "tests/memory/test_commands.py::test_a_committed_index_is_reported_untrusted",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": each reader of a
+# committed file a glob found reads it through that reader, so a link to a device or a FIFO is
+# one more file it cannot read, in that reader's own words.
+[[mutation]]
+name = "the ledger's entry reader follows a link to a device"
+file = "src/stayfixed/ledger/entries.py"
+before = "        return read_regular_text(path)"
+after = '        return path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]
+
+[[mutation]]
+name = "the note reader follows a link to a device"
+file = "src/stayfixed/memory/notes.py"
+before = '        text = read_regular_text(path, newline="")'
+after = '        text = path.read_bytes().decode("utf-8")'
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read",
+]
+
+[[mutation]]
+name = "the trust digest follows a note or index linked to a device"
+file = "src/stayfixed/memory/trust.py"
+before = "        with open_regular(path) as stream:"
+after = "        with path.open(\"rb\") as stream:"
+reddens = [
+  "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
+]
+
+[[mutation]]
+name = "the document reader follows a link to a device"
+file = "src/stayfixed/docs/hygiene.py"
+before = "        return read_regular_text(path)"
+after = '        return path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_document_linked_to_a_device_is_a_failure_naming_it",
+]
+
+[[mutation]]
+name = "a file past the cap digests as the unreadable marker"
+file = "src/stayfixed/memory/trust.py"
+before = "            content = _TOO_LARGE + content"
+after = "            content = _UNREADABLE"
+reddens = [
+  "tests/memory/test_trust.py::test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant",
 ]

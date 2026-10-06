@@ -15,15 +15,19 @@ claims, and that docstring says why.
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
-from stayfixed.fsops import names_regular_file
-from stayfixed.harnesses import HARNESSES
-from stayfixed.scaffold import ParserLimitError, Placed, marker_id, placed_entries
+from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
+from stayfixed.harnesses import HARNESSES, LENIENT_SETTINGS
+from stayfixed.printed import printable
+from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
 from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
@@ -34,6 +38,22 @@ from stayfixed.setup.api import USER_SETTINGS
 SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
+
+# Where Claude Code finds a project's skills, each one a directory holding `SKILL.md`. A skill's
+# YAML frontmatter can declare hooks, and Claude Code ran one so declared once the skill was
+# invoked (2.1.288, measured 2026-10-06), so this row names every skill whose frontmatter has a
+# top-level `hooks:` key as one it does not judge (`_skills`).
+SKILLS = ".claude/skills"
+_SKILL_FILE = "SKILL.md"
+# The line that opens a frontmatter and the next one that closes it.
+_FENCE = "---"
+# A top-level `hooks` key: at the start of its line, not indented under another key, and the whole
+# key, not the start of a longer one. Nothing else of YAML is parsed.
+_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")
+# What a skill whose directory name is outside the path grammar is named as: the name is the
+# repository's, and this row's detail is what `--json` carries too, so there is nowhere else to
+# point.
+_UNPRINTED_SKILL = "a skill whose name this row does not print"
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
@@ -228,10 +248,31 @@ def _unchecked(areas: Sequence[Claims], wheres: list[str]) -> str:
     )
 
 
+def _hidden(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} settings file(s) hold a command claiming the stayfixed marker where this "
+        f"check reads no hook entry, so nothing here can check it: {listed(wheres)}"
+    )
+
+
 def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
         f"{len(wheres)} settings file(s) exist and could not be read as hook entries, so "
         f"nothing here accounts for what is in them: {listed(wheres)}"
+    )
+
+
+def _skill_hooks(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} project skill(s) declare hooks in their frontmatter, which this row does "
+        f"not judge: {listed(wheres)}"
+    )
+
+
+def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} project skill file(s) could not be read, so this row cannot say whether "
+        f"they declare hooks: {listed(wheres)}"
     )
 
 
@@ -261,11 +302,40 @@ _UNCHECKED = _Kind(
         "no settings file nested that deep"
     ),
 )
+# A marked command in a part of the file the live-entry walk skipped: red, conservatively, for
+# the reason `_UNCHECKED` is -- a harness may run what nothing here can check.
+_HIDDEN = _Kind(
+    RED,
+    8,
+    _hidden,
+    lambda areas: (
+        "open each file named above and remove what you did not put there; stayfixed writes no "
+        "marked command outside an event's list of entry groups"
+    ),
+)
 _BLIND = _Kind(
     WARN,
     0,
     _blind,
     lambda areas: "check that each file named above is readable and is valid JSON",
+)
+# A project skill declaring hooks, and one whose file could not be read: warnings, never red, at
+# the lowest step, so either one softens a row with nothing else to say and never a red one. This
+# row judges settings files; a skill's hooks are named, not judged.
+_SKILL_HOOKS = _Kind(
+    WARN,
+    0,
+    _skill_hooks,
+    lambda areas: (
+        "open each skill named above and check the hooks its frontmatter declares: Claude Code "
+        "runs them once the skill is invoked"
+    ),
+)
+_SKILL_UNREAD = _Kind(
+    WARN,
+    0,
+    _skill_unread,
+    lambda areas: "check that each skill file named above is a readable regular file",
 )
 _KINDS = (
     _UNREADABLE,
@@ -276,7 +346,10 @@ _KINDS = (
     _UNREAD_UNVOUCHED,
     _UNREAD_UNGRANTED,
     _UNCHECKED,
+    _HIDDEN,
     _BLIND,
+    _SKILL_HOOKS,
+    _SKILL_UNREAD,
 )
 
 
@@ -309,6 +382,55 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
                 wheres = [where for where in mine if where is not None]
                 gathered.append(_Finding(kind, areas, wheres))
     return gathered
+
+
+def _declares_hooks(text: str) -> bool:
+    """Whether `text`, a `SKILL.md`, opens with a frontmatter holding a top-level `hooks:` key.
+
+    The frontmatter is the lines between a first line of `---` and the next `---` line; without
+    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
+    a byte-order mark ahead of the first line is read past."""
+    lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if lines[0].rstrip() != _FENCE:
+        return False
+    for end, line in enumerate(lines[1:], 1):
+        if line.rstrip() == _FENCE:
+            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+    return False
+
+
+def _skills(root: Path) -> list[_Found]:
+    """A finding for each project skill whose frontmatter declares hooks, and for each whose
+    `SKILL.md` could not be read, in name order.
+
+    Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to a
+    device or a FIFO is refused unread, and a file past the cap is refused, each a skill file this
+    row could not read. A skill directory without a `SKILL.md`, and a path under `SKILLS` that is
+    not a directory, name no skill and are passed over, as a `SKILLS` that names nothing is. Each
+    skill is named by its path, through `printed.printable`, because its directory name is the
+    repository's."""
+    directory = root / SKILLS
+    try:
+        with os.scandir(directory) as listing:
+            names = sorted(entry.name for entry in listing)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return [(_SKILL_UNREAD, None, SKILLS)]
+    found: list[_Found] = []
+    for name in names:
+        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)
+        try:
+            content = read_regular_bytes(directory / name / _SKILL_FILE)
+        except OSError as exc:
+            if exc.errno not in NAMES_NO_FILE:
+                found.append((_SKILL_UNREAD, None, label))
+            continue
+        # Replaced rather than refused, for the reason the settings walk replaces: the key is
+        # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
+        if _declares_hooks(content.decode("utf-8", errors="replace")):
+            found.append((_SKILL_HOOKS, None, label))
+    return found
 
 
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
@@ -350,28 +472,37 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         try:
             # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
-            document = path.read_text(encoding="utf-8", errors="replace")
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read to the
+            # regular-file reader's cap, as every reader of a committed file is, so a file that
+            # never ends, or one swapped for a device after the question above, is one this walk
+            # cannot read.
+            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))
             continue
         try:
-            # The engine's own reader, so a document `apply_entries` would refuse is one this walk
-            # names rather than silently tolerates.
-            entries = placed_entries(document)
+            # The entries a harness runs out of the file, read as `harnesses.LENIENT_SETTINGS`
+            # says its files were measured, and every other file strictly. A part this cannot
+            # read for entries is named as one the walk is blind to, and a marked command in one
+            # is red.
+            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)
         except ParserLimitError:
             found.append((_UNCHECKED, None, label))
             continue
         except Refusal:
             found.append((_BLIND, None, label))
             continue
-        for position, placed in enumerate(entries, start=1):
+        if read.hidden:
+            found.append((_HIDDEN, None, label))
+        if read.partly:
+            found.append((_BLIND, None, label))
+        for position, placed in read.entries:
             entry_id = marker_id(placed.command)
             if entry_id is None:
                 foreign += 1
                 continue
             claimed += 1
-            where = f"{label} entry {position} of {len(entries)}"
+            where = f"{label} entry {position} of {read.places}"
             holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
             if not holders and not unread:
                 # Needs the records alone, so a source that cannot be asked does not withhold
@@ -408,6 +539,7 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
                     found.append((_UNVOUCHED, holders[0], where))
+    found.extend(_skills(context.root))
     return claimed, foreign, _gathered(answers, found)
 
 
@@ -489,25 +621,41 @@ def hook_entries(context: Context) -> Row:
     once, so two areas' entries of one kind each get their area's way out. An entry no record holds
     names every record it is missing from, and with no area claiming anything, none.
 
-    **Entries are counted, never keys.** `scaffold.placed_entries` answers one element per entry,
+    **Entries are counted, never keys.** `scaffold.judged_entries` answers one element per entry,
     in document order, so N entries sharing one id are N entries and one id under two events is
     two. Keyed by id, as `owned_ids` answers, the claimed count would deflate and `foreign` inflate
     by exactly the difference. The count comes from `marker_id`, the predicate `owned_ids` is built
     on and the one `attach.write` keys its ledger with.
 
     **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
-    read and a document the engine refuses are each named, because "all accounted for" is the one
-    answer this check must never give about entries it did not see. `placed_entries` reads the
-    document with the engine's own strict walk, the one `apply_entries` rewrites through, so a
-    shape the merge would refuse is exactly the shape this walk admits it cannot account for. The
-    report names the file and never its contents.
+    read, a document that will not parse or is not an object, a `hooks` that is not an object, and
+    a part of the `hooks` section that could hold a command it cannot read are each named, because
+    "all accounted for" is the one answer this check must never give about entries it did not see.
+    The report names the file and never its contents.
+
+    **The entries a harness runs are judged, wherever they sit, in the files it was measured
+    on.** For Claude Code's settings files (`harnesses.LENIENT_SETTINGS`, which says what was
+    measured and when) the walk is not the engine's strict one, the one `apply_entries` rewrites
+    through: Claude Code still ran the valid hooks of a file whose `hooks` section held a scalar
+    where an event's list, a group, a group's `hooks` or an entry belongs, so a marked entry
+    beside such a part is live, and one nothing vouches for is red. Every other file -- Codex's
+    `.codex/hooks.json`, which no measurement covers -- is read by the strict walk, as before.
+    Read strictly, Claude Code's whole file was `blind`, a warning, and a clone kept the exit code
+    at 0 by committing one such scalar beside a forged entry. Not measured, and so not assumed: a
+    container in one of those places, or an entry object where a group goes, which may hold a
+    command, leaves the file `blind` as well as judging the entries beside it; and a command
+    claiming the stayfixed marker inside one is red. That last is a conservative reading, not a
+    measurement: whether a harness runs it is not known, and a clone could otherwise hide a
+    forged entry there and keep the exit code at 0. Every element of an entry list holds a place
+    in the count, so an entry is named where a person opening the file finds it.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
     byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
     are judged as they would be without the byte; a harness may read the file the same way, so
-    a marked entry in it nothing vouches for is red. Only what then fails to parse is `blind` —
-    a UTF-8 byte-order mark among it, which `json.loads` refuses as Node's parser does — and an
-    `OSError` on the read.
+    a marked entry in it nothing vouches for is red. In Claude Code's settings files a UTF-8
+    byte-order mark ahead of the document is read past: `json.loads` refuses it, and Claude Code
+    runs the hooks of such a file (`harnesses.LENIENT_SETTINGS`), so it is no reason to be
+    `blind` there. In any other file it still is.
 
     **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
     is a warning, which is right for a file this machine will not let anything read and for one
@@ -516,7 +664,14 @@ def hook_entries(context: Context) -> Row:
     it may run, and a warning there would let a clone commit a marked entry beside such nesting and
     keep the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may
     leave unknown the provenance of an entry a harness may run. A number longer than the
-    interpreter converts is not refused at all: `placed_entries` reads it as its text, and the
+    interpreter converts is not refused at all: either walk reads it as its text, and the
     entries beside it are judged as they would be without it.
+
+    **A project skill's hooks are named, never judged.** Claude Code runs a hook a committed
+    skill's frontmatter declares once the skill is invoked (`SKILLS` says what was measured), and
+    this row judges settings files, so "all accounted for" beside such a skill would claim more
+    than the row looked at. Each skill whose frontmatter holds a top-level `hooks:` key, and each
+    whose `SKILL.md` could not be read, is a warning naming it (`_skills`): never red, because
+    what a skill's hooks are and whether stayfixed put them there is nothing this row reads.
     """
     return _told(*_classify(context))

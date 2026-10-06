@@ -24,6 +24,7 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
+from tests.parserlimits import overflowing
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -2044,3 +2045,31 @@ def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anythin
     assert "is a directory" in str(refused.value)
     assert not home.exists(), sorted(p.name for p in home.rglob("*"))
     assert not machine.exists()
+
+
+def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
+    # deep `~/.claude/settings.json` was read and then ended `stayfixed setup` in
+    # `RecursionError` while the merge was encoded. Forced on every interpreter: it is the
+    # failure a file nested past the parser gets, and the file is left as it was. Mutation
+    # (declared): setup encodes the merged settings with a bare `json.dumps` again.
+    from stayfixed import jsonobject
+
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / USER_SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    monkeypatch.setattr(jsonobject, "_encode", overflowing)
+    with pytest.raises(Failure) as caught:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert str(caught.value) == f"{home / USER_SETTINGS} {NESTED}"
+    assert (home / USER_SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'

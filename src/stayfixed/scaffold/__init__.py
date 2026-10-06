@@ -1,9 +1,9 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
 Everything a consumer needs is re-exported here, including the primitives other areas reach for
-directly: `placed_entries` for `doctor`'s provenance list, each entry a `Placed`, and
-`wanted_placements` for the grants it is compared with, which `attach` answers; `entry_commands`
-for `assess`, which asks only for commands; `owned_ids` for the ids `attach` records in its
+directly: `judged_entries` for `doctor`'s provenance list, each entry a `Placed`, and for
+`assess`'s foreign-hook probe, which reads the same walk; `wanted_placements` for the grants it
+is compared with, which `attach` answers; `owned_ids` for the ids `attach` records in its
 ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
 `uninstall`. The three refusals a consumer has to catch by name
 are here too: a caller that cannot import `ManifestError`, `RegionError` or `EntriesError`
@@ -41,13 +41,13 @@ from stayfixed.scaffold.entries import (
     ParserLimitError,
     Placed,
     apply_entries,
-    entry_commands,
+    judged_entries,
     mark,
     marker_id,
     owned,
     owned_ids,
-    placed_entries,
     settings_object,
+    settings_text,
     wanted_placements,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
@@ -93,8 +93,8 @@ __all__ = [
     "digest",
     "drop",
     "effective_target",
-    "entry_commands",
     "extract",
+    "judged_entries",
     "left_copies",
     "local_copies",
     "mark",
@@ -102,11 +102,11 @@ __all__ = [
     "ours_locally",
     "owned",
     "owned_ids",
-    "placed_entries",
     "plan",
     "printable",
     "render_report",
     "settings_object",
+    "settings_text",
     "unlinks",
     "upsert",
     "validate_sources",

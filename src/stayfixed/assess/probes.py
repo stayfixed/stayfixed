@@ -40,7 +40,7 @@ from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import Severity
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.scaffold import EntriesError, entry_commands, marker_id
+from stayfixed.scaffold import EntriesError, judged_entries, marker_id
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -160,10 +160,13 @@ def _memory_history(context: ProbeContext) -> Looked:
 
 def _foreign_hooks(context: ProbeContext) -> Looked:
     """Settings files of the selected harnesses that hold a hook entry without stayfixed's
-    marker, read by the walk `doctor`'s `hook-entries` reads them with: a file one names and the
-    other cannot read would be two answers about one file. Every way repository content can make
-    reading fail is "could not look"."""
-    from stayfixed.harnesses import select
+    marker, read by the walk `doctor`'s `hook-entries` reads them with (`scaffold.judged_entries`,
+    lenient for the files a harness was measured running partly malformed): a file one names and
+    the other cannot read would be two answers about one file. Every way repository content can
+    make reading fail is "could not look", and so is a part of the file the walk skipped that
+    could hold a command. One difference stays: this decodes strictly, so a byte that is not
+    UTF-8 is "could not look" here where `doctor` reads past it."""
+    from stayfixed.harnesses import LENIENT_SETTINGS, select
 
     harnesses, _ = select(context.config.stayfixed.agents)
     found: list[str] = []
@@ -172,11 +175,14 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
         try:
             path = contained(context.root, relative)
             text = path.read_text(encoding="utf-8") if path.is_file() else ""
-            commands = entry_commands(text)  # raises EntriesError for a shape `doctor` names
+            # Raises `EntriesError` for a shape `doctor` names as one it could not read.
+            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
             unread.append(relative)
             continue
-        if any(marker_id(command) is None for command in commands):
+        if walked.partly:
+            unread.append(relative)
+        if any(marker_id(placed.command) is None for _, placed in walked.entries):
             found.append(relative)
     return Looked(tuple(found), tuple(unread))
 

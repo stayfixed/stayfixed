@@ -17,6 +17,7 @@ from stayfixed.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX, PAST_FLOAT
 from tests.project.repos import DOCUMENT as BASE_DOCUMENT
 from tests.project.repos import repository
 from tests.runners import LsRemote
@@ -267,3 +268,61 @@ def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
     monkeypatch.setattr("stayfixed.assess.assessment.run_probes", boom)
     assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 2
     assert (root / ASSESSMENT).read_bytes() == before
+
+
+# Integers `tomllib` converts whatever their length, each too large for what reads the key: a hex
+# literal (a power-of-two base is exempt from the 4,300-digit limit) that no `str` can print, and
+# a decimal of 401 digits, inside the limit, that no `float` can hold.
+TOO_LARGE = {"hex": LONG_HEX, "decimal": PAST_FLOAT}
+
+
+@needs_git
+@pytest.mark.parametrize("shape", sorted(TOO_LARGE))
+def test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error(
+    tmp_path: Path, shape: str
+) -> None:
+    # `[gates] custom_timeout_seconds` was checked only for `<= 0`, so either literal reached the
+    # custom gate: `str` raised `ValueError` with the interpreter's advice to raise a limit, or
+    # `float` raised `OverflowError`, and `assess` ended in an internal error, exit 2. The loader
+    # bounds every integer key, so it is the configuration's refusal, exit 1. Mutation
+    # (declared): the bound on a schema integer dropped -> exit 2 again.
+    root = smoke_repo(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + f"\n[gates]\ncustom_timeout_seconds = {TOO_LARGE[shape]}\n"
+        + CUSTOM_GATE,
+        encoding="utf-8",
+    )
+    code, out, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 1, err
+    assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
+    assert "internal error" not in out + err
+
+
+@needs_git
+def test_a_pyproject_number_past_the_conversion_limit_is_one_the_profile_cannot_read(
+    tmp_path: Path,
+) -> None:
+    # A hex literal of any length parses, and the Python profile's locator read its text with
+    # `str()`, which raises past 4,300 digits: `stayfixed assess` ended in an internal error, exit
+    # 2. The value resolves to nothing, as a `pyproject.toml` that does not parse does, and
+    # `requires-python` reads as absent. Mutation (declared): "a profile locator stringifies a
+    # number past the conversion limit".
+    root = smoke_repo(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[stayfixed]\n", '[stayfixed]\nprofile = "python"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    assert 'profile = "python"' in config.read_text(encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "smoke"\nrequires-python = 0x' + "f" * 5_000 + "\n", encoding="utf-8"
+    )
+    code, out, err = cli(root, tmp_path, "assess", "--base", BASE, "--json")
+    assert code in (0, 1), err
+    assert "internal error" not in out + err
+    ids = [item["rule"] for item in json.loads(out)["items"]]
+    assert "requires-python" in ids

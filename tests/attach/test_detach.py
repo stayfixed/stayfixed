@@ -11,9 +11,11 @@ import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
+from stayfixed import fsops, jsonobject
 from stayfixed.attach.write import GITIGNORE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
@@ -26,7 +28,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
 from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -274,6 +276,36 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_pa
     before = snapshot(root)
     assert before
     with pytest.raises(Failure, match="number longer"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("bound", ["real-depth", "cap-forced"])
+def test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bound: str
+) -> None:
+    # On Python 3.14 the parser follows about 57,800 levels and `json.dumps` overflows near
+    # 50,000, so a `settings.local.json` nested between the two parsed and then ended `detach` in
+    # `internal error: RecursionError … while encoding a JSON object`, where 3.11 to 3.13 refuse
+    # it as nested deeper than the reader follows. The reader now bounds the depth it follows, so
+    # every interpreter refuses it in those words. `real-depth` is that file, and exercises the
+    # bound only where the parser reaches it (3.14); `cap-forced` lowers the bound so the same
+    # refusal is reached on every interpreter. Mutation (declared): the depth bound never refuses
+    # -> `cap-forced` detaches.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    if bound == "cap-forced":
+        monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+        deep = "[" * 5 + "]" * 5
+    else:
+        deep = PAST_ENCODING
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + deep + "}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises((Failure, Refusal), match="nested deeper than this reader follows"):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
 
@@ -1329,3 +1361,180 @@ def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
     _detach(root, machine, home)
     assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()
+
+
+def test_a_local_settings_file_read_but_too_deep_to_write_back_is_refused_or_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # 3,000 levels: read by every supported parser but 3.11's, and past 3.12's indenting encoder,
+    # so `detach` read it there and then ended in `RecursionError` writing it back. Every
+    # interpreter now either withdraws what `attach` wrote or refuses before removing anything.
+    # Real depth, so it reddens on 3.12 in CI;
+    # `test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing`
+    # proves the arm on every interpreter, for the oracle.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + "[" * 3_000 + "]" * 3_000 + "}", encoding="utf-8")
+    before = snapshot(root)
+    try:
+        _detach(root, machine, home)
+    except (Failure, Refusal) as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+        assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Forced on every interpreter: the encode that writes the withdrawn settings back overflowing,
+    # as it does on Python 3.12 near 994 levels. No single mutation reddens it, and that is the
+    # point: two layers answer the overflow, `json_text` and the guard around `detach`'s copy and
+    # comparison, and each is proven alone -- `mutations/`'s "the JSON writer lets an encode past
+    # the interpreter's recursion escape" by the engine's forced case, and "detach copies and
+    # compares the settings document unguarded" by
+    # `test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_indent)
+    monkeypatch.setattr(json, "dumps", overflowing_indent)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes_anything(
+    tmp_path: Path,
+) -> None:
+    # `detach` reads `.claude/settings.local.json` to take back what `attach` merged into it, and
+    # read a link to a device through: `/dev/null` read as an empty file and the run went on.
+    # Only a regular file is read, so it stops before it removes anything. Mutation (declared):
+    # "the settings reader reads a file through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    if settings.exists():
+        settings.unlink()
+    settings.symlink_to("/dev/null")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Path) -> None:
+    # `detach` reads the ledger with no check before it, and a clone can commit the ledger: a link
+    # there to `/dev/zero` read until memory ran out. Only a regular file is read, and the refusal
+    # names the ledger as the project names it, never the machine's path. `/dev/null` tells the
+    # guard apart without hanging: read, it is an empty ledger, "not valid JSON". Mutation
+    # (declared): "the attach ledger is read through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).unlink()
+    (root / LEDGER).symlink_to("/dev/null")
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} cannot be read (not a regular file)"
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it(tmp_path: Path) -> None:
+    # The ledger's other refusal, held to the rule its first one keeps: the project's own name for
+    # the file, never the machine's path. Mutation (oracle): `mutations/`'s "the ledger refusal of
+    # a file that is not UTF-8 prints the path it opened".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).write_bytes(b'{"entries": {"\xff": "PreToolUse"}}')
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} is not UTF-8 text"
+    assert_snapshot_unchanged(root, before)
+
+
+class _ComparedTooDeep(dict[str, object]):
+    """A parsed settings document whose comparison overflows, as `==` does on Python 3.14 for a
+    document a few thousand levels deep under a reduced stack (`ulimit -s 2048`)."""
+
+    def __eq__(self, other: object) -> bool:
+        raise RecursionError
+
+    __hash__ = None
+
+
+@pytest.mark.parametrize("step", ["copy", "compare"])
+def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    # `detach` copies the parsed settings document through `json.dumps` and compares what is
+    # left with it, and neither step was guarded: on Python 3.14 under a reduced stack a document
+    # the parser read raised `RecursionError` at either, an internal error. Forced at each step
+    # here; both are the reader's refusal of a document nested too deep. Mutation (declared):
+    # "detach copies and compares the settings document unguarded".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    if step == "copy":
+        real_dumps = json.dumps
+
+        def dumps(value: object, *args: Any, **kwargs: Any) -> str:
+            if not args and not kwargs:
+                raise RecursionError
+            return real_dumps(value, *args, **kwargs)
+
+        monkeypatch.setattr(json, "dumps", dumps)
+    else:
+        real_loads = json.loads
+
+        def loads(text: str, **kwargs: Any) -> object:
+            loaded = real_loads(text, **kwargs)
+            return _ComparedTooDeep(loaded) if isinstance(loaded, dict) else loaded
+
+        monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` writes the withdrawn settings back indented, which can make a file the reader's
+    # cap admits one it refuses: written, every later read of it refused. `jsonobject.json_text`
+    # refuses such a write-back, so `detach` stops before it removes anything. The cap is lowered
+    # so the document is small. Mutation (oracle): `mutations/`'s "the JSON writer writes back a
+    # text past the read cap" -> `detach` writes it.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    document = {"theme": "dark", "a": [[[[[[[[[[[] for _ in range(1_000)]]]]]]]]]]}
+    settings.write_text(json.dumps(document, separators=(",", ":")), encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=jsonobject.WRITTEN_PAST):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)

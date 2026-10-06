@@ -62,3 +62,25 @@ differently. Each has its own entry in these notes, with the detail:
     `"trusted": false`, for every store until `stayfixed memory trust --in-repo-memory` has run,
     where 0.2.0 reported `true` for a store with no committed `MEMORY.md` (Fixed, "`stayfixed
     memory index` (with or without `--check`) and `stayfixed memory fit` now warn").
+  - On Python 3.14, a settings file, ledger, manifest or trust record nested deeper than 10,000
+    levels is refused as nested deeper than the reader follows; `stayfixed doctor` and an
+    `attach` with nothing to write read one in 0.2.0 (Fixed, "On Python 3.14, a JSON file nested
+    deeper than").
+  - `stayfixed doctor`'s `hook-entries` row is red, and the report exits `1`, for a marked entry
+    nothing vouches for in a settings file that opens with a byte-order mark or holds a malformed
+    value beside its valid hooks, where it warned and exited `0`, and for a marked command inside
+    such a value or in an entry object written where a group goes, where it warned or read "all
+    accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
+    a settings file that opens with").
+  - `stayfixed attach`, `attach --check` and `detach` refuse a `.claude/settings.local.json` whose
+    indented write-back would pass 64 MiB, which 0.2.0 wrote (Fixed, "`stayfixed attach` and
+    `attach --check` now refuse, before anything is written, a").
+  - `stayfixed doctor`'s `hook-entries` row warns, where 0.2.0 could read "all accounted for",
+    for a project skill whose `SKILL.md` frontmatter declares hooks and for a `SKILL.md` it cannot
+    read; the report's exit code is unchanged (Fixed, "`stayfixed doctor`'s `hook-entries` row now
+    warns about each project skill").
+  - A `stayfixed.toml` integer of 2,147,483,648 or more is refused when the file loads, where
+    0.2.0 loaded it, and a `[stayfixed] preset` that is not a string is refused as
+    "stayfixed.preset must be a string; available: …", where 0.2.0 refused `preset = 5` or
+    `true` as a name it does not ship and ended in an internal error on a hexadecimal one past
+    4,300 decimal digits (Fixed, "Every integer in `stayfixed.toml`").

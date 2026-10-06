@@ -2465,10 +2465,10 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
 file = "src/stayfixed/doctor/entries.py"
-before = """            document = path.read_text(encoding="utf-8", errors="replace")
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))"""
-after = """            document = path.read_text(encoding="utf-8", errors="replace")
+after = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_UNCHECKED, None, label))"""
 reddens = [
@@ -2482,9 +2482,9 @@ reddens = [
 [[mutation]]
 name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
 file = "src/stayfixed/doctor/entries.py"
-before = """            document = path.read_text(encoding="utf-8", errors="replace")
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:"""
-after = """            document = path.read_text(encoding="utf-8")
+after = """            document = read_regular_bytes(path).decode("utf-8")
         except (OSError, UnicodeDecodeError):"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
@@ -2524,4 +2524,258 @@ before = "        absent = [str(surface) for surface, reach in CODEX.reach.items
 after = "        absent = [str(surface) for surface, reach in CODEX.reach.items()]"
 reddens = [
   "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
+]
+
+# The overlay's manifests are the owner's files, read by `overlay init` and `overlay upgrade`, and
+# `gh`'s answers are read by `overlay create` and `publish-template`. Each reader caught the
+# decoder's `JSONDecodeError` alone, so valid JSON past the parser — nesting it cannot follow, or
+# an integer longer than the interpreter converts — ended the command as an internal error.
+[[mutation]]
+name = "overlay init renames a manifest past the parser as an internal error"
+file = "src/stayfixed/overlay/naming.py"
+before = "    document = json_object(text, relative, error=Failure)"
+after = "    document = json.loads(text)"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[nested]",
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[long-number]",
+]
+
+[[mutation]]
+name = "the overlay's owner is read with a bare json.loads"
+file = "src/stayfixed/overlay/naming.py"
+before = "            document = json_object(text, row.path, error=ValueError)"
+after = "            document = json.loads(text)"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[long]",
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
+]
+
+[[mutation]]
+name = "the template probe parses with a bare json.loads"
+file = "src/stayfixed/overlay/create.py"
+before = '        document = json_object(printed_json, "`gh repo view`", error=ValueError)'
+after = "        document = json.loads(printed_json)"
+reddens = [
+  "tests/overlay/test_create.py::test_a_template_probe_past_the_parser_is_no_answer[nested]",
+  "tests/overlay/test_create.py::test_a_template_probe_past_the_parser_is_no_answer[long]",
+  "tests/overlay/test_create.py::test_a_template_probe_past_the_depth_bound_is_no_answer",
+]
+
+[[mutation]]
+name = "publish-template parses the repository view with a bare json.loads"
+file = "src/stayfixed/overlay/publish.py"
+before = """
+    document = json_object(
+        view.stdout or "{}",
+"""
+after = """
+    document = json.loads(view.stdout or "{}") or json_object(
+        view.stdout or "{}",
+"""
+reddens = [
+  "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[nested]",
+  "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[long]",
+  "tests/overlay/test_publish.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
+]
+
+# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": the row
+# reads Claude Code's settings files by that walk and every other strictly, since only Claude
+# Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and names a file
+# the walk could only partly read.
+[[mutation]]
+name = "hook-entries reads every settings file leniently, Codex's included"
+file = "src/stayfixed/doctor/entries.py"
+before = "            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
+after = "            read = judged_entries(document, lenient=True)"
+reddens = [
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[scalar-event]",
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[byte-order-mark]",
+]
+
+[[mutation]]
+name = "hook-entries says nothing of a settings file it could only partly read"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+        if read.partly:
+            found.append((_BLIND, None, label))
+"""
+after = """
+        if False:
+            found.append((_BLIND, None, label))
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
+]
+
+# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
+# `setup` writes the owner's settings back, and `overlay init` a renamed manifest, through
+# `json_text`, so a document read and then too deep for the encoder is the reader's failure.
+[[mutation]]
+name = "setup encodes the owner's merged settings with a bare json.dumps"
+file = "src/stayfixed/setup/run.py"
+before = '    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
+after = '    new_text = __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
+]
+
+[[mutation]]
+name = "overlay init encodes a renamed manifest with a bare json.dumps"
+file = "src/stayfixed/overlay/naming.py"
+before = '    return json_text(document, relative, error=Failure, indent=2) + "\n"'
+after = '    return json.dumps(document, indent=2) + "\n"'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
+]
+
+[[mutation]]
+name = "hook-entries says nothing of a marked command the walk skipped"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+        if read.hidden:
+            found.append((_HIDDEN, None, label))
+"""
+after = """
+        if False:
+            found.append((_HIDDEN, None, label))
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+]
+
+# In the block led by "hook-entries reads no project skill": a project skill whose frontmatter
+# declares hooks is named as one the row does not judge, a warning and never a red, and its
+# frontmatter is read for a top-level `hooks:` key between its two fences and nothing more.
+[[mutation]]
+name = "hook-entries reads no project skill"
+file = "src/stayfixed/doctor/entries.py"
+before = "    found.extend(_skills(context.root))\n"
+after = "    found.extend([])\n"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+]
+
+[[mutation]]
+name = "a skill declaring hooks makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_HOOKS = _Kind(\n    WARN,"
+after = "_SKILL_HOOKS = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+]
+
+[[mutation]]
+name = "a skill declaring hooks outranks a red finding's remedy"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_HOOKS = _Kind(\n    WARN,\n    0,"
+after = "_SKILL_HOOKS = _Kind(\n    WARN,\n    9,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_hooks_never_softens_a_red_row",
+]
+
+[[mutation]]
+name = "hook-entries prints a skill's name whole"
+file = "src/stayfixed/doctor/entries.py"
+before = '        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)'
+after = '        label = f"{SKILLS}/{name}/{_SKILL_FILE}"'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_name_outside_the_path_grammar_is_withheld",
+]
+
+[[mutation]]
+name = "a skill's frontmatter runs past its closing fence"
+file = "src/stayfixed/doctor/entries.py"
+before = "for key in lines[1:end])"
+after = "for key in lines[1:])"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter reads an indented hooks key"
+file = "src/stayfixed/doctor/entries.py"
+before = "_HOOKS_KEY.match(key) for"
+after = "_HOOKS_KEY.match(key.lstrip()) for"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[nested-key]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter reads any key opening with hooks"
+file = "src/stayfixed/doctor/entries.py"
+before = '_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")'
+after = '_HOOKS_KEY = re.compile(r"hooks")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
+]
+
+[[mutation]]
+name = "an unterminated frontmatter is read to the end"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+    return False
+"""
+after = """
+            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+    return any(_HOOKS_KEY.match(key) for key in lines[1:])
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter keeps its byte-order mark"
+file = "src/stayfixed/doctor/entries.py"
+before = "    lines = text.removeprefix(chr(0xFEFF))."
+after = "    lines = text."
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+[[mutation]]
+name = "a skill's frontmatter splits on LF alone"
+file = "src/stayfixed/doctor/entries.py"
+before = '.replace("\r\n", "\n").replace("\r", "\n").split("\n")'
+after = '.split("\n")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+[[mutation]]
+name = "a skill directory without SKILL.md is unreadable"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((_SKILL_UNREAD,"
+after = "            if True:\n                found.append((_SKILL_UNREAD,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[no-skill-file]",
+]
+
+[[mutation]]
+name = "hook-entries passes over a skill file it cannot read"
+file = "src/stayfixed/doctor/entries.py"
+before = "                found.append((_SKILL_UNREAD, None, label))"
+after = "                pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-directory]",
+]
+
+[[mutation]]
+name = "hook-entries passes over a skills directory it cannot list"
+file = "src/stayfixed/doctor/entries.py"
+before = "        return [(_SKILL_UNREAD, None, SKILLS)]"
+after = "        return []"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
+]
+
+[[mutation]]
+name = "hook-entries reads a settings file past the cap"
+file = "src/stayfixed/doctor/entries.py"
+before = "            document = read_regular_bytes(path).decode("
+after = "            document = path.read_bytes().decode("
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]

@@ -657,9 +657,15 @@ reddens = [
 [[mutation]]
 name = "a payload that is not JSON is allowed instead of refused"
 file = "src/stayfixed/guards/commands.py"
-before = '        raise Refusal(f"{_UNREADABLE}; {exc}") from None'
-after = '        return None'
-reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+before = """
+    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
+"""
+after = """
+    if not (raw or "").lstrip().startswith(("{", "[")):
+        return None
+    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
+"""
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read[not json at all]"]
 
 [[mutation]]
 name = "a payload carrying no command string is allowed instead of refused"
@@ -1253,3 +1259,24 @@ reddens = [
 ]
 
 
+
+# `guard bg-cleanup` reads its stdin through the one JSON object reader, so stdin nested past
+# the parser or its depth bound, or holding an integer longer than the interpreter converts, is
+# refused in that reader's words; parsed with a bare `json.loads`, nesting raised `RecursionError`
+# past the guard's own arm, and a long integer was refused with the interpreter's advice.
+[[mutation]]
+name = "guard bg-cleanup parses stdin with a bare json.loads"
+file = "src/stayfixed/guards/commands.py"
+before = """
+    payload = json_object(
+        raw or "",
+"""
+after = """
+    payload = json.loads(raw or "") or json_object(
+        raw or "",
+"""
+reddens = [
+  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[nested]",
+  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[long]",
+  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound",
+]

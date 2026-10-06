@@ -11,6 +11,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Refusal
 from stayfixed.presets import load_preset
 from stayfixed.setup.machine import read_machine, write_machine
+from tests.parserlimits import LONG_HEX
 
 # The minimal `stayfixed.toml` `load()` accepts: everything else comes from the preset's own
 # defaults. `tests/hooks/test_hook_command.py::_initialised_project` carries the same shape for
@@ -218,3 +219,15 @@ def test_a_key_that_cannot_be_rewritten_names_the_file_and_the_remedy(tmp_path: 
         write_machine(path, personal={}, overlay_root=None, machine={})
     assert str(path) in str(refused.value)
     assert "run the command again" in str(refused.value)
+
+
+def test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite(tmp_path: Path) -> None:
+    # The owner's machine file is theirs to write, and `tomllib` reads a hex literal of any
+    # length; the rewrite spelled it with `str`, which raises past 4,300 digits, so every
+    # `stayfixed setup` on that machine ended in an internal error. It is kept, written back in
+    # hexadecimal. Mutation (declared): "the TOML writer spells every integer in decimal".
+    path = tmp_path / "config.toml"
+    large = LONG_HEX
+    path.write_text(f"[notes]\nkept = {large}\n", encoding="utf-8")
+    write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    assert read_machine(path)["notes"]["kept"] == int(large, 16)

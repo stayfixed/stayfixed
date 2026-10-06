@@ -650,3 +650,193 @@ def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     data = json.loads(capsys.readouterr().out)
     assert data["exclude_block_kept"] is False
     assert data["exclude_block_removed"] is True
+
+
+def test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An overlay that has no `projects/` yet answers every path below it with "no such file", the
+    # name's own length included, so a 300-character `project.name` read as a first attach:
+    # `--check` exited 0, and `attach` wrote `.git/info/exclude`, `.gitignore` and the ledger and
+    # then ended in a raw `OSError` that printed the name. Both refuse it above every write, and
+    # neither prints the name, which is the repository's. Mutation (declared): the share check
+    # asks no length where an ancestor of the share is absent -> `--check` exits 0 again.
+    from stayfixed.attach.binding import SHARE_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    overlay, projects = store.parents[2], store.parents[1]
+    machine = _machine(tmp_path, overlay=overlay)
+    shutil.rmtree(projects)
+    name = "n" * 300
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    flags = _flags(root, projects / name / "memory", machine)
+    refused = f"stayfixed: refused: {SHARE_CANNOT_EXIST.format(projects=projects)}"
+    before = snapshot(tmp_path)
+    assert before
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert name not in checked.out + checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert name not in attached.out + attached.err
+    assert_snapshot_unchanged(tmp_path, before)
+    assert not projects.exists()
+
+
+@pytest.mark.parametrize("projects_there", [True, False], ids=["projects-kept", "projects-absent"])
+def test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_by_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], projects_there: bool
+) -> None:
+    # An ordinary name under an overlay root so deep that a path the first attach links into it
+    # reaches the longest path: the run wrote four files and then ended in a raw `PartialLink`.
+    # Both commands refuse it above every write, `projects/` there or not, without printing the
+    # name. Mutation (oracle): `mutations/`'s "attach and --check go on for a name whose share
+    # holds a path past the longest one".
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import link_sources
+
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    # How far past the overlay root the longest path the first attach links under `projects/p`
+    # reaches, off the paths the link tree is built from.
+    shallow = store.parents[2]
+    linked = link_sources(shallow, load(root, machine=_machine(tmp_path, overlay=shallow)))
+    tail = max(len(str(path)) for path in linked if store.parent in path.parents) - len(
+        str(shallow)
+    )
+    # The overlay moved to a root exactly that much shorter than the longest path, so that path
+    # is as long as the system's longest, which no path may be (the limit counts the NUL). The
+    # checkout stays where it was, short enough for git.
+    deep = tmp_path / "deep"
+    while len(str(deep / "overlay")) + tail < longest:
+        room = longest - tail - len(str(deep / "overlay")) - 1
+        deep = deep / ("d" * max(1, min(200, room)))
+    deep.mkdir(parents=True)
+    overlay = deep / "overlay"
+    shutil.move(shallow, overlay)
+    assert len(str(overlay)) + tail == longest
+    machine = _machine(tmp_path, overlay=overlay)
+    projects = overlay / "projects"
+    store = projects / "p" / "memory"
+    shutil.rmtree(store.parent)
+    if not projects_there:
+        shutil.rmtree(projects)
+    flags = _flags(root, store, machine)
+    refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=projects)}"
+    before = snapshot(tmp_path)
+    assert before
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert "PartialLink" not in attached.err
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same gap for the other repository-chosen component under the share: a `memory.groups`
+    # entry longer than a file name may be, on a first attach, where the share is not there yet
+    # and every lookup below it says "no such file". Refused above every write, and the group is
+    # never printed. Mutation (declared): the share check asks no length of a component below a
+    # share that is not there -> `--check` exits 0.
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    group = "g" * 300
+    text = CONFIG.format(name="p").replace(
+        'groups = ["developer", "project-stable"]', f'groups = ["developer", "{group}"]'
+    )
+    assert group in text
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    shutil.rmtree(store.parent)
+    flags = _flags(root, store, machine)
+    refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=store.parents[1])}"
+    before = snapshot(tmp_path)
+    assert before
+
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert refused in checked.err
+    assert group not in checked.out + checked.err
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert refused in attached.err
+    assert group not in attached.out + attached.err
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_a_first_attach_into_an_overlay_with_no_projects_yet_is_made(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The legitimate user that
+    # `test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both` and
+    # `test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both` must not
+    # refuse: an ordinary name's first attach into a fresh overlay that has no `projects/` at all.
+    # `attach` creates it.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    shutil.rmtree(store.parents[1])
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 0, capsys.readouterr().err
+    assert invoke(["attach", "--yes", *flags]) == 0, capsys.readouterr().err
+    assert (store.parent / "project.toml").is_file()
+
+
+def test_a_group_name_is_judged_by_what_the_filesystem_takes_and_not_by_its_bytes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 200 x "é" is 400 bytes of UTF-8 and 200 characters. Linux filesystems limit a name to 255
+    # bytes and refuse it; macOS APFS limits it to 255 characters and takes it. A check that counted
+    # bytes against `PC_NAME_MAX` refused it on macOS, where the attach it previews works. So the
+    # verdict is asked of the filesystem the test runs on, and the commands must agree with it.
+    # Counting bytes again reddens this on macOS; the oracle runs on Linux, where bytes are what
+    # the filesystem counts, so the declared mutation, "the share check counts a name's bytes",
+    # is proven by `tests/attach/test_binding.py`'s stubbed lookup instead.
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    group = "é" * 200
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    try:
+        (probe / group).mkdir()
+        fits = True
+    except OSError:
+        fits = False
+    shutil.rmtree(probe)
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    text = CONFIG.format(name="p").replace(
+        'groups = ["developer", "project-stable"]', f'groups = ["developer", "{group}"]'
+    )
+    assert group in text
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    flags = _flags(root, store, machine)
+    if fits:
+        assert invoke(["attach", "--check", *flags]) == 0, capsys.readouterr().err
+        assert invoke(["attach", "--yes", *flags]) == 0, capsys.readouterr().err
+        assert (store / group).is_dir()
+    else:
+        refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=store.parents[1])}"
+        assert invoke(["attach", "--check", *flags]) == 2
+        assert refused in capsys.readouterr().err
