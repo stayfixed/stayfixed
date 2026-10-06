@@ -919,19 +919,24 @@ def test_the_row_reads_the_machines_settings_file_off_the_harness_registry() -> 
     # with the report, and closed a dependency cycle between `doctor`, `setup` and `overlay`.
     # Mutation (oracle): `mutations/`'s "hook-entries asks setup for the machine's settings
     # file" -> `stayfixed.setup` is loaded.
-    import stayfixed
-
+    #
+    # The tree this file sits in, put first on the path, and not `-I`, which drops `PYTHONPATH`:
+    # the installed package would be imported instead, whichever tree the test belongs to.
+    source = Path(__file__).resolve().parents[2] / "src"
     probe = (
         "import sys, stayfixed.doctor.entries as e\n"
+        "print(e.__file__)\n"
         "print(e.USER_SETTINGS)\n"
         "print(' '.join(sorted(m for m in sys.modules if m.startswith('stayfixed.setup'))))\n"
     )
     done = subprocess.run(
-        [sys.executable, "-I", "-c", probe],
+        [sys.executable, "-c", probe],
         capture_output=True,
         text=True,
         check=False,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(Path(stayfixed.__file__).parents[1])},
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(source)},
     )
     assert done.returncode == 0, done.stderr
-    assert done.stdout.split("\n") == [CLAUDE.settings[0], "", ""]
+    imported, settings, loaded, _ = done.stdout.split("\n")
+    assert Path(imported).is_relative_to(source), imported
+    assert (settings, loaded) == (CLAUDE.settings[0], "")
