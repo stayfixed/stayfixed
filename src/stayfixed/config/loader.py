@@ -535,6 +535,7 @@ def loads(
     machine: Path | None = None,
     interactive: bool | None = False,
     label: str | None = None,
+    personal: Personal | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `stayfixed.toml`'s contents, without reading a file.
 
@@ -543,6 +544,12 @@ def loads(
     `label` is what a refusal calls the document when it is not the file at `root`: the base's
     copy `stayfixed gate` reads out of git is validated against the tree's disk, and a refusal
     naming `<root>/stayfixed.toml` would send its owner to a file with nothing wrong in it.
+    `personal` is the `[personal]` a load earlier in the same command already read, taken in
+    place of reading the machine file again: a caller that holds a `Config` and not the path
+    its machine file came from — a gate, handed `(root, config, base)` — loads a second
+    document with it, and so reads no machine file but the one the command was given. Given
+    both, `personal` wins and `machine` is never read. Every argument after `root` is
+    keyword-only.
     """
     path = label or root / CONFIG_FILE
     try:
@@ -586,7 +593,8 @@ def loads(
         CommitMessages, "commit_messages", _merged(raw, defaults, "commit_messages")
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
-    personal = _personal(machine or machine_config_path(interactive=interactive), preset)
+    if personal is None:
+        personal = _personal(machine or machine_config_path(interactive=interactive), preset)
     config = Config(
         stayfixed=stayfixed,
         project=project,

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
 from tests.gitfixture import git, plant_path, run_git
+from tests.ledger.kills import Killed, killed_at
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -638,3 +641,243 @@ def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
     assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
     assert near.read_text(encoding="utf-8") == "# XBR-001 is a different thing\n"
     assert near.stat().st_mtime_ns == before
+
+
+def _renumber_tree(root: Path) -> None:
+    # The tree every kill-point case starts from: a sibling that relates to the moved entry and
+    # two files that mention it, so the move makes six writes — the two endpoints, three sweeps
+    # (the sibling's `related` and the two files) and the index.
+    (root / "docs" / "bugs" / "BR-002.md").write_text(
+        entry(2, related="[BR-001]"), encoding="utf-8"
+    )
+    (root / "src" / "a.py").write_text("x = 1  # see BR-001\n", encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
+
+
+# Which of the move's six writes each case kills before, in the order `_renumber_tree`'s move
+# makes them, and `finished` for a run nothing kills.
+KILL_POINTS = {
+    "before-target": 1,
+    "before-pointer": 2,
+    "before-sibling-sweep": 3,
+    "before-second-sweep": 4,
+    "before-third-sweep": 5,
+    "before-index": 6,
+    "finished": 7,
+}
+
+
+@pytest.mark.parametrize("kill", KILL_POINTS.values(), ids=KILL_POINTS.keys())
+def test_a_renumber_killed_at_any_write_is_finished_by_running_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kill: int
+) -> None:
+    # The reproduction: there is no journal and each of the six writes is atomic on its own, so
+    # a kill between two of them left a tree a re-run refused ("BR-009 already has an entry
+    # file") and `bugs check` reported only as a stale index — whose remedy, `bugs index`, turned
+    # check green over two live entries for one bug (killed before the void pointer) or over
+    # mentions of the old number the sweep never reached, which the void pointer makes look
+    # intentional forever. So a re-run of the same move finishes it, and the tree it leaves is
+    # the one an uninterrupted run leaves, byte for byte. `finished` is no kill at all: a re-run
+    # of a move that finished changes nothing. Mutations: `mutations/`, "a re-run of a renumber
+    # killed before its void pointer refuses again" and "a re-run of a renumber killed after
+    # its void pointer writes both endpoints again".
+    (tmp_path / "clean").mkdir()
+    (tmp_path / "killed").mkdir()
+    clean, config = project(tmp_path / "clean")
+    seed(clean, config, 1, 2)
+    _renumber_tree(clean)
+    renumber(clean, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    expected = snapshot(clean)
+
+    root, config = project(tmp_path / "killed")
+    seed(root, config, 1, 2)
+    _renumber_tree(root)
+    with killed_at(monkeypatch, kill) as writes:
+        if kill <= 6:
+            with pytest.raises(Killed):
+                renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+        else:
+            renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    # Each case is the kill point it names: the writes before it are on disk and no other.
+    assert len(writes) == min(kill - 1, 6)
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    assert_snapshot_unchanged(root, expected)
+    assert register_gate(root, config, bug_register(config)) == []
+
+
+def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half(
+    tmp_path: Path,
+) -> None:
+    # The resumption is for this move's own half-done states and nothing else: an entry at the
+    # target that differs from the moved text by one byte, and an old number already void
+    # toward another identifier, are each an entry the move would destroy, and each is refused
+    # with nothing written; so is a symlink at the target, even to the moved text itself, which
+    # the move would otherwise adopt as its new entry. Mutations: `mutations/`, "a renumber
+    # resumes over a target that is not the moved text" and "a renumber adopts a symlink at its
+    # target". The pointer toward another identifier is refused twice over — its title does not
+    # start "renumbered to BR-009 — " and its related list and body name BR-007 — so no single
+    # mutation reddens that case; each guard is pinned on its own by
+    # `test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused` and
+    # `test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer`.
+    root, config = project(tmp_path)
+    seed(root, config, 1, 3)
+    bugs = root / "docs" / "bugs"
+    moved = entry(1).replace("id: BR-001", "id: BR-009", 1)
+    (bugs / "BR-009.md").write_text(moved + "\n", encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert_snapshot_unchanged(root, before)
+
+    renumber(root, config, bug_register(config), "BR-003", "BR-007", today="2026-01-02")
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-003", "BR-009")
+    assert_snapshot_unchanged(root, before)
+
+    (bugs / "BR-009.md").unlink()
+    outside = tmp_path / "outside.md"
+    outside.write_text(moved, encoding="utf-8")
+    (bugs / "BR-009.md").symlink_to(outside)
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert_snapshot_unchanged(root, before)
+    assert (bugs / "BR-009.md").is_symlink()
+
+
+def test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    # With `old == new` the target is the source itself, so it is exactly the source's text with
+    # its `id:` line rewritten, and the resumption read it as a move killed after its first write:
+    # it overwrote the entry with a void pointer to itself and exited 0, and an entry filed and
+    # not yet committed was gone. Refused before anything is read. Mutation: `mutations/`,
+    # "renumber moves an entry onto its own identifier".
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="BR-001 to itself"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-001")
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("status", ["void", "open"])
+def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
+    tmp_path: Path, status: str
+) -> None:
+    # The pointer a move leaves is told by its bytes, as the moved text is: an `old` entry voided
+    # by hand as a duplicate of a genuine `new`, or a live one that merely relates to it, is not
+    # this move half-done, and resuming would sweep every mention of `old` over to `new`. Each is
+    # titled as the move titles its pointer, so its other bytes are what refuse it. Mutations:
+    # `mutations/`, "a renumber resumes from any void entry toward its target" (the `void` case)
+    # and "a renumber resumes from any entry that relates to its target" (both).
+    root, config = project(tmp_path)
+    seed(root, config, 3)
+    bugs = root / "docs" / "bugs"
+    (bugs / "BR-001.md").write_text(
+        entry(1, related="[BR-003]")
+        .replace("status: open", f"status: {status}")
+        .replace("title: a title", 'title: "renumbered to BR-003 — a title"'),
+        encoding="utf-8",
+    )
+    (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-003")
+    assert_snapshot_unchanged(root, before)
+
+
+OCCUPIED_BY_AN_EDIT = (
+    "BR-009 already has an entry file that is not this move half done; pick a free identifier, "
+    "or, if an interrupted `stayfixed bugs renumber BR-001 BR-009` wrote it and it was edited "
+    "since, make it BR-001's text again with only its `id:` line changed and run this again"
+)
+
+
+@pytest.mark.parametrize(
+    ("edit", "said"),
+    [
+        (
+            lambda text: text.replace("body mentioning", "a body edited, mentioning"),
+            OCCUPIED_BY_AN_EDIT,
+        ),
+        (
+            lambda text: text + "\n",
+            OCCUPIED_BY_AN_EDIT.replace(
+                "not this move half done;",
+                "not this move half done — it differs from BR-001's moved text only in the line "
+                "breaks at its end;",
+            ),
+        ),
+    ],
+    ids=["body-edited", "final-newline"],
+)
+def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edit: Callable[[str], str], said: str
+) -> None:
+    # Killed after the first write, and the moved file then touched — an editor's save, an
+    # end-of-file fixer: the target is no longer the moved text, so the re-run cannot tell it from
+    # an entry of its own and refuses. The refusal says so and how to finish, naming only the two
+    # identifiers, which the identifier grammar has already held: nothing the repository wrote.
+    # When the line breaks at the end are the only difference, it says that too, since a fixer's
+    # newline is invisible in an editor. Mutations: `mutations/`, "the occupied-target refusal
+    # says nothing of an interrupted move" and "the occupied-target refusal does not say a final
+    # newline is the only difference".
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    with killed_at(monkeypatch, KILL_POINTS["before-pointer"]), pytest.raises(Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    moved = root / "docs" / "bugs" / "BR-009.md"
+    moved.write_text(edit(moved.read_text(encoding="utf-8")), encoding="utf-8")
+    with pytest.raises(LedgerError) as raised:
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert str(raised.value) == said
+
+
+def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Retitling an entry is ordinary upkeep, after a kill or after a finished move. The pointer
+    # was recognised by rebuilding it from the target's current title, so a retitled target made
+    # the re-run refuse, with advice nobody could follow — the old entry's text is already the
+    # pointer — and the mention the sweep never reached stayed silent for good. The pointer's
+    # title is held only to the prefix the move writes; every other byte is compared. Mutation:
+    # `mutations/`, "the void pointer is recognised by the target's current title".
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    _renumber_tree(root)
+    with killed_at(monkeypatch, KILL_POINTS["before-sibling-sweep"]), pytest.raises(Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    moved = root / "docs" / "bugs" / "BR-009.md"
+    moved.write_text(
+        moved.read_text(encoding="utf-8").replace("title: a title", "title: a better title"),
+        encoding="utf-8",
+    )
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-03")
+    assert (root / "docs" / "notes.md").read_text(encoding="utf-8") == "BR-009 is the first one.\n"
+    assert "title: a better title" in moved.read_text(encoding="utf-8")
+    assert register_gate(root, config, bug_register(config)) == []
+
+
+def test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused(
+    tmp_path: Path,
+) -> None:
+    # The other side of the relaxed title: every other byte of the pointer is the move's, and
+    # its title is not "renumbered to <new> — …", so it is not this move's pointer and the
+    # mentions of the old number are not swept onto the new one. Mutation: `mutations/`, "the
+    # void pointer's title is not held to the prefix the move writes".
+    from stayfixed.ledger.write import _void_pointer
+
+    root, config = project(tmp_path)
+    seed(root, config, 3)
+    register = bug_register(config)
+    pointer = _void_pointer(
+        register, old="BR-001", new="BR-003", title="a duplicate", today="2026-01-02"
+    )
+    (root / "docs" / "bugs" / "BR-001.md").write_text(pointer, encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, register, "BR-001", "BR-003")
+    assert_snapshot_unchanged(root, before)

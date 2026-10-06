@@ -11,12 +11,17 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed.committed import committed_document, repository_prefix
+from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding, listed
 from stayfixed.gitenv import ForkUnknown, fork_points, git_run
 from stayfixed.ledger.entries import (
+    ID_LINE,
     Entry,
     LedgerError,
     entry_dir,
@@ -31,13 +36,20 @@ from stayfixed.ledger.index import (
     is_generated_index,
     render_index,
 )
-from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, Register, bug_register
+from stayfixed.ledger.register import (
+    EVIDENCE_LABEL,
+    EVIDENCE_PLACEHOLDER,
+    Register,
+    bug_register,
+    located_bug_register,
+)
 from stayfixed.ledger.scan import code_mentions, entry_citations
+from stayfixed.printed import clipped, quoted
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Callable
 
-    from stayfixed.config.schema import Config
+    from stayfixed.config.schema import Config, Personal
 
 
 # The negative lookahead is the point: the scaffold writes this line with its own placeholder
@@ -62,18 +74,50 @@ ENTRY_REMOVED = (
     "ledger entries are never deleted: restore it from the base, and move one with `stayfixed "
     "{name} renumber`, which leaves a `{void}` entry at the old number"
 )
+# `{what}` is the paths the failing read asked about: the ledger's directory and index, or a fork
+# point's `stayfixed.toml`. `{base}` is the caller's, printed through `printed.quoted`.
 _BASE_UNREAD = (
-    "what the commits HEAD forked from `{base}` at hold of {directory} and {index} is unknown "
+    "what the commits HEAD forked from `{base}` at hold of {what} is unknown "
     "under {root} ({cause}), so whether this change deleted the ledger or an entry of it is "
     "unknown and the {name} gate proved nothing. Fetch the whole history (`fetch-depth: 0` in "
     "CI), or pass a `--base` this clone holds that shares history with HEAD"
+)
+# What the loader calls a fork point's copy, so its reason names the right file: its own words
+# would name `<root>/stayfixed.toml`, which is the change's copy.
+FORK_COPY = "the stayfixed.toml of a commit this change forked from the base at"
+# The one cause the three `FORK_*` refusals share, and what it costs the gate.
+_FORK_UNKNOWN = (
+    "where a commit this change forked from `{base}` at kept the ledger is unknown, so the "
+    "{name} gate proved nothing: "
+)
+# `{reason}` is the loader's own, bounded where it was raised, as `stayfixed gate` prints it
+# for the base's copy.
+FORK_DOES_NOT_LOAD = _FORK_UNKNOWN + "its stayfixed.toml does not load ({reason})"
+FORK_REFUSED = (
+    _FORK_UNKNOWN + "loading its stayfixed.toml against this tree met a refusal: {reason}"
+)
+# The load succeeded and the prefix it names is one the identifier grammar refuses, by which no
+# entry of that commit can be found. `{prefix}` is the base's own, through `printed.clipped`.
+FORK_UNPLACED = (
+    _FORK_UNKNOWN + "its stayfixed.toml places its ledger by an identifier prefix the ledger "
+    "refuses, {prefix}"
 )
 
 
 @dataclass(frozen=True)
 class _BaseLedger:
-    carried: bool  # the fork point has the ledger directory or the index
     entries: tuple[str, ...]  # the entry files directly under the directory there, by name
+    # The directory and index of the first fork point that carried the ledger, where that
+    # commit's own configuration put them; `None` when none carried one.
+    place: tuple[str, str] | None
+
+
+def _unread(register: Register, base: str, root: Path, cause: str, what: str) -> Failure:
+    return Failure(
+        _BASE_UNREAD.format(
+            what=what, name=register.name, base=quoted(base), root=root, cause=cause
+        )
+    )
 
 
 def _body_state_bullet(register: Register) -> re.Pattern[str]:
@@ -92,23 +136,34 @@ def uninitialised(root: Path, register: Register) -> bool:
     return not directory.is_dir() and not is_generated_index(index_text(root, register))
 
 
-def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
-    """What the commits HEAD forked from `base` at carry of the ledger: whether any has the
-    directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
-    in any of them.
+def _base_ledger(
+    root: Path,
+    register: Register,
+    base: str,
+    locate: Callable[[str], Register] | None,
+) -> _BaseLedger:
+    """What the commits HEAD forked from `base` at carry of the ledger: where the first of them
+    that has the directory or the index keeps it, and the `<PREFIX>-nnn.md` entry files directly
+    under the directory in any of them.
+
+    Each commit's ledger is read where that commit kept it: `locate` builds the register a fork
+    point configured (`_fork_register`, bound once by `register_gate`). Read at the tree's paths,
+    a change that moved the ledger by `[paths]` found nothing there at the fork, so it could
+    delete an entry in the same change and pass. A register no configuration builds is read at
+    its own paths at every commit (`locate` is `None`).
 
     Those commits are `git merge-base --all <base> HEAD`, every best common ancestor, the ones
-    `plan` diffs against too. What the base gained after the change
-    forked is not the change's to have kept, so a branch behind its base is not blamed for an
-    entry filed since; and what the change forked with, it still answers for, on a stale branch
-    as on the merge commit CI checks out, whose base parent the base can have moved past. A
-    history the change shapes itself can give it several merge bases, and the one `merge-base`
-    alone answers, the newest by date, can predate an entry another of them carries: a merge
-    deletes that entry all the same. So each is listed with one `git ls-tree -r` of the two
-    configured paths, whose names come back relative to `root`, and their entries are united.
-    Entries are append-only, so on a base that kept its entries the union refuses no branch that
-    deleted nothing; an entry removed from the base itself, by a direct push, is still named on
-    a branch whose merge bases include one from before the removal, and is restored on the base.
+    `plan` diffs against too. What the base gained after the change forked is not the change's to
+    have kept, so a branch behind its base is not blamed for an entry filed since; and what the
+    change forked with, it still answers for, on a stale branch as on the merge commit CI checks
+    out, whose base parent the base can have moved past. A history the change shapes itself can
+    give it several merge bases, and the one `merge-base` alone answers, the newest by date, can
+    predate an entry another of them carries: a merge deletes that entry all the same. So each
+    is listed with one `git ls-tree -r` of the two configured paths, whose names come back
+    relative to `root`, and their entries are united. Entries are append-only, so on a base that
+    kept its entries the union refuses no branch that deleted nothing; an entry removed from the
+    base itself, by a direct push, is still named on a branch whose merge bases include one from
+    before the removal, and is restored on the base.
 
     A base shaped like an option is refused, as `plan check` refuses it. Fork points
     `gitenv.fork_points` cannot name — a base git cannot resolve, one that shares no commit with
@@ -117,44 +172,88 @@ def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
     which would pass exactly the change this question exists to catch.
     """
     if base.startswith("-"):
-        raise Refusal(f"{base!r} looks like an option, not a base ref")
-    directory, index = register.directory, register.index
-
-    def unread(unknown: ForkUnknown) -> Failure:
-        cause = unknown.cause
-        return Failure(
-            _BASE_UNREAD.format(
-                directory=directory,
-                index=index,
-                name=register.name,
-                base=base,
-                root=root,
-                cause=cause,
-            )
-        )
-
+        raise Refusal(f"{quoted(base)} looks like an option, not a base ref")
     forks = fork_points(root, base)
     if isinstance(forks, ForkUnknown):
-        raise unread(forks)
-    found: set[str] = set()
+        raise _unread(register, base, root, forks.cause, _paths(register))
+    place: tuple[str, str] | None = None
+    entries: set[str] = set()
     for fork in forks:
+        held = register if locate is None else locate(fork)
         code, out = git_run(
-            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index
+            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", held.directory, held.index
         )
         if code != 0:
-            raise unread(ForkUnknown.of(code))
-        found.update(name for name in out.split("\0") if name)
-    names = sorted(found)
-    ids = register.ids
-    under = f"{directory}/"
-    entries = tuple(
-        name.removeprefix(under)
-        for name in names
-        if name.startswith(under)
-        and name.endswith(".md")
-        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
-    )
-    return _BaseLedger(bool(names), entries)
+            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))
+        names = [name for name in out.split("\0") if name]
+        if names and place is None:
+            place = (held.directory, held.index)
+        under = f"{held.directory}/"
+        entries.update(
+            name.removeprefix(under)
+            for name in names
+            if name.startswith(under)
+            and name.endswith(".md")
+            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
+        )
+    return _BaseLedger(tuple(sorted(entries)), place)
+
+
+def _paths(register: Register) -> str:
+    return f"{register.directory} and {register.index}"
+
+
+def _fork_register(
+    fork: str,
+    *,
+    root: Path,
+    prefix: str,
+    personal: Personal,
+    register: Register,
+    locate: Callable[[Config], Register],
+    base: str,
+) -> Register:
+    """The register as the commit `fork` configured it, out of its own `stayfixed.toml`.
+
+    Found as `stayfixed gate` finds the base's copy (`committed.committed_document`, at the
+    project root's path inside the repository, `prefix`), and loaded as it loads it — through the
+    loader, against this tree's disk, under its own label — with the `[personal]` this command
+    already read, so no second machine file is read.
+
+    A commit with no copy there is the bootstrap, the change that adds the configuration, and
+    `register` decides, as the tree decides for `stayfixed gate`. A copy that does not load, is
+    not UTF-8 or meets a refusal is no answer, and never the tree's paths in its place: read
+    there, a change that moved the ledger would pass the deletion this exists to catch.
+    """
+
+    def failed(code: int) -> Failure:
+        return _unread(register, base, root, ForkUnknown.of(code).cause, CONFIG_FILE)
+
+    def does_not_load(reason: object) -> Failure:
+        return Failure(
+            FORK_DOES_NOT_LOAD.format(base=quoted(base), name=register.name, reason=reason)
+        )
+
+    raw = committed_document(root, fork, CONFIG_FILE, prefix=prefix, failed=failed)
+    if raw is None:
+        return register
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None
+    try:
+        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)
+    except Refusal as exc:
+        refused = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=exc)
+        raise Refusal(refused) from None
+    except Failure as exc:
+        raise does_not_load(exc) from None
+    try:
+        return locate(copy)
+    except Refusal:
+        prefix_named = clipped(copy.ledger.id_prefix)
+        unplaced = FORK_UNPLACED.format(base=quoted(base), name=register.name, prefix=prefix_named)
+        raise Refusal(unplaced) from None
 
 
 def _removed_entries(root: Path, register: Register, base: _BaseLedger | None) -> list[Finding]:
@@ -222,8 +321,10 @@ def _unledgered(
     The one `ledger-removed` finding stands for every entry that commit carried.
     """
     found: list[Finding] = []
-    if base is not None and base.carried:
-        directory, index = register.directory, register.index
+    if base is not None and base.place is not None:
+        # Where the base kept it, which is what "restore it from the base" restores: after a
+        # change that moved `[paths]`, the tree's own paths are ones no commit ever carried.
+        directory, index = base.place
         removed = LEDGER_REMOVED.format(directory=directory, index=index, name=register.name)
         found.append(Finding("ledger-removed", directory, None, removed))
     empty: set[str] = set()
@@ -252,7 +353,14 @@ def _dangling_citations(
     return found
 
 
-def register_gate(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
+def register_gate(
+    root: Path,
+    config: Config,
+    register: Register,
+    base: str = "",
+    *,
+    locate: Callable[[Config], Register] | None = None,
+) -> list[Finding]:
     """One register's gate, whole: every violation of `register` under `root`, most structural
     first.
 
@@ -264,9 +372,26 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
     that shape describes, and it is the ledger having been deleted. Against a `base`, every arm
     past that one also names each entry the change forked with and the tree lacks
     (`entry-removed`). Both are read at every commit HEAD forked from `base` at
-    (`_base_ledger`).
+    (`_base_ledger`), where that commit's own configuration put the ledger when `locate`
+    says how a configuration builds this register.
     """
-    carried = _base_ledger(root, register, base) if base else None
+    carried = None
+    if base:
+        # The strategy bound once: every fork point is located with the same root, prefix,
+        # `[personal]` and fallback. The prefix is asked only when a fork's own copy is read,
+        # and refuses a root git and the caller spell differently, as `stayfixed gate` does.
+        at = None
+        if locate is not None:
+            at = partial(
+                _fork_register,
+                root=root,
+                prefix=repository_prefix(root),
+                personal=config.personal,
+                register=register,
+                locate=locate,
+                base=base,
+            )
+        carried = _base_ledger(root, register, base, at)
     if uninitialised(root, register):
         return _unledgered(root, config, register, carried)
     ids, schema = register.ids, register.schema
@@ -279,6 +404,7 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
         return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
+    texts: dict[str, str] = {}
     required = set(register.evidence_boundary_for)
     restated = _body_state_bullet(register)
     for path in sorted(directory.glob(f"{ids.prefix}-*.md")):
@@ -326,6 +452,7 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
                 )
             )
         entries.append(entry)
+        texts.setdefault(entry.id, text)
 
     known = {entry.id for entry in entries}
     by_id: defaultdict[str, list[Entry]] = defaultdict(list)
@@ -372,7 +499,9 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        stale = f"is stale; run: stayfixed {register.name} index"
+        move = _half_done_move(register, entries, texts, current)
+        remedy = f"renumber {move[0]} {move[1]}" if move else "index"
+        stale = f"is stale; run: stayfixed {register.name} {remedy}"
         found.append(Finding("stale-index", index_name, None, stale))
 
     found.extend(_dangling_mentions(root, config, register, known))
@@ -383,6 +512,49 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
     return found + _dangling_citations(root, config, register, known)
 
 
+def _half_done_move(
+    register: Register, entries: list[Entry], texts: dict[str, str], current: str
+) -> tuple[str, str] | None:
+    """The renumber, `(old, new)`, whose interruption explains the stale index `current`
+    exactly, or `None`.
+
+    A `renumber` writes the index last, so a run killed before it leaves the index it found:
+    rendered from the ledger as it stood before the move. That state is recognised as
+    `renumber` recognises it — `new` holding `old`'s text with its `id:` line rewritten, or
+    `old` the void pointer the move titles toward `new` — and confirmed by the index alone: the
+    entries with `new`'s text restored to `old` render it byte for byte. Sent to `bugs index`
+    instead, the operator turned the check green over two live entries for one bug or over
+    mentions the sweep never reached. Anything else stale, a finished move's neighbour edited
+    since included, is `bugs index`'s.
+    """
+    by_text: defaultdict[str, list[str]] = defaultdict(list)
+    for identifier, text in texts.items():
+        by_text[ID_LINE.sub("id:", text, count=1)].append(identifier)
+    pairs = [(old, new) for same in by_text.values() for old in same for new in same if old != new]
+    void = register.schema.void
+    pairs += [
+        (entry.id, entry.related[0])
+        for entry in entries
+        if entry.status == void
+        and len(entry.related) == 1
+        and entry.title.startswith(f"renumbered to {entry.related[0]} — ")
+    ]
+    for old, new in pairs:
+        if new not in texts:
+            continue
+        restored = ID_LINE.sub(f"id: {old}", texts[new], count=1)
+        try:
+            moved = parse_entry(
+                restored, path=Path(register.directory) / f"{old}.md", register=register
+            )
+        except LedgerError:
+            continue
+        before = [entry for entry in entries if entry.id not in (old, new)] + [moved]
+        if render_index(sorted(before, key=lambda e: e.number), register) == current:
+            return old, new
+    return None
+
+
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     """The `bugs` gate: the bug ledger's `register_gate`, in the `(root, config, base)` shape every
     gate of `stayfixed assess` shares.
@@ -390,4 +562,4 @@ def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
     tree alone; every gate run passes the base it judges against.
     """
-    return register_gate(root, config, bug_register(config), base)
+    return register_gate(root, config, bug_register(config), base, locate=located_bug_register)

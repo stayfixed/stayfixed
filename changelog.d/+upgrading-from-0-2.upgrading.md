@@ -46,6 +46,22 @@ differently. Each has its own entry in these notes, with the detail:
     followed by a column or a nested symbol path, which 0.2.0 did not check (Fixed,
     "`stayfixed plan check`, the `plan` gate and `stayfixed memory refs` now check a backticked
     path in any language").
+  - `stayfixed bugs check --base` and the `bugs` gate read the base's ledger where the base's
+    `stayfixed.toml` kept it, so a change that moves the ledger by `[paths]` or changes
+    `[ledger] id_prefix` answers for every base entry it does not carry along. A base whose
+    `stayfixed.toml` does not load fails the check (exit 1); one whose load meets a refusal, or
+    whose `id_prefix` the ledger refuses, is refused (exit 2); and `bugs check --base` refuses
+    (exit 2) a project root reached through a symlink, as `stayfixed gate` does. Each of these
+    passed in 0.2.0 (Fixed, "`stayfixed bugs check --base`, and the `bugs` gate under `stayfixed
+    gate`, now read").
+  - A `[ledger] evidence_boundary_required_for` value that is not `high`, `medium` or `low`,
+    which 0.2.0 loaded and enforced nothing for, is refused (exit 2) by `stayfixed bugs`, `plan
+    check`, `memory refs`, `init` and `upgrade`: correct the value (Fixed,
+    "`[ledger] evidence_boundary_required_for` is now checked").
+  - In overlay mode, `stayfixed memory index` and `memory fit` warn, and their `--json` reports
+    `"trusted": false`, for every store until `stayfixed memory trust --in-repo-memory` has run,
+    where 0.2.0 reported `true` for a store with no committed `MEMORY.md` (Fixed, "`stayfixed
+    memory index` (with or without `--check`) and `stayfixed memory fit` now warn").
   - On Python 3.14, a settings file, ledger, manifest or trust record nested deeper than 10,000
     levels is refused as nested deeper than the reader follows; `stayfixed doctor` and an
     `attach` with nothing to write read one in 0.2.0 (Fixed, "On Python 3.14, a JSON file nested

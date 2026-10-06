@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from string import Formatter
 from typing import TYPE_CHECKING
 
+from stayfixed.errors import Refusal
 from stayfixed.identifiers import Identifiers
 
 if TYPE_CHECKING:
@@ -244,8 +245,41 @@ BUG_SCHEMA = Schema(
 )
 
 
+# Counted and never quoted, as the loader words a closed vocabulary (`[gates] builtin`): the
+# values are the repository's, and reach a terminal and a CI log.
+BOUNDARY_LEVELS_UNKNOWN = (
+    "[ledger] evidence_boundary_required_for names {count} value(s) that are not a severity, and "
+    "a value that names none requires the evidence line of no entry; the severities are {known}"
+)
+
+
 def bug_register(config: Config) -> Register:
-    """The bug ledger, as this project configures it."""
+    """The bug ledger, as this project configures it.
+
+    Refuses a `[ledger]` value the ledger cannot work with, here and not in the loader, so that
+    every command that builds the register refuses it and `uninstall`, which builds none, does
+    not: `id_prefix` outside the identifier grammar (`Identifiers`), and an
+    `evidence_boundary_required_for` level that is no severity, which loaded and enforced the
+    evidence line of no entry at all.
+    """
+    levels = BUG_SCHEMA.levels
+    unknown = [
+        level for level in config.ledger.evidence_boundary_required_for if level not in levels
+    ]
+    if unknown:
+        raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)))
+    return located_bug_register(config)
+
+
+def located_bug_register(config: Config) -> Register:
+    """The bug ledger where `config` puts it — its paths and its identifiers — with none of
+    `bug_register`'s checks on how it judges an entry.
+
+    For reading another commit's ledger, which needs only where it lives: the base's own
+    `stayfixed.toml` may carry a boundary level 0.2.0 accepted, and refusing it there refused
+    the very change that corrects it. `id_prefix` is still held to the identifier grammar,
+    because the identifiers are how the entries are found.
+    """
     paths = config.paths
     return Register(
         name="bugs",

@@ -753,10 +753,10 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     assert (bugs["name"], bugs["count"]) == ("bugs", 3)
 
 
-def _ledgered(tmp_path: Path, mention: str) -> Path:
-    """A clone whose base enforces `bugs`, carries entry BR-001 and its index, and holds
-    `mention` in `src/a.py`."""
-    enforced = BASE.replace('["docs"]', '["bugs"]')
+def _ledgered(tmp_path: Path, mention: str, *, base: str = "") -> Path:
+    """A clone whose base enforces `bugs` (or is `base`), carries entry BR-001 and its index,
+    and holds `mention` in `src/a.py`."""
+    enforced = base or BASE.replace('["docs"]', '["bugs"]')
     project = clone(tmp_path, enforced, also={"src/a.py": mention})
     upstream = tmp_path / "upstream"
     bugs = upstream / "docs" / "bugs"
@@ -863,6 +863,75 @@ def test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_sinc
         1,
         "FAIL: 1 ledger problem(s): docs/bugs/BR-001.md [entry-removed]",
     )
+
+
+def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
+    tmp_path: Path,
+) -> None:
+    # A base that enforces nothing refuses no `[paths]` change, so a change can move the ledger,
+    # delete an entry on the way and enforce `bugs` itself. The base's entries were listed at the
+    # change's paths, where the base had none: `bugs: enforcing, 0 finding(s)` and exit 0. They
+    # are read where the base's own `stayfixed.toml` kept them. Mutation: `mutations/`, "the
+    # base's entries are listed at the tree's paths again".
+    project = _ledgered(tmp_path, "", base=LOOSENED)
+    moved = BASE.replace('["docs"]', '["bugs"]')
+    _change(project, moved + '\n[paths]\nbugs = "ledger"\nbug_index = "ledger-index.md"\n')
+    git(project, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    (project / "ledger").mkdir()
+    (project / "ledger" / ".gitkeep").write_text("", encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    common = ["--root", str(project), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", *common], parser=parser) == 0
+    commit(project, "chore: move the ledger, and lose an entry on the way")
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)"), out
+    code, out, _ = cli(project, tmp_path, "bugs", "check", "--base", "refs/remotes/origin/main")
+    assert (code, out.strip()) == (
+        1,
+        "FAIL: 1 ledger problem(s): ledger/BR-001.md [entry-removed]",
+    )
+
+
+def test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check(
+    tmp_path: Path,
+) -> None:
+    # A change that turns the project's directory into a link to a copy without an entry: read
+    # where git puts the root, the base's `stayfixed.toml` is looked for at the copy, where the
+    # base has none, and `bugs check --base` passed the deletion as the bootstrap. Both readers
+    # find the copy the one way now (`committed.committed_document`), and a root reached through
+    # a symlink is refused by `stayfixed gate` and `bugs check --base` alike. Mutation:
+    # `mutations/`, "a project root reached through a symlink reads the base at a path it never
+    # had".
+    enforced = BASE.replace('["docs"]', '["bugs"]')
+    project = clone(tmp_path, enforced, under="proj")
+    entry = (
+        "---\nid: BR-00{n}\ntitle: t\nstatus: open\nseverity: low\narea: a\n"
+        "found: 2026-01-01\nsource:\nfixed_in:\nrelated:\n---\n\nbody\n"
+    )
+    bugs = project / "proj" / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    for n in (1, 2):
+        (bugs / f"BR-00{n}.md").write_text(entry.format(n=n), encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    machine = ["--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", "--root", str(project / "proj"), *machine], parser=parser) == 0
+    commit(project, "chore: a ledger")
+    base = git(project, "rev-parse", "HEAD").strip()
+    git(project, "mv", "proj", "other")
+    (project / "other" / "docs" / "bugs" / "BR-002.md").unlink()
+    (project / "other" / "docs" / "bug-reports.md").unlink()
+    with redirect_stdout(io.StringIO()):
+        assert (
+            run(["bugs", "index", "--root", str(project / "other"), *machine], parser=parser) == 0
+        )
+    (project / "proj").symlink_to("other", target_is_directory=True)
+    commit(project, "chore: the project as a link to a copy without BR-002")
+    code, out, err = cli(project / "proj", tmp_path, "gate", "--builtin", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
+    code, out, err = cli(project / "proj", tmp_path, "bugs", "check", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
 
 
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(

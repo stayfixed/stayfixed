@@ -2033,14 +2033,15 @@ reddens = [
 
 # `uninstall` builds the footprint to take it out and renders nothing, so it never needs the
 # identifiers only the bug index's render reads: a prefix the ledger refuses stops `init` and
-# `upgrade`, never the way out.
+# `upgrade`, never the way out, and so does a boundary level that names no severity.
 [[mutation]]
 name = "the footprint builds the bug ledger's register before anything renders"
 file = "src/stayfixed/project/templates.py"
 before = '''        _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),'''
 after = '''        _computed("bug-index", bug_register(config).index, lambda: render_index([], bug_register(config))),'''
 reddens = [
-  "tests/project/test_uninstall.py::test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall",
+  "tests/project/test_uninstall.py::test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_uninstall[id-prefix]",
+  "tests/project/test_uninstall.py::test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_uninstall[boundary-level]",
 ]
 
 # A profile's locator reads a value's text with `str()`, which raises past 4,300 digits for a hex
