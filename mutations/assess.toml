@@ -1686,3 +1686,30 @@ reddens = [
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[byte-order-mark]",
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[scalar-event]",
 ]
+
+# stayfixed writes no hook entry into a committed settings file, and the probe has no grant to
+# compare one with, so an entry there claiming stayfixed's marker is the repository's word alone:
+# read as stayfixed's, any entry of any `type` with any id passed unlisted.
+[[mutation]]
+name = "the foreign-hook probe takes a committed entry's word that it is stayfixed's"
+file = "src/stayfixed/assess/probes.py"
+before = """        if walked.entries:
+            found.append(relative)"""
+after = """        from stayfixed.scaffold import marker_id
+
+        if any(marker_id(placed.command) is None for _, placed in walked.entries):
+            found.append(relative)"""
+reddens = [
+  "tests/assess/test_probes.py::test_a_hook_entry_claiming_stayfixed_s_marker_in_a_committed_file_is_still_foreign",
+]
+
+[[mutation]]
+name = "the foreign-hook probe lists every settings file it reads"
+file = "src/stayfixed/assess/probes.py"
+before = """        if walked.entries:
+            found.append(relative)"""
+after = """        if True:
+            found.append(relative)"""
+reddens = [
+  "tests/assess/test_probes.py::test_a_settings_file_with_no_hook_entry_lists_nothing",
+]

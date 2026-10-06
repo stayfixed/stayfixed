@@ -40,7 +40,7 @@ from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import Severity
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.scaffold import EntriesError, judged_entries, marker_id
+from stayfixed.scaffold import EntriesError, judged_entries
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -159,13 +159,19 @@ def _memory_history(context: ProbeContext) -> Looked:
 
 
 def _foreign_hooks(context: ProbeContext) -> Looked:
-    """Settings files of the selected harnesses that hold a hook entry without stayfixed's
-    marker, read by the walk `doctor`'s `hook-entries` reads them with (`scaffold.judged_entries`,
+    """Committed settings files of the selected harnesses that hold any hook entry, read by the
+    walk `doctor`'s `hook-entries` reads them with (`scaffold.judged_entries`,
     lenient for the files a harness was measured running partly malformed): a file one names and
     the other cannot read would be two answers about one file. Every way repository content can
     make reading fail is "could not look", and so is a part of the file the walk skipped that
     could hold a command. One difference stays: this decodes strictly, so a byte that is not
-    UTF-8 is "could not look" here where `doctor` reads past it."""
+    UTF-8 is "could not look" here where `doctor` reads past it.
+
+    **An entry claiming stayfixed's marker is foreign here too.** stayfixed writes no hook entry
+    into a committed settings file -- `attach` merges into the one a repository keeps out of git --
+    and this probe has no grant to compare an entry with, which is what lets `hook-entries` vouch
+    for one. So a marker in a committed file is the repository's word alone, and one an entry of
+    any `type`, carrying any id, can give."""
     from stayfixed.harnesses import LENIENT_SETTINGS, select
 
     harnesses, _ = select(context.config.stayfixed.agents)
@@ -182,7 +188,7 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
             continue
         if walked.partly:
             unread.append(relative)
-        if any(marker_id(placed.command) is None for _, placed in walked.entries):
+        if walked.entries:
             found.append(relative)
     return Looked(tuple(found), tuple(unread))
 
