@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import committed
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -24,6 +25,7 @@ from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, bug_register
 from stayfixed.ledger.write import renumber
 from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, needs_git
+from tests.ledger.kills import Killed, killed_at
 
 CONFIG = """
 [stayfixed]
@@ -252,6 +254,246 @@ def test_renumbering_an_entry_removes_nothing(tmp_path: Path) -> None:
     renumber(root, config, bug_register(config), "BR-001", "BR-002", today="2026-01-02")
     assert (root / "docs" / "bugs" / "BR-001.md").is_file()
     assert register_gate(root, config, bug_register(config), base) == []
+
+
+MOVED = '\n[paths]\nbugs = "ledger"\nbug_index = "ledger-index.md"\n'
+
+
+def _moved(root: Path, tmp_path: Path, kept: tuple[str, ...]) -> Config:
+    """Move the committed ledger to `ledger/` and `ledger-index.md` by `[paths]`, keeping the
+    entries `kept` and deleting the rest, and the mentions with them; the tree's new config."""
+    (root / "stayfixed.toml").write_text(CONFIG + MOVED, encoding="utf-8")
+    config = load(root, machine=tmp_path / "m.toml")
+    (root / "ledger").mkdir()
+    for path in sorted((root / "docs" / "bugs").iterdir()):
+        if path.stem in kept:
+            path.rename(root / "ledger" / path.name)
+    shutil.rmtree(root / "docs" / "bugs")
+    (root / "docs" / "bug-reports.md").unlink()
+    register = bug_register(config)
+    (root / "ledger-index.md").write_text(
+        render_index(load_entries(root, register), register), encoding="utf-8"
+    )
+    (root / "src" / "a.py").write_text(
+        "".join(f"# workaround for {name}\n" for name in kept), encoding="utf-8"
+    )
+    return config
+
+
+@needs_git
+def test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it(
+    tmp_path: Path,
+) -> None:
+    # The base's entries were listed at the tree's `[paths]`, so a change that moved the ledger
+    # found none there on the base, and deleting an entry in the same change passed `bugs check
+    # --base` — and `stayfixed gate`, whenever the base enforces nothing and so refuses no
+    # `[paths]` change. The base's ledger is read where the base's own `stayfixed.toml` kept it.
+    # Mutation: `mutations/`, "the base's entries are listed at the tree's paths again".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002", "BR-003"))
+    config = _moved(root, tmp_path, ("BR-001", "BR-003"))
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "ledger/BR-002.md")
+    ]
+
+
+@needs_git
+def test_a_ledger_moved_whole_by_paths_removes_nothing(tmp_path: Path) -> None:
+    # The legitimate move this must not refuse: every entry carried to the new paths.
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    config = _moved(root, tmp_path, ("BR-001", "BR-002"))
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("copy", "raised", "said"),
+    [
+        (b"[nonsense]\n", Failure, "does not load"),
+        (b"# \xff\n", Failure, "is not UTF-8 text"),
+        (b"[paths]\nbugs = '../out'\n", Refusal, "loading its stayfixed.toml against this tree"),
+        (b"[ledger]\nid_prefix = 'br'\n", Refusal, "places its ledger by an identifier prefix"),
+    ],
+    ids=["does-not-load", "not-utf8", "refused", "prefix-refused"],
+)
+def test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger(
+    tmp_path: Path, copy: bytes, raised: type[Exception], said: str
+) -> None:
+    # Where the base kept its ledger is the question, so a copy that cannot answer it is no
+    # answer, and never the tree's paths in its place: that would pass again the change
+    # `test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it` makes. A copy
+    # that is not UTF-8 is never parsed, as the loader never parses the tree's. A load that met
+    # a refusal and a prefix the identifiers refuse are told apart in the words. Mutations:
+    # `mutations/`, "a base copy that does not load is read at the tree's paths", "a base copy
+    # that is not UTF-8 is parsed", "a base copy whose load meets a refusal is read at the
+    # tree's paths" and "a base copy whose prefix is refused is said to have met a refusal on
+    # load".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_bytes(CONFIG.encode() + copy)
+    git(root, "commit", "-qam", "a copy the loader refuses")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    with pytest.raises(raised, match=said):
+        check.bugs_gate(root, config, base)
+
+
+@needs_git
+def test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_that_corrects_it(
+    tmp_path: Path,
+) -> None:
+    # Locating the base's ledger needs its paths and its identifiers, and nothing of how it
+    # judges an entry: built whole, the base's register refused the boundary level 0.2.0 loaded,
+    # so the change correcting it was refused (exit 2) by the very check it repairs. Mutation:
+    # `mutations/`, "the base's ledger is located by a register that judges entries".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    typo = CONFIG + '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
+    (root / "stayfixed.toml").write_text(typo, encoding="utf-8")
+    git(root, "commit", "-qam", "a level that names no severity")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+def test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it(
+    tmp_path: Path,
+) -> None:
+    # The finding's remedy is "restore it from the base", so it names the paths the base held:
+    # named at the change's new paths, it sent the owner to restore what no commit ever had.
+    # Mutation: `mutations/`, "a removed ledger is named at the tree's paths".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_text(CONFIG + MOVED, encoding="utf-8")
+    config = load(root, machine=tmp_path / "m.toml")
+    shutil.rmtree(root / "docs" / "bugs")
+    (root / "docs" / "bug-reports.md").unlink()
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    [found] = check.bugs_gate(root, config, base)
+    assert (found.rule, found.path) == ("ledger-removed", "docs/bugs")
+    assert "(docs/bugs or docs/bug-reports.md)" in found.detail
+
+
+@needs_git
+def test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A listing that failed listed nothing, which is what a fork with no `stayfixed.toml` lists:
+    # read that way, the base would be compared at the tree's paths, which is the bootstrap's
+    # answer and not this one. The failure names the file it could not read, not the ledger's
+    # paths. Mutations: `mutations/`, "git failing to read the base is read as the base having no
+    # stayfixed.toml" and "an unread fork configuration is named by the ledger's paths".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    config = _moved(root, tmp_path, ("BR-001",))
+    real = git_run
+
+    def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if "ls-tree" in args and args[-1] == "stayfixed.toml":
+            return 128, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(committed, "git_run", refused)
+    with pytest.raises(Failure, match="proved nothing") as raised:
+        check.bugs_gate(root, config, base)
+    assert "hold of stayfixed.toml is unknown" in str(raised.value)
+
+
+@needs_git
+def test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledger_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # After a `[paths]` move the failing listing asked about the base's paths, not the tree's,
+    # and the message names what it asked about. Mutation: `mutations/`, "an unread fork
+    # listing is named by the tree's paths".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    config = _moved(root, tmp_path, ("BR-001",))
+    real = git_run
+
+    def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("ls-tree", "-r"):
+            return 128, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(check, "git_run", refused)
+    with pytest.raises(Failure) as raised:
+        check.bugs_gate(root, config, base)
+    assert "hold of docs/bugs and docs/bug-reports.md is unknown" in str(raised.value)
+
+
+@needs_git
+def test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal(tmp_path: Path) -> None:
+    # `--base` is the caller's, and a ref holding an escape sequence reached the terminal raw.
+    # It is printed through `printed.quoted`, as every name in a refusal is. Mutation:
+    # `mutations/`, "an unread base is named raw".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    with pytest.raises(Failure) as raised:
+        check.bugs_gate(root, config, "nowhere\x1b[31m")
+    assert "\x1b" not in str(raised.value)
+    assert "'nowhere\\x1b[31m'" in str(raised.value)
+
+
+@needs_git
+def test_a_base_prefix_the_ledger_refuses_is_clipped_where_it_is_named(tmp_path: Path) -> None:
+    # The base's prefix is the base's own text, of any length: named in full, five thousand
+    # characters of it reached the line. It is clipped as every repository-chosen name in a
+    # refusal is. Mutation: `mutations/`, "a base prefix the ledger refuses is named whole".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    long = "B" * 5000
+    (root / "stayfixed.toml").write_text(
+        CONFIG + f'\n[ledger]\nid_prefix = "{long}"\n', encoding="utf-8"
+    )
+    git(root, "commit", "-qam", "a prefix the ledger refuses")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    with pytest.raises(Refusal) as raised:
+        check.bugs_gate(root, config, base)
+    assert "…(5000 chars)" in str(raised.value)
+    assert long not in str(raised.value)
+
+
+@needs_git
+def test_a_changed_id_prefix_answers_for_every_entry_under_the_old_one(tmp_path: Path) -> None:
+    # The base's identifiers are the base's prefix: a change that renames the prefix leaves
+    # every old entry unloaded under the new one, and each is named.
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\nid_prefix = "XX"\n', encoding="utf-8"
+    )
+    config = load(root, machine=tmp_path / "m.toml")
+    (root / "docs" / "bugs" / "BR-001.md").unlink()
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    register = bug_register(config)
+    (root / "docs" / "bug-reports.md").write_text(render_index([], register), encoding="utf-8")
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-001.md")
+    ]
+
+
+@needs_git
+def test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given(
+    tmp_path: Path,
+) -> None:
+    # A gate is handed `(root, config, base)`, not the machine file's path, so a second load
+    # that read the machine file again read the default one: a command given `--machine` read
+    # a file nobody named, and failed on its contents. Mutation: `mutations/`, "the base's copy
+    # reads the default machine file".
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    default = Path.home() / ".config" / "stayfixed" / "config.toml"
+    default.parent.mkdir(parents=True)
+    default.write_text("[[[ not toml\n", encoding="utf-8")
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+def test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths(tmp_path: Path) -> None:
+    # The change that adds `stayfixed.toml` is the bootstrap, where the tree decides, as it
+    # does for `stayfixed gate`: its entries are compared at the tree's own paths.
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    git(root, "rm", "-q", "--cached", "stayfixed.toml")
+    git(root, "commit", "-qm", "no configuration yet")
+    base = git(root, "rev-parse", "HEAD").strip()
+    _drop(root, config, "BR-002")
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-002.md")
+    ]
 
 
 @needs_git
@@ -630,10 +872,54 @@ def test_foreign_index_content_is_reported_and_staleness_is_not_named_beside_it(
 def test_a_stale_index_is_reported_with_the_command_that_repairs_it(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
-    (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2), encoding="utf-8")
+    # Its own body: one byte-identical to BR-001 but for its `id:` is the tree a `renumber` killed
+    # after its first write leaves, whose stale index names that renumber.
+    own = entry(2, body="its own body\n")
+    (root / "docs" / "bugs" / "BR-002.md").write_text(own, encoding="utf-8")
     found = register_gate(root, config, bug_register(config))
     assert [p.rule for p in found] == ["stale-index"]
     assert "stayfixed bugs index" in found[0].detail
+
+
+@pytest.mark.parametrize(
+    "kill", [2, 3, 4], ids=["before-pointer", "before-sibling-sweep", "before-second-sweep"]
+)
+def test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kill: int
+) -> None:
+    # A renumber killed part-way leaves the index it found, so `check` reported it stale and
+    # sent the operator to `bugs index` — the remedy that turned the check green over two live
+    # entries for one bug, or over mentions of the old number the sweep never reached. When the
+    # stale index is exactly the one the move found, the line names the move that finishes it.
+    # Mutation: `mutations/`, "a stale index a killed renumber left is sent to bugs index".
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2, related="[BR-001]")})
+    (root / "src" / "a.py").write_text("# see BR-001\n", encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
+    with killed_at(monkeypatch, kill), pytest.raises(Killed):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    stale = [
+        p.detail
+        for p in register_gate(root, config, bug_register(config))
+        if p.rule == "stale-index"
+    ]
+    assert stale == ["is stale; run: stayfixed bugs renumber BR-001 BR-009"]
+
+
+def test_a_stale_index_beside_a_finished_renumber_is_sent_to_bugs_index(tmp_path: Path) -> None:
+    # The legitimate user: a move that finished, and an entry edited since without the index.
+    # Re-running that move would change nothing, so the line still names `bugs index`.
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    sibling = root / "docs" / "bugs" / "BR-002.md"
+    sibling.write_text(entry(2).replace("title: a title", "title: retitled"), encoding="utf-8")
+    stale = [
+        p.detail
+        for p in register_gate(root, config, bug_register(config))
+        if p.rule == "stale-index"
+    ]
+    assert stale == ["is stale; run: stayfixed bugs index"]
 
 
 def test_a_mention_with_no_entry_is_reported_at_its_first_location(tmp_path: Path) -> None:

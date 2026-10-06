@@ -53,8 +53,16 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
 
 
 def run_bugs_check(args: argparse.Namespace) -> Result:
+    from pathlib import Path
+
+    from stayfixed.committed import repository_prefix
     from stayfixed.ledger.check import bugs_gate, uninitialised
 
+    if args.base:
+        # The root as it was given, before `root_and_config` resolves it: against a base, a root
+        # reached through a symlink is refused as `stayfixed gate` refuses it, since resolved it
+        # is the link's target, where the base's copy can be made to be missing.
+        repository_prefix(Path(args.root).absolute())
     root, config = root_and_config(args)
     # The `bugs` gate itself, so this command and a gate run cannot disagree.
     found = bugs_gate(root, config, args.base or "")
@@ -100,7 +108,10 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
         "new": args.new,
         "void": void,
         "unswept": [asdict(u) for u in result.unswept],
+        "moved": result.moved,
     }
+    if not result.moved:
+        return Result(f"{args.old} was already moved to {args.new}; nothing to do", data)
     if result.unswept:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "

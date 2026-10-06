@@ -516,11 +516,139 @@ reddens = [
 [[mutation]]
 name = "renumber parses its siblings only after it has moved both endpoints"
 file = "src/stayfixed/ledger/write.py"
-before = '''    # the files as they are AFTER the move, so this is a check and not a value.
-    load_entries(root, register)'''
-after = "    # the files as they are AFTER the move, so this is a check and not a value."
+before = "    entries = load_entries(root, register)"
+after = "    entries = []"
 reddens = [
   "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
+]
+
+# A `renumber` killed between two of its writes left a tree the re-run refused as an occupied
+# target, and `bugs check` named only a stale index, whose remedy turned check green over two
+# live entries for one bug or over mentions the sweep never reached. The re-run tells this move's
+# own half-done states by their bytes and finishes them; anything else at the target stays an
+# entry of its own and is refused.
+[[mutation]]
+name = "a re-run of a renumber killed before its void pointer refuses again"
+file = "src/stayfixed/ledger/write.py"
+before = "    if held == moved:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_a_renumber_killed_at_any_write_is_finished_by_running_it_again[before-pointer]",
+]
+
+[[mutation]]
+name = "a re-run of a renumber killed after its void pointer writes both endpoints again"
+file = "src/stayfixed/ledger/write.py"
+before = "        return 2"
+after = "        return 0"
+reddens = [
+  "tests/ledger/test_write.py::test_a_renumber_killed_at_any_write_is_finished_by_running_it_again[before-sibling-sweep]",
+]
+
+[[mutation]]
+name = "a renumber resumes over a target that is not the moved text"
+file = "src/stayfixed/ledger/write.py"
+before = "    if held == moved:"
+after = "    if True:"
+reddens = [
+  "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
+]
+
+[[mutation]]
+name = "a renumber resumes from any void entry toward its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if source_text == pointer:"
+after = "    if source.status == register.schema.void and source.related == (new,):"
+reddens = [
+  "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[void]",
+]
+
+[[mutation]]
+name = "a renumber resumes from any entry that relates to its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if source_text == pointer:"
+after = "    if source.related == (new,):"
+reddens = [
+  "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[open]",
+]
+
+# The pointer's title is the one byte range not compared: the target may be retitled after the
+# move, and a pointer rebuilt from its current title stopped matching then.
+[[mutation]]
+name = "the void pointer is recognised by the target's current title"
+file = "src/stayfixed/ledger/write.py"
+before = "    pointer = _void_pointer(register, old=old, new=new, title=source.title, today=day)"
+after = '''    pointer = _void_pointer(register, old=old, new=new, title=f"renumbered to {new} — {parse_entry(held, path=Path(register.directory) / f'{new}.md', register=register).title}", today=day)'''
+reddens = [
+  "tests/ledger/test_write.py::test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finished",
+]
+
+[[mutation]]
+name = "the void pointer's title is not held to the prefix the move writes"
+file = "src/stayfixed/ledger/write.py"
+before = '''    if not source.title.startswith(f"renumbered to {new} — "):'''
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused",
+]
+
+# The index is the move's last write: with the pointer in place a fresh one is a move that
+# finished, and a mention of the old number written since is one the pointer exists to resolve.
+[[mutation]]
+name = "a renumber that finished sweeps again when run again"
+file = "src/stayfixed/ledger/write.py"
+before = "    if written == 2 and committed_index == render_index(entries, register):"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_commands.py::test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_mention",
+]
+
+# A stale index a killed renumber left is the one the move found: `check` names the renumber that
+# finishes it, since `bugs index` turned the check green over a half-moved ledger.
+[[mutation]]
+name = "a stale index a killed renumber left is sent to bugs index"
+file = "src/stayfixed/ledger/check.py"
+before = '        remedy = f"renumber {move[0]} {move[1]}" if move else "index"'
+after = '        remedy = "index"'
+reddens = [
+  "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-pointer]",
+  "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-sibling-sweep]",
+]
+
+[[mutation]]
+name = "the occupied-target refusal does not say a final newline is the only difference"
+file = "src/stayfixed/ledger/write.py"
+before = '    if held.rstrip("\r\n") == moved.rstrip("\r\n"):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand[final-newline]",
+]
+
+[[mutation]]
+name = "renumber moves an entry onto its own identifier"
+file = "src/stayfixed/ledger/write.py"
+before = "    if old == new:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothing",
+]
+
+[[mutation]]
+name = "the occupied-target refusal says nothing of an interrupted move"
+file = "src/stayfixed/ledger/write.py"
+before = '    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=""))'
+after = '    occupied = LedgerError(f"{new} already has an entry file; pick a free identifier")'
+reddens = [
+  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand[body-edited]",
+]
+
+[[mutation]]
+name = "a renumber adopts a symlink at its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if target.is_symlink() or not target.is_file():"
+after = "    if not target.is_file():"
+reddens = [
+  "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
 ]
 
 # The ledger engine serves any register, and the bug ledger is one value of it. A literal the bug
@@ -1143,7 +1271,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return register_gate(root, config, bug_register(config), base)"
+before = "    return register_gate(root, config, bug_register(config), base, locate=located_bug_register)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -1302,7 +1430,7 @@ reddens = ["tests/docs/test_hygiene.py::test_a_text_of_unclosed_links_is_read_in
 [[mutation]]
 name = "the uninitialised arm ignores the base's ledger"
 file = "src/stayfixed/ledger/check.py"
-before = "    if base is not None and base.carried:"
+before = "    if base is not None and base.place is not None:"
 after = "    if False:"
 reddens = [
   "tests/ledger/test_check.py::test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding",
@@ -1344,8 +1472,8 @@ reddens = [
 [[mutation]]
 name = "every markdown file the base carries under the ledger directory reads as an entry"
 file = "src/stayfixed/ledger/check.py"
-before = '        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
-after = "        and True"
+before = '            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
+after = "            and True"
 reddens = [
   "tests/ledger/test_check.py::test_deleting_what_is_not_an_entry_under_the_ledger_directory_removes_no_entry",
 ]
@@ -1353,8 +1481,8 @@ reddens = [
 [[mutation]]
 name = "the base's ledger is listed without its entries"
 file = "src/stayfixed/ledger/check.py"
-before = '            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index'
-after = '            root, "ls-tree", "-z", "--name-only", fork, "--", directory, index'
+before = '            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", held.directory, held.index'
+after = '            root, "ls-tree", "-z", "--name-only", fork, "--", held.directory, held.index'
 reddens = [
   "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
@@ -1397,14 +1525,10 @@ reddens = [
 [[mutation]]
 name = "bugs check answers beside the bugs gate rather than through it"
 file = "src/stayfixed/ledger/commands.py"
-before = '''    from stayfixed.ledger.check import bugs_gate, uninitialised
-
-    root, config = root_and_config(args)
-    # The `bugs` gate itself, so this command and a gate run cannot disagree.
+before = '''    # The `bugs` gate itself, so this command and a gate run cannot disagree.
     found = bugs_gate(root, config, args.base or "")'''
-after = '''    from stayfixed.ledger.check import register_gate, uninitialised
+after = '''    from stayfixed.ledger.check import register_gate
 
-    root, config = root_and_config(args)
     found = register_gate(root, config, bug_register(config), args.base or "")'''
 reddens = [
   "tests/ledger/test_commands.py::test_check_answers_with_the_bugs_gate_s_own_function",
@@ -1802,11 +1926,9 @@ reddens = [
 name = "the base's ledger is listed at its tip, not where the change forked from it"
 file = "src/stayfixed/ledger/check.py"
 before = """    forks = fork_points(root, base)
-    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+    if isinstance(forks, ForkUnknown):"""
 after = """    forks = [base]
-    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+    if isinstance(forks, ForkUnknown):"""
 reddens = [
   "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
   "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_had_a_ledger_deleted_none",
@@ -1820,11 +1942,9 @@ reddens = [
 name = "only the first of several merge bases is listed"
 file = "src/stayfixed/ledger/check.py"
 before = """    for fork in forks:
-        code, out = git_run(
-            root, "ls-tree""""
+        held = register"""
 after = """    for fork in forks[:1]:
-        code, out = git_run(
-            root, "ls-tree""""
+        held = register"""
 reddens = [
   "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
 ]
@@ -1835,9 +1955,9 @@ reddens = [
 name = "a fork point that is not known reads as a base with no ledger"
 file = "src/stayfixed/ledger/check.py"
 before = """    if isinstance(forks, ForkUnknown):
-        raise unread(forks)"""
+        raise _unread(register, base, root, forks.cause, _paths(register))"""
 after = """    if isinstance(forks, ForkUnknown):
-        return _BaseLedger(False, ())"""
+        return _BaseLedger((), None)"""
 reddens = [
   "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
   "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
@@ -1850,9 +1970,9 @@ reddens = [
 name = "a listing git refuses reads as a base with no ledger"
 file = "src/stayfixed/ledger/check.py"
 before = """        if code != 0:
-            raise unread(ForkUnknown.of(code))"""
+            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"""
 after = """        if False:
-            raise unread(ForkUnknown.of(code))"""
+            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"""
 reddens = [
   "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger",
 ]
@@ -2054,8 +2174,8 @@ reddens = [
 [[mutation]]
 name = "the base's entries are read with the bug ledger's identifiers whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "    ids = register.ids\n    under = f\"{directory}/\""
-after = "    ids = type(register.ids)(\"BR\")\n    under = f\"{directory}/\""
+before = '            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
+after = '            and type(held.ids)("BR").is_identifier(name.removeprefix(under).removesuffix(".md"))'
 reddens = [
   "tests/ledger/test_register.py::test_the_gate_judges_a_second_register_against_its_base",
 ]
@@ -2083,8 +2203,8 @@ reddens = [
 [[mutation]]
 name = "an unread base names the bugs gate whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "                name=register.name,"
-after = '                name="bugs",'
+before = '            what=what, name=register.name, base=quoted(base), root=root, cause=cause'
+after = '            what=what, name="bugs", base=quoted(base), root=root, cause=cause'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]
@@ -2092,8 +2212,8 @@ reddens = [
 [[mutation]]
 name = "a stale index is sent to the bug ledger's index command whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = '        stale = f"is stale; run: stayfixed {register.name} index"'
-after = '        stale = "is stale; run: stayfixed bugs index"'
+before = '        stale = f"is stale; run: stayfixed {register.name} {remedy}"'
+after = '        stale = f"is stale; run: stayfixed bugs {remedy}"'
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]
@@ -2203,4 +2323,202 @@ before = "    ids = bug_register(config).ids"
 after = '    ids = type(bug_register(config).ids)("BR")'
 reddens = [
   "tests/memory/test_graph.py::test_a_bracketed_identifier_is_the_bug_ledgers_as_the_project_configures_it",
+]
+
+# The base's entries were listed at the tree's `[paths]`, so a change that moved the ledger found
+# none there on the base and could delete an entry in the same change: `bugs check --base`
+# passed, and so did `stayfixed gate` whenever the base enforced nothing. Each fork point's
+# ledger is read where its own `stayfixed.toml` kept it, and a copy that cannot say is no answer.
+[[mutation]]
+name = "the base's entries are listed at the tree's paths again"
+file = "src/stayfixed/ledger/check.py"
+before = "        held = register if locate is None else locate(fork)"
+after = "        held = register"
+reddens = [
+  "tests/ledger/test_check.py::test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it",
+  "tests/assess/test_gate_command.py::test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs",
+]
+
+[[mutation]]
+name = "a base copy that does not load is read at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = '''    except Failure as exc:
+        raise does_not_load(exc) from None'''
+after = '''    except Failure:
+        return register'''
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[does-not-load]",
+]
+
+[[mutation]]
+name = "a base copy whose load meets a refusal is read at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = """    except Refusal as exc:
+        refused = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=exc)
+        raise Refusal(refused) from None"""
+after = """    except Refusal:
+        return register"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[refused]",
+]
+
+[[mutation]]
+name = "a fork point with no stayfixed.toml fails the ledger's base comparison"
+file = "src/stayfixed/ledger/check.py"
+before = """    if raw is None:
+        return register"""
+after = """    if raw is None:
+        raise failed(1)"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths",
+]
+
+[[mutation]]
+name = "a base copy that is not UTF-8 is parsed"
+file = "src/stayfixed/ledger/check.py"
+before = "        raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None"
+after = "        decoded = text"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[not-utf8]",
+]
+
+[[mutation]]
+name = "a base copy whose prefix is refused is said to have met a refusal on load"
+file = "src/stayfixed/ledger/check.py"
+before = "        unplaced = FORK_UNPLACED.format(base=quoted(base), name=register.name, prefix=prefix_named)"
+after = "        unplaced = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=prefix_named)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[prefix-refused]",
+]
+
+# Locating the base's ledger needs its paths and identifiers and nothing of how it judges an
+# entry, so a level 0.2.0 accepted on the base does not refuse the change that corrects it; and a
+# ledger deleted along with a `[paths]` move is named where the base kept it.
+[[mutation]]
+name = "the base's ledger is located by a register that judges entries"
+file = "src/stayfixed/ledger/check.py"
+before = "    return register_gate(root, config, bug_register(config), base, locate=located_bug_register)"
+after = "    return register_gate(root, config, bug_register(config), base, locate=bug_register)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_that_corrects_it",
+]
+
+[[mutation]]
+name = "a removed ledger is named at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "        directory, index = base.place"
+after = "        directory, index = register.directory, register.index"
+reddens = [
+  "tests/ledger/test_check.py::test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it",
+]
+
+[[mutation]]
+name = "bugs check --base judges a root reached through a symlink at the link's target"
+file = "src/stayfixed/ledger/commands.py"
+before = "        repository_prefix(Path(args.root).absolute())"
+after = "        pass"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check",
+]
+
+# What a base refusal prints is the caller's base through `printed.quoted`, the base's own prefix
+# through `printed.clipped`, and the paths the failing read asked about.
+[[mutation]]
+name = "an unread base is named raw"
+file = "src/stayfixed/ledger/check.py"
+before = "            what=what, name=register.name, base=quoted(base), root=root, cause=cause"
+after = "            what=what, name=register.name, base=base, root=root, cause=cause"
+reddens = [
+  "tests/ledger/test_check.py::test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal",
+]
+
+[[mutation]]
+name = "a base prefix the ledger refuses is named whole"
+file = "src/stayfixed/ledger/check.py"
+before = "        prefix_named = clipped(copy.ledger.id_prefix)"
+after = "        prefix_named = copy.ledger.id_prefix"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_prefix_the_ledger_refuses_is_clipped_where_it_is_named",
+]
+
+[[mutation]]
+name = "an unread fork configuration is named by the ledger's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "        return _unread(register, base, root, ForkUnknown.of(code).cause, CONFIG_FILE)"
+after = "        return _unread(register, base, root, ForkUnknown.of(code).cause, _paths(register))"
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
+]
+
+[[mutation]]
+name = "an unread fork listing is named by the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(held))"
+after = "            raise _unread(register, base, root, ForkUnknown.of(code).cause, _paths(register))"
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledger_at",
+]
+
+[[mutation]]
+name = "the base's copy reads the default machine file"
+file = "src/stayfixed/ledger/check.py"
+before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)"
+after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)"
+reddens = [
+  "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
+]
+
+# A `[ledger] evidence_boundary_required_for` level that names no severity loaded and enforced the
+# evidence line of no entry. `bug_register` refuses it, beside `id_prefix`'s refusal, so every
+# command that builds the register refuses it as a `Refusal` and `uninstall` is not stopped.
+[[mutation]]
+name = "a boundary level outside the severities builds the register"
+file = "src/stayfixed/ledger/register.py"
+before = "    if unknown:\n        raise Refusal(BOUNDARY_LEVELS_UNKNOWN"
+after = "    if False:\n        raise Refusal(BOUNDARY_LEVELS_UNKNOWN"
+reddens = [
+  "tests/ledger/test_register.py::test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted[levels0-1]",
+  "tests/ledger/test_commands.py::test_a_boundary_level_that_names_no_severity_is_a_refusal_in_every_command_that_reads_it[memory-refs]",
+]
+
+[[mutation]]
+name = "the boundary-level refusal quotes the values"
+file = "src/stayfixed/ledger/register.py"
+before = '        raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)))'
+after = '        raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)) + repr(unknown))'
+reddens = [
+  "tests/ledger/test_register.py::test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted[levels0-1]",
+]
+
+# `memory index --check` and `memory fit` asked whether the notes or a committed index are
+# repository data, a narrower question than the harness memory link's, so an overlay store with no
+# record read as trusted and said nothing while its link waited. Both ask the link's question,
+# and the words say whether the whole gate is shut or only the link waits.
+[[mutation]]
+name = "memory index and fit ask a narrower question than the harness link"
+file = "src/stayfixed/memory/commands.py"
+before = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = harness_link_needed(store, config)"""
+after = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = trust.may_inject(store, config, repository_data=_holds_repository_data(store, config))"""
+reddens = [
+  "tests/memory/test_commands.py::test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow",
+]
+
+[[mutation]]
+name = "an overlay store with no record is told none of its notes reach a session"
+file = "src/stayfixed/memory/commands.py"
+before = "    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS"
+after = "    return _UNTRUSTED"
+reddens = [
+  "tests/memory/test_commands.py::test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow",
+]
+
+[[mutation]]
+name = "a committed index is told only the harness link waits"
+file = "src/stayfixed/memory/commands.py"
+before = "    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS"
+after = "    return _LINK_WAITS"
+reddens = [
+  "tests/memory/test_commands.py::test_a_committed_index_is_reported_untrusted",
 ]

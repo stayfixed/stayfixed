@@ -53,10 +53,14 @@ from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
+from stayfixed.committed import (
+    committed_document,
+    repository_prefix,
+)
 from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
+from stayfixed.gitenv import git_run
 from stayfixed.semver import later
 
 # Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
@@ -88,60 +92,21 @@ BASE_DOES_NOT_LOAD = (
     "the base's stayfixed.toml governs this change and does not load, so the change cannot be "
     "judged; fix it on the base branch by a direct push ({reason})"
 )
-NOT_A_REPOSITORY = (
-    "the project root is not inside a git repository, so it has no base to compare with"
-)
-ROOT_UNANSWERED = (
-    "git gave no answer about the repository the project root is in, so its base cannot be "
-    f"read: {NO_ANSWER}, or git refused the repository (a checkout of dubious ownership, a "
-    "worktree whose git directory is gone)"
-)
-ROOT_DOT_DOT = (
-    "the project root is given with a `..` component, and `..` after a component that is a link "
-    "is not the directory the spelling names, so the base's stayfixed.toml could be looked for "
-    "in the wrong place; pass the root by its real path, with no `..`"
-)
-ROOT_THROUGH_SYMLINK = (
-    "the project root is reached through a symlink, or git spells its path differently from the "
-    "caller, so the base's stayfixed.toml would be looked for in the wrong place; pass the root by "
-    "its real path"
-)
 BASE_REF = re.compile(r"\A(?:[0-9a-f]{40}|refs/[A-Za-z0-9._/-]+)\Z")
 
 
+def _unreadable(branch: str) -> Failure:
+    """ "git did not answer" is never read as "no copy". The failure's remedy names `branch`, the
+    configured base branch."""
+    return Failure(BASE_UNREADABLE.format(branch=branch))
+
+
 def _read(root: Path, *args: str, branch: str) -> str:
-    """git's answer, or the run fails: "git did not answer" is never read as "no copy". The
-    failure's remedy names `branch`, the configured base branch."""
+    """git's answer, or the run fails as `_unreadable` says."""
     code, out = git_run(root, *args)
     if code != 0:
-        raise Failure(BASE_UNREADABLE.format(branch=branch))
+        raise _unreadable(branch)
     return out
-
-
-def repository_prefix(root: Path) -> str:
-    """The project root's path inside its repository, `""` at the top or `"a/b/"` below it: git's
-    spelling, which is refused unless it is also the caller's."""
-    lexical = root.absolute()
-    if ".." in lexical.parts:
-        raise Refusal(ROOT_DOT_DOT)
-    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
-    if code != 0:
-        # Read off the disk, as git finds a repository: git refuses a checkout of dubious
-        # ownership exactly as it refuses a directory outside any repository.
-        raise Failure(ROOT_UNANSWERED if in_work_tree(lexical) else NOT_A_REPOSITORY)
-    top, _, prefix = out.partition("\n")
-    # The HIGHEST ancestor that resolves to the top, not the nearest: a component linked back
-    # to the top (`app -> .`) resolves to the top as well, and a spelling read below it skips it.
-    chain = (*reversed(lexical.parents), lexical)
-    ancestor = next((path for path in chain if path.resolve() == Path(top)), None)
-    if ancestor is None:
-        raise Refusal(ROOT_THROUGH_SYMLINK)
-    below = lexical.parts[len(ancestor.parts) :]
-    linked = any(ancestor.joinpath(*below[: n + 1]).is_symlink() for n in range(len(below)))
-    spelled = "".join(f"{part}/" for part in below)
-    if linked or spelled != prefix.rstrip("\n"):
-        raise Refusal(ROOT_THROUGH_SYMLINK)
-    return spelled
 
 
 def read_base(root: Path, base: str, *, branch: str, prefix: str | None = None) -> str | None:
@@ -167,30 +132,14 @@ def read_base(root: Path, base: str, *, branch: str, prefix: str | None = None) 
         f"{base}^{{commit}}",
         branch=branch,
     ).strip()
-    path = f"{prefix}{CONFIG_FILE}"
-    # Literal: git reads a pathspec starting `:/` as "from the top", so under a directory named
-    # `:` the listing would look elsewhere, answer nothing, and make the change the bootstrap.
-    # No `--` after `--end-of-options`: every argument past it is literal, and a `--` there is a
-    # path, which listed a top-level file of that name.
-    listed = _read(
-        root,
-        "--literal-pathspecs",
-        "ls-tree",
-        "--full-tree",
-        "--name-only",
-        "--end-of-options",
-        commit,
-        path,
-        branch=branch,
+    raw = committed_document(
+        root, commit, CONFIG_FILE, prefix=prefix, failed=lambda _code: _unreadable(branch)
     )
-    if not listed:
+    if raw is None:
         return None
-    text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}", branch=branch)
-    # The bytes git printed, read as UTF-8 the way the loader reads the tree's copy: the text
-    # `git_run` decoded with the filesystem's codec is neither refused nor read the same where
-    # that codec is latin-1 (Linux under a latin-1 locale), because every byte decodes.
+    # Read as UTF-8 the way the loader reads the tree's copy.
     try:
-        return answer_bytes(text).decode("utf-8")
+        return raw.decode("utf-8")
     except UnicodeDecodeError:
         raise Failure(BASE_NOT_UTF8) from None
 

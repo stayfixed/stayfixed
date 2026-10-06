@@ -2683,3 +2683,98 @@ reddens = [
   "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
   "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
 ]
+
+# A commit's copy of a document at the project's own path (`committed.py`), read one way for the
+# base's `stayfixed.toml` that governs `stayfixed gate` and for each fork point's that places the
+# ledger. A copy that reads as missing is the bootstrap, where the change decides for itself, so
+# each git argument and refusal whose removal reaches it by accident is a guard: git failing read
+# as "no copy", the bytes read in the locale's codec, a root reached through a symlink or spelled
+# otherwise than git spells it, a project in a subdirectory, a directory named like pathspec magic.
+[[mutation]]
+name = "git failing to read the base is read as the base having no stayfixed.toml"
+file = "src/stayfixed/committed.py"
+before = """    if code != 0:
+        raise failed(code)
+    if not listed:
+        return None"""
+after = """    if not listed:
+        return None"""
+reddens = [
+  "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
+  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
+]
+
+[[mutation]]
+name = "the base copy is read in the locale's codec rather than as UTF-8"
+file = "src/stayfixed/committed.py"
+before = '    return answer_bytes(text)'
+after = '    return text.encode("utf-8")'
+reddens = [
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[utf-8]",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
+]
+
+[[mutation]]
+name = "a project root reached through a symlink reads the base at a path it never had"
+file = "src/stayfixed/committed.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
+  "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
+  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bugs_check",
+]
+
+[[mutation]]
+name = "the ancestor that resolves to the top is looked for from the nearest end"
+file = "src/stayfixed/committed.py"
+before = "    chain = (*reversed(lexical.parents), lexical)"
+after = "    chain = (lexical, *lexical.parents)"
+reddens = ["tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused"]
+
+[[mutation]]
+name = "a project in a subdirectory reads the base's copy at the repository's top"
+file = "src/stayfixed/committed.py"
+before = '    path = f"{prefix}{name}"'
+after = "    path = name"
+reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path"]
+
+[[mutation]]
+name = "a root outside any repository is judged as if git had answered"
+file = "src/stayfixed/committed.py"
+before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if code != 0:"""
+after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if False:"""
+reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
+
+[[mutation]]
+name = "a project under a directory named like pathspec magic reads no copy on the base"
+file = "src/stayfixed/committed.py"
+before = '        "--literal-pathspecs",'
+after = '        "--no-pager",'
+reddens = ["tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy"]
+
+[[mutation]]
+name = "the base's copy is listed relative to the project root rather than the repository's top"
+file = "src/stayfixed/committed.py"
+before = '        "--full-tree",'
+after = '        "--name-only",'
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path",
+  "tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy",
+]
+
+[[mutation]]
+name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
+file = "src/stayfixed/committed.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if linked:"
+reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
+
+[[mutation]]
+name = "a root spelled with '..' is refused as a symlink"
+file = "src/stayfixed/committed.py"
+before = '    if ".." in lexical.parts:'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]

@@ -147,6 +147,7 @@ def run_gate(args: argparse.Namespace) -> Result:
         summary,
         workflow_commands,
     )
+    from stayfixed.committed import repository_prefix
     from stayfixed.config.layout import local_base
     from stayfixed.config.loader import ConfigError, loads, read_document
     from stayfixed.config.schema import CONFIG_CHECK
@@ -155,7 +156,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed.runner import subprocess_runner
 
     root = Path(args.root).absolute()
-    prefix = rule.repository_prefix(root)
+    prefix = repository_prefix(root)
     machine = Path(args.machine) if args.machine else None
     tree_text = read_document(root)
     if tree_text is None:

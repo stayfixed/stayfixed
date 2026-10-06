@@ -38,6 +38,7 @@ from stayfixed.memory.index import (
 )
 from stayfixed.memory.inventory import inventory, totals
 from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
+from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -91,14 +92,25 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 # What the trust gate withholds until there is a record, said where a person will read it:
 # `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
 # withholds the harness memory link from a store whose directory is inside the repository.
-# `_trusted` decides when this is said, and its question is narrower than the link's; its
-# docstring says how. The failure this closes was silent in both directions: `memory index`
-# rewrites every note and `MEMORY.md`, so it used to revoke the very record it depends on, and
-# nothing in any summary said why the model had stopped receiving standing rules.
+# `harness_link_needed` decides when one of these is said — the link's question, which is the
+# wider one: whenever the notes or a committed index are withheld, so is the link — and
+# `_holds_repository_data` which. The failure
+# this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
+# so it used to revoke the very record it depends on, and nothing in any summary said why the
+# model had stopped receiving standing rules.
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
     "link — run `stayfixed memory trust --in-repo-memory`"
+)
+# The overlay store whose notes are all the machine owner's: the bundles deliver them with no
+# record, and only the link to the store's directory, which is inside the repository, waits.
+# Said in its own words because `_UNTRUSTED`'s "none of it reaches a session" is false here.
+_LINK_WAITS = (
+    "the harness memory link to this store waits for a trust record, because the store's "
+    "directory is inside the repository; its notes still reach a session through the "
+    "standing-rules and volatile-notes bundles — run `stayfixed memory trust --in-repo-memory` "
+    "to link it"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
@@ -132,38 +144,32 @@ _EXTRA_NOT_PUBLISHED = (
 )
 
 
-def _trusted(store: Store, config: Config) -> bool:
-    """Whether this store's repository data, notes or a committed index, may reach a session.
+def _holds_repository_data(store: Store, config: Config) -> bool:
+    """Whether the notes or a committed index are repository data, which the bundles withhold
+    too, rather than only the directory the harness link exposes.
 
-    `may_inject(store, config)` alone answers about the store's *notes*, through
-    `inside_project`. In overlay mode that is False by design — every group resolves out into
-    the overlay — while `store.path` is a real directory inside the repository, so a committed
-    `MEMORY.md` there is repository data that answer cannot see. Asked that way, this reported
-    `"trusted": true` and `_gate` said nothing. So the index is asked about by file, through its
-    own `in_repository`, beside the notes' `is_repository_data`.
-
-    The harness memory link asks a wider question. `worktree.harness_link_needed` asks
-    `in_repository(store, store.path)` — whether the *directory* the link exposes is inside the
-    repository, which in overlay mode it always is. So an overlay store with no committed index
-    and no trust record reads as trusted here, with no warning, while its harness link waits for
-    a record all the same.
+    `trust.is_repository_data` answers about the store's *notes*, through `inside_project`,
+    which in overlay mode is False by design — every group resolves out into the overlay —
+    while `store.path` is a real directory inside the repository, so a committed `MEMORY.md`
+    there is repository data that answer cannot see. So the index is asked about by file,
+    through its own `in_repository`, beside the notes.
     """
     index = index_source(store, config)
-    repository_data = trust.is_repository_data(store) or (
-        index is not None and in_repository(store, index)
-    )
-    return trust.may_inject(store, config, repository_data=repository_data)
+    return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
 
 
-def _gate(store: Store, config: Config) -> str | None:
-    """Whether the trust gate is what a person should be told about, after a command ran.
+def _gate(store: Store, config: Config, trusted: bool) -> str | None:
+    """Whether the trust gate is what a person should be told about, after a command ran;
+    `trusted` is the caller's own answer to `harness_link_needed`, asked once per command.
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
     text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    return None if _trusted(store, config) else _UNTRUSTED
+    if trusted:
+        return None
+    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -257,8 +263,9 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
+        trusted = harness_link_needed(store, config)
         return Result(
-            _with(summary, _gate(store, config)),
+            _with(summary, _gate(store, config, trusted)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -271,7 +278,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
-                "trusted": _trusted(store, config),
+                "trusted": trusted,
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
@@ -279,7 +286,9 @@ def run_index(args: argparse.Namespace) -> Result:
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
     carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
-    note = _DROPPED if before.trusted and not carried else _gate(store, config)
+    # Asked after the write and its refresh, which is the state the next session meets.
+    trusted = harness_link_needed(store, config)
+    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -300,7 +309,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": _trusted(store, config),
+            "trusted": trusted,
         },
     )
 
@@ -353,9 +362,9 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = _trusted(store, config)
+    trusted = harness_link_needed(store, config)
     return Result(
-        _with(summary, _gate(store, config)),
+        _with(summary, _gate(store, config, trusted)),
         {"bundles": report, "trusted": trusted},
         exit_code=1 if bad else 0,
     )
