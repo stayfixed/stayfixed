@@ -407,11 +407,12 @@ def test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested(
 def test_a_document_at_the_depth_bound_is_written_back_or_refused_on_this_interpreter() -> None:
     # The bound is only as good as what the rest of the interpreter follows: a document exactly at
     # it either round-trips through the engine here or is refused in the reader's words, never an
-    # internal error -- on 3.11 to 3.13 the parser refuses it, on 3.14 it is read and written.
+    # internal error -- on 3.11 to 3.13 the parser refuses it; on 3.14 it is read and encoded,
+    # and refused because, indented, it is longer than the regular-file reader reads.
     deep = '{"x": ' + "[" * (jsonobject.DEPTH_CAP - 1) + "]" * (jsonobject.DEPTH_CAP - 1) + "}"
     try:
         written = apply_entries(deep, {})
     except ParserLimitError as refused:
-        assert "nested deeper than this reader follows" in str(refused)
+        assert jsonobject.NESTED in str(refused) or jsonobject.WRITTEN_PAST in str(refused)
     else:
         assert written.startswith('{\n  "x": [')

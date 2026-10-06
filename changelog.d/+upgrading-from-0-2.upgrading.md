@@ -72,6 +72,9 @@ differently. Each has its own entry in these notes, with the detail:
     such a value or in an entry object written where a group goes, where it warned or read "all
     accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
     a settings file that opens with").
+  - `stayfixed attach`, `attach --check` and `detach` refuse a `.claude/settings.local.json` whose
+    indented write-back would pass 64 MiB, which 0.2.0 wrote (Fixed, "`stayfixed attach` and
+    `attach --check` now refuse, before anything is written, a").
   - `stayfixed doctor`'s `hook-entries` row warns, where 0.2.0 could read "all accounted for",
     for a project skill whose `SKILL.md` frontmatter declares hooks and for a `SKILL.md` it cannot
     read; the report's exit code is unchanged (Fixed, "`stayfixed doctor`'s `hook-entries` row now

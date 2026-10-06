@@ -2307,3 +2307,13 @@ after = '        raise Failure(f"{path} is not UTF-8 text") from None'
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
+
+[[mutation]]
+name = "attach plans a settings write-back the next read refuses"
+file = "src/stayfixed/attach/permissions.py"
+before = "    document = local_document(root)\n    _refuse_unless_written_back(document)\n"
+after = "    document = local_document(root)\n"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write[check]",
+  "tests/attach/test_write.py::test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not[1000-check]",
+]

@@ -194,7 +194,11 @@ class TooLarge(OSError):
 # read. So the read asks for one byte past the cap, and a file that has it is refused as too
 # large. Far above any file these readers take -- a bug-ledger entry, a note, `MEMORY.md` (whose
 # own budget, `memory_index_bytes`, is 25,600), a plan, a settings file, `.gitignore`, each a few
-# kilobytes -- and far under what would exhaust a machine's memory. No shipped file states it.
+# kilobytes -- and far under what would exhaust a machine's memory. A file stayfixed writes
+# itself is held under it too: a JSON document written back indented grows by its depth on every
+# line, so `jsonobject.json_text` refuses a write-back past the cap before anything is written,
+# and `attach` refuses a settings file whose write-back would pass it (`permissions`). No shipped
+# file states it.
 REGULAR_READ_LIMIT = 64 * 1024 * 1024
 
 # The open `open_regular` makes: it follows a link at the last component, because `attach` links

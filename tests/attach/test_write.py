@@ -2502,3 +2502,74 @@ def test_a_local_settings_file_that_is_a_fifo_is_refused_without_waiting(tmp_pat
     except subprocess.TimeoutExpired:
         pytest.fail("the settings read waited on a FIFO")
     assert done.stdout == "refused\n", done.stderr
+
+
+def _wide(siblings: int) -> str:
+    """A settings document ten lists deep holding `siblings` empty lists: about 3 bytes each as
+    written, and about 26 once written back indented, which is the growth the cap is about."""
+    return '{"a": ' + "[" * 10 + ",".join(["[]"] * siblings) + "]" * 10 + "}"
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write(
+    tmp_path: Path, command: str
+) -> None:
+    # 12 KB, 6,000 lists deep: written back indented it is 72 MB, past the regular-file reader's
+    # cap, so `attach` wrote it, the ignore files, the ledger and `MEMORY.md`, then refused its own
+    # read of the file, and every `detach` after refused the same way. It is refused while nothing
+    # is written, and `--check` refuses it too. On an interpreter whose indenting encoder stops
+    # short of that depth the refusal is the one for nesting; elsewhere the one for length.
+    # Mutation (oracle): `mutations/`'s "attach plans a settings write-back the next read refuses"
+    # -> `--check` passes. `attach` is refused by two layers, that one and the merge's own
+    # write-back through `jsonobject.json_text`, so no single mutation reddens its case: the
+    # second is proven alone by `mutations/`'s "the JSON writer writes back a text past the read
+    # cap", in `tests/attach/test_detach.py`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_text('{"deep": ' + "[" * 6_000 + "]" * 6_000 + "}", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(EntriesError) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert str(refused.value) in (
+        f"{SETTINGS} {jsonobject.WRITTEN_PAST}",
+        f"{SETTINGS} {jsonobject.NESTED}",
+    )
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("siblings", [1_000, 100])
+def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, siblings: int
+) -> None:
+    # The same rule on every interpreter, with the cap lowered so the document is small: a
+    # document whose write-back, with room for the one key the settings fallback adds, would pass
+    # the cap is refused before anything is written, by `attach` and `--check` alike, and one
+    # inside it is merged as before. Mutation (oracle): `mutations/`'s "attach plans a settings
+    # write-back the next read refuses" -> `--check` passes the 1,000 case; `attach`'s two
+    # layers are the case above's.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_text(_wide(siblings), encoding="utf-8")
+    before = _everything(tmp_path)
+
+    def run() -> object:
+        if command == "attach":
+            return _attach_it(root, store, machine, tmp_path / "home")
+        return check(root, store=store, machine=machine)
+
+    if siblings == 100:
+        run()
+        if command == "attach":
+            assert RULE in settings.read_text(encoding="utf-8")
+        return
+    with pytest.raises(EntriesError) as refused:
+        run()
+    assert str(refused.value) == f"{SETTINGS} {jsonobject.WRITTEN_PAST}"
+    assert _everything(tmp_path) == before

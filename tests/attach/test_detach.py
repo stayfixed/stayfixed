@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from stayfixed import jsonobject
+from stayfixed import fsops, jsonobject
 from stayfixed.attach.write import GITIGNORE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
@@ -1513,5 +1513,28 @@ def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_
 
         monkeypatch.setattr(json, "loads", loads)
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` writes the withdrawn settings back indented, which can make a file the reader's
+    # cap admits one it refuses: written, every later read of it refused. `jsonobject.json_text`
+    # refuses such a write-back, so `detach` stops before it removes anything. The cap is lowered
+    # so the document is small. Mutation (oracle): `mutations/`'s "the JSON writer writes back a
+    # text past the read cap" -> `detach` writes it.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    document = {"theme": "dark", "a": [[[[[[[[[[[] for _ in range(1_000)]]]]]]]]]]}
+    settings.write_text(json.dumps(document, separators=(",", ":")), encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=jsonobject.WRITTEN_PAST):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)

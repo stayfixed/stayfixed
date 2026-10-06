@@ -25,8 +25,14 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from stayfixed import fsops
+
 NESTED = "is nested deeper than this reader follows"
 LONG_NUMBER = "holds a number longer than this reader converts"
+# A document written back longer than `fsops.REGULAR_READ_LIMIT`, which the next read of it would
+# refuse: indented, a short document many levels deep grows by its depth on every line, and 12 KB
+# 6,000 lists deep is 72 MB written back.
+WRITTEN_PAST = "would be longer than this reader reads once written back"
 # A named cap: the deepest nesting a document read here may hold, counting the top-level object
 # as one. The parser's own reach differs by interpreter — measured, 992 levels on 3.11, 9,997 on
 # 3.12, 9,998 on 3.13 and about 57,800 on 3.14 — and on 3.14 it passes what the rest of the
@@ -103,11 +109,19 @@ def json_text(
     between the two was read and then ended its writer in `RecursionError`, an internal error.
     That is answered as the reader answers a document nested past the parser, with the same
     `label`, `error` and `limit`.
+
+    Nor is every text written one the next read takes: a text longer than
+    `fsops.REGULAR_READ_LIMIT` is refused, `<label>` before `WRITTEN_PAST`, in the same way and
+    before anything is written, because written it would be a file every later read refused.
     """
     try:
-        return _encode(value, indent=indent, sort_keys=sort_keys)
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
     except RecursionError:
         raise _past(label, NESTED, error, limit) from None
+    # Characters stand for bytes: `json.dumps` escapes every character past ASCII by default.
+    if len(text) > fsops.REGULAR_READ_LIMIT:
+        raise _past(label, WRITTEN_PAST, error, limit)
+    return text
 
 
 def _deeper_than(value: object, cap: int) -> bool:

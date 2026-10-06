@@ -2923,11 +2923,11 @@ reddens = [
 name = "the JSON writer lets an encode past the interpreter's recursion escape"
 file = "src/stayfixed/jsonobject.py"
 before = """
-        return _encode(value, indent=indent, sort_keys=sort_keys)
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
     except RecursionError:
 """
 after = """
-        return _encode(value, indent=indent, sort_keys=sort_keys)
+        text = _encode(value, indent=indent, sort_keys=sort_keys)
     except ZeroDivisionError:
 """
 reddens = [
@@ -3218,4 +3218,13 @@ before = '        text = raw.decode(json.detect_encoding(raw), "surrogatepass")'
 after = '        text = raw.decode("utf-8")'
 reddens = [
   "tests/release/test_hashes.py::test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did",
+]
+
+[[mutation]]
+name = "the JSON writer writes back a text past the read cap"
+file = "src/stayfixed/jsonobject.py"
+before = "    if len(text) > fsops.REGULAR_READ_LIMIT:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+after = "    if False:\n        raise _past(label, WRITTEN_PAST, error, limit)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
 ]
