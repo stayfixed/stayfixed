@@ -574,23 +574,14 @@ def test_a_red_pytest_run_gets_the_python_profiles_note(tmp_path: Path) -> None:
 
 
 @needs_git
-@pytest.mark.parametrize(
-    "command",
-    [
-        "uv run --locked pytest -q",
-        "uv run -- pytest",
-        "uv --quiet run pytest",
-        "uv sync --locked && uv run --locked pytest tests/x.py::t",
-    ],
-)
-def test_a_red_pytest_run_behind_uvs_options_gets_the_same_note(
-    tmp_path: Path, command: str
-) -> None:
-    # The shapes the README and the `attribute-failure` skill recommend, end to end through the
-    # handler: before uv's options were read, each got no notice at all, not even the core's
-    # dirty-tree line, because `context_for` speaks only when a hint recognises the run.
+def test_a_red_pytest_run_behind_uvs_options_gets_the_same_note(tmp_path: Path) -> None:
+    # The shape the README and the `attribute-failure` skill recommend, end to end through the
+    # handler: before uv's options were read it got no notice at all, not even the core's
+    # dirty-tree line, because `context_for` speaks only when a hint recognises the run. The
+    # other spellings of uv's options are the scanner's own matrix, in `test_bashscan.py`.
     # Oracle: `mutations/`, "uv's options stop being read past `run`".
     root = faulty_python_tree(tmp_path)
+    command = "uv sync --locked && uv run --locked pytest tests/x.py::t"
     result = hygiene().run(red_event(root, command), config(root))
     assert result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {STALE_ONE}"
 

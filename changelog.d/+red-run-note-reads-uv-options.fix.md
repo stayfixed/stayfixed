@@ -4,11 +4,4 @@ skill suggest, and `uv --quiet run pytest` or `uv run -- pytest`. Before, only t
 pytest` was read through, so a failing `uv sync --locked && uv run --locked pytest …` got no note
 at all, not even the line about uncommitted changes. uv's options are read by uv's own list of
 them, and a `uv` command carrying an option outside that list still gets no note, so a value such
-as the package in `uv run --with pytest echo` is never taken for the program. The background
-guard reads the same way, so a backgrounded command that begins with `uv run <options> sleep`
-(for example `uv run --no-project sleep 30`) is now refused as a backgrounded `sleep` is, where
-before it was allowed, while `uv run -m sleep` and `uv run --script sleep`, which run a module or
-a file of that name, are not; and its advice about a backgrounded chain ending in `; echo` sees an
-echo uv launches past its options and no longer takes one for the command the echo hides, so
-`pytest -q; uv run --no-project echo done` now gets it (`stayfixed guard bg-cleanup` exits `1`)
-and `uv run --frozen echo hi; echo done` no longer does (exit `0`).
+as the package in `uv run --with pytest echo` is never taken for the program.

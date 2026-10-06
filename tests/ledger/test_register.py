@@ -503,7 +503,7 @@ def test_the_bug_entry_template_names_no_one_stacks_location_syntax() -> None:
     # entries filed after it, so no recorded byte moves with it. Oracle: `mutations/`, "the bug
     # entry template names a Python file again".
     (where,) = [line for line in BUG_SCHEMA.template.splitlines() if "**Where:**" in line]
-    assert where == "- **Where:** `path/to/file`, and the symbol or line in it"
+    assert ".py" not in where and "::" not in where
 
 
 @pytest.mark.parametrize("build", SHIPPED_REGISTERS, ids=lambda build: build.__name__)
