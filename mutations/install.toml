@@ -2579,15 +2579,15 @@ reddens = [
   "tests/overlay/test_publish.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
 ]
 
-# In the block led by "the live-entry walk refuses an event whose value is not a list": the row
+# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": the row
 # reads Claude Code's settings files by that walk and every other strictly, since only Claude
 # Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and names a file
 # the walk could only partly read.
 [[mutation]]
 name = "hook-entries reads every settings file leniently, Codex's included"
 file = "src/stayfixed/doctor/entries.py"
-before = "            entries, partly = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
-after = "            entries, partly = judged_entries(document, lenient=True)"
+before = "            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
+after = "            read = judged_entries(document, lenient=True)"
 reddens = [
   "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[scalar-event]",
   "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[byte-order-mark]",
@@ -2597,7 +2597,7 @@ reddens = [
 name = "hook-entries says nothing of a settings file it could only partly read"
 file = "src/stayfixed/doctor/entries.py"
 before = """
-        if partly:
+        if read.partly:
             found.append((_BLIND, None, label))
 """
 after = """
@@ -2627,4 +2627,19 @@ before = '    return json_text(document, relative, error=Failure, indent=2) + "\
 after = '    return json.dumps(document, indent=2) + "\n"'
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
+]
+
+[[mutation]]
+name = "hook-entries says nothing of a marked command the walk skipped"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+        if read.hidden:
+            found.append((_HIDDEN, None, label))
+"""
+after = """
+        if False:
+            found.append((_HIDDEN, None, label))
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
 ]

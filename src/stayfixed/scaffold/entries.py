@@ -252,55 +252,101 @@ def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
     return Placed(event, _matcher(group), text)
 
 
-def live_entries(document: str) -> tuple[list[Placed], bool]:
-    """Every hook entry a harness runs out of the document, as `placed_entries` places it, and
-    whether some part of the `hooks` section could not be read for entries at all.
+@dataclass(frozen=True)
+class Walked:
+    """What a walk for live hook entries read out of a settings document.
+
+    `entries` holds each entry it read with its place, 1-based, among `places`: every element of
+    every group's `hooks` list, read or skipped, in document order, so a reader names an entry
+    where a person opening the file finds it. `partly` is whether it skipped a part that could
+    hold a command; `hidden`, whether a command claiming the stayfixed marker sits in such a part.
+    """
+
+    entries: tuple[tuple[int, Placed], ...]
+    places: int
+    partly: bool
+    hidden: bool
+
+
+def _admitted(value: object, kind: type, skipped: list[object]) -> bool:
+    """Whether `value` is the `kind` the walk reads at its place in the `hooks` section.
+
+    The measured rule, stated once: a scalar where a list or an object belongs holds no command
+    and is skipped, as Claude Code skipped it (`harnesses.LENIENT_SETTINGS` says what, where
+    and when that was measured); a container of the wrong kind was not measured and may hold a
+    command, so it is skipped and kept in `skipped`, for the reader to say so.
+    """
+    if isinstance(value, kind):
+        return True
+    if isinstance(value, dict | list):
+        skipped.append(value)
+    return False
+
+
+def _claims_the_marker(skipped: list[object]) -> bool:
+    """Whether any string anywhere inside `skipped` is a command claiming the stayfixed marker,
+    asked without recursion: a skipped part may be nested as deep as the parser follows."""
+    pending = list(skipped)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            if marker_id(node) is not None:
+                return True
+        elif isinstance(node, dict):
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    return False
+
+
+def live_entries(document: str) -> Walked:
+    """Every hook entry a harness runs out of the document, as `placed_entries` places it.
 
     `placed_entries` reads as strictly as `apply_entries` writes, because a merge must not rewrite
-    a shape it cannot read; that is the wrong question for which entries are live. Claude Code
-    2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a settings file whose
-    `hooks` section held, beside them, an event whose value is not a list, a group that is not an
-    object, a group whose `hooks` is not a list, and an entry that is not an object — each a
-    scalar, which holds no command. So a scalar in any of those places is skipped. A container
-    there was not measured and may hold a command a harness runs: it is skipped too, and the
-    second answer says so, so a reader still reports a part of the file it could not account for.
-    Refuses what `placed_entries` refuses above the events — a document that is not a JSON object,
-    and a `hooks` that is not an object — which was not measured either.
+    a shape it cannot read; that is the wrong question for which entries are live. What is
+    skipped is `_admitted`'s rule. One shape more is set aside without a measurement: an object
+    where a group goes that carries a `command` or a `type`, as an entry does, and no `hooks` list
+    -- a reader may run it as an entry, so it is kept with the skipped parts. A command claiming
+    the stayfixed marker in any skipped part is `hidden`, which a reader judges as the
+    conservative answer, not a measured one: whether a harness runs it is not known. Refuses what
+    `placed_entries` refuses above the events -- a document that is not a JSON object, and a
+    `hooks` that is not an object -- which was not measured either.
     """
     raw = _entry_document(document)
-    found: list[Placed] = []
-    unread = False
+    found: list[tuple[int, Placed]] = []
+    skipped: list[object] = []
+    places = 0
     for event, groups in _hooks_table(raw).items():
-        if not isinstance(groups, list):
-            unread = unread or isinstance(groups, dict)
+        if not _admitted(groups, list, skipped):
             continue
         for group in groups:
-            if not isinstance(group, dict):
-                unread = unread or isinstance(group, list)
+            if not _admitted(group, dict, skipped):
                 continue
+            if "command" in group or "type" in group:
+                skipped.append({key: value for key, value in group.items() if key != "hooks"})
             entries = group.get("hooks", [])
-            if not isinstance(entries, list):
-                unread = unread or isinstance(entries, dict)
+            if not _admitted(entries, list, skipped):
                 continue
             for entry in entries:
-                if not isinstance(entry, dict):
-                    unread = unread or isinstance(entry, list)
-                    continue
-                found.append(_placed(event, group, entry))
-    return found, unread
+                places += 1
+                if _admitted(entry, dict, skipped):
+                    found.append((places, _placed(event, group, entry)))
+    return Walked(tuple(found), places, bool(skipped), _claims_the_marker(skipped))
 
 
-def judged_entries(document: str, *, lenient: bool) -> tuple[list[Placed], bool]:
-    """The hook entries a reader judges in a settings file, and whether part of it went unread.
+def judged_entries(document: str, *, lenient: bool) -> Walked:
+    """The hook entries a reader judges in a settings file, and what it skipped.
 
     `lenient` for a file a harness was measured running partly malformed (`harnesses.
     LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
-    `placed_entries`, which refuses every shape the merge would. One spelling, for `doctor`'s
-    `hook-entries` and `assess`'s `foreign-hooks`, so the two never give two answers about one file.
+    `placed_entries`, which refuses every shape the merge would, so it skips nothing. One
+    spelling, for `doctor`'s `hook-entries` and `assess`'s `foreign-hooks`, so the two never
+    give two answers about one file.
     """
     if lenient:
         return live_entries(document.removeprefix("\ufeff"))
-    return placed_entries(document), False
+    placed = placed_entries(document)
+    return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
 
 
 def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:

@@ -12,3 +12,7 @@ that could hold a command, but the entries beside that value are now judged too,
 can turn the row red where it used to warn. Codex's `.codex/hooks.json`, which nobody measured, is
 read as strictly as before, and `stayfixed assess`'s `foreign-hooks` item now reads Claude Code's
 settings files the way `doctor` does.
+A command claiming the stayfixed marker inside such an object or list, or in an entry object
+written where a group goes, is now red rather than a warning; that is a conservative reading, since
+whether Claude Code runs it was not measured. And an entry is named by its place among every
+element of its list, so one beside skipped values is named where you find it.

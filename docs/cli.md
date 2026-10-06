@@ -2694,7 +2694,10 @@ object, a group whose `hooks` is not a list, or an entry that is not an object: 
 still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are judged
 like any other. Where such a misplaced value is itself an object or a list, which could hold a
 command, the file is also reported as one that could not be read, since that shape was not
-measured. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no
+measured; so is an entry object where a group goes, and a command claiming the stayfixed marker
+inside any such part is `red`. That is a conservative reading and not a measurement: whether a
+harness runs a command there is not known. An entry is named by its place among every element
+of its list, skipped scalars included, so `entry 5 of 5` is where you find it. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no
 measurement covers, is read as strictly as the merge that rewrites it.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than

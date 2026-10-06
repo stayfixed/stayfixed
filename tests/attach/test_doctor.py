@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -2015,7 +2016,11 @@ def test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red(
     PARTLY_MALFORMED[case](document["hooks"])
     path.write_text(json.dumps(document), encoding="utf-8")
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert check == TABLE["forged-right-store"]
+    expected = TABLE["forged-right-store"]
+    if case == "entry-not-an-object":
+        # The scalar beside the forged entry holds a place in its list, so the file holds two.
+        expected = replace(expected, detail=expected.detail.replace("entry 1 of 1", "entry 1 of 2"))
+    assert check == expected
 
 
 def test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for(
@@ -2045,23 +2050,39 @@ def test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unacco
 
 
 # A container where the `hooks` section expects an event's list, a group or an entry, holding the
-# forged entry: none of these shapes was measured, and each could hold a command a harness runs.
+# forged entry, and the forged entry itself where a group goes, with no `hooks` list of its own:
+# none of these shapes was measured, and each could hold a command a harness runs.
 CONTAINED_FORGERIES = {
     "event-an-object": lambda hooks, group: hooks.update({"Stop": {"wrapped": [group]}}),
     "group-a-list": lambda hooks, group: hooks.update({"Stop": [[group]]}),
     "entry-a-list": lambda hooks, group: hooks.update({"Stop": [{"hooks": [group["hooks"]]}]}),
+    "entry-where-a-group-goes": lambda hooks, group: hooks.update({"Stop": group["hooks"]}),
 }
+# What the row says of a file holding a marked command where the walk reads no hook entry.
+HIDDEN = Check(
+    "hook-entries",
+    "red",
+    f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) hold a command claiming the stayfixed "
+    f"marker where this check reads no hook entry, so nothing here can check it: {COMMITTED}; 1 "
+    f"settings file(s) exist and could not be read as hook entries, so nothing here accounts for "
+    f"what is in them: {COMMITTED}",
+    "open each file named above and remove what you did not put there; stayfixed writes no "
+    "marked command outside an event's list of entry groups",
+)
 
 
 @pytest.mark.parametrize("case", sorted(CONTAINED_FORGERIES))
-def test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for(
+def test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread(
     tmp_path: Path, case: str
 ) -> None:
-    # The live-entry walk skips a misplaced container, and says it skipped one, so the row names
-    # the file as one it could not read rather than "all accounted for" over the entry inside.
-    # Mutations (declared): "the live-entry walk skips an event's object without saying so",
-    # "... a list where a group goes ..." and "... a list where an entry goes ..." -> the row
-    # reads "all accounted for".
+    # The live-entry walk skips a misplaced container, and an entry object where a group goes,
+    # neither of which was measured. A command claiming the stayfixed marker inside one is red
+    # rather than the warning a file the walk cannot read gets: a conservative reading, since
+    # whether a harness runs it is not known, and a clone could otherwise hide a forged entry
+    # there and keep the exit code at 0. Mutations (declared): "the live-entry walk skips a
+    # container without saying so" and "the live-entry walk reads an entry where a group goes as
+    # no entry" -> the row warns or reads "all accounted for"; "the live-entry walk overlooks a
+    # marked command it skipped" -> it warns.
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -2069,13 +2090,24 @@ def test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unacco
     CONTAINED_FORGERIES[case](document["hooks"], group)
     path.write_text(json.dumps(document), encoding="utf-8")
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert check == Check(
-        "hook-entries",
-        WARN,
-        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
-        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
-        "check that each file named above is readable and is valid JSON",
-    )
+    assert check == HIDDEN
+
+
+def test_an_entry_is_named_by_its_place_among_every_element_beside_it(tmp_path: Path) -> None:
+    # The row named an entry by its place among the entries it judged, so with scalars beside it
+    # -- skipped, as Claude Code skips them -- a forged entry fifth in its list was named "entry 2
+    # of 2", a place a reader opening the file would not find. Every element of an entry list
+    # holds a place. Mutation (declared): "the live-entry walk numbers only the entries it reads".
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    forged = document["hooks"]["PreToolUse"][0]["hooks"][0]
+    ok = {"type": "command", "command": "echo ok"}
+    document["hooks"]["PreToolUse"][0]["hooks"] = [1, "s", None, ok, forged]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check.status == "red"
+    assert check.detail.endswith(f"{COMMITTED} entry 5 of 5")
 
 
 @pytest.mark.parametrize("shape", ["scalar-event", "byte-order-mark"])

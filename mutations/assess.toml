@@ -1749,8 +1749,8 @@ reddens = [
 [[mutation]]
 name = "the foreign-hook probe reads every settings file strictly"
 file = "src/stayfixed/assess/probes.py"
-before = "            entries, partly = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
-after = "            entries, partly = judged_entries(text, lenient=False)"
+before = "            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
+after = "            walked = judged_entries(text, lenient=False)"
 reddens = [
   "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[byte-order-mark]",
   "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[scalar-event]",
@@ -1760,7 +1760,7 @@ reddens = [
 name = "the foreign-hook probe says nothing of a file it could only partly read"
 file = "src/stayfixed/assess/probes.py"
 before = """
-        if partly:
+        if walked.partly:
             unread.append(relative)
 """
 after = """
@@ -1774,8 +1774,8 @@ reddens = [
 [[mutation]]
 name = "the foreign-hook probe reads every settings file leniently, Codex's included"
 file = "src/stayfixed/assess/probes.py"
-before = "            entries, partly = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
-after = "            entries, partly = judged_entries(text, lenient=True)"
+before = "            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
+after = "            walked = judged_entries(text, lenient=True)"
 reddens = [
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[byte-order-mark]",
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[scalar-event]",

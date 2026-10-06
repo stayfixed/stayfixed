@@ -228,6 +228,13 @@ def _unchecked(areas: Sequence[Claims], wheres: list[str]) -> str:
     )
 
 
+def _hidden(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} settings file(s) hold a command claiming the stayfixed marker where this "
+        f"check reads no hook entry, so nothing here can check it: {listed(wheres)}"
+    )
+
+
 def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
         f"{len(wheres)} settings file(s) exist and could not be read as hook entries, so "
@@ -261,6 +268,17 @@ _UNCHECKED = _Kind(
         "no settings file nested that deep"
     ),
 )
+# A marked command in a part of the file the live-entry walk skipped: red, conservatively, for
+# the reason `_UNCHECKED` is -- a harness may run what nothing here can check.
+_HIDDEN = _Kind(
+    RED,
+    8,
+    _hidden,
+    lambda areas: (
+        "open each file named above and remove what you did not put there; stayfixed writes no "
+        "marked command outside an event's list of entry groups"
+    ),
+)
 _BLIND = _Kind(
     WARN,
     0,
@@ -276,6 +294,7 @@ _KINDS = (
     _UNREAD_UNVOUCHED,
     _UNREAD_UNGRANTED,
     _UNCHECKED,
+    _HIDDEN,
     _BLIND,
 )
 
@@ -356,28 +375,28 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             found.append((_BLIND, None, label))
             continue
         try:
-            # The entries a harness runs out of the file, as Claude Code 2.1.288 was measured
-            # reading its own (macOS, 2026-10-05): past a leading byte-order mark, and past a
-            # scalar where an event's list, a group, a group's `hooks` or an entry belongs, it
-            # still ran the valid hooks, so those are live and judged like any other. A file no
-            # measurement covers is read strictly. A part this cannot read for entries is still
-            # named as one the walk is blind to.
-            entries, partly = judged_entries(document, lenient=relative in LENIENT_SETTINGS)
+            # The entries a harness runs out of the file, read as `harnesses.LENIENT_SETTINGS`
+            # says its files were measured, and every other file strictly. A part this cannot
+            # read for entries is named as one the walk is blind to, and a marked command in one
+            # is red.
+            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)
         except ParserLimitError:
             found.append((_UNCHECKED, None, label))
             continue
         except Refusal:
             found.append((_BLIND, None, label))
             continue
-        if partly:
+        if read.hidden:
+            found.append((_HIDDEN, None, label))
+        if read.partly:
             found.append((_BLIND, None, label))
-        for position, placed in enumerate(entries, start=1):
+        for position, placed in read.entries:
             entry_id = marker_id(placed.command)
             if entry_id is None:
                 foreign += 1
                 continue
             claimed += 1
-            where = f"{label} entry {position} of {len(entries)}"
+            where = f"{label} entry {position} of {read.places}"
             holders = [answer for answer in answers if entry_id in (answer.recorded or {})]
             if not holders and not unread:
                 # Needs the records alone, so a source that cannot be asked does not withhold
@@ -508,24 +527,28 @@ def hook_entries(context: Context) -> Row:
     The report names the file and never its contents.
 
     **The entries a harness runs are judged, wherever they sit, in the files it was measured
-    on.** For Claude Code's settings files (`harnesses.LENIENT_SETTINGS`) the walk is not the
-    engine's strict one, the one `apply_entries` rewrites through: Claude Code 2.1.288 (measured
-    on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section held a scalar
+    on.** For Claude Code's settings files (`harnesses.LENIENT_SETTINGS`, which says what was
+    measured and when) the walk is not the engine's strict one, the one `apply_entries` rewrites
+    through: Claude Code still ran the valid hooks of a file whose `hooks` section held a scalar
     where an event's list, a group, a group's `hooks` or an entry belongs, so a marked entry
     beside such a part is live, and one nothing vouches for is red. Every other file -- Codex's
     `.codex/hooks.json`, which no measurement covers -- is read by the strict walk, as before.
     Read strictly, Claude Code's whole file was `blind`, a warning, and a clone kept the exit code
     at 0 by committing one such scalar beside a forged entry. Not measured, and so not assumed: a
-    container in one of those places, which may hold a command, leaves the file `blind` as well
-    as judging the entries beside it.
+    container in one of those places, or an entry object where a group goes, which may hold a
+    command, leaves the file `blind` as well as judging the entries beside it; and a command
+    claiming the stayfixed marker inside one is red. That last is a conservative reading, not a
+    measurement: whether a harness runs it is not known, and a clone could otherwise hide a
+    forged entry there and keep the exit code at 0. Every element of an entry list holds a place
+    in the count, so an entry is named where a person opening the file finds it.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
     byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
     are judged as they would be without the byte; a harness may read the file the same way, so
     a marked entry in it nothing vouches for is red. In Claude Code's settings files a UTF-8
     byte-order mark ahead of the document is read past: `json.loads` refuses it, and Claude Code
-    2.1.288 runs the hooks of such a file (measured on macOS, 2026-10-05), so it is no reason to
-    be `blind` there. In any other file it still is.
+    runs the hooks of such a file (`harnesses.LENIENT_SETTINGS`), so it is no reason to be
+    `blind` there. In any other file it still is.
 
     **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
     is a warning, which is right for a file this machine will not let anything read and for one

@@ -2623,11 +2623,11 @@ reddens = [
 [[mutation]]
 name = "doctor counts hook entries by marker id rather than by position"
 file = "src/stayfixed/scaffold/entries.py"
-before = "                found.append(_placed(event, group, entry))"
-after = """                placed = _placed(event, group, entry)
-                here = marker_id(placed.command)
-                if here is None or here not in {marker_id(seen.command) for seen in found}:
-                    found.append(placed)"""
+before = "                    found.append((places, _placed(event, group, entry)))"
+after = """                    placed = _placed(event, group, entry)
+                    here = marker_id(placed.command)
+                    if here is None or here not in {marker_id(seen.command) for _, seen in found}:
+                        found.append((places, placed))"""
 reddens = [
   "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
@@ -2750,80 +2750,91 @@ reddens = [
 # 2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section
 # held a scalar where an event's list, a group, a group's `hooks` or an entry belongs. Read with
 # the engine's strict walk, one such scalar made the file one the row was blind to, a warning, and
-# a forged entry beside it lost its red. Each place is skipped on its own.
+# a forged entry beside it lost its red. `_admitted` states the rule once, for every place.
 [[mutation]]
-name = "the live-entry walk refuses an event whose value is not a list"
+name = "the live-entry walk refuses a scalar where a list or an object belongs"
 file = "src/stayfixed/scaffold/entries.py"
 before = """
-        if not isinstance(groups, list):
-            unread = unread or isinstance(groups, dict)
-            continue
+    if isinstance(value, dict | list):
+        skipped.append(value)
+    return False
 """
 after = """
-        if not isinstance(groups, list):
-            raise EntriesError("not a list")
+    if isinstance(value, dict | list):
+        skipped.append(value)
+        return False
+    raise EntriesError("not the kind this place holds")
 """
 reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[event-not-a-list]",
-]
-
-[[mutation]]
-name = "the live-entry walk refuses a group that is not an object"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-            if not isinstance(group, dict):
-                unread = unread or isinstance(group, list)
-                continue
-"""
-after = """
-            if not isinstance(group, dict):
-                raise EntriesError("not an object")
-"""
-reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-not-an-object]",
-]
-
-[[mutation]]
-name = "the live-entry walk refuses a group whose hooks is not a list"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-            if not isinstance(entries, list):
-                unread = unread or isinstance(entries, dict)
-                continue
-"""
-after = """
-            if not isinstance(entries, list):
-                raise EntriesError("not a list")
-"""
-reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-hooks-not-a-list]",
-]
-
-[[mutation]]
-name = "the live-entry walk refuses an entry that is not an object"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-                if not isinstance(entry, dict):
-                    unread = unread or isinstance(entry, list)
-                    continue
-"""
-after = """
-                if not isinstance(entry, dict):
-                    raise EntriesError("not an object")
-"""
-reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[entry-not-an-object]",
 ]
 
 # A container in one of those places was not measured, and may hold a command a harness runs: the
-# walk says it skipped one, so the row still names the file as one it could not account for.
+# walk keeps it, so the row still names the file as one it could not account for.
 [[mutation]]
-name = "the live-entry walk skips a container that could hold a command without saying so"
+name = "the live-entry walk skips a container without saying so"
 file = "src/stayfixed/scaffold/entries.py"
-before = "                unread = unread or isinstance(entries, dict)"
-after = "                unread = unread or False"
+before = """
+    if isinstance(value, dict | list):
+        skipped.append(value)
+"""
+after = """
+    if isinstance(value, dict | list):
+        pass
+"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[group-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-a-list]",
+]
+
+# Not measured, and read conservatively: an object where a group goes that carries an entry's
+# `command` or `type` and no `hooks` list is kept with the skipped parts, and a command claiming the
+# stayfixed marker in any skipped part is red, since a harness may run what nothing here can check.
+[[mutation]]
+name = "the live-entry walk reads an entry where a group goes as no entry"
+file = "src/stayfixed/scaffold/entries.py"
+before = '            if "command" in group or "type" in group:'
+after = "            if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
+]
+
+[[mutation]]
+name = "the live-entry walk overlooks a marked command it skipped"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+            if marker_id(node) is not None:
+                return True
+"""
+after = """
+            if False:
+                return True
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
+]
+
+# Every element of an entry list holds a place, so the row names an entry where a person opening
+# the file finds it, scalars beside it included.
+[[mutation]]
+name = "the live-entry walk numbers only the entries it reads"
+file = "src/stayfixed/scaffold/entries.py"
+before = """
+                places += 1
+                if _admitted(entry, dict, skipped):
+"""
+after = """
+                if _admitted(entry, dict, skipped):
+                    places += 1
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_an_entry_is_named_by_its_place_among_every_element_beside_it",
 ]
 
 # Read is not written: Python 3.12's C encoder does not handle `indent`, so an indented encode runs
@@ -2916,10 +2927,8 @@ reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
 ]
 
-# In the block led by "the live-entry walk refuses an event whose value is not a list": a file a
-# harness was measured running is read past a leading byte-order mark too, and a container in one
-# of the four places the walk skips a scalar was not measured and may hold a command, so the walk
-# says it skipped one.
+# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": a file a harness
+# was measured running is read past a leading byte-order mark too.
 [[mutation]]
 name = "hook-entries is blind to a settings file opening with a byte-order mark"
 file = "src/stayfixed/scaffold/entries.py"
@@ -2927,33 +2936,6 @@ before = 'return live_entries(document.removeprefix("\ufeff"))'
 after = 'return live_entries(document)'
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
-]
-
-[[mutation]]
-name = "the live-entry walk skips an event's object without saying so"
-file = "src/stayfixed/scaffold/entries.py"
-before = "            unread = unread or isinstance(groups, dict)"
-after = "            unread = unread or False"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[event-an-object]",
-]
-
-[[mutation]]
-name = "the live-entry walk skips a list where a group goes without saying so"
-file = "src/stayfixed/scaffold/entries.py"
-before = "                unread = unread or isinstance(group, list)"
-after = "                unread = unread or False"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[group-a-list]",
-]
-
-[[mutation]]
-name = "the live-entry walk skips a list where an entry goes without saying so"
-file = "src/stayfixed/scaffold/entries.py"
-before = "                    unread = unread or isinstance(entry, list)"
-after = "                    unread = unread or False"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[entry-a-list]",
 ]
 
 # In the block led by "the regular-file reader opens whatever a path names": the open never waits,

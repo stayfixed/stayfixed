@@ -176,13 +176,13 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
             path = contained(context.root, relative)
             text = path.read_text(encoding="utf-8") if path.is_file() else ""
             # Raises `EntriesError` for a shape `doctor` names as one it could not read.
-            entries, partly = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
+            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
             unread.append(relative)
             continue
-        if partly:
+        if walked.partly:
             unread.append(relative)
-        if any(marker_id(placed.command) is None for placed in entries):
+        if any(marker_id(placed.command) is None for _, placed in walked.entries):
             found.append(relative)
     return Looked(tuple(found), tuple(unread))
 
