@@ -1437,17 +1437,31 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 
 ### Counts (Task 17)
 
-| Measure | Before (`aed27b6`) | After |
+| Measure | Before (`aed27b6`) | After (`a920ba1`) |
 |---|---|---|
-| Lines in `src/stayfixed/**/*.py` | 32,736 (141 files) | |
-| Commands registered by the parser | 38 | |
-| Command headings in `docs/cli.md` | 40 | |
-| Skills / agents | 14 / 1 | |
-| `hooks/hooks.json` entries (of them `SessionStart`) | 13 (11) | |
-| Mutation entries | 1,225 | |
-| Discovered areas | 12 | |
-| Core imports into delivery | 12 | |
-| Tracked files | 476 | |
+| Lines in `src/stayfixed/**/*.py` | 32,736 (141 files) | 35,879 (154 files) |
+| Commands registered by the parser | 38 | 33 |
+| Command headings in `docs/cli.md` | 40 | 35 |
+| Skills / agents | 14 / 1 | 14 / 1 |
+| `hooks/hooks.json` entries (of them `SessionStart`) | 13 (11) | 9 (7) |
+| Mutation entries | 1,225 | 1,648 |
+| Discovered areas | 12 | 11 |
+| Core imports into delivery | 12 | 2 (both in `setup/run.py`, the pinned crossing) |
+| Tracked files | 476 | 555 |
+
+`build_parser` now takes the registrars, so the command count is
+`build_parser(discover_registrars())` from `stayfixed.cli`; `build_parser()` alone registers none.
+
+The cut removed surface, not code. Five commands, four session-start entries, one area and ten of
+the twelve crossings are gone, but the source grew by 3,143 lines. The largest growth is in
+`attach` (+982), `ledger` (+667, one engine serving any register), `profiles` (+418, the hints the
+core no longer holds), `overlay` (+353), `doctor` (+343, contributions and claims) and
+`harnesses` (+246, the adapter). Of the 1,678 lines `attach`, `doctor` and `overlay` grew by
+together, 962 came from follow-up pull requests merged during the wave (#69, #77, #79, #83) and
+630 from the boundary pull request (#68), which moved the delivery checks into their areas
+(`git diff --numstat` over each first-parent merge). The largest removals are in `guards` (-454), `release`
+(-367, now repository tooling under `scripts/`) and `assess` (-117). Per-area counts:
+`git ls-tree -r --name-only <rev> -- src/stayfixed`, summed by top-level module.
 
 ### Final review (Task 17)
 
