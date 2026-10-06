@@ -789,6 +789,46 @@ reddens = [
   "tests/ledger/test_register.py::test_what_new_writes_and_renumber_leaves_reads_back_through_the_entry_reader[moved-and-renamed-bug_register]",
 ]
 
+# The entry `bugs new` writes names no one stack's file or location syntax; the old line was
+# a Python file and pytest's node id in every project.
+[[mutation]]
+name = "the bug entry template names a Python file again"
+file = "src/stayfixed/ledger/register.py"
+before = '- **Where:** `path/to/file`, and the symbol or line in it'
+after = '- **Where:** `path/to/file.py::symbol`'
+reddens = [
+  "tests/ledger/test_register.py::test_the_bug_entry_template_names_no_one_stacks_location_syntax",
+]
+
+# Each reader of a path claim asks `prose.present_within` rather than `exists()`, which follows a
+# committed symlink out of the tree and answers about the machine.
+[[mutation]]
+name = "the plan lint follows a symlink out of the tree"
+file = "src/stayfixed/docs/plans.py"
+before = "                if present_within(root, landed) is not False:"
+after = "                if landed.exists():"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+[[mutation]]
+name = "the AGENTS.md link check follows a symlink out of the tree"
+file = "src/stayfixed/docs/hygiene.py"
+before = "        if present_within(root, landed) is False"
+after = "        if not landed.exists()"
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+[[mutation]]
+name = "memory refs follows a symlink out of the tree"
+file = "src/stayfixed/memory/refs.py"
+before = "    return present_within(root, path) is not False"
+after = "    return path.exists()"
+reddens = [
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
 # permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
 # as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool

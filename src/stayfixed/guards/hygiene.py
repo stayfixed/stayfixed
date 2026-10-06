@@ -77,7 +77,7 @@ def simple_commands(command: str) -> list[list[str]]:
         return []
     found: list[list[str]] = []
     for segment in bashscan.segments(tokens):
-        words = bashscan.command_words(segment)
+        words = bashscan.command_words(segment, modules_as_programs=True)
         if words:
             found.append(words)
     return found

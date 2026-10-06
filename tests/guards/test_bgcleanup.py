@@ -323,6 +323,58 @@ def test_a_backgrounded_leading_sleep_is_refused_however_it_is_spelled(command: 
     assert judge(command, background=True).deny == SLEEP_REASON
 
 
+def test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused() -> None:
+    """`uv run --no-project sleep 30` launches `sleep` as surely as `uv run sleep 30` does,
+    and was allowed while only the exact pair `uv run` was unwrapped. A refusal this guard did
+    not make before, and the right one: the call returns at once whatever it sleeps for.
+    Oracle: `mutations/`, "uv's options stop being read past `run`"."""
+    assert judge("uv run --no-project sleep 30", background=True).deny == SLEEP_REASON
+    assert judge("uv --quiet run -- sleep 30", background=True).deny == SLEEP_REASON
+
+
+def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
+    """The legitimate call beside it: a suite started in the background through uv's options
+    is ordinary work, and neither the sleep rule nor a value uv takes may refuse it. Oracle:
+    `mutations/`, "a value-taking uv option stops taking the next word"."""
+    assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) == ALLOW
+    assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) == ALLOW
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv run -m sleep 30",
+        "uv run --module sleep 30",
+        "uv run -qm sleep 30",
+        "uv run -s sleep 30",
+        "uv run --script sleep 30",
+        "uv run --gui-script sleep 30",
+    ],
+)
+def test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep(command: str) -> None:
+    """`uv run -m sleep 30` runs `python -m sleep`, and `--script sleep` a script file of that
+    name: neither is the `sleep` program, so a refusal here is a closed-policy deny on a command
+    that does not sleep. Measured on uv: `No module named sleep`, exit 1. Oracle: `mutations/`,
+    "a module or script name reads as the program by default"."""
+    assert judge(command, background=True) == ALLOW
+
+
+def test_the_exit_echo_hint_reads_both_commands_through_uvs_options() -> None:
+    """The hint asks the same question of the echo and of the command it masks. An echo uv
+    launches past its options is an echo, and a command uv launches past them is not one.
+    Oracle: `mutations/`, "uv's options stop being read past `run`"."""
+    assert judge("pytest -q > out.log; uv run --no-project echo done", background=True).hint
+    assert judge("uv run --frozen echo hi; echo done", background=True).hint is None
+
+
+def test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo() -> None:
+    """`uv run -m echo` runs a module, whose exit code an echo after it hides and which hides
+    nothing itself. Oracle: `mutations/`, "a module or script name reads as the program by
+    default"."""
+    assert judge("pytest -q > out.log; uv run -m echo done", background=True).hint is None
+    assert judge("uv run -m echo hi > out.log; echo done", background=True).hint is not None
+
+
 def test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep() -> None:
     """`X=$(sleep 5) pytest -q` does not begin with `sleep`; it begins with an assignment whose
     value a substitution computes. It segments to

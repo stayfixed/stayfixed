@@ -59,11 +59,14 @@ class RedRunHint(Protocol):
         """Whether this simple command runs this stack's tests.
 
         `argv` is one simple command with exactly this removed from its front, as often as it
-        recurs: a shell assignment (`FOO=1`), `env`, and `uv` followed by the word `run`, the
-        program named by its path or its bare name (`/usr/bin/env` too). Everything else
-        arrives as written: any other launcher (`poetry run`, `npx`, `sudo`, `time`), a flag
-        after `uv run` (`uv run --locked pytest` arrives as `--locked pytest`), and the `(`
-        that opens a subshell or the `{` that opens a group, which stays the first word.
+        recurs: a shell assignment (`FOO=1`), `env`, and `uv` with its options, the word `run`
+        and `run`'s options (`uv run --locked pytest` arrives as `pytest`), the program named
+        by its path or its bare name (`/usr/bin/env` too). A module or a script uv runs stands
+        where the program would: `uv run -m pytest -q` arrives as `pytest -q`, and
+        `uv run --script t.py` as `t.py`. Everything else arrives as written:
+        any other launcher (`poetry run`, `npx`, `sudo`, `time`), a `uv` command with an option
+        the scanner does not know (it arrives whole, as `uv …`), and the `(` that opens a
+        subshell or the `{` that opens a group, which stays the first word.
         """
         ...
 

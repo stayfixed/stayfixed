@@ -5,6 +5,7 @@ sample data.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -78,6 +79,82 @@ def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
     )
     found = lint(root, config, plans=[path]).findings
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, "src/gone.py")]
+
+
+def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) -> None:
+    # Go's import spelling in a plan line failed the gate as a missing file of this repository.
+    # The path beside it on the same line is still checked. Oracle: `mutations/`, "a
+    # host-shaped first component is read as a directory".
+    root, config = project(tmp_path)
+    path = plan(root, SCOPE + "Use `gopkg.in/yaml.v3` to parse `internal/config/load.go`.\n")
+    found = lint(root, config, plans=[path]).findings
+    assert [(f.rule, f.line, f.detail) for f in found] == [
+        ("dead-reference", 3, "internal/config/load.go")
+    ]
+
+
+def test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A 5,000-character backticked path made `exists()` raise `ENAMETOOLONG` on Python 3.11 to
+    # 3.13, which crashed the lint on the author's own plan instead of reporting the claim.
+    # Forced here, portably, by making `exists` raise for that path. Oracle: `mutations/`, "a
+    # path the filesystem cannot name crashes the reference checks".
+    root, config = project(tmp_path)
+    long = "src/" + "a" * 5000 + ".py"
+    real = Path.exists
+
+    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
+        if len(str(self)) > 4096:
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    path = plan(root, SCOPE + f"- Modify: `{long}`\n")
+    found = lint(root, config, plans=[path]).findings
+    assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, long)]
+
+
+def test_a_reference_too_long_for_this_filesystem_is_not_found(tmp_path: Path) -> None:
+    # The same case unforced, where the platform still raises; 3.14's `exists` answers False.
+    try:
+        (tmp_path / ("a" * 5000)).exists()
+    except OSError:
+        pass
+    else:
+        pytest.skip("this Python's exists() answers a name too long instead of raising")
+    root, config = project(tmp_path)
+    long = "src/" + "a" * 5000 + ".py"
+    path = plan(root, SCOPE + f"- Modify: `{long}`\n")
+    assert rules(root, config, path) == ["dead-reference"]
+
+
+def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
+    tmp_path: Path,
+) -> None:
+    # `resolves_within` is lexical, and `exists()` follows symlinks: a committed `docs/l -> /`
+    # made the lint a one-bit existence oracle for any path on the machine, a present file
+    # passing and an absent one reported. A claim whose real path leaves the root is now not
+    # settled at all, as one whose spelling leaves it is not. A symlink that stays inside the
+    # tree is still followed. Oracle: `mutations/`, "the plan lint follows a symlink out of
+    # the tree", "a path claim is followed through a symlink out of the tree".
+    root, config = project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    (root / "docs" / "l").symlink_to(outside)
+    (root / "src").mkdir()
+    (root / "src" / "ok.py").write_text("", encoding="utf-8")
+    (root / "docs" / "alias").symlink_to(Path("..") / "src")
+    path = plan(
+        root,
+        SCOPE + "- `docs/l/secret.md`\n- `docs/l/absent.md`\n"
+        "- `docs/alias/ok.py`\n- `docs/alias/gone.py`\n",
+    )
+    found = lint(root, config, plans=[path]).findings
+    assert [(f.rule, f.line, f.detail) for f in found] == [
+        ("dead-reference", 6, "docs/alias/gone.py")
+    ]
 
 
 def test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone(

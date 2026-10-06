@@ -92,7 +92,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding
 from stayfixed.gitenv import NO_ANSWER, ForkUnknown, fork_points, git_run
 from stayfixed.ledger.api import bug_register
-from stayfixed.prose import blank_fences, path_references, resolves_within
+from stayfixed.prose import blank_fences, path_references, present_within, resolves_within
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -412,7 +412,9 @@ def _lint_one(
                 # answer would be about this disk rather than about the repository, and a plan
                 # naming an absolute path that exists locally would pass here and fail in CI.
                 landed = resolves_within(root, target)
-                if landed is None or landed.exists() or target in declared:
+                if landed is None or target in declared:
+                    continue
+                if present_within(root, landed) is not False:
                     continue
                 found.append(Finding("dead-reference", where, number, target))
         if _LEADING.search(line):
