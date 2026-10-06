@@ -69,7 +69,7 @@ from pathlib import Path
 import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
-from stayfixed.config.machine import machine_config_path
+from stayfixed.config.machine import machine_config_path, passwd_home
 from stayfixed.config.schema import Config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
@@ -863,19 +863,56 @@ def _diagnostics(context: Context) -> Row:
 
 # The two variables that can name the machine configuration file, and are honoured only from an
 # interactive shell. `config/machine.py` nominates this check by name: "a machine owner who sets
-# one really does lose it on the hook path rather than getting a wrong answer quietly".
+# one really does lose it on the hook path rather than getting a wrong answer quietly". `HOME` is
+# the third, and its own sentence (`_ignored_home`), because it is ignored only when it differs.
 IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 
 def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    if not set_here:
+    home = _ignored_home(context.env)
+    if not set_here and home is None:
         return Row(OK, "no environment variable is being ignored")
-    return Row(
-        WARN,
+    if not set_here and home is not None:
+        return Row(WARN, *home)
+    detail = (
         f"{listed(set_here)} is set and is not honoured on the hook path: the machine "
-        f"configuration is ~/.config/stayfixed/config.toml and nothing else there",
-        "pass --machine <path> to a command that must read a different file",
+        f"configuration is ~/.config/stayfixed/config.toml and nothing else there"
+    )
+    if home is not None:
+        detail = f"{detail}; {home[0]}"
+    return Row(WARN, detail, "pass --machine <path> to a command that must read a different file")
+
+
+def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
+    """What `HOME` costs on the hook path, when it is not the password database's home: a detail
+    and a remedy, or `None` when the two homes are one.
+
+    Off a terminal the home directory is the database's entry and not `HOME`
+    (`config.machine.owner_home`), and the machine file and `trust.json` are under it for every
+    command. A container or home-manager setup whose `HOME` is another directory is not refused
+    for that; it is told here which home its stayfixed files are under. The value of `HOME` is
+    not printed: `doctor` may be run by an agent whose environment a repository chose.
+    """
+    chosen = env.get("HOME")
+    if not chosen:
+        return None
+    recorded = passwd_home()
+    if recorded is None:
+        return (
+            "the password database lists no home directory for this user, so off a terminal "
+            "no machine configuration and no trust record is read, whatever HOME says",
+            "pass --machine <path> to a command that must read a machine configuration file",
+        )
+    if Path(chosen).resolve() == recorded.resolve():
+        return None
+    return (
+        f"HOME is not the home directory the password database records for this user, and is "
+        f"not honoured on the hook path: the machine configuration and trust record are under "
+        f"{recorded / '.config' / 'stayfixed'}, and a hook links the harness memory under "
+        f"{recorded}",
+        "nothing, if that is intended: `stayfixed setup` and `stayfixed memory trust` write "
+        "under that directory too",
     )
 
 

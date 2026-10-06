@@ -29,9 +29,9 @@ from tests import scriptload
 from tests.assess.baserepo import clone, commit
 from tests.floor import floor_env
 from tests.gitfixture import git, needs_git
+from tests.ownerhome import checkout_with_owner_home
 from tests.test_fixtures import (
     CHECK_WORKFLOW,
-    ROOT,
     needs_bash,
     needs_workflow,
     step_script,
@@ -324,7 +324,9 @@ def _judge(
     }
     checkout = workspace / "stayfixed"
     if not checkout.exists():
-        checkout.symlink_to(ROOT, target_is_directory=True)
+        # This checkout, with the password database answering the workspace as `HOME` does: the
+        # gate reads the machine file under the database's home, never the developer's.
+        checkout_with_owner_home(checkout, workspace)
     summary = workspace / "step-summary.md"
     summary.unlink(missing_ok=True)
     done = subprocess.run(

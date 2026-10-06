@@ -28,6 +28,7 @@ from stayfixed.config.schema import (
     CustomGate,
 )
 from stayfixed.findings import LISTED_LIMIT
+from tests.ownerhome import as_owner_home
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -181,6 +182,7 @@ def test_load_can_be_told_it_is_not_interactive(
         '[personal]\nreply_language = "the-repositorys"\n', encoding="utf-8"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    as_owner_home(monkeypatch, home)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(hostile))
 
     root = tmp_path / "project"
@@ -223,6 +225,7 @@ def test_one_command_reads_one_machine_file(
         '[personal]\nreply_language = "the-other-files"\n', encoding="utf-8"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    as_owner_home(monkeypatch, home)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(elsewhere))
 
     root = tmp_path / "project"
@@ -232,7 +235,9 @@ def test_one_command_reads_one_machine_file(
     # one the two security anchors were always going to read.
     assert load(root).personal.reply_language == "the-owners"
     assert overlay_root(None) == Path("/tmp/recorded")
-    assert _trust_file(None).parent == machine_config_path(interactive=False).parent
+    trust_file, machine = _trust_file(None), machine_config_path(interactive=False)
+    assert trust_file is not None and machine is not None
+    assert trust_file.parent == machine.parent
 
 
 def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
@@ -252,6 +257,7 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
         encoding="utf-8",
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    as_owner_home(monkeypatch, tmp_path / "home")
     root = tmp_path / "project"
     root.mkdir()
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")

@@ -39,6 +39,7 @@ from tests.doctor.test_checks import (
     _attached,
     _by_name,
     _checks,
+    _env,
     _initialised,
     _machine,
     _no_overlay_machine,
@@ -48,8 +49,9 @@ from tests.doctor.test_checks import (
 )
 from tests.floor import is_developers
 from tests.gitfixture import git as _git
+from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
-from tests.runners import git_that_cannot_run
+from tests.runners import Recorder, git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -2129,3 +2131,21 @@ def test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_i
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert "could not be read as hook entries" in check.detail
     assert check.detail.endswith(": .codex/hooks.json")
+
+
+def test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Off a terminal the harness memory path is under the database's home, and a user it lists no
+    # home for has none: the machine's state, said as a warning, never "this check could not run",
+    # whose remedy is to report a defect.
+    root = _attached(tmp_path)
+    as_owner_home(monkeypatch, None)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    # No `--home`, so the row asks where the harness memory path is, as `doctor` itself does.
+    rows = doctor_checks.run_checks(
+        root, home=None, machine=_machine(tmp_path), runner=Recorder(), env=_env(tmp_path)
+    )
+    check = _by_name(rows, "attached")
+    assert check.status == "warn"
+    assert "lists no home directory" in check.detail

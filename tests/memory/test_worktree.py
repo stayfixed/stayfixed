@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ from stayfixed.memory.worktree import (
 )
 from stayfixed.presets import load_preset
 from tests.gitfixture import git
+from tests.ownerhome import as_owner_home
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -1221,3 +1223,28 @@ def test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all(
     # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
     # write that followed it.
     assert list(elsewhere.iterdir()) == []
+
+
+def test_the_harness_link_is_anchored_on_home_only_from_a_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no `--home`, a person at a terminal keeps the `HOME` they set, as a container or
+    # home-manager setup sets one that differs from the password database. Anything else — a hook,
+    # a command an agent runs — is anchored on the database's home, which no variable moves.
+    owner, chosen = tmp_path / "owner", tmp_path / "chosen"
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", str(chosen))
+    tree = tmp_path / "tree"
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    assert worktree.harness_link_parts(tree)[0] == owner
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    assert worktree.harness_link_parts(tree)[0] == chosen
+
+
+def test_no_home_in_the_database_is_a_refusal_off_a_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_owner_home(monkeypatch, None)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    with pytest.raises(Refusal, match="lists no home directory"):
+        worktree.harness_link_parts(tmp_path / "tree")

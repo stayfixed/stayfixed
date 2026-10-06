@@ -265,7 +265,7 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     # not run: stayfixed ships no MCP server yet (the README lists the memory MCP server under
     # "Not yet"), and the script says so in its own output.
     #
-    # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
+    # The count as well as the exit code, because seven of the nine rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
     # `report.rows = report.rows[:1]` before the summary, this file was still five green.
     # Mutation (declared, "the exfiltration scenario stops recording the rows that passed"):
@@ -283,7 +283,7 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "8 row(s), 0 failure(s)" in out, out
+    assert "9 row(s), 0 failure(s)" in out, out
 
 
 @needs_git

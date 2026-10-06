@@ -22,11 +22,23 @@ a file the clone ships.
 A caller that knows it is a hook, the MCP server or a `stayfixed gate` run says
 `interactive=False` rather than relying on the terminal check — `config.loader.load` takes the
 same keyword for exactly that reason.
+
+**`HOME` is a third such variable, and it is gated the same way.** It reaches a hook from the same
+`env` block, and `run-hook.sh` enters the project root before Python starts, so `HOME=fakehome`
+names a directory inside the clone: a `trust.json` committed there approved the clone's own notes
+with no word from the owner. So off a terminal the home directory is the password database's
+entry for this process's user (`owner_home`), which no variable moves, and every reader and
+writer of this file asks with `interactive=False` — `setup` and `memory trust` included, so the
+file a person writes is the file a hook reads. A container or home-manager setup whose `HOME`
+differs from that entry therefore keeps this file and `trust.json` under the entry's directory,
+and `stayfixed doctor`'s `ignored-env` row says so. A user the database does not list has no home
+off a terminal at all: no machine file is read, rather than one `HOME` chose.
 """
 
 from __future__ import annotations
 
 import os
+import pwd
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -43,15 +55,59 @@ def override_is_honoured(interactive: bool | None = None) -> bool:
         return False
 
 
+def passwd_home() -> Path | None:
+    """This process's user's home directory as the password database records it.
+
+    `None` for a user the database does not list — a container run under a bare uid — and for an
+    entry whose directory is not an absolute path, which would otherwise be read against
+    whatever directory the process happens to be in.
+    """
+    try:
+        recorded = pwd.getpwuid(os.getuid()).pw_dir
+    except KeyError:
+        return None
+    return Path(recorded) if os.path.isabs(recorded) else None
+
+
+def owner_home(interactive: bool | None = None) -> Path | None:
+    """The machine owner's home directory: `HOME` from a terminal, the database's everywhere else.
+
+    The gate `override_is_honoured` keeps for the two variables that name the machine file, and
+    for the same reason (the module docstring). `None` only off a terminal, for a user
+    `passwd_home` finds no directory for.
+    """
+    if override_is_honoured(interactive):
+        return Path.home()
+    return passwd_home()
+
+
+def in_owner_home(value: str) -> Path | None:
+    """`value` with a leading `~` read as the machine owner's home directory, never as `HOME`.
+
+    For a path the machine file records, which is read with `interactive=False` by every command:
+    `~` there means the home that file lives under. `None` when `value` begins with `~` and there
+    is no such home, rather than a `~` left to be read as a directory name. `~user` is the
+    database's entry for that user already, which is what `expanduser` asks for it.
+    """
+    if value == "~" or value.startswith("~/"):
+        home = passwd_home()
+        return None if home is None else home / value[2:]
+    return Path(value).expanduser()
+
+
 def machine_config_path(
     env: Mapping[str, str] | None = None, *, interactive: bool | None = None
-) -> Path:
+) -> Path | None:
+    """The machine configuration file, or `None` off a terminal when `owner_home` has no answer."""
     env = os.environ if env is None else env
     honoured = override_is_honoured(interactive)
     explicit = env.get("STAYFIXED_CONFIG") if honoured else None
     if explicit:
         return Path(explicit)
-    base = (env.get("XDG_CONFIG_HOME") if honoured else None) or str(
-        Path.home() / DEFAULT_CONFIG_DIR
-    )
-    return Path(base) / "stayfixed" / "config.toml"
+    chosen = env.get("XDG_CONFIG_HOME") if honoured else None
+    if chosen:
+        return Path(chosen) / "stayfixed" / "config.toml"
+    home = owner_home(honoured)
+    if home is None:
+        return None
+    return home / DEFAULT_CONFIG_DIR / "stayfixed" / "config.toml"

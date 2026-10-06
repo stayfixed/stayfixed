@@ -16,6 +16,7 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from stayfixed.setup.api import SetupReport
+from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
@@ -85,6 +86,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    as_owner_home(monkeypatch, home)
     # An interactive shell is what makes the sniff answer yes; the reader's answer must not
     # depend on it.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
@@ -249,3 +251,20 @@ def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_th
     assert code == 2
     assert not machine.exists()
     assert stub.calls == []
+
+
+def test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The default machine file is under the database's home, and a user it does not list has
+    # none. A file written under `HOME` instead is one no hook reads, so the command says to name
+    # one, and runs nothing.
+    as_owner_home(monkeypatch, None)
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    home = tmp_path / "home"
+    home.mkdir()
+    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+    assert "--machine PATH" in capsys.readouterr().err
+    assert not stub.calls
+    assert list(tmp_path.rglob("config.toml")) == []

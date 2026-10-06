@@ -119,6 +119,48 @@ INJECTED: dict[str, tuple[str, ...]] = {
 }
 
 
+def owner_home_prelude(home: Path) -> str:
+    """Python source that has the password database record `home` as this user's home directory.
+
+    stayfixed takes the machine owner's home from the password database whenever no person is at
+    a terminal, and never from `HOME`, which a committed `env` block can set. So a scratch `HOME`
+    no longer keeps a run away from the owner's own `~/.config/stayfixed`: recording trust here
+    would write the owner's real `trust.json`. No variable can say otherwise, because a variable
+    is what that block sets, so the scratch home goes in through the launcher instead.
+    """
+    return (
+        "import pwd as _pwd\n"
+        "_real = _pwd.getpwuid\n"
+        "def _lookup(uid):\n"
+        "    try:\n"
+        "        entry = tuple(_real(uid))\n"
+        "    except KeyError:\n"
+        "        entry = ('stayfixed-smoke', 'x', uid, 0, '', '', '/bin/sh')\n"
+        f"    return _pwd.struct_passwd((*entry[:5], {str(home)!r}, *entry[6:]))\n"
+        "_pwd.getpwuid = _lookup\n"
+    )
+
+
+def with_owner_home(plugin_root: Path, into: Path, home: Path) -> Path:
+    """`plugin_root` again at `into`, with the password database's home pinned to `home`.
+
+    `hooks/` is copied byte for byte with its modes, `src` is linked where the root has one, and
+    `scripts/stayfixed` is the root's own launcher run after `owner_home_prelude`. The wrapper
+    finds its launcher beside itself and starts it under `-I`, so this is the one place the
+    prelude can go; every line after it is the plugin root's.
+    """
+    shutil.copytree(plugin_root / "hooks", into / "hooks")
+    (into / "scripts").mkdir(parents=True)
+    if (plugin_root / "src").is_dir():
+        (into / "src").symlink_to(plugin_root / "src", target_is_directory=True)
+    shipped = (plugin_root / "scripts" / "stayfixed").read_text(encoding="utf-8")
+    first, _, rest = shipped.partition("\n")
+    launcher = into / "scripts" / "stayfixed"
+    launcher.write_text(f"{first}\n{owner_home_prelude(home)}{rest}", encoding="utf-8")
+    launcher.chmod(0o755)
+    return into
+
+
 def tail_of(command: str) -> str:
     """The part of a `hooks.json` command after the wrapper — what the entry actually asks."""
     return command.split("run-hook.sh")[-1].strip().lstrip('" ')
@@ -294,6 +336,9 @@ def main(argv: list[str]) -> int:
     if not os.access(wrapper, os.X_OK):
         print(f"FAIL  {wrapper} is not executable")
         failures += 1
+    # Every row runs under the scratch home, in the password database as in `HOME`: the plugin
+    # root's own files, with only the launcher's lookup of the home directory pinned.
+    args.plugin_root = with_owner_home(args.plugin_root, args.scratch / "owner-home-plugin", home)
     found = entries(args.plugin_root)
     if not found:
         print("FAIL  no hook entries at all")

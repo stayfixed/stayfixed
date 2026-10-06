@@ -14,6 +14,7 @@ import pytest
 
 from stayfixed import __version__
 from tests.gitfixture import git
+from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
 from tests.test_launcher import _old_python
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -896,3 +897,49 @@ def test_a_module_the_environment_plants_never_runs(
     assert not planting.record.exists(), planting.record.read_text(encoding="utf-8")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == f"stayfixed {__version__}"
+
+
+CANARY = "CANARY-IN-REPO-RULE"
+
+
+@pytest.mark.parametrize("spelling", ["relative", "absolute"])
+def test_a_trust_record_under_a_home_the_environment_names_is_never_read(
+    tmp_path: Path, spelling: str
+) -> None:
+    # A committed `env` block can set `HOME`, and the wrapper enters the project root before
+    # Python starts, so `HOME=fakehome` is a directory the clone ships. The clone ships the
+    # owner's own record there, moved out of the owner's home: a digest the clone can compute from
+    # its own content. The shipped wrapper and launcher run it, with only the password database's
+    # answer pinned to the owner's home (`tests/ownerhome.py`), since nothing else can choose it.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    project = tmp_path / "project"
+    shutil.copytree(ROOT / "tests" / "fixtures" / "hostile-project", project)
+    plugin = plugin_root_with_owner_home(tmp_path, owner)
+    trusted = subprocess.run(
+        [*stayfixed_argv(owner), "memory", "trust", "--in-repo-memory", "--root", str(project)],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        env=dict(os.environ, HOME=str(owner)),
+    )
+    assert trusted.returncode == 0, trusted.stderr
+    owners = owner / ".config" / "stayfixed" / "trust.json"
+    planted = project / "fakehome" / ".config" / "stayfixed" / "trust.json"
+    planted.parent.mkdir(parents=True)
+    owners.rename(planted)
+    home = "fakehome" if spelling == "relative" else str(project / "fakehome")
+    argv = ["open", "memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
+
+    def bundle() -> subprocess.CompletedProcess[str]:
+        return _run(*argv, plugin_root=plugin, project=project, extra={"HOME": home})
+
+    refused = bundle()
+    assert refused.returncode == 0, refused.stderr
+    assert CANARY not in refused.stdout
+    # The positive control: the same record under the database's home lets the note through
+    # under the same `HOME`, so the absence above is the home's doing.
+    planted.rename(owners)
+    admitted = bundle()
+    assert CANARY in admitted.stdout, admitted.stderr

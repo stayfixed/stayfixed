@@ -27,12 +27,83 @@ reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
 [[mutation]]
 name = "the machine path honours XDG_CONFIG_HOME non-interactively again"
 file = "src/stayfixed/config/machine.py"
-before = '    base = (env.get("XDG_CONFIG_HOME") if honoured else None) or str('
-after = '    base = env.get("XDG_CONFIG_HOME") or str('
+before = '    chosen = env.get("XDG_CONFIG_HOME") if honoured else None'
+after = '    chosen = env.get("XDG_CONFIG_HOME")'
 reddens = [
   "tests/config/test_machine.py::test_the_override_is_ignored_when_the_caller_is_not_interactive",
   "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
 ]
+
+# Off a terminal the home directory is the password database's, never `HOME`: a committed `env`
+# block sets `HOME` as readily as the two variables above, and relative, it names a directory
+# inside the clone a hook runs in, with a `trust.json` the clone ships.
+[[mutation]]
+name = "the hook path takes the home directory from HOME again"
+file = "src/stayfixed/config/machine.py"
+before = '    return passwd_home()'
+after = '    return Path.home()'
+reddens = [
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+  "tests/memory/test_hooks.py::test_the_harness_link_goes_under_the_owners_home_and_never_under_home",
+  "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
+  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# A home the database records as no absolute path is no home: read as one, it is a directory
+# relative to wherever the process is, which on the hook path is the project.
+[[mutation]]
+name = "a home the password database records as a relative path is used"
+file = "src/stayfixed/config/machine.py"
+before = '    return Path(recorded) if os.path.isabs(recorded) else None'
+after = '    return Path(recorded)'
+reddens = ["tests/config/test_machine.py::test_a_home_the_database_records_as_no_absolute_path_is_no_home"]
+
+# A user the database does not list has no home off a terminal, and that is an answer, not an
+# exception that ends the command.
+[[mutation]]
+name = "a user the password database does not list ends the command"
+file = "src/stayfixed/config/machine.py"
+before = '    except KeyError:'
+after = '    except OSError:'
+reddens = [
+  "tests/config/test_machine.py::test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal",
+]
+
+# `~` in the machine file is the home that file lives under, never `HOME`.
+[[mutation]]
+name = "the overlay root's tilde is read from HOME"
+file = "src/stayfixed/config/overlay.py"
+before = '    return in_owner_home(value) if isinstance(value, str) and value else None'
+after = '    return Path(value).expanduser() if isinstance(value, str) and value else None'
+reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home_and_never_home"]
+
+[[mutation]]
+name = "a tilde with no home behind it is left to name a directory"
+file = "src/stayfixed/config/machine.py"
+before = '        return None if home is None else home / value[2:]'
+after = '        return Path(value) if home is None else home / value[2:]'
+reddens = [
+  "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home",
+]
+
+# No home off a terminal is no machine file, for each of its readers, and never an error: a
+# `closed` hook that raised would refuse every tool call on such a machine.
+[[mutation]]
+name = "the configuration reads a machine file that has no home"
+file = "src/stayfixed/config/loader.py"
+before = '    raw = None if machine is None else read_machine_toml(machine)'
+after = '    raw = read_machine_toml(machine)'
+reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
+
+[[mutation]]
+name = "the overlay root is read from a machine file that has no home"
+file = "src/stayfixed/config/overlay.py"
+before = '    raw = None if path is None else read_machine_toml(path)'
+after = '    raw = read_machine_toml(path)'
+reddens = ["tests/memory/test_hooks.py::test_a_user_with_no_home_in_the_database_gets_no_harness_link"]
 
 # Half a file behind a gate is not a gate. `load` resolved the machine file with the `isatty` sniff
 # while `overlay_root` and `_trust_file` — the two anchors store resolution and the trust record

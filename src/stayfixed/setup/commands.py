@@ -26,7 +26,7 @@ from typing import Any
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.result import Result
 from stayfixed.runner import subprocess_runner
 
@@ -81,6 +81,12 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
     return Result(summary, install_data)
 
 
+NO_MACHINE_HOME = (
+    "the password database lists no home directory for this user, so there is no default "
+    "machine configuration file; pass --machine PATH to write one, which no hook reads"
+)
+
+
 def run_setup(args: argparse.Namespace) -> Result:
     if args.git_hooks:
         if args.preset is not None:
@@ -108,6 +114,10 @@ def run_setup(args: argparse.Namespace) -> Result:
         if args.machine is None
         else Path(args.machine).expanduser()
     )
+    if machine is None:
+        # Off `--machine`, the file is under the home the password database records, and this
+        # user has none there; a file put under `HOME` instead would be one no hook reads.
+        raise Failure(NO_MACHINE_HOME)
     report = setup(
         args.preset or "recommended",
         home=home,

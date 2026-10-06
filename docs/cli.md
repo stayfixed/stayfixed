@@ -2660,7 +2660,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead | the environment, the password database |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes | the note store |
@@ -3332,6 +3332,18 @@ a setting: it is written, never hand-edited, and a file that has never had one l
 it: a committed `.claude/settings.json` `env` block would otherwise choose your overlay root
 and your trust record. Pass `--machine <path>` to read a different file — a path you typed
 rather than one an environment chose, and honoured by every reader of it.
+
+**`~` here is your home directory as the password database records it, not `HOME`.** The same
+`env` block can set `HOME`, and a hook runs inside the project, so `HOME=fakehome` would name a
+directory the repository ships, with a `trust.json` in it. Every command reads and writes this
+file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
+file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
+still decides what it decides from your own terminal: `--home`'s default, and where an
+interactive `attach` puts the harness memory link. A container or home-manager setup whose `HOME`
+is not its database entry is not refused: its files live under the entry's home, and `doctor`'s
+`ignored-env` row names that directory. A user the database lists no home for has no such file
+off `--machine`: nothing is read, `memory trust` and `setup` fail and say so, and a hook links no
+harness memory.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
 the environment, so one command could read the two halves of this file out of two different

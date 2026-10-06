@@ -3169,3 +3169,33 @@ after = "            document = path.read_bytes().decode("
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]
+
+# A `HOME` that is not the password database's home is named, with the directory stayfixed's
+# machine files are under, rather than ignored in silence; a user the database does not list is
+# told that no machine file is read.
+[[mutation]]
+name = "doctor says nothing of a HOME the password database does not record"
+file = "src/stayfixed/doctor/checks.py"
+before = '    if Path(chosen).resolve() == recorded.resolve():'
+after = '    if True:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
+]
+
+[[mutation]]
+name = "doctor reads a home the password database does not list"
+file = "src/stayfixed/doctor/checks.py"
+before = "    recorded = passwd_home()\n    if recorded is None:"
+after = "    recorded = passwd_home()\n    if False:"
+reddens = ["tests/doctor/test_checks.py::test_a_user_the_password_database_does_not_list_is_told_no_file_is_read"]
+
+# With no home in the password database there is no default machine file, and `setup` writes
+# none under `HOME`, which no hook would read.
+[[mutation]]
+name = "setup runs with no machine file to write"
+file = "src/stayfixed/setup/commands.py"
+before = '    if machine is None:'
+after = '    if False:'
+reddens = [
+  "tests/setup/test_commands.py::test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing",
+]

@@ -134,6 +134,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import OK, RED, WARN, Row
+    from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
         DIFFERENT_REMOTE,
         MISMATCH,
@@ -150,7 +151,18 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # stayfixed's own labels rather than a string a clone chose.
         return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
-    harness = harness_memory_path(context.root, context.home)
+    try:
+        harness = harness_memory_path(context.root, context.home)
+    except Refusal:
+        # Refused only for a home it cannot name: a user the password database lists no home for,
+        # off a terminal. That is this machine's state and not a broken check, so it is a warning
+        # that says what it costs; `ignored-env` says why.
+        return Row(
+            WARN,
+            "the password database lists no home directory for this user, so there is no harness "
+            "memory path to check and no hook makes one",
+            "pass --home <path> to check the harness memory path under that directory",
+        )
     if harness.is_dir() and not harness.is_symlink():
         return Row(
             RED,

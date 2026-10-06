@@ -54,7 +54,7 @@ In scope, and treated as security rather than as an ordinary bug:
   repository-data region it is wrapped in.
 - **The machine anchors.** Any way a repository can choose which machine configuration file,
   overlay root or `trust.json` stayfixed reads — for example through an environment variable a
-  committed settings file can set.
+  committed settings file can set, `HOME` among them.
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.

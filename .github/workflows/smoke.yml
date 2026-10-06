@@ -125,10 +125,10 @@ jobs:
           python3 scripts/smoke_exfiltration.py --plugin-root "$INSTALLED" \
             --fixture tests/fixtures/hostile-project --scratch "$RUNNER_TEMP/hostile" \
             | tee "$RUNNER_TEMP/hostile.out"
-          # Six of this scenario's eight rows assert an ABSENCE, which is also what a run of
+          # Seven of this scenario's nine rows assert an ABSENCE, which is also what a run of
           # one row prints. The count is the difference between those two runs, and
           # `tests/test_check_workflow.py` derives it from the script's own constant.
-          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"
+          grep -qx "9 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"
 
   same-repository-form:
     # The same guard `installed-plugin` carries: a fork inherits the schedule, and only this

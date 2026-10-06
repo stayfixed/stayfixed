@@ -25,7 +25,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import open_regular, write_atomically
 from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
@@ -70,7 +70,7 @@ def wrap(text: str, nonce: str) -> str:
     return f"{begin}\n{_LEAD}\n\n{text}\n{end}"
 
 
-def _trust_file(machine: Path | None) -> Path:
+def _trust_file(machine: Path | None) -> Path | None:
     """The record `may_inject` consults, beside the machine configuration file.
 
     `machine=None` resolves it through `machine_config_path`, which gates **both** variables
@@ -78,10 +78,27 @@ def _trust_file(machine: Path | None) -> Path:
     `XDG_CONFIG_HOME` beside it chose this very file for a committed `.claude/settings.json`
     `env` block, wherever no `--machine` was threaded — the gate the security record of this
     module rests on, bypassed by the variable three lines below it. `store.py`'s module
-    docstring states what that exposure was and what bounded it.
+    docstring states what that exposure was and what bounded it. `HOME` chose it the same way
+    until the home directory, too, came from the password database off a terminal.
+
+    `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
+    so nothing is trusted, and `record` refuses to invent a place for one.
     """
     base = machine_config_path(interactive=False) if machine is None else machine
-    return base.parent / "trust.json"
+    return None if base is None else base.parent / "trust.json"
+
+
+NO_HOME = (
+    "the password database lists no home directory for this user, so there is no trust record "
+    "to write; pass --machine PATH to keep one beside that file, which no hook reads"
+)
+
+
+def _writable_trust_file(machine: Path | None) -> Path:
+    path = _trust_file(machine)
+    if path is None:
+        raise Failure(NO_HOME)
+    return path
 
 
 @dataclass(frozen=True)
@@ -276,7 +293,7 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     costs that project a re-approval instead of costing every project its record.
     """
     path = _trust_file(machine)
-    if not path.is_file():
+    if path is None or not path.is_file():
         return {}
     try:
         text = path.read_text(encoding="utf-8")
@@ -335,7 +352,9 @@ def state(store: Store, config: Config) -> TrustState:
 def record(store: Store, config: Config) -> TrustState:
     raw = _recorded(store.machine)
     raw[_key(store)] = store_digest(store, config)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    write_atomically(
+        _writable_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n"
+    )
     return state(store, config)
 
 
@@ -403,7 +422,9 @@ def refresh_if_trusted(
         return False  # an approved file is gone, and stayfixed does not delete notes
     raw = _recorded(store.machine)
     raw[_key(store)] = _digest_of(expected)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    write_atomically(
+        _writable_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n"
+    )
     return True
 
 

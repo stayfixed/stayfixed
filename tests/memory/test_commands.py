@@ -13,6 +13,7 @@ from stayfixed.printed import UNPRINTABLE
 from tests import parserlimits
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
+from tests.ownerhome import as_owner_home
 
 CONFIG = """
 [stayfixed]
@@ -126,6 +127,76 @@ def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory
     machine = project.parent / "machine.toml"
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     assert (machine.parent / "trust.json").is_file()
+
+
+@pytest.mark.parametrize("spelling", ["relative", "absolute"])
+def test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    _a_home_of_its_own: Path,
+    spelling: str,
+) -> None:
+    # A clone ships `fakehome/.config/stayfixed/trust.json` recording its own store, and a
+    # committed `env` block sets `HOME=fakehome`; a hook runs in the project root, so the relative
+    # value lands inside the clone. The record is the owner's own here, moved, which is the
+    # digest a clone computes from its own content. No `--machine`: the default is the case.
+    as_owner_home(monkeypatch, _a_home_of_its_own)
+    argv = ["memory", "session-context", "--bundle", "standing-rules", "--root", str(project)]
+    assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 0
+    owners = _a_home_of_its_own / ".config" / "stayfixed" / "trust.json"
+    planted = project / "fakehome" / ".config" / "stayfixed" / "trust.json"
+    planted.parent.mkdir(parents=True)
+    owners.rename(planted)
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", "fakehome" if spelling == "relative" else str(project / "fakehome"))
+    capsys.readouterr()
+    assert invoke(argv) == 0
+    assert "Body." not in capsys.readouterr().out
+    # The positive control: the same record where the password database puts the owner's home
+    # does open the gate, so the absence above is the home's doing and not a broken pipeline.
+    planted.rename(owners)
+    assert invoke(argv) == 0
+    assert "Body." in capsys.readouterr().out
+
+
+def test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # The user the rule above must not refuse: a container or home-manager setup whose `HOME` is
+    # not its database entry, running `memory trust` at a terminal. The record lands where every
+    # command reads it, the database's home, so the hook path then honours it under the same
+    # `HOME`; a record put under `HOME` would be one no hook reads.
+    owner, chosen = tmp_path / "database-home", tmp_path / "chosen-home"
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", str(chosen))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 0
+    assert (owner / ".config" / "stayfixed" / "trust.json").is_file()
+    assert not (chosen / ".config").exists()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    capsys.readouterr()
+    argv = ["memory", "session-context", "--bundle", "standing-rules", "--root", str(project)]
+    assert invoke(argv) == 0
+    assert "Body." in capsys.readouterr().out
+
+
+def test_trust_with_no_home_in_the_database_fails_and_writes_nothing(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # No home the hook path could read the record from, so none is written anywhere: not under
+    # `HOME`, and not as a `trust.json` beside whatever directory the command ran in.
+    as_owner_home(monkeypatch, None)
+    monkeypatch.chdir(tmp_path)
+    assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 1
+    assert "lists no home directory" in capsys.readouterr().err
+    assert list(tmp_path.rglob("trust.json")) == []
 
 
 @pytest.mark.parametrize(

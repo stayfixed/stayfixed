@@ -2588,3 +2588,63 @@ after = 'from stayfixed.ledger.register import bug_register'
 reddens = [
   "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
 ]
+
+# The trust record is where every command reads it, under the password database's home, so the
+# record a person writes at a terminal is the one a hook reads. Resolved with the terminal check
+# instead, an owner whose `HOME` differs from the database's writes a record no hook reads.
+[[mutation]]
+name = "the trust record follows HOME from a terminal"
+file = "src/stayfixed/memory/trust.py"
+before = '    base = machine_config_path(interactive=False) if machine is None else machine'
+after = '    base = machine_config_path() if machine is None else machine'
+reddens = [
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+]
+
+# No home in the password database is no trust record: none is read, and none is written beside
+# whatever directory the command happens to run in.
+[[mutation]]
+name = "a trust record with no home is written beside the working directory"
+file = "src/stayfixed/memory/trust.py"
+before = '        raise Failure(NO_HOME)'
+after = '        return Path("trust.json")'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+[[mutation]]
+name = "a trust record with no home is read as a path"
+file = "src/stayfixed/memory/trust.py"
+before = '    if path is None or not path.is_file():'
+after = '    if not path.is_file():'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+# With no `--home`, the harness link is anchored on `HOME` only from a terminal, and on the
+# password database's home everywhere else; a user the database lists no home for has no anchor.
+[[mutation]]
+name = "the harness link is anchored on HOME off a terminal"
+file = "src/stayfixed/memory/worktree.py"
+before = '    base = owner_home() if home is None else home'
+after = '    base = Path.home() if home is None else home'
+reddens = ["tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal"]
+
+[[mutation]]
+name = "the harness link has an anchor where the database lists no home"
+file = "src/stayfixed/memory/worktree.py"
+before = '    if base is None:'
+after = '    if False:'
+reddens = ["tests/memory/test_worktree.py::test_no_home_in_the_database_is_a_refusal_off_a_terminal"]
+
+# The hook says it is not at a terminal rather than sniffing it, so `HOME` never chooses where a
+# hook makes the harness link.
+[[mutation]]
+name = "the worktree-link hook makes the harness link under HOME"
+file = "src/stayfixed/memory/hooks.py"
+before = '        home = owner_home(interactive=False)'
+after = '        home = owner_home(interactive=True)'
+reddens = ["tests/memory/test_hooks.py::test_the_harness_link_goes_under_the_owners_home_and_never_under_home"]
+
+[[mutation]]
+name = "the worktree-link hook links with no home to anchor on"
+file = "src/stayfixed/memory/hooks.py"
+before = '        if home is None:'
+after = '        if False:'
+reddens = ["tests/memory/test_hooks.py::test_a_user_with_no_home_in_the_database_gets_no_harness_link"]

@@ -12,6 +12,7 @@ from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
 from stayfixed.memory import worktree as worktree_module
 from stayfixed.memory.hooks import NOT_LINKED, PARTIAL, REVOKED, register
 from stayfixed.memory.worktree import Links, PartialLink
+from tests.ownerhome import as_owner_home
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -246,3 +247,47 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
         for fragment in HOSTILE_GROUP.splitlines():
             if fragment.strip():
                 assert fragment not in NOT_LINKED
+
+
+def test_the_harness_link_goes_under_the_owners_home_and_never_under_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A hook is never a person at a terminal, so the home the harness link is made under is the
+    # password database's, whatever `HOME` a committed `env` block set; relative, that would be
+    # a directory inside the clone.
+    owner = tmp_path / "owner"
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", "fakehome")
+    seen: list[object] = []
+
+    def recorded(*_args: object, **kwargs: object) -> Links:
+        seen.append(kwargs.get("home"))
+        return Links()
+
+    monkeypatch.setattr(worktree_module, "link", recorded)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        handler.run(an_event(root), config)
+    assert seen == [owner]
+
+
+def test_a_user_with_no_home_in_the_database_gets_no_harness_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No anchor that `HOME` did not choose, so no link at all, and the fixed line a refused
+    # link gets; never the session's cost.
+    as_owner_home(monkeypatch, None)
+    seen: list[object] = []
+
+    def recorded(*_args: object, **kwargs: object) -> Links:
+        seen.append(kwargs)
+        return Links()
+
+    monkeypatch.setattr(worktree_module, "link", recorded)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), config)
+        assert result.context == NOT_LINKED
+    assert seen == []

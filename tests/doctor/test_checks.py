@@ -53,6 +53,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
@@ -151,9 +152,10 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     `tests/test_install_path.py::_doctor_env` does for the walkthrough.
 
     `PATH` is kept because the wrapper's interpreter probe is `command -v`, and a probe with no
-    `PATH` measures nothing.
+    `PATH` measures nothing. `HOME` is the test's own (`tests/conftest.py`), which is also what the
+    password database answers in this process, so `ignored-env` finds the two homes one.
     """
-    return {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home"), **extra}
+    return {"PATH": os.environ.get("PATH", ""), "HOME": os.environ["HOME"], **extra}
 
 
 def _initialised(tmp_path: Path, *, template: str = LOCAL_ONLY) -> Path:
@@ -985,6 +987,35 @@ def test_neither_variable_set_is_not_a_finding(tmp_path: Path) -> None:
         "ignored-env",
     )
     assert check.status == "ok"
+
+
+def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A container or home-manager setup whose `HOME` is not its database entry is not refused:
+    # off a terminal stayfixed reads the entry's home, and this row says which, so the owner is
+    # not left wondering why the hook path ignores files under `HOME`. `HOME`'s own value is not
+    # printed, since an agent's environment may be a repository's choice.
+    owner = tmp_path / "owner"
+    as_owner_home(monkeypatch, owner)
+    check = _by_name(
+        _checks(tmp_path, _initialised(tmp_path), env=_env(tmp_path, HOME="fakehome")),
+        "ignored-env",
+    )
+    assert check.status == "warn"
+    assert str(owner / ".config" / "stayfixed") in check.detail
+    assert "fakehome" not in check.detail
+    assert "stayfixed memory trust" in check.remedy
+
+
+def test_a_user_the_password_database_does_not_list_is_told_no_file_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_owner_home(monkeypatch, None)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "ignored-env")
+    assert check.status == "warn"
+    assert "lists no home directory" in check.detail
+    assert "--machine" in check.remedy
 
 
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:

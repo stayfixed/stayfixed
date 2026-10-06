@@ -453,9 +453,10 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
 
 
-def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
+def _personal(machine: Path | None, preset: dict[str, Any]) -> Personal:
     values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    raw = read_machine_toml(machine)
+    # `None` is a machine with no home to hold the file (`machine_config_path`), read as no file.
+    raw = None if machine is None else read_machine_toml(machine)
     if raw is None:
         # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
         # else. A fault here would be the preset's, not a machine's, and must not be relabelled.

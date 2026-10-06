@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
+from stayfixed.config.machine import owner_home
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
@@ -147,16 +148,26 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     reason for existing.
 
     **Where the root comes from, because a containment rule that cannot say is not one.**
-    `home` is the machine owner's own home directory — `Path.home()` on every production
-    path, and a `--home` value only a person typing a command can supply. It is never read
-    from `stayfixed.toml`, from a note, from a committed settings file or from anything else
-    the repository authored, and the repository is the party being contained here: what it
-    controls is `memory.groups` and `paths.memory`, which appear only in the *relative* half
-    the walk refuses to follow out. The home directory itself is found and never created:
+    `home` is the machine owner's own home directory: `config.machine.owner_home`, which is
+    `HOME` from a terminal and the password database's entry everywhere else, or a `--home`
+    value only a person typing a command can supply. `HOME` alone was not that: a committed
+    `.claude/settings.json` `env` block can set it in a session no person is watching, and
+    relative, it names a directory inside the clone. So the hook path never reads it. It is
+    never read from `stayfixed.toml`, from a note, from a committed settings file or from
+    anything else the repository authored, and the repository is the party being contained here:
+    what it controls is `memory.groups` and `paths.memory`, which appear only in the *relative*
+    half the walk refuses to follow out. The home directory itself is found and never created:
     `open_within` applies `O_NOFOLLOW` to every component below the root and never to the
-    root, so an anchor stayfixed made up would be an anchor the walk cannot vouch for.
+    root, so an anchor stayfixed made up would be an anchor the walk cannot vouch for — and a
+    user the password database lists no home for has no anchor off a terminal, which is a
+    refusal here.
     """
-    base = Path.home() if home is None else home
+    base = owner_home() if home is None else home
+    if base is None:
+        raise Refusal(
+            "the password database lists no home directory for this user, so there is nowhere "
+            "to put the harness memory link"
+        )
     return base, _memory_dir(str(worktree.resolve()))
 
 

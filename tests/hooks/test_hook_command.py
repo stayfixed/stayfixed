@@ -6,7 +6,6 @@ import asyncio
 import io
 import json
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -18,6 +17,7 @@ from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from stayfixed.hooks.commands import LINKED, _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
+from tests.ownerhome import stayfixed_argv
 from tests.parserlimits import LONG_NUMBER
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -71,12 +71,13 @@ def hook(
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
-    if home is not None:
-        # A hook reads the machine file at `$HOME/.config/stayfixed/config.toml` and nowhere a
-        # repository can name, so a case about that file gives the hook a home of its own.
-        env["HOME"] = str(home)
+    # A hook reads the machine file under the home the password database records, and nowhere a
+    # repository can name, so every case gives the hook a home of its own there: one with no
+    # machine file unless the case is about that file. `HOME` says the same, as on most machines.
+    owner = home if home is not None else cwd / "no-home"
+    env["HOME"] = str(owner)
     return subprocess.run(
-        [sys.executable, "-m", "stayfixed", "hook", event, *args],
+        [*stayfixed_argv(owner), "hook", event, *args],
         input=stdin,
         capture_output=True,
         text=True,

@@ -17,6 +17,7 @@ from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSi
 from stayfixed.hooks.commands import run_hook
 from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
 from tests.gitfixture import git
+from tests.ownerhome import as_owner_home
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
 
@@ -821,3 +822,28 @@ def test_a_clamped_answer_is_the_detected_harnesss_envelope() -> None:
     assert recorder.records == [
         {"event": "PreToolUse", "handler": "*", "error": "context-truncated"}
     ]
+
+
+def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A container run under a uid with no entry has no home off a terminal, so no machine file:
+    # the configuration loads with the preset's `[personal]` and the guards still answer. Read as
+    # an error instead, a `closed` entry would refuse every tool call on such a machine.
+    as_owner_home(monkeypatch, None)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\nstate = "installed"\n\n'
+        '[project]\nname = "widget"\n\n[memory]\nmode = "local-only"\n',
+        encoding="utf-8",
+    )
+    seen: list[object] = []
+
+    def note(ev: HookEvent, config: object) -> HookResult:
+        seen.append(config)
+        return HookResult()
+
+    probe = Handler(name="probe", event="PreToolUse", policy=Policy.CLOSED, run=note)
+    payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
+    assert _hook(monkeypatch, "PreToolUse", payload, probe, env={"HOME": str(tmp_path)}) == 0
+    assert len(seen) == 1 and seen[0] is not None

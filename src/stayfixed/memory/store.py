@@ -27,9 +27,10 @@ nor an inherited `GIT_DIR` can point this module at another project's notes. Bot
 by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block that
 applies with no trust prompt in a non-interactive session.
 
-**The machine file makes the same claim.** `machine_config_path` gates `STAYFIXED_CONFIG` and
-`XDG_CONFIG_HOME` alike behind `interactive`, since gating one alone is worth nothing: both
-variables reach the same file, and this area routes the store's overlay anchor
+**The machine file makes the same claim.** `machine_config_path` gates `STAYFIXED_CONFIG`,
+`XDG_CONFIG_HOME` and `HOME` alike behind `interactive` (off a terminal the home directory is the
+password database's), since gating one alone is worth nothing: each of them reaches the same
+file, and this area routes the store's overlay anchor
 (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`) through it. A committed
 `env` block that could set either would choose which overlay root `permitted_roots` is computed
 from, and which `trust.json` `may_inject` consults, wherever no `--machine` is threaded.

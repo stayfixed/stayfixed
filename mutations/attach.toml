@@ -2326,3 +2326,12 @@ after = "    held = set(_allow_rules(document, root / LOCAL_SETTINGS))"
 reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
 ]
+
+# A user the password database lists no home for has no harness memory path off a terminal, and
+# the `attached` row says so as a warning rather than dying as a broken check.
+[[mutation]]
+name = "the attached row dies on a home the password database does not list"
+file = "src/stayfixed/attach/doctor.py"
+before = "    except Refusal:\n        # Refused only for a home it cannot name"
+after = "    except LookupError:\n        # Refused only for a home it cannot name"
+reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check"]

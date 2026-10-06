@@ -64,6 +64,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
+        from stayfixed.config.machine import owner_home
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.store import resolve
         from stayfixed.memory.worktree import PartialLink, link
@@ -76,8 +77,13 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             return HookResult(context=NOT_ASKABLE)
         if store is None:
             return HookResult(context=NO_STORE)
+        # Said rather than sniffed, as `hooks.commands` says it for the machine file: a hook is
+        # never a person at a terminal, so `HOME` does not choose where the harness link goes.
+        home = owner_home(interactive=False)
+        if home is None:
+            return HookResult(context=NOT_LINKED)
         try:
-            links = link(event.project_root, store, config)
+            links = link(event.project_root, store, config, home=home)
         except PartialLink as partial:
             # A write failed part-way. `link` makes one symlink at a time, so the tree now
             # holds some names and not the rest — and `worktree`'s own docstring says a group
