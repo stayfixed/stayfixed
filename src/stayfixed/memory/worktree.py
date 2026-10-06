@@ -59,7 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
-from stayfixed.config.machine import owner_home
+from stayfixed.config.machine import anchor_home
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
@@ -162,7 +162,7 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     user the password database lists no home for has no anchor off a terminal, which is a
     refusal here.
     """
-    base = owner_home() if home is None else home
+    base = anchor_home() if home is None else home
     if base is None:
         raise Refusal(
             "the password database lists no home directory for this user, so there is nowhere "
@@ -208,10 +208,13 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
       reading as success is the worse half: it is the one case where the caller would act on
       the answer.
 
-    `is_dir()` and not `exists()`: a home directory that is a symlink to a real directory is
-    the ordinary dotfiles case and is fine, because `open_within` never applies `O_NOFOLLOW`
-    to the root itself. It is every component *below* it — `.claude` included — that the walk
-    refuses to follow, which is the same rule `setup` applies to `~/.claude/settings.json`.
+    `is_dir()` and not `exists()`: a home whose *parent* is a symlink (`/home` linking to a
+    volume) is the ordinary case and is fine, since the walk opens the root by its whole path. The
+    root itself is opened with `O_NOFOLLOW` like every component below it — `.claude` included —
+    so a home that is *itself* a symlink fails at the walk. That is why the password database's
+    answer is resolved before it is used as a root (`config.machine.anchor_home`); a `--home`, or
+    `HOME` at a terminal, that names a symlink fails there as it did in the release before. The
+    rule below the root is the one `setup` applies to `~/.claude/settings.json`.
     """
     root, relative = harness_link_parts(where, home)
     if not root.is_dir():
@@ -546,15 +549,18 @@ def _withdraw_lapsed(where: Path, store: Store, home: Path) -> list[Path]:
     `home` is one this module makes nothing under, so the narrowest withdrawal there is: only a
     symlink whose own target is this store goes (`_unlink`), a link to anything else is left
     standing, a relative `home` is ignored, and an anchor `harness_anchor` refuses is passed over
-    rather than refused, because a hook never costs a session for a home it does not trust.
+    rather than refused, because a hook never costs a session for a home it does not trust. So is
+    one the walk cannot open — a `home` that is itself a symlink, which the walk never follows,
+    or one it may not search — rather than reported as a link that could not be made.
     """
     if not home.is_absolute():
         return []
     try:
         root, relative = harness_anchor(where, home)
-    except Refusal:
+        removed = _unlink(root, relative, store.path.resolve())
+    except (Refusal, OSError):
         return []
-    return [root / relative] if _unlink(root, relative, store.path.resolve()) else []
+    return [root / relative] if removed else []
 
 
 def attach_main(

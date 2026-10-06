@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.config.machine import (
+    anchor_home,
     machine_config_path,
     override_is_honoured,
     owner_home,
@@ -115,3 +116,16 @@ def test_a_home_the_database_records_as_no_absolute_path_is_no_home(
 ) -> None:
     as_owner_home(monkeypatch, recorded)
     assert passwd_home() is None
+
+
+def test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(real, target_is_directory=True)
+    as_owner_home(monkeypatch, linked)
+    monkeypatch.setenv("HOME", str(linked))
+    assert anchor_home(interactive=False) == real.resolve()
+    assert anchor_home(interactive=True) == linked

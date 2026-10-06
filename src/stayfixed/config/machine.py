@@ -81,6 +81,21 @@ def owner_home(interactive: bool | None = None) -> Path | None:
     return passwd_home()
 
 
+def anchor_home(interactive: bool | None = None) -> Path | None:
+    """`owner_home`, as a root a containment walk opens: the database's answer resolved once.
+
+    `fsops.open_within` opens its root with `O_NOFOLLOW`, so an entry whose directory is itself
+    a symlink (`/Users/me` linking to a volume) is refused there, while the release before read
+    `HOME`, often the real directory, and made the link. The entry is the anchor this module
+    trusts and its symlinks are the machine's, so resolving them changes nothing about whom the
+    root belongs to. `HOME` from a terminal is used as typed, as it always was.
+    """
+    home = owner_home(interactive)
+    if home is None or override_is_honoured(interactive):
+        return home
+    return home.resolve()
+
+
 def homes_agree(env: Mapping[str, str] | None = None) -> bool:
     """Whether `HOME` names the home the password database records, or is not set at all.
 

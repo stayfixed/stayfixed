@@ -1332,3 +1332,51 @@ def test_a_relative_home_and_an_approved_store_are_not_withdrawn_under(
     links = link(tree, store, config, harness=False, withdraw_under=home)
     assert links.revoked == [] and links.withheld is True
     assert approved.is_symlink()
+
+
+@pytest.mark.parametrize("shape", ["a symlink", "unsearchable"])
+def test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
+) -> None:
+    # `HOME` is not trusted, so the walk never follows it when it is itself a symlink, and a home
+    # it may not search is no more its business: either way nothing is withdrawn, and the hook is
+    # not handed a `PartialLink` it would report as links that could not be made. The exact link
+    # behind the symlink is left standing, since only the walk's own path is ever touched.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    real = tmp_path / "real-home"
+    behind = _a_harness_link(real, tree, store.path.resolve())
+    home = tmp_path / "home-the-hook-was-handed"
+    if shape == "a symlink":
+        home.symlink_to(real, target_is_directory=True)
+    else:
+        home = real
+        (real / ".claude").chmod(0o000)
+    try:
+        links = link(tree, store, config, harness=False, withdraw_under=home)
+    finally:
+        (real / ".claude").chmod(0o755)
+    assert links.revoked == []
+    assert behind.is_symlink()
+
+
+def test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An entry naming a symlink (`/Users/me` linking to a volume) is the machine's own layout.
+    # The walk opens its root with `O_NOFOLLOW`, so the database's answer is resolved once before
+    # it is a root; the link is made under the real directory, which is where `HOME` finds it.
+    real = tmp_path / "real-home"
+    real.mkdir()
+    linked = tmp_path / "linked-home"
+    linked.symlink_to(real, target_is_directory=True)
+    as_owner_home(monkeypatch, linked)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    record(store, config)
+    created = link(tree, store, config).created
+    assert harness_memory_path(tree, real) in created
+    assert harness_memory_path(tree, real).resolve() == store.path.resolve()

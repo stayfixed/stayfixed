@@ -2622,7 +2622,7 @@ reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_databa
 [[mutation]]
 name = "the harness link is anchored on HOME off a terminal"
 file = "src/stayfixed/memory/worktree.py"
-before = '    base = owner_home() if home is None else home'
+before = '    base = anchor_home() if home is None else home'
 after = '    base = Path.home() if home is None else home'
 reddens = ["tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal"]
 
@@ -2639,8 +2639,8 @@ reddens = ["tests/memory/test_worktree.py::test_no_home_in_the_database_is_a_ref
 [[mutation]]
 name = "the worktree-link hook makes the harness link where HOME is not the database's home"
 file = "src/stayfixed/memory/hooks.py"
-before = '        home = owner_home(interactive=False) if homes_agree() else None'
-after = '        home = owner_home(interactive=False)'
+before = '        home = anchor_home(interactive=False) if homes_agree() else None'
+after = '        home = anchor_home(interactive=False)'
 reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
 
 [[mutation]]
@@ -2726,3 +2726,12 @@ file = "src/stayfixed/memory/hooks.py"
 before = '                withdraw_under=None if home is not None else _lapsed_link_home(),'
 after = '                withdraw_under=None,'
 reddens = ["tests/memory/test_hooks.py::test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs"]
+
+# A home the withdrawal walk cannot open — itself a symlink, or not searchable — is passed over,
+# never reported to the session as links that could not be made.
+[[mutation]]
+name = "a home the withdrawal cannot open is reported as a failed link"
+file = "src/stayfixed/memory/worktree.py"
+before = '    except (Refusal, OSError):'
+after = '    except Refusal:'
+reddens = ["tests/memory/test_worktree.py::test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing"]

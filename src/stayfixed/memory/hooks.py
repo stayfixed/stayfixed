@@ -86,7 +86,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
-        from stayfixed.config.machine import homes_agree, owner_home
+        from stayfixed.config.machine import anchor_home, homes_agree
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.store import resolve
         from stayfixed.memory.worktree import PartialLink, link
@@ -103,7 +103,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         # never a person at a terminal, so `HOME` does not choose where the harness link goes.
         # Where `HOME` is not that home, the harness looks somewhere else, so the hook makes the
         # tree's links and no harness link (`NO_HARNESS_LINK`).
-        home = owner_home(interactive=False) if homes_agree() else None
+        home = anchor_home(interactive=False) if homes_agree() else None
         try:
             links = link(
                 event.project_root,
