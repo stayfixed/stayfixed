@@ -729,7 +729,7 @@ def _ci_ref(context: Context) -> Row:
     except OSError as exc:
         return Row(
             WARN,
-            f"{WORKFLOW} is there and could not be read ({type(exc).__name__}), so whether it "
+            f"{WORKFLOW} is there and could not be read ({fsops.said(exc)}), so whether it "
             f"pins the same ref as [ci] ref was not checked",
             CI_REF_REMEDY,
         )
@@ -846,7 +846,7 @@ def _diagnostics(context: Context) -> Row:
     except OSError as exc:
         return Row(
             WARN,
-            f"the hook sink's log is there and could not be read ({type(exc).__name__})",
+            f"the hook sink's log is there and could not be read ({fsops.said(exc)})",
             DIAGNOSTICS_REMEDY,
         )
     count = sum(1 for line in raw.splitlines() if _is_record(line))

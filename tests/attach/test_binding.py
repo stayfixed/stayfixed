@@ -16,9 +16,15 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
-from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, binding_for, unlinked_groups
+from stayfixed.attach.binding import (
+    MEMORY_GROUP_ESCAPES,
+    UnreadableRecord,
+    binding_for,
+    unlinked_groups,
+)
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
 from stayfixed.config.paths import PathEscape
@@ -425,6 +431,26 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
     (root / ".claude" / "settings.local.json").unlink()
     with pytest.raises(EntriesError):
         diff_permissions(root, binding)
+
+
+def test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record is read to the read cap (`fsops.read_regular_text`), and one past it stops the
+    # run as any record that cannot be read does. The refusal says why in the reader's words: the
+    # class name it printed before named stayfixed's internals (`TooLarge`) and no condition. The
+    # cap is lowered so the record is small. Mutation (oracle): `mutations/`'s "a binding record
+    # that cannot be read is said by its error's class name" -> `(TooLarge)`.
+    root, store = _project_and_store(tmp_path, recorded="x", origin="x")
+    limit = 4 * 1024
+    record = store.parent / PROJECT_RECORD
+    record.write_text(record.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(UnreadableRecord) as refused:
+        read_binding(root, store=store, machine=_machine(tmp_path, overlay=store.parents[2]))
+    assert str(refused.value).endswith(
+        f"<this project's name>/{PROJECT_RECORD} cannot be read (larger than this reader reads)"
+    )
 
 
 def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_time(

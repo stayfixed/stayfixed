@@ -35,6 +35,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.fsops import said
 from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
@@ -218,7 +219,7 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
         mode = None
     except OSError as exc:
         if not cannot_exist(exc):
-            raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
+            raise Failure(f"{where} cannot be read ({said(exc)})") from exc
         mode = 0
     if mode is not None and not stat.S_ISDIR(mode):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
@@ -345,13 +346,13 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except OSError as exc:
         if cannot_exist(exc):
             return None
-        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
+        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
     if not stat.S_ISREG(found):
         return None
     try:
         recorded = read_binding_record(record)
     except OSError as exc:
-        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
+        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
     except UnicodeDecodeError:
         raise UnreadableRecord(f"{where} is not UTF-8 text") from None
     except UNPARSEABLE as exc:

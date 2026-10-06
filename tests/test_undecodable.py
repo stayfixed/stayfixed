@@ -284,26 +284,26 @@ def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
 # OSError` taken out of that reader -> the case reddens on the `OSError` itself.
 def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).mkdir()
-    with pytest.raises(ConfigError, match=r"cannot be read \(NotRegularFile\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(not a regular file\)"):
         load(tmp_path, machine=tmp_path / "absent.toml")
-    with pytest.raises(ConfigError, match=r"cannot be read \(NotRegularFile\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(not a regular file\)"):
         read_document(tmp_path)
 
 
 def test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `stayfixed.toml` is committed and is the first thing most commands and every hook read, so
-    # it is read to the read cap, as every reader of a committed file reads one, and one past it
-    # is a file that cannot be read rather than one read to its end. The cap is lowered so the
-    # file is small. Mutation (oracle): `mutations/`'s "stayfixed.toml is read with no bound" ->
-    # the document is read.
+    # `stayfixed.toml` is committed and is the first thing most commands and every hook read, so it
+    # is read to the read cap by the bounded reader every committed file is read with, and one past
+    # it is a file that cannot be read rather than one read to its end. The cap is lowered so the
+    # file is small. Mutation (oracle): `mutations/`'s "stayfixed.toml is read with no bound" -> the
+    # document is read.
     limit = 4 * 1024
     (tmp_path / CONFIG_FILE).write_text("#" * (limit + 1), encoding="utf-8")
     monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
     with pytest.raises(ConfigError) as refused:
         read_document(tmp_path)
-    assert str(refused.value) == f"{CONFIG_FILE} cannot be read (TooLarge)"
+    assert str(refused.value) == f"{CONFIG_FILE} cannot be read (larger than this reader reads)"
 
 
 @pytest.mark.parametrize("which", ["machine", "overlay-root", "setup", CONFIG_FILE])
@@ -325,16 +325,16 @@ def test_a_file_without_read_permission_cannot_be_read_and_says_so(
     locked.chmod(0)
     try:
         if which == "machine":
-            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
                 load(tmp_path, machine=machine)
         elif which == "overlay-root":
-            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
                 overlay_root(machine)
         elif which == "setup":
-            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(Permission denied\)"):
                 read_machine(machine)
         else:
-            with pytest.raises(Failure, match=r"cannot be read \(PermissionError\)"):
+            with pytest.raises(Failure, match=r"cannot be read \(Permission denied\)"):
                 _existing(tmp_path)
     finally:
         locked.chmod(0o644)

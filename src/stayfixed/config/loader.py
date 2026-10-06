@@ -43,7 +43,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.fsops import read_regular_text
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
@@ -134,7 +134,9 @@ class ConfigError(Failure):
 # Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
 # a byte and an offset, but the one sentence says what to do about every such file.
 NOT_UTF8 = "{path} is not UTF-8 text; stayfixed reads it only as UTF-8"
-# The error's class name and not its message, which repeats the path and adds nothing to act on.
+# What the error says, in `fsops.said`'s words, and not its message, which repeats the path and
+# adds nothing to act on; never its class's name, which for a reader's own refusal is a name of
+# stayfixed's internals (`fsops.TooLarge`, `fsops.NotRegularFile`) and names no condition.
 UNREADABLE = "{path} cannot be read ({error})"
 NOT_THERE = "{path} does not exist; run `stayfixed init` first"
 
@@ -191,7 +193,7 @@ def read_machine_toml(path: Path) -> dict[str, Any] | None:
     except UnicodeDecodeError:
         raise MachineConfigError(NOT_UTF8.format(path=path)) from None
     except OSError as exc:
-        raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None
+        raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None
     try:
         return tomllib.loads(text)
     except UNPARSEABLE as exc:
@@ -528,7 +530,7 @@ def read_document(root: Path) -> str | None:
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
     except OSError as exc:
-        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
 
 
 def loads(
