@@ -1113,8 +1113,8 @@ def test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Each manifest goes through the one JSON object reader and its depth bound; one past it is
-    # one the owner is not read from, and the next is asked. Mutation (declared): "the overlay's
-    # owner is read with a bare json.loads".
+    # one the owner is not read from, and the next is asked. Mutation (declared): "an overlay
+    # manifest is read with a bare json.loads".
     root = _an_overlay(tmp_path)
     init_instance(root, "acme", runner=Recorder())
     path = root / ".claude-plugin" / "plugin.json"

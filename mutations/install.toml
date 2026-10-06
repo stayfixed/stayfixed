@@ -235,20 +235,36 @@ reddens = [
   "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
 ]
 
-# The probe answers every way its manifests can fail to parse, because what it returns is a
-# refusal and what escapes it is an internal error: a manifest nested past the parser or holding an
-# integer longer than it converts is valid JSON that `json.loads` meets with no `JSONDecodeError`,
-# and either ended `stayfixed setup --overlay` in one.
+# The overlay's manifests have one reader, `naming.manifest`, for the probe, the owner and the
+# version floor. It answers every way a manifest can fail to parse, because what the probe returns
+# is a refusal and what escapes it is an internal error: a manifest nested past the parser or
+# holding an integer longer than it converts is valid JSON that `json.loads` meets with no
+# `JSONDecodeError`, and either ended `stayfixed setup --overlay` in one, while the owner's reader
+# must ask the next manifest past one it cannot read. The long integer has no case here: it is a
+# `ValueError` out of `json.loads` too, which every caller of the one reader reads as a manifest it
+# cannot read, so only the nesting tells this reader from a bare parse.
 [[mutation]]
-name = "the overlay probe lets a manifest past the parser escape"
-file = "src/stayfixed/overlay/identity.py"
-before = "            document = json_object(text, str(row.path), error=_Unreadable, shape=_NotAnObject)"
-after = "            document = __import__(\"json\").loads(text)"
+name = "an overlay manifest is read with a bare json.loads"
+file = "src/stayfixed/overlay/naming.py"
+before = "    return json_object(text, relative, error=ValueError, shape=NotAnObject)"
+after = '    return __import__("json").loads(text)'
 reddens = [
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[long-number-.claude-plugin/plugin.json]",
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[long-number-.claude-plugin/marketplace.json]",
   "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/plugin.json]",
   "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/marketplace.json]",
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
+]
+
+# And it reads a regular file only: two of its three callers read the plugin manifest with a bare
+# `read_text`, so a FIFO there blocked the SessionStart hook (`requires_of`) and `overlay upgrade`
+# (`owner_of`) for good.
+[[mutation]]
+name = "an overlay manifest is read without asking what it is"
+file = "src/stayfixed/overlay/naming.py"
+before = "    text = read_regular_text(root / relative)"
+after = '    text = (root / relative).read_text(encoding="utf-8")'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_fifo_at_the_plugin_manifest_is_unreadable_to_all_three_readers_without_waiting",
 ]
 
 # The actual control over a named overlay path: a path outside the repository that already
@@ -2580,17 +2596,6 @@ after = "    document = json.loads(text)"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[nested]",
   "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[long-number]",
-]
-
-[[mutation]]
-name = "the overlay's owner is read with a bare json.loads"
-file = "src/stayfixed/overlay/naming.py"
-before = "            document = json_object(text, row.path, error=ValueError)"
-after = "            document = json.loads(text)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[long]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
 ]
 
 [[mutation]]

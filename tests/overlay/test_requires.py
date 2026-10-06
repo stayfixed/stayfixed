@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from stayfixed.overlay.api import requires_of, satisfies
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
@@ -69,6 +74,41 @@ def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -
     for body in (NESTED, '{"n": ' + LONG_NUMBER + "}"):
         (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
         assert requires_of(root) is None, body[:8]
+
+
+def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_all_three_readers_without_waiting(
+    tmp_path: Path,
+) -> None:
+    # The overlay's plugin manifest had three readers, and two read it with `read_text`, which
+    # waits on a FIFO for a writer that never comes: `requires_of`, which the SessionStart hook
+    # asks, and `owner_of`, which `overlay upgrade` asks. All three read it through
+    # `naming.manifest`, a regular file only, so a FIFO is nothing declared, no owner, and not the
+    # overlay layout. In a child under a timeout, so a regression fails this case rather than
+    # hanging. Mutation (oracle): `mutations/`'s "an overlay manifest is read without asking what
+    # it is" -> the child waits and this times out.
+    root = overlay_with(tmp_path / "overlay", ">=0.1.0")
+    (root / PLUGIN_MANIFEST).unlink()
+    os.mkfifo(root / PLUGIN_MANIFEST)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.overlay.api import requires_of\n"
+        "from stayfixed.overlay.identity import overlay_fault\n"
+        "from stayfixed.overlay.naming import owner_of\n"
+        "root = Path(sys.argv[1])\n"
+        "print(requires_of(root), owner_of(root), overlay_fault(root) is not None)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("a reader of the overlay's plugin manifest waited on a FIFO")
+    assert done.stdout == "None None True\n", done.stderr
 
 
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:

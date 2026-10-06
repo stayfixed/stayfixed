@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from stayfixed.jsonobject import json_object
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
+from stayfixed.overlay.naming import manifest
 from stayfixed.semver import COMPONENT, VERSION
 
 # A floor is built from `semver`'s component, so a declared floor and a running version bound each
@@ -28,9 +28,10 @@ def requires_of(root: Path) -> str | None:
     every one of those is "nothing declared", and none of them is this reader's business to
     tell apart.
     """
-    path = root / PLUGIN_MANIFEST
     try:
-        raw = json_object(path.read_text(encoding="utf-8"), PLUGIN_MANIFEST, error=ValueError)
+        # `naming.manifest`, the one reader of an overlay's manifests: a regular file only, so a
+        # FIFO there cannot block the SessionStart hook this is asked on.
+        raw = manifest(root, PLUGIN_MANIFEST)
     except (OSError, ValueError):  # bytes that are not UTF-8 are a `ValueError` too
         return None
     head = raw.get("stayfixed")

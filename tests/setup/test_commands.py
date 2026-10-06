@@ -231,8 +231,9 @@ def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_th
     # the refusal is about the one asked. Nothing is recorded, and the runner is never reached:
     # the probe runs above every write.
     #
-    # Mutation (oracle): `mutations/`'s "the overlay probe lets a manifest past the parser escape"
-    # -> the internal error comes back and every case reddens.
+    # Mutation (oracle): `mutations/`'s "an overlay manifest is read with a bare json.loads" -> the
+    # internal error comes back and the nested cases redden; a long integer is a `ValueError` the
+    # probe reads as unreadable either way.
     overlay = tmp_path / "overlay"
     (overlay / ".claude-plugin").mkdir(parents=True)
     (overlay / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), "utf-8")

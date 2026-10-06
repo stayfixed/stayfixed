@@ -3,8 +3,10 @@ that owner is read back.
 
 One module, so the three places that need the rule — `identity` asking whether a tree is an
 overlay, `create.init_instance` renaming the manifests, and `upgrade` refreshing them — read it
-from one table rather than each keeping an ordered copy. A leaf: it imports no command module,
-so `upgrade` reaches the rename without importing `create`, the module that runs `gh`.
+from one table rather than each keeping an ordered copy. And one reader of the manifests
+themselves, `manifest`, for the probe, the owner and the version floor `requires` reads. A leaf:
+it imports no command module, so `upgrade` reaches the rename without importing `create`, the
+module that runs `gh`.
 
 `NAMED` is the table. Each row is a manifest, the name the shipped template gives it, the key
 its account goes under (a marketplace has to name an `owner` for `claude plugin validate` to
@@ -19,10 +21,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Failure
+from stayfixed.fsops import read_regular_text
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.overlay.layout import CODEX_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
@@ -85,6 +88,29 @@ def claims(value: object, expected: str) -> bool:
     return value == expected or owner_in(value, expected) is not None
 
 
+class NotAnObject(ValueError):
+    """A manifest that parses as JSON and is not an object, so it names nothing. A `ValueError`, so
+    a reader with no sentence of its own for it reads it as any manifest it cannot read."""
+
+
+def manifest(root: Path, relative: str) -> dict[str, Any]:
+    """The overlay manifest at `root/relative` as a JSON object: the one reader of an overlay's
+    manifests, for `requires_of`, `owner_of` and `identity.overlay_fault`.
+
+    Read through `fsops.read_regular_text`: a regular file only, followed through a link, and to
+    the read cap. Two of the three read it with a bare `read_text`, so a FIFO at
+    `.claude-plugin/plugin.json` blocked them for good, and `requires_of` is on the SessionStart
+    hook path. Parsed through `jsonobject`, the one reader of a JSON object, so a manifest nested
+    past the parser or holding an integer longer than it converts is one this cannot read.
+
+    Raises `OSError` for one that cannot be read -- absent, not a regular file, past the cap --
+    and `ValueError` for one that is not UTF-8 or not JSON, past the parser included, or
+    `NotAnObject` for JSON that is not an object. Each caller says what those mean to it.
+    """
+    text = read_regular_text(root / relative)
+    return json_object(text, relative, error=ValueError, shape=NotAnObject)
+
+
 def owner_of(root: Path) -> str | None:
     """The account `overlay init` named this overlay after, or `None` where it named nobody.
 
@@ -94,11 +120,9 @@ def owner_of(root: Path) -> str | None:
     """
     for row in NAMED:
         try:
-            # Through `jsonobject`, the one reader of a JSON object: a manifest that is not one,
-            # or is past the parser or its depth bound, is one this cannot read, and the next is
-            # asked. `UnicodeDecodeError` is a `ValueError` too.
-            text = (root / row.path).read_text(encoding="utf-8")
-            document = json_object(text, row.path, error=ValueError)
+            # Through `manifest`: one that cannot be read, is not an object, or is past the parser
+            # or its depth bound is one this cannot read, and the next is asked.
+            document = manifest(root, row.path)
         except (OSError, ValueError):
             continue
         name = document.get("name")

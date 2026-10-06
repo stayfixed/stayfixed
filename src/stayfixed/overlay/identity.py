@@ -38,17 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed.errors import Refusal
-from stayfixed.jsonobject import json_object
-from stayfixed.overlay.naming import NAMED, SEGMENT, claims
-
-
-class _Unreadable(Exception):
-    """A manifest that is not JSON, or is JSON past this interpreter's parser. Never printed:
-    `overlay_fault` says which file in its own words."""
-
-
-class _NotAnObject(Exception):
-    """A manifest that parses and is not an object, so it names nothing."""
+from stayfixed.overlay.naming import NAMED, SEGMENT, NotAnObject, claims, manifest
 
 
 def segment(label: str, value: str) -> str:
@@ -76,19 +66,19 @@ def overlay_fault(root: Path) -> str | None:
         path = root / row.path
         if not path.is_file():
             return f"{root} does not carry the overlay layout ({row.path} is missing)"
-        # Through `jsonobject`, whose parser-limit arms are the point: a manifest nested past the
-        # parser or holding an integer longer than it converts is valid JSON that `json.loads`
-        # meets with no `JSONDecodeError`, and it ended `setup --overlay` in an internal error. A
-        # manifest that parses and is not an object keeps this probe's own sentence, which says
-        # what it fails to name.
+        # Through `naming.manifest`, the one reader of an overlay's manifests, whose parser-limit
+        # arms are the point: a manifest nested past the parser or holding an integer longer than
+        # it converts is valid JSON that `json.loads` meets with no `JSONDecodeError`, and it ended
+        # `setup --overlay` in an internal error. A manifest that parses and is not an object keeps
+        # this probe's own sentence, which says what it fails to name. Never printed: the sentence
+        # says which file, in this probe's words.
         document: dict[str, Any] | None
         try:
-            text = path.read_text(encoding="utf-8")
-            document = json_object(text, str(row.path), error=_Unreadable, shape=_NotAnObject)
-        except (OSError, UnicodeDecodeError, _Unreadable):
-            return f"{root} carries a {row.path} that cannot be read as JSON"
-        except _NotAnObject:
+            document = manifest(root, row.path)
+        except NotAnObject:
             document = None
+        except (OSError, ValueError):
+            return f"{root} carries a {row.path} that cannot be read as JSON"
         if document is None or not claims(document.get("name"), row.name):
             return (
                 f"{root} carries a {row.path} that does not name a stayfixed overlay; its `name` "
