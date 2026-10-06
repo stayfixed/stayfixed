@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.paths import PathEscape
 from stayfixed.scaffold.manifest import (
     FORMAT,
@@ -83,6 +84,23 @@ def test_a_malformed_manifest_refuses_rather_than_reading_as_empty(tmp_path: Pat
     (tmp_path / MANIFEST_PATH).write_text("{not json", encoding="utf-8")
     with pytest.raises(ManifestError):
         Manifest.read(tmp_path)
+
+
+def test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The manifest is committed, so a clone chooses its size: it is read to the read cap, as every
+    # reader of a committed file is, and one past it is unreadable, named as the project names it
+    # and never by the path it was opened by. The cap is lowered so the file is small. Mutation
+    # (oracle): `mutations/`'s "the footprint manifest is read with no bound" -> it is read whole.
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    limit = 4 * 1024
+    path = tmp_path / MANIFEST_PATH
+    path.write_text(path.read_text(encoding="utf-8") + " " * limit, encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(ManifestError) as refused:
+        Manifest.read(tmp_path)
+    assert str(refused.value) == f"{MANIFEST_PATH} is unreadable: larger than this reader reads"
 
 
 def test_an_unknown_kind_refuses(tmp_path: Path) -> None:

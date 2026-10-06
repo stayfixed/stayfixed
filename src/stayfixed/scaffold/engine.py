@@ -40,7 +40,7 @@ from typing import Protocol
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import PROJECT_NAME, Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import UnsafePath, path_key, remove_within, write_within
+from stayfixed.fsops import UnsafePath, path_key, read_regular_text, remove_within, write_within
 from stayfixed.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from stayfixed.scaffold.manifest import Kind, Location, Manifest, Record, digest
@@ -208,10 +208,13 @@ def _read(path: Path) -> tuple[str | None, str | None]:
     every lone `\\r` into `\\n` before `regions.py` is reached, and `regions.py` is the module
     promising to return every byte outside its own markers unchanged. Translating on the way in
     makes that promise false for a CRLF file no matter how carefully the rewrite is done.
+
+    To the read cap, a regular file only (`fsops.read_regular_text`): the file is one a clone
+    commits, so one past the cap, or a FIFO a local process left there, is this artifact's
+    refusal rather than a read to its end or a wait on a writer.
     """
     try:
-        with path.open(encoding="utf-8", newline="") as stream:
-            return stream.read(), None
+        return read_regular_text(path, newline=""), None
     except FileNotFoundError:
         return None, None
     except (OSError, UnicodeDecodeError) as exc:

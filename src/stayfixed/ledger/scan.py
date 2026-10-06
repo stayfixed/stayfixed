@@ -29,7 +29,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.fsops import said
+from stayfixed.fsops import read_regular_bytes, said
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
 
@@ -209,7 +209,9 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         try:
             if not stat.S_ISREG(path.lstat().st_mode):
                 continue
-            raw = path.read_bytes()
+            # To the read cap, as every reader of a committed file reads one: a file past it is
+            # one this scan could not read, never one read to its end.
+            raw = read_regular_bytes(path)
         except OSError as error:
             yield Scanned(path, relative, None, said(error))
             continue

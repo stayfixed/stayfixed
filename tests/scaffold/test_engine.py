@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from stayfixed import profiles
+from stayfixed import fsops, profiles
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
@@ -530,6 +532,58 @@ def test_an_unreadable_file_refuses_only_its_own_artifact(tmp_path: Path) -> Non
     )
     assert [a.artifact_id for a in result.actions] == ["good"]
     assert [r.artifact_id for r in result.refusals] == ["agents-md"]
+
+
+def test_a_file_past_the_read_cap_refuses_only_its_own_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An artifact's file is one a clone commits, so the engine reads it to the read cap, as every
+    # reader of a committed file reads one, and a file past it is a refusal for its own artifact,
+    # never one read to its end. The cap is lowered so the file is small. Mutation (oracle):
+    # `mutations/`'s "the scaffold engine reads an artifact's file with no bound" -> it is read.
+    limit = 4 * 1024
+    (tmp_path / "AGENTS.md").write_text("BODY\n" + "#" * limit, encoding="utf-8")
+    config = a_config(tmp_path)
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    result = plan(tmp_path, config, [a_template(), a_template(id="good", target="GOOD.md")])
+    assert [a.artifact_id for a in result.actions] == ["good"]
+    assert [r.artifact_id for r in result.refusals] == ["agents-md"]
+    assert "larger than this reader reads" in result.refusals[0].reason
+
+
+def test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on(tmp_path: Path) -> None:
+    # A FIFO cannot be committed, but a local process can leave one where an artifact goes, and
+    # the engine opened it for reading and waited for a writer that never came: `init` and
+    # `upgrade` hung. It is read as a regular file only, so the FIFO is this artifact's refusal. In
+    # a child under a timeout, so a regression fails this case rather than hanging. Mutation
+    # (oracle): `mutations/`'s "the scaffold engine reads an artifact's file with no bound" -> the
+    # child waits and this times out.
+    a_config(tmp_path)
+    os.mkfifo(tmp_path / "AGENTS.md")
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.config.loader import load\n"
+        "from stayfixed.scaffold.engine import plan\n"
+        "from stayfixed.scaffold.manifest import Kind\n"
+        "from stayfixed.scaffold.model import Template\n"
+        "root = Path(sys.argv[1])\n"
+        "template = Template(id='agents-md', kind=Kind.TEMPLATE, target='AGENTS.md',\n"
+        "    source='project/AGENTS.md', render=lambda: 'BODY\\n')\n"
+        "config = load(root, machine=root / 'absent.toml')\n"
+        "print([r.artifact_id for r in plan(root, config, [template]).refusals])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the engine waited on a FIFO at an artifact's place")
+    assert done.stdout == "['agents-md']\n", done.stderr
 
 
 def test_a_doubled_region_marker_refuses_only_its_own_artifact(tmp_path: Path) -> None:

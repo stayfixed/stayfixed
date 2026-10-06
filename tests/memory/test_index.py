@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.index import (
     EXTRA_TITLE,
     INDEX_NAME,
+    _appended,
     check_index,
     entries_in,
     index_source,
@@ -284,6 +286,40 @@ def test_an_index_that_is_not_utf8_is_drift_and_not_a_crash(tmp_path: Path) -> N
     path = write_index(store, config, render_index(reconciled, config, store))
     path.write_bytes(b"\xff\xfe# Memory\n")
     assert check_index(store, config, reconciled).drifted is True
+
+
+def test_an_index_past_the_read_cap_is_drift_and_never_read_to_its_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The index is a file a clone can commit, so it is read to the read cap, as every reader of a
+    # committed file is, and one past it is not what the render writes: drift, which `stayfixed
+    # memory index` replaces. The cap is lowered to one byte under the render, the one case where
+    # a bounded read and a whole one give different answers: read whole, the file equals the
+    # render. Mutation (oracle): `mutations/`'s "the index check reads the index with no bound" ->
+    # it is not drift.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
+    write_index(store, config, text)
+    assert check_index(store, config, reconciled).drifted is False
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text.encode("utf-8")) - 1)
+    assert check_index(store, config, reconciled).drifted is True
+
+
+def test_an_index_past_the_read_cap_hands_the_harvest_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The harvest reads the same file the check does, and to the same cap: an index past it
+    # contributes no entry rather than being read to its end. The cap is lowered to one byte under
+    # the render, which read whole hands back every entry. Mutation (oracle): `mutations/`'s "the
+    # harvest reads the index with no bound" -> the entries come back.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text)
+    assert _appended(path) != {}
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text.encode("utf-8")) - 1)
+    assert _appended(path) == {}
 
 
 def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
+from stayfixed import fsops
 from stayfixed.assess import probes
 from stayfixed.assess.model import WHERE_CAP, Item
 from stayfixed.assess.probes import (
@@ -290,6 +291,26 @@ def test_a_settings_file_that_is_not_utf_8_is_named_and_not_fatal(tmp_path: Path
     root = _repo(tmp_path, 'agents = ["claude"]')
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.json").write_bytes(b"\xff\xfe{}")
+    assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
+        (COULD_NOT_LOOK, (".claude/settings.json",))
+    ]
+
+
+def test_a_settings_file_past_the_read_cap_is_one_the_probe_could_not_look_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A committed settings file is read to the read cap, as `doctor`'s `hook-entries` reads the
+    # same file, and one past it is "could not look", never read to its end. The cap is lowered so
+    # the file is small. Mutation (oracle): `mutations/`'s "the foreign-hook probe reads a settings
+    # file with no bound" -> the entry is read and listed as foreign.
+    root = _repo(tmp_path, 'agents = ["claude"]')
+    limit = 4 * 1024
+    _write(
+        root,
+        ".claude/settings.json",
+        _settings("echo foreign")[:-1] + ', "pad": "' + "x" * limit + '"}',
+    )
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
     assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
         (COULD_NOT_LOOK, (".claude/settings.json",))
     ]

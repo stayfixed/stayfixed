@@ -1466,14 +1466,18 @@ def _ignore_region_remainder(root: Path) -> str | None:
     tree were gone, with the ledger still present: `doctor` would report the repository attached,
     and a second `detach` would fail at the same line. A region that cannot be withdrawn is
     knowable at the start, and so is a file that cannot be read.
+
+    Read as `_planned_ignore_region` reads it (`fsops.read_regular_text`), so a `.gitignore` past
+    the read cap that stops an `attach` stops the `detach` beside it too, rather than being read
+    to its end; and named as the project names it, never by the path it was opened by.
     """
     path = root / GITIGNORE
     if not path.is_file():
         return None
     try:
-        text = path.read_text(encoding="utf-8")
+        text = fsops.read_regular_text(path)
     except OSError as exc:
-        raise Failure(f"{GITIGNORE} cannot be read: {exc}") from exc
+        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
         raise Failure(f"{GITIGNORE} is not UTF-8 text") from None
     remaining = _in_gitignore(drop, text, IGNORE_REGION, Style.HASH)

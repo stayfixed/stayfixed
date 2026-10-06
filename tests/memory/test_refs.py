@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
@@ -85,6 +86,25 @@ def test_a_reference_to_a_deleted_file_is_reported_and_a_live_one_is_not(tmp_pat
     root, config = project(tmp_path)
     note(root, "developer", "a", "see `src/widget/boot.py`\n\nand `src/gone.py`\n")
     assert findings(root, config) == [("developer/a.md", 10, "src/gone.py", "dead-reference")]
+
+
+def test_a_note_that_grew_past_the_read_cap_after_the_walk_is_a_failure_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk reads each note to the read cap, and the line reader reads it again for its line
+    # numbers: to the same cap, so a note that is past it by then is a failure naming the note,
+    # never one read to its end. The cap is lowered between the two reads, which is how a note
+    # that grew in between reaches the second one. Mutation (oracle): `mutations/`'s "the
+    # reference check reads a note again with no bound" -> nothing is refused.
+    root, config = project(tmp_path)
+    path = note(root, "developer", "a", "see `src/gone.py`\n")
+    store = resolve(root, config, machine=root.parent / "m.toml")
+    assert store is not None
+    walked = walk(store.path, config.memory.groups)
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(path.read_bytes()) - 1)
+    with pytest.raises(Failure) as refused:
+        unresolved(root, config, store, walked)
+    assert str(refused.value) == "a.md cannot be read (larger than this reader reads)"
 
 
 def test_shorthand_under_a_source_root_resolves(tmp_path: Path) -> None:

@@ -1795,8 +1795,8 @@ reddens = [
 [[mutation]]
 name = "memory refs names a note that stopped decoding unescaped"
 file = "src/stayfixed/memory/refs.py"
-before = "{quoted(note.path.name)}"
-after = "{note.path.name}"
+before = "{quoted(note.path.name)} is not valid UTF-8"
+after = "{note.path.name} is not valid UTF-8"
 reddens = [
   "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
 ]
@@ -2544,6 +2544,48 @@ before = '        text = read_regular_text(path, newline="")'
 after = '        text = path.read_bytes().decode("utf-8")'
 reddens = [
   "tests/memory/test_notes.py::test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read",
+]
+
+# The index is a file a clone can commit: `memory index --check` reads it to the read cap, and one
+# past it is drift, never read to its end.
+[[mutation]]
+name = "the harvest reads the index with no bound"
+file = "src/stayfixed/memory/index.py"
+before = "        text = read_regular_text(path)\n    except (OSError, UnicodeDecodeError):\n        return {}"
+after = "        text = path.read_text(encoding=\"utf-8\")\n    except (OSError, UnicodeDecodeError):\n        return {}"
+reddens = [
+  "tests/memory/test_index.py::test_an_index_past_the_read_cap_hands_the_harvest_nothing",
+]
+
+# The reference check reads each note a second time for its line numbers, to the cap the walk read
+# it to, and a note past it by then is a failure naming it.
+[[mutation]]
+name = "the reference check reads a note again with no bound"
+file = "src/stayfixed/memory/refs.py"
+before = "        text = read_regular_text(note.path)"
+after = '        text = note.path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_grew_past_the_read_cap_after_the_walk_is_a_failure_naming_it",
+]
+
+# The reference scan reads files a clone commits: to the read cap, and a file past it is one the
+# scan could not read, never one read to its end.
+[[mutation]]
+name = "the reference scan reads a file with no bound"
+file = "src/stayfixed/ledger/scan.py"
+before = "            raw = read_regular_bytes(path)"
+after = "            raw = path.read_bytes()"
+reddens = [
+  "tests/ledger/test_scan.py::test_a_file_past_the_read_cap_is_one_the_scan_could_not_read",
+]
+
+[[mutation]]
+name = "the index check reads the index with no bound"
+file = "src/stayfixed/memory/index.py"
+before = "        current = read_regular_text(path) if path.is_file() else None"
+after = '        current = path.read_text(encoding="utf-8") if path.is_file() else None'
+reddens = [
+  "tests/memory/test_index.py::test_an_index_past_the_read_cap_is_drift_and_never_read_to_its_end",
 ]
 
 [[mutation]]

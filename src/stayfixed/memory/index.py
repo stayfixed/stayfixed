@@ -21,7 +21,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
-from stayfixed.fsops import write_atomically
+from stayfixed.fsops import TooLarge, read_regular_text, write_atomically
 from stayfixed.memory.notes import (
     UNRANKED,
     Note,
@@ -185,7 +185,8 @@ def _appended(path: Path | None) -> dict[str, str]:
     if path is None or not path.is_file():
         return {}
     try:
-        text = path.read_text(encoding="utf-8")
+        # To the read cap, as `check_index` reads the same file.
+        text = read_regular_text(path)
     except (OSError, UnicodeDecodeError):
         return {}
     return {target: title for title, target in entries_in(text)}
@@ -506,8 +507,9 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
     text = render_index(reconciled, config, store)
     path = _destination(store, config)
     try:
-        current = path.read_text(encoding="utf-8") if path.is_file() else None
-    except UnicodeDecodeError:
+        # To the read cap, as every reader of a file a clone can commit reads it.
+        current = read_regular_text(path) if path.is_file() else None
+    except (UnicodeDecodeError, TooLarge):
         # Not what the render writes, whatever else it holds: drifted, and `stayfixed memory
         # index` replaces it.
         current = None

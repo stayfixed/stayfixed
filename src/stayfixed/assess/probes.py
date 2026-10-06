@@ -38,6 +38,7 @@ from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import Severity
+from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
 from stayfixed.scaffold import EntriesError, judged_entries
@@ -180,7 +181,9 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
     for relative in sorted({s for h in harnesses for s in h.settings}):
         try:
             path = contained(context.root, relative)
-            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+            # To the read cap, as `doctor` reads the same file: a committed one past it is a file
+            # this probe could not look at, never one read to its end.
+            text = read_regular_text(path) if path.is_file() else ""
             # Raises `EntriesError` for a shape `doctor` names as one it could not read.
             walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
@@ -432,9 +435,12 @@ def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
             path = contained(context.root, relative)
             if not _exact_file(path):
                 continue
-            if path.stat().st_size >= CODEOWNERS_MAX_BYTES:
+            # Read to one byte under GitHub's limit, and a file that has that byte is one GitHub
+            # does not load; a regular file only, so no committed link reads on past it.
+            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 1)
+            if over:
                 return Looked((_UNOWNED,))  # GitHub does not load it
-            return relative, path.read_bytes().decode("utf-8")
+            return relative, content.decode("utf-8")
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
     return Looked((_UNOWNED,))

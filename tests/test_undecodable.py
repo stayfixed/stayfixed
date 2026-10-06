@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.attach import binding, permissions, write
 from stayfixed.attach.binding import Binding
 from stayfixed.config.layout import ATTACH_LEDGER
@@ -283,10 +284,26 @@ def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
 # OSError` taken out of that reader -> the case reddens on the `OSError` itself.
 def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).mkdir()
-    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(NotRegularFile\)"):
         load(tmp_path, machine=tmp_path / "absent.toml")
-    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+    with pytest.raises(ConfigError, match=r"cannot be read \(NotRegularFile\)"):
         read_document(tmp_path)
+
+
+def test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `stayfixed.toml` is committed and is the first thing most commands and every hook read, so
+    # it is read to the read cap, as every reader of a committed file reads one, and one past it
+    # is a file that cannot be read rather than one read to its end. The cap is lowered so the
+    # file is small. Mutation (oracle): `mutations/`'s "stayfixed.toml is read with no bound" ->
+    # the document is read.
+    limit = 4 * 1024
+    (tmp_path / CONFIG_FILE).write_text("#" * (limit + 1), encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(ConfigError) as refused:
+        read_document(tmp_path)
+    assert str(refused.value) == f"{CONFIG_FILE} cannot be read (TooLarge)"
 
 
 @pytest.mark.parametrize("which", ["machine", "overlay-root", "setup", CONFIG_FILE])

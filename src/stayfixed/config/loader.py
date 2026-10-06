@@ -43,6 +43,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
+from stayfixed.fsops import read_regular_text
 from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
@@ -516,11 +517,12 @@ def read_document(root: Path) -> str | None:
     `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
     which keeps every byte but the values it sets, and universal-newline translation would have
     rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
-    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal.
+    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal; then read
+    to the read cap, a regular file only (`fsops.read_regular_text`), as every reader of a
+    committed file reads one.
     """
     try:
-        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
-            return stream.read()
+        return read_regular_text(contained(root, CONFIG_FILE), newline="")
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:

@@ -1222,10 +1222,57 @@ reddens = [
 [[mutation]]
 name = "the manifest reader lets undecodable bytes out as a crash again"
 file = "src/stayfixed/scaffold/manifest.py"
-before = "        except (OSError, UnicodeDecodeError) as exc:"
-after = "        except OSError as exc:"
+before = """        except UnicodeDecodeError as exc:
+            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
+"""
+after = ""
 reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# `stayfixed.toml` is committed and read by every command and hook: to the read cap, a regular file
+# only, and one past the cap cannot be read.
+[[mutation]]
+name = "stayfixed.toml is read with no bound"
+file = "src/stayfixed/config/loader.py"
+before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="")'
+after = """        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
+            return stream.read()"""
+reddens = [
+  "tests/test_undecodable.py::test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so",
+]
+
+# An artifact's file is one a clone commits: the engine reads it to the read cap, a regular file
+# only, and one past the cap is that artifact's refusal.
+[[mutation]]
+name = "the scaffold engine reads an artifact's file with no bound"
+file = "src/stayfixed/scaffold/engine.py"
+before = '        return read_regular_text(path, newline=""), None'
+after = """        with path.open(encoding="utf-8", newline="") as stream:
+            return stream.read(), None"""
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_file_past_the_read_cap_refuses_only_its_own_artifact",
+  "tests/scaffold/test_engine.py::test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on",
+]
+
+# A clone chooses the manifest's size too: it is read to the read cap, and a fault is said without
+# the path it was opened by.
+[[mutation]]
+name = "the footprint manifest is read with no bound"
+file = "src/stayfixed/scaffold/manifest.py"
+before = "            text = read_regular_text(path)"
+after = '            text = path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
+]
+
+[[mutation]]
+name = "the footprint manifest's read refusal prints the path it opened"
+file = "src/stayfixed/scaffold/manifest.py"
+before = 'raise ManifestError(f"{MANIFEST_PATH} is unreadable: {said(exc)}") from exc'
+after = 'raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc'
+reddens = [
+  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
 ]
 
 # The ledger is tracked, so a clone can commit one nested past the parser or holding an integer

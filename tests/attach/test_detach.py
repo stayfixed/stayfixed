@@ -595,6 +595,31 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     assert (root / "docs" / "memory" / "developer").is_symlink()
 
 
+def test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` reads `.gitignore` to the read cap, and `detach` read the same file whole: a
+    # `.gitignore` past the cap stopped an `attach` and was read to its end by the `detach` beside
+    # it. Both read it through `fsops.read_regular_text` now, and `detach` refuses it above the
+    # first withdrawal, naming the file as the project names it and never by the path it opened.
+    # The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s "detach reads
+    # .gitignore with no bound" -> the region is withdrawn.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    ignore = root / GITIGNORE
+    assert extract(ignore.read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH) is not None
+    limit = 16 * 1024
+    ignore.write_text(ignore.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == ".gitignore cannot be read (larger than this reader reads)"
+    assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
+
+
 def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
     # `docs/cli.md` promises the round trip is byte-for-byte, and the withdrawal removed the
     # file whenever what remained was blank — so a `.gitignore` holding one newline before the

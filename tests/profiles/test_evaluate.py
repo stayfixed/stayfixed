@@ -45,6 +45,24 @@ def test_present_reports_only_when_no_locator_resolves(tmp_path: Path) -> None:
     assert evaluate(_profile(check), tmp_path) == []
 
 
+def test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A profile reads configuration files, each held to `_TEXT_CAP`: one at the cap is read, one
+    # past it reads as no file. The cap is lowered so the files are small. Mutations (oracle):
+    # `mutations/`'s "a profile reads a configuration file past its cap" -> the longer one is
+    # read; "a profile refuses a configuration file at its cap" -> the shorter one is not.
+    check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
+    text = "[tool]\nchecker = 1\n"
+    (tmp_path / "a.toml").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(
+        importlib.import_module("stayfixed.profiles.evaluate"), "_TEXT_CAP", len(text)
+    )
+    assert evaluate(_profile(check), tmp_path) == []
+    (tmp_path / "a.toml").write_text(text + "#", encoding="utf-8")
+    assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]
+
+
 def test_absent_reports_the_locators_whose_value_matches(tmp_path: Path) -> None:
     check = _check(
         CheckKind.ABSENT,

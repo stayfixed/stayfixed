@@ -2240,6 +2240,30 @@ reddens = [
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
 ]
 
+# `detach` reads `.gitignore` as `attach` does, to the read cap, so a file past it that stops one
+# stops the other above its first withdrawal; and names it as the project does.
+[[mutation]]
+name = "detach reads .gitignore with no bound"
+file = "src/stayfixed/attach/write.py"
+before = """        text = fsops.read_regular_text(path)
+    except OSError as exc:
+        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc"""
+after = """        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+[[mutation]]
+name = "detach's .gitignore refusal prints the path it opened"
+file = "src/stayfixed/attach/write.py"
+before = 'raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc'
+after = 'raise Failure(f"{GITIGNORE} cannot be read ({exc})") from exc'
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
 # In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
 # `detach` copies the parsed settings document and compares what is left with it, and both recurse
 # as the encoder does, so either overflowing is the reader's refusal of a document nested too deep.

@@ -25,6 +25,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
 from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
@@ -119,7 +120,10 @@ def _lines(note: Note) -> list[tuple[int, str]]:
     never as an internal error (2).
     """
     try:
-        text = note.path.read_text(encoding="utf-8")
+        # To the read cap, as the walk read it: a note past it by now is named, never read whole.
+        text = read_regular_text(note.path)
+    except OSError as exc:
+        raise Failure(f"{quoted(note.path.name)} cannot be read ({said(exc)})") from exc
     except UnicodeDecodeError as exc:
         raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))

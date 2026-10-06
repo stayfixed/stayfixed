@@ -968,12 +968,22 @@ reddens = [
 [[mutation]]
 name = "the code-owners file is read with universal newlines"
 file = "src/stayfixed/assess/probes.py"
-before = '            return relative, path.read_bytes().decode("utf-8")'
-after = '            return relative, path.read_text(encoding="utf-8")'
+before = '            return relative, content.decode("utf-8")'
+after = '''            return relative, content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")'''
 reddens = [
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return]",
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return-in-a-crlf-file]",
 ]
+
+# GitHub does not load a code-owners file of `CODEOWNERS_MAX_BYTES` or more, so the read stops one
+# byte under it and a file that has that byte owns nothing. That the read is bounded at all has no
+# entry: a whole read and the bounded one give the same answer at every size a test can write.
+[[mutation]]
+name = "a code-owners file of exactly the size GitHub refuses is loaded"
+file = "src/stayfixed/assess/probes.py"
+before = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 1)"
+after = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES)"
+reddens = ["tests/assess/test_probes.py::test_a_codeowners_file_github_does_not_load_owns_nothing"]
 
 [[mutation]]
 name = "a CRLF line keeps its carriage return"
@@ -1660,6 +1670,15 @@ after = "            walked = judged_entries(text, lenient=False)"
 reddens = [
   "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[byte-order-mark]",
   "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[scalar-event]",
+]
+
+[[mutation]]
+name = "the foreign-hook probe reads a settings file with no bound"
+file = "src/stayfixed/assess/probes.py"
+before = '            text = read_regular_text(path) if path.is_file() else ""'
+after = '            text = path.read_text(encoding="utf-8") if path.is_file() else ""'
+reddens = [
+  "tests/assess/test_probes.py::test_a_settings_file_past_the_read_cap_is_one_the_probe_could_not_look_at",
 ]
 
 [[mutation]]

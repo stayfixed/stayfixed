@@ -42,6 +42,7 @@ from typing import Any, TypeVar
 
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.paths import PathEscape, contained
+from stayfixed.fsops import read_bounded
 from stayfixed.gitenv import git_run, in_work_tree
 from stayfixed.profiles.model import Check, CheckKind, Locator, Profile
 
@@ -75,11 +76,14 @@ def _files(root: Path, at: str) -> list[str]:
 
 
 def _read(root: Path, relative: str) -> str | None:
+    """A configuration file's text, line endings translated as `Path.read_text` translates them,
+    or `None` for one that cannot be read or is past `_TEXT_CAP`: read to the cap by
+    `fsops.read_bounded`, so what is opened is a regular file and no more than the cap is read."""
     try:
-        path = contained(root, relative)
-        if path.stat().st_size > _TEXT_CAP:
+        content, over = read_bounded(contained(root, relative), _TEXT_CAP)
+        if over:
             return None
-        return path.read_text(encoding="utf-8")
+        return content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except (PathEscape, OSError, UnicodeDecodeError):
         return None
 

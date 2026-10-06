@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.gitenv import git_run
@@ -160,6 +161,22 @@ def test_an_undecodable_file_is_not_text_and_an_unreadable_one_carries_its_error
         assert items["src/ok.py"].text is None and items["src/ok.py"].error
     finally:
         (root / "src" / "ok.py").chmod(0o644)
+
+
+def test_a_file_past_the_read_cap_is_one_the_scan_could_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A scanned file is one a clone commits, so it is read to the read cap, as every reader of a
+    # committed file reads one, and a file past it carries the reader's error rather than being
+    # read to its end. The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s
+    # "the reference scan reads a file with no bound" -> the file is read as text.
+    root, _config = project(tmp_path)
+    limit = 4 * 1024
+    write(root, "src/long.py", "# BR-404\n" + "#" * limit + "\n")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    items = {item.relative.as_posix(): item for item in scannable(root, ("src",))}
+    assert items["src/long.py"].text is None
+    assert items["src/long.py"].error == "larger than this reader reads"
 
 
 @needs_git

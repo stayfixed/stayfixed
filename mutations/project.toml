@@ -1856,6 +1856,26 @@ after = '''        importlib.util.find_spec("stayfixed.memory.store")
         hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'''
 reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
+# A profile reads configuration files a repository commits, each to `_TEXT_CAP`: one at the cap is
+# read, and one past it reads as no file.
+[[mutation]]
+name = "a profile reads a configuration file past its cap"
+file = "src/stayfixed/profiles/evaluate.py"
+before = """        if over:
+            return None
+        return content.decode"""
+after = """        if False:
+            return None
+        return content.decode"""
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
+
+[[mutation]]
+name = "a profile refuses a configuration file at its cap"
+file = "src/stayfixed/profiles/evaluate.py"
+before = "        content, over = read_bounded(contained(root, relative), _TEXT_CAP)"
+after = "        content, over = read_bounded(contained(root, relative), _TEXT_CAP - 1)"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
+
 # The source is not held to the rule a `.pyc` is (`mutations/`'s "a symlinked .pyc is followed",
 # declared in the core group, where the reader is): the interpreter follows a symlinked source too.
 [[mutation]]
