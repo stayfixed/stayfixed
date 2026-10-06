@@ -276,8 +276,8 @@ reddens = [
 [[mutation]]
 name = "an undecodable ledger file is silently mangled instead of reported"
 file = "src/stayfixed/ledger/entries.py"
-before = '        return path.read_text(encoding="utf-8")'
-after = '        return path.read_text(encoding="utf-8", errors="replace")'
+before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
+after = '        with open(path, encoding="utf-8", errors="replace") as stream:'
 reddens = [
   "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
   "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
@@ -2165,4 +2165,43 @@ before = "    ids = bug_register(config).ids"
 after = '    ids = type(bug_register(config).ids)("BR")'
 reddens = [
   "tests/memory/test_graph.py::test_a_bracketed_identifier_is_the_bug_ledgers_as_the_project_configures_it",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": each reader of a
+# committed file a glob found reads it through that reader, so a link to a device or a FIFO is
+# one more file it cannot read, in that reader's own words.
+[[mutation]]
+name = "the ledger's entry reader follows a link to a device"
+file = "src/stayfixed/ledger/entries.py"
+before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
+after = '        with path.open(encoding="utf-8") as stream:'
+reddens = [
+  "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]
+
+[[mutation]]
+name = "the note reader follows a link to a device"
+file = "src/stayfixed/memory/notes.py"
+before = '        with open_regular(path, "r", encoding="utf-8", newline="") as stream:'
+after = '        with path.open(encoding="utf-8", newline="") as stream:'
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read",
+]
+
+[[mutation]]
+name = "the trust digest follows a note or index linked to a device"
+file = "src/stayfixed/memory/trust.py"
+before = "        with open_regular(path) as stream:"
+after = '        with path.open("rb") as stream:'
+reddens = [
+  "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
+]
+
+[[mutation]]
+name = "the document reader follows a link to a device"
+file = "src/stayfixed/docs/hygiene.py"
+before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
+after = '        with path.open(encoding="utf-8") as stream:'
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_document_linked_to_a_device_is_a_failure_naming_it",
 ]

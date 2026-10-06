@@ -2712,3 +2712,34 @@ after = "        if depth >= cap:"
 reddens = [
   "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
 ]
+
+# The readers of files a repository commits and a reader globs (bug ledger entries, notes, the
+# trust digest's notes and `MEMORY.md`, plans) followed a committed link to whatever it named: a
+# link to `/dev/zero` read until memory ran out, in CI too, and one to `/dev/stdin` or a FIFO
+# waited forever. `open_regular` reads a regular file only, through a link as before.
+[[mutation]]
+name = "the regular-file reader opens whatever a path names"
+file = "src/stayfixed/fsops.py"
+before = """
+    if not stat.S_ISREG(checked.st_mode):
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+after = """
+    if False:
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+"""
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/test_fsops.py::test_a_fifo_is_refused_without_waiting_for_a_writer",
+]
+
+# And what it opened is the file it checked: a path repointed between the check and the open is
+# judged by the descriptor.
+[[mutation]]
+name = "the regular-file reader reads a file swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = "        if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_file_swapped_after_the_check_is_judged_by_what_was_opened",
+]

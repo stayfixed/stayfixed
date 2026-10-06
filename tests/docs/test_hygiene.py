@@ -14,6 +14,7 @@ from stayfixed.docs.hygiene import (
     check_budgets,
     check_links,
     local_markdown_targets,
+    read_document,
     roadmap_prose,
 )
 from stayfixed.errors import Failure
@@ -224,3 +225,13 @@ def test_a_text_of_unclosed_links_is_read_in_linear_time() -> None:
 
     benign = cpu("[a](b)" * (size // 6))
     assert cpu("[a](" * (size // 4)) < 20 * max(benign, 0.001)
+
+
+def test_a_document_linked_to_a_device_is_a_failure_naming_it(tmp_path: Path) -> None:
+    # `plan check` outside a git repository globs `docs/plans/` and reads each match, and a link
+    # there to `/dev/stdin` hung it. Only a regular file is read; `/dev/null` is the case that
+    # cannot hang and still tells the guard apart, since unguarded it reads as an empty plan.
+    # Mutation (declared): `read_document` reads with `read_text` again -> this reddens.
+    (tmp_path / "plan.md").symlink_to("/dev/null")
+    with pytest.raises(Failure, match="could not be read \\(not a regular file\\)"):
+        read_document(tmp_path / "plan.md", "docs/plans/plan.md")

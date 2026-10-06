@@ -287,3 +287,21 @@ def test_a_ledger_file_that_cannot_be_read_is_a_ledger_error_naming_it(tmp_path:
             read_ledger_text(path, where=PATH)
     finally:
         path.chmod(0o644)
+
+
+def test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read(
+    tmp_path: Path,
+) -> None:
+    # A committed `BR-001.md -> /dev/zero` grew `bugs check` to 9 GB in 2 s on any machine, CI
+    # included, and `-> /dev/stdin` waited on a terminal forever. Only a regular file is read,
+    # through a link as before; anything else is an entry that could not be read, which
+    # `register_gate` reports as `unreadable-entry`. `/dev/null` is the case that cannot hang and
+    # still tells the guard apart: unguarded it reads as empty text. Mutation (declared): the
+    # reader opens with `read_text` again -> this reddens.
+    target = tmp_path / "real.md"
+    target.write_text("---\nid: BR-001\n---\n", encoding="utf-8")
+    (tmp_path / "BR-001.md").symlink_to(target)
+    assert read_ledger_text(tmp_path / "BR-001.md", where=PATH) == "---\nid: BR-001\n---\n"
+    (tmp_path / "BR-002.md").symlink_to("/dev/null")
+    with pytest.raises(LedgerError, match="could not be read \\(not a regular file\\)"):
+        read_ledger_text(tmp_path / "BR-002.md", where=PATH)

@@ -47,6 +47,7 @@ import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import IO, Any, BinaryIO, Literal, TextIO, overload
 
 # The mode a file stayfixed creates asks for. It is a request, not a decision: the temporary is
 # created with it and the kernel subtracts the process umask, exactly as `open()` does for any
@@ -175,6 +176,58 @@ def names_regular_file(path: Path) -> bool:
             return False
         raise
     return stat.S_ISREG(mode)
+
+
+class NotRegularFile(OSError):
+    """A path a reader was handed names something other than a regular file. An `OSError`, so
+    every reader's existing "could not be read" arm is its answer without a branch of its own."""
+
+
+# The open `open_regular` makes: it follows a link at the last component, because `attach` links
+# each memory group and `MEMORY.md` into the overlay in overlay mode and those are read through
+# the link, and it never waits, because a FIFO swapped in after the check would otherwise block
+# the open on a writer that never comes.
+_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+
+
+@overload
+def open_regular(path: Path, mode: Literal["rb"] = "rb") -> BinaryIO: ...
+
+
+@overload
+def open_regular(
+    path: Path, mode: Literal["r"], *, encoding: str, newline: str | None = None
+) -> TextIO: ...
+
+
+def open_regular(
+    path: Path, mode: str = "rb", *, encoding: str | None = None, newline: str | None = None
+) -> IO[Any]:
+    """`path` opened for reading as `open` would, if it names a regular file, followed through
+    symbolic links; `NotRegularFile` if it names anything else.
+
+    For a reader of files a repository commits, which globs a directory and reads what it found:
+    a committed link to `/dev/zero` read until memory ran out, one to `/dev/stdin` waited on a
+    terminal for good, and a FIFO left there waited on a writer. The path is asked with `stat`
+    before anything is opened, so no device is ever opened at all; and the descriptor is asked
+    again after the open, and must be the same regular file, so a path repointed in between is
+    refused too. A link to a regular file is read, as before. Not a size bound: a large regular
+    file is read whole, as it was.
+    """
+    checked = os.stat(path)
+    if not stat.S_ISREG(checked.st_mode):
+        raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+    descriptor = os.open(path, _REGULAR_OPEN)
+    try:
+        # The file that was checked, and so a regular one: anything else opened in its place,
+        # a device or another file, is a different `(st_dev, st_ino)`.
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):
+            raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
+        return os.fdopen(descriptor, mode, encoding=encoding, newline=newline)
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def checked_components(relative: str) -> tuple[str, ...]:

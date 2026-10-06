@@ -25,7 +25,7 @@ from pathlib import Path
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import write_atomically
+from stayfixed.fsops import open_regular, write_atomically
 from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
@@ -113,7 +113,11 @@ def _content_digest(path: Path) -> str:
     state, included.
     """
     try:
-        content = path.read_bytes()
+        # Only a regular file, followed through a link: `MEMORY.md` is one in overlay mode and is
+        # hashed through it, and a note or index linked to a device or a FIFO hung every
+        # trust-gated command. Anything else is unreadable, and still moves the digest.
+        with open_regular(path) as stream:
+            content = stream.read()
     except OSError:
         content = _UNREADABLE
     return hashlib.sha256(content).hexdigest()
