@@ -1420,6 +1420,17 @@ reddens = [
   "tests/doctor/test_checks.py::test_the_wrapper_runs_under_the_variables_the_harness_registry_names",
 ]
 
+# Every harness fact a module spells outside the registry is pardoned, counted, by the item of the
+# registry's docstring that lists it: a literal put back where the registry is read is one more.
+[[mutation]]
+name = "doctor spells the project-root variable again"
+file = "src/stayfixed/doctor/checks.py"
+before = "(CLAUDE.project_dir_env, context.root)"
+after = '("CLAUDE_PROJECT_DIR", context.root)'
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
+]
+
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
 # and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
 # fault". An empty remedy there is the report's loudest finding rendered as its quietest.
@@ -2810,20 +2821,6 @@ reddens = [
 
 # Commands, agents and skills below the root declare hooks as a project's own skills do, and the
 # row read only `.claude/skills/<name>/SKILL.md`: each place, and each depth below it, is read.
-[[mutation]]
-name = "hook-entries reads no command or agent file"
-file = "src/stayfixed/doctor/entries.py"
-before = """
-    _Hooked(".claude/commands", None),
-    _Hooked(".claude/agents", None),
-"""
-after = """
-"""
-reddens = [
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
-]
-
 [[mutation]]
 name = "hook-entries reads no skill below the project root"
 file = "src/stayfixed/doctor/entries.py"

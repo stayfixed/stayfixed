@@ -63,6 +63,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.harnesses import CLAUDE
 from stayfixed.memory import trust
 from stayfixed.memory.index import (
     INDEX_NAME,
@@ -156,8 +157,17 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     root, so an anchor stayfixed made up would be an anchor the walk cannot vouch for.
     """
     base = Path.home() if home is None else home
-    slug = str(worktree.resolve()).replace("/", "-").replace(".", "-")
-    return base, f".claude/projects/{slug}/memory"
+    return base, _memory_dir(str(worktree.resolve()))
+
+
+def _memory_dir(project: str) -> str:
+    """Where Claude Code keeps `project`'s memory under the home directory, read off the harness
+    registry (`harnesses.CLAUDE.memory_dir`): the one harness whose memory the store is linked
+    into, whichever harnesses a project lists."""
+    memory_dir = CLAUDE.memory_dir
+    if memory_dir is None:
+        raise RuntimeError("the harness registry states no memory directory to link into")
+    return memory_dir(project)
 
 
 def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:

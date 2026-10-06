@@ -3273,3 +3273,30 @@ after = "    if False:\n        raise _past(label, WRITTEN_PAST, error, limit)"
 reddens = [
   "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
 ]
+
+# The registry states where Claude Code reads Markdown whose frontmatter can declare hooks, and
+# `hook-entries` walks what it states: commands and agents declare hooks as skills do.
+[[mutation]]
+name = "hook-entries reads no command or agent file"
+file = "src/stayfixed/harnesses.py"
+before = """
+        Hooked(f"{CLAUDE_DIR}/commands", None),
+        Hooked(f"{CLAUDE_DIR}/agents", None),
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
+]
+
+# Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as
+# `-`, which the registry states and `memory` links into.
+[[mutation]]
+name = "Claude Code's memory slug keeps a dot"
+file = "src/stayfixed/harnesses.py"
+before = '    slug = project.replace("/", "-").replace(".", "-")'
+after = '    slug = project.replace("/", "-")'
+reddens = [
+  "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
+]

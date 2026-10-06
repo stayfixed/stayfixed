@@ -26,7 +26,7 @@ from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, 
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
-from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS
+from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS, Hooked
 from stayfixed.printed import printable
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
 
@@ -41,31 +41,11 @@ SETTINGS_FILES = tuple(
 # Claude Code's settings file under the home directory, read off the registry as `setup` reads it,
 # and not asked of `setup`, whose import surface loads the command that writes it.
 (USER_SETTINGS,) = CLAUDE.settings
-
-
-@dataclass(frozen=True)
-class _Hooked:
-    """A directory whose Markdown files' YAML frontmatter can declare hooks, relative to a project
-    root: the one name such a file has at any depth below it (`SKILL.md`), or `None` for every
-    name ending in `.md`, and whether the directory is read below the root as well."""
-
-    directory: str
-    name: str | None
-    nested: bool = False
-
-
-# Where Claude Code reads Markdown whose frontmatter can declare hooks. A skill's can, and Claude
-# Code ran a hook so declared once the skill was invoked (2.1.288, measured 2026-10-06); a command
-# file accepts a skill's fields, and an agent's frontmatter is documented to carry hooks, though
-# none ran in that measurement. Skills are also read from a `.claude/skills` below the project
-# root, once a session reads a file in that directory, and every one of these is read at any
-# depth below its directory. This row names each such file whose frontmatter declares hooks as
-# one it does not judge (`_hooked`).
-HOOKED = (
-    _Hooked(".claude/skills", "SKILL.md", nested=True),
-    _Hooked(".claude/commands", None),
-    _Hooked(".claude/agents", None),
-)
+# Every place a registered harness reads Markdown whose frontmatter can declare hooks
+# (`harnesses.Hooked`), read off the registry, so a harness added there is walked here without an
+# edit. This row names each such file whose frontmatter declares hooks as one it does not judge
+# (`_hooked`).
+HOOKED = tuple(place for harness in HARNESSES for place in harness.hooked)
 # A named cap (CONTRIBUTING.md#named-caps): how many directory entries the walk for those files
 # lists, below the root's own directories and through the whole tree for the nested ones, before it
 # stops and says it could not tell. No shipped file states it. It is the bytecode walk's cap
@@ -598,7 +578,7 @@ def _label(relative: str) -> str:
     return printable(relative, _UNPRINTED)
 
 
-def _reads(place: _Hooked, name: str) -> bool:
+def _reads(place: Hooked, name: str) -> bool:
     """Whether a file named `name` below `place` is one whose frontmatter is read. Compared
     without case, because a filesystem that folds case finds `skill.md` at `SKILL.md`."""
     folded = name.casefold()
@@ -625,7 +605,7 @@ def _frontmatter(root: Path, relative: str) -> list[_Found]:
     return []
 
 
-def _read_place(root: Path, top: str, place: _Hooked, budget: _Budget) -> list[_Found]:
+def _read_place(root: Path, top: str, place: Hooked, budget: _Budget) -> list[_Found]:
     """A finding for each file below `top`, a directory `place` names, whose frontmatter declares
     hooks or could not be read, in name order, depth first.
 
@@ -662,7 +642,7 @@ def _read_place(root: Path, top: str, place: _Hooked, budget: _Budget) -> list[_
     return found
 
 
-def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, _Hooked]]:
+def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
     """Every directory below the root that a `nested` place names, with that place, in name
     order, depth first.
 
