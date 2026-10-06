@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+import sys
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
@@ -39,21 +40,73 @@ SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
 
-# Where Claude Code finds a project's skills, each one a directory holding `SKILL.md`. A skill's
-# YAML frontmatter can declare hooks, and Claude Code ran one so declared once the skill was
-# invoked (2.1.288, measured 2026-10-06), so this row names every skill whose frontmatter has a
-# top-level `hooks:` key as one it does not judge (`_skills`).
-SKILLS = ".claude/skills"
-_SKILL_FILE = "SKILL.md"
+
+@dataclass(frozen=True)
+class _Hooked:
+    """A directory whose Markdown files' YAML frontmatter can declare hooks, relative to a project
+    root: the one name such a file has at any depth below it (`SKILL.md`), or `None` for every
+    name ending in `.md`, and whether the directory is read below the root as well."""
+
+    directory: str
+    name: str | None
+    nested: bool = False
+
+
+# Where Claude Code reads Markdown whose frontmatter can declare hooks. A skill's can, and Claude
+# Code ran a hook so declared once the skill was invoked (2.1.288, measured 2026-10-06); a command
+# file accepts a skill's fields, and an agent's frontmatter is documented to carry hooks, though
+# none ran in that measurement. Skills are also read from a `.claude/skills` below the project
+# root, once a session reads a file in that directory, and every one of these is read at any
+# depth below its directory. This row names each such file whose frontmatter declares hooks as
+# one it does not judge (`_hooked`).
+HOOKED = (
+    _Hooked(".claude/skills", "SKILL.md", nested=True),
+    _Hooked(".claude/commands", None),
+    _Hooked(".claude/agents", None),
+)
+# A named cap (CONTRIBUTING.md#named-caps): how many directory entries the walk for those files
+# lists, below the root's own directories and through the whole tree for the nested ones, before it
+# stops and says it could not tell. No shipped file states it. It is the bytecode walk's cap
+# (`profiles/python/hygiene.py`'s `BYTECODE_WALK_ENTRIES`), whose listing of that many entries
+# was measured at under half a second with a warm cache, and `doctor` runs on no hook's timeout.
+HOOKED_WALK_ENTRIES = 500_000
+# Git's own directory, which the walk below the root never enters: git refuses to check out a path
+# with a `.git` component, so nothing in one is the repository's, and it can hold many entries.
+_GIT_DIR = ".git"
 # The line that opens a frontmatter and the next one that closes it.
 _FENCE = "---"
-# A top-level `hooks` key: at the start of its line, not indented under another key, and the whole
-# key, not the start of a longer one. Nothing else of YAML is parsed.
-_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")
-# What a skill whose directory name is outside the path grammar is named as: the name is the
-# repository's, and this row's detail is what `--json` carries too, so there is nowhere else to
-# point.
-_UNPRINTED_SKILL = "a skill whose name this row does not print"
+# A key quoted either way: double, with backslash escapes, or single, with `''` for a quote.
+_QUOTED = r'"(?:[^"\\]|\\.)*"|\'(?:[^\']|\'\')*\''
+# One token of a flow mapping (`{name: x, hooks: {...}}`): a quoted scalar, a flow indicator, a
+# comment, blanks, a plain scalar -- which holds a `:` not followed by a blank or an indicator, and
+# a `#` not after a blank -- or a colon. Whatever else a line holds is one character at a time.
+_FLOW = re.compile(
+    rf"(?P<quoted>{_QUOTED})|(?P<indicator>[{{}}\[\],])|(?P<comment>#[^\n]*)|(?P<blank>\s+)"
+    r"|(?P<plain>[^\s{}\[\],:#\"'](?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)|(?P<colon>:)|(?P<other>.)",
+    re.DOTALL,
+)
+# A double-quoted scalar's escapes, as YAML spells them.
+_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)", re.DOTALL)
+_ESCAPED = {
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "t": "\t",
+    "n": "\n",
+    "v": "\v",
+    "f": "\f",
+    "r": "\r",
+    "e": "\x1b",
+    "N": "\x85",
+    "_": "\xa0",
+    "L": "\u2028",
+    "P": "\u2029",
+}
+# The key whose presence at the top level is what this row names.
+_HOOKS = "hooks"
+# What a file whose path is outside the path grammar is named as: the path is the repository's,
+# and this row's detail is what `--json` carries too, so there is nowhere else to point.
+_UNPRINTED = "a skill, command or agent file whose path this row does not print"
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
@@ -268,15 +321,22 @@ def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
 
 def _skill_hooks(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"{len(wheres)} project skill(s) declare hooks in their frontmatter, which this row does "
-        f"not judge: {listed(wheres)}"
+        f"{len(wheres)} skill, command or agent file(s) declare hooks in their frontmatter, which "
+        f"this row does not judge: {listed(wheres)}"
     )
 
 
 def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"{len(wheres)} project skill file(s) could not be read, so this row cannot say whether "
-        f"they declare hooks: {listed(wheres)}"
+        f"{len(wheres)} skill, command or agent path(s) could not be read, so this row cannot say "
+        f"whether what they hold declares hooks: {listed(wheres)}"
+    )
+
+
+def _skill_untold(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"the walk for skill, command and agent files stopped after {HOOKED_WALK_ENTRIES:,} "
+        f"directory entries, so this row cannot say whether the files past them declare hooks"
     )
 
 
@@ -323,23 +383,36 @@ _BLIND = _Kind(
     _blind,
     lambda areas: "check that each file named above is readable and is valid JSON",
 )
-# A project skill declaring hooks, and one whose file could not be read: warnings, never red, at
-# the lowest step, so either one softens a row with nothing else to say and never a red one. This
-# row judges settings files; a skill's hooks are named, not judged.
+# A skill, command or agent file declaring hooks, one that could not be read, and a walk for them
+# that stopped at its cap: warnings, never red, at the lowest step, so each softens a row with
+# nothing else to say and never a red one. This row judges settings files; such a file's hooks are
+# named, not judged.
 _SKILL_HOOKS = _Kind(
     WARN,
     0,
     _skill_hooks,
     lambda areas: (
-        "open each skill named above and check the hooks its frontmatter declares: Claude Code "
-        "runs them once the skill is invoked"
+        "open each file named above and check the hooks its frontmatter declares: Claude Code "
+        "runs a skill's once the skill is invoked"
     ),
 )
 _SKILL_UNREAD = _Kind(
     WARN,
     0,
     _skill_unread,
-    lambda areas: "check that each skill file named above is a readable regular file",
+    lambda areas: (
+        "check that each path named above can be read: a regular file, or a directory this user "
+        "can list"
+    ),
+)
+_SKILL_UNTOLD = _Kind(
+    WARN,
+    0,
+    _skill_untold,
+    lambda areas: (
+        "look through the repository's .claude directories yourself for skill, command and agent "
+        "files whose frontmatter declares hooks"
+    ),
 )
 _KINDS = (
     _UNREADABLE,
@@ -354,6 +427,7 @@ _KINDS = (
     _BLIND,
     _SKILL_HOOKS,
     _SKILL_UNREAD,
+    _SKILL_UNTOLD,
 )
 
 
@@ -388,52 +462,253 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
     return gathered
 
 
+def _unquoted(token: str) -> str:
+    """A quoted scalar's text: single-quoted with `''` for a quote, or double-quoted with YAML's
+    backslash escapes, an escape YAML does not have read as the character after the backslash."""
+    body = token[1:-1]
+    if token[0] == "'":
+        return body.replace("''", "'")
+
+    def escaped(match: re.Match[str]) -> str:
+        code = match.group(1)
+        if len(code) > 1:
+            point = int(code[1:], 16)
+            return chr(point) if point <= sys.maxunicode else ""
+        return _ESCAPED.get(code, code)
+
+    return _ESCAPE.sub(escaped, body)
+
+
+def _block_key(line: str) -> str | None:
+    """The key a block mapping's line opens with, or `None` for a line that opens none.
+
+    Past an explicit-key `? ` and any tag (`!...`) or anchor (`&...`) ahead of the key; then a
+    quoted key followed by a colon, or a plain one ending at the first colon followed by a blank or
+    the end of the line. An explicit key needs no colon on its line."""
+    explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
+    rest = line[1:].lstrip(" \t") if explicit else line
+    while rest[:1] in ("!", "&"):
+        parts = re.split(r"[ \t]+", rest, maxsplit=1)
+        if len(parts) < 2:
+            return None
+        rest = parts[1]
+    if rest[:1] in ('"', "'"):
+        quoted = re.match(_QUOTED, rest)
+        if quoted is None:
+            return None
+        after = rest[quoted.end() :].lstrip(" \t")
+        return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
+    plain = re.match(r"([^\n]*?)[ \t]*:(?:[ \t]|$)", rest)
+    if plain is not None:
+        return plain.group(1)
+    return rest.rstrip(" \t") if explicit else None
+
+
+def _flow_keys(text: str) -> set[str]:
+    """The keys of the flow mapping `text` opens with, at its top level and no deeper.
+
+    Each is a scalar right after the mapping's `{` or a `,` at its own level, past any tag or
+    anchor, and followed by a colon; quoted scalars are read whole, so a brace, a comma or `hooks:`
+    inside one is text. Reading stops where the mapping closes."""
+    keys: set[str] = set()
+    depth: list[str] = []
+    candidate: str | None = None
+    at_key = False
+    for token in _FLOW.finditer(text):
+        kind, value = token.lastgroup, token.group()
+        if kind in ("blank", "comment"):
+            continue
+        if kind == "indicator":
+            if value in "{[":
+                depth.append(value)
+            elif value in "}]":
+                del depth[-1:]
+                if not depth:
+                    break
+            at_key = depth[-1:] == ["{"] and value in "{,"
+            candidate = None
+        elif kind == "colon":
+            if candidate is not None and len(depth) == 1:
+                keys.add(candidate)
+            candidate, at_key = None, False
+        elif at_key and kind == "plain" and value[0] in "!&":
+            continue
+        else:
+            candidate = (_unquoted(value) if kind == "quoted" else value) if at_key else None
+            at_key = False
+    return keys
+
+
 def _declares_hooks(text: str) -> bool:
-    """Whether `text`, a `SKILL.md`, opens with a frontmatter holding a top-level `hooks:` key.
+    """Whether `text`, a skill, command or agent file, opens with a frontmatter holding a
+    top-level `hooks` key.
 
     The frontmatter is the lines between a first line of `---` and the next `---` line; without
     the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
-    a byte-order mark ahead of the first line is read past."""
+    a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
+    first line that is neither blank nor a comment: a mapping in block style has its keys there,
+    and one in flow style opens there with `{` (`_flow_keys`). A key is `hooks` bare or quoted
+    either way, its escapes read; nothing else of YAML is parsed."""
     lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
     if lines[0].rstrip() != _FENCE:
         return False
     for end, line in enumerate(lines[1:], 1):
         if line.rstrip() == _FENCE:
-            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+            return _holds_hooks(lines[1:end])
     return False
 
 
-def _skills(root: Path) -> list[_Found]:
-    """A finding for each project skill whose frontmatter declares hooks, and for each whose
-    `SKILL.md` could not be read, in name order.
+def _holds_hooks(lines: list[str]) -> bool:
+    """Whether a frontmatter's `lines` hold a top-level `hooks` key, as `_declares_hooks` reads
+    one."""
+    content = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+    if not content:
+        return False
+    indent = len(content[0]) - len(content[0].lstrip(" "))
+    if content[0][indent:].startswith("{"):
+        opened = "\n".join(lines[lines.index(content[0]) :])
+        return _HOOKS in _flow_keys(opened[indent:])
+    return any(
+        _block_key(line[indent:]) == _HOOKS
+        for line in content
+        if len(line) - len(line.lstrip(" ")) == indent
+    )
 
-    Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to a
-    device or a FIFO is refused unread, and a file past the cap is refused, each a skill file this
-    row could not read. A skill directory without a `SKILL.md`, and a path under `SKILLS` that is
-    not a directory, name no skill and are passed over, as a `SKILLS` that names nothing is. Each
-    skill is named by its path, through `printed.printable`, because its directory name is the
-    repository's."""
-    directory = root / SKILLS
+
+class _Spent(Exception):
+    """The walk for hooked files listed more than `HOOKED_WALK_ENTRIES` entries."""
+
+
+@dataclass
+class _Budget:
+    """What is left of `HOOKED_WALK_ENTRIES` for one walk."""
+
+    left: int = field(default_factory=lambda: HOOKED_WALK_ENTRIES)
+
+    def spend(self, entries: int) -> None:
+        self.left -= entries
+        if self.left < 0:
+            raise _Spent
+
+
+def _label(relative: str) -> str:
+    """A path under the root as the row names it: the path is the repository's."""
+    return printable(relative, _UNPRINTED)
+
+
+def _reads(place: _Hooked, name: str) -> bool:
+    """Whether a file named `name` below `place` is one whose frontmatter is read. Compared
+    without case, because a filesystem that folds case finds `skill.md` at `SKILL.md`."""
+    folded = name.casefold()
+    if place.name is None:
+        return folded.endswith(".md")
+    return folded == place.name.casefold()
+
+
+def _frontmatter(root: Path, relative: str) -> list[_Found]:
+    """The finding for one file whose frontmatter is read: it declares hooks, or it could not be
+    read, or none. Read through `fsops.read_regular_bytes`, as every reader of a committed file
+    is: a link to a device or a FIFO is refused unread, and a file past the cap is refused, each one
+    this row could not read; a path that names no file is passed over."""
     try:
-        with os.scandir(directory) as listing:
-            names = sorted(entry.name for entry in listing)
+        content = read_regular_bytes(root / relative)
     except OSError as exc:
         if exc.errno in NAMES_NO_FILE:
             return []
-        return [(_SKILL_UNREAD, None, SKILLS)]
+        return [(_SKILL_UNREAD, None, _label(relative))]
+    # Replaced rather than refused, for the reason the settings walk replaces: the key is
+    # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
+    if _declares_hooks(content.decode("utf-8", errors="replace")):
+        return [(_SKILL_HOOKS, None, _label(relative))]
+    return []
+
+
+def _read_place(root: Path, top: str, place: _Hooked, budget: _Budget) -> list[_Found]:
+    """A finding for each file below `top`, a directory `place` names, whose frontmatter declares
+    hooks or could not be read, in name order, depth first.
+
+    Links are followed, as the harness follows them, and a directory reached twice is listed
+    once, so a link back up the tree ends rather than circling until the cap. A directory that
+    cannot be listed is named, and one that names no directory is passed over, as `top` itself
+    is when there is none."""
     found: list[_Found] = []
-    for name in names:
-        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)
+    listed_once: set[tuple[int, int]] = set()
+    pending = [top]
+    while pending:
+        relative = pending.pop()
+        directory = root / relative
         try:
-            content = read_regular_bytes(directory / name / _SKILL_FILE)
+            status = directory.stat()
+            if (status.st_dev, status.st_ino) in listed_once:
+                continue
+            listed_once.add((status.st_dev, status.st_ino))
+            with os.scandir(directory) as listing:
+                names = sorted(entry.name for entry in listing)
         except OSError as exc:
             if exc.errno not in NAMES_NO_FILE:
-                found.append((_SKILL_UNREAD, None, label))
+                found.append((_SKILL_UNREAD, None, _label(relative)))
             continue
-        # Replaced rather than refused, for the reason the settings walk replaces: the key is
-        # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
-        if _declares_hooks(content.decode("utf-8", errors="replace")):
-            found.append((_SKILL_HOOKS, None, label))
+        budget.spend(len(names))
+        below: list[str] = []
+        for name in names:
+            child = f"{relative}/{name}"
+            if _reads(place, name):
+                found.extend(_frontmatter(root, child))
+            elif (root / child).is_dir():
+                below.append(child)
+        pending.extend(reversed(below))
+    return found
+
+
+def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, _Hooked]]:
+    """Every directory below the root that a `nested` place names, with that place, in name
+    order, depth first.
+
+    No link is followed and `.git` is never entered: what a link leads to outside the tree is
+    not the repository's, and inside it the walk meets it where it is. A directory that cannot be
+    listed is passed over, as the bytecode walk passes one over: git records no permission that
+    keeps one from being listed. The root's own copy of a place is not one of these, and nothing
+    below a directory handed out here is walked again."""
+    places = [place for place in HOOKED if place.nested]
+    pending = [""]
+    while pending and places:
+        relative = pending.pop()
+        try:
+            with os.scandir(root / relative) as listing:
+                entries = sorted(
+                    (entry.name, entry.is_dir(follow_symlinks=False)) for entry in listing
+                )
+        except OSError:
+            continue
+        budget.spend(len(entries))
+        below: list[str] = []
+        for name, is_directory in entries:
+            if not is_directory or name == _GIT_DIR:
+                continue
+            child = f"{relative}/{name}" if relative else name
+            owner = next((p for p in places if f"/{child}".endswith(f"/{p.directory}")), None)
+            if owner is None:
+                below.append(child)
+            elif child != owner.directory:
+                yield child, owner
+        pending.extend(reversed(below))
+
+
+def _hooked(root: Path) -> list[_Found]:
+    """A finding for each skill, command or agent file whose frontmatter declares hooks, and for
+    each such file or directory that could not be read: the root's own places first, in `HOOKED`'s
+    order, then each nested one the walk finds. The whole walk lists at most
+    `HOOKED_WALK_ENTRIES` entries, past which it stops and says so. Each file is named by its path,
+    through `printed.printable`, because every name in it is the repository's."""
+    found: list[_Found] = []
+    budget = _Budget()
+    try:
+        for place in HOOKED:
+            found.extend(_read_place(root, place.directory, place, budget))
+        for directory, place in _nested(root, budget):
+            found.extend(_read_place(root, directory, place, budget))
+    except _Spent:
+        found.append((_SKILL_UNTOLD, None, None))
     return found
 
 
@@ -543,7 +818,7 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
                     found.append((_UNVOUCHED, holders[0], where))
-    found.extend(_skills(context.root))
+    found.extend(_hooked(context.root))
     return claimed, foreign, _gathered(answers, found)
 
 

@@ -2666,13 +2666,13 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
 ]
 
-# In the block led by "hook-entries reads no project skill": a project skill whose frontmatter
-# declares hooks is named as one the row does not judge, a warning and never a red, and its
-# frontmatter is read for a top-level `hooks:` key between its two fences and nothing more.
+# In the block led by "hook-entries reads no project skill": a skill, command or agent file whose
+# frontmatter declares hooks is named as one the row does not judge, a warning and never a red, and
+# its frontmatter is read for a top-level `hooks` key between its two fences and nothing more.
 [[mutation]]
 name = "hook-entries reads no project skill"
 file = "src/stayfixed/doctor/entries.py"
-before = "    found.extend(_skills(context.root))\n"
+before = "    found.extend(_hooked(context.root))\n"
 after = "    found.extend([])\n"
 reddens = [
   "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
@@ -2699,8 +2699,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries prints a skill's name whole"
 file = "src/stayfixed/doctor/entries.py"
-before = '        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)'
-after = '        label = f"{SKILLS}/{name}/{_SKILL_FILE}"'
+before = "    return printable(relative, _UNPRINTED)"
+after = "    return relative"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_name_outside_the_path_grammar_is_withheld",
 ]
@@ -2708,8 +2708,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
 file = "src/stayfixed/doctor/entries.py"
-before = "for key in lines[1:end])"
-after = "for key in lines[1:])"
+before = "            return _holds_hooks(lines[1:end])"
+after = "            return _holds_hooks(lines[1:])"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
 ]
@@ -2717,8 +2717,15 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter reads an indented hooks key"
 file = "src/stayfixed/doctor/entries.py"
-before = "_HOOKS_KEY.match(key) for"
-after = "_HOOKS_KEY.match(key.lstrip()) for"
+before = """
+        _block_key(line[indent:]) == _HOOKS
+        for line in content
+        if len(line) - len(line.lstrip(" ")) == indent
+"""
+after = """
+        _block_key(line.lstrip(" ")) == _HOOKS
+        for line in content
+"""
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[nested-key]",
 ]
@@ -2726,8 +2733,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter reads any key opening with hooks"
 file = "src/stayfixed/doctor/entries.py"
-before = '_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")'
-after = '_HOOKS_KEY = re.compile(r"hooks")'
+before = "        return plain.group(1)"
+after = "        return plain.group(1)[: len(_HOOKS)]"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
 ]
@@ -2736,12 +2743,12 @@ reddens = [
 name = "an unterminated frontmatter is read to the end"
 file = "src/stayfixed/doctor/entries.py"
 before = """
-            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+            return _holds_hooks(lines[1:end])
     return False
 """
 after = """
-            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
-    return any(_HOOKS_KEY.match(key) for key in lines[1:])
+            return _holds_hooks(lines[1:end])
+    return _holds_hooks(lines[1:])
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
@@ -2766,19 +2773,19 @@ reddens = [
 ]
 
 [[mutation]]
-name = "a skill directory without SKILL.md is unreadable"
+name = "a skill file that names no file is unreadable"
 file = "src/stayfixed/doctor/entries.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((_SKILL_UNREAD,"
-after = "            if True:\n                found.append((_SKILL_UNREAD,"
+before = "        if exc.errno in NAMES_NO_FILE:\n            return []\n"
+after = "        if False:\n            return []\n"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[no-skill-file]",
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link]",
 ]
 
 [[mutation]]
 name = "hook-entries passes over a skill file it cannot read"
 file = "src/stayfixed/doctor/entries.py"
-before = "                found.append((_SKILL_UNREAD, None, label))"
-after = "                pass"
+before = "        return [(_SKILL_UNREAD, None, _label(relative))]"
+after = "        return []"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
   "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-directory]",
@@ -2787,10 +2794,176 @@ reddens = [
 [[mutation]]
 name = "hook-entries passes over a skills directory it cannot list"
 file = "src/stayfixed/doctor/entries.py"
-before = "        return [(_SKILL_UNREAD, None, SKILLS)]"
-after = "        return []"
+before = "                found.append((_SKILL_UNREAD, None, _label(relative)))"
+after = "                pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
+]
+
+# Commands, agents and skills below the root declare hooks as a project's own skills do, and the
+# row read only `.claude/skills/<name>/SKILL.md`: each place, and each depth below it, is read.
+[[mutation]]
+name = "hook-entries reads no command or agent file"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+    _Hooked(".claude/commands", None),
+    _Hooked(".claude/agents", None),
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
+]
+
+[[mutation]]
+name = "hook-entries reads no skill below the project root"
+file = "src/stayfixed/doctor/entries.py"
+before = "        for directory, place in _nested(root, budget):"
+after = "        for directory, place in ():"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[nested-skill]",
+]
+
+[[mutation]]
+name = "hook-entries reads a place one level deep"
+file = "src/stayfixed/doctor/entries.py"
+before = "            elif (root / child).is_dir():"
+after = "            elif (root / child).is_dir() and relative == top:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[skill-inside-a-skill]",
+]
+
+[[mutation]]
+name = "hook-entries reads only a command directory's own files"
+file = "src/stayfixed/doctor/entries.py"
+before = "            elif (root / child).is_dir():"
+after = "            elif (root / child).is_dir() and place.name is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command-in-a-namespace]",
+]
+
+[[mutation]]
+name = "hook-entries reads a skill file's name in its own case"
+file = "src/stayfixed/doctor/entries.py"
+before = "    return folded == place.name.casefold()"
+after = "    return name == place.name"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[lowercase-skill-file]",
+]
+
+[[mutation]]
+name = "hook-entries reads every file in a command directory"
+file = "src/stayfixed/doctor/entries.py"
+before = '        return folded.endswith(".md")'
+after = "        return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_plain_command_and_agent_files_leave_the_row_as_it_was",
+]
+
+# YAML spells one top-level key many ways, and the row read only a bare `hooks:` in the first
+# column: quoted either way, in a flow mapping, in a mapping indented as a whole, or behind a tag or
+# an anchor, the key declared hooks the row never named. Each spelling is read, at the top level
+# and no deeper.
+[[mutation]]
+name = "a frontmatter's quoted key is read as no key"
+file = "src/stayfixed/doctor/entries.py"
+before = """    if rest[:1] in ('"', "'"):"""
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[double-quoted]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[single-quoted]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[escaped]",
+]
+
+[[mutation]]
+name = "a frontmatter in flow style is read as no mapping"
+file = "src/stayfixed/doctor/entries.py"
+before = '    if content[0][indent:].startswith("{"):'
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-as-json]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-over-lines]",
+]
+
+[[mutation]]
+name = "a frontmatter's top level is its first column"
+file = "src/stayfixed/doctor/entries.py"
+before = '    indent = len(content[0]) - len(content[0].lstrip(" "))'
+after = "    indent = 0"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[indented-mapping]",
+]
+
+[[mutation]]
+name = "a frontmatter key's tag or anchor hides it"
+file = "src/stayfixed/doctor/entries.py"
+before = '    while rest[:1] in ("!", "&"):'
+after = "    while False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored]",
+]
+
+[[mutation]]
+name = "a flow mapping's keys are read at every depth"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if candidate is not None and len(depth) == 1:"
+after = "            if candidate is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-nested]",
+]
+
+[[mutation]]
+name = "a flow mapping's quoted scalars are read as tokens"
+file = "src/stayfixed/doctor/entries.py"
+before = 'rf"(?P<quoted>{_QUOTED})|'
+after = 'rf"(?P<quoted>(?!))|'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-in-a-quoted-value]",
+]
+
+# The walk below the root lists a whole checkout, so it is bounded, enters no `.git`, and lists a
+# directory a link leads back to once; a walk that stopped is a warning that says so.
+[[mutation]]
+name = "the hooked-file walk lists past its cap"
+file = "src/stayfixed/doctor/entries.py"
+before = "        if self.left < 0:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so",
+]
+
+[[mutation]]
+name = "a hooked-file walk that stopped makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_UNTOLD = _Kind(\n    WARN,"
+after = "_SKILL_UNTOLD = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so",
+]
+
+[[mutation]]
+name = "the hooked-file walk enters .git"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if not is_directory or name == _GIT_DIR:"
+after = "            if not is_directory:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_below_the_root_never_enters_git_s_own_directory",
+]
+
+[[mutation]]
+name = "the hooked-file walk lists a directory each time it is reached"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+            if (status.st_dev, status.st_ino) in listed_once:
+                continue
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_back_up_a_skills_tree_is_listed_once",
 ]
 
 [[mutation]]

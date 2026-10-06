@@ -2650,7 +2650,7 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every project skill whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; `.claude/skills/<name>/SKILL.md` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -2764,17 +2764,39 @@ ran):
 | A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
 
 So a skill a repository commits does run its own hooks once it is invoked. `hook-entries` does
-not judge them, and says so: each project skill whose `.claude/skills/<name>/SKILL.md` opens with
-a frontmatter (the lines between a first `---` line and the next one) holding a `hooks:` key at
-the start of a line is named as one whose hooks the row does not judge, a `warn` that never makes
-the row `red`. Nothing else of the YAML is parsed, and a frontmatter with no closing `---` is
-none. A `SKILL.md` the row cannot read, such as a link to a device or a directory, is named as
-one it cannot say anything about, also a `warn`. A skill's directory
-name is the repository's, so one outside the path grammar is named as a skill whose name the row
-does not print. Agents are not read. Whether the model can invoke a skill, and so run its hooks,
-without a person asking was not measured, because no model call ran. The plugin and agent rows
-held under that same limit, and say nothing about a logged-in session that has accepted the
-repository's trust prompt.
+not judge them, and says so, of every file whose frontmatter Claude Code reads for hooks:
+
+- every `SKILL.md` at any depth below the project's `.claude/skills`, and below a `.claude/skills`
+  anywhere else in the tree, which Claude Code loads once a session reads a file in that
+  directory;
+- every `*.md` at any depth below `.claude/commands`, since a command file accepts a skill's
+  fields;
+- every `*.md` at any depth below `.claude/agents`, since an agent's frontmatter is documented to
+  carry hooks, though none ran in the measurement above.
+
+Each such file whose frontmatter (the lines between a first `---` line and the next one) holds a
+top-level `hooks` key is named as one whose hooks the row does not judge, a `warn` that never makes
+the row `red`. The top level is the indentation of the frontmatter's first line that is neither
+blank nor a comment. The key is found bare, quoted either way (its escapes read), behind a tag, an
+anchor or `? `, or among the top-level keys of a frontmatter written as a flow mapping
+(`{name: x, hooks: {...}}`); a `hooks` nested under another key, or inside a quoted value, is not
+one. Nothing else of the YAML is parsed: a merge key (`<<`) is not followed, and a frontmatter with
+no closing `---` is none. Names are compared without case, so `skill.md` counts, as a filesystem
+that folds case finds it. A file or directory the row cannot read, such as a link to a device or a
+directory it cannot list, is named as one it cannot say anything about, also a `warn`. Every name
+in a path is the repository's, so a path outside the path grammar is named as a file whose path
+the row does not print.
+
+The walk follows links inside `.claude/skills`, `.claude/commands` and `.claude/agents`, and lists a
+directory a link leads back to once. To find a `.claude/skills` below the root it lists the whole
+tree, following no link and never entering `.git`, whose contents git never checks out, and passing
+over a directory it cannot list. The two together list at most 500,000 directory entries; past
+that, the row says the walk stopped and that it cannot say whether the files past it declare hooks,
+a `warn`.
+
+Whether the model can invoke a skill, and so run its hooks, without a person asking was not
+measured, because no model call ran. The plugin and agent rows held under that same limit, and say
+nothing about a logged-in session that has accepted the repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

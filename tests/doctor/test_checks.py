@@ -1361,8 +1361,13 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
     _past_a_name(tmp_path, root / link)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     blinded = UNCHECKABLE_SETTINGS[link]
-    # A `.claude` past a name hides the project's skills too, and the row names them as well.
-    skills = f"; 1 {SKILL_UNREAD}: .claude/skills" if link == ".claude" else ""
+    # A `.claude` past a name hides the project's skills, commands and agents too, and the row
+    # names each of them as well.
+    skills = (
+        f"; 3 {SKILL_UNREAD}: .claude/skills, .claude/commands, .claude/agents"
+        if link == ".claude"
+        else ""
+    )
     remedy = f"; {SKILL_UNREAD_REMEDY}" if link == ".claude" else ""
     assert row == Check(
         "hook-entries",
@@ -1450,17 +1455,24 @@ def test_an_entry_is_numbered_across_every_list_in_its_file(tmp_path: Path) -> N
     assert row.detail.endswith(": .claude/settings.json entry 2 of 2"), row.detail
 
 
-# What the row says of a project skill whose frontmatter declares hooks, and of one it could not
-# read, and the way out of each.
-SKILL_HOOKS = "project skill(s) declare hooks in their frontmatter, which this row does not judge"
+# What the row says of a skill, command or agent file whose frontmatter declares hooks, of one it
+# could not read, and of a walk for them that stopped at its cap, and the way out of each.
+SKILL_HOOKS = (
+    "skill, command or agent file(s) declare hooks in their frontmatter, which this row does not "
+    "judge"
+)
 SKILL_HOOKS_REMEDY = (
-    "open each skill named above and check the hooks its frontmatter declares: Claude Code runs "
-    "them once the skill is invoked"
+    "open each file named above and check the hooks its frontmatter declares: Claude Code runs a "
+    "skill's once the skill is invoked"
 )
 SKILL_UNREAD = (
-    "project skill file(s) could not be read, so this row cannot say whether they declare hooks"
+    "skill, command or agent path(s) could not be read, so this row cannot say whether what they "
+    "hold declares hooks"
 )
-SKILL_UNREAD_REMEDY = "check that each skill file named above is a readable regular file"
+SKILL_UNREAD_REMEDY = (
+    "check that each path named above can be read: a regular file, or a directory this user can "
+    "list"
+)
 NO_SKILL_ENTRIES = "0 stayfixed entr(ies), 0 foreign"
 
 
@@ -1526,7 +1538,8 @@ def test_a_skill_name_outside_the_path_grammar_is_withheld(tmp_path: Path) -> No
     assert row == Check(
         "hook-entries",
         WARN,
-        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: a skill whose name this row does not print",
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: a skill, command or agent file whose path this row "
+        "does not print",
         SKILL_HOOKS_REMEDY,
     )
 
@@ -1548,17 +1561,20 @@ NO_DECLARED_HOOKS: dict[str, str | bytes] = {
 }
 
 
-@pytest.mark.parametrize("shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file"])
+@pytest.mark.parametrize("shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file", "dangling-link"])
 def test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was(tmp_path: Path, shape: str) -> None:
     # The vacuity guard for the warning: only a top-level `hooks:` key line inside a frontmatter
     # closed by its second `---` line is one. Mutations (oracle): `mutations/`'s "a skill's
     # frontmatter runs past its closing fence" -> "in-the-body"; "a skill's frontmatter reads an
     # indented hooks key" -> "nested-key"; "a skill's frontmatter reads any key opening with
     # hooks" -> "a-longer-key"; "an unterminated frontmatter is read to the end" ->
-    # "unterminated"; "a skill directory without SKILL.md is unreadable" -> "no-skill-file".
+    # "unterminated"; "a skill file that names no file is unreadable" -> "dangling-link".
     root = _initialised(tmp_path)
     if shape == "no-skill-file":
         (root / ".claude" / "skills" / "empty").mkdir(parents=True)
+    elif shape == "dangling-link":
+        (root / ".claude" / "skills" / "gone").mkdir(parents=True)
+        (root / ".claude" / "skills" / "gone" / "SKILL.md").symlink_to("nowhere")
     else:
         _skill(root, "plain", NO_DECLARED_HOOKS[shape])
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
@@ -1622,6 +1638,170 @@ def test_a_skills_directory_that_cannot_be_listed_is_named(tmp_path: Path) -> No
         f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills",
         SKILL_UNREAD_REMEDY,
     )
+
+
+def _file(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, "utf-8")
+
+
+# Places besides the project's own `.claude/skills/<name>/SKILL.md` whose frontmatter can declare
+# hooks: a command file, one in a namespace directory, an agent, a skill under a `.claude/skills`
+# below the root, a `SKILL.md` deeper inside a skill, and a skill file named in lower case, which a
+# filesystem that folds case finds where `SKILL.md` is looked for. Each is a mutation of its own
+# (oracle): `mutations/`'s "hook-entries reads no command or agent file" -> `command` and `agent`;
+# "hook-entries reads no skill below the project root" -> `nested-skill`; "hook-entries reads a
+# place one level deep" -> `skill-inside-a-skill`; "hook-entries reads only a command directory's
+# own files" -> `command-in-a-namespace`; "hook-entries reads a skill file's name in its own case"
+# -> `lowercase-skill-file`.
+HOOKED_ELSEWHERE = {
+    "command": ".claude/commands/deploy.md",
+    "command-in-a-namespace": ".claude/commands/ops/deploy.md",
+    "agent": ".claude/agents/reviewer.md",
+    "nested-skill": "pkg/.claude/skills/nested/SKILL.md",
+    "skill-inside-a-skill": ".claude/skills/deep/sub/SKILL.md",
+    "lowercase-skill-file": ".claude/skills/lower/skill.md",
+}
+
+
+@pytest.mark.parametrize("place", sorted(HOOKED_ELSEWHERE))
+def test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it(
+    tmp_path: Path, place: str
+) -> None:
+    # A command file accepts a skill's frontmatter fields, an agent's frontmatter is documented to
+    # carry hooks, and a skill below the root loads once a session reads a file beside it, so the
+    # row read only the project's own skills and said "all accounted for" beside each of these.
+    root = _initialised(tmp_path)
+    _file(root, HOOKED_ELSEWHERE[place], SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {HOOKED_ELSEWHERE[place]}",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -> None:
+    # The legitimate repository the wider walk must not warn about: command and agent files whose
+    # frontmatter declares no hooks, a file beside them that is not Markdown, and a nested
+    # `.claude` with no skills. Mutation (oracle): `mutations/`'s "hook-entries reads every file
+    # in a command directory" -> the text file is named.
+    root = _initialised(tmp_path)
+    plain = "---\nname: plain\ndescription: no hooks\n---\nThe body.\n"
+    _file(root, ".claude/commands/deploy.md", plain)
+    _file(root, ".claude/commands/notes.txt", SKILL_WITH_HOOKS)
+    _file(root, ".claude/agents/reviewer.md", plain)
+    _file(root, "pkg/.claude/settings.json", "{}")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+# Frontmatter spellings of a top-level `hooks` key besides a bare one at the start of a line: each
+# quoting, a quoted key with an escape in it, a flow mapping (on one line, as JSON, and over
+# several), a mapping indented as a whole, and a key behind a tag, an anchor or `? `. Mutations
+# (oracle): `mutations/`'s "a frontmatter's quoted key is read as no key" -> the quoted cases; "a
+# frontmatter in flow style is read as no mapping" -> the flow cases; "a frontmatter's top level is
+# its first column" -> `indented-mapping`; "a frontmatter key's tag or anchor hides it" ->
+# `tagged` and `anchored`.
+HOOKS_SPELLED = {
+    "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
+    "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
+    "escaped": '"hoo\\x6bs": {}\n',
+    "flow": "{name: probe, hooks: {UserPromptSubmit: []}}\n",
+    "flow-as-json": '{"name": "probe", "hooks": {}}\n',
+    "flow-over-lines": "{name: probe,\n  description: a probe,\n  hooks:\n    {Stop: []}}\n",
+    "indented-mapping": "  name: probe\n  hooks:\n    UserPromptSubmit: []\n",
+    "tagged": "!!str hooks: {}\n",
+    "anchored": "&key hooks: {}\n",
+    "explicit-key": "? hooks\n: {}\n",
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(HOOKS_SPELLED))
+def test_every_spelling_of_a_top_level_hooks_key_is_read(tmp_path: Path, spelling: str) -> None:
+    # YAML spells one key many ways, and the row read only the bare one at the start of a line, so
+    # a quoted `"hooks":` or a flow mapping declared hooks it never named.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", f"---\n{HOOKS_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+    )
+
+
+# Flow-style and quoted frontmatter that holds no top-level `hooks` key: one nested under another
+# key or inside a sequence, `hooks:` inside a quoted value or after a comment, and a longer quoted
+# key. The vacuity guards for the spellings above. Mutations (oracle): `mutations/`'s "a flow
+# mapping's keys are read at every depth" -> `flow-nested`; "a flow mapping's quoted scalars are
+# read as tokens" -> `flow-in-a-quoted-value`.
+NO_HOOKS_SPELLED = {
+    "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
+    "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
+    "flow-in-a-quoted-value": '{name: plain, description: "a, hooks: x"}\n',
+    "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
+    "a-longer-quoted-key": '"hooksmith": x\n',
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(NO_HOOKS_SPELLED))
+def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over(
+    tmp_path: Path, spelling: str
+) -> None:
+    root = _initialised(tmp_path)
+    _skill(root, "plain", f"---\n{NO_HOOKS_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+def test_a_link_back_up_a_skills_tree_is_listed_once(tmp_path: Path) -> None:
+    # Links are followed, as the harness follows them, so a link back up the tree would be walked
+    # until the cap and end in a warning that the walk could not tell. Each directory is listed
+    # once. Mutation (oracle): `mutations/`'s "the hooked-file walk lists a directory each time it
+    # is reached" -> the row also says the walk stopped.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", SKILL_WITH_HOOKS)
+    (root / ".claude" / "skills" / "probe" / "loop").symlink_to("..")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk below the root lists the whole tree, which in a large checkout is many entries, so
+    # it is bounded (`HOOKED_WALK_ENTRIES`), and a walk that stopped is no "all accounted for".
+    # Mutation (oracle): `mutations/`'s "the hooked-file walk lists past its cap" -> the nested
+    # skill is found and named instead.
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.claude/skills/nested/SKILL.md", SKILL_WITH_HOOKS)
+    monkeypatch.setattr(entries, "HOOKED_WALK_ENTRIES", 3)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; the walk for skill, command and agent files stopped after 3 "
+        "directory entries, so this row cannot say whether the files past them declare hooks",
+        "look through the repository's .claude directories yourself for skill, command and agent "
+        "files whose frontmatter declares hooks",
+    )
+
+
+def test_the_walk_below_the_root_never_enters_git_s_own_directory(tmp_path: Path) -> None:
+    # Git refuses to check out a path with a `.git` component, so nothing in one is the
+    # repository's, and it can hold many entries. Mutation (oracle): `mutations/`'s "the
+    # hooked-file walk enters .git" -> the planted skill is named.
+    root = _initialised(tmp_path)
+    _file(root, ".git/modules/pkg/.claude/skills/planted/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
 
 
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
