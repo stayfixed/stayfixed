@@ -17,21 +17,50 @@ def test_a_backticked_path_with_a_slash_is_a_reference_and_a_bare_filename_is_pr
 
 
 def test_a_location_suffix_is_not_part_of_the_name() -> None:
-    assert list(path_references("`src/a.py:12` and `tests/test_a.py::test_x`")) == [
+    # A line, a line and a column, and a symbol path of any depth: `::` joins a symbol path in
+    # Rust and C++ as it does a test node's, so `::TestA::test_x` and `::parser::parse` are one
+    # suffix. Before, a column or a second `::` made the span no reference at all. Oracle:
+    # `mutations/`, "a column stops being part of a location suffix", "a symbol path stops
+    # being read past its first `::`".
+    line = (
+        "`src/a.py:12` `tests/test_a.py::test_x` `src/b.c:3:14` "
+        "`tests/test_a.py::TestA::test_x` `src/lib.rs::parser::parse`"
+    )
+    assert list(path_references(line)) == [
         "src/a.py",
         "tests/test_a.py",
+        "src/b.c",
+        "tests/test_a.py",
+        "src/lib.rs",
     ]
 
 
-def test_typescript_and_toml_count_as_files_this_grammar_stores() -> None:
-    # The drift that built this module: one reader accepted `.ts`/`.tsx` and the other did not.
-    # Mutation: drop `tsx?` from `REFERENCE` — this reddens.
-    assert list(path_references("`web/app.tsx` `web/x.ts` `cfg/a.toml` `k/v.yaml`")) == [
+def test_a_file_any_stack_stores_is_a_path_claim() -> None:
+    # The drift that built this module was one reader accepting `.ts`/`.tsx` and the other not;
+    # a closed list of extensions is the same drift between this grammar and every stack it does
+    # not list. Before, a plan citing `src/lib.rs` or `cmd/main.go:12` was never checked. An
+    # extension is any word that starts with a letter, a dotfile's included. Oracle:
+    # `mutations/`, "the reference grammar closes its extension list again".
+    line = (
+        "`web/app.tsx` `cfg/a.toml` `src/lib.rs` `cmd/main.go:12` `app/Foo.java` "
+        "`include/a.hpp` `types/a.d.ts` `secrets/.env`"
+    )
+    assert list(path_references(line)) == [
         "web/app.tsx",
-        "web/x.ts",
         "cfg/a.toml",
-        "k/v.yaml",
+        "src/lib.rs",
+        "cmd/main.go",
+        "app/Foo.java",
+        "include/a.hpp",
+        "types/a.d.ts",
+        "secrets/.env",
     ]
+
+
+def test_a_version_number_is_not_an_extension() -> None:
+    # `releases/0.1.9596` names a version, not a file: an extension starts with a letter, so a
+    # numbered directory is prose. Oracle: `mutations/`, "an extension may start with a digit".
+    assert list(path_references("`releases/0.1.9596` `docs/p0/0.0.1` `man/stayfixed.1`")) == []
 
 
 def test_a_shell_command_or_a_url_is_never_a_reference() -> None:

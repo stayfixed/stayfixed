@@ -39,3 +39,8 @@ differently. Each has its own entry in these notes, with the detail:
   - The background guard refuses a backgrounded command that begins with `uv run <options>
     sleep`, such as `uv run --no-project sleep 30`, which 0.2.0 allowed (Fixed, "The note after a
     failing test run now reaches a run started through `uv run`").
+  - `stayfixed plan check`, the `plan` gate and `stayfixed memory refs` report a dead reference for
+    a missing backticked path whatever its extension (`src/lib.rs`, `secrets/.env`), and for one
+    followed by a column or a nested symbol path, which 0.2.0 did not check (Fixed,
+    "`stayfixed plan check`, the `plan` gate and `stayfixed memory refs` now check a backticked
+    path in any language").

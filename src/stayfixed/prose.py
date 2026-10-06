@@ -5,14 +5,18 @@ and ask them the same question: which backticked spans claim that a path exists.
 that question drift, and they drift silently: let one copy accept `.ts`/`.tsx` and the other
 not, and in a repository whose front end is TypeScript a plan naming a deleted `.ts` module gets
 no reference check at all, while the module that came second goes on saying in its docstring
-that it shares a grammar it does not. One copy, here, is what stops that.
+that it shares a grammar it does not. One copy, here, is what stops that. A closed list of
+extensions is the same drift between this grammar and every stack the list leaves out, so there
+is none: a `.rs`, a `.go` or a `.java` file is claimed as a `.py` one is.
 
 Four rules live here, and each is a decision rather than a default:
 
-* the extension list, because a backticked span is a path claim only when it looks like a
-  file this repository stores. The whole span is the path, so a shell command or a URL —
-  both of which carry characters this class excludes — cannot match, and a trailing `:12` or
-  `::name` is a location within the file rather than part of its name;
+* the shape of a file name, because a backticked span is a path claim only when it looks like
+  a file: a name ending in an extension that starts with a letter (`lib.rs`, `a.d.ts`, the
+  dotfile `.env`), so a version such as `0.1.9` is not one. The whole span is the path, so a
+  shell command or a URL — both of which carry characters this class excludes — cannot match,
+  and a trailing `:12`, `:12:4` or `::symbol::path` is a location within the file rather than
+  part of its name, in whichever stack's notation;
 * fences are BLANKED, not deleted. Fenced code is fixture text and not prose, and deleting a
   block shifts every line below it upward by the block's height, so every report under a
   fence named a line that was not the line;
@@ -33,7 +37,12 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")
+# The path, ending in an extension that starts with a letter; then, outside the group, a place
+# in the file: a line and a column, or a symbol path of any depth.
+REFERENCE = re.compile(
+    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
+    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"
+)
 FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
 # Inline code, single-line so a stray backtick cannot swallow the lines after it. Blanked
 # AFTER fences (a fence can contain backticks).

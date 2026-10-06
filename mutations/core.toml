@@ -344,13 +344,38 @@ before = '            raise Refusal(f"{identifier!r} is not a {self.shape} ident
 after = '            return 0'
 reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]
 
-# The extension list is a decision: a repository storing TypeScript needs `.ts` to be a path claim.
+# The extension is any word that starts with a letter, a decision rather than a default: a
+# closed list leaves every stack it does not name unchecked (`src/lib.rs`, `cmd/main.go`).
 [[mutation]]
-name = "a TypeScript reference stops being a path claim"
+name = "the reference grammar closes its extension list again"
 file = "src/stayfixed/prose.py"
-before = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")'
-after = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml))(?::\d+|::[\w.]+)?`")'
-reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_this_grammar_stores"]
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))"'
+reddens = ["tests/docs/test_prose.py::test_a_file_any_stack_stores_is_a_path_claim"]
+
+# The letter is what keeps a version number (`releases/0.1.9596`) from reading as a file.
+[[mutation]]
+name = "an extension may start with a digit"
+file = "src/stayfixed/prose.py"
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"'
+reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"]
+
+# `src/b.c:3:14` names a line and a column; without the column the span claims no path.
+[[mutation]]
+name = "a column stops being part of a location suffix"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+after = '    r"(?::\d+|(?:::[\w.]+)+)?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
+
+# `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
+[[mutation]]
+name = "a symbol path stops being read past its first `::`"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+after = '    r"(?::\d+(?::\d+)?|::[\w.]+)?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # One digit rule, and every reader takes it from the constant. The allocator's `git log` source
 # respelled it inline, where widening the rule would have left it counting by the old one and
