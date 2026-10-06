@@ -38,7 +38,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
-# in the file: a line and a column, or a symbol path of any depth.
+# in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
+# a backticked `owner/lib.js` repository name, a dotted branch or a URL with no scheme reads as one.
 REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
     r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"

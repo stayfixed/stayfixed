@@ -37,8 +37,10 @@ differently. Each has its own entry in these notes, with the detail:
     `attach` skill and `common/rules/README.md`, keeping and naming a copy you edited (Changed,
     "`stayfixed overlay upgrade` and `overlay init` remove two files").
   - The background guard refuses a backgrounded command that begins with `uv run <options>
-    sleep`, such as `uv run --no-project sleep 30`, which 0.2.0 allowed (Fixed, "The note after a
-    failing test run now reaches a run started through `uv run`").
+    sleep`, such as `uv run --no-project sleep 30`, which 0.2.0 allowed, and `stayfixed guard
+    bg-cleanup` can exit `1` where 0.2.0 exited `0`, and the reverse, for a backgrounded chain
+    whose `; echo` or the command before it runs through `uv run <options>` (Fixed, "The note
+    after a failing test run now reaches a run started through `uv run`").
   - `stayfixed plan check`, the `plan` gate and `stayfixed memory refs` report a dead reference for
     a missing backticked path whatever its extension (`src/lib.rs`, `secrets/.env`), and for one
     followed by a column or a nested symbol path, which 0.2.0 did not check (Fixed,
