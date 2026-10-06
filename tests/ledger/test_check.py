@@ -308,24 +308,86 @@ def test_a_ledger_moved_whole_by_paths_removes_nothing(tmp_path: Path) -> None:
     [
         (b"[nonsense]\n", Failure, "does not load"),
         (b"# \xff\n", Failure, "is not UTF-8 text"),
-        (b"[ledger]\nid_prefix = 'br'\n", Refusal, "met a refusal"),
+        (b"[paths]\nbugs = '../out'\n", Refusal, "loading its stayfixed.toml against this tree"),
+        (b"[ledger]\nid_prefix = 'br'\n", Refusal, "places its ledger by an identifier prefix"),
     ],
-    ids=["does-not-load", "not-utf8", "refused"],
+    ids=["does-not-load", "not-utf8", "refused", "prefix-refused"],
 )
 def test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger(
     tmp_path: Path, copy: bytes, raised: type[Exception], said: str
 ) -> None:
     # Where the base kept its ledger is the question, so a copy that cannot answer it is no
-    # answer, and never the tree's paths in its place: that would pass the change above again.
-    # A copy that is not UTF-8 is never parsed, as the loader never parses the tree's. Mutations:
-    # `mutations/`, "a base copy that does not load is read at the tree's paths" and "a base copy
-    # whose load meets a refusal is read at the tree's paths".
+    # answer, and never the tree's paths in its place: that would pass again the change
+    # `test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it` makes. A copy
+    # that is not UTF-8 is never parsed, as the loader never parses the tree's. A load that met
+    # a refusal and a prefix the identifiers refuse are told apart in the words. Mutations:
+    # `mutations/`, "a base copy that does not load is read at the tree's paths", "a base copy
+    # that is not UTF-8 is parsed", "a base copy whose load meets a refusal is read at the
+    # tree's paths" and "a base copy whose prefix is refused is said to have met a refusal on
+    # load".
     root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
     (root / "stayfixed.toml").write_bytes(CONFIG.encode() + copy)
     git(root, "commit", "-qam", "a copy the loader refuses")
     base = git(root, "rev-parse", "HEAD").strip()
     (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     with pytest.raises(raised, match=said):
+        check.bugs_gate(root, config, base)
+
+
+@needs_git
+def test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_that_corrects_it(
+    tmp_path: Path,
+) -> None:
+    # Locating the base's ledger needs its paths and its identifiers, and nothing of how it
+    # judges an entry: built whole, the base's register refused the boundary level 0.2.0 loaded,
+    # so the change correcting it was refused (exit 2) by the very check it repairs. Mutation:
+    # `mutations/`, "the base's ledger is located by a register that judges entries".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    typo = CONFIG + '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
+    (root / "stayfixed.toml").write_text(typo, encoding="utf-8")
+    git(root, "commit", "-qam", "a level that names no severity")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+def test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it(
+    tmp_path: Path,
+) -> None:
+    # The finding's remedy is "restore it from the base", so it names the paths the base held:
+    # named at the change's new paths, it sent the owner to restore what no commit ever had.
+    # Mutation: `mutations/`, "a removed ledger is named at the tree's paths".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_text(CONFIG + MOVED, encoding="utf-8")
+    config = load(root, machine=tmp_path / "m.toml")
+    shutil.rmtree(root / "docs" / "bugs")
+    (root / "docs" / "bug-reports.md").unlink()
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    [found] = check.bugs_gate(root, config, base)
+    assert (found.rule, found.path) == ("ledger-removed", "docs/bugs")
+    assert "(docs/bugs or docs/bug-reports.md)" in found.detail
+
+
+@needs_git
+def test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A listing that failed listed nothing, which is what a fork with no `stayfixed.toml` lists:
+    # read that way, the base would be compared at the tree's paths, which is the bootstrap's
+    # answer and not this one. Mutation: `mutations/`, "a listing of the base's stayfixed.toml
+    # git refused reads as the bootstrap".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    config = _moved(root, tmp_path, ("BR-001",))
+    real = git_run
+
+    def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:1] == ("ls-tree",) and args[-1] == "stayfixed.toml":
+            return 128, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(check, "git_run", refused)
+    with pytest.raises(Failure, match="proved nothing"):
         check.bugs_gate(root, config, base)
 
 

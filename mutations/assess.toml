@@ -254,6 +254,7 @@ after = "    if False:"
 reddens = [
   "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
   "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
+  "tests/assess/test_gate_command.py::test_a_project_root_a_change_made_a_symlink_is_refused_before_the_bugs_gate_runs",
 ]
 
 [[mutation]]

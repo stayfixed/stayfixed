@@ -31,7 +31,13 @@ from stayfixed.ledger.index import (
     is_generated_index,
     render_index,
 )
-from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, Register, bug_register
+from stayfixed.ledger.register import (
+    EVIDENCE_LABEL,
+    EVIDENCE_PLACEHOLDER,
+    Register,
+    bug_register,
+    located_bug_register,
+)
 from stayfixed.ledger.scan import code_mentions, entry_citations
 
 if TYPE_CHECKING:
@@ -79,6 +85,13 @@ FORK_DOES_NOT_LOAD = (
     "stayfixed.toml does not load, so whether this change deleted an entry is unknown and the "
     "{name} gate proved nothing ({reason})"
 )
+# The load succeeded and building the register from it refused: an `id_prefix` the identifier
+# grammar does not hold, by which no entry of that commit can be found.
+FORK_UNPLACED = (
+    "where a commit this change forked from `{base}` at kept the ledger is unknown: its "
+    "stayfixed.toml places its ledger by an identifier prefix the ledger refuses, so the {name} "
+    "gate proved nothing: {reason}"
+)
 FORK_REFUSED = (
     "where a commit this change forked from `{base}` at kept the ledger is unknown: loading its "
     "stayfixed.toml against this tree met a refusal, so the {name} gate proved nothing: {reason}"
@@ -89,6 +102,9 @@ FORK_REFUSED = (
 class _BaseLedger:
     carried: bool  # the fork point has the ledger directory or the index
     entries: tuple[str, ...]  # the entry files directly under the directory there, by name
+    # The directory and index of the first fork point that carried the ledger, where that
+    # commit's own configuration put them; `None` when none carried one.
+    place: tuple[str, str] | None = None
 
 
 def _body_state_bullet(register: Register) -> re.Pattern[str]:
@@ -163,7 +179,7 @@ def _base_ledger(
     forks = fork_points(root, base)
     if isinstance(forks, ForkUnknown):
         raise unread(forks)
-    carried = False
+    place: tuple[str, str] | None = None
     entries: set[str] = set()
     for fork in forks:
         held = register
@@ -175,7 +191,8 @@ def _base_ledger(
         if code != 0:
             raise unread(ForkUnknown.of(code))
         names = [name for name in out.split("\0") if name]
-        carried = carried or bool(names)
+        if names and place is None:
+            place = (held.directory, held.index)
         under = f"{held.directory}/"
         entries.update(
             name.removeprefix(under)
@@ -184,7 +201,7 @@ def _base_ledger(
             and name.endswith(".md")
             and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
         )
-    return _BaseLedger(carried, tuple(sorted(entries)))
+    return _BaseLedger(place is not None, tuple(sorted(entries)), place)
 
 
 def _fork_register(
@@ -228,11 +245,14 @@ def _fork_register(
         raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None
     try:
         copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=config.personal)
-        return registered(copy)
     except Refusal as exc:
         raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None
     except Failure as exc:
         raise does_not_load(exc) from None
+    try:
+        return registered(copy)
+    except Refusal as exc:
+        raise Refusal(FORK_UNPLACED.format(base=base, name=register.name, reason=exc)) from None
 
 
 def _removed_entries(root: Path, register: Register, base: _BaseLedger | None) -> list[Finding]:
@@ -301,7 +321,9 @@ def _unledgered(
     """
     found: list[Finding] = []
     if base is not None and base.carried:
-        directory, index = register.directory, register.index
+        # Where the base kept it, which is what "restore it from the base" restores: after a
+        # change that moved `[paths]`, the tree's own paths are ones no commit ever carried.
+        directory, index = base.place or (register.directory, register.index)
         removed = LEDGER_REMOVED.format(directory=directory, index=index, name=register.name)
         found.append(Finding("ledger-removed", directory, None, removed))
     empty: set[str] = set()
@@ -476,4 +498,4 @@ def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
     tree alone; every gate run passes the base it judges against.
     """
-    return register_gate(root, config, bug_register(config), base, registered=bug_register)
+    return register_gate(root, config, bug_register(config), base, registered=located_bug_register)

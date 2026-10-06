@@ -1189,7 +1189,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return register_gate(root, config, bug_register(config), base, registered=bug_register)"
+before = "    return register_gate(root, config, bug_register(config), base, registered=located_bug_register)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -2294,6 +2294,56 @@ after = '''    if not listed:
         raise unread(ForkUnknown.of(1))'''
 reddens = [
   "tests/ledger/test_check.py::test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths",
+]
+
+[[mutation]]
+name = "a base copy that is not UTF-8 is parsed"
+file = "src/stayfixed/ledger/check.py"
+before = "        raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None"
+after = "        decoded = text"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[not-utf8]",
+]
+
+[[mutation]]
+name = "a base copy whose prefix is refused is said to have met a refusal on load"
+file = "src/stayfixed/ledger/check.py"
+before = "        raise Refusal(FORK_UNPLACED.format(base=base, name=register.name, reason=exc)) from None"
+after = "        raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[prefix-refused]",
+]
+
+[[mutation]]
+name = "a listing of the base's stayfixed.toml git refused reads as the bootstrap"
+file = "src/stayfixed/ledger/check.py"
+before = '''    code, listed = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", CONFIG_FILE)
+    if code != 0:
+        raise unread(ForkUnknown.of(code))'''
+after = '''    code, listed = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", CONFIG_FILE)'''
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_the_bootstrap",
+]
+
+# Locating the base's ledger needs its paths and identifiers and nothing of how it judges an
+# entry, so a level 0.2.0 accepted on the base does not refuse the change that corrects it; and a
+# ledger deleted along with a `[paths]` move is named where the base kept it.
+[[mutation]]
+name = "the base's ledger is located by a register that judges entries"
+file = "src/stayfixed/ledger/check.py"
+before = "    return register_gate(root, config, bug_register(config), base, registered=located_bug_register)"
+after = "    return register_gate(root, config, bug_register(config), base, registered=bug_register)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_that_corrects_it",
+]
+
+[[mutation]]
+name = "a removed ledger is named at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = "        directory, index = base.place or (register.directory, register.index)"
+after = "        directory, index = register.directory, register.index"
+reddens = [
+  "tests/ledger/test_check.py::test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it",
 ]
 
 [[mutation]]

@@ -262,13 +262,25 @@ def bug_register(config: Config) -> Register:
     `evidence_boundary_required_for` level that is no severity, which loaded and enforced the
     evidence line of no entry at all.
     """
-    paths = config.paths
     levels = BUG_SCHEMA.levels
     unknown = [
         level for level in config.ledger.evidence_boundary_required_for if level not in levels
     ]
     if unknown:
         raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)))
+    return located_bug_register(config)
+
+
+def located_bug_register(config: Config) -> Register:
+    """The bug ledger where `config` puts it — its paths and its identifiers — with none of
+    `bug_register`'s checks on how it judges an entry.
+
+    For reading another commit's ledger, which needs only where it lives: the base's own
+    `stayfixed.toml` may carry a boundary level 0.2.0 accepted, and refusing it there refused
+    the very change that corrects it. `id_prefix` is still held to the identifier grammar,
+    because the identifiers are how the entries are found.
+    """
+    paths = config.paths
     return Register(
         name="bugs",
         title="Bug reports",

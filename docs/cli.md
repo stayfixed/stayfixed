@@ -209,8 +209,10 @@ Whether each bundle fits the numbered hook entries declared for it. Exits `1` wh
 — either it needs more parts than there are slots, or a single block is larger than one part
 and would be truncated by the platform.
 
-A bundle that fits because it is *empty* is not a bundle that fits, so the output also reports
-whether the trust gate is open, by the question and in the words `memory index` uses.
+A bundle that fits says nothing of whether its notes may reach a session, so the output also
+reports whether the trust gate is open, by the question and in the words `memory index` uses:
+`--json`'s `trusted` is the harness memory link's question, so `false` says the link waits for a
+record, and the line says whether the bundles are withheld too or still deliver the notes.
 
 **Writes** nothing.
 
@@ -654,13 +656,20 @@ a base that kept its entries taking them together refuses no branch that deleted
 removed from the base itself, by a direct push, is still named on a criss-crossed branch whose
 merge bases include one from before the removal: restore it on the base. Each of those commits'
 ledger is read where that commit's own `stayfixed.toml` put it (its `[paths] bugs`, `bug_index`
-and `[ledger] id_prefix`), loaded as `stayfixed gate` loads the base's copy, and compared by file
-name with the tree's directory: a change that moves the ledger by `[paths]` answers for every
-entry it did not carry along, and one that changes `id_prefix` for every entry under the old
-prefix. A commit with no `stayfixed.toml` at the project's path is read at the tree's paths, as
-the change that adds the configuration decides for itself under `stayfixed gate`; a copy that does
-not load fails (`1`), and one whose load meets a refusal refuses (`2`), rather than read as a
-base with no ledger. `--base` is what the
+and `[ledger] id_prefix`, and nothing of how it judges an entry, so a base carrying an
+`evidence_boundary_required_for` level the ledger now refuses does not stop the change that
+corrects it), loaded through the loader against the tree's disk as `stayfixed gate` loads the
+base's copy, and compared by file name with the tree's directory: a change that moves the ledger
+by `[paths]` answers for every entry it did not carry along, and one that changes `id_prefix` for
+every entry under the old prefix, and a deleted ledger is named at the paths the base kept it
+at. A commit with no `stayfixed.toml` at the project's path is read at the tree's paths, as the
+change that adds the configuration decides for itself under `stayfixed gate`; a copy that does not
+load fails (`1`), and one whose load meets a refusal, or whose `id_prefix` the identifiers refuse,
+refuses (`2`), rather than read as a base with no ledger. The copy is found where git puts the
+root, which is not quite how `stayfixed gate` finds the base's: the gate first refuses a root
+reached through a symlink or spelled otherwise than git spells it, and `bugs check --base` does
+not, so a root that a change made a symlink is judged at the directory the link names — under
+`stayfixed gate` that root is refused before any gate runs. `--base` is what the
 `bugs` gate passes, the base it judges against; a base git cannot list, one that shares no commit
 with `HEAD`, any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
 the merge base git sees be an older one, and any base in a clone git cannot say is shallow or

@@ -860,6 +860,45 @@ def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
     )
 
 
+def test_a_project_root_a_change_made_a_symlink_is_refused_before_the_bugs_gate_runs(
+    tmp_path: Path,
+) -> None:
+    # `bugs check --base` finds the base's `stayfixed.toml` where git puts the root, so a change
+    # that turns the project's directory into a link to a copy without an entry is judged at the
+    # copy, where the base has nothing: that run passes. Under `stayfixed gate` the root is asked
+    # about first, and one reached through a symlink is refused before any gate runs, so the
+    # deletion cannot pass the workflow. `docs/cli.md` says which of the two does what. Mutation:
+    # `mutations/`, "a project root reached through a symlink reads the base at a path it never
+    # had".
+    enforced = BASE.replace('["docs"]', '["bugs"]')
+    project = clone(tmp_path, enforced, under="proj")
+    entry = (
+        "---\nid: BR-00{n}\ntitle: t\nstatus: open\nseverity: low\narea: a\n"
+        "found: 2026-01-01\nsource:\nfixed_in:\nrelated:\n---\n\nbody\n"
+    )
+    bugs = project / "proj" / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    for n in (1, 2):
+        (bugs / f"BR-00{n}.md").write_text(entry.format(n=n), encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    machine = ["--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", "--root", str(project / "proj"), *machine], parser=parser) == 0
+    commit(project, "chore: a ledger")
+    base = git(project, "rev-parse", "HEAD").strip()
+    git(project, "mv", "proj", "other")
+    (project / "other" / "docs" / "bugs" / "BR-002.md").unlink()
+    (project / "other" / "docs" / "bug-reports.md").unlink()
+    with redirect_stdout(io.StringIO()):
+        assert (
+            run(["bugs", "index", "--root", str(project / "other"), *machine], parser=parser) == 0
+        )
+    (project / "proj").symlink_to("other", target_is_directory=True)
+    commit(project, "chore: the project as a link to a copy without BR-002")
+    code, out, err = cli(project / "proj", tmp_path, "gate", "--builtin", "--base", base)
+    assert code == 2 and "symlink" in err, (out, err)
+
+
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
     tmp_path: Path,
 ) -> None:
