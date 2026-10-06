@@ -99,7 +99,7 @@ def _scalar(value: object, where: str) -> str:
     if isinstance(value, str):
         return quoted(value)
     if isinstance(value, int):
-        return str(value)
+        return _integer(value, where)
     if isinstance(value, float):
         # `repr` spells the three special values the way TOML does (`inf`, `-inf`, `nan`) and
         # gives a round-tripping decimal, always with a point or an exponent, for the rest.
@@ -129,6 +129,27 @@ def _scalar(value: object, where: str) -> str:
         f"every type a TOML document can hold — strings, integers, floats, booleans, dates and "
         f"times, tables, and lists of those — and refuses anything else rather than guessing"
     )
+
+
+def _integer(value: int, where: str) -> str:
+    """`value` as a TOML integer: decimal, or hexadecimal where decimal cannot be spelled.
+
+    `str` refuses an integer past the interpreter's 4,300-digit limit, and `tomllib` converts a
+    hex, octal or binary literal of any length, so a document this was handed back to write --
+    an adopted `stayfixed.toml`, the owner's machine file -- could hold one: the rewrite ended in
+    `ValueError`, an internal error, before anything had judged the value. `hex` has no such
+    limit and TOML reads it back. A negative integer that large has no spelling at all (TOML's
+    hexadecimal has no sign) and no document could have held one.
+    """
+    try:
+        return str(value)
+    except ValueError:
+        if value < 0:
+            raise Refusal(
+                f"{where} holds an integer too long for decimal and below zero, which TOML "
+                f"cannot spell"
+            ) from None
+        return hex(value)
 
 
 def _inline(table: dict[str, object], where: str) -> str:

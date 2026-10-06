@@ -297,3 +297,31 @@ def test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error(
     assert code == 1, err
     assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
     assert "internal error" not in out + err
+
+
+@needs_git
+def test_a_pyproject_number_past_the_conversion_limit_is_one_the_profile_cannot_read(
+    tmp_path: Path,
+) -> None:
+    # A hex literal of any length parses, and the Python profile's locator read its text with
+    # `str()`, which raises past 4,300 digits: `stayfixed assess` ended in an internal error, exit
+    # 2. The value resolves to nothing, as a `pyproject.toml` that does not parse does, and
+    # `requires-python` reads as absent. Mutation (declared): "a profile locator stringifies a
+    # number past the conversion limit".
+    root = smoke_repo(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[stayfixed]\n", '[stayfixed]\nprofile = "python"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    assert 'profile = "python"' in config.read_text(encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "smoke"\nrequires-python = 0x' + "f" * 5_000 + "\n", encoding="utf-8"
+    )
+    code, out, err = cli(root, tmp_path, "assess", "--base", BASE, "--json")
+    assert code in (0, 1), err
+    assert "internal error" not in out + err
+    ids = [item["rule"] for item in json.loads(out)["items"]]
+    assert "requires-python" in ids

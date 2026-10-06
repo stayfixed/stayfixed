@@ -150,3 +150,22 @@ def test_a_time_with_an_offset_and_a_sub_minute_offset_are_refused_rather_than_w
         }
     }
     assert tomllib.loads(dumps(fine)) == fine
+
+
+def test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal() -> None:
+    # `tomllib` converts a hex, octal or binary literal of any length, and `str()` of the result
+    # past 4,300 digits raises `ValueError`: `setup`'s rewrite of the owner's machine file and
+    # `init`'s re-render of an adopted `stayfixed.toml` ended in an internal error on one such
+    # line. Written as the hexadecimal TOML reads back, which no digit limit bounds. Mutation
+    # (declared): the integer spelled with `str` alone again -> `ValueError`.
+    large = int("f" * 5_000, 16)
+    assert tomllib.loads(dumps({"t": {"n": large}})) == {"t": {"n": large}}
+    # A decimal one: the usual spelling, unchanged.
+    assert dumps({"t": {"n": 600}}) == "[t]\nn = 600\n"
+
+
+def test_a_negative_integer_no_toml_spelling_holds_is_refused() -> None:
+    # A negative integer past the decimal limit has no TOML spelling (a hex literal has no sign),
+    # and no TOML document could have held it: a caller's bug, refused rather than written.
+    with pytest.raises(Refusal, match=r"t\.n holds an integer"):
+        dumps({"t": {"n": -int("f" * 5_000, 16)}})

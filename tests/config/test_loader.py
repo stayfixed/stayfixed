@@ -27,6 +27,7 @@ from stayfixed.config.schema import (
     Config,
     CustomGate,
 )
+from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
@@ -787,5 +788,20 @@ def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
 
 def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
     # The legitimate side, and the bound's exact edge: one under it is a value like any other.
+    # Mutation (declared): "a configuration integer one under the bound is refused".
     config = _gated(tmp_path, rest=f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT - 1}\n")
     assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
+
+
+def test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name(
+    tmp_path: Path,
+) -> None:
+    # `[stayfixed] preset` was spelled with `str()` before it was checked, and `tomllib` converts
+    # a hex literal of any length, whose `str` raises past 4,300 digits: every command loading
+    # the file ended in an internal error. A value that is not a string is refused as a preset
+    # name that is not one, as `preset = 5` already was. Mutation (declared): the preset spelled
+    # with `str` again -> `ValueError`.
+    text = '[stayfixed]\nversion = "0.1.0"\npreset = 0x' + "f" * 5_000 + "\n"
+    text += '\n[project]\nname = "sample"\n'
+    with pytest.raises(Failure, match=r"\[stayfixed\] preset is not a plain identifier"):
+        loads(text, tmp_path, machine=tmp_path / "no-machine.toml")

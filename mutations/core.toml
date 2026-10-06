@@ -2985,3 +2985,48 @@ reddens = [
   "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
   "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
 ]
+
+# `tomllib` converts a hex, octal or binary literal of any length, and `str` of one past 4,300
+# digits raises: `init --yes` re-rendering an adopted `stayfixed.toml`, and `setup` rewriting the
+# owner's machine file, ended in an internal error on one such line. The serialiser spells it in
+# hexadecimal, which TOML reads back.
+[[mutation]]
+name = "the TOML writer spells every integer in decimal"
+file = "src/stayfixed/tomlout.py"
+before = "        return _integer(value, where)"
+after = "        return str(value)"
+reddens = [
+  "tests/test_tomlout.py::test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[integer-key]",
+  "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[string-key]",
+]
+
+[[mutation]]
+name = "the TOML writer spells a negative integer past the limit in hexadecimal"
+file = "src/stayfixed/tomlout.py"
+before = "        if value < 0:"
+after = "        if False:"
+reddens = [
+  "tests/test_tomlout.py::test_a_negative_integer_no_toml_spelling_holds_is_refused",
+]
+
+# A preset's name was spelled with `str()` before it was checked, so a hex literal there ended
+# every command that loads the file in an internal error.
+[[mutation]]
+name = "the loader spells a preset that is not a string with str"
+file = "src/stayfixed/config/loader.py"
+before = '    preset_name = chosen if isinstance(chosen, str) else ""'
+after = "    preset_name = str(chosen)"
+reddens = [
+  "tests/config/test_loader.py::test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name",
+]
+
+# The bound is the first integer refused, not one under it: the largest value it admits loads.
+[[mutation]]
+name = "a configuration integer one under the bound is refused"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if value > INTEGER_LIMIT - 2:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
+]

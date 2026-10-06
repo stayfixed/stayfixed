@@ -121,8 +121,8 @@ T = TypeVar("T")
 # `<= 0` handed its reader a number no `str` could print or no `float` could hold: `[gates]
 # custom_timeout_seconds` ended `assess` and `gate` in an internal error. 2**31 is what a signed
 # 32-bit count holds, far above any budget, cap or timeout a project writes (the preset's largest
-# is a 600 s timeout), and below what every reader of one handles: `str`, `float`, a comparison.
-# No shipped file states it.
+# integer is `memory_index_bytes = 25600`), and below what every reader of one handles: `str`,
+# `float`, a comparison. No shipped file states it.
 INTEGER_LIMIT = 2**31
 
 
@@ -554,7 +554,11 @@ def loads(
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "stayfixed")
-    preset_name = str(head.get("preset", "recommended"))
+    # Never `str()` of the value: a hex literal of any length converts, and its `str` raises
+    # past 4,300 digits. A value that is not a string is no preset's name, and `load_preset`
+    # refuses it, as it refuses any other name that is not a plain identifier.
+    chosen = head.get("preset", "recommended")
+    preset_name = chosen if isinstance(chosen, str) else ""
     preset = load_preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}

@@ -111,10 +111,13 @@ def _toml_document(text: str) -> dict[str, Any] | None:
 
 
 def _toml_value(document: dict[str, Any], dotted: str) -> str | None:
-    """The text of `dotted` in `document`, or `None` when the key is absent.
+    """The text of `dotted` in `document`, or `None` when the key is absent or has no text.
 
     `_text` walks the nesting `tomllib` built, so it sits inside the same `RecursionError`
-    guard the parse does.
+    guard the parse does. And it spells an integer with `str`, which raises `ValueError` past
+    4,300 digits, while `tomllib` converts a hex, octal or binary literal of any length: such a
+    value is one this locator cannot read, as a file that does not parse is, and resolves to
+    nothing rather than ending the whole evaluation.
     """
     try:
         node: Any = document
@@ -123,7 +126,7 @@ def _toml_value(document: dict[str, Any], dotted: str) -> str | None:
                 return None
             node = node[part]
         return _text(node)
-    except RecursionError:
+    except (RecursionError, ValueError):
         return None
 
 

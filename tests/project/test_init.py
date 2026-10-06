@@ -676,3 +676,37 @@ def test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_d
         with pytest.raises(ConfigError, match=r"\[project\] is missing required key\(s\): name"):
             _init(root, tmp_path, dry_run=dry_run, ci=False)
         assert_snapshot_unchanged(root, before)
+
+
+# An adopted `stayfixed.toml` holding a hexadecimal integer longer than any decimal Python prints:
+# under an integer key, and under a key that holds a string.
+HEX_HEADS = {
+    "integer-key": "\n[gates]\ncustom_timeout_seconds = 0x" + "f" * 5_000 + "\n",
+    "string-key": None,
+}
+
+
+@needs_git
+@pytest.mark.parametrize("case", sorted(HEX_HEADS))
+def test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error(
+    tmp_path: Path, case: str
+) -> None:
+    # `init` re-renders the adopted document before the loader asks a thing of it, and the
+    # renderer spelled every integer with `str()`, which raises past 4,300 digits: a hex literal
+    # of any length converts, so `init --yes` ended in an internal error on one line of it, under
+    # any key. The document renders, and the loader refuses it as the configuration's own error,
+    # before anything is written and without printing the value. Mutation (declared): the
+    # serialiser spells an integer with `str` alone again -> `ValueError`.
+    root = _repo(tmp_path)
+    large = "0x" + "f" * 5_000
+    if case == "string-key":
+        document = f'[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = {large}\n'
+    else:
+        document = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+        document += str(HEX_HEADS[case])
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(ConfigError) as refused:
+        _init(root, tmp_path, dry_run=False, ci=False)
+    assert "f" * 50 not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
