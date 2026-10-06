@@ -178,3 +178,10 @@ def test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpr
     with pytest.raises(ConfigError) as refused:
         loads(LONG, Path("/nowhere"), machine=Path("/nowhere/absent.toml"))
     assert str(refused.value).endswith(f"stayfixed.toml is not valid TOML {TOO_LONG}")
+
+
+def test_an_integer_of_exactly_the_conversion_limit_still_parses() -> None:
+    # The legitimate edge of the readers' widened catch: 4,300 digits is what the interpreter still
+    # converts, so such a document parses, and only one past it is a document that does not. No
+    # mutation: it pins the interpreter's limit the widened catch relies on, not a line here.
+    assert _toml_document("a = " + "9" * 4_300 + "\n") == {"a": int("9" * 4_300)}

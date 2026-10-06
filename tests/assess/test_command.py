@@ -267,3 +267,33 @@ def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
     monkeypatch.setattr("stayfixed.assess.assessment.run_probes", boom)
     assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 2
     assert (root / ASSESSMENT).read_bytes() == before
+
+
+# Integers `tomllib` converts whatever their length, each too large for what reads the key: a hex
+# literal (a power-of-two base is exempt from the 4,300-digit limit) that no `str` can print, and
+# a decimal of 401 digits, inside the limit, that no `float` can hold.
+TOO_LARGE = {"hex": "0x" + "f" * 5_000, "decimal": "9" * 401}
+
+
+@needs_git
+@pytest.mark.parametrize("shape", sorted(TOO_LARGE))
+def test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error(
+    tmp_path: Path, shape: str
+) -> None:
+    # `[gates] custom_timeout_seconds` was checked only for `<= 0`, so either literal reached the
+    # custom gate: `str` raised `ValueError` with the interpreter's advice to raise a limit, or
+    # `float` raised `OverflowError`, and `assess` ended in an internal error, exit 2. The loader
+    # bounds every integer key, so it is the configuration's refusal, exit 1. Mutation
+    # (declared): the bound on a schema integer dropped -> exit 2 again.
+    root = smoke_repo(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + f"\n[gates]\ncustom_timeout_seconds = {TOO_LARGE[shape]}\n"
+        + CUSTOM_GATE,
+        encoding="utf-8",
+    )
+    code, out, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 1, err
+    assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
+    assert "internal error" not in out + err

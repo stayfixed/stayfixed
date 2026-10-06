@@ -1807,8 +1807,8 @@ reddens = [
 [[mutation]]
 name = "an integer setting at or below zero loads"
 file = "src/stayfixed/config/loader.py"
-before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
-after = "            if isinstance(value, bool) or not isinstance(value, int):"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if isinstance(value, bool) or not isinstance(value, int):"
 reddens = [
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[no-time-at-all]",
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[negative-time]",
@@ -1817,8 +1817,8 @@ reddens = [
 [[mutation]]
 name = "a bool loads as an integer setting"
 file = "src/stayfixed/config/loader.py"
-before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
-after = "            if not isinstance(value, int) or value <= 0:"
+before = "    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "    if not isinstance(value, int) or value <= 0:"
 reddens = [
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[time-as-a-bool]",
 ]
@@ -2887,4 +2887,37 @@ before = "DEPTH_CAP = 10_000"
 after = "DEPTH_CAP = 999"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+# A hex, octal or binary literal of any length converts, and so does a decimal under 4,300 digits,
+# so a configuration integer checked only for `<= 0` handed its reader a number no `str` could
+# print or no `float` could hold: `[gates] custom_timeout_seconds` ended `assess` and `gate` in an
+# internal error. Every integer key is bounded by `INTEGER_LIMIT`.
+[[mutation]]
+name = "a configuration integer is bounded only below"
+file = "src/stayfixed/config/loader.py"
+before = "    if value >= INTEGER_LIMIT:"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[hex]",
+  "tests/assess/test_command.py::test_a_timeout_too_large_for_its_reader_is_the_configurations_own_error[hex]",
+  "tests/assess/test_gate_command.py::test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error[decimal]",
+]
+
+[[mutation]]
+name = "the schema's integer keys are taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '            coerced[key] = _positive(f"{name}.{key}", value)'
+after = "            coerced[key] = value"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[octal]",
+]
+
+[[mutation]]
+name = "a `[budgets]` value is taken unchecked"
+file = "src/stayfixed/config/loader.py"
+before = '        _positive(f"budgets.{key}", value)'
+after = "        pass"
+reddens = [
+  "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
 ]

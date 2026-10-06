@@ -998,3 +998,22 @@ def test_a_local_run_without_the_workflow_sha_refuses_a_moved_pin(
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 1
     assert "ci.ref" in out
+
+
+@pytest.mark.parametrize("shape", ["hex", "decimal"])
+def test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configurations_error(
+    tmp_path: Path, shape: str
+) -> None:
+    # A hex literal of any length converts, and a decimal of 401 digits is inside the parser's
+    # limit, so each reached the custom gate and ended `gate` in an internal error. The loader
+    # refuses it, so the gate fails closed on the configuration's own error. Mutation (declared):
+    # the bound on a schema integer dropped -> exit 2.
+    large = "0x" + "f" * 5_000 if shape == "hex" else "9" * 401
+    config = BASE + f"\n[gates]\ncustom_timeout_seconds = {large}\n" + MARKER
+    # On both sides, so the configuration the gate runs under holds it whichever side it judges.
+    project = clone(tmp_path, config)
+    _change(project, config, agents="# Agents\n")
+    code, out, err = cli(project, tmp_path, "gate", "--custom")
+    assert code == 1, err
+    assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
+    assert "internal error" not in out + err

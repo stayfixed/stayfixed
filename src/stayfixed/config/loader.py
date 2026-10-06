@@ -115,6 +115,16 @@ GATES_PARTIAL = (
 
 T = TypeVar("T")
 
+# A named cap: every integer a configuration key holds is below it. `tomllib` converts a hex,
+# octal or binary literal of any length (a power-of-two base is exempt from the interpreter's
+# 4,300-digit limit), and a decimal of 401 digits is inside that limit, so a key checked only for
+# `<= 0` handed its reader a number no `str` could print or no `float` could hold: `[gates]
+# custom_timeout_seconds` ended `assess` and `gate` in an internal error. 2**31 is what a signed
+# 32-bit count holds, far above any budget, cap or timeout a project writes (the preset's largest
+# is a 600 s timeout), and below what every reader of one handles: `str`, `float`, a comparison.
+# No shipped file states it.
+INTEGER_LIMIT = 2**31
+
 
 class ConfigError(Failure):
     """A stayfixed.toml that cannot be trusted as written."""
@@ -291,9 +301,7 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 raise ConfigError(f"{name}.{key} must be true or false")
             coerced[key] = value
         elif annotation is int:
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ConfigError(f"{name}.{key} must be a positive integer")
-            coerced[key] = value
+            coerced[key] = _positive(f"{name}.{key}", value)
         elif annotation is str:
             if not isinstance(value, str):
                 raise ConfigError(f"{name}.{key} must be a string")
@@ -305,6 +313,16 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
                 "the loader coerces tuple[str, ...], bool, int and str"
             )
     return cls(**coerced)
+
+
+def _positive(key: str, value: object) -> int:
+    """`value` when it is a positive integer below `INTEGER_LIMIT`; a `ConfigError` naming `key`
+    otherwise. Never the value: a number that large is the one no message could print."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{key} must be a positive integer")
+    if value >= INTEGER_LIMIT:
+        raise ConfigError(f"{key} must be a positive integer below {INTEGER_LIMIT:,}")
+    return value
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -431,8 +449,7 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     if unknown:
         raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
     for key, value in configured.items():
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise ConfigError(f"budgets.{key} must be a positive integer")
+        _positive(f"budgets.{key}", value)
     return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
 
 

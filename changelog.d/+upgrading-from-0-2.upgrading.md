@@ -44,3 +44,5 @@ differently. Each has its own entry in these notes, with the detail:
     nothing vouches for in a settings file that opens with a byte-order mark or holds a malformed
     value beside its valid hooks, where it warned and exited `0` (Fixed, "`stayfixed doctor`'s
     `hook-entries` row now judges the hook entries in a settings file that opens with").
+  - A `stayfixed.toml` integer of 2,147,483,648 or more is refused when the file loads, where
+    0.2.0 loaded it (Fixed, "Every integer in `stayfixed.toml`").

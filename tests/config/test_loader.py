@@ -9,6 +9,7 @@ import pytest
 
 from stayfixed.config.loader import (
     CONFIG_FILE,
+    INTEGER_LIMIT,
     ConfigError,
     MachineConfigError,
     _build,
@@ -758,3 +759,33 @@ def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> N
         f"[paths] has unknown key(s): {shown} and 3 more plain name(s); "
         "1 more that is not a plain key name"
     )
+
+
+@pytest.mark.parametrize(
+    "rest",
+    [
+        "\n[gates]\ncustom_timeout_seconds = 0x" + "f" * 5_000 + "\n",
+        "\n[gates]\ncustom_timeout_seconds = 0o" + "7" * 6_000 + "\n",
+        "\n[gates]\ncustom_timeout_seconds = 0b" + "1" * 15_000 + "\n",
+        f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT}\n",
+        f"\n[budgets]\nagents_md_lines = {'9' * 401}\n",
+    ],
+    ids=["hex", "octal", "binary", "at-the-bound", "budget"],
+)
+def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
+    tmp_path: Path, rest: str
+) -> None:
+    # A power-of-two literal of any length converts, and so does a decimal under 4,300 digits, so
+    # the loader's own bound is what keeps a number no reader can print or hold out of `Config`.
+    # The refusal names the bound and never the value. Mutations (declared): "a configuration
+    # integer is bounded only below" -> every case loads; "the schema's integer keys are taken
+    # unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" -> `budget`.
+    with pytest.raises(ConfigError) as refused:
+        _gated(tmp_path, rest=rest)
+    assert str(refused.value).endswith(f"must be a positive integer below {INTEGER_LIMIT:,}")
+
+
+def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
+    # The legitimate side, and the bound's exact edge: one under it is a value like any other.
+    config = _gated(tmp_path, rest=f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT - 1}\n")
+    assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
