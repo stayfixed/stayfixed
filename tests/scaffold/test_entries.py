@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
@@ -14,7 +15,7 @@ from stayfixed.scaffold.entries import (
     owned,
     owned_ids,
 )
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING
 
 
 def document(*commands: tuple[str, str]) -> str:
@@ -161,6 +162,36 @@ def test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit() 
         owned_ids(nested)
     with pytest.raises(ParserLimitError, match="nested deeper"):
         apply_entries(nested, {})
+
+
+def test_a_document_past_the_encoder_refuses_as_one_nested_past_the_parser() -> None:
+    # On Python 3.14 this parses, and `apply_entries`'s `json.dumps` of it raised `RecursionError`
+    # past every caller's catch, where 3.11 to 3.13 refuse it at the parse. The reader bounds the
+    # depth it follows, so every interpreter refuses it as nested too deep; the bound itself is
+    # proven on every interpreter by `test_the_object_reader_refuses_a_value_past_its_depth_bound`.
+    with pytest.raises(ParserLimitError, match="nested deeper"):
+        apply_entries('{"x": ' + PAST_ENCODING + "}", {})
+
+
+def test_the_object_reader_refuses_a_value_past_its_depth_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The bound lowered, so a document every parser follows meets it: one level past refuses in
+    # the parser's own words, and a document at the bound is read. Mutation (declared): the
+    # bound never refuses -> the deeper document is read.
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    with pytest.raises(ParserLimitError, match="nested deeper than this reader follows"):
+        apply_entries('{"x": [[[[]]]]}', {})
+    assert json.loads(apply_entries('{"x": [[[]]]}', {})) == {"x": [[[]]]}
+
+
+def test_a_real_settings_document_sits_far_inside_the_depth_bound() -> None:
+    # The legitimate document the bound must never refuse: hooks -> event -> group -> hooks ->
+    # entry is five levels, and the bound is a named cap far above any settings file a harness
+    # writes.
+    marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
+    assert jsonobject.DEPTH_CAP >= 1_000
+    assert json.loads(apply_entries(marked, {})) == {}
 
 
 def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge() -> None:

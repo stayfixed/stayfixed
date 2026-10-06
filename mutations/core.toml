@@ -2682,3 +2682,33 @@ after = """
 reddens = [
   "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
 ]
+
+# Python 3.14's JSON parser follows about 57,800 levels, further than its own `json.dumps` and
+# `str` do, so a document 3.13 refuses as nested too deep was read on 3.14 and then ended `detach`
+# and the settings engine in an internal error when they wrote it back. The object reader bounds
+# the depth it follows; the cases lower the bound, so they run on every interpreter.
+[[mutation]]
+name = "the JSON object reader follows whatever depth the parser does"
+file = "src/stayfixed/jsonobject.py"
+before = """
+    if _deeper_than(raw, DEPTH_CAP):
+        raise _past(label, NESTED, error, limit)
+"""
+after = """
+    if False:
+        raise _past(label, NESTED, error, limit)
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+  "tests/attach/test_detach.py::test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing[cap-forced]",
+]
+
+# And the bound is the deepest a document may hold, not one less: a document at it is read.
+[[mutation]]
+name = "the JSON object reader refuses a document at its depth bound"
+file = "src/stayfixed/jsonobject.py"
+before = "        if depth > cap:"
+after = "        if depth >= cap:"
+reddens = [
+  "tests/scaffold/test_entries.py::test_the_object_reader_refuses_a_value_past_its_depth_bound",
+]

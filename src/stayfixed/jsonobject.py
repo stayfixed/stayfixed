@@ -27,6 +27,15 @@ from typing import Any
 
 NESTED = "is nested deeper than this reader follows"
 LONG_NUMBER = "holds a number longer than this reader converts"
+# A named cap: the deepest nesting a document read here may hold, counting the top-level object
+# as one. The parser's own reach differs by interpreter — measured, 992 levels on 3.11, 9,997 on
+# 3.12, 9,998 on 3.13 and about 57,800 on 3.14 — and on 3.14 it passes what the rest of the
+# interpreter follows: `json.dumps` overflowed at 50,000 levels and `str` at 40,000, so a document
+# 3.13 refuses was read on 3.14 and then ended `detach` and the settings engine in an internal
+# error when they wrote it back. Just above 3.13's reach, so 3.11 to 3.13 refuse nothing they read
+# today, and 3.14 refuses what 3.13 refuses, in the same words; four times under where 3.14's `str`
+# stops. No shipped file states it: a settings file nests five levels.
+DEPTH_CAP = 10_000
 
 
 def json_object(
@@ -62,9 +71,24 @@ def json_object(
         # `JSONDecodeError` is a `ValueError` too, and caught above: what reaches this arm is an
         # integer literal the interpreter will not convert.
         raise _past(label, LONG_NUMBER, error, limit) from None
+    if _deeper_than(raw, DEPTH_CAP):
+        raise _past(label, NESTED, error, limit)
     if not isinstance(raw, dict):
         raise (error if shape is None else shape)(f"{label} is not a JSON object")
     return raw
+
+
+def _deeper_than(value: object, cap: int) -> bool:
+    """Whether `value` nests containers more than `cap` deep, asked without recursion: the value
+    may be one the interpreter cannot recurse through, which is the question."""
+    pending = [(value, 1)] if isinstance(value, dict | list) else []
+    while pending:
+        node, depth = pending.pop()
+        children = node.values() if isinstance(node, dict) else node
+        if depth > cap:
+            return True
+        pending.extend((child, depth + 1) for child in children if isinstance(child, dict | list))
+    return False
 
 
 def _past(

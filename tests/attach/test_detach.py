@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.attach.write import GITIGNORE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
@@ -26,7 +27,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING
 from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -274,6 +275,36 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing(tmp_pa
     before = snapshot(root)
     assert before
     with pytest.raises(Failure, match="number longer"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("bound", ["real-depth", "cap-forced"])
+def test_a_local_settings_file_past_the_encoder_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bound: str
+) -> None:
+    # On Python 3.14 the parser follows about 57,800 levels and `json.dumps` overflows near
+    # 50,000, so a `settings.local.json` nested between the two parsed and then ended `detach` in
+    # `internal error: RecursionError … while encoding a JSON object`, where 3.11 to 3.13 refuse
+    # it as nested deeper than the reader follows. The reader now bounds the depth it follows, so
+    # every interpreter refuses it in those words. `real-depth` is that file, and exercises the
+    # bound only where the parser reaches it (3.14); `cap-forced` lowers the bound so the same
+    # refusal is reached on every interpreter. Mutation (declared): the depth bound never refuses
+    # -> `cap-forced` detaches.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    if bound == "cap-forced":
+        monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+        deep = "[" * 5 + "]" * 5
+    else:
+        deep = PAST_ENCODING
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + deep + "}", encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    with pytest.raises((Failure, Refusal), match="nested deeper than this reader follows"):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
 

@@ -15,3 +15,9 @@ NESTED = "[" * 200_000 + "]" * 200_000
 # supported Python: `json.loads` raises a plain `ValueError` for it, which is neither the
 # `JSONDecodeError` nor the `RecursionError` a reader catches.
 LONG_NUMBER = "1" * 5_000
+
+# Valid JSON nested where Python 3.14's parser still follows (about 57,800 levels, measured on
+# 3.14.7) and its encoder no longer does: `json.dumps` overflowed at 50,000 levels there, and `str`
+# at 40,000. On 3.11 to 3.13 the parser itself stops long before (992, 9,997 and 9,998 levels), so a
+# reader meets it as `NESTED` on every supported Python only if it bounds the depth it follows.
+PAST_ENCODING = "[" * 53_000 + "]" * 53_000

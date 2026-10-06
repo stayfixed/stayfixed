@@ -36,3 +36,7 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed overlay upgrade` and `overlay init` remove the overlay template's copy of the
     `attach` skill and `common/rules/README.md`, keeping and naming a copy you edited (Changed,
     "`stayfixed overlay upgrade` and `overlay init` remove two files").
+  - On Python 3.14, a settings file, ledger, manifest or trust record nested deeper than 10,000
+    levels is refused as nested deeper than the reader follows, as 3.11 to 3.13 already refused
+    it; `stayfixed doctor` and an `attach` with nothing to write read one before (Fixed, "On Python
+    3.14, a JSON file nested deeper than").
