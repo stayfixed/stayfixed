@@ -80,6 +80,18 @@ def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, "src/gone.py")]
 
 
+def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) -> None:
+    # Go's import spelling in a plan line failed the gate as a missing file of this repository.
+    # The path beside it on the same line is still checked. Oracle: `mutations/`, "a
+    # host-shaped first component is read as a directory".
+    root, config = project(tmp_path)
+    path = plan(root, SCOPE + "Use `gopkg.in/yaml.v3` to parse `internal/config/load.go`.\n")
+    found = lint(root, config, plans=[path]).findings
+    assert [(f.rule, f.line, f.detail) for f in found] == [
+        ("dead-reference", 3, "internal/config/load.go")
+    ]
+
+
 def test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone(
     tmp_path: Path,
 ) -> None:

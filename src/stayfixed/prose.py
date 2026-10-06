@@ -39,7 +39,7 @@ from pathlib import Path
 
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
 # in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
-# a backticked `owner/lib.js` repository name, a dotted branch or a URL with no scheme reads as one.
+# a backticked `owner/lib.js` repository name or a dotted branch (`release/v1.x`) reads as one.
 REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
     r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"
@@ -48,6 +48,14 @@ FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", re.MULTILINE | re
 # Inline code, single-line so a stray backtick cannot swallow the lines after it. Blanked
 # AFTER fences (a fence can contain backticks).
 CODE_SPAN = re.compile(r"`[^`\n]*`")
+# A first path component that ends in a dot and a label of two or more characters, the dot after
+# some other character: a host (a Go module path's `example.com/`, a URL with no scheme), not a
+# directory of this repository. A leading dot alone is a hidden directory (`.github/`), and a
+# one-letter suffix is the `.d` of a directory of fragments (`changelog.d/`, `conf.d/`): both stay
+# paths. Measured over this repository's plans, the `.d` exception is what keeps `changelog.d/`
+# checked. A dotted top-level directory with a longer suffix (`app.config/`) reads as a host and
+# is under-reported, the safe direction for a dead-reference check.
+HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")
 
 
 def blank_fences(text: str) -> str:
@@ -67,11 +75,12 @@ def blank_code_spans(text: str, placeholder: str = "\x00") -> str:
 
 
 def path_references(line: str) -> Iterator[str]:
-    """Every backticked span in ``line`` that claims a path; bare filenames are prose."""
+    """Every backticked span in ``line`` that claims a path; bare filenames, and a span whose
+    first component is a host (`HOST`), are prose."""
 
     for match in REFERENCE.finditer(line):
         target = match.group(1)
-        if "/" in target:
+        if "/" in target and not HOST.match(target):
             yield target
 
 

@@ -377,6 +377,34 @@ before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
 after = '    r"(?::\d+(?::\d+)?|::[\w.]+)?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
+# A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
+# directory of this repository: read as one, a Go module path fails the plan gate.
+[[mutation]]
+name = "a host-shaped first component is read as a directory"
+file = "src/stayfixed/prose.py"
+before = '        if "/" in target and not HOST.match(target):'
+after = '        if "/" in target:'
+reddens = [
+  "tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose",
+  "tests/docs/test_plans.py::test_a_dependency_named_by_its_host_is_not_a_dead_reference",
+]
+
+# The host's label has two characters or more, so `changelog.d/` stays a directory.
+[[mutation]]
+name = "a `.d` directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]*/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# The dot comes after some other character, so `.github/` stays a hidden directory.
+[[mutation]]
+name = "a hidden directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
 # One digit rule, and every reader takes it from the constant. The allocator's `git log` source
 # respelled it inline, where widening the rule would have left it counting by the old one and
 # handing out a number some ref already holds — a survivor of `mutations/`'s "the Fixes claim stops

@@ -57,6 +57,24 @@ def test_a_file_any_stack_stores_is_a_path_claim() -> None:
     ]
 
 
+def test_a_span_whose_first_component_is_a_host_is_prose() -> None:
+    # Go names a dependency `gopkg.in/yaml.v3`, and a repository or a page is often written
+    # with no scheme: a first path component ending in a host's label is not a directory of this
+    # repository, so the span is prose. A leading dot is a hidden directory, and a `.d` suffix a
+    # directory of fragments (this repository's own `changelog.d/`): both stay paths. Oracle:
+    # `mutations/`, "a host-shaped first component is read as a directory", "a `.d` directory
+    # reads as a host", "a hidden directory reads as a host".
+    hosts = "`gopkg.in/yaml.v3` `github.com/owner/repo.git` `docs.example.org/3/x.html`"
+    assert list(path_references(hosts)) == []
+    paths = "`.github/workflows/x.yml` `./src/a.py` `changelog.d/x.fix.md` `conf.d/a.conf`"
+    assert list(path_references(paths)) == [
+        ".github/workflows/x.yml",
+        "./src/a.py",
+        "changelog.d/x.fix.md",
+        "conf.d/a.conf",
+    ]
+
+
 def test_a_version_number_is_not_an_extension() -> None:
     # `releases/0.1.9596` names a version, not a file: an extension starts with a letter, so a
     # numbered directory is prose. Oracle: `mutations/`, "an extension may start with a digit".
