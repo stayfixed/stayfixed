@@ -98,17 +98,21 @@ def _area_claims(context: Context) -> list[Claims]:
 
 def _grants(area: Claims, placed: Placed) -> bool:
     """Whether `area` grants the entry `placed` is, where it is: its command, under its event, in a
-    group with its matcher.
+    group with its matcher, and the whole entry it sits in.
 
-    All three, because a granted command under another event or matcher is a hook the area never
-    put there — the harness runs it at another time, or for other tools — and vouching for it
-    would let a repository hang the owner's command anywhere it liked and read "all accounted
-    for". Told, where the area records the entry's id, as an entry its source does not grant,
-    which it does not."""
+    All of them, because a granted command under another event or matcher is a hook the area never
+    put there — the harness runs it at another time, or for other tools — and so is a granted
+    command inside an entry that does something else with it: an `http` entry carrying it posts
+    every event to a URL and ignores the command. Vouching for either would let a repository hang
+    the owner's command anywhere it liked and read "all accounted for". The whole entry is the one
+    the area writes, so a grant that carries more than a command, a `timeout` say, is compared
+    with what it wrote. Told, where the area records the entry's id, as an entry its source does
+    not grant, which it does not."""
     return any(
         grant.command == placed.command
         and grant.event == placed.event
         and grant.matcher == placed.matcher
+        and grant.entry == placed.entry
         for grant in area.granted or ()
     )
 
@@ -578,9 +582,11 @@ def hook_entries(context: Context) -> Row:
     answer "all accounted for". An id is credible only beside a grant from a source the repository
     cannot choose, and only the same area's grant, so one area's record never borrows another's. The
     grant is the *marked command* and not the id, because an id that is granted with a different
-    command hung on it is the same attack one step down; and it is that command *where the area
+    command hung on it is the same attack one step down; it is that command *where the area
     puts it*, under its event and its group's matcher (`_grants`), because the granted command
-    hung under another event or matcher is the same attack one step further.
+    hung under another event or matcher is the same attack one step further; and it is the whole
+    entry the area writes, because the granted command inside an `http` entry, or beside an `args`
+    or a `shell` of the repository's choosing, is that attack in one more field.
 
     Where a source this machine records cannot be asked, the answer is the one this check gives a
     file it could not parse: report it, never absolve it. That withholds the grant comparison and

@@ -2718,8 +2718,8 @@ reddens = [
 [[mutation]]
 name = "the hook entry walk reads every entry under one event"
 file = "src/stayfixed/scaffold/entries.py"
-before = "    return Placed(event, _matcher(group), text)"
-after = '    return Placed("", _matcher(group), text)'
+before = "    return Placed(event, _matcher(group), text, _whole(entry))"
+after = '    return Placed("", _matcher(group), text, _whole(entry))'
 reddens = [
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
@@ -2733,6 +2733,51 @@ after = "    if True:"
 reddens = [
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
   "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
+]
+
+# The walk also carries each entry whole, which is what a grant is compared as: a walk that kept
+# only the command would compare only the command on both sides, and a granted command inside an
+# `http` entry would read as the grant.
+[[mutation]]
+name = "the hook entry walk reads only an entry's command"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    return Placed(event, _matcher(group), text, _whole(entry))"
+after = "    return Placed(event, _matcher(group), text, text)"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[agent]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[args]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[async]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[http]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[mcp-tool]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[no-type]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[prompt]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[shell]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[timeout]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[unknown-field]",
+]
+
+# The whole entry is compared as canonical text: its keys sorted, so a file that spells the granted
+# entry's keys in another order holds the same entry.
+[[mutation]]
+name = "the hook entry walk compares an entry's keys in the order they were written"
+file = "src/stayfixed/scaffold/entries.py"
+before = "        entry, _DOCUMENT, error=EntriesError, limit=_past_parser(_DOCUMENT), sort_keys=True"
+after = "        entry, _DOCUMENT, error=EntriesError, limit=_past_parser(_DOCUMENT), sort_keys=False"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_equal_to_a_grant_that_carries_more_than_a_command_is_absolved",
+]
+
+# A grant is read back through the walk out of the document the merge would write, so an integer
+# in it, a `timeout` say, is its text on both sides. Read off `wanted` itself it stays a number, and
+# the owner's own entry carrying one is never equal to the grant it was written from.
+[[mutation]]
+name = "a grant keeps the integers the walk reads as text"
+file = "src/stayfixed/scaffold/entries.py"
+before = '    return placed_entries(json.dumps({"hooks": wanted}))'
+after = '    return [_placed(e, g, x) for e, gs in wanted.items() for g in gs for x in g["hooks"]]'
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_equal_to_a_grant_that_carries_more_than_a_command_is_absolved",
+  "tests/test_install_path.py::test_an_overlay_grant_carrying_more_than_a_command_is_accounted_for_once_attached",
 ]
 
 # A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,

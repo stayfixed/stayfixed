@@ -170,13 +170,15 @@ class Claims:
 
     `recorded` is the marker ids the area's record says it wrote, by event, and may be repository
     bytes: `attach`'s record is a file a clone can commit. `granted` is the entries the area
-    grants right now, each a marked command **where the area puts it** — its event and its group's
-    matcher, as `scaffold.Placed` holds them — and **must come from a source the repository cannot
-    choose** — `attach` asks the overlay whose root the machine file records — because it is the
-    half that vouches. An entry is absolved only when one area both records its id and grants it
-    there: its command, under its event, in a group with its matcher. A granted command anywhere
-    else is a hook the area never installed, because the event is when a harness runs it and the
-    matcher for which tools. One area's record never stands on another area's grant. `wording` is
+    grants right now, each a marked command **where the area puts it** — its event, its group's
+    matcher and the whole entry it writes, as `scaffold.Placed` holds them — and **must come from
+    a source the repository cannot choose** — `attach` asks the overlay whose root the machine file
+    records — because it is the half that vouches. An entry is absolved only when one area both
+    records its id and grants it there: its command, under its event, in a group with its matcher,
+    in an entry equal to the one the area writes. A granted command anywhere else is a hook the
+    area never installed, because the event is when a harness runs it, the matcher for which tools,
+    and the entry's other fields what it does. One area's record never stands on another area's
+    grant. `wording` is
     how the row names that record, that source and the commands that repair them, and holds
     `Wording`'s invariant: stayfixed's own fixed strings, never anything a repository authored.
 

@@ -391,9 +391,11 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
     the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
     still let a repository take an id the overlay does grant and hang a different command on it.
-    And each is where `attach` would write it — its event and its group's matcher, read back by
-    `scaffold.wanted_placements` as the `hook-entries` walk reads the settings file — because the
-    granted command hung under another event or matcher is a hook the overlay never granted.
+    And each is where `attach` would write it, and as it would write it — its event, its group's
+    matcher and the whole entry, read back by `scaffold.wanted_placements` as the `hook-entries`
+    walk reads the settings file — because the granted command hung under another event or matcher,
+    or inside an entry of another `type` or with fields the overlay did not write, is a hook the
+    overlay never granted.
 
     **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
     this machine records and the project's name, the same one `attach` would install from, and

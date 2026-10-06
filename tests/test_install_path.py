@@ -794,6 +794,49 @@ def test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_
     )
 
 
+def test_an_overlay_grant_carrying_more_than_a_command_is_accounted_for_once_attached(
+    tmp_path: Path,
+) -> None:
+    # `hook-entries` vouches for an entry only where the whole entry is the one `attach` writes, so
+    # the owner it must not refuse is one whose overlay grants an entry with a `timeout` and a
+    # `statusMessage` beside its command: `attach` writes both as they are, and the row reads what
+    # it wrote. Run through the real `attach`, so the comparison is with the bytes it put in the
+    # settings file. Mutation (oracle): `mutations/`'s "a grant keeps the integers the walk reads
+    # as text" -> red.
+    walk = _install_path(tmp_path)
+    granted = {
+        "type": "command",
+        "command": "echo hi",
+        "timeout": 30,
+        "statusMessage": "Checking the command…",
+    }
+    (walk.overlay / "common" / "claude" / "hooks.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [granted]}]}}),
+        encoding="utf-8",
+    )
+    done = _cli(
+        walk,
+        "attach",
+        "--store",
+        str(walk.store),
+        "--yes",
+        "--machine",
+        str(walk.machine),
+        tty=True,
+    )
+    assert done.returncode == 0, done.stderr
+    written = json.loads((walk.root / ".claude" / "settings.local.json").read_text("utf-8"))
+    (entry,) = written["hooks"]["PreToolUse"][0]["hooks"]
+    assert (entry["timeout"], entry["statusMessage"]) == (30, granted["statusMessage"]), entry
+    rows = _doctor(walk)
+    assert next(row for row in rows if row["name"] == "hook-entries") == {
+        "name": "hook-entries",
+        "status": OK,
+        "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+        "remedy": "",
+    }
+
+
 def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:
     # The interactive-shell gate on `--machine`, reached through argv rather than through the
     # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
