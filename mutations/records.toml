@@ -2572,3 +2572,19 @@ after = "            content = _UNREADABLE"
 reddens = [
   "tests/memory/test_trust.py::test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant",
 ]
+
+# CONTRIBUTING makes `api.py` the only cross-area import surface, and before this guard nothing
+# asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
+# `hooks.sink`, and both merged green. The guard now walks every module under `src/stayfixed/`.
+# This mutation puts a violation back — the plan check reading the ledger area's private
+# `register` module for a name its `api.py` publishes — and the guard must name it. The name still
+# exists at the private spelling, so the mutated tree imports and runs: what goes red is the
+# boundary assertion and nothing else.
+[[mutation]]
+name = "an area reaches past another area's api.py again"
+file = "src/stayfixed/docs/plans.py"
+before = 'from stayfixed.ledger.api import bug_register'
+after = 'from stayfixed.ledger.register import bug_register'
+reddens = [
+  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+]

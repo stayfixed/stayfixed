@@ -1396,20 +1396,16 @@ reddens = [
 
 # --- install path: the cross-area import boundary ----------------------------------------
 #
-# CONTRIBUTING makes `api.py` the only cross-area import surface, and before this guard nothing
-# asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
-# `hooks.sink`, and both merged green. The guard now walks every module under `src/stayfixed/`.
-# This mutation puts a violation back — `doctor` reading the setup area's private `machine`
-# module for a name its `api.py` publishes — and the guard must name it. The name still exists
-# at the private spelling, so the mutated tree imports and runs: what goes red is the boundary
-# assertion and nothing else.
+# `hook-entries` reads the machine's settings file's path off the harness registry. Asked of
+# `setup.api`, it loaded `setup.run` with the report and closed a dependency cycle between `doctor`,
+# `setup` and `overlay`.
 [[mutation]]
-name = "an area reaches past another area's api.py again"
+name = "hook-entries asks setup for the machine's settings file"
 file = "src/stayfixed/doctor/entries.py"
-before = 'from stayfixed.setup.api import USER_SETTINGS'
-after = 'from stayfixed.setup.machine import USER_SETTINGS'
+before = "(USER_SETTINGS,) = CLAUDE.settings"
+after = "from stayfixed.setup.api import USER_SETTINGS"
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/doctor/test_entries.py::test_the_row_reads_the_machines_settings_file_off_the_harness_registry",
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,

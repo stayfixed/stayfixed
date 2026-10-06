@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -31,6 +33,7 @@ from stayfixed.doctor.api import (
     Wording,
 )
 from stayfixed.doctor.entries import SETTINGS_FILES
+from stayfixed.harnesses import CLAUDE
 from stayfixed.scaffold import Placed, wanted_placements
 from tests.doctor.test_checks import _checks, _initialised
 from tests.doctor.test_registry import CORE, _area, _contribute
@@ -908,3 +911,27 @@ def test_claims_that_raise_an_os_error_are_red_and_never_a_warning(
         "report this, with the command you ran",
     )
     assert "IGNORE" not in row.detail + row.remedy
+
+
+def test_the_row_reads_the_machines_settings_file_off_the_harness_registry() -> None:
+    # The row needs one fact of the machine's settings file, its path under the home directory,
+    # which is Claude Code's and the registry states. Asked of `setup.api`, it loaded `setup.run`
+    # with the report, and closed a dependency cycle between `doctor`, `setup` and `overlay`.
+    # Mutation (oracle): `mutations/`'s "hook-entries asks setup for the machine's settings
+    # file" -> `stayfixed.setup` is loaded.
+    import stayfixed
+
+    probe = (
+        "import sys, stayfixed.doctor.entries as e\n"
+        "print(e.USER_SETTINGS)\n"
+        "print(' '.join(sorted(m for m in sys.modules if m.startswith('stayfixed.setup'))))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", probe],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(Path(stayfixed.__file__).parents[1])},
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split("\n") == [CLAUDE.settings[0], "", ""]

@@ -26,19 +26,21 @@ from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, 
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
-from stayfixed.harnesses import HARNESSES, LENIENT_SETTINGS
+from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS
 from stayfixed.printed import printable
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
-from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
 # committed settings files and the ones it keeps out of git, read off the harness registry, so a
 # harness added there is walked here without an edit. The two roots are the project (all of
 # them) and `home` (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny
-# rules, and which `setup` reads off `CLAUDE.settings`: the same file under another root).
+# rules: the same file under another root).
 SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
+# Claude Code's settings file under the home directory, read off the registry as `setup` reads it,
+# and not asked of `setup`, whose import surface loads the command that writes it.
+(USER_SETTINGS,) = CLAUDE.settings
 
 
 @dataclass(frozen=True)
