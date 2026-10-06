@@ -2368,6 +2368,15 @@ reddens = [
   "tests/ledger/test_commands.py::test_a_boundary_level_that_names_no_severity_is_a_refusal_in_every_command_that_reads_it[memory-refs]",
 ]
 
+[[mutation]]
+name = "the boundary-level refusal quotes the values"
+file = "src/stayfixed/ledger/register.py"
+before = '        raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)))'
+after = '        raise Refusal(BOUNDARY_LEVELS_UNKNOWN.format(count=len(unknown), known=", ".join(levels)) + repr(unknown))'
+reddens = [
+  "tests/ledger/test_register.py::test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted[levels0-1]",
+]
+
 # `memory index --check` and `memory fit` asked whether the notes or a committed index are
 # repository data, a narrower question than the harness memory link's, so an overlay store with no
 # record read as trusted and said nothing while its link waited. Both ask the link's question,

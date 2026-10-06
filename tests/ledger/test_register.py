@@ -992,8 +992,8 @@ def test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted(
     # no severity — a misspelling, a capital, a level another tool has — loaded and required the
     # evidence line of no entry at all, and every high entry passed without one. It is refused
     # where the register is built, beside `id_prefix`'s refusal, counted and never quoted: the
-    # values are the repository's. Mutation: `mutations/`, "a boundary level outside the
-    # severities builds the register".
+    # values are the repository's. Mutations: `mutations/`, "a boundary level outside the
+    # severities builds the register" and "the boundary-level refusal quotes the values".
     root = tmp_path / "widget"
     root.mkdir()
     document = CONFIG + f"\n[ledger]\nevidence_boundary_required_for = {levels!r}\n"

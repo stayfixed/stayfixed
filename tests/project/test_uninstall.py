@@ -999,11 +999,12 @@ def test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninst
 def test_a_boundary_level_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall(
     tmp_path: Path,
 ) -> None:
-    # The second `[ledger]` value the register refuses, held to the same rule as `id_prefix`
-    # above: a level in `evidence_boundary_required_for` that names no severity stops `init` and
-    # `upgrade`, which render the bug index, and never `uninstall`, the way out. Mutation:
-    # `mutations/`, "the footprint builds the bug ledger's register before anything renders" —
-    # measured to redden this case on its own as well as the one above.
+    # The second `[ledger]` value the register refuses, held to the rule
+    # `test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall` holds
+    # `id_prefix` to: a level in `evidence_boundary_required_for` that names no severity stops
+    # `init` and `upgrade`, which render the bug index, and never `uninstall`, the way out.
+    # Mutation: `mutations/`, "the footprint builds the bug ledger's register before anything
+    # renders" — measured to redden this case on its own as well as that one.
     malformed = '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
     refusal = "[ledger] evidence_boundary_required_for names 1 value(s) that are not a severity"
     fresh = repository(tmp_path, directory="fresh")
