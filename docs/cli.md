@@ -114,6 +114,16 @@ Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule
 overlay mode a symlinked index is refused outright; in overlay mode only a link into *this*
 project's own share of the recorded overlay is honoured).
 
+**When the trust gate is shut, the line says so**, on `--check` and on the write path alike, and
+`--json`'s `trusted` is `false`. The question is the one the harness memory link asks: a note, or
+the store's own directory, inside the repository with no `stayfixed memory trust
+--in-repo-memory` record matching it — which in overlay mode, where the store's directory is a
+real directory in the repository, is every store until that record is made. When the notes or a
+committed `MEMORY.md` are themselves repository data, the line says none of it reaches a session;
+when only the directory is — an overlay store whose notes all live in the overlay — it says the
+link waits for a record while the standing-rules and volatile-notes bundles still deliver the
+notes.
+
 **One store however it is named.** In overlay mode `--store <overlay>/projects/<name>/memory` —
 this project's own share, the far end of the link tree — resolves exactly as the plain run
 does, through the link tree under `paths.memory`, so the two render the same `MEMORY.md` with the
@@ -200,7 +210,7 @@ Whether each bundle fits the numbered hook entries declared for it. Exits `1` wh
 and would be truncated by the platform.
 
 A bundle that fits because it is *empty* is not a bundle that fits, so the output also reports
-whether the trust gate is open.
+whether the trust gate is open, by the question and in the words `memory index` uses.
 
 **Writes** nothing.
 

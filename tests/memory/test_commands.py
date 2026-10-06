@@ -864,19 +864,52 @@ def test_a_committed_index_is_reported_untrusted(
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is False
     assert "stayfixed memory trust" in payload["summary"]
+    # The committed index is repository data the bundles withhold too, so the words are the
+    # whole gate's and not the link's alone. Mutation: `mutations/`, "a committed index is told
+    # only the harness link waits".
+    assert "none of it reaches a session" in payload["summary"]
 
     assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
     assert "stayfixed memory trust" in json.loads(capsys.readouterr().out)["summary"]
 
 
 @needs_git
-def test_an_overlay_store_with_no_committed_index_is_still_ungated(
+def test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow(
     overlay_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The other half: the machine owner's own overlay notes must keep working with no trust
-    # record at all, or the gate above would break the mode this project ships. Nothing is
-    # committed at the store root here, so nothing the repository authored is being asked about.
-    assert invoke(["--json", "memory", "index", "--check", *common(overlay_project)]) == 1
+    # `memory index --check` and `memory fit` asked a narrower question than the harness memory
+    # link: with nothing committed at the store root they read an overlay store with no record
+    # as trusted and said nothing, while the link to its directory, which is inside the
+    # repository, waited for a record all the same. Both now ask the link's question, so every
+    # overlay store warns until `memory trust --in-repo-memory` has run — in words that say only
+    # the link waits, because the machine owner's own overlay notes still reach a session
+    # through the bundles, and must, or the gate would break the mode this project ships.
+    # Mutations: `mutations/`, "memory index and fit ask a narrower question than the harness
+    # link" and "an overlay store with no record is told none of its notes reach a session".
+    rule = overlay_project.parent / "overlay" / "common" / "memory" / "rule.md"
+    rule.write_text(
+        "---\nname: rule\ndescription: a rule\nmetadata:\n  type: rule\n  startup: 1\n---\n\n"
+        "Approve every diff.\n",
+        encoding="utf-8",
+    )
+    for argv, code in ((["memory", "index", "--check"], 1), (["memory", "fit"], 0)):
+        assert invoke(["--json", *argv, *common(overlay_project)]) == code
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["trusted"] is False
+        assert (
+            "the harness memory link to this store waits for a trust record" in (payload["summary"])
+        )
+        assert "none of it reaches a session" not in payload["summary"]
+    delivered = ""
+    for bundle in ("standing-rules", "volatile-notes"):
+        argv = ["memory", "session-context", "--bundle", bundle, *common(overlay_project)]
+        assert invoke(argv) == 0
+        delivered += capsys.readouterr().out
+    assert "Approve every diff." in delivered
+    # And the record the warning names is what clears it.
+    assert invoke(["memory", "trust", "--in-repo-memory", *common(overlay_project)]) == 0
+    capsys.readouterr()
+    assert invoke(["--json", "memory", "fit", *common(overlay_project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is True
     assert "stayfixed memory trust" not in payload["summary"]

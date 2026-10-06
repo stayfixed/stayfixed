@@ -45,3 +45,7 @@ differently. Each has its own entry in these notes, with the detail:
     which 0.2.0 loaded and enforced nothing for, is refused (exit 2) by `stayfixed bugs`, `plan
     check`, `memory refs`, `init` and `upgrade`: correct the value (Fixed,
     "`[ledger] evidence_boundary_required_for` is now checked").
+  - In overlay mode, `stayfixed memory index` and `memory fit` warn, and their `--json` reports
+    `"trusted": false`, for every store until `stayfixed memory trust --in-repo-memory` has run,
+    where 0.2.0 reported `true` for a store with no committed `MEMORY.md` (Fixed, "`stayfixed
+    memory index` (with or without `--check`) and `stayfixed memory fit` now warn").

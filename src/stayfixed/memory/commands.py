@@ -38,6 +38,7 @@ from stayfixed.memory.index import (
 )
 from stayfixed.memory.inventory import inventory, totals
 from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
+from stayfixed.memory.worktree import harness_link_needed
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -91,14 +92,23 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 # What the trust gate withholds until there is a record, said where a person will read it:
 # `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
 # withholds the harness memory link from a store whose directory is inside the repository.
-# `_trusted` decides when this is said, and its question is narrower than the link's; its
-# docstring says how. The failure this closes was silent in both directions: `memory index`
-# rewrites every note and `MEMORY.md`, so it used to revoke the very record it depends on, and
-# nothing in any summary said why the model had stopped receiving standing rules.
+# `_trusted` decides when one of these is said, and `_holds_repository_data` which. The failure
+# this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
+# so it used to revoke the very record it depends on, and nothing in any summary said why the
+# model had stopped receiving standing rules.
 _UNTRUSTED = (
     "this store holds repository data with no trust record, so none of it reaches a session — "
     "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
     "link — run `stayfixed memory trust --in-repo-memory`"
+)
+# The overlay store whose notes are all the machine owner's: the bundles deliver them with no
+# record, and only the link to the store's directory, which is inside the repository, waits.
+# Said in its own words because `_UNTRUSTED`'s "none of it reaches a session" is false here.
+_LINK_WAITS = (
+    "the harness memory link to this store waits for a trust record, because the store's "
+    "directory is inside the repository; its notes still reach a session through the "
+    "standing-rules and volatile-notes bundles — run `stayfixed memory trust --in-repo-memory` "
+    "to link it"
 )
 # The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
 # under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
@@ -133,26 +143,31 @@ _EXTRA_NOT_PUBLISHED = (
 
 
 def _trusted(store: Store, config: Config) -> bool:
-    """Whether this store's repository data, notes or a committed index, may reach a session.
+    """Whether everything this store hands a session may reach it — the question the harness
+    memory link asks, `worktree.harness_link_needed`, and no other.
 
-    `may_inject(store, config)` alone answers about the store's *notes*, through
-    `inside_project`. In overlay mode that is False by design — every group resolves out into
-    the overlay — while `store.path` is a real directory inside the repository, so a committed
-    `MEMORY.md` there is repository data that answer cannot see. Asked that way, this reported
-    `"trusted": true` and `_gate` said nothing. So the index is asked about by file, through its
-    own `in_repository`, beside the notes' `is_repository_data`.
+    This asked a narrower one, whether the notes or a committed `MEMORY.md` are repository data,
+    while the link asks whether the *directory* it exposes is inside the repository, which in
+    overlay mode it always is. So an overlay store with no record read as trusted, and `memory
+    index --check` and `memory fit` said nothing, while its link waited for a record all the
+    same. One function now answers both, and the wider one: whenever the narrower question
+    withholds anything, the link is withheld too. `_holds_repository_data` says which words fit.
+    """
+    return harness_link_needed(store, config)
 
-    The harness memory link asks a wider question. `worktree.harness_link_needed` asks
-    `in_repository(store, store.path)` — whether the *directory* the link exposes is inside the
-    repository, which in overlay mode it always is. So an overlay store with no committed index
-    and no trust record reads as trusted here, with no warning, while its harness link waits for
-    a record all the same.
+
+def _holds_repository_data(store: Store, config: Config) -> bool:
+    """Whether the notes or a committed index are repository data, which the bundles withhold
+    too, rather than only the directory the harness link exposes.
+
+    `trust.is_repository_data` answers about the store's *notes*, through `inside_project`,
+    which in overlay mode is False by design — every group resolves out into the overlay —
+    while `store.path` is a real directory inside the repository, so a committed `MEMORY.md`
+    there is repository data that answer cannot see. So the index is asked about by file,
+    through its own `in_repository`, beside the notes.
     """
     index = index_source(store, config)
-    repository_data = trust.is_repository_data(store) or (
-        index is not None and in_repository(store, index)
-    )
-    return trust.may_inject(store, config, repository_data=repository_data)
+    return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
 
 
 def _gate(store: Store, config: Config) -> str | None:
@@ -163,7 +178,9 @@ def _gate(store: Store, config: Config) -> str | None:
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    return None if _trusted(store, config) else _UNTRUSTED
+    if _trusted(store, config):
+        return None
+    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
 
 
 def _with(summary: str, note: str | None) -> str:

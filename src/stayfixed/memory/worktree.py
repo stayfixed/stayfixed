@@ -417,17 +417,20 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     the harness symlink: it would not inject the file through the channel it controls, and
     created the link to the channel it does not.
 
-    `memory.commands._trusted` asks the narrower question, file by file: whether the notes or a
-    committed `MEMORY.md` are repository data. A link to a directory exposes every file under it,
-    so the question here is whether the **directory** is repository data, not whether the notes
-    or the index are.
+    A link to a directory exposes every file under it, so the question here is whether the
+    **directory** is repository data, not whether the notes or the index are. `memory index
+    --check` and `memory fit` warn by this same question (`memory.commands._trusted`), so a
+    store whose link waits is a store they warn about.
 
     Nothing narrower than `may_inject` will do. It is already the predicate that means "these
     bytes may reach the model at all": it short-circuits to True when neither
-    `inside_project(store)` nor `repository_data` holds, so the machine owner's own overlay
-    notes keep their link with no record at all, and otherwise it demands a digest that matches
-    what the owner approved. Gating on `inside_project` alone would ask the wrong question (it
-    would refuse a trusted store for ever); gating on the mode would ask the clone.
+    `inside_project(store)` nor `repository_data` holds — here, only a store whose directory is
+    outside the repository — and otherwise it demands a digest that matches what the owner
+    approved. So in overlay mode, where the store's directory is inside the repository, the
+    link waits for `stayfixed memory trust --in-repo-memory` even when every note behind it is
+    the machine owner's own; the bundles deliver those notes with no record, and the link does
+    not. Gating on `inside_project` alone would ask the wrong question (it would refuse a
+    trusted store for ever); gating on the mode would ask the clone.
 
     **The same gate runs in the other direction, in the same call.** Creation was gated and
     removal was not, so the link outlived the record that authorised it: `record`, then a
