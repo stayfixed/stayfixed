@@ -26,7 +26,6 @@ them — one of `memory.store.binding_state`'s four labels — is stayfixed's ow
 from __future__ import annotations
 
 import errno
-import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,7 +105,8 @@ SHARE_CANNOT_EXIST = (
 # above, and never a group either: `memory.groups` is the repository's too, and a long entry is
 # the other way to reach it.
 PATH_CANNOT_EXIST = (
-    "{projects}/<this project's name>/ would hold a path longer than this machine allows -- the "
+    "{projects}/<this project's name>/ would hold a path, or a name in one, longer than this "
+    "machine allows -- the "
     "binding record " + PROJECT_RECORD + ", the notes index or a memory group's directory -- so "
     "attach could not record the binding or link the notes there; choose a shorter `name` under "
     "[project] in stayfixed.toml, or shorter memory.groups entries"
@@ -190,12 +190,13 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     damaged = damaged_overlay(binding.overlay)
     if damaged is not None:
         raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
-    # A name, or a group, longer than a file name may be is asked by its length and not by what a
-    # lookup says: an overlay with no `projects/` yet answers every path under it with "no such
-    # file", the over-long name included, so a 300-character name read as a first attach and the
-    # run failed at the record's write, after the ignore region and the ledger, printing the name.
-    longest_name = _longest_name(binding.overlay / PROJECTS)
-    if _longer_than(binding.project, longest_name):
+    # A name, or a group, longer than a file name may be is asked of the nearest directory that is
+    # there and not of the path it will have: an overlay with no `projects/` yet answers every path
+    # under it with "no such file", the over-long name included, so a 300-character name read as a
+    # first attach and the run failed at the record's write, after the ignore region and the
+    # ledger, printing the name.
+    there = _nearest_directory(binding.overlay / PROJECTS)
+    if _name_too_long(there, binding.project):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     try:
         mode: int | None = share.stat().st_mode
@@ -209,7 +210,7 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
     for path in (path for path in made if path.is_relative_to(share)):
-        if any(_longer_than(part, longest_name) for part in path.relative_to(share).parts):
+        if any(_name_too_long(there, part) for part in path.relative_to(share).parts):
             raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
         try:
             path.lstat()
@@ -227,20 +228,37 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
             continue
 
 
-def _longest_name(directory: Path) -> int | None:
-    """The longest file name the filesystem under `directory` takes, asked of the nearest of it
-    and its ancestors that is there, or `None` when none can be asked."""
-    for there in (directory, *directory.parents):
+def _nearest_directory(path: Path) -> Path | None:
+    """`path` or the nearest of its ancestors that is a directory, or `None` when none is."""
+    for there in (path, *path.parents):
         try:
-            return os.pathconf(there, "PC_NAME_MAX")
+            if stat.S_ISDIR(there.stat().st_mode):
+                return there
         except OSError:
             continue
     return None
 
 
-def _longer_than(component: str, longest: int | None) -> bool:
-    """Whether `component`, in the bytes the filesystem stores, is longer than `longest`."""
-    return longest is not None and len(os.fsencode(component)) > longest
+def _name_too_long(directory: Path | None, component: str) -> bool:
+    """Whether the filesystem holding `directory` refuses `component` as a name too long to be one.
+
+    Asked of the kernel with an `lstat` of the name directly under `directory`, which is there, and
+    never counted here: Linux filesystems limit a name to 255 bytes and macOS APFS to 255
+    characters, so 200 x "é" (400 bytes) is a name on one and not the other, and `PC_NAME_MAX`
+    says 255 on both. A lookup that answers anything but `ENAMETOOLONG` -- the usual "no such
+    file", or a name that is there -- says the name fits.
+    """
+    if directory is None:
+        return False
+    try:
+        (directory / component).lstat()
+    except OSError as exc:
+        return exc.errno == errno.ENAMETOOLONG
+    except ValueError:
+        # A NUL, which no name can hold: not a question of length, and the `memory.groups`
+        # containment both callers ask next refuses it by name of the key.
+        return False
+    return False
 
 
 def not_overlay(config: Config) -> str | None:

@@ -785,8 +785,11 @@ def test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_
 def test_a_first_attach_into_an_overlay_with_no_projects_yet_is_made(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The legitimate user the two refusals above must not refuse: an ordinary name's first
-    # attach into a fresh overlay that has no `projects/` at all. `attach` creates it.
+    # The legitimate user that
+    # `test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both` and
+    # `test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both` must not
+    # refuse: an ordinary name's first attach into a fresh overlay that has no `projects/` at all.
+    # `attach` creates it.
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store, allow=(RULE,))
     machine = _machine(tmp_path, overlay=store.parents[2])
@@ -795,3 +798,45 @@ def test_a_first_attach_into_an_overlay_with_no_projects_yet_is_made(
     assert invoke(["attach", "--check", *flags]) == 0, capsys.readouterr().err
     assert invoke(["attach", "--yes", *flags]) == 0, capsys.readouterr().err
     assert (store.parent / "project.toml").is_file()
+
+
+def test_a_group_name_is_judged_by_what_the_filesystem_takes_and_not_by_its_bytes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 200 x "é" is 400 bytes of UTF-8 and 200 characters. Linux filesystems limit a name to 255
+    # bytes and refuse it; macOS APFS limits it to 255 characters and takes it. A check that counted
+    # bytes against `PC_NAME_MAX` refused it on macOS, where the attach it previews works. So the
+    # verdict is asked of the filesystem the test runs on, and the commands must agree with it.
+    # No mutation is declared: counting bytes again reddens this on macOS (checked by hand, against
+    # a `len(component.encode()) > 255` in `_name_too_long`), and the oracle runs on Linux, where
+    # bytes are what the filesystem counts, so the entry would survive there by construction.
+    from stayfixed.attach.binding import PATH_CANNOT_EXIST
+    from stayfixed.config.loader import CONFIG_FILE
+    from tests.attach.test_binding import CONFIG
+
+    group = "é" * 200
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    try:
+        (probe / group).mkdir()
+        fits = True
+    except OSError:
+        fits = False
+    shutil.rmtree(probe)
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    text = CONFIG.format(name="p").replace(
+        'groups = ["developer", "project-stable"]', f'groups = ["developer", "{group}"]'
+    )
+    assert group in text
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    flags = _flags(root, store, machine)
+    if fits:
+        assert invoke(["attach", "--check", *flags]) == 0, capsys.readouterr().err
+        assert invoke(["attach", "--yes", *flags]) == 0, capsys.readouterr().err
+        assert (store / group).is_dir()
+    else:
+        refused = f"stayfixed: refused: {PATH_CANNOT_EXIST.format(projects=store.parents[1])}"
+        assert invoke(["attach", "--check", *flags]) == 2
+        assert refused in capsys.readouterr().err

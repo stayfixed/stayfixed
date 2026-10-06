@@ -2087,7 +2087,7 @@ reddens = [
 [[mutation]]
 name = "attach reads a name longer than a file name as a first attach where projects/ is not there"
 file = "src/stayfixed/attach/binding.py"
-before = "    if _longer_than(binding.project, longest_name):"
+before = "    if _name_too_long(there, binding.project):"
 after = "    if False:"
 reddens = [
   "tests/attach/test_commands.py::test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both",
@@ -2098,7 +2098,7 @@ reddens = [
 [[mutation]]
 name = "attach reads a group longer than a file name as a first attach where the share is not there"
 file = "src/stayfixed/attach/binding.py"
-before = "        if any(_longer_than(part, longest_name) for part in path.relative_to(share).parts):"
+before = "        if any(_name_too_long(there, part) for part in path.relative_to(share).parts):"
 after = "        if False:"
 reddens = [
   "tests/attach/test_commands.py::test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both",
