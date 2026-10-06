@@ -296,8 +296,9 @@ is a destination and is honoured, and a committed `env` block does not choose it
 Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming another
 `CLAUDE_PROJECT_DIR` reached neither a project hook nor a plugin hook on `UserPromptSubmit`, nor
 a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
-set the real project root over it, while the block's other keys were applied. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
-candidate only to exit `0` for a trivial `-I -c`, so an unguarded list picks the interpreter that
+set the real project root over it, while the block's other keys were applied.
+`STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a candidate only to exit `0` for a trivial
+`-I -c`, so an unguarded list picks the interpreter that
 runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
 gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`

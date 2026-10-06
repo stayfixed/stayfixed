@@ -807,9 +807,9 @@ def test_a_group_name_is_judged_by_what_the_filesystem_takes_and_not_by_its_byte
     # bytes and refuse it; macOS APFS limits it to 255 characters and takes it. A check that counted
     # bytes against `PC_NAME_MAX` refused it on macOS, where the attach it previews works. So the
     # verdict is asked of the filesystem the test runs on, and the commands must agree with it.
-    # No mutation is declared: counting bytes again reddens this on macOS (checked by hand, against
-    # a `len(component.encode()) > 255` in `_name_too_long`), and the oracle runs on Linux, where
-    # bytes are what the filesystem counts, so the entry would survive there by construction.
+    # Counting bytes again reddens this on macOS; the oracle runs on Linux, where bytes are what
+    # the filesystem counts, so the declared mutation, "the share check counts a name's bytes",
+    # is proven by `tests/attach/test_binding.py`'s stubbed lookup instead.
     from stayfixed.attach.binding import PATH_CANNOT_EXIST
     from stayfixed.config.loader import CONFIG_FILE
     from tests.attach.test_binding import CONFIG

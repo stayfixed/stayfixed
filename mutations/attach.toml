@@ -2184,3 +2184,27 @@ reddens = [
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[attach]",
 ]
+
+# Whether a name is too long is the kernel's verdict: Linux limits a name to 255 bytes and APFS to
+# 255 characters, so counting a name's bytes refused on macOS a `memory.groups` entry the
+# filesystem takes. The lookup is stubbed in the test, so the count is caught on any OS.
+[[mutation]]
+name = "the share check counts a name's bytes"
+file = "src/stayfixed/attach/binding.py"
+before = """
+    if directory is None:
+        return False
+    try:
+        (directory / component).lstat()
+"""
+after = """
+    if directory is None:
+        return False
+    if len(component.encode()) > 255:
+        return True
+    try:
+        (directory / component).lstat()
+"""
+reddens = [
+  "tests/attach/test_binding.py::test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count[no-such-file]",
+]

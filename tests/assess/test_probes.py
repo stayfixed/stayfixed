@@ -1162,3 +1162,21 @@ def test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_wha
         (COULD_NOT_LOOK, (".claude/settings.json",)),
         ("foreign-hooks", (".claude/settings.json",)),
     ]
+
+
+@pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
+def test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # The lenient walk is for the files Claude Code was measured running partly malformed, and no
+    # measurement covers Codex's `.codex/hooks.json`, which `doctor` reads strictly: the probe
+    # reads it strictly too, so the two give one answer about one file. Mutation (declared): the
+    # probe reads every file leniently -> the foreign entry is named.
+    root = _repo(tmp_path, 'agents = ["codex"]')
+    plain = _settings("echo foreign")
+    bom = chr(0xFEFF)
+    text = plain[:-2] + ', "Stop": "notalist"}}' if shape == "scalar-event" else bom + plain
+    _write(root, ".codex/hooks.json", text)
+    assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
+        (COULD_NOT_LOOK, (".codex/hooks.json",))
+    ]

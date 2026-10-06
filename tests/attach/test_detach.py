@@ -1368,8 +1368,9 @@ def test_a_local_settings_file_read_but_too_deep_to_write_back_is_refused_or_wit
     # 3,000 levels: read by every supported parser but 3.11's, and past 3.12's indenting encoder,
     # so `detach` read it there and then ended in `RecursionError` writing it back. Every
     # interpreter now either withdraws what `attach` wrote or refuses before removing anything.
-    # Real depth, so it reddens on 3.12 in CI; the forced case below proves the arm on every
-    # interpreter, for the oracle.
+    # Real depth, so it reddens on 3.12 in CI;
+    # `test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing`
+    # proves the arm on every interpreter, for the oracle.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"

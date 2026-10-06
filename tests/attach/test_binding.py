@@ -8,12 +8,15 @@ lives in `test_write.py`.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
+from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
 from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, binding_for, unlinked_groups
 from stayfixed.attach.permissions import diff_permissions
@@ -524,3 +527,27 @@ def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_tru
         unlinked_groups(tmp_path, config)
     assert str(caught.value) == MEMORY_GROUP_ESCAPES
     assert "subdirectory" in str(caught.value) and "stay inside" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("kernel_says", "too_long"),
+    [(errno.ENOENT, False), (errno.ENAMETOOLONG, True)],
+    ids=["no-such-file", "name-too-long"],
+)
+def test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kernel_says: int, too_long: bool
+) -> None:
+    # 200 x "é" is 400 bytes: too long for Linux's 255-byte names, a name on APFS, which counts
+    # 255 characters. The share check asks the kernel, so it answers as the filesystem does on
+    # either; the lookup is stubbed so both answers are tested on any OS. Mutation (declared):
+    # "the share check counts a name's bytes" -> `no-such-file` reads as too long.
+    name = "é" * 200
+    real = Path.lstat
+
+    def lstat(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+        if self.name == name:
+            raise OSError(kernel_says, "stubbed")
+        return real(self)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    assert binding._name_too_long(tmp_path, name) is too_long

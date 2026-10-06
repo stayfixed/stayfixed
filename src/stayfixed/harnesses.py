@@ -271,8 +271,10 @@ HARNESSES: tuple[Harness, ...] = (CLAUDE, CODEX)
 # The settings files whose hook entries are read as a harness was measured running them: past a
 # leading UTF-8 byte-order mark, and past a scalar where an event's list, a group, a group's
 # `hooks` or an entry belongs (`scaffold.judged_entries`). Claude Code 2.1.288 ran the valid hooks
-# of each such file (measured on macOS, 2026-10-05); every other settings file -- Codex's, which
-# no measurement covers -- is read as strictly as the merge that rewrites it. A path relative to the
+# of such a file (measured on macOS, 2026-10-05, on the project's `.claude/settings.json` only;
+# `.claude/settings.local.json` and `~/.claude/settings.json` are taken to be read by the same
+# loader, an inference that was not measured); every other settings file -- Codex's, which no
+# measurement covers -- is read as strictly as the merge that rewrites it. A path relative to the
 # file's root, so `~/.claude/settings.json` is the first of these under the home directory.
 LENIENT_SETTINGS: frozenset[str] = frozenset((*CLAUDE.settings, *CLAUDE.local_settings))
 

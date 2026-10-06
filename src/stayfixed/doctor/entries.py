@@ -495,7 +495,7 @@ def hook_entries(context: Context) -> Row:
     once, so two areas' entries of one kind each get their area's way out. An entry no record holds
     names every record it is missing from, and with no area claiming anything, none.
 
-    **Entries are counted, never keys.** `scaffold.live_entries` answers one element per entry,
+    **Entries are counted, never keys.** `scaffold.judged_entries` answers one element per entry,
     in document order, so N entries sharing one id are N entries and one id under two events is
     two. Keyed by id, as `owned_ids` answers, the claimed count would deflate and `foreign` inflate
     by exactly the difference. The count comes from `marker_id`, the predicate `owned_ids` is built
@@ -507,21 +507,25 @@ def hook_entries(context: Context) -> Row:
     "all accounted for" is the one answer this check must never give about entries it did not see.
     The report names the file and never its contents.
 
-    **The entries a harness runs are judged, wherever they sit.** The walk is not the engine's
-    strict one, the one `apply_entries` rewrites through: Claude Code 2.1.288 (measured on macOS,
-    2026-10-05) still ran the valid hooks of a file whose `hooks` section held a scalar where an
-    event's list, a group, a group's `hooks` or an entry belongs, so a marked entry beside such a
-    part is live, and one nothing vouches for is red. Read strictly, the whole file was `blind`,
-    a warning, and a clone kept the exit code at 0 by committing one such scalar beside a forged
-    entry. Not measured, and so not assumed: a container in one of those places, which may hold a
-    command, leaves the file `blind` as well as judging the entries beside it.
+    **The entries a harness runs are judged, wherever they sit, in the files it was measured
+    on.** For Claude Code's settings files (`harnesses.LENIENT_SETTINGS`) the walk is not the
+    engine's strict one, the one `apply_entries` rewrites through: Claude Code 2.1.288 (measured
+    on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section held a scalar
+    where an event's list, a group, a group's `hooks` or an entry belongs, so a marked entry
+    beside such a part is live, and one nothing vouches for is red. Every other file -- Codex's
+    `.codex/hooks.json`, which no measurement covers -- is read by the strict walk, as before.
+    Read strictly, Claude Code's whole file was `blind`, a warning, and a clone kept the exit code
+    at 0 by committing one such scalar beside a forged entry. Not measured, and so not assumed: a
+    container in one of those places, which may hold a command, leaves the file `blind` as well
+    as judging the entries beside it.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
     byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
     are judged as they would be without the byte; a harness may read the file the same way, so
-    a marked entry in it nothing vouches for is red. A UTF-8 byte-order mark ahead of the
-    document is read past: `json.loads` refuses it, and Claude Code 2.1.288 runs the hooks of
-    such a file (measured on macOS, 2026-10-05), so it is no reason to be `blind` either.
+    a marked entry in it nothing vouches for is red. In Claude Code's settings files a UTF-8
+    byte-order mark ahead of the document is read past: `json.loads` refuses it, and Claude Code
+    2.1.288 runs the hooks of such a file (measured on macOS, 2026-10-05), so it is no reason to
+    be `blind` there. In any other file it still is.
 
     **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
     is a warning, which is right for a file this machine will not let anything read and for one
@@ -530,7 +534,7 @@ def hook_entries(context: Context) -> Row:
     it may run, and a warning there would let a clone commit a marked entry beside such nesting and
     keep the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may
     leave unknown the provenance of an entry a harness may run. A number longer than the
-    interpreter converts is not refused at all: `live_entries` reads it as its text, and the
+    interpreter converts is not refused at all: either walk reads it as its text, and the
     entries beside it are judged as they would be without it.
     """
     return _told(*_classify(context))
