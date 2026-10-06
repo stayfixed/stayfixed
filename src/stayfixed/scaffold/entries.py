@@ -226,8 +226,11 @@ class Placed:
     that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
     never guesses what a harness makes of it. `entry` is the entry as JSON text by the same rule,
     with its keys sorted, so the order a file spells them in changes nothing and any field it adds,
-    drops or changes does. Never printed: an event, a matcher and an entry are bytes a repository
-    chose.
+    drops or changes does. One difference the rule cannot see: an integer and the string of its
+    digits read alike, so a `"timeout": "30"` equals a granted `30`. That is benign, because it
+    vouches for no entry that runs anything the grant does not: the command, the `type` and every
+    other field still have to match, and a timeout is how long, not what. Never printed: an event,
+    a matcher and an entry are bytes a repository chose.
     """
 
     event: str

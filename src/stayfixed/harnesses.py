@@ -60,6 +60,11 @@ package that names a harness is pardoned there, each pardon by one of these item
   there.
 - One hook output cap, `native_caps.hook_output_chars`, is Claude Code's and is applied under
   every harness.
+- The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
+  (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool
+  name `Bash` and its event names are spelled across the `hooks` package (`hooks.dispatch`,
+  `hooks.api`, `hooks.policy`, `hooks.sink`), in `guards` and in the areas' hook handlers, so a
+  harness whose payload differs is an edit to each.
 
 Elsewhere, code that needs a harness fact asks this registry: `doctor` walks every value's
 `settings` and `local_settings` for hook entries and every value's `hooked` places for skills,
