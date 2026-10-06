@@ -26,7 +26,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stayfixed.fsops import read_bounded
+from stayfixed.fsops import open_directory, read_bounded
 from stayfixed.guards.api import contained_roots
 
 if TYPE_CHECKING:
@@ -88,9 +88,7 @@ _PYC_MTIME_MASK = 0xFFFFFFFF
 # up to the read cap took 1.2-1.6 s at 10k reads, 1.6-3.0 s at 20k and 3.8-7.6 s at 50k. 20k is
 # the largest of those under a third of the timeout, which leaves room for a slower disk, a cold
 # cache and the `git status` the same hook runs; it is more bytecode, and 500k more entries, than
-# a code root holds once virtual environments and dependency trees are outside it. Each `.pyc` is
-# now read under its `__pycache__`, which opens that directory once more per file: on the same
-# laptop, 20k reads of one `__pycache__` went from 0.45 s to 0.67 s, inside that room.
+# a code root holds once virtual environments and dependency trees are outside it.
 # `docs/cli.md`'s `test hygiene` section states both numbers.
 BYTECODE_WALK_ENTRIES = 500_000
 BYTECODE_READ_FILES = 20_000
@@ -115,9 +113,9 @@ UNTOLD = (
 )
 
 
-def _recorded_source_mtime(cache: Path, name: str) -> int | None:
-    """The source mtime CPython recorded in the header of `cache`'s `.pyc` called `name`, or `None`
-    when there is not one.
+def _recorded_source_mtime(cache: int, name: str) -> int | None:
+    """The source mtime CPython recorded in the header of the `.pyc` called `name` in the open
+    `__pycache__` `cache`, or `None` when there is not one.
 
     Five things produce `None` and they all mean the same thing to the caller -- skip this
     file: it is not a regular file, the header could not be read, it is short, it was written by
@@ -128,9 +126,10 @@ def _recorded_source_mtime(cache: Path, name: str) -> int | None:
     Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe
     was put there by whoever wrote the tree, and opening it reads what it names, or waits on a
     pipe's writer for good (a link to `/dev/stdin` hung a terminal). So it is read under its
-    `__pycache__` (`fsops.read_bounded`), which refuses a symlink, returns at once from a pipe,
-    and judges what it opened by its descriptor, which nothing can swap between the check and the
-    read. The source is not held to this: the interpreter follows a symlinked source too.
+    `__pycache__`, opened once for all its files (`fsops.read_bounded` with a directory
+    descriptor), which refuses a symlink, returns at once from a pipe, and judges what it opened by
+    its descriptor, which nothing can swap between the check and the read. The source is not held
+    to this: the interpreter follows a symlinked source too.
     """
     try:
         header, _ = read_bounded(name, _PYC_HEADER, root=cache)
@@ -194,21 +193,33 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     stale = 0
     read = 0
     for cache, names in walked:
-        for name in names:
-            read += 1
-            if read > BYTECODE_READ_FILES:
-                return None
-            source = cache.parent / (name.split(".")[0] + ".py")
-            try:
-                if not source.is_file():
+        # Each `__pycache__` is opened once for every file read in it. One that cannot be opened
+        # has no file this walk can read, and its files still count towards the cap.
+        try:
+            directory: int | None = open_directory(cache)
+        except OSError:
+            directory = None
+        try:
+            for name in names:
+                read += 1
+                if read > BYTECODE_READ_FILES:
+                    return None
+                if directory is None:
                     continue
-                recorded = _recorded_source_mtime(cache, name)
-                if recorded is None:
+                source = cache.parent / (name.split(".")[0] + ".py")
+                try:
+                    if not source.is_file():
+                        continue
+                    recorded = _recorded_source_mtime(directory, name)
+                    if recorded is None:
+                        continue
+                    if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
+                        stale += 1
+                except OSError:
                     continue
-                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
-                    stale += 1
-            except OSError:
-                continue
+        finally:
+            if directory is not None:
+                os.close(directory)
     return stale
 
 

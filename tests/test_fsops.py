@@ -790,3 +790,29 @@ def test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer(tmp_path: P
     except subprocess.TimeoutExpired:
         pytest.fail("the open under a root waited on a FIFO")
     assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link(
+    tmp_path: Path,
+) -> None:
+    # A reader of many files in one directory opens it once (`open_directory`) and reads each
+    # name under it, by the same rules as under a root path: one name and no path below it, no
+    # link followed, a regular file only. Mutation (declared): "a name under an open directory may
+    # be a path" -> the file below a subdirectory is read.
+    (tmp_path / "file.md").write_bytes(b"abcde")
+    (tmp_path / "link.md").symlink_to(tmp_path / "file.md")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "file.md").write_bytes(b"x")
+    directory = fsops.open_directory(tmp_path)
+    try:
+        assert fsops.read_bounded("file.md", 4, root=directory) == (b"abcd", True)
+        assert fsops.read_bounded("file.md", 5, root=directory) == (b"abcde", False)
+        with pytest.raises(OSError) as refused:
+            fsops.read_bounded("link.md", 4, root=directory)
+        assert refused.value.errno == errno.ELOOP
+        with pytest.raises(UnsafePath):
+            fsops.read_bounded("sub/file.md", 4, root=directory)
+        with pytest.raises(NotRegularFile):
+            fsops.read_bounded("sub", 4, root=directory)
+    finally:
+        os.close(directory)

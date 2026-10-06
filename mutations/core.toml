@@ -3270,6 +3270,18 @@ after = "_WITHIN_OPEN = _REGULAR_OPEN"
 reddens = [
   "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed",
   "tests/test_fsops.py::test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_file",
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
+]
+
+[[mutation]]
+name = "a name under an open directory may be a path"
+file = "src/stayfixed/fsops.py"
+before = """        if len(parts) != 1:
+            raise UnsafePath(f"{relative!r} is not one name in the directory it is read from")
+        descriptor = os.open(parts[0], _WITHIN_OPEN, dir_fd=root)"""
+after = """        descriptor = os.open(relative, _WITHIN_OPEN, dir_fd=root)"""
+reddens = [
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
 ]
 
 [[mutation]]
