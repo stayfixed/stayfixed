@@ -2608,3 +2608,24 @@ after = """
 reddens = [
   "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
 ]
+
+# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
+# `setup` writes the owner's settings back, and `overlay init` a renamed manifest, through
+# `json_text`, so a document read and then too deep for the encoder is the reader's failure.
+[[mutation]]
+name = "setup encodes the owner's merged settings with a bare json.dumps"
+file = "src/stayfixed/setup/run.py"
+before = '    new_text = json_text(document, str(path), error=Failure, indent=2, sort_keys=True) + "\n"'
+after = '    new_text = __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
+]
+
+[[mutation]]
+name = "overlay init encodes a renamed manifest with a bare json.dumps"
+file = "src/stayfixed/overlay/naming.py"
+before = '    return json_text(document, relative, error=Failure, indent=2) + "\n"'
+after = '    return json.dumps(document, indent=2) + "\n"'
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
+]

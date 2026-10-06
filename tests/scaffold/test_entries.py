@@ -188,9 +188,14 @@ def test_the_object_reader_refuses_a_value_past_its_depth_bound(
 def test_a_real_settings_document_sits_far_inside_the_depth_bound() -> None:
     # The legitimate document the bound must never refuse: hooks -> event -> group -> hooks ->
     # entry is five levels, and the bound is a named cap far above any settings file a harness
-    # writes.
+    # writes. Under it too, and pinned, because only the oracle's interpreters see this test run
+    # the cap: on 3.14 (the one interpreter whose parser follows past it) nested objects stopped
+    # encoding at about 21,700 levels of `==` and 28,900 of `json.dumps(indent=2)` (measured on
+    # 3.14.7), so a cap raised past 20,000 would let 3.14 read what it cannot write back.
+    # Mutations (declared): "the JSON object reader's depth bound is raised past what 3.14
+    # encodes" and "the JSON object reader's depth bound is lowered under what a harness writes".
     marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
-    assert jsonobject.DEPTH_CAP >= 1_000
+    assert 1_000 <= jsonobject.DEPTH_CAP < 20_000
     assert json.loads(apply_entries(marked, {})) == {}
 
 
@@ -352,3 +357,58 @@ def test_event_keys_apply_entries_adds_land_in_sorted_order() -> None:
         },
     )
     assert list(json.loads(after)["hooks"]) == ["Zed", "Alpha", "Beta", "Mid"]
+
+
+# Valid JSON 3,000 levels deep: inside every supported parser's reach but 3.11's, and past the
+# reach of 3.12's encoder whenever it indents. 3.12's C encoder does not handle `indent`, so
+# `json.dumps(indent=2)` runs the pure-Python one, which stops near 994 levels.
+ENCODER_DEEP = '{"x": ' + "[" * 3_000 + "]" * 3_000 + "}"
+
+
+def test_a_document_read_and_then_too_deep_to_write_back_is_refused_never_an_internal_error() -> (
+    None
+):
+    # On Python 3.12 the engine read this document and then ended in `RecursionError` writing it
+    # back, an internal error; 3.11 refuses it at the parse, and 3.13 and 3.14 read and write it.
+    # Every interpreter now either writes it back or refuses it as nested too deep. Real depth, so
+    # it reddens on 3.12 in CI; `test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested`
+    # forces the same arm on every interpreter, for the oracle.
+    try:
+        written = apply_entries(ENCODER_DEEP, {})
+    except ParserLimitError as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+    else:
+        assert json.loads(written) == json.loads(ENCODER_DEEP)
+
+
+@pytest.mark.parametrize("call", ["apply-entries", "owned"])
+def test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested(
+    monkeypatch: pytest.MonkeyPatch, call: str
+) -> None:
+    # The encoder stops where an interpreter's recursion does, which differs by interpreter and
+    # by `indent`; forced here, the engine's two encodes of a parsed document answer it as the
+    # reader answers a document nested past the parser. Mutations (declared): either encode made
+    # with a bare `json.dumps` again -> `RecursionError` escapes.
+    def overflowing(*args: object, **kwargs: object) -> str:
+        raise RecursionError
+
+    monkeypatch.setattr(jsonobject, "_encode", overflowing)
+    marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
+    with pytest.raises(ParserLimitError, match="nested deeper than this reader follows"):
+        if call == "apply-entries":
+            apply_entries(marked, {})
+        else:
+            owned(marked)
+
+
+def test_a_document_at_the_depth_bound_is_written_back_or_refused_on_this_interpreter() -> None:
+    # The bound is only as good as what the rest of the interpreter follows: a document exactly at
+    # it either round-trips through the engine here or is refused in the reader's words, never an
+    # internal error -- on 3.11 to 3.13 the parser refuses it, on 3.14 it is read and written.
+    deep = '{"x": ' + "[" * (jsonobject.DEPTH_CAP - 1) + "]" * (jsonobject.DEPTH_CAP - 1) + "}"
+    try:
+        written = apply_entries(deep, {})
+    except ParserLimitError as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+    else:
+        assert written.startswith('{\n  "x": [')

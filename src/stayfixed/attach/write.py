@@ -120,6 +120,7 @@ from stayfixed.scaffold import (
     mark,
     marker_id,
     owned_ids,
+    settings_text,
     upsert,
 )
 
@@ -487,7 +488,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
     if allow or permissions:
         permissions["allow"] = allow
         raw["permissions"] = permissions
-    return apply_entries(json.dumps(raw, indent=2) + "\n", wanted)
+    return apply_entries(settings_text(raw, LOCAL_SETTINGS) + "\n", wanted)
 
 
 def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
@@ -1015,7 +1016,7 @@ def _harness_fallback(
     else:
         document[FALLBACK_KEY] = wanted
     if document:
-        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
+        fsops.write_within(root, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
     else:
         # `{}` is not what the file looked like before the fallback was taken, and a document
         # holding only this key is one `attach` created — the same rule `_withdraw_settings`
@@ -1418,12 +1419,15 @@ def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
         raw["permissions"] = permissions
     for key in recorded.settings_keys:
         raw.pop(key, None)
-    remaining = json.loads(apply_entries(json.dumps(_emptied(raw), indent=2) + "\n", {}))
+    # Through `settings_text`, as every write-back of a parsed settings document: on Python 3.12
+    # an indented encode stops near 994 levels, under what the parser read.
+    remaining = json.loads(apply_entries(settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n", {}))
     if remaining == held:
         return SettingsWithdrawal(removed, None)
     # `{}` is not what the file looked like before `attach`; a file holding nothing is one this
     # command created and is the last thing it takes away.
-    return SettingsWithdrawal(removed, json.dumps(remaining, indent=2) + "\n" if remaining else "")
+    text = settings_text(remaining, LOCAL_SETTINGS) + "\n" if remaining else ""
+    return SettingsWithdrawal(removed, text)
 
 
 def _withdraw_settings(root: Path, planned: SettingsWithdrawal) -> tuple[str, ...]:

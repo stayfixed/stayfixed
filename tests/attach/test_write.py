@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed import fsops
+from stayfixed import fsops, jsonobject
 from stayfixed.attach.api import ledger
 from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.permissions import check, settings_document
@@ -38,7 +38,7 @@ from stayfixed.scaffold import EntriesError, Style, drop, extract, owned_ids
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, overflowing_indent
 from tests.runners import Recorder
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
@@ -2325,4 +2325,23 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
     assert said == OVERLAY_DAMAGED.format(path=broken)
     assert "choose another" not in said
     assert name not in said
+    assert _everything(tmp_path) == before
+
+
+def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
+    # deep `settings.local.json` was read and then ended `attach` in `RecursionError` while the
+    # merge was encoded. Forced here on every interpreter: the merge refuses as the reader refuses
+    # a document nested too deep, before anything is written. Mutation (declared): the merge
+    # encodes the settings document with a bare `json.dumps` again -> `RecursionError`.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = _everything(tmp_path)
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_indent)
+    monkeypatch.setattr(json, "dumps", overflowing_indent)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _attach_it(root, store, machine, tmp_path / "home")
     assert _everything(tmp_path) == before

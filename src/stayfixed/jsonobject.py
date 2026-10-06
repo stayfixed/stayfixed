@@ -30,11 +30,14 @@ LONG_NUMBER = "holds a number longer than this reader converts"
 # A named cap: the deepest nesting a document read here may hold, counting the top-level object
 # as one. The parser's own reach differs by interpreter — measured, 992 levels on 3.11, 9,997 on
 # 3.12, 9,998 on 3.13 and about 57,800 on 3.14 — and on 3.14 it passes what the rest of the
-# interpreter follows: `json.dumps` overflowed at 50,000 levels and `str` at 40,000, so a document
-# 3.13 refuses was read on 3.14 and then ended `detach` and the settings engine in an internal
-# error when they wrote it back. Just above 3.13's reach, so 3.11 to 3.13 refuse nothing they read
-# today, and 3.14 refuses what 3.13 refuses, in the same words; four times under where 3.14's `str`
-# stops. No shipped file states it: a settings file nests five levels.
+# interpreter follows: on 3.14.7, nested objects stopped at about 21,700 levels for `==`, 28,900
+# for `json.dumps(indent=2)` and 34,700 for `str` (nested lists go deeper), so a document 3.13
+# refuses was read on 3.14 and then ended `detach` and the settings engine in an internal error
+# when they wrote it back. Just above 3.13's reach, so 3.11 to 3.13 refuse nothing they read
+# today, and 3.14 refuses what 3.13 refuses, in the same words; more than twice under where 3.14's
+# `==` stops, though on 3.14 those limits follow the stack size and shrink under a smaller
+# `ulimit -s`. It is not 3.12's indenting encoder's reach, near 994 levels: `json_text` answers
+# that one where it is met. No shipped file states it: a settings file nests five levels.
 DEPTH_CAP = 10_000
 
 
@@ -76,6 +79,35 @@ def json_object(
     if not isinstance(raw, dict):
         raise (error if shape is None else shape)(f"{label} is not a JSON object")
     return raw
+
+
+# The encoder `json_text` calls, a name of its own so a test can make it overflow on any
+# interpreter: where it really does differs by interpreter and by `indent`.
+_encode = json.dumps
+
+
+def json_text(
+    value: object,
+    label: str,
+    *,
+    error: Callable[[str], Exception],
+    limit: Callable[[str], Exception] | None = None,
+    indent: int | None = None,
+    sort_keys: bool = False,
+) -> str:
+    """`value` as JSON text, for a document `json_object` read and a caller writes back.
+
+    Read is not written: on Python 3.12 the C encoder does not handle `indent`, so
+    `json.dumps(indent=2)` runs the pure-Python encoder, which stops at the interpreter's
+    recursion limit -- about 994 levels -- while the parser follows about 9,996. A document
+    between the two was read and then ended its writer in `RecursionError`, an internal error.
+    That is answered as the reader answers a document nested past the parser, with the same
+    `label`, `error` and `limit`.
+    """
+    try:
+        return _encode(value, indent=indent, sort_keys=sort_keys)
+    except RecursionError:
+        raise _past(label, NESTED, error, limit) from None
 
 
 def _deeper_than(value: object, cap: int) -> bool:

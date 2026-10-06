@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from stayfixed.errors import Refusal
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import json_object, json_text
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
@@ -104,6 +104,21 @@ def settings_object(
         error=EntriesError,
         limit=lambda clause: ParserLimitError(f"{label} {clause}"),
         numbers=numbers,
+    )
+
+
+def settings_text(raw: dict[str, Any], label: str = _DOCUMENT, *, sort_keys: bool = False) -> str:
+    """A settings document `settings_object` read, as the indented text written back, or the
+    refusal `settings_object` gives a document nested past the parser: see `jsonobject.json_text`
+    for why one the parser read can still be too deep to write. Public for `attach`, which writes
+    the settings file it merges into by this rule too."""
+    return json_text(
+        raw,
+        label,
+        error=EntriesError,
+        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
+        indent=2,
+        sort_keys=sort_keys,
     )
 
 
@@ -301,7 +316,7 @@ def owned(document: str) -> str:
             mine = [entry for entry in _entries_of(group) if _claimed(entry) is not None]
             if mine:
                 claimed.setdefault(event, []).append({**group, "hooks": mine})
-    return json.dumps(claimed, indent=2, sort_keys=True)
+    return settings_text(claimed, sort_keys=True)
 
 
 def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str:
@@ -318,4 +333,4 @@ def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str
         raw["hooks"] = hooks
     else:
         raw.pop("hooks", None)
-    return json.dumps(raw, indent=2) + "\n"
+    return settings_text(raw) + "\n"

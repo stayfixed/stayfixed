@@ -27,7 +27,7 @@ from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
-from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
 from tests.runners import git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -1360,3 +1360,46 @@ def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
     _detach(root, machine, home)
     assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()
+
+
+def test_a_local_settings_file_read_but_too_deep_to_write_back_is_refused_or_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # 3,000 levels: read by every supported parser but 3.11's, and past 3.12's indenting encoder,
+    # so `detach` read it there and then ended in `RecursionError` writing it back. Every
+    # interpreter now either withdraws what `attach` wrote or refuses before removing anything.
+    # Real depth, so it reddens on 3.12 in CI; the forced case below proves the arm on every
+    # interpreter, for the oracle.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"x": ' + "[" * 3_000 + "]" * 3_000 + "}", encoding="utf-8")
+    before = snapshot(root)
+    try:
+        _detach(root, machine, home)
+    except (Failure, Refusal) as refused:
+        assert "nested deeper than this reader follows" in str(refused)
+        assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Forced on every interpreter: the encode that writes the withdrawn settings back overflowing,
+    # as it does on Python 3.12 near 994 levels. Mutation (declared): `detach` encodes the
+    # withdrawn document with a bare `json.dumps` again -> `RecursionError`.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / SETTINGS).parent.mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    before = snapshot(root)
+    assert before
+    monkeypatch.setattr(jsonobject, "_encode", overflowing_indent)
+    monkeypatch.setattr(json, "dumps", overflowing_indent)
+    with pytest.raises(Refusal, match="nested deeper than this reader follows"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Failure
-from stayfixed.jsonobject import json_object
+from stayfixed.jsonobject import json_object, json_text
 from stayfixed.overlay.layout import CODEX_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ def renamed(text: str, relative: str, suffix: str) -> str | None:
                 changed = True
     if not changed:
         return None
-    return json.dumps(document, indent=2) + "\n"
+    return json_text(document, relative, error=Failure, indent=2) + "\n"
 
 
 def _named_for(document: dict[str, object], key: str, account: str) -> bool:

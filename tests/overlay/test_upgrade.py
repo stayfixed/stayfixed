@@ -1089,3 +1089,23 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
     assert upgrade(root, dry_run=True).plan.actions == ()
     done = init_instance(root, "octo", runner=Recorder())
     assert not [note for note in done.notes if note.startswith(("removed ", "left "))], done.notes
+
+
+def test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
+    # deep manifest was read and then ended `overlay init` in `RecursionError` while it was
+    # renamed. Forced on every interpreter: it stops as it stops on a manifest it cannot read,
+    # with the tree as it was. Mutation (declared): `renamed` encodes with a bare `json.dumps`.
+    def overflowing(*args: object, **kwargs: object) -> str:
+        raise RecursionError
+
+    from stayfixed import jsonobject
+
+    root = _an_overlay(tmp_path)
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(jsonobject, "_encode", overflowing)
+    with pytest.raises(Failure, match="is nested deeper than this reader follows"):
+        init_instance(root, "acme", runner=Recorder())
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before

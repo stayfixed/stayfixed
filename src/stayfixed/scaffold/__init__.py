@@ -48,6 +48,7 @@ from stayfixed.scaffold.entries import (
     owned,
     owned_ids,
     settings_object,
+    settings_text,
     wanted_placements,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
@@ -107,6 +108,7 @@ __all__ = [
     "printable",
     "render_report",
     "settings_object",
+    "settings_text",
     "unlinks",
     "upsert",
     "validate_sources",

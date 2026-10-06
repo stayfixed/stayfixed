@@ -2249,8 +2249,16 @@ reddens = [
 [[mutation]]
 name = "the JSON object reader lets a document nested past the parser raise"
 file = "src/stayfixed/jsonobject.py"
-before = "    except RecursionError:"
-after = "    except ZeroDivisionError:"
+before = """
+    except RecursionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
+after = """
+    except ZeroDivisionError:
+        raise _past(label, NESTED, error, limit) from None
+    except ValueError:
+"""
 reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
@@ -2821,4 +2829,62 @@ before = "                unread = unread or isinstance(entries, dict)"
 after = "                unread = unread or False"
 reddens = [
   "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
+]
+
+# Read is not written: Python 3.12's C encoder does not handle `indent`, so an indented encode runs
+# the pure-Python encoder, which stops near 994 levels while the parser follows about 9,996. A
+# document between the two was read and then ended its writer in an internal error. The writer
+# answers it as the reader answers a document nested past the parser.
+[[mutation]]
+name = "the JSON writer lets an encode past the interpreter's recursion escape"
+file = "src/stayfixed/jsonobject.py"
+before = """
+        return _encode(value, indent=indent, sort_keys=sort_keys)
+    except RecursionError:
+"""
+after = """
+        return _encode(value, indent=indent, sort_keys=sort_keys)
+    except ZeroDivisionError:
+"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
+  "tests/attach/test_detach.py::test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing",
+]
+
+[[mutation]]
+name = "the settings engine writes a merge back with a bare encode"
+file = "src/stayfixed/scaffold/entries.py"
+before = '    return settings_text(raw) + "\n"'
+after = '    return json.dumps(raw, indent=2) + "\n"'
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
+]
+
+[[mutation]]
+name = "the settings engine renders its own entries with a bare encode"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    return settings_text(claimed, sort_keys=True)"
+after = "    return json.dumps(claimed, indent=2, sort_keys=True)"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[owned]",
+]
+
+# The depth bound sits where every interpreter can write back what it read: above what a harness
+# writes, and under what Python 3.14, whose parser follows past it, still encodes.
+[[mutation]]
+name = "the JSON object reader's depth bound is raised past what 3.14 encodes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 1_000_000"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
+]
+
+[[mutation]]
+name = "the JSON object reader's depth bound is lowered under what a harness writes"
+file = "src/stayfixed/jsonobject.py"
+before = "DEPTH_CAP = 10_000"
+after = "DEPTH_CAP = 999"
+reddens = [
+  "tests/scaffold/test_entries.py::test_a_real_settings_document_sits_far_inside_the_depth_bound",
 ]

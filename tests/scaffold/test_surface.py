@@ -48,6 +48,7 @@ EXPORTED = [
     "printable",
     "render_report",
     "settings_object",
+    "settings_text",
     "unlinks",
     "upsert",
     "validate_sources",
