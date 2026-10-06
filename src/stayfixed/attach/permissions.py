@@ -47,7 +47,14 @@ from stayfixed.jsonobject import WRITTEN_PAST
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
-from stayfixed.scaffold import EntriesError, ParserLimitError, mark, settings_object, settings_text
+from stayfixed.scaffold import (
+    EntriesError,
+    ParserLimitError,
+    judged_entries,
+    mark,
+    settings_object,
+    settings_text,
+)
 
 # The project-local file `attach` owns outright, as the harness registry names it: the one file
 # Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
@@ -162,27 +169,36 @@ def _names_no_directory(share: Path) -> bool:
     return not stat.S_ISDIR(mode)
 
 
-def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
-    """The `permissions.allow` list of one settings-shaped document, or nothing.
+def allow_list(raw: dict[str, Any], label: str) -> list[str]:
+    """The `permissions.allow` list of a settings document `settings_object` read, or a refusal.
 
-    A shape this cannot read is a refusal and never a filter, for the same reason
-    `_hook_groups` gives: `--check` promises to read the document the real run reads, and the
-    real run (`write._allow_list`) raises on a `permissions` that is not an object or an `allow`
-    that is not a list of strings. Filtering here let `--check` exit 0 promising one rule for a
-    file the real run then refused.
+    **The one reader of that list**, for `--check` and for the real run alike: `diff_permissions`
+    reads every source and the project's own file through it, and `write.py` reads the file it
+    merges into and withdraws from through it, so `--check` refuses exactly the documents the real
+    run refuses. Two copies of it disagreed about `null`: one read a `null` `permissions` or
+    `allow` as no rules, the other refused it, so `--check` exited 0 promising a rule for a file
+    the real run then refused. A key that is absent is no rules; a key that is there must hold an
+    object, and then a list of strings, and `null` is a value that is neither. A shape this cannot
+    read is a refusal and never a filter, for the reason `_hook_groups` gives. `label` names the
+    file in the refusal.
     """
-    label = str(path)
-    permissions = settings_object(document, label).get("permissions")
-    if permissions is None:
-        return ()
+    if "permissions" not in raw:
+        return []
+    permissions = raw["permissions"]
     if not isinstance(permissions, dict):
         raise EntriesError(f"{label}: 'permissions' is not an object")
-    allow = permissions.get("allow")
-    if allow is None:
-        return ()
+    if "allow" not in permissions:
+        return []
+    allow = permissions["allow"]
     if not isinstance(allow, list) or not all(isinstance(rule, str) for rule in allow):
         raise EntriesError(f"{label}: 'permissions.allow' is not a list of strings")
-    return tuple(allow)
+    return list(allow)
+
+
+def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
+    """The `permissions.allow` list of one settings-shaped document, read by `allow_list`."""
+    label = str(path)
+    return tuple(allow_list(settings_object(document, label), label))
 
 
 def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, Any]]]:
@@ -278,7 +294,9 @@ def _numbered(
     for source, share in sources:
         for event, groups in _hook_groups(source, share=share).items():
             for group in groups:
-                entries = group.get("hooks") or []
+                # Absent is no entries; `null`, or any other value that is not a list, is
+                # refused, as `allow_list` refuses one where its list goes.
+                entries = group.get("hooks", [])
                 if not isinstance(entries, list):
                     raise EntriesError(f"{source}: an entry group's 'hooks' is not a list")
                 marked: list[dict[str, Any]] = []
@@ -313,19 +331,22 @@ def local_document(root: Path) -> str:
 
 
 def _commands(document: str, label: str) -> set[str]:
-    """Every hook command already in a settings document, whoever wrote it."""
-    hooks = settings_object(document, label).get("hooks", {})
-    if not isinstance(hooks, dict):
-        raise EntriesError(f"{label}: 'hooks' is not an object")
-    found: set[str] = set()
-    for groups in hooks.values():
-        for group in groups if isinstance(groups, list) else []:
-            entries = group.get("hooks") if isinstance(group, dict) else None
-            for entry in entries if isinstance(entries, list) else []:
-                command = entry.get("command") if isinstance(entry, dict) else None
-                if isinstance(command, str):
-                    found.add(command)
-    return found
+    """Every hook command already in a settings document, whoever wrote it, or a refusal.
+
+    Read by the strict walk (`scaffold.judged_entries`, not lenient), which refuses every shape
+    `scaffold.apply_entries` refuses when the real run merges into this document: a `hooks` that
+    is not an object, an event that is not a list of objects, a group whose `hooks` is not a list
+    of objects, `null` in any of those places included. This filtered them, so `--check` exited 0
+    for a file the real run then refused. A refusal names the file by `label`; one past a limit of
+    the parser keeps its own kind and words.
+    """
+    try:
+        walked = judged_entries(document, lenient=False)
+    except ParserLimitError:
+        raise
+    except EntriesError as exc:
+        raise EntriesError(f"{label}: {exc}") from None
+    return {placed.command for _, placed in walked.entries}
 
 
 # Room for the one key the settings fallback adds to the text `attach` writes back after the merge:

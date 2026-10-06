@@ -467,9 +467,47 @@ reddens = [
 name = "attach --check filters a malformed allow list the real run refuses"
 file = "src/stayfixed/attach/permissions.py"
 before = "        raise EntriesError(f\"{label}: 'permissions.allow' is not a list of strings\")"
-after = "        return ()"
+after = "        return []"
 reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
+
+# One reader each for the settings document's allow list and its hook table, shared by `--check`
+# and the real run, so `--check` refuses exactly what `attach` refuses: `null` where an object or a
+# list goes, and a group or an entry that is not an object. A `--check` that read either with a
+# filter of its own exited 0 promising a clean diff for a file `attach --yes` then refused.
+[[mutation]]
+name = "check reads a null allow list as no rules"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return tuple(allow_list(settings_object(document, label), label))"
+after = """    raw = settings_object(document, label)
+    if raw.get("permissions") is None or raw["permissions"].get("allow") is None:
+        return ()
+    return tuple(allow_list(raw, label))"""
+reddens = [
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[permissions-null]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[allow-null]",
+]
+
+[[mutation]]
+name = "check filters the hook shapes the merge refuses"
+file = "src/stayfixed/attach/permissions.py"
+before = "        walked = judged_entries(document, lenient=False)"
+after = "        walked = judged_entries(document, lenient=True)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[event-null]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-a-number]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-hooks-null]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[entry-a-string]",
+]
+
+[[mutation]]
+name = "attach reads an overlay group's null hooks as none"
+file = "src/stayfixed/attach/permissions.py"
+before = '                entries = group.get("hooks", [])'
+after = '                entries = group.get("hooks") or []'
+reddens = [
+  "tests/attach/test_commands.py::test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_alike",
 ]
 
 # `project.name` is repository-authored and the attach skill relays these messages to the model.

@@ -19,7 +19,7 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
-from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
+from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants
 from tests.cli import cli
 from tests.gitfixture import run_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -524,6 +524,126 @@ def test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike(
         assert "internal error" not in said.err
         assert "\x00" not in said.out + said.err
     assert_snapshot_unchanged(tmp_path, before)
+
+
+# Every shape of the settings document `attach` merges into that the real run refuses, and the
+# overlay grant's one shape both read alike, each spelled once for both commands: `--check`
+# promises to read what `attach` reads, so each half must refuse exactly what the other does, in
+# the same words. `null` is a value, never an absent key, wherever an object or a list belongs.
+REFUSED_SHAPES = {
+    "permissions-null": ({"permissions": None}, "'permissions' is not an object"),
+    "permissions-a-list": ({"permissions": []}, "'permissions' is not an object"),
+    "allow-null": (
+        {"permissions": {"allow": None}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "allow-a-string": (
+        {"permissions": {"allow": "all"}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "allow-a-number": (
+        {"permissions": {"allow": [42]}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "hooks-null": ({"hooks": None}, "'hooks' is not an object"),
+    "hooks-a-list": ({"hooks": []}, "'hooks' is not an object"),
+    "event-null": ({"hooks": {"Stop": None}}, "'hooks.Stop' is not a list"),
+    "event-an-object": ({"hooks": {"Stop": {}}}, "'hooks.Stop' is not a list"),
+    "group-a-number": (
+        {"hooks": {"Stop": [5]}},
+        "'hooks.Stop' holds an entry group that is not an object",
+    ),
+    "group-hooks-null": (
+        {"hooks": {"Stop": [{"hooks": None}]}},
+        "an entry group's 'hooks' is not a list",
+    ),
+    "group-hooks-a-string": (
+        {"hooks": {"Stop": [{"hooks": "x"}]}},
+        "an entry group's 'hooks' is not a list",
+    ),
+    "entry-a-string": (
+        {"hooks": {"Stop": [{"hooks": ["x"]}]}},
+        "an entry group holds an entry that is not an object",
+    ),
+}
+# And the shapes both read, so neither half refuses by refusing everything: an absent key is no
+# rules and no entries, and an entry with no command is somebody else's to keep.
+READ_SHAPES = {
+    "empty": {},
+    "permissions-empty": {"permissions": {}},
+    "allow-empty": {"permissions": {"allow": []}},
+    "hooks-empty": {"hooks": {}},
+    "event-empty": {"hooks": {"Stop": []}},
+    "group-without-hooks": {"hooks": {"Stop": [{}]}},
+    "group-hooks-empty": {"hooks": {"Stop": [{"hooks": []}]}},
+    "entry-without-command": {"hooks": {"Stop": [{"hooks": [{"type": "command"}]}]}},
+}
+
+
+def _granting(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A project whose overlay grants one rule and one hook entry, so the real run reaches the
+    merge into the project's settings file rather than leaving it untouched."""
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,), hooks={"Stop": [{"hooks": [ENTRY]}]})
+    return root, store, _machine(tmp_path, overlay=store.parents[2])
+
+
+@pytest.mark.parametrize("shape", sorted(REFUSED_SHAPES))
+def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], shape: str
+) -> None:
+    # `--check` read the allow list and the hook table with filters of its own, while the real run
+    # refused the same shapes: `null` where an object or a list goes, and a group or an entry that
+    # is not an object. `--check` exited 0 promising a clean diff, and `attach --yes` then exited
+    # 2 on the same file. One reader each now, shared by both. Mutations (oracle): `mutations/`'s
+    # "check reads a null allow list as no rules" -> the `null` cases exit 0 under `--check`;
+    # "check filters the hook shapes the merge refuses" -> the hook cases do.
+    document, clause = REFUSED_SHAPES[shape]
+    root, store, machine = _granting(tmp_path)
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text(json.dumps(document), encoding="utf-8")
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == attached.err == f"stayfixed: refused: {SETTINGS}: {clause}\n"
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+@pytest.mark.parametrize("shape", sorted(READ_SHAPES))
+def test_check_and_attach_both_read_the_settings_shapes_either_reads(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], shape: str
+) -> None:
+    # The other half of the case above, over the same reader: neither command refuses these.
+    root, store, machine = _granting(tmp_path)
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text(json.dumps(READ_SHAPES[shape]), encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 0
+    assert invoke(["attach", "--yes", *flags]) == 0
+    assert "refused" not in capsys.readouterr().err
+
+
+def test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_alike(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The overlay's grant file is read by one reader for both commands already; it read a group's
+    # `null` `hooks` as no entries while the allow list's reader refuses `null`. One reading of
+    # `null` for every document `attach` reads: refused, as any other value that is not a list.
+    # Mutation (oracle): `mutations/`'s "attach reads an overlay group's null hooks as none" ->
+    # both commands exit 0.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,), hooks={"Stop": [{"hooks": None}]})
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == attached.err
+    assert checked.err.endswith(": an entry group's 'hooks' is not a list\n")
 
 
 def test_attach_reads_each_of_its_two_documents_once_too(

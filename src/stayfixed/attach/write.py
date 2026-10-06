@@ -62,6 +62,7 @@ from stayfixed.attach.permissions import (
     CODEX_RULES,
     LOCAL_SETTINGS,
     PermissionDiff,
+    allow_list,
     codex_rules,
     diff_permissions,
     local_document,
@@ -111,7 +112,6 @@ from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 from stayfixed.printed import answered
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
-    EntriesError,
     Manifest,
     ParserLimitError,
     RegionError,
@@ -462,13 +462,11 @@ def _write_ignore_region(root: Path, updated: str) -> None:
 
 
 def _allow_list(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    permissions = raw.get("permissions", {})
-    if not isinstance(permissions, dict):
-        raise EntriesError(f"{LOCAL_SETTINGS}: 'permissions' is not an object")
-    allow = permissions.get("allow", [])
-    if not isinstance(allow, list) or not all(isinstance(rule, str) for rule in allow):
-        raise EntriesError(f"{LOCAL_SETTINGS}: 'permissions.allow' is not a list of strings")
-    return dict(permissions), list(allow)
+    """The local settings document's `permissions` object, copied, and its allow list, read by
+    `permissions.allow_list`: the reader `--check` reads the same file with, so the two refuse
+    the same documents."""
+    allow = allow_list(raw, LOCAL_SETTINGS)
+    return dict(raw.get("permissions", {})), allow
 
 
 def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> str:

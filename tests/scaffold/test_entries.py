@@ -307,6 +307,20 @@ def test_an_entry_that_is_not_an_object_refuses_rather_than_vanishing() -> None:
         apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
 
 
+@pytest.mark.parametrize("groups", [None, [5]], ids=["not-a-list", "not-an-object"])
+def test_an_event_a_refusal_names_is_printed_bounded(groups: object) -> None:
+    # The event is a key of a settings document a clone can commit, and the refusal naming it
+    # reaches a terminal and a model, so it is printed through `printed.clipped`: a line break and
+    # a workflow command inside it arrive escaped and cannot start a line. Mutation (oracle):
+    # `mutations/`'s "a refused event is printed as the document spells it" -> the line break is in
+    # the message.
+    event = "Stop\n::error::x"
+    with pytest.raises(EntriesError) as refused:
+        apply_entries(json.dumps({"hooks": {event: groups}}), {})
+    assert "\n" not in str(refused.value)
+    assert repr(event) in str(refused.value)
+
+
 def test_several_well_formed_entries_in_one_group_are_not_swept_up() -> None:
     # The anti-overreach guard for the refusal above: the same group with its bare string written
     # as a proper entry must pass and must return both of them. The refusal has to key on a shape

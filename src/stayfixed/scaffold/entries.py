@@ -26,6 +26,7 @@ from typing import Any
 
 from stayfixed.errors import Refusal
 from stayfixed.jsonobject import json_object, json_text
+from stayfixed.printed import clipped
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
@@ -140,11 +141,15 @@ def _groups(raw: dict[str, Any], event: str) -> list[dict[str, Any]]:
     filtered away. `apply_entries` writes the structure it built back over the user's file, so
     dropping a group it did not recognise deletes somebody else's hook and says nothing."""
     groups = _hooks_table(raw).get(event, [])
+    # The event through `printed.clipped`: it is a key of a document a clone can commit, and this
+    # refusal reaches a terminal and a model.
     if not isinstance(groups, list):
-        raise EntriesError(f"'hooks.{event}' is not a list")
+        raise EntriesError(f"'hooks.{clipped(event)}' is not a list")
     for group in groups:
         if not isinstance(group, dict):
-            raise EntriesError(f"'hooks.{event}' holds an entry group that is not an object")
+            raise EntriesError(
+                f"'hooks.{clipped(event)}' holds an entry group that is not an object"
+            )
     return groups
 
 
@@ -367,7 +372,8 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
     LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
     `placed_entries`, which refuses every shape the merge would, so it skips nothing. One
     spelling, for `doctor`'s `hook-entries` and `assess`'s `foreign-hooks`, so the two never
-    give two answers about one file.
+    give two answers about one file; and, strict, for `attach --check`'s reading of the settings
+    file `attach` merges into, which must refuse what the merge refuses.
     """
     if lenient:
         return live_entries(document.removeprefix("\ufeff"))

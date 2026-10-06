@@ -2294,7 +2294,10 @@ It exits `2` on a refusal, in the order the run meets them:
   own directory inside it.
 - A `memory.mode` other than `overlay`.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, that is not
-  JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read.
+  JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read:
+  anything but an object, a list of strings, a list of entry groups or a list of entries where
+  one goes, `null` included. An absent key is no rules and no entries. `--check` reads both with
+  the run's own readers, so it refuses exactly these documents.
 - A widening without `--yes`; a checkout with no `origin`, whether or not the overlay records the
   project; a mismatch without `--trust-remote`; an `origin` whose URL is not UTF-8 text, which the
   overlay's record cannot hold.

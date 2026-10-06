@@ -1230,6 +1230,26 @@ reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
+# An event is a key of a settings document a clone can commit, and the refusal naming it reaches a
+# terminal and a model: printed through `printed.clipped`, never as the document spells it.
+[[mutation]]
+name = "a refused event is printed as the document spells it"
+file = "src/stayfixed/scaffold/entries.py"
+before = """        raise EntriesError(f"'hooks.{clipped(event)}' is not a list")"""
+after = """        raise EntriesError(f"'hooks.{event}' is not a list")"""
+reddens = [
+  "tests/scaffold/test_entries.py::test_an_event_a_refusal_names_is_printed_bounded[not-a-list]",
+]
+
+[[mutation]]
+name = "a refused event's group is printed as the document spells it"
+file = "src/stayfixed/scaffold/entries.py"
+before = """                f"'hooks.{clipped(event)}' holds an entry group that is not an object""""
+after = """                f"'hooks.{event}' holds an entry group that is not an object""""
+reddens = [
+  "tests/scaffold/test_entries.py::test_an_event_a_refusal_names_is_printed_bounded[not-an-object]",
+]
+
 # `stayfixed.toml` is committed and read by every command and hook: to the read cap, a regular file
 # only, and one past the cap cannot be read.
 [[mutation]]
