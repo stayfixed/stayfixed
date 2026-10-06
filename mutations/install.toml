@@ -3233,3 +3233,10 @@ after = "    except LookupError as exc:\n        # With no `--machine`"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
+
+[[mutation]]
+name = "doctor names attach as making the harness link for every store"
+file = "src/stayfixed/doctor/checks.py"
+before = '        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",'
+after = '        f"{_LINK_FROM_A_TERMINAL}",'
+reddens = ["tests/doctor/test_checks.py::test_the_row_names_what_makes_the_harness_link_only_where_it_does"]

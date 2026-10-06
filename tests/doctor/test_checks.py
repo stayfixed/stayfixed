@@ -1012,6 +1012,22 @@ def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_d
     assert "check that they are yours" in check.remedy
 
 
+@pytest.mark.parametrize("template", ["overlay", "local-only"])
+def test_the_row_names_what_makes_the_harness_link_only_where_it_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, template: str
+) -> None:
+    # `attach` attaches overlay stores and refuses every other mode, so the row names it only for
+    # an overlay store; for the others, nothing but the hook makes the link.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    root = _initialised(tmp_path, template=OVERLAY if template == "overlay" else LOCAL_ONLY)
+    check = _by_name(_checks(tmp_path, root, env=_env(tmp_path, HOME="fakehome")), "ignored-env")
+    if template == "overlay":
+        assert "`stayfixed attach` from a terminal makes it" in check.detail
+    else:
+        assert "attach" not in check.detail
+        assert "no stayfixed command makes it" in check.detail
+
+
 def test_off_a_terminal_doctor_never_advises_moving_files_from_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

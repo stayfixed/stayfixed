@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 import sys
 from pathlib import Path
@@ -9,8 +10,17 @@ import pytest
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
+from stayfixed.memory import hooks as memory_hooks
 from stayfixed.memory import worktree as worktree_module
-from stayfixed.memory.hooks import NO_HARNESS_LINK, NOT_LINKED, PARTIAL, REVOKED, register
+from stayfixed.memory.hooks import (
+    NO_HARNESS_LINK,
+    NO_HARNESS_LINK_NO_HOME,
+    NO_HARNESS_LINK_OVERLAY,
+    NOT_LINKED,
+    PARTIAL,
+    REVOKED,
+    register,
+)
 from stayfixed.memory.worktree import Links, PartialLink
 from tests.ownerhome import as_owner_home
 
@@ -249,9 +259,9 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
                 assert fragment not in NOT_LINKED
 
 
-def _recording(seen: list[tuple[object, object]], *, withheld: bool = False) -> object:
+def _recording(seen: list[tuple[object, ...]], *, withheld: bool = False) -> object:
     def recorded(*_args: object, **kwargs: object) -> Links:
-        seen.append((kwargs.get("home"), kwargs.get("harness")))
+        seen.append((kwargs.get("home"), kwargs.get("harness"), kwargs.get("withdraw_under")))
         return Links(withheld=withheld and kwargs.get("harness") is False)
 
     return recorded
@@ -266,42 +276,82 @@ def test_the_harness_link_goes_under_the_owners_home_where_home_agrees(
     owner.mkdir()
     as_owner_home(monkeypatch, owner)
     monkeypatch.setenv("HOME", str(owner))
-    seen: list[tuple[object, object]] = []
+    seen: list[tuple[object, ...]] = []
     monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     contexts = [handler.run(an_event(root), config).context for handler in register()]
-    assert seen == [(owner, True)]
+    assert seen == [(owner, True, None)]
     assert contexts == [None]
 
 
-@pytest.mark.parametrize("database", ["another home", "no entry"])
+@pytest.mark.parametrize(
+    ("database", "line"),
+    [("another home", NO_HARNESS_LINK), ("no entry", NO_HARNESS_LINK_NO_HOME)],
+    ids=["another home", "no entry"],
+)
 def test_no_harness_link_is_made_where_home_is_not_the_databases(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str, line: str
 ) -> None:
     # The harness finds its memory directory through `HOME`, and a hook trusts only the database's
     # home. Where the two differ, a link made under the second is one the harness never reads, so
-    # the tree's links are made, the harness link is not, and the session is told how to make it.
-    # Relative, `HOME` would also name a directory inside the clone; nothing is made under it.
+    # the tree's links are made, the harness link is not, and the session is told what is true of
+    # this store. A relative `HOME` names a directory inside the clone: nothing is made there,
+    # and nothing is withdrawn there either.
     as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
     monkeypatch.setenv("HOME", "fakehome")
-    seen: list[tuple[object, object]] = []
+    seen: list[tuple[object, ...]] = []
     monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     contexts = [handler.run(an_event(root), config).context for handler in register()]
-    assert seen == [(None, False)]
-    assert contexts == [NO_HARNESS_LINK]
+    assert seen == [(None, False, None)]
+    assert contexts == [line]
+
+
+def test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An upgrader's link under `HOME`, made by an earlier release, is still the harness's; so the
+    # withdrawal half looks there, and only there, when `HOME` is absolute.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    elsewhere = tmp_path / "elsewhere"
+    monkeypatch.setenv("HOME", str(elsewhere))
+    seen: list[tuple[object, ...]] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        handler.run(an_event(root), config)
+    assert seen == [(None, False, elsewhere)]
+
+
+@pytest.mark.parametrize("mode", ["overlay", "in-repo", "local-only"])
+def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    # `attach` attaches overlay stores only, and refuses the other two modes; for those, the hook
+    # is the only thing that makes the link, so the line names no command that would refuse.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    config = load(a_project(tmp_path), machine=tmp_path / "absent.toml")
+    config = dataclasses.replace(config, memory=dataclasses.replace(config.memory, mode=mode))
+    line = memory_hooks._no_harness_link(config)
+    if mode == "overlay":
+        assert line == NO_HARNESS_LINK_OVERLAY
+        assert "stayfixed attach --store" in line
+    else:
+        assert line == NO_HARNESS_LINK
+        assert "attach" not in line
 
 
 def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withheld(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The vacuity guard for the line above: it is said only when a link was due, so an untrusted
-    # store under a differing `HOME` is as quiet as it is anywhere else.
+    # The vacuity guard for the lines above: they are said only when a link was due, so an
+    # untrusted store under a differing `HOME` is as quiet as it is anywhere else.
     as_owner_home(monkeypatch, tmp_path / "owner")
     monkeypatch.setenv("HOME", "fakehome")
-    seen: list[tuple[object, object]] = []
+    seen: list[tuple[object, ...]] = []
     monkeypatch.setattr(worktree_module, "link", _recording(seen))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")

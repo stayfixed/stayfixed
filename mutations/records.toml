@@ -2653,8 +2653,8 @@ reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_
 [[mutation]]
 name = "a link without the harness half makes the harness link anyway"
 file = "src/stayfixed/memory/worktree.py"
-before = "        if not harness:\n            return Links(created, revoked, withheld=harness_link_needed(store, config))"
-after = "        if False:\n            return Links(created, revoked, withheld=harness_link_needed(store, config))"
+before = "        if not harness:\n            approved = harness_link_needed(store, config)"
+after = "        if False:\n            approved = harness_link_needed(store, config)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
 ]
@@ -2678,3 +2678,51 @@ after = '    if False:'
 reddens = [
   "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
 ]
+
+# The line for a withheld harness link names `attach` only where `attach` makes the link: an
+# overlay store. It refuses every other mode, and for those the hook is the only maker.
+[[mutation]]
+name = "the withheld link line names attach for every store"
+file = "src/stayfixed/memory/hooks.py"
+before = "    if config.memory.mode == \"overlay\":\n        return NO_HARNESS_LINK_OVERLAY"
+after = "    if True:\n        return NO_HARNESS_LINK_OVERLAY"
+reddens = ["tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store"]
+
+[[mutation]]
+name = "the withheld link line points a user with no home at a home"
+file = "src/stayfixed/memory/hooks.py"
+before = '    return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME'
+after = '    return NO_HARNESS_LINK'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+# A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse
+# survives the hook making nothing there; and only under an absolute `HOME`.
+[[mutation]]
+name = "a lapsed link under HOME stays once the harness half is withheld"
+file = "src/stayfixed/memory/worktree.py"
+before = '            if not approved and withdraw_under is not None:'
+after = '            if False:'
+reddens = [
+  "tests/memory/test_worktree.py::test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld",
+]
+
+[[mutation]]
+name = "a lapsed link is withdrawn under a relative home"
+file = "src/stayfixed/memory/worktree.py"
+before = "    if not home.is_absolute():\n        return []"
+after = "    if False:\n        return []"
+reddens = ["tests/memory/test_worktree.py::test_a_relative_home_and_an_approved_store_are_not_withdrawn_under"]
+
+[[mutation]]
+name = "the worktree-link hook hands on a relative HOME to withdraw under"
+file = "src/stayfixed/memory/hooks.py"
+before = '    if not chosen or not os.path.isabs(chosen):'
+after = '    if not chosen:'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+[[mutation]]
+name = "the worktree-link hook withdraws nothing under HOME"
+file = "src/stayfixed/memory/hooks.py"
+before = '                withdraw_under=None if home is not None else _lapsed_link_home(),'
+after = '                withdraw_under=None,'
+reddens = ["tests/memory/test_hooks.py::test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs"]

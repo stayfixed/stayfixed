@@ -870,7 +870,7 @@ IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    home = _ignored_home(context.env)
+    home = _ignored_home(context.env, overlay=context.config.memory.mode == "overlay")
     if not set_here and home is None:
         return Row(OK, "no environment variable is being ignored")
     if not set_here and home is not None:
@@ -895,9 +895,16 @@ _MOVE_YOUR_FILES = (
     "setup` or `stayfixed memory trust`, which write there; otherwise nothing"
 )
 _FROM_A_TERMINAL = "run `stayfixed doctor` from your own terminal to see what to do about it"
+# What does make the harness link a hook withholds. `attach` links every worktree of an overlay
+# store under the `HOME` it reads at a terminal; for any other store the hook is the only maker.
+_LINK_FROM_A_TERMINAL = "; `stayfixed attach` from a terminal makes it under HOME"
+_LINK_FROM_NOTHING = (
+    "; for this store no stayfixed command makes it while they differ, so start sessions with "
+    "HOME set to the database's home"
+)
 
 
-def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
+def _ignored_home(env: Mapping[str, str], *, overlay: bool) -> tuple[str, str] | None:
     """What `HOME` costs on the hook path, when it is not the password database's home: a detail
     and a remedy, or `None` when the two homes are one.
 
@@ -905,7 +912,8 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     (`config.machine.owner_home`), and the machine file and `trust.json` are under it for every
     command. A container or home-manager setup whose `HOME` is another directory is not refused
     for that; it is told here which home its stayfixed files are under, and that a hook makes no
-    harness memory link while the two differ (`memory.hooks.NO_HARNESS_LINK`). The value of
+    harness memory link while the two differ (`memory.hooks.NO_HARNESS_LINK`), and what makes
+    it: `attach` from a terminal for an overlay store, and nothing for any other. The value of
     `HOME` is not printed: `doctor` may be run by an agent whose environment a repository chose.
     """
     chosen = env.get("HOME")
@@ -916,7 +924,7 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
         return (
             "the password database lists no home directory for this user, so off a terminal "
             "no machine configuration and no trust record is read, whatever HOME says, and a "
-            "hook makes no harness memory link",
+            f"hook makes no harness memory link{_LINK_FROM_A_TERMINAL if overlay else ''}",
             "pass --machine <path> to a command that must read a machine configuration file",
         )
     if Path(chosen).resolve() == recorded.resolve():
@@ -925,8 +933,8 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     return (
         f"HOME is not the home directory the password database records for this user, and is "
         f"not honoured on the hook path: the machine configuration and trust record are under "
-        f"{owner}, and while the two differ a hook makes no harness memory link; "
-        f"`stayfixed attach` from a terminal makes it under HOME",
+        f"{owner}, and while the two differ a hook makes no harness memory link"
+        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",
         _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,
     )
 

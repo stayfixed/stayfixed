@@ -1269,3 +1269,66 @@ def test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withhel
     assert trusted.withheld is True
     assert not harness_memory_path(tree, owner).exists()
     assert not (owner / ".claude").exists()
+
+
+def _a_harness_link(home: Path, tree: Path, target: Path) -> Path:
+    """A symlink at `tree`'s harness memory path under `home`, as an earlier release made it."""
+    path = harness_memory_path(tree, home)
+    path.parent.mkdir(parents=True)
+    path.symlink_to(target, target_is_directory=True)
+    return path
+
+
+def test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The upgrader whose `HOME` is not the database's: an earlier release made the link under
+    # `HOME`, the harness still reads it there, and the store's approval has now lapsed (never
+    # recorded here). The hook makes nothing under that `HOME`, and still takes this link back.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = tmp_path / "home-the-harness-reads"
+    lapsed = _a_harness_link(home, tree, store.path.resolve())
+    links = link(tree, store, config, harness=False, withdraw_under=home)
+    assert links.revoked == [lapsed]
+    assert not lapsed.is_symlink()
+
+
+def test_a_link_to_anything_else_under_a_chosen_home_is_left_standing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A clone can choose an absolute `HOME`; withdrawing there only ever removes a link to this
+    # very store, so a link to anything else is somebody else's and stays.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    other = tmp_path / "somebody-elses"
+    other.mkdir()
+    chosen = tmp_path / "clone-chosen-home"
+    kept = _a_harness_link(chosen, tree, other)
+    assert link(tree, store, config, harness=False, withdraw_under=chosen).revoked == []
+    assert kept.is_symlink() and kept.resolve() == other.resolve()
+
+
+def test_a_relative_home_and_an_approved_store_are_not_withdrawn_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A relative `HOME` names a directory relative to wherever the process is, which for a hook
+    # is the clone; and an approved store keeps its link, which only a lapse takes back.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    monkeypatch.chdir(tmp_path)
+    relative = _a_harness_link(tmp_path / "relhome", tree, store.path.resolve())
+    assert link(tree, store, config, harness=False, withdraw_under=Path("relhome")).revoked == []
+    assert relative.is_symlink()
+    home = tmp_path / "home-the-harness-reads"
+    approved = _a_harness_link(home, tree, store.path.resolve())
+    record(store, config)
+    links = link(tree, store, config, harness=False, withdraw_under=home)
+    assert links.revoked == [] and links.withheld is True
+    assert approved.is_symlink()

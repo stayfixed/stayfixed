@@ -35,6 +35,8 @@ from typing import TYPE_CHECKING
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from stayfixed.config.schema import Config
 
 # Fixed, and carrying nothing the repository chose. A plain string is not an import, so
@@ -60,11 +62,23 @@ REVOKED = (
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
 # Off a terminal the only home a hook trusts is the password database's, and the harness finds
 # its memory directory through `HOME`. Where the two differ, a link made under the first is one
-# the harness never reads, so none is made and the session is told; at a terminal `attach` reads
-# `HOME`, which is the person's own there.
+# the harness never reads, so none is made and the session is told what does make it. That
+# depends on the store: in overlay mode `attach`, run from a terminal, links every worktree under
+# the `HOME` it reads there; for any other store this hook is the only thing that makes the link,
+# and it makes it only where the two homes agree.
+NO_HARNESS_LINK_OVERLAY = (
+    "stayfixed: HOME is not this user's home in the password database, so this hook made no "
+    "harness memory link; run `stayfixed attach --store <overlay>/projects/<project>/memory` "
+    "from a terminal to make it"
+)
 NO_HARNESS_LINK = (
     "stayfixed: HOME is not this user's home in the password database, so this hook made no "
-    "harness memory link; run `stayfixed attach` from a terminal to make it"
+    "harness memory link, and no stayfixed command makes it for this store while that is so; "
+    "start sessions with HOME set to that home and this hook makes it"
+)
+NO_HARNESS_LINK_NO_HOME = (
+    "stayfixed: the password database lists no home directory for this user, so this hook made "
+    "no harness memory link, and no stayfixed command makes it for this store"
 )
 
 
@@ -91,7 +105,14 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         # tree's links and no harness link (`NO_HARNESS_LINK`).
         home = owner_home(interactive=False) if homes_agree() else None
         try:
-            links = link(event.project_root, store, config, home=home, harness=home is not None)
+            links = link(
+                event.project_root,
+                store,
+                config,
+                home=home,
+                harness=home is not None,
+                withdraw_under=None if home is not None else _lapsed_link_home(),
+            )
         except PartialLink as partial:
             # A write failed part-way. `link` makes one symlink at a time, so the tree now
             # holds some names and not the rest — and `worktree`'s own docstring says a group
@@ -119,7 +140,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             return HookResult(context=REVOKED)
         lines = [LINKED.format(count=len(links.created))] if links.created else []
         if links.withheld:
-            lines.append(NO_HARNESS_LINK)
+            lines.append(_no_harness_link(config))
         return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
@@ -128,6 +149,34 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     # neither silent nor the same event.
     except Exception:
         return HookResult()
+
+
+def _no_harness_link(config: Config) -> str:
+    """The line for a harness link withheld, saying only what is true of this store."""
+    from stayfixed.config.machine import passwd_home
+
+    if config.memory.mode == "overlay":
+        return NO_HARNESS_LINK_OVERLAY
+    return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME
+
+
+def _lapsed_link_home() -> Path | None:
+    """Where a link the harness may still read can be, for withdrawing one whose approval lapsed.
+
+    Not a home this hook makes anything under: `HOME`, which it does not trust. A link there is
+    every upgrader's state, made under `HOME` by an earlier release, and the harness keeps
+    reading it after the store's approval lapses unless something takes it back. Withdrawal only
+    ever removes a link pointing at this very store (`worktree._unlink`), so a `HOME` an `env`
+    block chose gains nothing from it. A relative `HOME` is never used: it names a directory
+    relative to the clone this hook runs in.
+    """
+    import os
+    from pathlib import Path
+
+    chosen = os.environ.get("HOME")
+    if not chosen or not os.path.isabs(chosen):
+        return None
+    return Path(chosen)
 
 
 def register() -> list[Handler]:

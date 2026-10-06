@@ -412,6 +412,7 @@ def link(
     *,
     home: Path | None = None,
     harness: bool = True,
+    withdraw_under: Path | None = None,
 ) -> Links:
     """Create what is missing, withdraw what is no longer authorised, and report both.
 
@@ -485,9 +486,11 @@ def link(
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
 
-    `harness=False` makes the tree's links and neither makes nor withdraws the harness link, and
-    reports in `withheld` whether the store is approved for one. For a caller whose only home
-    is not the one the harness reads (`memory.hooks`): a link made there is a link nothing sees.
+    `harness=False` makes the tree's links and no harness link, and reports in `withheld` whether
+    the store is approved for one. For a caller whose only trusted home is not the one the harness
+    reads (`memory.hooks`): a link made there is a link nothing sees. The withdrawal half still
+    runs, under `withdraw_under` when the caller names one: a store whose approval has lapsed
+    loses a link there that points at it, which `revoked` reports (`_withdraw_lapsed`).
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
@@ -525,13 +528,33 @@ def link(
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
         if not harness:
-            return Links(created, revoked, withheld=harness_link_needed(store, config))
+            approved = harness_link_needed(store, config)
+            if not approved and withdraw_under is not None:
+                revoked += _withdraw_lapsed(worktree, store, withdraw_under)
+            return Links(created, revoked, withheld=approved)
         made, withdrawn = _apply_harness_link(worktree, store, config, home)
         created += made
         revoked += withdrawn
     except OSError as exc:
         raise PartialLink(created, exc) from exc
     return Links(created, revoked)
+
+
+def _withdraw_lapsed(where: Path, store: Store, home: Path) -> list[Path]:
+    """Remove the harness link under `home` that points at `store`, for a store not approved.
+
+    `home` is one this module makes nothing under, so the narrowest withdrawal there is: only a
+    symlink whose own target is this store goes (`_unlink`), a link to anything else is left
+    standing, a relative `home` is ignored, and an anchor `harness_anchor` refuses is passed over
+    rather than refused, because a hook never costs a session for a home it does not trust.
+    """
+    if not home.is_absolute():
+        return []
+    try:
+        root, relative = harness_anchor(where, home)
+    except Refusal:
+        return []
+    return [root / relative] if _unlink(root, relative, store.path.resolve()) else []
 
 
 def attach_main(
