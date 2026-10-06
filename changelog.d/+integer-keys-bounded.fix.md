@@ -7,6 +7,7 @@ and `stayfixed gate` in an internal error. A hexadecimal integer whose decimal s
 4,300 digits no longer ends a command in an internal error either: `stayfixed init` adopting a
 `stayfixed.toml` that holds one refuses it as the configuration's own error, `[stayfixed] preset`
 holding any value that is not a string is refused as "stayfixed.preset must be a string",
+followed by the presets this version ships,
 `stayfixed assess` reads one in a profile's `pyproject.toml` as a value it cannot read, and
 `stayfixed setup` keeps one you wrote in the machine configuration file, writing it back in
 hexadecimal.

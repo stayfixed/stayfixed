@@ -792,15 +792,20 @@ def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
     assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
 
 
+@pytest.mark.parametrize("value", ["0x" + "f" * 5_000, "5", "true"], ids=["long-hex", "5", "true"])
 def test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name(
-    tmp_path: Path,
+    tmp_path: Path, value: str
 ) -> None:
     # `[stayfixed] preset` was spelled with `str()` before it was checked, and `tomllib` converts
     # a hex literal of any length, whose `str` raises past 4,300 digits: every command loading
     # the file ended in an internal error. A value that is not a string is refused as the
-    # configuration's own error, before anything spells it. Mutation (declared): the preset
-    # spelled with `str` again -> `ValueError`.
-    text = '[stayfixed]\nversion = "0.1.0"\npreset = 0x' + "f" * 5_000 + "\n"
+    # configuration's own error, before anything spells it, and still lists the presets this
+    # build ships, as 0.2.0's refusal of `5` or `true` did. Mutation (declared): the preset
+    # spelled with `str` again -> `ValueError` for the long one, and a refusal of a name this
+    # build does not ship for the others.
+    text = '[stayfixed]\nversion = "0.1.0"\npreset = ' + value + "\n"
     text += '\n[project]\nname = "sample"\n'
-    with pytest.raises(ConfigError, match=r"^stayfixed\.preset must be a string$"):
+    with pytest.raises(
+        ConfigError, match=r"^stayfixed\.preset must be a string; available: recommended$"
+    ):
         loads(text, tmp_path, machine=tmp_path / "no-machine.toml")

@@ -43,7 +43,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
-from stayfixed.presets import load_preset
+from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
 # Where `tomllib` stopped, and nothing else it had to say. Every `TOMLDecodeError` this
@@ -565,7 +565,7 @@ def loads(
     # raises past 4,300 digits.
     preset_name = head.get("preset", "recommended")
     if not isinstance(preset_name, str):
-        raise ConfigError("stayfixed.preset must be a string")
+        raise ConfigError(f"stayfixed.preset must be a string; {available()}")
     preset = load_preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}

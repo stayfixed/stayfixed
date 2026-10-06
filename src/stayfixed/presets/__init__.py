@@ -36,7 +36,7 @@ def load_preset(name: str, *, key: str = "[stayfixed] preset") -> dict[str, Any]
     on their own screen, and the list of shipped presets is what they need to fix it.
     """
     if not NAME.match(name):
-        raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {_available()}")
+        raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {available()}")
     # Membership in the listing, not `joinpath(...).is_file()`: the filesystem answered that, and
     # on macOS's default case-insensitive one `"RECOMMENDED"` loaded where Linux refused it, so a
     # configuration checked on one machine failed CI on another. The profile half already asks
@@ -44,11 +44,12 @@ def load_preset(name: str, *, key: str = "[stayfixed] preset") -> dict[str, Any]
     # which refusal a value gets.
     if name not in shipped_presets():
         raise Failure(
-            f"{key} names a preset this version of stayfixed does not ship; {_available()}"
+            f"{key} names a preset this version of stayfixed does not ship; {available()}"
         )
     resource = resources.files(__package__).joinpath(f"{name}.toml")
     return tomllib.loads(resource.read_text(encoding="utf-8"))
 
 
-def _available() -> str:
+def available() -> str:
+    """The clause every refusal of a preset name ends with: the names this build ships."""
     return f"available: {', '.join(shipped_presets()) or 'none'}"
