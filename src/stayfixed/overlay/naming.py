@@ -15,7 +15,6 @@ overlay, and the Codex one is absent from an overlay generated before the Codex 
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
@@ -95,13 +94,14 @@ def owner_of(root: Path) -> str | None:
     """
     for row in NAMED:
         try:
-            document = json.loads((root / row.path).read_text(encoding="utf-8"))
-        except (OSError, ValueError, RecursionError):
-            # `ValueError` holds the decoder's own two (`UnicodeDecodeError`, `JSONDecodeError`)
-            # and an integer longer than the interpreter converts; `RecursionError` is nesting
-            # past the parser. Each is a manifest this cannot read, and the next is asked.
+            # Through `jsonobject`, the one reader of a JSON object: a manifest that is not one,
+            # or is past the parser or its depth bound, is one this cannot read, and the next is
+            # asked. `UnicodeDecodeError` is a `ValueError` too.
+            text = (root / row.path).read_text(encoding="utf-8")
+            document = json_object(text, row.path, error=ValueError)
+        except (OSError, ValueError):
             continue
-        name = document.get("name") if isinstance(document, dict) else None
+        name = document.get("name")
         if (owner := owner_in(name, row.name)) is not None:
             return owner
     return None

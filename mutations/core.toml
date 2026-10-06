@@ -755,8 +755,14 @@ reddens = [
 [[mutation]]
 name = "a record that is not JSON reads as no record at all"
 file = "src/stayfixed/release/hashes.py"
-before = '        raise UnreadableRecord(f"{RECORD} is not valid JSON: {exc}") from None'
-after = "        return None"
+before = """
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
+after = """
+    if text.count("{") != text.count("}"):
+        return None
+    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
+"""
 reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unreadable_rather_than_absent"]
 
 # Valid JSON of the wrong shape decodes cleanly, so the decoder catch never sees it — the same
@@ -764,8 +770,14 @@ reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unre
 [[mutation]]
 name = "a record of another format is read as this one"
 file = "src/stayfixed/release/hashes.py"
-before = '        or document.get("format") != FORMAT'
-after = "        or False"
+before = """
+        document.get("format") != FORMAT
+        or not isinstance(files, dict)
+"""
+after = """
+        False
+        or not isinstance(files, dict)
+"""
 reddens = [
   "tests/release/test_hashes.py::test_a_record_of_the_wrong_shape_is_unreadable[another-format]",
 ]
@@ -2658,36 +2670,19 @@ reddens = [
   "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
 ]
 
-# A release's hash record is read where the plugin is installed, and valid JSON past the parser —
-# nesting it cannot follow, or an integer longer than the interpreter converts — escaped the
-# record's reader, so `doctor`'s `files` row read "this check could not run" for a record that is
-# present and unreadable.
+# A release's hash record is read where the plugin is installed, through the one JSON object
+# reader, so a record nested past the parser or its depth bound, or holding an integer longer than
+# the interpreter converts, is present and unreadable; parsed with a bare `json.loads`, either
+# escaped the record's reader and `doctor`'s `files` row read "this check could not run".
 [[mutation]]
-name = "the hash record's reader lets a record nested past the parser escape"
+name = "the hash record is parsed with a bare json.loads"
 file = "src/stayfixed/release/hashes.py"
-before = """
-    except RecursionError:
-        raise UnreadableRecord(f"{RECORD} {NESTED}") from None
-"""
-after = """
-"""
+before = "    document = json_object(text, RECORD, error=UnreadableRecord, shape=lambda _: not_a_record)"
+after = "    document = json.loads(text)"
 reddens = [
   "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[nested]",
-]
-
-[[mutation]]
-name = "the hash record's reader lets a number past the parser escape"
-file = "src/stayfixed/release/hashes.py"
-before = """
-    except ValueError:
-        # Valid JSON too: past the `JSONDecodeError` and `UnicodeDecodeError` arms, what reaches
-"""
-after = """
-    except ZeroDivisionError:
-        # Valid JSON too: past the `JSONDecodeError` and `UnicodeDecodeError` arms, what reaches
-"""
-reddens = [
   "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
+  "tests/release/test_hashes.py::test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser",
 ]
 
 # Python 3.14's JSON parser follows about 57,800 levels, further than its own `json.dumps` and

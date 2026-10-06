@@ -6,6 +6,7 @@ from typing import NoReturn
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.create import RETRY_WAIT_SECONDS, _is_template
@@ -735,3 +736,12 @@ def test_a_template_probe_past_the_parser_is_no_answer(printed: str) -> None:
     # where an answer that is not JSON reads as no answer. Mutation (declared): the catch narrowed
     # to `JSONDecodeError` again.
     assert _is_template(printed) is None
+
+
+def test_a_template_probe_past_the_depth_bound_is_no_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The probe's answer goes through the one JSON object reader and its depth bound. Mutation
+    # (declared): "the template probe parses with a bare json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    assert _is_template('{"isTemplate": true, "a": [[[[]]]]}') is None

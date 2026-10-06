@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
@@ -1109,3 +1110,22 @@ def test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_re
     with pytest.raises(Failure, match="is nested deeper than this reader follows"):
         init_instance(root, "acme", runner=Recorder())
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+def test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each manifest goes through the one JSON object reader and its depth bound; one past it is
+    # one the owner is not read from, and the next is asked. Mutation (declared): "the overlay's
+    # owner is read with a bare json.loads".
+    root = _an_overlay(tmp_path)
+    init_instance(root, "acme", runner=Recorder())
+    path = root / ".claude-plugin" / "plugin.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["deep"] = [[[[]]]]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    assert owner_of(root) == "acme"
+    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(document), "utf-8")
+    (root / ".codex-plugin" / "plugin.json").write_text(json.dumps(document), "utf-8")
+    assert owner_of(root) is None

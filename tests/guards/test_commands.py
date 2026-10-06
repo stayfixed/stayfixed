@@ -9,10 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
 from tests.gitfixture import git
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
 from tests.profiles import redrun
 from tests.profiles.python.bytecode import compile_module, make_stale
 
@@ -866,3 +867,15 @@ def test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words(
     assert said in err
     assert "internal error" not in err
     assert "set_int_max_str_digits" not in err
+
+
+def test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Stdin goes through the one JSON object reader, so its depth bound holds here as it does for
+    # every other JSON document. Mutation (declared): "guard bg-cleanup parses stdin with a bare
+    # json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    feed(monkeypatch, DEEPER_THAN_FOUR)
+    assert invoke(["guard", "bg-cleanup"]) == 2
+    assert "nested deeper than this reader follows" in capsys.readouterr().err

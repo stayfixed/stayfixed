@@ -2541,45 +2541,42 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the overlay's owner is not read past a manifest beyond the parser"
+name = "the overlay's owner is read with a bare json.loads"
 file = "src/stayfixed/overlay/naming.py"
-before = "        except (OSError, ValueError, RecursionError):"
-after = "        except (OSError, UnicodeDecodeError, json.JSONDecodeError):"
+before = "            document = json_object(text, row.path, error=ValueError)"
+after = "            document = json.loads(text)"
 reddens = [
   "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
   "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[long]",
+  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
 ]
 
 [[mutation]]
-name = "the template probe reads an answer past the parser as an internal error"
+name = "the template probe parses with a bare json.loads"
 file = "src/stayfixed/overlay/create.py"
-before = """
-        document = json.loads(printed_json)
-    except (ValueError, RecursionError):
-"""
-after = """
-        document = json.loads(printed_json)
-    except json.JSONDecodeError:
-"""
+before = '        document = json_object(printed_json, "`gh repo view`", error=ValueError)'
+after = "        document = json.loads(printed_json)"
 reddens = [
   "tests/overlay/test_create.py::test_a_template_probe_past_the_parser_is_no_answer[nested]",
   "tests/overlay/test_create.py::test_a_template_probe_past_the_parser_is_no_answer[long]",
+  "tests/overlay/test_create.py::test_a_template_probe_past_the_depth_bound_is_no_answer",
 ]
 
 [[mutation]]
-name = "publish-template reads a repository view past the parser as an internal error"
+name = "publish-template parses the repository view with a bare json.loads"
 file = "src/stayfixed/overlay/publish.py"
 before = """
-    except (ValueError, RecursionError):
-        # Valid JSON this parser cannot follow: an integer longer than the interpreter converts,
+    document = json_object(
+        view.stdout or "{}",
 """
 after = """
-    except ZeroDivisionError:
-        # Valid JSON this parser cannot follow: an integer longer than the interpreter converts,
+    document = json.loads(view.stdout or "{}") or json_object(
+        view.stdout or "{}",
 """
 reddens = [
   "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[nested]",
   "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[long]",
+  "tests/overlay/test_publish.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
 ]
 
 # In the block led by "the live-entry walk refuses an event whose value is not a list": the row

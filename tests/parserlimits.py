@@ -35,3 +35,9 @@ def overflowing_indent(value: object, *args: Any, indent: int | None = None, **k
     if indent is not None:
         raise RecursionError
     return _ENCODE(value, *args, **kwargs)
+
+
+# Valid JSON nested five levels deep, one past the depth bound once a test lowers
+# `jsonobject.DEPTH_CAP` to 4: every parser follows it, so only the shared reader's bound refuses
+# it, and a reader that bypasses that reader reads it.
+DEEPER_THAN_FOUR = '{"a": [[[[]]]]}'

@@ -16,7 +16,6 @@ ordinary case rather than the exception.
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from collections.abc import Callable
@@ -27,6 +26,7 @@ from typing import Literal
 from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.errors import Failure, Refusal
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay import naming
 from stayfixed.overlay.identity import require_overlay, segment
 from stayfixed.overlay.layout import (
@@ -298,13 +298,12 @@ def _is_template(printed_json: str) -> bool | None:
     """`isTemplate` from what `gh repo view --json isTemplate` printed, or `None` for anything
     that is not exactly an object carrying a boolean there."""
     try:
-        document = json.loads(printed_json)
-    except (ValueError, RecursionError):
-        # The decoder's `JSONDecodeError` is a `ValueError`, and so is an integer longer than
-        # the interpreter converts; `RecursionError` is nesting past the parser. Each is an
-        # answer that says nothing about `isTemplate`.
+        # Through `jsonobject`, the one reader of a JSON object: an answer that is not one, or is
+        # past the parser or its depth bound, says nothing about `isTemplate`.
+        document = json_object(printed_json, "`gh repo view`", error=ValueError)
+    except ValueError:
         return None
-    value = document.get("isTemplate") if isinstance(document, dict) else None
+    value = document.get("isTemplate")
     return value if isinstance(value, bool) else None
 
 

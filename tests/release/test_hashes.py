@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import jsonobject
 from stayfixed.jsonobject import LONG_NUMBER as LONG_CLAUSE
 from stayfixed.jsonobject import NESTED as NESTED_CLAUSE
 from stayfixed.release.hashes import (
@@ -25,7 +26,7 @@ from stayfixed.release.hashes import (
     digests,
     read_record,
 )
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
 
 
 def hashed_plugin(tmp_path: Path) -> Path:
@@ -176,4 +177,18 @@ def test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error(
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_text(body, encoding="utf-8")
     with pytest.raises(UnreadableRecord, match=said):
+        read_record(root)
+
+
+def test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record goes through the one JSON object reader, so the depth bound every other reader of
+    # a JSON document applies holds here too: on Python 3.14 a bare `json.loads` followed 20,000
+    # levels. The bound lowered, so a shallow document meets it. Mutation (declared): "the hash
+    # record is parsed with a bare json.loads".
+    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
+    root = hashed_plugin(tmp_path)
+    (root / RECORD).write_text(DEEPER_THAN_FOUR, encoding="utf-8")
+    with pytest.raises(UnreadableRecord, match=NESTED_CLAUSE):
         read_record(root)

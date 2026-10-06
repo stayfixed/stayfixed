@@ -9,7 +9,6 @@ advisory is a finding (1); a clean command is 0.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,7 +19,7 @@ from stayfixed.command import common_flags
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.jsonobject import LONG_NUMBER, NESTED
+from stayfixed.jsonobject import json_object
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
@@ -35,18 +34,15 @@ _NOT_BASH = "not a Bash call; nothing to judge"
 
 def _tool_input(raw: str) -> dict[str, Any] | None:
     """The Bash input to judge, or None for a whole payload naming another tool."""
-    try:
-        payload = json.loads(raw or "")
-    except json.JSONDecodeError as exc:
-        raise Refusal(f"{_UNREADABLE}; {exc}") from None
-    except RecursionError:
-        raise Refusal(f"{_UNREADABLE}; stdin {NESTED}") from None
-    except ValueError:
-        # Valid JSON past the decoder's own errors: an integer longer than the interpreter
-        # converts, whose message would advise raising a process-wide limit.
-        raise Refusal(f"{_UNREADABLE}; stdin {LONG_NUMBER}") from None
-    if not isinstance(payload, dict):
-        raise Refusal(_UNREADABLE)
+    # Through `jsonobject`, the one reader of a JSON object, so stdin nested past the parser or
+    # its depth bound, or holding an integer longer than the interpreter converts, is refused in
+    # the words every reader uses rather than ending the guard in an internal error.
+    payload = json_object(
+        raw or "",
+        "stdin",
+        error=lambda reason: Refusal(f"{_UNREADABLE}; {reason}"),
+        shape=lambda _: Refusal(_UNREADABLE),
+    )
     if "tool_name" in payload and payload["tool_name"] != "Bash":
         return None  # the handler is silent here too (`hooks.bash_command`)
     tool_input = payload.get("tool_input", payload)
