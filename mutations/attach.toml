@@ -2259,5 +2259,4 @@ after = """
 reddens = [
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[copy]",
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[compare]",
-  "tests/attach/test_detach.py::test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing",
 ]

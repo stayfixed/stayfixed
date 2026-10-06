@@ -1390,9 +1390,12 @@ def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_re
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Forced on every interpreter: the encode that writes the withdrawn settings back overflowing,
-    # as it does on Python 3.12 near 994 levels. Mutations (declared): "the JSON writer lets an
-    # encode past the interpreter's recursion escape" and "detach copies and compares the
-    # settings document unguarded" -> `RecursionError`.
+    # as it does on Python 3.12 near 994 levels. No single mutation reddens it, and that is the
+    # point: two layers answer the overflow, `json_text` and the guard around `detach`'s copy and
+    # comparison, and each is proven alone -- `mutations/`'s "the JSON writer lets an encode past
+    # the interpreter's recursion escape" by the engine's forced case, and "detach copies and
+    # compares the settings document unguarded" by
+    # `test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"

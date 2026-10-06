@@ -2843,7 +2843,6 @@ after = """
 """
 reddens = [
   "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
-  "tests/attach/test_detach.py::test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing",
 ]
 
 [[mutation]]
