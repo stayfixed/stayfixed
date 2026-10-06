@@ -76,16 +76,18 @@ def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -
         assert requires_of(root) is None, body[:8]
 
 
-def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_all_three_readers_without_waiting(
+def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_its_readers_without_waiting(
     tmp_path: Path,
 ) -> None:
-    # The overlay's plugin manifest had three readers, and two read it with `read_text`, which
-    # waits on a FIFO for a writer that never comes: `requires_of`, which the SessionStart hook
-    # asks, and `owner_of`, which `overlay upgrade` asks. All three read it through
-    # `naming.manifest`, a regular file only, so a FIFO is nothing declared, no owner, and not the
-    # overlay layout. In a child under a timeout, so a regression fails this case rather than
-    # hanging. Mutation (oracle): `mutations/`'s "an overlay manifest is read without asking what
-    # it is" -> the child waits and this times out.
+    # Two readers of the overlay's plugin manifest read it with `read_text`, which waits on a FIFO
+    # for a writer that never comes: `requires_of`, which the SessionStart hook asks, and
+    # `owner_of`, which `overlay upgrade` asks. Both read it through `naming.manifest` now, a
+    # regular file only, so a FIFO is nothing declared and no owner, and the reader itself refuses
+    # it unread. `overlay_fault` reads it through `naming.manifest` too, but its answer for a FIFO
+    # comes from the `is_file` gate above that read, so it holds the probe's verdict and not the
+    # reader's. In a child under a timeout, so a regression fails this case rather than hanging.
+    # Mutation (oracle): `mutations/`'s "an overlay manifest is read without asking what it is" ->
+    # the child waits and this times out.
     root = overlay_with(tmp_path / "overlay", ">=0.1.0")
     (root / PLUGIN_MANIFEST).unlink()
     os.mkfifo(root / PLUGIN_MANIFEST)
@@ -94,8 +96,13 @@ def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_all_three_readers_withou
         "from pathlib import Path\n"
         "from stayfixed.overlay.api import requires_of\n"
         "from stayfixed.overlay.identity import overlay_fault\n"
-        "from stayfixed.overlay.naming import owner_of\n"
+        "from stayfixed.fsops import NotRegularFile\n"
+        "from stayfixed.overlay.naming import manifest, owner_of\n"
         "root = Path(sys.argv[1])\n"
+        "try:\n"
+        "    manifest(root, '.claude-plugin/plugin.json')\n"
+        "except NotRegularFile:\n"
+        "    print('refused', end=' ')\n"
         "print(requires_of(root), owner_of(root), overlay_fault(root) is not None)\n"
     )
     try:
@@ -108,7 +115,7 @@ def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_all_three_readers_withou
         )
     except subprocess.TimeoutExpired:
         pytest.fail("a reader of the overlay's plugin manifest waited on a FIFO")
-    assert done.stdout == "None None True\n", done.stderr
+    assert done.stdout == "refused None None True\n", done.stderr
 
 
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:

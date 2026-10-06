@@ -4,7 +4,8 @@ that owner is read back.
 One module, so the three places that need the rule — `identity` asking whether a tree is an
 overlay, `create.init_instance` renaming the manifests, and `upgrade` refreshing them — read it
 from one table rather than each keeping an ordered copy. And one reader of the manifests
-themselves, `manifest`, for the probe, the owner and the version floor `requires` reads. A leaf:
+themselves, `manifest_text`, for the probe, the owner, the version floor `requires` reads and the
+rename. A leaf:
 it imports no command module, so `upgrade` reaches the rename without importing `create`, the
 module that runs `gh`.
 
@@ -93,22 +94,30 @@ class NotAnObject(ValueError):
     a reader with no sentence of its own for it reads it as any manifest it cannot read."""
 
 
-def manifest(root: Path, relative: str) -> dict[str, Any]:
-    """The overlay manifest at `root/relative` as a JSON object: the one reader of an overlay's
-    manifests, for `requires_of`, `owner_of` and `identity.overlay_fault`.
+def manifest_text(root: Path, relative: str) -> str:
+    """The text of the overlay manifest at `root/relative`: the one reader of an overlay's
+    manifests, for `manifest` and for `create.init_instance`, which renames them as text.
 
     Read through `fsops.read_regular_text`: a regular file only, followed through a link, and to
-    the read cap. Two of the three read it with a bare `read_text`, so a FIFO at
-    `.claude-plugin/plugin.json` blocked them for good, and `requires_of` is on the SessionStart
-    hook path. Parsed through `jsonobject`, the one reader of a JSON object, so a manifest nested
-    past the parser or holding an integer longer than it converts is one this cannot read.
-
-    Raises `OSError` for one that cannot be read -- absent, not a regular file, past the cap --
-    and `ValueError` for one that is not UTF-8 or not JSON, past the parser included, or
-    `NotAnObject` for JSON that is not an object. Each caller says what those mean to it.
+    the read cap. Three of the four callers read it with a bare `read_text`, so a FIFO at
+    `.claude-plugin/plugin.json` blocked two of them for good, and `requires_of` is on the
+    SessionStart hook path. Raises `OSError` for one that cannot be read -- absent, not a regular
+    file, past the cap -- and `UnicodeDecodeError` for one that is not UTF-8.
     """
-    text = read_regular_text(root / relative)
-    return json_object(text, relative, error=ValueError, shape=NotAnObject)
+    return read_regular_text(root / relative)
+
+
+def manifest(root: Path, relative: str) -> dict[str, Any]:
+    """The overlay manifest at `root/relative` as a JSON object, read by `manifest_text`: for
+    `requires_of`, `owner_of` and `identity.overlay_fault`.
+
+    Parsed through `jsonobject`, the one reader of a JSON object, so a manifest nested past the
+    parser or holding an integer longer than it converts is one this cannot read. Raises
+    `manifest_text`'s `OSError`, and `ValueError` for one that is not UTF-8 or not JSON, past the
+    parser included, or `NotAnObject` for JSON that is not an object. Each caller says what those
+    mean to it.
+    """
+    return json_object(manifest_text(root, relative), relative, error=ValueError, shape=NotAnObject)
 
 
 def owner_of(root: Path) -> str | None:

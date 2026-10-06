@@ -329,6 +329,33 @@ def test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read(
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
 
 
+def test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `overlay init` reads each manifest it renames through `naming.manifest_text`, the one reader
+    # of the overlay's manifests, so one past the read cap stops it with the tree as it was, named
+    # as the overlay names it and said in words, never by the path it was opened by. The cap is
+    # lowered so the file is small. Mutations (oracle): `mutations/`'s "overlay init reads a
+    # manifest with no bound" -> the run renames it; "overlay init's manifest refusal prints the
+    # path it opened" -> the message carries the temporary directory.
+    from stayfixed import fsops
+
+    root = _an_overlay(tmp_path)
+    # Above every other file `init` reads, the scaffold ledger among them, and under the padded one.
+    limit = max(p.stat().st_size for p in root.rglob("*") if p.is_file())
+    manifest = root / ".codex-plugin" / "plugin.json"
+    manifest.write_text(manifest.read_text(encoding="utf-8") + " " * limit, encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(Failure) as failed:
+        init_instance(root, "acme", runner=Recorder())
+    assert (
+        str(failed.value)
+        == ".codex-plugin/plugin.json cannot be read (larger than this reader reads)"
+    )
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
 @pytest.mark.parametrize("body", [NESTED, f'{{"n": {LONG_NUMBER}}}'], ids=["nested", "long"])
 def test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach(
     tmp_path: Path, body: str

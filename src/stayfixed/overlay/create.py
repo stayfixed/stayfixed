@@ -617,10 +617,12 @@ def _retire(
 
 
 def _read_manifest(root: Path, relative: str) -> str:
+    """A manifest's text, read by `naming.manifest_text`; a failure that says why in words and
+    names the file as the overlay does, never by the path it was opened by."""
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return naming.manifest_text(root, relative)
     except OSError as exc:
-        raise Failure(f"{relative} cannot be read: {exc}") from exc
+        raise Failure(f"{relative} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
         raise Failure(f"{relative} is not UTF-8 text") from None
 
