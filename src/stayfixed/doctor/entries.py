@@ -472,8 +472,11 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         try:
             # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict.
-            document = path.read_text(encoding="utf-8", errors="replace")
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read to the
+            # regular-file reader's cap, as every reader of a committed file is, so a file that
+            # never ends, or one swapped for a device after the question above, is one this walk
+            # cannot read.
+            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))
             continue

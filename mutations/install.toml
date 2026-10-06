@@ -2465,10 +2465,10 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
 file = "src/stayfixed/doctor/entries.py"
-before = """            document = path.read_text(encoding="utf-8", errors="replace")
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))"""
-after = """            document = path.read_text(encoding="utf-8", errors="replace")
+after = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_UNCHECKED, None, label))"""
 reddens = [
@@ -2482,9 +2482,9 @@ reddens = [
 [[mutation]]
 name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
 file = "src/stayfixed/doctor/entries.py"
-before = """            document = path.read_text(encoding="utf-8", errors="replace")
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:"""
-after = """            document = path.read_text(encoding="utf-8")
+after = """            document = read_regular_bytes(path).decode("utf-8")
         except (OSError, UnicodeDecodeError):"""
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
@@ -2769,4 +2769,13 @@ before = "        return [(_SKILL_UNREAD, None, SKILLS)]"
 after = "        return []"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
+]
+
+[[mutation]]
+name = "hook-entries reads a settings file past the cap"
+file = "src/stayfixed/doctor/entries.py"
+before = "            document = read_regular_bytes(path).decode("
+after = "            document = path.read_bytes().decode("
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]

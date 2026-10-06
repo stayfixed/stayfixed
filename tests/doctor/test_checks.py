@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed import REPOSITORY_URL
+from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -1371,6 +1371,29 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
         f"read as hook entries, so nothing here accounts for what is in them: {', '.join(blinded)}"
         f"{skills}",
         f"check that each file named above is readable and is valid JSON{remedy}",
+    )
+
+
+def test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Read through `fsops.read_regular_bytes`, as every other reader of a committed file is, so a
+    # regular file that never ends is refused at the cap rather than read until memory runs out,
+    # and named as a file the walk could not read. The cap is lowered so the case is small.
+    # Mutation (oracle): `mutations/`'s "hook-entries reads a settings file past the cap" -> the
+    # file is read and the row is green.
+    limit = 32 * 1024
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text('{"hooks": {}, "pad": "' + "x" * limit + '"}')
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        "0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as hook "
+        "entries, so nothing here accounts for what is in them: .claude/settings.json",
+        "check that each file named above is readable and is valid JSON",
     )
 
 
