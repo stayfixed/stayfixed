@@ -62,9 +62,16 @@ NO_POSITION = "(at a position tomllib did not report)"
 # `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
 # thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
 # Uncaught, that is an internal error, the class stayfixed keeps for its own defects, and in a
-# gate run it ended every gate. Every reader of a document somebody else wrote catches both.
-UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)
+# gate run it ended every gate. And an integer literal longer than the interpreter converts
+# (4,300 digits by default, `sys.get_int_max_str_digits`) is valid TOML that `tomllib` answers with
+# a plain `ValueError`, which is not a `TOMLDecodeError`: one line of a committed file ended
+# `doctor`, `gate` and `init` the same way. Every reader of a document somebody else wrote catches
+# all three. `ValueError` is caught whole, `TOMLDecodeError` being one: no reader's `try` holds
+# anything else that raises it but a decode, whose `UnicodeDecodeError` it catches first or
+# answers as it answers a record that does not parse.
+UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)
 TOO_DEEP = "(nested deeper than the parser reads)"
+TOO_LONG = "(holds a number longer than the parser converts)"
 SECTIONS = (
     "stayfixed",
     "project",
@@ -133,7 +140,7 @@ class MachineConfigError(ConfigError):
     """
 
 
-def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
+def toml_position(exc: tomllib.TOMLDecodeError | RecursionError | ValueError) -> str:
     """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
 
     One extractor for every caller in this package that reports a document it did not write,
@@ -144,10 +151,14 @@ def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
     A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
     stopped appending a position would otherwise take this guard with it silently, which is the
     shape every other bounded value in this file refuses. A document nested past the parser's
-    recursion has no position, and says so.
+    recursion has no position, and says so; so does one holding a number past the conversion
+    limit, whose own message would tell the reader to raise a process-wide limit rather than fix a
+    file somebody else wrote.
     """
     if isinstance(exc, RecursionError):
         return TOO_DEEP
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
     found = _TOML_POSITION.search(str(exc))
     return found.group(0) if found is not None else NO_POSITION
 

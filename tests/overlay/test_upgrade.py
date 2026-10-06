@@ -9,8 +9,10 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
+from stayfixed.overlay.naming import owner_of
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
+from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
 MANIFESTS = (
@@ -302,6 +304,41 @@ def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> Non
     with pytest.raises(Failure, match="not valid JSON"):
         init_instance(root, "acme", runner=Recorder())
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize(
+    ("body", "said"),
+    [
+        pytest.param(NESTED, "is nested deeper than this reader follows", id="nested"),
+        pytest.param(f'{{"n": {LONG_NUMBER}}}', "holds a number longer", id="long-number"),
+    ],
+)
+def test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read(
+    tmp_path: Path, body: str, said: str
+) -> None:
+    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`, neither
+    # of them the `JSONDecodeError` `renamed` caught: `overlay init` ended in an internal error.
+    # It stops as it stops on a manifest that is not JSON, with the tree as it was. Mutation
+    # (declared): `renamed` parsing with a bare `json.loads` again.
+    root = _an_overlay(tmp_path)
+    (root / ".codex-plugin" / "plugin.json").write_text(body, encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    with pytest.raises(Failure, match=said):
+        init_instance(root, "acme", runner=Recorder())
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("body", [NESTED, f'{{"n": {LONG_NUMBER}}}'], ids=["nested", "long"])
+def test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach(
+    tmp_path: Path, body: str
+) -> None:
+    # `owner_of` passes over a manifest it cannot read and asks the next, and it caught only
+    # `JSONDecodeError`, so one past the parser ended `overlay upgrade` in an internal error.
+    # Mutation (declared): its catch narrowed to the decoder's own errors again.
+    root = _an_overlay(tmp_path)
+    init_instance(root, "acme", runner=Recorder())
+    (root / ".claude-plugin" / "plugin.json").write_text(body, encoding="utf-8")
+    assert owner_of(root) == "acme"
 
 
 # --- a file an earlier release shipped and this one does not --------------------------------

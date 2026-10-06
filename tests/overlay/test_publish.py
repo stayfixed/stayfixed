@@ -13,6 +13,7 @@ from stayfixed.overlay.layout import OVERLAY_FILES
 from stayfixed.overlay.publish import TEMPLATE_REPOSITORY, publish_template
 from stayfixed.runner import NOT_FOUND, Completed
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.parserlimits import LONG_NUMBER, NESTED
 
 
 @dataclass
@@ -357,3 +358,23 @@ def test_what_gh_prints_cannot_drive_a_terminal() -> None:
     message = str(raised.value)
     assert "forged" in message
     assert "\n::error::" not in message and "\x1b" not in message
+
+
+@pytest.mark.parametrize(
+    "answer", [NESTED, f'{{"isTemplate": {LONG_NUMBER}}}'], ids=["nested", "long"]
+)
+def test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error(
+    answer: str,
+) -> None:
+    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`, neither
+    # of them the `JSONDecodeError` this caught: an answer this cannot read ended the command as
+    # an internal error rather than as the failure an answer that is not JSON is. Mutation
+    # (declared): the arm for valid JSON past the parser removed -> it escapes.
+    class _Deep(_GitHub):
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[:3] == ["gh", "repo", "view"]:
+                return Completed(0, answer, "")
+            return super().launch(argv, cwd)
+
+    with pytest.raises(Failure, match="past what this reader follows"):
+        publish_template("owner", yes=False, runner=_Deep())

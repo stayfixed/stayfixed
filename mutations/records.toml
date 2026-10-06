@@ -1189,6 +1189,7 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[trail]",
 ]
 
 [[mutation]]
@@ -1198,6 +1199,7 @@ before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
 after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[store-bound]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
 ]
 
 # A `trail.toml` theme pattern is repository-authored, and `re` backtracks exponentially on some:

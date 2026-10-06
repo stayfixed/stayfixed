@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed.jsonobject import LONG_NUMBER as LONG_CLAUSE
+from stayfixed.jsonobject import NESTED as NESTED_CLAUSE
 from stayfixed.release.hashes import (
     FORMAT,
     HASHED_FILES,
@@ -23,6 +25,7 @@ from stayfixed.release.hashes import (
     digests,
     read_record,
 )
+from tests.parserlimits import LONG_NUMBER, NESTED
 
 
 def hashed_plugin(tmp_path: Path) -> Path:
@@ -153,4 +156,24 @@ def test_a_record_of_the_wrong_shape_is_unreadable(tmp_path: Path, body: str) ->
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_text(body + "\n", encoding="utf-8")
     with pytest.raises(UnreadableRecord):
+        read_record(root)
+
+
+@pytest.mark.parametrize(
+    ("body", "said"),
+    [
+        pytest.param(NESTED, NESTED_CLAUSE, id="nested"),
+        pytest.param(f'{{"format": {LONG_NUMBER}}}', LONG_CLAUSE, id="long-number"),
+    ],
+)
+def test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error(
+    tmp_path: Path, body: str, said: str
+) -> None:
+    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`, neither
+    # of them `JSONDecodeError`: either reached `doctor`'s `files` row as "this check could not
+    # run". The record is present and cannot be read, which is red. Mutation (declared): the arm
+    # for valid JSON past the parser removed -> it escapes.
+    root = hashed_plugin(tmp_path)
+    (root / RECORD).write_text(body, encoding="utf-8")
+    with pytest.raises(UnreadableRecord, match=said):
         read_record(root)

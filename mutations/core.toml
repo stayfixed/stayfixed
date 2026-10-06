@@ -1676,11 +1676,51 @@ reddens = [
 [[mutation]]
 name = "the TOML readers answer a document nested past the parser as an internal error"
 file = "src/stayfixed/config/loader.py"
-before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
-after = "UNPARSEABLE = (tomllib.TOMLDecodeError,)"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, ValueError)"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+]
+
+# An integer literal longer than the interpreter converts is valid TOML that `tomllib` answers
+# with a plain `ValueError`, not a `TOMLDecodeError`: `doctor` and `gate` ended in an internal
+# error, a hook said "internal error" where it says "does not load", and three `doctor` rows went
+# red "could not run" on an overlay record holding one. Every reader shares the one tuple.
+[[mutation]]
+name = "the TOML readers answer a number past the parser as an internal error"
+file = "src/stayfixed/config/loader.py"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError, ValueError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
+  "tests/config/test_deep_toml.py::test_a_profile_document_holding_a_number_past_the_parser_resolves_to_nothing",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/assess/test_gate_command.py::test_a_trail_toml_holding_a_number_past_the_parser_is_one_gate_that_could_not_run",
+  "tests/doctor/test_checks.py::test_a_configuration_holding_a_number_past_the_parser_does_not_load",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[long-number]",
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_leaves_a_session_open_in_its_own_words[long-number]",
+  "tests/attach/test_doctor.py::test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse",
+]
+
+# The same document refused in stayfixed's words: the interpreter's message tells the reader to
+# raise a process-wide limit, which is no remedy for a file somebody else wrote.
+[[mutation]]
+name = "a TOML number past the parser is refused with no reason given"
+file = "src/stayfixed/config/loader.py"
+before = """
+    if not isinstance(exc, tomllib.TOMLDecodeError):
+        return TOO_LONG
+"""
+after = """
+    if False:
+        return TOO_LONG
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpreters",
+  "tests/assess/test_gate_command.py::test_a_stayfixed_toml_holding_a_number_past_the_parser_does_not_load_naming_the_side[tree]",
 ]
 
 [[mutation]]
@@ -1698,6 +1738,7 @@ reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
   "tests/assess/test_gate_command.py::test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side[base]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[loads]",
 ]
 
 [[mutation]]
@@ -1715,6 +1756,9 @@ reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[overlay-root]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[personal]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[overlay-root]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[machine]",
 ]
 
 [[mutation]]
@@ -1730,6 +1774,7 @@ after = """
 """
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[owned-rewrite]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[owned-rewrite]",
 ]
 
 # Two readers of `stayfixed.toml` followed two rules: `read_document` refuses a symlink, and
@@ -2604,4 +2649,36 @@ after = "        if False:"
 reddens = [
   "tests/test_fsops.py::test_a_component_holding_a_nul_is_refused",
   "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
+]
+
+# A release's hash record is read where the plugin is installed, and valid JSON past the parser —
+# nesting it cannot follow, or an integer longer than the interpreter converts — escaped the
+# record's reader, so `doctor`'s `files` row read "this check could not run" for a record that is
+# present and unreadable.
+[[mutation]]
+name = "the hash record's reader lets a record nested past the parser escape"
+file = "src/stayfixed/release/hashes.py"
+before = """
+    except RecursionError:
+        raise UnreadableRecord(f"{RECORD} {NESTED}") from None
+"""
+after = """
+"""
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[nested]",
+]
+
+[[mutation]]
+name = "the hash record's reader lets a number past the parser escape"
+file = "src/stayfixed/release/hashes.py"
+before = """
+    except ValueError:
+        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
+"""
+after = """
+    except ZeroDivisionError:
+        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
+"""
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
 ]

@@ -1097,3 +1097,35 @@ reddens = [
 ]
 
 
+
+# `guard bg-cleanup` reads its stdin as JSON, and stdin nested past the parser raised
+# `RecursionError` past its `ValueError` arm: a refusal still, but worded as stayfixed's own
+# internal error. And an integer longer than the interpreter converts was refused with the
+# interpreter's advice to raise a process-wide limit.
+[[mutation]]
+name = "guard bg-cleanup reads stdin nested past the parser as an internal error"
+file = "src/stayfixed/guards/commands.py"
+before = """
+    except RecursionError:
+        raise Refusal(f"{_UNREADABLE}; stdin {NESTED}") from None
+"""
+after = """
+"""
+reddens = [
+  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[nested]",
+]
+
+[[mutation]]
+name = "guard bg-cleanup refuses a number past the parser in the interpreter's words"
+file = "src/stayfixed/guards/commands.py"
+before = """
+    except json.JSONDecodeError as exc:
+        raise Refusal(f"{_UNREADABLE}; {exc}") from None
+"""
+after = """
+    except ValueError as exc:
+        raise Refusal(f"{_UNREADABLE}; {exc}") from None
+"""
+reddens = [
+  "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[long]",
+]

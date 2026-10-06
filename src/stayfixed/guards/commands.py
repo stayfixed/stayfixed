@@ -20,6 +20,7 @@ from stayfixed.command import common_flags
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
+from stayfixed.jsonobject import LONG_NUMBER, NESTED
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
@@ -36,8 +37,14 @@ def _tool_input(raw: str) -> dict[str, Any] | None:
     """The Bash input to judge, or None for a whole payload naming another tool."""
     try:
         payload = json.loads(raw or "")
-    except ValueError as exc:
+    except json.JSONDecodeError as exc:
         raise Refusal(f"{_UNREADABLE}; {exc}") from None
+    except RecursionError:
+        raise Refusal(f"{_UNREADABLE}; stdin {NESTED}") from None
+    except ValueError:
+        # Valid JSON past the decoder's own errors: an integer longer than the interpreter
+        # converts, whose message would advise raising a process-wide limit.
+        raise Refusal(f"{_UNREADABLE}; stdin {LONG_NUMBER}") from None
     if not isinstance(payload, dict):
         raise Refusal(_UNREADABLE)
     if "tool_name" in payload and payload["tool_name"] != "Bash":

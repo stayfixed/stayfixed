@@ -153,6 +153,13 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
         document = json.loads(view.stdout or "{}")
     except json.JSONDecodeError as exc:
         raise Failure(f"`gh repo view {slug}` did not answer with JSON: {exc}") from None
+    except (ValueError, RecursionError):
+        # Valid JSON this parser cannot follow: an integer longer than the interpreter converts,
+        # or nesting past its reach. The interpreter's message is not repeated: it tells the
+        # reader to raise a limit.
+        raise Failure(
+            f"`gh repo view {slug}` answered with JSON past what this reader follows"
+        ) from None
     if not isinstance(document, dict):
         raise Failure(f"`gh repo view {slug}` answered with JSON that is not an object")
     branch = document.get("defaultBranchRef")

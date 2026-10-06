@@ -299,7 +299,10 @@ def _is_template(printed_json: str) -> bool | None:
     that is not exactly an object carrying a boolean there."""
     try:
         document = json.loads(printed_json)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
+        # The decoder's `JSONDecodeError` is a `ValueError`, and so is an integer longer than
+        # the interpreter converts; `RecursionError` is nesting past the parser. Each is an
+        # answer that says nothing about `isTemplate`.
         return None
     value = document.get("isTemplate") if isinstance(document, dict) else None
     return value if isinstance(value, bool) else None

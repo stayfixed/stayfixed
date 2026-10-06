@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Failure
+from stayfixed.jsonobject import json_object
 from stayfixed.overlay.layout import CODEX_PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
 if TYPE_CHECKING:
@@ -95,7 +96,10 @@ def owner_of(root: Path) -> str | None:
     for row in NAMED:
         try:
             document = json.loads((root / row.path).read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        except (OSError, ValueError, RecursionError):
+            # `ValueError` holds the decoder's own two (`UnicodeDecodeError`, `JSONDecodeError`)
+            # and an integer longer than the interpreter converts; `RecursionError` is nesting
+            # past the parser. Each is a manifest this cannot read, and the next is asked.
             continue
         name = document.get("name") if isinstance(document, dict) else None
         if (owner := owner_in(name, row.name)) is not None:
@@ -117,12 +121,10 @@ def renamed(text: str, relative: str, suffix: str) -> str | None:
     what goes to disk — reading the file back to hash it would hash whatever is there then.
     Nothing is written here: every manifest is decided before any is written.
     """
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Failure(f"{relative} is not valid JSON: {exc}") from exc
-    if not isinstance(document, dict):
-        raise Failure(f"{relative} is not a JSON object")
+    # Through `json_object`, whose sentences for a manifest that is not JSON or not an object are
+    # the two this used to say, and which also answers valid JSON past the parser's reach: a bare
+    # `json.loads` let `RecursionError` and the long-integer `ValueError` end `overlay init`.
+    document = json_object(text, relative, error=Failure)
     changed = False
     if (name := _suffixed(document.get("name"), suffix)) is not None:
         document["name"] = name

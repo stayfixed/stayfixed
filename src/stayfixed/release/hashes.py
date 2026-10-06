@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from stayfixed.errors import Failure
+from stayfixed.jsonobject import LONG_NUMBER, NESTED
 
 # The three files the harness runs on its own, with no interpreter of ours in front of them:
 # the wrapper every hook entry executes, the entry table that names it, and the launcher the
@@ -78,6 +79,12 @@ def read_record(root: Path) -> dict[str, str] | None:
         raise UnreadableRecord(f"{RECORD} is not valid JSON: {exc}") from None
     except UnicodeDecodeError as exc:
         raise UnreadableRecord(f"{RECORD} is present and is not UTF-8 text: {exc}") from None
+    except RecursionError:
+        raise UnreadableRecord(f"{RECORD} {NESTED}") from None
+    except ValueError:
+        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
+        # than the interpreter converts, whose own message would tell the owner to raise a limit.
+        raise UnreadableRecord(f"{RECORD} {LONG_NUMBER}") from None
     except OSError as exc:
         raise UnreadableRecord(f"{RECORD} is present and could not be read: {exc}") from None
     files = document.get("files") if isinstance(document, dict) else None

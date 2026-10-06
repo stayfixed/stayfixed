@@ -788,6 +788,7 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except UNPARSEABLE[0] as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[binding]",
 ]
 
 [[mutation]]
@@ -797,6 +798,7 @@ before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
 after = "    except (OSError, UnicodeDecodeError, UNPARSEABLE[0]):"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[first-attach]",
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[first-attach]",
 ]
 
 # `memory.mode` was asked by `worktree.attach_main`, after every write `attach` makes, so a

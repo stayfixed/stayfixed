@@ -319,6 +319,21 @@ def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path
     assert "Error" not in row.detail + row.remedy
 
 
+def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path: Path) -> None:
+    # `tomllib` raises a plain `ValueError` for an integer longer than the interpreter converts,
+    # and the loader caught only `TOMLDecodeError` and `RecursionError`: the whole report ended in
+    # `internal error: ValueError`, exit 2. It is a file that does not load, like any other.
+    # Mutation (declared): `ValueError` dropped from `UNPARSEABLE`.
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(f"[stayfixed]\nx = {LONG_NUMBER}\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root), "not-initialised")
+    assert (row.status, row.detail) == (
+        "red",
+        "stayfixed.toml is here and does not load, so nothing else can be checked against it",
+    )
+
+
 # The report's sixteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.

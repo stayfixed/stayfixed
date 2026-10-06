@@ -1888,6 +1888,28 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
         attach_check(root, store=store, machine=machine)
 
 
+def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse(
+    tmp_path: Path,
+) -> None:
+    # Valid TOML that `tomllib` answers with a plain `ValueError`, which none of the record's
+    # readers caught: `attached`, `bundles` and `store-debris` each went red "this check could
+    # not run: ValueError", and `attach --check` ended in an internal error. Each now answers as
+    # it answers the record above that does not parse. Mutation (declared): `ValueError` dropped
+    # from `UNPARSEABLE`.
+    root = _granting_project(tmp_path, OWN_NAME)
+    record_path = tmp_path / "overlay" / PROJECTS / OWN_NAME / PROJECT_RECORD
+    record_path.write_text(f"x = {LONG_NUMBER}\n", encoding="utf-8")
+    machine = _machine(tmp_path)
+    rows = _checks(tmp_path, root, machine=machine)
+    assert _by_name(rows, "attached") == RECORD_UNREADABLE_ATTACHED
+    assert _by_name(rows, "hook-entries") == RECORD_UNREADABLE
+    for name in ("bundles", "store-debris"):
+        assert "could not run" not in _by_name(rows, name).detail
+    store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
+    with pytest.raises(Failure, match="is not valid TOML \\(holds a number longer"):
+        attach_check(root, store=store, machine=machine)
+
+
 # The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this
 # project to the ssh remote, so the binding is a mismatch.
 HTTPS_ORIGIN = "https://github.com/owner/p.git"

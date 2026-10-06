@@ -1444,6 +1444,7 @@ before = "    except (json.JSONDecodeError, *UNPARSEABLE) as exc:"
 after = "    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-read]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-read]",
 ]
 
 [[mutation]]
@@ -1453,6 +1454,7 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-pyproject]",
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-pyproject]",
 ]
 
 # `json` answers nesting past its depth with `RecursionError` as `tomllib` does, and the arm that
