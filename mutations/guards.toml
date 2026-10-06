@@ -33,7 +33,7 @@ reddens = [
 [[mutation]]
 name = "`uv run` stops being stripped off a segment"
 file = "src/stayfixed/guards/bashscan.py"
-before = '        if name == _UV:'
+before = '        if uvrun.is_launcher(name):'
 after = '        if False:'
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_uv_run_with_nothing_before_the_program",
@@ -44,7 +44,7 @@ reddens = [
 # `uv run --no-project sleep 30` met no sleep rule. Each caller's end-to-end test reddens.
 [[mutation]]
 name = "uv's options stop being read past `run`"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '        width = _uv_option_width(word, flags, valued)'
 after = '        width = None'
 reddens = [
@@ -53,12 +53,12 @@ reddens = [
   "tests/guards/test_bgcleanup.py::test_the_exit_echo_hint_reads_both_commands_through_uvs_options",
 ]
 
-# The branches of `_past_uv_run` and `_uv_option_width`, one entry each. A global option
+# The branches of `uvrun.past_run` and `_uv_option_width`, one entry each. A global option
 # before `run` (`uv --quiet run pytest`) is accepted by uv, so skipping none of them leaves
 # that run unread.
 [[mutation]]
 name = "uv's global options stop being skipped before `run`"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED'
 after = '    flags, valued = frozenset(), frozenset()'
 reddens = [
@@ -68,7 +68,7 @@ reddens = [
 # `uv --locked run pytest` exits 2 and runs nothing, so it is no pytest run.
 [[mutation]]
 name = "`run`'s options are skipped before `run`"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED'
 after = '    flags, valued = _UV_RUN_FLAGS, _UV_RUN_VALUED'
 reddens = [
@@ -78,7 +78,7 @@ reddens = [
 # `uv run -- pytest`: `--` ends uv's options, and the word after it is the program.
 [[mutation]]
 name = "`--` stops ending uv's options"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '        if running and word == "--":'
 after = '        if False:'
 reddens = [
@@ -89,7 +89,7 @@ reddens = [
 # taken for the program.
 [[mutation]]
 name = "a lone `-` is read as a uv option"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '        if not word.startswith("-") or word == "-":'
 after = '        if not word.startswith("-"):'
 reddens = [
@@ -99,7 +99,7 @@ reddens = [
 # `uv sync --locked` launches nothing, and neither does a `uv` that never reaches `run`.
 [[mutation]]
 name = "a uv command other than `run` is unwrapped"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '            return index if running else None'
 after = '            return index'
 reddens = [
@@ -108,7 +108,7 @@ reddens = [
 
 [[mutation]]
 name = "a uv command that never reaches `run` is unwrapped"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '    return min(index, len(segment)) if running else None'
 after = '    return min(index, len(segment))'
 reddens = [
@@ -118,7 +118,7 @@ reddens = [
 # The wrong-note direction: read as a flag, `--with pytest echo` makes `pytest` the program.
 [[mutation]]
 name = "a value-taking uv option stops taking the next word"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '            return 1 if equals else 2'
 after = '            return 1'
 reddens = [
@@ -129,7 +129,7 @@ reddens = [
 # `-p3.11` carries its value; taking the next word too skips the program.
 [[mutation]]
 name = "a fused short value stops being one word"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '            return 1 if position + 1 < len(token) else 2'
 after = '            return 2'
 reddens = [
@@ -140,7 +140,7 @@ reddens = [
 # program; the unwrap stops instead, long or short, and so it does for a flag given a value.
 [[mutation]]
 name = "an unknown uv option is read as a flag"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = "        return None\n    for position in range(1, len(token)):"
 after = "        return 1\n    for position in range(1, len(token)):"
 reddens = [
@@ -149,7 +149,7 @@ reddens = [
 
 [[mutation]]
 name = "an unknown short uv option is read as a flag"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = "        if short not in flags:\n            return None"
 after = "        if short not in flags:\n            continue"
 reddens = [
@@ -158,7 +158,7 @@ reddens = [
 
 [[mutation]]
 name = "a uv flag given a value is read as a flag"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '        if name in flags and not equals:'
 after = '        if name in flags:'
 reddens = [
@@ -169,7 +169,7 @@ reddens = [
 # backgrounded `uv run -m sleep 30` is refused as a `sleep` by the closed-policy guard.
 [[mutation]]
 name = "a module or script name reads as the program by default"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS'
 after = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS'
 reddens = [
@@ -181,7 +181,7 @@ reddens = [
 # The other side: `uv run -m pytest` is a pytest run, which the runner's hint must still see.
 [[mutation]]
 name = "a module or script name is never read as what uv runs"
-file = "src/stayfixed/guards/bashscan.py"
+file = "src/stayfixed/guards/uvrun.py"
 before = '            flags = _UV_RUN_FLAGS | _UV_RUN_TARGETS if modules_as_programs else _UV_RUN_FLAGS'
 after = '            flags = _UV_RUN_FLAGS'
 reddens = [
