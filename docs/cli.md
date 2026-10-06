@@ -642,7 +642,15 @@ commit CI checks out, and on a history with several merge bases, where the one g
 alone can predate the entry while a merge deletes it all the same. Entries are append-only, so on
 a base that kept its entries taking them together refuses no branch that deleted nothing; an entry
 removed from the base itself, by a direct push, is still named on a criss-crossed branch whose
-merge bases include one from before the removal: restore it on the base. `--base` is what the
+merge bases include one from before the removal: restore it on the base. Each of those commits'
+ledger is read where that commit's own `stayfixed.toml` put it (its `[paths] bugs`, `bug_index`
+and `[ledger] id_prefix`), loaded as `stayfixed gate` loads the base's copy, and compared by file
+name with the tree's directory: a change that moves the ledger by `[paths]` answers for every
+entry it did not carry along, and one that changes `id_prefix` for every entry under the old
+prefix. A commit with no `stayfixed.toml` at the project's path is read at the tree's paths, as
+the change that adds the configuration decides for itself under `stayfixed gate`; a copy that does
+not load fails (`1`), and one whose load meets a refusal refuses (`2`), rather than read as a
+base with no ledger. `--base` is what the
 `bugs` gate passes, the base it judges against; a base git cannot list, one that shares no commit
 with `HEAD`, any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
 the merge base git sees be an older one, and any base in a clone git cannot say is shallow or

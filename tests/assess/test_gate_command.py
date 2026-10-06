@@ -720,10 +720,10 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     assert (bugs["name"], bugs["count"]) == ("bugs", 3)
 
 
-def _ledgered(tmp_path: Path, mention: str) -> Path:
-    """A clone whose base enforces `bugs`, carries entry BR-001 and its index, and holds
-    `mention` in `src/a.py`."""
-    enforced = BASE.replace('["docs"]', '["bugs"]')
+def _ledgered(tmp_path: Path, mention: str, *, base: str = "") -> Path:
+    """A clone whose base enforces `bugs` (or is `base`), carries entry BR-001 and its index,
+    and holds `mention` in `src/a.py`."""
+    enforced = base or BASE.replace('["docs"]', '["bugs"]')
     project = clone(tmp_path, enforced, also={"src/a.py": mention})
     upstream = tmp_path / "upstream"
     bugs = upstream / "docs" / "bugs"
@@ -829,6 +829,34 @@ def test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_sinc
     assert (code, out.strip()) == (
         1,
         "FAIL: 1 ledger problem(s): docs/bugs/BR-001.md [entry-removed]",
+    )
+
+
+def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
+    tmp_path: Path,
+) -> None:
+    # A base that enforces nothing refuses no `[paths]` change, so a change can move the ledger,
+    # delete an entry on the way and enforce `bugs` itself. The base's entries were listed at the
+    # change's paths, where the base had none: `bugs: enforcing, 0 finding(s)` and exit 0. They
+    # are read where the base's own `stayfixed.toml` kept them. Mutation: `mutations/`, "the
+    # base's entries are listed at the tree's paths again".
+    project = _ledgered(tmp_path, "", base=LOOSENED)
+    moved = BASE.replace('["docs"]', '["bugs"]')
+    _change(project, moved + '\n[paths]\nbugs = "ledger"\nbug_index = "ledger-index.md"\n')
+    git(project, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    (project / "ledger").mkdir()
+    (project / "ledger" / ".gitkeep").write_text("", encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    common = ["--root", str(project), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", *common], parser=parser) == 0
+    commit(project, "chore: move the ledger, and lose an entry on the way")
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)"), out
+    code, out, _ = cli(project, tmp_path, "bugs", "check", "--base", "refs/remotes/origin/main")
+    assert (code, out.strip()) == (
+        1,
+        "FAIL: 1 ledger problem(s): ledger/BR-001.md [entry-removed]",
     )
 
 

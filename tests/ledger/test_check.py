@@ -254,6 +254,129 @@ def test_renumbering_an_entry_removes_nothing(tmp_path: Path) -> None:
     assert register_gate(root, config, bug_register(config), base) == []
 
 
+MOVED = '\n[paths]\nbugs = "ledger"\nbug_index = "ledger-index.md"\n'
+
+
+def _moved(root: Path, tmp_path: Path, kept: tuple[str, ...]) -> Config:
+    """Move the committed ledger to `ledger/` and `ledger-index.md` by `[paths]`, keeping the
+    entries `kept` and deleting the rest, and the mentions with them; the tree's new config."""
+    (root / "stayfixed.toml").write_text(CONFIG + MOVED, encoding="utf-8")
+    config = load(root, machine=tmp_path / "m.toml")
+    (root / "ledger").mkdir()
+    for path in sorted((root / "docs" / "bugs").iterdir()):
+        if path.stem in kept:
+            path.rename(root / "ledger" / path.name)
+    shutil.rmtree(root / "docs" / "bugs")
+    (root / "docs" / "bug-reports.md").unlink()
+    register = bug_register(config)
+    (root / "ledger-index.md").write_text(
+        render_index(load_entries(root, register), register), encoding="utf-8"
+    )
+    (root / "src" / "a.py").write_text(
+        "".join(f"# workaround for {name}\n" for name in kept), encoding="utf-8"
+    )
+    return config
+
+
+@needs_git
+def test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it(
+    tmp_path: Path,
+) -> None:
+    # The base's entries were listed at the tree's `[paths]`, so a change that moved the ledger
+    # found none there on the base, and deleting an entry in the same change passed `bugs check
+    # --base` — and `stayfixed gate`, whenever the base enforces nothing and so refuses no
+    # `[paths]` change. The base's ledger is read where the base's own `stayfixed.toml` kept it.
+    # Mutation: `mutations/`, "the base's entries are listed at the tree's paths again".
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002", "BR-003"))
+    config = _moved(root, tmp_path, ("BR-001", "BR-003"))
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "ledger/BR-002.md")
+    ]
+
+
+@needs_git
+def test_a_ledger_moved_whole_by_paths_removes_nothing(tmp_path: Path) -> None:
+    # The legitimate move this must not refuse: every entry carried to the new paths.
+    root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    config = _moved(root, tmp_path, ("BR-001", "BR-002"))
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("copy", "raised", "said"),
+    [
+        (b"[nonsense]\n", Failure, "does not load"),
+        (b"# \xff\n", Failure, "is not UTF-8 text"),
+        (b"[ledger]\nid_prefix = 'br'\n", Refusal, "met a refusal"),
+    ],
+    ids=["does-not-load", "not-utf8", "refused"],
+)
+def test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger(
+    tmp_path: Path, copy: bytes, raised: type[Exception], said: str
+) -> None:
+    # Where the base kept its ledger is the question, so a copy that cannot answer it is no
+    # answer, and never the tree's paths in its place: that would pass the change above again.
+    # A copy that is not UTF-8 is never parsed, as the loader never parses the tree's. Mutations:
+    # `mutations/`, "a base copy that does not load is read at the tree's paths" and "a base copy
+    # whose load meets a refusal is read at the tree's paths".
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_bytes(CONFIG.encode() + copy)
+    git(root, "commit", "-qam", "a copy the loader refuses")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    with pytest.raises(raised, match=said):
+        check.bugs_gate(root, config, base)
+
+
+@needs_git
+def test_a_changed_id_prefix_answers_for_every_entry_under_the_old_one(tmp_path: Path) -> None:
+    # The base's identifiers are the base's prefix: a change that renames the prefix leaves
+    # every old entry unloaded under the new one, and each is named.
+    root, _, base = _committed_ledger(tmp_path, ("BR-001",))
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\nid_prefix = "XX"\n', encoding="utf-8"
+    )
+    config = load(root, machine=tmp_path / "m.toml")
+    (root / "docs" / "bugs" / "BR-001.md").unlink()
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    register = bug_register(config)
+    (root / "docs" / "bug-reports.md").write_text(render_index([], register), encoding="utf-8")
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-001.md")
+    ]
+
+
+@needs_git
+def test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given(
+    tmp_path: Path,
+) -> None:
+    # A gate is handed `(root, config, base)`, not the machine file's path, so a second load
+    # that read the machine file again read the default one: a command given `--machine` read
+    # a file nobody named, and failed on its contents. Mutation: `mutations/`, "the base's copy
+    # reads the default machine file".
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    default = Path.home() / ".config" / "stayfixed" / "config.toml"
+    default.parent.mkdir(parents=True)
+    default.write_text("[[[ not toml\n", encoding="utf-8")
+    assert check.bugs_gate(root, config, base) == []
+
+
+@needs_git
+def test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths(tmp_path: Path) -> None:
+    # The change that adds `stayfixed.toml` is the bootstrap, where the tree decides, as it
+    # does for `stayfixed gate`: its entries are compared at the tree's own paths.
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    git(root, "rm", "-q", "--cached", "stayfixed.toml")
+    git(root, "commit", "-qm", "no configuration yet")
+    base = git(root, "rev-parse", "HEAD").strip()
+    _drop(root, config, "BR-002")
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-002.md")
+    ]
+
+
 @needs_git
 def test_an_entry_renamed_only_in_case_is_entry_removed_where_the_filesystem_folds_case(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

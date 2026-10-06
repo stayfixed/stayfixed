@@ -36,3 +36,8 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed overlay upgrade` and `overlay init` remove the overlay template's copy of the
     `attach` skill and `common/rules/README.md`, keeping and naming a copy you edited (Changed,
     "`stayfixed overlay upgrade` and `overlay init` remove two files").
+  - `stayfixed bugs check --base` and the `bugs` gate read the base's ledger where the base's
+    `stayfixed.toml` kept it, so a change that moves the ledger by `[paths]` or changes
+    `[ledger] id_prefix` answers for every base entry it does not carry along, and a base whose
+    `stayfixed.toml` does not load fails the check (exit 1) where it passed (Fixed,
+    "`stayfixed bugs check --base`, and the `bugs` gate under `stayfixed gate`, now read").

@@ -209,6 +209,9 @@ VOUCHED_ELEMENTS: dict[tuple[str, str, str], str] = {
         "which `lint` runs before it asks for any plan's lines"
     ),
     ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
+    ("src/stayfixed/ledger/check.py", "_fork_register", "fork"): (
+        "a merge base git printed, handed on by `_base_ledger`"
+    ),
     ("src/stayfixed/guards/attribute.py", "_extract", "str(archive)"): (
         "the value of `git archive -o` and of `tar -f`, a path under the temporary directory "
         "this run made"

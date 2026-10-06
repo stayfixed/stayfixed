@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import Finding, listed
-from stayfixed.gitenv import ForkUnknown, fork_points, git_run
+from stayfixed.gitenv import ForkUnknown, answer_bytes, fork_points, git_run
 from stayfixed.ledger.entries import (
     Entry,
     LedgerError,
@@ -35,6 +35,7 @@ from stayfixed.ledger.register import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, Regi
 from stayfixed.ledger.scan import code_mentions, entry_citations
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from stayfixed.config.schema import Config
@@ -68,6 +69,20 @@ _BASE_UNREAD = (
     "unknown and the {name} gate proved nothing. Fetch the whole history (`fetch-depth: 0` in "
     "CI), or pass a `--base` this clone holds that shares history with HEAD"
 )
+# What the loader calls a fork point's copy, so its reason names the right file: its own words
+# would name `<root>/stayfixed.toml`, which is the change's copy.
+FORK_COPY = "the stayfixed.toml of a commit this change forked from the base at"
+# `{reason}` is the loader's own, bounded where it was raised, as `stayfixed gate` prints it
+# for the base's copy.
+FORK_DOES_NOT_LOAD = (
+    "where a commit this change forked from `{base}` at kept the ledger is unknown: its "
+    "stayfixed.toml does not load, so whether this change deleted an entry is unknown and the "
+    "{name} gate proved nothing ({reason})"
+)
+FORK_REFUSED = (
+    "where a commit this change forked from `{base}` at kept the ledger is unknown: loading its "
+    "stayfixed.toml against this tree met a refusal, so the {name} gate proved nothing: {reason}"
+)
 
 
 @dataclass(frozen=True)
@@ -92,10 +107,22 @@ def uninitialised(root: Path, register: Register) -> bool:
     return not directory.is_dir() and not is_generated_index(index_text(root, register))
 
 
-def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
+def _base_ledger(
+    root: Path,
+    config: Config,
+    register: Register,
+    base: str,
+    registered: Callable[[Config], Register] | None,
+) -> _BaseLedger:
     """What the commits HEAD forked from `base` at carry of the ledger: whether any has the
     directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
     in any of them.
+
+    Each commit's ledger is read where that commit kept it: `registered` builds the register
+    from each one's own `stayfixed.toml` (`_fork_register`). Read at the tree's paths, a change
+    that moved the ledger by `[paths]` found nothing there at the fork, so it could delete an
+    entry in the same change and pass. A register no configuration builds is read at its own
+    paths at every commit (`registered` is `None`).
 
     Those commits are `git merge-base --all <base> HEAD`, every best common ancestor, the ones
     `plan` diffs against too. What the base gained after the change
@@ -136,25 +163,76 @@ def _base_ledger(root: Path, register: Register, base: str) -> _BaseLedger:
     forks = fork_points(root, base)
     if isinstance(forks, ForkUnknown):
         raise unread(forks)
-    found: set[str] = set()
+    carried = False
+    entries: set[str] = set()
     for fork in forks:
+        held = register
+        if registered is not None:
+            held = _fork_register(root, config, register, registered, fork, base, unread)
         code, out = git_run(
-            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index
+            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", held.directory, held.index
         )
         if code != 0:
             raise unread(ForkUnknown.of(code))
-        found.update(name for name in out.split("\0") if name)
-    names = sorted(found)
-    ids = register.ids
-    under = f"{directory}/"
-    entries = tuple(
-        name.removeprefix(under)
-        for name in names
-        if name.startswith(under)
-        and name.endswith(".md")
-        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
-    )
-    return _BaseLedger(bool(names), entries)
+        names = [name for name in out.split("\0") if name]
+        carried = carried or bool(names)
+        under = f"{held.directory}/"
+        entries.update(
+            name.removeprefix(under)
+            for name in names
+            if name.startswith(under)
+            and name.endswith(".md")
+            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
+        )
+    return _BaseLedger(carried, tuple(sorted(entries)))
+
+
+def _fork_register(
+    root: Path,
+    config: Config,
+    register: Register,
+    registered: Callable[[Config], Register],
+    fork: str,
+    base: str,
+    unread: Callable[[ForkUnknown], Failure],
+) -> Register:
+    """The register as the commit `fork` configured it, out of its own `stayfixed.toml`.
+
+    Loaded as `stayfixed gate` loads the base's copy — through the loader, against this tree's
+    disk, under its own label — with the `[personal]` this command already read, so no second
+    machine file is read. The copy sits at the project's own path in that commit, which is
+    `./stayfixed.toml` from `root`, the directory every git question here is asked from.
+
+    A commit with no copy there is the bootstrap, the change that adds the configuration, and
+    `register` decides, as the tree decides for `stayfixed gate`. A copy that does not load,
+    is not UTF-8 or meets a refusal is no answer, and never the tree's paths in its place: read
+    there, a change that moved the ledger would pass the deletion this exists to catch.
+    """
+    from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
+
+    code, listed = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", CONFIG_FILE)
+    if code != 0:
+        raise unread(ForkUnknown.of(code))
+    if not listed:
+        return register
+    code, text = git_run(root, "cat-file", "blob", "--end-of-options", f"{fork}:./{CONFIG_FILE}")
+    if code != 0:
+        raise unread(ForkUnknown.of(code))
+
+    def does_not_load(reason: object) -> Failure:
+        return Failure(FORK_DOES_NOT_LOAD.format(base=base, name=register.name, reason=reason))
+
+    try:
+        decoded = answer_bytes(text).decode("utf-8")
+    except UnicodeDecodeError:
+        raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None
+    try:
+        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=config.personal)
+        return registered(copy)
+    except Refusal as exc:
+        raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None
+    except Failure as exc:
+        raise does_not_load(exc) from None
 
 
 def _removed_entries(root: Path, register: Register, base: _BaseLedger | None) -> list[Finding]:
@@ -252,7 +330,14 @@ def _dangling_citations(
     return found
 
 
-def register_gate(root: Path, config: Config, register: Register, base: str = "") -> list[Finding]:
+def register_gate(
+    root: Path,
+    config: Config,
+    register: Register,
+    base: str = "",
+    *,
+    registered: Callable[[Config], Register] | None = None,
+) -> list[Finding]:
     """One register's gate, whole: every violation of `register` under `root`, most structural
     first.
 
@@ -264,9 +349,10 @@ def register_gate(root: Path, config: Config, register: Register, base: str = ""
     that shape describes, and it is the ledger having been deleted. Against a `base`, every arm
     past that one also names each entry the change forked with and the tree lacks
     (`entry-removed`). Both are read at every commit HEAD forked from `base` at
-    (`_base_ledger`).
+    (`_base_ledger`), where that commit's own configuration put the ledger when `registered`
+    says how a configuration builds this register.
     """
-    carried = _base_ledger(root, register, base) if base else None
+    carried = _base_ledger(root, config, register, base, registered) if base else None
     if uninitialised(root, register):
         return _unledgered(root, config, register, carried)
     ids, schema = register.ids, register.schema
@@ -390,4 +476,4 @@ def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
     tree alone; every gate run passes the base it judges against.
     """
-    return register_gate(root, config, bug_register(config), base)
+    return register_gate(root, config, bug_register(config), base, registered=bug_register)

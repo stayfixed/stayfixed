@@ -1153,7 +1153,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return register_gate(root, config, bug_register(config), base)"
+before = "    return register_gate(root, config, bug_register(config), base, registered=bug_register)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -1354,8 +1354,8 @@ reddens = [
 [[mutation]]
 name = "every markdown file the base carries under the ledger directory reads as an entry"
 file = "src/stayfixed/ledger/check.py"
-before = '        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
-after = "        and True"
+before = '            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
+after = "            and True"
 reddens = [
   "tests/ledger/test_check.py::test_deleting_what_is_not_an_entry_under_the_ledger_directory_removes_no_entry",
 ]
@@ -1363,8 +1363,8 @@ reddens = [
 [[mutation]]
 name = "the base's ledger is listed without its entries"
 file = "src/stayfixed/ledger/check.py"
-before = '            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", directory, index'
-after = '            root, "ls-tree", "-z", "--name-only", fork, "--", directory, index'
+before = '            root, "ls-tree", "-r", "-z", "--name-only", fork, "--", held.directory, held.index'
+after = '            root, "ls-tree", "-z", "--name-only", fork, "--", held.directory, held.index'
 reddens = [
   "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
@@ -1830,11 +1830,9 @@ reddens = [
 name = "only the first of several merge bases is listed"
 file = "src/stayfixed/ledger/check.py"
 before = """    for fork in forks:
-        code, out = git_run(
-            root, "ls-tree""""
+        held = register"""
 after = """    for fork in forks[:1]:
-        code, out = git_run(
-            root, "ls-tree""""
+        held = register"""
 reddens = [
   "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
 ]
@@ -2064,8 +2062,8 @@ reddens = [
 [[mutation]]
 name = "the base's entries are read with the bug ledger's identifiers whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "    ids = register.ids\n    under = f\"{directory}/\""
-after = "    ids = type(register.ids)(\"BR\")\n    under = f\"{directory}/\""
+before = '            and held.ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
+after = '            and type(held.ids)("BR").is_identifier(name.removeprefix(under).removesuffix(".md"))'
 reddens = [
   "tests/ledger/test_register.py::test_the_gate_judges_a_second_register_against_its_base",
 ]
@@ -2213,4 +2211,60 @@ before = "    ids = bug_register(config).ids"
 after = '    ids = type(bug_register(config).ids)("BR")'
 reddens = [
   "tests/memory/test_graph.py::test_a_bracketed_identifier_is_the_bug_ledgers_as_the_project_configures_it",
+]
+
+# The base's entries were listed at the tree's `[paths]`, so a change that moved the ledger found
+# none there on the base and could delete an entry in the same change: `bugs check --base`
+# passed, and so did `stayfixed gate` whenever the base enforced nothing. Each fork point's
+# ledger is read where its own `stayfixed.toml` kept it, and a copy that cannot say is no answer.
+[[mutation]]
+name = "the base's entries are listed at the tree's paths again"
+file = "src/stayfixed/ledger/check.py"
+before = "        if registered is not None:"
+after = "        if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it",
+  "tests/assess/test_gate_command.py::test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs",
+]
+
+[[mutation]]
+name = "a base copy that does not load is read at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = '''    except Failure as exc:
+        raise does_not_load(exc) from None'''
+after = '''    except Failure:
+        return register'''
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[does-not-load]",
+]
+
+[[mutation]]
+name = "a base copy whose load meets a refusal is read at the tree's paths"
+file = "src/stayfixed/ledger/check.py"
+before = '''    except Refusal as exc:
+        raise Refusal(FORK_REFUSED.format(base=base, name=register.name, reason=exc)) from None'''
+after = '''    except Refusal:
+        return register'''
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_ledger[refused]",
+]
+
+[[mutation]]
+name = "a fork point with no stayfixed.toml fails the ledger's base comparison"
+file = "src/stayfixed/ledger/check.py"
+before = '''    if not listed:
+        return register'''
+after = '''    if not listed:
+        raise unread(ForkUnknown.of(1))'''
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_with_no_stayfixed_toml_is_read_at_the_tree_s_paths",
+]
+
+[[mutation]]
+name = "the base's copy reads the default machine file"
+file = "src/stayfixed/ledger/check.py"
+before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=config.personal)"
+after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)"
+reddens = [
+  "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
 ]
