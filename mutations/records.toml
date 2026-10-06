@@ -534,7 +534,7 @@ file = "src/stayfixed/ledger/write.py"
 before = "    if held == moved:"
 after = "    if False:"
 reddens = [
-  "tests/ledger/test_write.py::test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again[2]",
+  "tests/ledger/test_write.py::test_a_renumber_killed_at_any_write_is_finished_by_running_it_again[before-pointer]",
 ]
 
 [[mutation]]
@@ -543,7 +543,7 @@ file = "src/stayfixed/ledger/write.py"
 before = "        return 2"
 after = "        return 0"
 reddens = [
-  "tests/ledger/test_write.py::test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again[3]",
+  "tests/ledger/test_write.py::test_a_renumber_killed_at_any_write_is_finished_by_running_it_again[before-sibling-sweep]",
 ]
 
 [[mutation]]

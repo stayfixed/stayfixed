@@ -970,43 +970,26 @@ def test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it(
 
 
 @needs_git
-def test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("malformed", "refusal"),
+    [
+        ('\n[ledger]\nid_prefix = "br"\n', "[ledger] id_prefix 'br' must match"),
+        (
+            '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n',
+            "[ledger] evidence_boundary_required_for names 1 value(s) that are not a severity",
+        ),
+    ],
+    ids=["id-prefix", "boundary-level"],
+)
+def test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_uninstall(
+    tmp_path: Path, malformed: str, refusal: str
 ) -> None:
-    # `uninstall` is the way out of a configuration stayfixed cannot work with. An `[ledger]
-    # id_prefix` outside the grammar is refused where the bug index is rendered, so `init` and
-    # `upgrade` stop on it; taking the footprint out renders nothing and must not ask for the
-    # prefix. Mutation (oracle): "the footprint builds the bug ledger's register before anything
-    # renders" -> `uninstall` refuses too, and this reddens.
-    malformed = '\n[ledger]\nid_prefix = "br"\n'
-    refusal = "[ledger] id_prefix 'br' must match"
-    fresh = repository(tmp_path, directory="fresh")
-    (fresh / CONFIG_FILE).write_text(DOCUMENT + malformed, encoding="utf-8")
-    code, out, err = cli(fresh, tmp_path, "init", "--yes", "--no-ci")
-    assert code == 2 and refusal in err, (out, err)
-    assert tree(fresh) == {"README.md", CONFIG_FILE}
-    root = initialised(tmp_path, document=DOCUMENT)
-    config = root / CONFIG_FILE
-    config.write_text(config.read_text(encoding="utf-8") + malformed, encoding="utf-8")
-    code, out, err = cli(root, tmp_path, "upgrade")
-    assert code == 2 and refusal in err, (out, err)
-    code, out, err = cli(root, tmp_path, "uninstall")
-    assert code == 0, err
-    assert tree(root) == {"README.md", CONFIG_FILE}
-
-
-@needs_git
-def test_a_boundary_level_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall(
-    tmp_path: Path,
-) -> None:
-    # The second `[ledger]` value the register refuses, held to the rule
-    # `test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall` holds
-    # `id_prefix` to: a level in `evidence_boundary_required_for` that names no severity stops
-    # `init` and `upgrade`, which render the bug index, and never `uninstall`, the way out.
-    # Mutation: `mutations/`, "the footprint builds the bug ledger's register before anything
-    # renders" — measured to redden this case on its own as well as that one.
-    malformed = '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
-    refusal = "[ledger] evidence_boundary_required_for names 1 value(s) that are not a severity"
+    # `uninstall` is the way out of a configuration stayfixed cannot work with. A `[ledger]` value
+    # the bug ledger's register refuses — an `id_prefix` outside the grammar, a boundary level that
+    # names no severity — is refused where the bug index is rendered, so `init` and `upgrade` stop
+    # on it; taking the footprint out renders nothing and must not ask for the register. Mutation
+    # (oracle): "the footprint builds the bug ledger's register before anything renders" ->
+    # `uninstall` refuses too, and each case reddens on its own.
     fresh = repository(tmp_path, directory="fresh")
     (fresh / CONFIG_FILE).write_text(DOCUMENT + malformed, encoding="utf-8")
     code, out, err = cli(fresh, tmp_path, "init", "--yes", "--no-ci")

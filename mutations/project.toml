@@ -2039,6 +2039,6 @@ file = "src/stayfixed/project/templates.py"
 before = '''        _computed("bug-index", p.bug_index, lambda: render_index([], bug_register(config))),'''
 after = '''        _computed("bug-index", bug_register(config).index, lambda: render_index([], bug_register(config))),'''
 reddens = [
-  "tests/project/test_uninstall.py::test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall",
-  "tests/project/test_uninstall.py::test_a_boundary_level_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall",
+  "tests/project/test_uninstall.py::test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_uninstall[id-prefix]",
+  "tests/project/test_uninstall.py::test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_uninstall[boundary-level]",
 ]

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
 from tests.gitfixture import git, plant_path, run_git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -656,16 +659,41 @@ def _renumber_tree(root: Path) -> None:
     (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
 
 
-def _snapshot(root: Path) -> dict[str, bytes]:
-    return {
-        path.relative_to(root).as_posix(): path.read_bytes()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
+@contextmanager
+def _killed_at(monkeypatch: pytest.MonkeyPatch, write: int) -> Iterator[list[str]]:
+    """`fsops.write_within` raising `_Killed` in place of its `write`-th call while the block
+    runs, and as it was after; yields the targets written before the kill, in order."""
+    from stayfixed import fsops
+
+    real = fsops.write_within
+    writes: list[str] = []
+
+    def counted(within: Path, target: str, text: str, **kwargs: Any) -> None:
+        if len(writes) + 1 == write:
+            raise _Killed(target)
+        writes.append(target)
+        real(within, target, text, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(fsops, "write_within", counted)
+        yield writes
 
 
-@pytest.mark.parametrize("killed_at", [1, 2, 3, 4, 5, 6, 7])
-def test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again(
+# Which of the move's six writes each case kills before, in the order `_renumber_tree`'s move
+# makes them, and `finished` for a run nothing kills.
+KILL_POINTS = {
+    "before-target": 1,
+    "before-pointer": 2,
+    "before-sibling-sweep": 3,
+    "before-second-sweep": 4,
+    "before-third-sweep": 5,
+    "before-index": 6,
+    "finished": 7,
+}
+
+
+@pytest.mark.parametrize("killed_at", KILL_POINTS.values(), ids=KILL_POINTS.keys())
+def test_a_renumber_killed_at_any_write_is_finished_by_running_it_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, killed_at: int
 ) -> None:
     # The reproduction: there is no journal and each of the six writes is atomic on its own, so
@@ -674,8 +702,8 @@ def test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_ag
     # check green over two live entries for one bug (killed before the void pointer) or over
     # mentions of the old number the sweep never reached, which the void pointer makes look
     # intentional forever. So a re-run of the same move finishes it, and the tree it leaves is
-    # the one an uninterrupted run leaves, byte for byte. Case 7 is no kill at all: a re-run of
-    # a move that finished changes nothing. Mutations: `mutations/`, "a re-run of a renumber
+    # the one an uninterrupted run leaves, byte for byte. `finished` is no kill at all: a re-run
+    # of a move that finished changes nothing. Mutations: `mutations/`, "a re-run of a renumber
     # killed before its void pointer refuses again" and "a re-run of a renumber killed after
     # its void pointer writes both endpoints again".
     (tmp_path / "clean").mkdir()
@@ -684,33 +712,21 @@ def test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_ag
     seed(clean, config, 1, 2)
     _renumber_tree(clean)
     renumber(clean, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
-    expected = _snapshot(clean)
+    expected = snapshot(clean)
 
     root, config = project(tmp_path / "killed")
     seed(root, config, 1, 2)
     _renumber_tree(root)
-    from stayfixed import fsops
-
-    real = fsops.write_within
-    writes: list[str] = []
-
-    def counted(within: Path, target: str, text: str, **kwargs: Any) -> None:
-        if len(writes) + 1 == killed_at:
-            raise _Killed(target)
-        writes.append(target)
-        real(within, target, text, **kwargs)
-
-    monkeypatch.setattr(fsops, "write_within", counted)
-    if killed_at <= 6:
-        with pytest.raises(_Killed):
+    with _killed_at(monkeypatch, killed_at) as writes:
+        if killed_at <= 6:
+            with pytest.raises(_Killed):
+                renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+        else:
             renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
-    else:
-        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
-    monkeypatch.setattr(fsops, "write_within", real)
     # Each case is the kill point it names: the writes before it are on disk and no other.
     assert len(writes) == min(killed_at - 1, 6)
     renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
-    assert _snapshot(root) == expected
+    assert_snapshot_unchanged(root, expected)
     assert register_gate(root, config, bug_register(config)) == []
 
 
@@ -733,25 +749,25 @@ def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own
     bugs = root / "docs" / "bugs"
     moved = entry(1).replace("id: BR-001", "id: BR-009", 1)
     (bugs / "BR-009.md").write_text(moved + "\n", encoding="utf-8")
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
 
     renumber(root, config, bug_register(config), "BR-003", "BR-007", today="2026-01-02")
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, bug_register(config), "BR-003", "BR-009")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
 
     (bugs / "BR-009.md").unlink()
     outside = tmp_path / "outside.md"
     outside.write_text(moved, encoding="utf-8")
     (bugs / "BR-009.md").symlink_to(outside)
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
     assert (bugs / "BR-009.md").is_symlink()
 
 
@@ -765,10 +781,10 @@ def test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothin
     # "renumber moves an entry onto its own identifier".
     root, config = project(tmp_path)
     seed(root, config, 1)
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="BR-001 to itself"):
         renumber(root, config, bug_register(config), "BR-001", "BR-001")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
 
 
 @pytest.mark.parametrize("status", ["void", "open"])
@@ -791,10 +807,10 @@ def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
         encoding="utf-8",
     )
     (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, bug_register(config), "BR-001", "BR-003")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
 
 
 def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
@@ -807,19 +823,8 @@ def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
     # Mutation: `mutations/`, "the occupied-target refusal says nothing of an interrupted move".
     root, config = project(tmp_path)
     seed(root, config, 1)
-    from stayfixed import fsops
-
-    real = fsops.write_within
-
-    def killed(within: Path, target: str, text: str, **kwargs: Any) -> None:
-        if target.endswith("BR-001.md"):
-            raise _Killed(target)
-        real(within, target, text, **kwargs)
-
-    monkeypatch.setattr(fsops, "write_within", killed)
-    with pytest.raises(_Killed):
+    with _killed_at(monkeypatch, KILL_POINTS["before-pointer"]), pytest.raises(_Killed):
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
-    monkeypatch.setattr(fsops, "write_within", real)
     moved = root / "docs" / "bugs" / "BR-009.md"
     moved.write_text(moved.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     with pytest.raises(LedgerError) as raised:
@@ -845,21 +850,8 @@ def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finish
     root, config = project(tmp_path)
     seed(root, config, 1, 2)
     _renumber_tree(root)
-    from stayfixed import fsops
-
-    real = fsops.write_within
-    writes: list[str] = []
-
-    def killed(within: Path, target: str, text: str, **kwargs: Any) -> None:
-        if len(writes) == 2:
-            raise _Killed(target)
-        writes.append(target)
-        real(within, target, text, **kwargs)
-
-    monkeypatch.setattr(fsops, "write_within", killed)
-    with pytest.raises(_Killed):
+    with _killed_at(monkeypatch, KILL_POINTS["before-sibling-sweep"]), pytest.raises(_Killed):
         renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
-    monkeypatch.setattr(fsops, "write_within", real)
     moved = root / "docs" / "bugs" / "BR-009.md"
     moved.write_text(
         moved.read_text(encoding="utf-8").replace("title: a title", "title: a better title"),
@@ -888,7 +880,7 @@ def test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused(
     )
     (root / "docs" / "bugs" / "BR-001.md").write_text(pointer, encoding="utf-8")
     (root / "docs" / "notes.md").write_text("BR-001 was the first report.\n", encoding="utf-8")
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, register, "BR-001", "BR-003")
-    assert _snapshot(root) == before
+    assert_snapshot_unchanged(root, before)
