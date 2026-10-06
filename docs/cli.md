@@ -2393,8 +2393,8 @@ take a line out of a tracked file this command never wrote and leave `stayfixed 
 reading the footprint as hand-edited. A repository with no manifest is one no
 `init` has set up, and its region is withdrawn as before.
 
-A manifest this command **cannot read** — unreadable, not a JSON object, or written by a newer
-stayfixed — is read as no answer rather than as an answer, so the block stays and the detach
+A manifest this command **cannot read** — unreadable, not a JSON object, holding a `format` that
+is not an integer, or written by a newer stayfixed — is read as no answer rather than as an answer, so the block stays and the detach
 finishes. That file is committed and `attach` never opens it, so a clone that ships a broken one
 would otherwise attach cleanly and then make every later `detach` exit `2` for ever, with the
 only way out being to delete a tracked file out of somebody else's repository. `--json` reports

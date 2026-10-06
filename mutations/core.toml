@@ -1275,6 +1275,19 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on",
 ]
 
+# A footprint manifest's `format` that is no integer is damage, refused as the manifest's other bad
+# shapes are; read as a newer stayfixed's, it sent the owner to upgrade the plugin.
+[[mutation]]
+name = "a footprint manifest's format that is not an integer reads as a newer one"
+file = "src/stayfixed/scaffold/manifest.py"
+before = """        if not isinstance(version, int) or isinstance(version, bool):
+            raise ManifestError(f"{MANIFEST_PATH}: 'format' is not an integer")
+        if version > FORMAT:"""
+after = """        if not isinstance(version, int) or version > FORMAT:"""
+reddens = [
+  "tests/scaffold/test_manifest.py::test_a_format_that_is_not_an_integer_is_damage_and_not_a_newer_stayfixed",
+]
+
 # A clone chooses the manifest's size too: it is read to the read cap, and a fault is said without
 # the path it was opened by.
 [[mutation]]
