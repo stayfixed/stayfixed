@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -21,10 +23,12 @@ from stayfixed.attach.api import ledger
 from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.permissions import check, settings_document
 from stayfixed.attach.write import (
+    GITIGNORE,
     GROUP_ESCAPES,
     HARNESS_WAITS,
     REAL_DIRECTORIES,
     Attached,
+    _planned_ignore_region,
     attach,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -2345,3 +2349,53 @@ def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_fi
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
         _attach_it(root, store, machine, tmp_path / "home")
     assert _everything(tmp_path) == before
+
+
+@pytest.mark.parametrize("command", ["attach", "plan"])
+def test_a_gitignore_linked_to_a_device_is_refused_and_never_read(
+    tmp_path: Path, command: str
+) -> None:
+    # `attach` read `.gitignore` with `exists()` and `read_text`, both of which follow a link: a
+    # committed `.gitignore -> /dev/zero` read until memory ran out, and one to a FIFO waited for
+    # a writer. It is read only when it is a regular file, and anything else is a `.gitignore` that
+    # cannot be read, which stops the run before its first write. `/dev/null` is the case that
+    # cannot hang and still tells the guard apart: read, it is an empty `.gitignore`. Mutation
+    # (declared): `.gitignore` read with `read_text` again -> the run goes on.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    gitignore = root / GITIGNORE
+    if gitignore.exists():
+        gitignore.unlink()
+    gitignore.symlink_to("/dev/null")
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal, match=r"\.gitignore cannot be read \(.*not a regular file"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            _planned_ignore_region(root)
+    assert _everything(tmp_path) == before
+
+
+def test_a_gitignore_that_is_a_fifo_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
+    # A FIFO cannot be committed, but a local process can leave one: the read must refuse it, not
+    # wait. In a child under a timeout, so a regression fails this case rather than hanging.
+    root = tmp_path / "project"
+    root.mkdir()
+    os.mkfifo(root / GITIGNORE)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.attach.write import _planned_ignore_region\n"
+        "from stayfixed.errors import Refusal\n"
+        "try:\n"
+        "    _planned_ignore_region(Path(sys.argv[1]))\n"
+        "except Refusal:\n"
+        "    print('refused')\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe, str(root)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert done.stdout == "refused\n", done.stderr

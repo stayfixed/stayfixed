@@ -2961,3 +2961,27 @@ after = "                    unread = unread or False"
 reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[entry-a-list]",
 ]
+
+# In the block led by "the regular-file reader opens whatever a path names": the open never waits,
+# so a FIFO swapped in after the check cannot block it, and it follows a link at the last
+# component, because `attach` links each memory group and `MEMORY.md` into the overlay and those
+# are read and hashed through the link.
+[[mutation]]
+name = "the regular-file reader waits on a FIFO swapped in after its check"
+file = "src/stayfixed/fsops.py"
+before = '    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
+after = '    os.O_RDONLY | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
+reddens = [
+  "tests/test_fsops.py::test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a link to a regular file"
+file = "src/stayfixed/fsops.py"
+before = '    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
+after = '    os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)'
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
+  "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
+  "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]

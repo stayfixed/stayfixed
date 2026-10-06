@@ -185,9 +185,12 @@ class NotRegularFile(OSError):
 
 # The open `open_regular` makes: it follows a link at the last component, because `attach` links
 # each memory group and `MEMORY.md` into the overlay in overlay mode and those are read through
-# the link, and it never waits, because a FIFO swapped in after the check would otherwise block
-# the open on a writer that never comes.
-_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+# the link; it never waits, because a FIFO swapped in after the check would otherwise block the
+# open on a writer that never comes; and a terminal swapped in is never made this process's
+# controlling one.
+_REGULAR_OPEN = (
+    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)
+)
 
 
 @overload
@@ -209,10 +212,11 @@ def open_regular(
     For a reader of files a repository commits, which globs a directory and reads what it found:
     a committed link to `/dev/zero` read until memory ran out, one to `/dev/stdin` waited on a
     terminal for good, and a FIFO left there waited on a writer. The path is asked with `stat`
-    before anything is opened, so no device is ever opened at all; and the descriptor is asked
-    again after the open, and must be the same regular file, so a path repointed in between is
-    refused too. A link to a regular file is read, as before. Not a size bound: a large regular
-    file is read whole, as it was.
+    before anything is opened, so a device the path names is never opened. A path repointed
+    between that check and the open can still be opened -- without blocking and without becoming
+    the controlling terminal -- and is refused unread, because the descriptor must be the same
+    file the check saw. A link to a regular file is read, as before. Not a size bound: a large
+    regular file is read whole, as it was.
     """
     checked = os.stat(path)
     if not stat.S_ISREG(checked.st_mode):
@@ -224,10 +228,12 @@ def open_regular(
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):
             raise NotRegularFile(errno.EINVAL, "not a regular file", str(path))
-        return os.fdopen(descriptor, mode, encoding=encoding, newline=newline)
     except BaseException:
         os.close(descriptor)
         raise
+    # Outside the `try`: once `fdopen` has the descriptor it closes it on its own failure, and a
+    # second close here would raise `EBADF` in place of the real error.
+    return os.fdopen(descriptor, mode, encoding=encoding, newline=newline)
 
 
 def checked_components(relative: str) -> tuple[str, ...]:

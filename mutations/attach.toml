@@ -2171,3 +2171,16 @@ after = '    return apply_entries(json.dumps(raw, indent=2) + "\n", wanted)'
 reddens = [
   "tests/attach/test_write.py::test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write",
 ]
+
+# In the block led by "the regular-file reader opens whatever a path names": `attach` reads the
+# committed `.gitignore` it adds its region to through that reader, so a link there to a device or
+# a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
+[[mutation]]
+name = "attach reads a .gitignore through any link"
+file = "src/stayfixed/attach/write.py"
+before = '        with fsops.open_regular(path, "r", encoding="utf-8") as stream:'
+after = '        with path.open(encoding="utf-8") as stream:'
+reddens = [
+  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
+  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[attach]",
+]

@@ -664,3 +664,37 @@ def test_a_fifo_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
         check=False,
     )
     assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting(tmp_path: Path) -> None:
+    # The check before the open is about a path, which a local process can repoint at a FIFO in
+    # between: the open must not wait on a writer that never comes, and the descriptor is then
+    # refused as not the file that was checked. In a child under a timeout, so a regression fails
+    # this case rather than hanging. Mutation (declared): `O_NONBLOCK` dropped from the open ->
+    # the child waits and this times out.
+    regular = tmp_path / "regular.md"
+    regular.write_bytes(b"x")
+    fifo = tmp_path / "pipe.md"
+    os.mkfifo(fifo)
+    probe = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "real = os.open\n"
+        "os.open = lambda path, flags, *rest: real(sys.argv[2], flags, *rest)\n"
+        "try:\n"
+        "    fsops.open_regular(Path(sys.argv[1]))\n"
+        "except fsops.NotRegularFile:\n"
+        "    print('refused')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(regular), str(fifo)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the open waited on the FIFO swapped in after the check")
+    assert done.stdout == "refused\n", done.stderr

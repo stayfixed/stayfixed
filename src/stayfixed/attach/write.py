@@ -414,7 +414,13 @@ def _planned_ignore_region(root: Path) -> str | None:
     """
     path = root / GITIGNORE
     try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        # Only a regular file, through `fsops.open_regular`: `exists()` and `read_text` follow a
+        # committed link, so `.gitignore -> /dev/zero` read until memory ran out and a FIFO there
+        # waited for a writer. Anything else is a `.gitignore` that cannot be read.
+        with fsops.open_regular(path, "r", encoding="utf-8") as stream:
+            text = stream.read()
+    except FileNotFoundError:
+        text = ""
     except UnicodeDecodeError:
         raise Refusal(
             f"{GITIGNORE} is not UTF-8 text, so `.stayfixed/local/` cannot be made untracked — and "

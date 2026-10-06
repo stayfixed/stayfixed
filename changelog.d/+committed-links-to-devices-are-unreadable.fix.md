@@ -8,3 +8,6 @@ or a FIFO made them, `memory refs`, `memory inventory`, `memory index --check`, 
 `memory session-context` wait for input that never came. A link to a regular file is still read:
 in overlay mode `stayfixed attach` links each memory group and `MEMORY.md` into the overlay, and
 those read as they did.
+`stayfixed attach` likewise stops, before anything is written, on a committed `.gitignore` that
+links to a device or a pipe, as on one it cannot read; before, `/dev/zero` there read until memory
+ran out and a FIFO waited for good.
