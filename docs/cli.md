@@ -3145,7 +3145,8 @@ gate_branch = "main"     # the branch the workflow gates; left out, [project] ba
 
 [gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
-custom_timeout_seconds = 600  # seconds a gate of your own may run, below 2,147,483,648
+custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole number above 0
+                              # and below 2,147,483,648
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
 
