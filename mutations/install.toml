@@ -2794,27 +2794,40 @@ reddens = [
 [[mutation]]
 name = "a skill file that names no file is unreadable"
 file = "src/stayfixed/doctor/entries.py"
-before = "        if exc.errno in NAMES_NO_FILE:\n            return []\n"
-after = "        if False:\n            return []\n"
+before = "        path.stat()\n    except OSError as exc:\n        if exc.errno in NAMES_NO_FILE:\n            return []\n"
+after = "        path.stat()\n    except OSError as exc:\n        if False:\n            return []\n"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link]",
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link-out]",
 ]
 
 [[mutation]]
 name = "hook-entries passes over a skill file it cannot read"
 file = "src/stayfixed/doctor/entries.py"
-before = "        return [(_SKILL_UNREAD, None, _label(relative))]"
-after = "        return []"
+before = """
+        content = read_regular_bytes(path)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return [(_SKILL_UNREAD, None, _label(relative))]
+"""
+after = """
+        content = read_regular_bytes(path)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return []
+"""
 reddens = [
-  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
   "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-directory]",
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-fifo]",
 ]
 
 [[mutation]]
 name = "hook-entries passes over a skills directory it cannot list"
 file = "src/stayfixed/doctor/entries.py"
-before = "                found.append((_SKILL_UNREAD, None, _label(relative)))"
-after = "                pass"
+before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((_SKILL_UNREAD, None, _label(relative)))"
+after = "            if exc.errno not in NAMES_NO_FILE:\n                pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
 ]
@@ -2952,10 +2965,187 @@ reddens = [
 [[mutation]]
 name = "the hooked-file walk enters .git"
 file = "src/stayfixed/doctor/entries.py"
-before = "            if not is_directory or name == _GIT_DIR:"
-after = "            if not is_directory:"
+before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
+after = "            if not (is_directory or is_link):"
 reddens = [
   "tests/doctor/test_checks.py::test_the_walk_below_the_root_never_enters_git_s_own_directory",
+]
+
+# In a work tree the nested places are asked of git's index: tracked and untracked files, never
+# ignored ones, which no clone carries and whose trees passed the walk's cap on every run; each
+# name compared without case. The walk is the fallback where git cannot answer.
+[[mutation]]
+name = "the nested-skill query lists ignored files"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+            "--others",
+            "--exclude-standard",
+"""
+after = """
+            "--others",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_large_ignored_tree_is_neither_walked_nor_named",
+]
+
+[[mutation]]
+name = "the nested places are walked in a work tree"
+file = "src/stayfixed/doctor/entries.py"
+before = "        if queried is not None:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_large_ignored_tree_is_neither_walked_nor_named",
+]
+
+[[mutation]]
+name = "the nested-skill query lists only untracked files"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+            "--cached",
+            "--others",
+"""
+after = """
+            "--others",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[pkg/.claude/skills/nested/SKILL.md]",
+]
+
+[[mutation]]
+name = "the nested-skill query compares names by case"
+file = "src/stayfixed/doctor/entries.py"
+before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
+after = '        for spec in (f":(glob)**/{place.directory}", f":(glob)**/{place.directory}/**")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[pkg/.Claude/Skills/n/SKILL.md]",
+]
+
+[[mutation]]
+name = "the nested-skill query reads the root's own places again"
+file = "src/stayfixed/doctor/entries.py"
+before = '        if place is not None and not f"{name}/".casefold().startswith(own):'
+after = "        if place is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[.claude/skills/top/SKILL.md]",
+]
+
+[[mutation]]
+name = "the nested walk compares directory names by case"
+file = "src/stayfixed/doctor/entries.py"
+before = '    folded = f"/{relative}".casefold()'
+after = '    folded = f"/{relative}"'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_outside_a_work_tree_folds_the_case_of_directories",
+]
+
+# A link inside a place is followed only while it stays under the root: one to `/` read every
+# Markdown file below it, and named a file outside the checkout by the path it was reached through.
+[[mutation]]
+name = "the hooked-file walk follows a link out of the checkout"
+file = "src/stayfixed/doctor/entries.py"
+before = "    return Path(os.path.realpath(path)).is_relative_to(real_root)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/skills/out]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/agents/a.md]",
+]
+
+# git lists a link as an entry of its own and never what it leads to, so each link the query
+# lists is read as a directory of its place; a submodule is one entry to `--cached`, so its index is
+# asked too. A link that leads out of the checkout is no defect, and is told as one that leads out.
+[[mutation]]
+name = "the nested-skill query reads no link it lists"
+file = "src/stayfixed/doctor/entries.py"
+before = "                elif os.path.islink(root / relative):"
+after = "                elif False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_inside_a_nested_skills_directory_is_followed_in_a_work_tree",
+]
+
+[[mutation]]
+name = "the nested-skill query asks no submodule"
+file = "src/stayfixed/doctor/entries.py"
+before = "    if any(os.path.lexists(directory / _GITMODULES) for directory in (root, *root.parents)):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_in_a_checked_out_submodule_is_named",
+]
+
+[[mutation]]
+name = "a directory link out of the checkout is told as unreadable"
+file = "src/stayfixed/doctor/entries.py"
+before = "                found.append((_LINKED_OUT, None, _label(relative)))"
+after = "                found.append((_SKILL_UNREAD, None, _label(relative)))"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/skills/out]",
+]
+
+[[mutation]]
+name = "a file link out of the checkout is told as unreadable"
+file = "src/stayfixed/doctor/entries.py"
+before = "        return [(_LINKED_OUT, None, _label(relative))]"
+after = "        return [(_SKILL_UNREAD, None, _label(relative))]"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/agents/a.md]",
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
+]
+
+[[mutation]]
+name = "a link out of the checkout makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_LINKED_OUT = _Kind(\n    WARN,"
+after = "_LINKED_OUT = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+]
+
+# A link that names no directory, a skill's `LICENSE` say, is passed over wherever it points, as it
+# is in the project's own places; a nested `.claude/skills` that is itself a link is read as theirs
+# are, by the query and by the walk.
+[[mutation]]
+name = "a link to a file is read as a directory of its place"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+            if not S_ISDIR(status.st_mode):
+                continue
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_to_a_file_out_of_a_nested_skills_directory_is_passed_over[queried]",
+]
+
+[[mutation]]
+name = "the nested-skill query lists no link standing for a skills directory"
+file = "src/stayfixed/doctor/entries.py"
+before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
+after = '        for spec in (f":(glob,icase)**/{place.directory}/**",)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested walk passes over a link standing for a skills directory"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
+after = "            if not is_directory or name == _GIT_DIR:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[inside-walked]",
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[outside-walked]",
+]
+
+# The row parses no merge key, as `docs/cli.md` states; the boundary is pinned so that moving it is
+# a decision the documents follow.
+[[mutation]]
+name = "a frontmatter's merge key reads as a hooks key"
+file = "src/stayfixed/doctor/entries.py"
+before = "        return plain.group(1)"
+after = '        return _HOOKS if plain.group(1) == "<<" else plain.group(1)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_hooks_key_reached_only_through_a_merge_key_is_not_named",
 ]
 
 [[mutation]]

@@ -20,12 +20,14 @@ import re
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from stat import S_ISDIR
 
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
+from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
 from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS, Hooked
 from stayfixed.printed import printable
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
@@ -315,6 +317,10 @@ def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
     )
 
 
+def _linked_out(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return f"{len(wheres)} path(s) lead out of the checkout and were not followed: {listed(wheres)}"
+
+
 def _skill_untold(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
         f"the walk for skill, command and agent files stopped after {HOOKED_WALK_ENTRIES:,} "
@@ -387,6 +393,18 @@ _SKILL_UNREAD = _Kind(
         "can list"
     ),
 )
+# A link in a place that leads out of the checkout, which the row does not follow: no defect,
+# because a dotfiles setup links these directories out on purpose, so its remedy is a way to look
+# and not a repair.
+_LINKED_OUT = _Kind(
+    WARN,
+    0,
+    _linked_out,
+    lambda areas: (
+        "if a link named above is yours, as a dotfiles setup's is, look through what it leads to "
+        "yourself, since this row reads only what the repository holds"
+    ),
+)
 _SKILL_UNTOLD = _Kind(
     WARN,
     0,
@@ -409,6 +427,7 @@ _KINDS = (
     _BLIND,
     _SKILL_HOOKS,
     _SKILL_UNREAD,
+    _LINKED_OUT,
     _SKILL_UNTOLD,
 )
 
@@ -587,13 +606,31 @@ def _reads(place: Hooked, name: str) -> bool:
     return folded == place.name.casefold()
 
 
-def _frontmatter(root: Path, relative: str) -> list[_Found]:
+def _inside(real_root: Path, path: Path) -> bool:
+    """Whether `path`, every link in it followed, is still under `real_root`, the root's own
+    resolved path. Asked through `os.path.realpath`, which answers for a link that loops too."""
+    return Path(os.path.realpath(path)).is_relative_to(real_root)
+
+
+def _frontmatter(root: Path, real_root: Path, relative: str) -> list[_Found]:
     """The finding for one file whose frontmatter is read: it declares hooks, or it could not be
-    read, or none. Read through `fsops.read_regular_bytes`, as every reader of a committed file
-    is: a link to a device or a FIFO is refused unread, and a file past the cap is refused, each one
-    this row could not read; a path that names no file is passed over."""
+    read, or it leads out of the checkout, or none. A link that leads out is not followed and is
+    named as one that does (`_LINKED_OUT`): what it leads to is not the repository's. Whether a
+    path names a file is asked first, so a dangling link names none wherever it points. Read
+    through `fsops.read_regular_bytes`, as every reader of a committed file is: a device or a FIFO
+    is refused unread, and a file past the cap is refused, each one this row could not read; a
+    path that names no file is passed over."""
+    path = root / relative
     try:
-        content = read_regular_bytes(root / relative)
+        path.stat()
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return [(_SKILL_UNREAD, None, _label(relative))]
+    if not _inside(real_root, path):
+        return [(_LINKED_OUT, None, _label(relative))]
+    try:
+        content = read_regular_bytes(path)
     except OSError as exc:
         if exc.errno in NAMES_NO_FILE:
             return []
@@ -605,14 +642,17 @@ def _frontmatter(root: Path, relative: str) -> list[_Found]:
     return []
 
 
-def _read_place(root: Path, top: str, place: Hooked, budget: _Budget) -> list[_Found]:
+def _read_place(
+    root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget
+) -> list[_Found]:
     """A finding for each file below `top`, a directory `place` names, whose frontmatter declares
     hooks or could not be read, in name order, depth first.
 
-    Links are followed, as the harness follows them, and a directory reached twice is listed
-    once, so a link back up the tree ends rather than circling until the cap. A directory that
-    cannot be listed is named, and one that names no directory is passed over, as `top` itself
-    is when there is none."""
+    Links are followed, as the harness follows them, while they lead to a directory still inside
+    the checkout; one that leads out is named as one that does (`_LINKED_OUT`), and one that cannot
+    be listed as a directory this row could not read. A directory reached twice is listed once,
+    so a link back up the tree ends rather than circling until the cap. One that names no
+    directory is passed over, as `top` itself is when there is none."""
     found: list[_Found] = []
     listed_once: set[tuple[int, int]] = set()
     pending = [top]
@@ -621,6 +661,11 @@ def _read_place(root: Path, top: str, place: Hooked, budget: _Budget) -> list[_F
         directory = root / relative
         try:
             status = directory.stat()
+            if not S_ISDIR(status.st_mode):
+                continue
+            if not _inside(real_root, directory):
+                found.append((_LINKED_OUT, None, _label(relative)))
+                continue
             if (status.st_dev, status.st_ino) in listed_once:
                 continue
             listed_once.add((status.st_dev, status.st_ino))
@@ -635,19 +680,109 @@ def _read_place(root: Path, top: str, place: Hooked, budget: _Budget) -> list[_F
         for name in names:
             child = f"{relative}/{name}"
             if _reads(place, name):
-                found.extend(_frontmatter(root, child))
+                found.extend(_frontmatter(root, real_root, child))
             elif (root / child).is_dir():
                 below.append(child)
         pending.extend(reversed(below))
     return found
 
 
+def _owned(relative: str, places: Sequence[Hooked]) -> Hooked | None:
+    """The place among `places` whose directory `relative`, a directory below the root, is, or
+    ends in, compared without case: a filesystem that folds case finds `.Claude/Skills` where
+    `.claude/skills` is looked for."""
+    folded = f"/{relative}".casefold()
+    return next((p for p in places if folded.endswith(f"/{p.directory}".casefold())), None)
+
+
+# The file whose presence says a work tree has submodules, at its top level.
+_GITMODULES = ".gitmodules"
+
+
+def _listing(asked: tuple[int, str]) -> set[str] | None:
+    """The names a `git ls-files -z` answer lists, or `None` where it gives no answer: a `git` that
+    fails or runs past `QUERY_TIMEOUT_SECONDS`, the bound for a query over a whole tree."""
+    code, answer = asked
+    if code != 0:
+        return None
+    return {name for name in answer.split("\0") if name}
+
+
+def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
+    """Every entry below the root inside a directory a `nested` place names, as git's index lists
+    it, with that place, in name order; or `None` where git cannot answer: outside a work tree, or
+    a `git` that fails.
+
+    Tracked files and untracked ones git does not ignore, which is what a clone commits and what
+    the owner is writing; never an ignored one, which no clone carries, and whose trees, an
+    installed dependency's or a build's, are what made a walk of the whole checkout stop at its
+    cap. Each place is asked with a pathspec git matches without case (`icase`), so a directory or
+    file name in any case is listed as a filesystem that folds case finds it. Every entry is
+    listed and not only the files a place reads, because git lists a link as an entry of its own
+    and never what it leads to, and a link may lead to a skill (`_hooked` reads it as a directory);
+    so is an entry that is the place's directory itself, which is a link where git lists one.
+
+    `--cached` lists a submodule as one entry and none of its files, and `--recurse-submodules`
+    takes no `--others`, so a work tree with a `.gitmodules` at or above the root is asked a second
+    time, through each checked-out submodule's index: what each submodule commits. An entry under
+    one of the root's own places is left out: those are read off the disk (`_read_place`)."""
+    places = [place for place in HOOKED if place.nested]
+    if not places or not in_work_tree(root):
+        return None
+    pathspecs = [
+        spec
+        for place in places
+        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")
+    ]
+    listed = _listing(
+        git_run(
+            root,
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *pathspecs,
+            timeout=QUERY_TIMEOUT_SECONDS,
+        )
+    )
+    if listed is None:
+        return None
+    if any(os.path.lexists(directory / _GITMODULES) for directory in (root, *root.parents)):
+        modules = _listing(
+            git_run(
+                root,
+                "ls-files",
+                "-z",
+                "--cached",
+                "--recurse-submodules",
+                "--",
+                *pathspecs,
+                timeout=QUERY_TIMEOUT_SECONDS,
+            )
+        )
+        if modules is None:
+            return None
+        listed |= modules
+    own = tuple(f"{place.directory}/".casefold() for place in HOOKED)
+    found: list[tuple[str, Hooked]] = []
+    for name in sorted(listed):
+        folded = f"/{name}/".casefold()
+        place = next((p for p in places if f"/{p.directory}/".casefold() in folded), None)
+        if place is not None and not f"{name}/".casefold().startswith(own):
+            found.append((name, place))
+    return found
+
+
 def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
     """Every directory below the root that a `nested` place names, with that place, in name
-    order, depth first.
+    order, depth first: the bounded walk for a root git cannot answer for (`_queried`).
 
     No link is followed and `.git` is never entered: what a link leads to outside the tree is
-    not the repository's, and inside it the walk meets it where it is. A directory that cannot be
+    not the repository's, and inside it the walk meets it where it is. A link that is itself such
+    a directory is handed out, as the query hands one out, for `_read_place` to follow while it
+    stays in the checkout. A directory that cannot be
     listed is passed over, as the bytecode walk passes one over: git records no permission that
     keeps one from being listed. The root's own copy of a place is not one of these, and nothing
     below a directory handed out here is walked again."""
@@ -658,20 +793,22 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
         try:
             with os.scandir(root / relative) as listing:
                 entries = sorted(
-                    (entry.name, entry.is_dir(follow_symlinks=False)) for entry in listing
+                    (entry.name, entry.is_dir(follow_symlinks=False), entry.is_symlink())
+                    for entry in listing
                 )
         except OSError:
             continue
         budget.spend(len(entries))
         below: list[str] = []
-        for name, is_directory in entries:
-            if not is_directory or name == _GIT_DIR:
+        for name, is_directory, is_link in entries:
+            if not (is_directory or is_link) or name == _GIT_DIR:
                 continue
             child = f"{relative}/{name}" if relative else name
-            owner = next((p for p in places if f"/{child}".endswith(f"/{p.directory}")), None)
+            owner = _owned(child, places)
             if owner is None:
-                below.append(child)
-            elif child != owner.directory:
+                if is_directory:
+                    below.append(child)
+            elif child.casefold() != owner.directory.casefold():
                 yield child, owner
         pending.extend(reversed(below))
 
@@ -679,16 +816,27 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
 def _hooked(root: Path) -> list[_Found]:
     """A finding for each skill, command or agent file whose frontmatter declares hooks, and for
     each such file or directory that could not be read: the root's own places first, in `HOOKED`'s
-    order, then each nested one the walk finds. The whole walk lists at most
-    `HOOKED_WALK_ENTRIES` entries, past which it stops and says so. Each file is named by its path,
-    through `printed.printable`, because every name in it is the repository's."""
+    order, read off the disk, then each file a nested place names, as git lists it
+    (`_queried`), or, where git cannot answer, as the bounded walk finds it (`_nested`). The walks
+    list at most `HOOKED_WALK_ENTRIES` entries between them, past which they stop and say so. Each
+    file is named by its path, through `printed.printable`, because every name in it is the
+    repository's."""
     found: list[_Found] = []
     budget = _Budget()
+    real_root = Path(os.path.realpath(root))
     try:
         for place in HOOKED:
-            found.extend(_read_place(root, place.directory, place, budget))
-        for directory, place in _nested(root, budget):
-            found.extend(_read_place(root, directory, place, budget))
+            found.extend(_read_place(root, real_root, place.directory, place, budget))
+        queried = _queried(root)
+        if queried is not None:
+            for relative, place in queried:
+                if _reads(place, PurePosixPath(relative).name):
+                    found.extend(_frontmatter(root, real_root, relative))
+                elif os.path.islink(root / relative):
+                    found.extend(_read_place(root, real_root, relative, place, budget))
+        else:
+            for directory, place in _nested(root, budget):
+                found.extend(_read_place(root, real_root, directory, place, budget))
     except _Spent:
         found.append((_SKILL_UNTOLD, None, None))
     return found

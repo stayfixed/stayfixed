@@ -1500,6 +1500,12 @@ SKILL_UNREAD_REMEDY = (
     "check that each path named above can be read: a regular file, or a directory this user can "
     "list"
 )
+# A link in one of those places that leads out of the checkout, which the row does not follow.
+LINKED_OUT = "path(s) lead out of the checkout and were not followed"
+LINKED_OUT_REMEDY = (
+    "if a link named above is yours, as a dotfiles setup's is, look through what it leads to "
+    "yourself, since this row reads only what the repository holds"
+)
 NO_SKILL_ENTRIES = "0 stayfixed entr(ies), 0 foreign"
 
 
@@ -1588,20 +1594,25 @@ NO_DECLARED_HOOKS: dict[str, str | bytes] = {
 }
 
 
-@pytest.mark.parametrize("shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file", "dangling-link"])
+@pytest.mark.parametrize(
+    "shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file", "dangling-link", "dangling-link-out"]
+)
 def test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was(tmp_path: Path, shape: str) -> None:
     # The vacuity guard for the warning: only a top-level `hooks:` key line inside a frontmatter
     # closed by its second `---` line is one. Mutations (oracle): `mutations/`'s "a skill's
     # frontmatter runs past its closing fence" -> "in-the-body"; "a skill's frontmatter reads an
     # indented hooks key" -> "nested-key"; "a skill's frontmatter reads any key opening with
     # hooks" -> "a-longer-key"; "an unterminated frontmatter is read to the end" ->
-    # "unterminated"; "a skill file that names no file is unreadable" -> "dangling-link".
+    # "unterminated"; "a skill file that names no file is unreadable" -> "dangling-link" and
+    # "dangling-link-out": a dangling link names no file wherever it points, so whether it names
+    # one is asked before whether it leads out of the checkout.
     root = _initialised(tmp_path)
     if shape == "no-skill-file":
         (root / ".claude" / "skills" / "empty").mkdir(parents=True)
-    elif shape == "dangling-link":
+    elif shape in ("dangling-link", "dangling-link-out"):
         (root / ".claude" / "skills" / "gone").mkdir(parents=True)
-        (root / ".claude" / "skills" / "gone" / "SKILL.md").symlink_to("nowhere")
+        target = "nowhere" if shape == "dangling-link" else str(tmp_path / "nowhere" / "SKILL.md")
+        (root / ".claude" / "skills" / "gone" / "SKILL.md").symlink_to(target)
     else:
         _skill(root, "plain", NO_DECLARED_HOOKS[shape])
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
@@ -1622,28 +1633,40 @@ def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -
     )
 
 
-@pytest.mark.parametrize("target", ["/dev/zero", "a-directory"])
+@pytest.mark.parametrize("target", ["/dev/zero", "a-directory", "a-fifo"])
 def test_a_skill_file_that_is_no_regular_file_is_refused_and_named(
     tmp_path: Path, target: str
 ) -> None:
-    # Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to
-    # `/dev/zero` is refused unread, not read forever, and named as a skill file this row could not
-    # read, a warning. Mutation (oracle): `mutations/`'s "hook-entries passes over a skill file
-    # it cannot read" -> the row is green.
+    # Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a directory
+    # where the file goes is refused, a FIFO inside the checkout is refused without waiting on a
+    # writer, and each is named as a skill file this row could not read, a warning. Mutation
+    # (oracle): `mutations/`'s "hook-entries passes over a skill file it cannot read" ->
+    # `a-directory` and `a-fifo` are green. A link to `/dev/zero` leads out of the checkout, so it
+    # is not followed and is told as one leading out; followed, the reader would refuse a device.
     root = _initialised(tmp_path)
     path = root / ".claude" / "skills" / "probe" / "SKILL.md"
     path.parent.mkdir(parents=True)
     if target == "a-directory":
         path.mkdir()
+    elif target == "a-fifo":
+        os.mkfifo(path)
     else:
         path.symlink_to(target)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert row == Check(
-        "hook-entries",
-        WARN,
-        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills/probe/SKILL.md",
-        SKILL_UNREAD_REMEDY,
-    )
+    if target == "/dev/zero":
+        assert row == Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: .claude/skills/probe/SKILL.md",
+            LINKED_OUT_REMEDY,
+        )
+    else:
+        assert row == Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills/probe/SKILL.md",
+            SKILL_UNREAD_REMEDY,
+        )
 
 
 def test_a_skills_directory_that_cannot_be_listed_is_named(tmp_path: Path) -> None:
@@ -1827,6 +1850,219 @@ def test_the_walk_below_the_root_never_enters_git_s_own_directory(tmp_path: Path
     # hooked-file walk enters .git" -> the planted skill is named.
     root = _initialised(tmp_path)
     _file(root, ".git/modules/pkg/.claude/skills/planted/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+def _repository(root: Path) -> Path:
+    """`root` as a git work tree with nothing committed."""
+    _git(root, "init", "-q", "-b", "main")
+    return root
+
+
+def test_a_large_ignored_tree_is_neither_walked_nor_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In a work tree the nested places are asked of git's index, tracked and untracked files but
+    # never ignored ones: a clone carries no ignored file, and an installed dependency's tree can
+    # pass any cap, which left a warning on every run that nothing could clear. Here the ignored
+    # tree is past a cap of 20 entries and holds a skill declaring hooks; the row says neither.
+    # Mutations (oracle): `mutations/`'s "the nested-skill query lists ignored files" -> the
+    # ignored skill is named; "the nested places are walked in a work tree" -> the walk stops.
+    root = _repository(_initialised(tmp_path))
+    _file(root, ".gitignore", "vendor/\n")
+    for n in range(30):
+        _file(root, f"vendor/pkg{n}/index.md", "x\n")
+    _file(root, "vendor/pkg0/.claude/skills/dep/SKILL.md", SKILL_WITH_HOOKS)
+    monkeypatch.setattr(entries, "HOOKED_WALK_ENTRIES", 20)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "pkg/.claude/skills/nested/SKILL.md",
+        "pkg/.Claude/Skills/n/SKILL.md",
+        ".claude/skills/top/SKILL.md",
+    ],
+)
+def test_a_committed_nested_skill_is_named_in_any_case(tmp_path: Path, path: str) -> None:
+    # What a clone commits is what the row reads below the root, and a filesystem that folds case
+    # finds `.Claude/Skills` where `.claude/skills` is looked for; the root's own skill, which the
+    # query lists too, is named once. Mutations (oracle): `mutations/`'s "the nested-skill query
+    # lists only untracked files" -> the committed skills are missed; "the nested-skill query
+    # compares names by case" -> the second case is; "the nested-skill query reads the root's own
+    # places again" -> the third is named twice.
+    root = _repository(_initialised(tmp_path))
+    _file(root, path, SKILL_WITH_HOOKS)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "a nested skill")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries", WARN, f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {path}", SKILL_HOOKS_REMEDY
+    )
+
+
+def test_the_walk_outside_a_work_tree_folds_the_case_of_directories(tmp_path: Path) -> None:
+    # Where git cannot answer, the bounded walk finds the nested places, and it compares directory
+    # names as the query does, without case. Mutation (oracle): `mutations/`'s "the nested walk
+    # compares directory names by case" -> the skill is missed.
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.Claude/Skills/n/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.Claude/Skills/n/SKILL.md",
+    )
+
+
+@pytest.mark.parametrize("link", [".claude/commands", ".claude/skills/out", ".claude/agents/a.md"])
+def test_a_link_out_of_the_checkout_is_named_and_never_followed(tmp_path: Path, link: str) -> None:
+    # A committed link inside a place sent the walk out of the checkout, to any depth: one to `/`
+    # read every Markdown file below it. A link is followed only while it stays under the root, and
+    # one that leads out is named as such: not a defect, since a dotfiles setup links these
+    # directories out on purpose, and not a path that could not be read. Mutations (oracle):
+    # `mutations/`'s "the hooked-file walk follows a link out of the checkout" -> the file outside
+    # is named instead; "a directory link out of the checkout is told as unreadable" and "a file
+    # link out of the checkout is told as unreadable" -> the old words; "a link out of the checkout
+    # makes hook-entries red" -> red.
+    root = _initialised(tmp_path)
+    outside = tmp_path / "outside"
+    _file(outside, "deploy.md", SKILL_WITH_HOOKS)
+    _file(outside, "SKILL.md", SKILL_WITH_HOOKS)
+    (root / link).parent.mkdir(parents=True, exist_ok=True)
+    (root / link).symlink_to(outside / "deploy.md" if link.endswith(".md") else outside)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries", WARN, f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: {link}", LINKED_OUT_REMEDY
+    )
+
+
+def test_a_link_inside_a_nested_skills_directory_is_followed_in_a_work_tree(
+    tmp_path: Path,
+) -> None:
+    # git lists a link as an entry of its own and never what it leads to, so a committed link in a
+    # nested `.claude/skills` to a skill elsewhere in the checkout hid that skill in a work tree,
+    # while the walk outside one followed it. Each link the query lists is read as a directory of
+    # the place, within the walk's bound and only while it stays in the checkout. Mutation
+    # (oracle): `mutations/`'s "the nested-skill query reads no link it lists" -> the skill is
+    # missed.
+    root = _repository(_initialised(tmp_path))
+    _file(root, "hidden/evil/SKILL.md", SKILL_WITH_HOOKS)
+    (root / "pkg/.claude/skills").mkdir(parents=True)
+    (root / "pkg/.claude/skills/evil").symlink_to("../../../hidden/evil")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "a linked skill")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/evil/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def _in_a_work_tree(root: Path, where: str) -> Path:
+    """`root` as a work tree with everything in it committed, or left as it is for `"walked"`."""
+    if where == "queried":
+        _repository(root)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "the tree")
+    return root
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+def test_a_link_to_a_file_out_of_a_nested_skills_directory_is_passed_over(
+    tmp_path: Path, where: str
+) -> None:
+    # A link to a file the row would never read, a skill's `LICENSE` say, names no directory to
+    # look in, so it is passed over wherever it points, in the project's own `.claude/skills` and
+    # in a nested one, asked of git or walked. In a work tree it was told as a path leading out.
+    # Mutation (oracle): `mutations/`'s "a link to a file is read as a directory of its place" ->
+    # the `queried` case names it.
+    outside = tmp_path / "outside"
+    _file(outside, "hosts", "x\n")
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.claude/skills/s/notes.txt", "x\n")
+    (root / "pkg/.claude/skills/s/LICENSE").symlink_to(outside / "hosts")
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("leads", ["inside", "outside"])
+def test_a_nested_skills_directory_that_is_a_link_is_read_or_named(
+    tmp_path: Path, where: str, leads: str
+) -> None:
+    # A nested `.claude/skills` that is itself a link was named by no path: git lists the link as
+    # one entry, which no pattern below the directory matches, and the walk follows no link. It is
+    # read as the project's own are: followed while it stays in the checkout, and named as a path
+    # that leads out where it does not. Mutations (oracle): `mutations/`'s "the nested-skill query
+    # lists no link standing for a skills directory" -> the `queried` cases; "the nested walk
+    # passes over a link standing for a skills directory" -> the `walked` cases.
+    target = tmp_path / "outside" if leads == "outside" else tmp_path / "project" / "kept"
+    _file(target, "s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / "pkg/.claude").mkdir(parents=True)
+    (root / "pkg/.claude/skills").symlink_to(target)
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    if leads == "inside":
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/s/SKILL.md",
+            SKILL_HOOKS_REMEDY,
+        )
+    else:
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: pkg/.claude/skills",
+            LINKED_OUT_REMEDY,
+        )
+    assert row == expected
+
+
+def test_a_skill_in_a_checked_out_submodule_is_named(tmp_path: Path) -> None:
+    # The query's `--cached` lists a submodule as one entry and none of its files, so a skill a
+    # submodule commits went unnamed. A second query asks each checked-out submodule's index.
+    # Mutation (oracle): `mutations/`'s "the nested-skill query asks no submodule" -> the skill is
+    # missed.
+    (tmp_path / "module").mkdir()
+    module = _repository(tmp_path / "module")
+    _file(module, ".claude/skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    _git(module, "add", "-A")
+    _git(module, "commit", "-q", "-m", "a skill")
+    root = _repository(_initialised(tmp_path))
+    _git(
+        root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(module), "vendored"
+    )
+    _git(root, "commit", "-q", "-m", "a submodule")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: vendored/.claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+# A frontmatter that declares `hooks` only through a merge key, `<<` pulling in an anchored mapping
+# that holds it. Not named: the row parses no merge, as `docs/cli.md` states. A YAML reader that
+# honours `<<` reads a top-level `hooks` here, so this pins the answer the documents give rather
+# than one the row could defend as complete.
+MERGED_HOOKS = "---\nbase: &base\n  hooks:\n    Stop: []\n<<: *base\n---\nThe body.\n"
+
+
+def test_a_hooks_key_reached_only_through_a_merge_key_is_not_named(tmp_path: Path) -> None:
+    # The boundary `docs/cli.md` states, pinned so that changing it is a decision the documents
+    # follow. Mutation (oracle): `mutations/`'s "a frontmatter's merge key reads as a hooks key"
+    # -> the skill is named.
+    root = _initialised(tmp_path)
+    _skill(root, "merged", MERGED_HOOKS)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
 

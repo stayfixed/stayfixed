@@ -2617,17 +2617,21 @@ position.
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
-rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
-resolves to, which the binding's row and the note store's rows each ask for themselves. Five of
-those are measured on a green attached installation — the wrapper probe and four `git`
-questions — and not one of the five leaves this machine. The `ci-ref` row's `git ls-remote` is a
-sixth on a repository that records a `[ci] ref` at all, and it is the only one that does leave:
-it goes through the `Runner` seam, which is what lets the case that pins the five answer it in
-process instead of launching it. That one is bounded at **30 seconds**, and not
-at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
-clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
-five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
-this area's own thirty.
+rows need — where the overlay keeps its hooks, what its `origin` is, where the note store
+resolves to, which the binding's row and the note store's rows each ask for themselves, and, for
+`hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
+a second time through each submodule's index where a `.gitmodules` sits at or above the root. Six
+of those are measured on a green attached installation with no submodules — the wrapper probe and
+five `git` questions — and seven where a `.gitmodules` is present; not one of them leaves this
+machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a `[ci] ref`
+at all, and it is the only one that does leave: it goes through the `Runner` seam, which is what
+lets the case that pins the six answer it in process instead of launching it. That one is bounded
+at **30 seconds**, and not at the seam's own five minutes: five minutes is the bound for
+`gh repo create --clone` and the clone behind it, and a peer that does not answer must not turn a
+one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
+seconds of its own for a query over a whole tree, so the two together may take up to a minute; the
+other `git` questions are `gitenv`'s five seconds, and the wrapper probe is this area's own
+thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
 repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
@@ -2650,7 +2654,7 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree, and every `*.md` below `.claude/commands` and `.claude/agents` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -2767,8 +2771,8 @@ So a skill a repository commits does run its own hooks once it is invoked. `hook
 not judge them, and says so, of every file whose frontmatter Claude Code reads for hooks:
 
 - every `SKILL.md` at any depth below the project's `.claude/skills`, and below a `.claude/skills`
-  anywhere else in the tree, which Claude Code loads once a session reads a file in that
-  directory;
+  anywhere else in the tree that git does not ignore, which Claude Code loads once a session reads
+  a file in that directory;
 - every `*.md` at any depth below `.claude/commands`, since a command file accepts a skill's
   fields;
 - every `*.md` at any depth below `.claude/agents`, since an agent's frontmatter is documented to
@@ -2781,18 +2785,40 @@ blank nor a comment. The key is found bare, quoted either way (its escapes read)
 anchor or `? `, or among the top-level keys of a frontmatter written as a flow mapping
 (`{name: x, hooks: {...}}`); a `hooks` nested under another key, or inside a quoted value, is not
 one. Nothing else of the YAML is parsed: a merge key (`<<`) is not followed, and a frontmatter with
-no closing `---` is none. Names are compared without case, so `skill.md` counts, as a filesystem
-that folds case finds it. A file or directory the row cannot read, such as a link to a device or a
-directory it cannot list, is named as one it cannot say anything about, also a `warn`. Every name
+no closing `---` is none. Names are compared without case, a directory's as well as a file's, so
+`skill.md` and `.Claude/Skills` count, as a filesystem that folds case finds them. A file or
+directory the row cannot read, such as a FIFO or a directory it cannot list, is named as one it
+cannot say anything about, also a `warn`. Every name
 in a path is the repository's, so a path outside the path grammar is named as a file whose path
 the row does not print.
 
-The walk follows links inside `.claude/skills`, `.claude/commands` and `.claude/agents`, and lists a
-directory a link leads back to once. To find a `.claude/skills` below the root it lists the whole
-tree, following no link and never entering `.git`, whose contents git never checks out, and passing
-over a directory it cannot list. The two together list at most 500,000 directory entries; past
-that, the row says the walk stopped and that it cannot say whether the files past it declare hooks,
-a `warn`.
+The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
+The read follows a link inside them only while it leads to a directory still inside the checkout,
+and lists a directory a link leads back to once. A link that leads out, as a dotfiles setup links
+`.claude/agents`, is named as a path that leads out of the checkout and was not followed, a `warn`
+that marks no fault: what it leads to is not the repository's, so the row does not read it and
+leaves that to you. A link that names no directory to look in, a skill's `LICENSE` say, is passed
+over wherever it points, and so is a dangling link.
+
+A `.claude/skills` below the root is found by asking git (`git ls-files --cached --others
+--exclude-standard`): the files a clone commits and the untracked ones git does not ignore, each
+name compared without case. git lists a link as an entry of its own, so each link inside such a
+directory, and such a directory that is itself a link, is read as the project's own are. A
+submodule is one entry to that query, so where a `.gitmodules` sits at or above the root, git is
+asked again through each checked-out submodule's index (`git ls-files --cached
+--recurse-submodules`): what that index holds, its staged files as well as its committed ones, and
+not the files untracked inside a submodule, which git cannot list that way.
+
+**A skill inside a directory git ignores is not named**, such as one an installed dependency ships
+under `node_modules`: no clone carries an ignored file, so it is not the repository's to declare,
+whether Claude Code loads such a skill was not measured, and listing those trees is what would make
+the row stop short in a large checkout. Outside a git work tree, or where `git` fails, the row
+walks the tree instead, following no link but one that is itself a nested `.claude/skills`, never
+entering `.git`, whose contents git never checks out, and passing over a directory it cannot list.
+The reads and that walk list at most 500,000 directory entries between them; past that, the row
+says the walk stopped and that it cannot say whether the files past it declare hooks, a `warn`. In
+a work tree only the project's own three directories, and the directories links in a nested
+`.claude/skills` lead to, count toward that number.
 
 Whether the model can invoke a skill, and so run its hooks, without a person asking was not
 measured, because no model call ran. The plugin and agent rows held under that same limit, and say
