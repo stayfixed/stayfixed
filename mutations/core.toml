@@ -2969,8 +2969,8 @@ reddens = [
 [[mutation]]
 name = "the regular-file reader waits on a FIFO swapped in after its check"
 file = "src/stayfixed/fsops.py"
-before = '    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
-after = '    os.O_RDONLY | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NOCTTY | os.O_CLOEXEC"
 reddens = [
   "tests/test_fsops.py::test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting",
 ]
@@ -2978,8 +2978,8 @@ reddens = [
 [[mutation]]
 name = "the regular-file reader refuses a link to a regular file"
 file = "src/stayfixed/fsops.py"
-before = '    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)'
-after = '    os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)'
+before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC"
+after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC"
 reddens = [
   "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
   "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
@@ -3030,4 +3030,25 @@ before = "    if value >= INTEGER_LIMIT:"
 after = "    if value > INTEGER_LIMIT - 2:"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": the read stops one
+# byte past `REGULAR_READ_LIMIT`, because a regular file can be endless (`/proc/self/pagemap`), and
+# a file at the limit is read.
+[[mutation]]
+name = "the regular-file reader reads past its limit"
+file = "src/stayfixed/fsops.py"
+before = "    if len(content) > REGULAR_READ_LIMIT:"
+after = "    if False:"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
+]
+
+[[mutation]]
+name = "the regular-file reader refuses a file at its limit"
+file = "src/stayfixed/fsops.py"
+before = "    if len(content) > REGULAR_READ_LIMIT:"
+after = "    if len(content) >= REGULAR_READ_LIMIT:"
+reddens = [
+  "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
 ]

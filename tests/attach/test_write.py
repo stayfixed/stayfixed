@@ -2367,11 +2367,17 @@ def test_a_gitignore_linked_to_a_device_is_refused_and_never_read(
         gitignore.unlink()
     gitignore.symlink_to("/dev/null")
     before = _everything(tmp_path)
-    with pytest.raises(Refusal, match=r"\.gitignore cannot be read \(.*not a regular file"):
+    with pytest.raises(
+        Refusal, match=r"\.gitignore cannot be read \(not a regular file\)"
+    ) as raised:
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
             _planned_ignore_region(root)
+    # The machine's own absolute path is not the reader's business: the refusal says why, and
+    # names the file as the project names it. Mutation (declared): "the .gitignore refusal prints
+    # the path it opened".
+    assert str(tmp_path) not in str(raised.value)
     assert _everything(tmp_path) == before
 
 
@@ -2398,4 +2404,58 @@ def test_a_gitignore_that_is_a_fifo_is_refused_without_waiting_for_a_writer(tmp_
         timeout=60,
         check=False,
     )
+    assert done.stdout == "refused\n", done.stderr
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
+    tmp_path: Path, command: str
+) -> None:
+    # `attach` and `--check` read `.claude/settings.local.json` with `read_text`, which follows a
+    # link: a committed link to `/dev/zero` read until memory ran out, and one to a FIFO waited for
+    # a writer. It is read only when it is a regular file, and anything else is a settings file
+    # that cannot be read, before the first write. `/dev/null` tells the guard apart without
+    # hanging: read, it is an empty settings file. Mutation (declared): "the settings reader reads
+    # a file through any link".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    if settings.exists():
+        settings.unlink()
+    settings.symlink_to("/dev/null")
+    before = _everything(tmp_path)
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    assert _everything(tmp_path) == before
+
+
+def test_a_local_settings_file_that_is_a_fifo_is_refused_without_waiting(tmp_path: Path) -> None:
+    # A FIFO left where the settings file goes: the read refuses it, never waits. In a child under
+    # a timeout, so a regression fails this case rather than hanging.
+    root = tmp_path / "project"
+    (root / ".claude").mkdir(parents=True)
+    os.mkfifo(root / SETTINGS)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.attach.permissions import local_document\n"
+        "from stayfixed.errors import Failure\n"
+        "try:\n"
+        "    local_document(Path(sys.argv[1]))\n"
+        "except Failure:\n"
+        "    print('refused')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the settings read waited on a FIFO")
     assert done.stdout == "refused\n", done.stderr

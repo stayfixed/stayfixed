@@ -325,14 +325,17 @@ def ledger(root: Path) -> AttachLedger:
     """
     path = root / ATTACH_LEDGER
     try:
-        text = path.read_text(encoding="utf-8")
+        # A regular file only (`fsops.read_regular_text`): a clone can commit the ledger, and
+        # `detach` read it with no other check first, so a link to `/dev/zero` read until memory
+        # ran out.
+        text = fsops.read_regular_text(path)
     except FileNotFoundError as exc:
         raise Failure(
             f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added to "
             f"this repository; there is no safe way to guess it from the settings file"
         ) from exc
     except OSError as exc:
-        raise Failure(f"{path} cannot be read: {exc}") from exc
+        raise Failure(f"{ATTACH_LEDGER} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
     # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
@@ -414,11 +417,10 @@ def _planned_ignore_region(root: Path) -> str | None:
     """
     path = root / GITIGNORE
     try:
-        # Only a regular file, through `fsops.open_regular`: `exists()` and `read_text` follow a
-        # committed link, so `.gitignore -> /dev/zero` read until memory ran out and a FIFO there
-        # waited for a writer. Anything else is a `.gitignore` that cannot be read.
-        with fsops.open_regular(path, "r", encoding="utf-8") as stream:
-            text = stream.read()
+        # A regular file only: `exists()` and `read_text` followed a committed link, so
+        # `.gitignore -> /dev/zero` read until memory ran out and a FIFO there waited for a
+        # writer. Anything else is a `.gitignore` that cannot be read.
+        text = fsops.read_regular_text(path)
     except FileNotFoundError:
         text = ""
     except UnicodeDecodeError:
@@ -429,8 +431,8 @@ def _planned_ignore_region(root: Path) -> str | None:
         ) from None
     except OSError as exc:
         raise Refusal(
-            f"{GITIGNORE} cannot be read ({exc}), so `.stayfixed/local/` cannot be made "
-            f"untracked — and writing the attach ledger into a tracked path would publish "
+            f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "
+            f"made untracked — and writing the attach ledger into a tracked path would publish "
             f"your personal allow rules to every collaborator"
         ) from exc
     updated = _in_gitignore(upsert, text, IGNORE_REGION, IGNORE_BODY, Style.HASH)

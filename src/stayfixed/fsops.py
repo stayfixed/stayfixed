@@ -47,7 +47,7 @@ import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import IO, Any, BinaryIO, Literal, TextIO, overload
+from typing import BinaryIO
 
 # The mode a file stayfixed creates asks for. It is a request, not a decision: the temporary is
 # created with it and the kernel subtracts the process umask, exactly as `open()` does for any
@@ -183,30 +183,30 @@ class NotRegularFile(OSError):
     every reader's existing "could not be read" arm is its answer without a branch of its own."""
 
 
+class TooLarge(OSError):
+    """A regular file longer than `REGULAR_READ_LIMIT`, refused unread past the limit. An `OSError`
+    for the reason `NotRegularFile` is one."""
+
+
+# A named cap: the most bytes `read_regular_bytes` and `read_regular_text` read of one file. A
+# regular file can be endless: on Linux `/proc/self/pagemap` is `S_ISREG` with a size of 0 and
+# reads on for as long as anyone asks, and a committed link to it passes every check above the
+# read. So the read asks for one byte past the cap, and a file that has it is refused as too
+# large. Far above any file these readers take -- a bug-ledger entry, a note, `MEMORY.md` (whose
+# own budget, `memory_index_bytes`, is 25,600), a plan, a settings file, `.gitignore`, each a few
+# kilobytes -- and far under what would exhaust a machine's memory. No shipped file states it.
+REGULAR_READ_LIMIT = 64 * 1024 * 1024
+
 # The open `open_regular` makes: it follows a link at the last component, because `attach` links
 # each memory group and `MEMORY.md` into the overlay in overlay mode and those are read through
 # the link; it never waits, because a FIFO swapped in after the check would otherwise block the
 # open on a writer that never comes; and a terminal swapped in is never made this process's
 # controlling one.
-_REGULAR_OPEN = (
-    os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_CLOEXEC", 0)
-)
+_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC
 
 
-@overload
-def open_regular(path: Path, mode: Literal["rb"] = "rb") -> BinaryIO: ...
-
-
-@overload
-def open_regular(
-    path: Path, mode: Literal["r"], *, encoding: str, newline: str | None = None
-) -> TextIO: ...
-
-
-def open_regular(
-    path: Path, mode: str = "rb", *, encoding: str | None = None, newline: str | None = None
-) -> IO[Any]:
-    """`path` opened for reading as `open` would, if it names a regular file, followed through
+def open_regular(path: Path) -> BinaryIO:
+    """`path` opened for reading in binary, if it names a regular file, followed through
     symbolic links; `NotRegularFile` if it names anything else.
 
     For a reader of files a repository commits, which globs a directory and reads what it found:
@@ -215,8 +215,8 @@ def open_regular(
     before anything is opened, so a device the path names is never opened. A path repointed
     between that check and the open can still be opened -- without blocking and without becoming
     the controlling terminal -- and is refused unread, because the descriptor must be the same
-    file the check saw. A link to a regular file is read, as before. Not a size bound: a large
-    regular file is read whole, as it was.
+    file the check saw. A link to a regular file is read, as before. No bound on what is then
+    read: `read_regular_bytes` and `read_regular_text` hold the read to `REGULAR_READ_LIMIT`.
     """
     checked = os.stat(path)
     if not stat.S_ISREG(checked.st_mode):
@@ -233,7 +233,29 @@ def open_regular(
         raise
     # Outside the `try`: once `fdopen` has the descriptor it closes it on its own failure, and a
     # second close here would raise `EBADF` in place of the real error.
-    return os.fdopen(descriptor, mode, encoding=encoding, newline=newline)
+    return os.fdopen(descriptor, "rb")
+
+
+def read_regular_bytes(path: Path) -> bytes:
+    """The bytes of `path`, a regular file followed through links: `open_regular`'s rules, and
+    `TooLarge` for a file longer than `REGULAR_READ_LIMIT`."""
+    with open_regular(path) as stream:
+        content = stream.read(REGULAR_READ_LIMIT + 1)
+    if len(content) > REGULAR_READ_LIMIT:
+        raise TooLarge(errno.EFBIG, "larger than this reader reads", str(path))
+    return content
+
+
+def read_regular_text(path: Path, *, newline: str | None = None) -> str:
+    """`read_regular_bytes(path)` decoded as UTF-8, a `UnicodeDecodeError` where it is not.
+
+    `newline` as `open` takes it, for the two spellings readers use: `None` translates every CRLF
+    and lone CR to LF, as `Path.read_text` does, and `""` keeps the file's own line endings.
+    """
+    text = read_regular_bytes(path).decode("utf-8")
+    if newline is None:
+        return text.replace("\r\n", "\n").replace("\r", "\n")
+    return text
 
 
 def checked_components(relative: str) -> tuple[str, ...]:

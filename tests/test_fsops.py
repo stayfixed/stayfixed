@@ -610,8 +610,9 @@ def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(
     (tmp_path / "to-regular.md").symlink_to(regular)
     with fsops.open_regular(tmp_path / "to-regular.md") as stream:
         assert stream.read() == b"a\r\nb\n"
-    with fsops.open_regular(regular, "r", encoding="utf-8", newline="") as stream:
-        assert stream.read() == "a\r\nb\n"
+    assert fsops.read_regular_text(regular, newline="") == "a\r\nb\n"
+    assert fsops.read_regular_text(regular) == "a\nb\n"
+    assert fsops.read_regular_bytes(tmp_path / "to-regular.md") == b"a\r\nb\n"
     (tmp_path / "null.md").symlink_to("/dev/null")
     (tmp_path / "directory.md").mkdir()
     for path in (tmp_path / "null.md", tmp_path / "directory.md"):
@@ -698,3 +699,27 @@ def test_a_fifo_swapped_in_after_the_check_is_refused_without_waiting(tmp_path: 
     except subprocess.TimeoutExpired:
         pytest.fail("the open waited on the FIFO swapped in after the check")
     assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A regular file can be endless: on Linux `/proc/self/pagemap` is `S_ISREG` with a size of 0
+    # and reads on for as long as anyone asks, so the read stops one byte past the limit and
+    # refuses a file that has it. The limit lowered here, so a file at it and one past it are
+    # cheap. Mutations (declared): "the regular-file reader reads past its limit" -> the longer
+    # file is read; "the regular-file reader refuses a file at its limit" -> the shorter is not.
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 4)
+    (tmp_path / "at.md").write_bytes(b"abcd")
+    (tmp_path / "past.md").write_bytes(b"abcde")
+    assert fsops.read_regular_bytes(tmp_path / "at.md") == b"abcd"
+    with pytest.raises(fsops.TooLarge) as refused:
+        fsops.read_regular_bytes(tmp_path / "past.md")
+    assert isinstance(refused.value, OSError)
+    assert refused.value.strerror == "larger than this reader reads"
+
+
+def test_the_read_limit_sits_far_above_every_file_its_readers_take() -> None:
+    # The legitimate readers' files are a few kilobytes -- `MEMORY.md`'s own budget is 25,600
+    # bytes -- so the bound must be far above them and still far under a machine's memory.
+    assert 1024 * 1024 <= fsops.REGULAR_READ_LIMIT <= 1024 * 1024 * 1024

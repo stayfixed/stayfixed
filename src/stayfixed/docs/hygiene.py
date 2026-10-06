@@ -10,7 +10,7 @@ from urllib.parse import unquote
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
-from stayfixed.fsops import open_regular
+from stayfixed.fsops import read_regular_text
 from stayfixed.printed import quoted
 from stayfixed.prose import blank_fences, resolves_within
 
@@ -56,10 +56,9 @@ def read_document(path: Path, where: str | Path) -> str:
     """
     shown = quoted(Path(where).as_posix())
     try:
-        # Only a regular file, followed through a link: a plan globbed outside a work tree can be
-        # a committed link to `/dev/stdin`, which hung `plan check`.
-        with open_regular(path, "r", encoding="utf-8") as stream:
-            return stream.read()
+        # A regular file only: a plan globbed outside a work tree can be a committed link to
+        # `/dev/stdin`, which hung `plan check`.
+        return read_regular_text(path)
     except UnicodeDecodeError as error:
         raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None
     except OSError as error:

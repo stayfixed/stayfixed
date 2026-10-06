@@ -28,7 +28,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.fsops import open_regular, utf_8_name, write_atomically
+from stayfixed.fsops import read_regular_text, said, utf_8_name, write_atomically
 
 # Sort sentinel for a note whose `startup` metadata could not be parsed as an int. Not a named cap
 # (CONTRIBUTING.md#named-caps): it bounds nothing, and only needs to sort after every real startup
@@ -297,14 +297,12 @@ def read_note(path: Path) -> Note:
         # into `\n` before this module ever sees it, which makes the byte-for-byte round trip
         # below impossible to keep for a CRLF note no matter how carefully the rewrite is done.
         # `scaffold.engine._read` opens the same way, for the same reason.
-        # Through `fsops.open_regular`, which follows a link to a regular file, as `attach`'s
-        # group links in overlay mode need, and refuses one to anything else: a committed note
-        # linked to `/dev/stdin` hung `memory refs`, and `/dev/zero` would read until memory ran
-        # out. The refusal is an `OSError`, so the note is quarantined as unreadable.
-        with open_regular(path, "r", encoding="utf-8", newline="") as stream:
-            text = stream.read()
+        # A regular file only, followed through the group links `attach` makes in overlay mode
+        # (`fsops.open_regular` says what a link to a device did); a refusal is an `OSError`,
+        # and the note is quarantined as unreadable.
+        text = read_regular_text(path, newline="")
     except OSError as exc:
-        raise NoteError(f"{path} cannot be read: {exc}") from exc
+        raise NoteError(f"{path} cannot be read: {said(exc)}") from exc
     # `UnicodeDecodeError` is not an `OSError`. Without it one latin-1 byte in a note left this
     # walk as `internal error: UnicodeDecodeError` and exit 2 — a repository's malformed input
     # reading as this tool being broken. It is a note this reader cannot read, exactly like the

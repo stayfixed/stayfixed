@@ -40,6 +40,7 @@ from stayfixed.attach.binding import (
 )
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.harnesses import CLAUDE
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -113,13 +114,16 @@ def _read(path: Path, *, share: Path | None = None) -> str:
     of that file.
     """
     try:
-        return path.read_text(encoding="utf-8")
+        # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a path
+        # a clone can commit, and a link there to `/dev/zero` read until memory ran out, one to a
+        # FIFO waited for a writer. Anything else is a file that cannot be read.
+        return read_regular_text(path)
     except FileNotFoundError:
         return ""
     except OSError as exc:
         if share is not None and cannot_exist(exc) and _names_no_directory(share):
             return ""
-        raise Failure(f"{path} cannot be read: {exc}") from exc
+        raise Failure(f"{path} cannot be read: {said(exc)}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
 

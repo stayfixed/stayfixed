@@ -2178,8 +2178,16 @@ reddens = [
 [[mutation]]
 name = "attach reads a .gitignore through any link"
 file = "src/stayfixed/attach/write.py"
-before = '        with fsops.open_regular(path, "r", encoding="utf-8") as stream:'
-after = '        with path.open(encoding="utf-8") as stream:'
+before = """
+        text = fsops.read_regular_text(path)
+    except FileNotFoundError:
+        text = ""
+"""
+after = """
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = ""
+"""
 reddens = [
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[attach]",
@@ -2207,4 +2215,36 @@ after = """
 """
 reddens = [
   "tests/attach/test_binding.py::test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count[no-such-file]",
+]
+
+# In the block led by "the regular-file reader opens whatever a path names": `attach`, `--check`
+# and `detach` read the committed `.claude/settings.local.json` and the ledger through that reader,
+# and a refusal names the file as the project does, never by the machine's absolute path.
+[[mutation]]
+name = "the settings reader reads a file through any link"
+file = "src/stayfixed/attach/permissions.py"
+before = "        return read_regular_text(path)"
+after = '        return path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/attach/test_write.py::test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read[attach]",
+  "tests/attach/test_write.py::test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read[check]",
+  "tests/attach/test_detach.py::test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes_anything",
+]
+
+[[mutation]]
+name = "the attach ledger is read through any link"
+file = "src/stayfixed/attach/write.py"
+before = "        text = fsops.read_regular_text(path)\n    except FileNotFoundError as exc:"
+after = "        text = path.read_text(encoding=\"utf-8\")\n    except FileNotFoundError as exc:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read",
+]
+
+[[mutation]]
+name = "the .gitignore refusal prints the path it opened"
+file = "src/stayfixed/attach/write.py"
+before = 'f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "'
+after = 'f"{GITIGNORE} cannot be read ({exc}), so `.stayfixed/local/` cannot be "'
+reddens = [
+  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
 ]

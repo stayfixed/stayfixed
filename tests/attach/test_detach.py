@@ -1404,3 +1404,45 @@ def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_re
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
         _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes_anything(
+    tmp_path: Path,
+) -> None:
+    # `detach` reads `.claude/settings.local.json` to take back what `attach` merged into it, and
+    # read a link to a device through: `/dev/null` read as an empty file and the run went on.
+    # Only a regular file is read, so it stops before it removes anything. Mutation (declared):
+    # "the settings reader reads a file through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    settings = root / SETTINGS
+    settings.parent.mkdir(exist_ok=True)
+    if settings.exists():
+        settings.unlink()
+    settings.symlink_to("/dev/null")
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Failure, match=r"settings\.local\.json cannot be read"):
+        _detach(root, machine, home)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Path) -> None:
+    # `detach` reads the ledger with no check before it, and a clone can commit the ledger: a link
+    # there to `/dev/zero` read until memory ran out. Only a regular file is read, and the refusal
+    # names the ledger as the project names it, never the machine's path. `/dev/null` tells the
+    # guard apart without hanging: read, it is an empty ledger, "not valid JSON". Mutation
+    # (declared): "the attach ledger is read through any link".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / LEDGER).unlink()
+    (root / LEDGER).symlink_to("/dev/null")
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == f"{LEDGER} cannot be read (not a regular file)"
+    assert_snapshot_unchanged(root, before)

@@ -276,8 +276,8 @@ reddens = [
 [[mutation]]
 name = "an undecodable ledger file is silently mangled instead of reported"
 file = "src/stayfixed/ledger/entries.py"
-before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
-after = '        with open(path, encoding="utf-8", errors="replace") as stream:'
+before = "        return read_regular_text(path)"
+after = '        return path.read_bytes().decode("utf-8", errors="replace")'
 reddens = [
   "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
   "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
@@ -2173,8 +2173,8 @@ reddens = [
 [[mutation]]
 name = "the ledger's entry reader follows a link to a device"
 file = "src/stayfixed/ledger/entries.py"
-before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
-after = '        with path.open(encoding="utf-8") as stream:'
+before = "        return read_regular_text(path)"
+after = '        return path.read_text(encoding="utf-8")'
 reddens = [
   "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
 ]
@@ -2182,8 +2182,8 @@ reddens = [
 [[mutation]]
 name = "the note reader follows a link to a device"
 file = "src/stayfixed/memory/notes.py"
-before = '        with open_regular(path, "r", encoding="utf-8", newline="") as stream:'
-after = '        with path.open(encoding="utf-8", newline="") as stream:'
+before = '        text = read_regular_text(path, newline="")'
+after = '        text = path.read_bytes().decode("utf-8")'
 reddens = [
   "tests/memory/test_notes.py::test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read",
 ]
@@ -2191,8 +2191,8 @@ reddens = [
 [[mutation]]
 name = "the trust digest follows a note or index linked to a device"
 file = "src/stayfixed/memory/trust.py"
-before = "        with open_regular(path) as stream:"
-after = '        with path.open("rb") as stream:'
+before = "        content = read_regular_bytes(path)"
+after = "        content = path.read_bytes()"
 reddens = [
   "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
 ]
@@ -2200,8 +2200,8 @@ reddens = [
 [[mutation]]
 name = "the document reader follows a link to a device"
 file = "src/stayfixed/docs/hygiene.py"
-before = '        with open_regular(path, "r", encoding="utf-8") as stream:'
-after = '        with path.open(encoding="utf-8") as stream:'
+before = "        return read_regular_text(path)"
+after = '        return path.read_text(encoding="utf-8")'
 reddens = [
   "tests/docs/test_hygiene.py::test_a_document_linked_to_a_device_is_a_failure_naming_it",
 ]
