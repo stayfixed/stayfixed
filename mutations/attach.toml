@@ -2020,6 +2020,8 @@ reddens = [
   "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
   "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-group]",
   "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[a-long-group]",
+  "tests/attach/test_commands.py::test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_by_both[projects-kept]",
+  "tests/attach/test_commands.py::test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_by_both[projects-absent]",
 ]
 
 # The paths asked are the link tree's own, and the record alone is the shortest of them: asked of
@@ -2076,4 +2078,28 @@ before = "from stayfixed.attach import ATTACH_STORE\n"
 after = "from stayfixed.attach import ATTACH_STORE\nfrom stayfixed.attach.doctor import NO_LEDGER\n"
 reddens = [
   "tests/attach/test_hooks.py::test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module",
+]
+
+# An overlay with no `projects/` yet answers every path under it with "no such file", the name's
+# own length included, so a `project.name` longer than a file name may be read as a first attach:
+# `--check` exited 0, and `attach` wrote the ignore region, `.gitignore` and the ledger and then
+# ended in a raw `OSError` that printed the name. The name is asked by its length.
+[[mutation]]
+name = "attach reads a name longer than a file name as a first attach where projects/ is not there"
+file = "src/stayfixed/attach/binding.py"
+before = "    if _longer_than(binding.project, longest_name):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both",
+]
+
+# And a `memory.groups` entry, the other component under the share a repository chooses, on a
+# first attach where the share is not there yet.
+[[mutation]]
+name = "attach reads a group longer than a file name as a first attach where the share is not there"
+file = "src/stayfixed/attach/binding.py"
+before = "        if any(_longer_than(part, longest_name) for part in path.relative_to(share).parts):"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both",
 ]

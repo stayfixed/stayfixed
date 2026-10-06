@@ -26,6 +26,7 @@ them — one of `memory.store.binding_state`'s four labels — is stayfixed's ow
 from __future__ import annotations
 
 import errno
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -153,6 +154,13 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
+    # A name, or a group, longer than a file name may be is asked by its length and not by what a
+    # lookup says: an overlay with no `projects/` yet answers every path under it with "no such
+    # file", the over-long name included, so a 300-character name read as a first attach and the
+    # run failed at the record's write, after the ignore region and the ledger, printing the name.
+    longest_name = _longest_name(binding.overlay / PROJECTS)
+    if _longer_than(binding.project, longest_name):
+        raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     try:
         mode: int | None = share.stat().st_mode
     except FileNotFoundError:
@@ -165,6 +173,8 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
     made = (share / PROJECT_RECORD, *link_sources(binding.overlay, config))
     for path in (path for path in made if path.is_relative_to(share)):
+        if any(_longer_than(part, longest_name) for part in path.relative_to(share).parts):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
         try:
             path.lstat()
         except OSError as exc:
@@ -179,6 +189,22 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
             # A group holding a NUL, which no path can: not a question of length, and the
             # `memory.groups` containment both callers ask next refuses it by name of the key.
             continue
+
+
+def _longest_name(directory: Path) -> int | None:
+    """The longest file name the filesystem under `directory` takes, asked of the nearest of it
+    and its ancestors that is there, or `None` when none can be asked."""
+    for there in (directory, *directory.parents):
+        try:
+            return os.pathconf(there, "PC_NAME_MAX")
+        except OSError:
+            continue
+    return None
+
+
+def _longer_than(component: str, longest: int | None) -> bool:
+    """Whether `component`, in the bytes the filesystem stores, is longer than `longest`."""
+    return longest is not None and len(os.fsencode(component)) > longest
 
 
 def not_overlay(config: Config) -> str | None:
