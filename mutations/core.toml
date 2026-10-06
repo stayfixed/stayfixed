@@ -1302,12 +1302,22 @@ reddens = [
 [[mutation]]
 name = "a footprint manifest's format that is not an integer reads as a newer one"
 file = "src/stayfixed/scaffold/manifest.py"
-before = """        if not isinstance(version, int) or isinstance(version, bool):
-            raise ManifestError(f"{MANIFEST_PATH}: 'format' is not an integer")
+before = """        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ManifestError(f"{MANIFEST_PATH}: 'format' is not a positive integer")
         if version > FORMAT:"""
 after = """        if not isinstance(version, int) or version > FORMAT:"""
 reddens = [
-  "tests/scaffold/test_manifest.py::test_a_format_that_is_not_an_integer_is_damage_and_not_a_newer_stayfixed",
+  "tests/scaffold/test_manifest.py::test_a_format_that_is_not_a_positive_integer_is_damage_and_not_a_newer_stayfixed",
+]
+
+[[mutation]]
+name = "a footprint manifest's format below 1 is read"
+file = "src/stayfixed/scaffold/manifest.py"
+before = "        if not isinstance(version, int) or isinstance(version, bool) or version < 1:"
+after = "        if not isinstance(version, int) or isinstance(version, bool):"
+reddens = [
+  "tests/scaffold/test_manifest.py::test_a_format_that_is_not_a_positive_integer_is_damage_and_not_a_newer_stayfixed[0]",
+  "tests/scaffold/test_manifest.py::test_a_format_that_is_not_a_positive_integer_is_damage_and_not_a_newer_stayfixed[-1]",
 ]
 
 # A clone chooses the manifest's size too: it is read to the read cap, and a fault is said without

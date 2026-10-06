@@ -73,22 +73,23 @@ def test_a_manifest_from_a_newer_stayfixed_refuses(tmp_path: Path) -> None:
         Manifest.read(tmp_path)
 
 
-@pytest.mark.parametrize("value", [None, "1", 1.0, True, [1]], ids=repr)
-def test_a_format_that_is_not_an_integer_is_damage_and_not_a_newer_stayfixed(
+@pytest.mark.parametrize("value", [None, "1", 1.0, True, [1], 0, -1], ids=repr)
+def test_a_format_that_is_not_a_positive_integer_is_damage_and_not_a_newer_stayfixed(
     tmp_path: Path, value: object
 ) -> None:
     # A `format` of `null` or `"1"` is no number a stayfixed writes, newer or older, and was read
-    # as one written by a newer stayfixed, which sent the owner to upgrade the plugin. It is a
-    # manifest that is not this module's shape, refused as the others are. Mutation (oracle):
-    # `mutations/`'s "a footprint manifest's format that is not an integer reads as a newer one"
-    # -> the refusal says to upgrade.
+    # as one written by a newer stayfixed, which sent the owner to upgrade the plugin; `true`, `0`
+    # and `-1` were read as formats. Each is a manifest that is not this module's shape, refused as
+    # the others are. Mutations (oracle): `mutations/`'s "a footprint manifest's format that is
+    # not an integer reads as a newer one" -> the refusal says to upgrade; "a footprint manifest's
+    # format below 1 is read" -> `0` and `-1` are read.
     Manifest({}).with_record(a_record()).write(tmp_path)
     raw = raw_of(tmp_path)
     raw["format"] = value
     (tmp_path / MANIFEST_PATH).write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ManifestError) as refused:
         Manifest.read(tmp_path)
-    assert str(refused.value) == f"{MANIFEST_PATH}: 'format' is not an integer"
+    assert str(refused.value) == f"{MANIFEST_PATH}: 'format' is not a positive integer"
 
 
 def test_records_are_written_in_id_order(tmp_path: Path) -> None:

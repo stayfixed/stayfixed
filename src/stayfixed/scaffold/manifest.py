@@ -144,11 +144,11 @@ class Manifest:
             raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
         raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)
         version = raw.get("format", FORMAT)
-        # Damage, not a newer stayfixed: `null`, `"1"` and the rest are no format any stayfixed
-        # writes, and "upgrade the plugin" is the wrong remedy for them. `bool` is an `int` to
-        # `isinstance`, and no format either.
-        if not isinstance(version, int) or isinstance(version, bool):
-            raise ManifestError(f"{MANIFEST_PATH}: 'format' is not an integer")
+        # Damage, not a newer stayfixed: `null`, `"1"`, `0` and the rest are no format any
+        # stayfixed writes, and "upgrade the plugin" is the wrong remedy for them. `bool` is an
+        # `int` to `isinstance`, and no format either.
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ManifestError(f"{MANIFEST_PATH}: 'format' is not a positive integer")
         if version > FORMAT:
             raise ManifestError(
                 f"{MANIFEST_PATH} was written by a newer stayfixed (format {version!r}); "
