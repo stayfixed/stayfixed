@@ -100,7 +100,10 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
         "new": args.new,
         "void": void,
         "unswept": [asdict(u) for u in result.unswept],
+        "moved": result.moved,
     }
+    if not result.moved:
+        return Result(f"{args.old} was already moved to {args.new}; nothing to do", data)
     if result.unswept:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "

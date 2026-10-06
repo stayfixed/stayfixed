@@ -241,6 +241,29 @@ def test_renumber_reports_its_endpoints(tmp_path: Path, capsys: pytest.CaptureFi
     )
 
 
+def test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_mention(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Once a move has finished, a mention of the old number is legitimate — the void pointer is
+    # there so that it resolves — and a re-run from shell history swept it onto the new number,
+    # exit 0: "BR-009 was renumbered to BR-009". The index is the move's last write, so a fresh
+    # one says the move finished, and the re-run changes nothing and says so. Mutation:
+    # `mutations/`, "a renumber that finished sweeps again when run again".
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
+    history = root / "docs" / "history.md"
+    history.write_text("BR-001 was renumbered to BR-009 to resolve a collision.\n", "utf-8")
+    capsys.readouterr()
+    assert invoke(["bugs", "renumber", "BR-001", "BR-009", "--json", *common]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["summary"] == "BR-001 was already moved to BR-009; nothing to do"
+    assert data["moved"] is False
+    assert history.read_text(encoding="utf-8") == (
+        "BR-001 was renumbered to BR-009 to resolve a collision.\n"
+    )
+
+
 def test_a_missing_configuration_is_a_failure_not_a_refusal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

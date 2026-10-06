@@ -516,9 +516,8 @@ reddens = [
 [[mutation]]
 name = "renumber parses its siblings only after it has moved both endpoints"
 file = "src/stayfixed/ledger/write.py"
-before = '''    # the files as they are AFTER the move, so this is a check and not a value.
-    load_entries(root, register)'''
-after = "    # the files as they are AFTER the move, so this is a check and not a value."
+before = "    entries = load_entries(root, register)"
+after = "    entries = []"
 reddens = [
   "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
 ]
@@ -591,6 +590,17 @@ before = '''    if not carried.title.startswith(f"renumbered to {new} — "):'''
 after = "    if False:"
 reddens = [
   "tests/ledger/test_write.py::test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused",
+]
+
+# The index is the move's last write: with the pointer in place a fresh one is a move that
+# finished, and a mention of the old number written since is one the pointer exists to resolve.
+[[mutation]]
+name = "a renumber that finished sweeps again when run again"
+file = "src/stayfixed/ledger/write.py"
+before = "    if written == 2 and committed_index == render_index(entries, register):"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_commands.py::test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_mention",
 ]
 
 [[mutation]]

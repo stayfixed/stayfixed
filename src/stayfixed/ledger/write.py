@@ -82,6 +82,8 @@ class Unswept:
 class Renumbered:
     void: Path
     unswept: tuple[Unswept, ...]
+    # False for a re-run of a move that had already finished, which wrote nothing.
+    moved: bool = True
 
 
 def _fetch(root: Path) -> str | None:
@@ -295,13 +297,12 @@ def _endpoints_written(
     the target is exactly the old entry's text with its `id:` line rewritten while the old file
     is untouched, and finishing leaves it as it is. Killed after the second, the old file is,
     byte for byte, the void pointer this move writes toward this target — its title only held to
-    start as the move writes it, since the target may be retitled since, its date its own —
-    which is what a finished move leaves too, so a re-run of a
-    finished move sweeps again, and finds nothing to rewrite unless a mention of `old` was
-    written since. Anything else at the target is an entry of its own, which the move would
+    start as the move writes it, since the target may be retitled since, and its date its own.
+    A finished move leaves that state too; `renumber` tells the two apart by the index, the
+    move's last write. Anything else at the target is an entry of its own, which the move would
     destroy, and is refused as it always was, saying how to finish by hand a move whose target
-    was edited after the kill. A symlink there is refused before it is read, as
-    anything but a regular file is: the move writes its target, it never adopts one.
+    was edited after the kill. A symlink there is refused before it is read, as anything but a
+    regular file is: the move writes its target, it never adopts one.
     """
     if not target.exists():
         return 0
@@ -369,8 +370,10 @@ def renumber(
 
     A run killed part-way is finished by running the same move again (`_endpoints_written`): it
     skips the endpoint writes already on disk and makes the rest, so the tree it leaves is the
-    one an uninterrupted run would have left. Refusing that re-run, as the occupied-target check
-    once did, left a half-moved ledger nothing could finish and `check` could not name.
+    one an uninterrupted run would have left — when resumed the same day, since a pointer still
+    to be written carries the day it is written. A re-run of a move that finished, told by its
+    fresh index, writes nothing and says so (`moved` is False). Refusing these re-runs, as the
+    occupied-target check once did, left a half-moved ledger nothing could finish.
     """
     ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
@@ -401,9 +404,9 @@ def renumber(
     # were on disk: exit 1 naming a file the operator did not edit, a half-completed rename, and
     # a retry then refused with "already has an entry file", so the move could not be finished
     # at all. `file_entry` never had it, because `next_identifier` parses the siblings before
-    # anything is written. The result is discarded on purpose: the index has to be rendered from
-    # the files as they are AFTER the move, so this is a check and not a value.
-    load_entries(root, register)
+    # anything is written. The index `_write_index` writes is rendered from the files as they are
+    # AFTER the move, so these entries serve only to ask whether the move has already finished.
+    entries = load_entries(root, register)
     # The last of the checks that reject with the tree untouched, and the one this command
     # needs most: it regenerates the index at the end, by which time both endpoints and the
     # whole sweep are already on disk, so a refusal that came any later would come after the
@@ -411,6 +414,12 @@ def renumber(
     # oracle entry that pins this call site names a line that appears once in this file.
     committed_index = index_text(root, register)
     refuse_index_overwrite(root, register, committed_index)
+    # The index is the move's last write, so with the pointer in place a fresh index is a move
+    # that finished, and a mention of `old` written since is one the pointer exists to resolve:
+    # sweeping it again rewrote "BR-001 was renumbered to BR-009" into "BR-009 was renumbered to
+    # BR-009". A stale one is a move killed in its sweep or before the index, which is finished.
+    if written == 2 and committed_index == render_index(entries, register):
+        return Renumbered(source, (), moved=False)
 
     if written < 1:
         fsops.write_within(root, f"{directory}/{new}.md", moved)

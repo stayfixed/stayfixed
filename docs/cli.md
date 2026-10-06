@@ -686,22 +686,28 @@ identifiers and is neither scanned nor swept.
 
 Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
 a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
-index is regenerated — both endpoints first, then the sweep, so an interruption leaves `OLD`
-resolving to the pointer rather than to nothing. A run that was killed part-way is finished by
-running the same move again: it recognises its own half-done state — `NEW` holding exactly
-`OLD`'s text with the `id:` rewritten, or `OLD` byte for byte the pointer this move writes to
-`NEW`, its title only held to start `renumbered to NEW — `, so a `NEW` retitled since is still
-finished — makes the writes still missing and leaves the tree an uninterrupted run would have, and a
-re-run of a move that finished only sweeps again. Rejects `OLD` equal to `NEW`, any other
-occupied `NEW` — saying how to finish by hand a move whose `NEW` was edited after the kill, which
-the re-run can no longer tell from an entry of its own — or a missing `OLD`
-(`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
-could not read or write is listed and the command exits `1` naming it, because once the pointer
-exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
-them and names up to eight; `--json`'s `unswept` carries every one, each an object with `path`
-and `reason`. The path is relative to the root, and the reason is the error in words, naming no
-absolute path; a refusal of stayfixed's own may repeat the root-relative path. The moved entry's
-own body is the operator's to rewrite and is not swept.
+index is regenerated. Both endpoints are written first, then the sweep, so an interruption leaves
+`OLD` resolving to the pointer rather than to nothing.
+
+A run that was killed part-way is finished by running the same move again. The re-run recognises
+the move's own half-done state: `NEW` holding exactly `OLD`'s text with the `id:` line rewritten,
+or `OLD` byte for byte the pointer this move writes to `NEW`, whose title is only held to start
+`renumbered to NEW — `, so a `NEW` retitled since is still finished. It makes the writes still
+missing and leaves the tree an uninterrupted run would have left, when resumed the same day: a
+pointer written by the resume carries the day it is written. A re-run of a move that finished —
+the pointer in place and the index fresh — changes nothing and says `OLD was already moved to
+NEW; nothing to do`, and `--json`'s `moved` is `false`, so a mention of `OLD` written since stays
+as it was written.
+
+Rejects `OLD` equal to `NEW`, a missing `OLD`, and any other occupied `NEW` (`1`); the last says
+how to finish by hand a move whose `NEW` was edited after the kill, which the re-run can no longer
+tell from an entry of its own. Raises the index refusals of `bugs index` (`2`) before touching
+anything. A file the sweep could not read or write is listed and the command exits `1` naming it,
+because once the pointer exists a stale mention in that file looks intentional to `bugs check`
+forever. The line counts them and names up to eight; `--json`'s `unswept` carries every one, each
+an object with `path` and `reason`. The path is relative to the root, and the reason is the error
+in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
+The moved entry's own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
