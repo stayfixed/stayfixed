@@ -35,7 +35,7 @@ PROFILES = PACKAGE / "profiles"
 
 # One stack's test runner, build artifacts or package manager, for the common stacks. `uv` stands
 # for itself rather than for `uv run`: the walk reads one constant at a time, and the command
-# scanner spells its wrapper as the two words `("uv", "run")`.
+# scanner spells its wrapper as the two words `"uv"` and `"run"`.
 STACK_WORDS = (
     "pytest",
     "pyc",
@@ -73,11 +73,12 @@ STACK_NAMED = {
     ("src/stayfixed/ledger/scan.py", "venv"),
     ("src/stayfixed/ledger/scan.py", "pycache"),
     ("src/stayfixed/ledger/scan.py", "pyc"),
-    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, as it unwraps `env <cmd>`. `uv run`
-    # is a Python launcher, and it stays in the shared scanner rather than in the Python profile
-    # because more than the profiles read commands through that unwrapping: the background-
-    # cleanup guard (`guards/bgcleanup.py`) judges the command `uv run` launches, as every
-    # profile's `recognises` does.
+    # The command scanner unwraps `uv run <cmd>` to `<cmd>`, as it unwraps `env <cmd>`, past
+    # uv's own options before and after `run`, which it reads off tables of uv's options named
+    # for uv. `uv run` is a Python launcher, and it stays in the shared scanner rather than in the
+    # Python profile because more than the profiles read commands through that unwrapping: the
+    # background-cleanup guard (`guards/bgcleanup.py`) judges the command `uv run` launches, as
+    # every profile's `recognises` does.
     ("src/stayfixed/guards/bashscan.py", "uv"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
     # (`cli-path` in the core's checks, `overlay-requires` in the overlay area's) and in `setup`'s

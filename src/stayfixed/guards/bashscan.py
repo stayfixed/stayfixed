@@ -190,15 +190,130 @@ _WORD_BOUNDARY = frozenset({";", "&", "|", "(", ")", "<", ">"})
 # purpose -- `.match` already anchors at index 0, and the token's own tail (the value) is
 # irrelevant to "is this an assignment", so nothing needs to anchor the end.
 _ASSIGNMENT = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
-# `env pytest`: a bare wrapper token, not the command. `uv run pytest`: an exact two-token
-# wrapper pair -- CI's own invocation shape. Deliberately not a general argv resolver:
-# `uv run --python 3.11 pytest` (a flag between `run` and the real command) is not unwrapped,
-# and no other launcher is recognised. Under-reporting stays the safe direction for the
-# warn-only callers this exists for -- an unrecognised wrapper just leaves a note
-# undelivered, never wrongly delivered, so the set only grows when a real shape is
-# reproduced, not speculatively.
+# `env pytest`: a bare wrapper token, not the command. Deliberately not a general argv
+# resolver: no launcher but this one and `uv run` below is recognised (`poetry run`, `npx`,
+# `sudo` and `time` are not). Under-reporting stays the safe direction for the warn-only callers
+# this exists for -- an unrecognised wrapper just leaves a note undelivered, never wrongly
+# delivered, so the set only grows when a real shape is reproduced, not speculatively.
 _SINGLE_WRAPPERS = frozenset({"env"})
-_DOUBLE_WRAPPER = ("uv", "run")
+# `uv run --locked pytest`, the shape the README and the `attribute-failure` skill recommend:
+# `uv`, uv's global options, the word `run`, `run`'s options, then the program. The four tables
+# are uv's own, read off `uv --help` and `uv run --help` (uv 0.12.19, measured): the global
+# options are accepted before `run` and after it, `run`'s own only after it (`uv --locked run`
+# exits 2). An option in no table stops the unwrap rather than being guessed a flag, since a
+# guessed flag that takes a value reads that value as the program (`uv run --with pytest echo`
+# would become a pytest run); `-h` is in no table because it prints help and runs nothing. The
+# tables move with uv, and an option uv adds is under-reported until it is added here.
+_UV = "uv"
+_UV_RUN = "run"
+_UV_GLOBAL_FLAGS = frozenset(
+    {
+        "-q",
+        "--quiet",
+        "-v",
+        "--verbose",
+        "-n",
+        "--no-cache",
+        "--managed-python",
+        "--no-managed-python",
+        "--no-python-downloads",
+        "--system-certs",
+        "--offline",
+        "--no-progress",
+        "--no-config",
+    }
+)
+_UV_GLOBAL_VALUED = frozenset(
+    {
+        "--cache-dir",
+        "--color",
+        "--allow-insecure-host",
+        "--directory",
+        "--project",
+        "--config-file",
+    }
+)
+_UV_RUN_FLAGS = _UV_GLOBAL_FLAGS | frozenset(
+    {
+        "--all-extras",
+        "--no-dev",
+        "--only-dev",
+        "--no-default-groups",
+        "--all-groups",
+        "-m",
+        "--module",
+        "--no-editable",
+        "--exact",
+        "--no-env-file",
+        "--isolated",
+        "--active",
+        "--no-sync",
+        "--locked",
+        "--frozen",
+        "-s",
+        "--script",
+        "--gui-script",
+        "--all-packages",
+        "--no-project",
+        "--no-index",
+        "-U",
+        "--upgrade",
+        "--no-sources",
+        "--reinstall",
+        "--compile-bytecode",
+        "--no-build-isolation",
+        "--no-build",
+        "--no-binary",
+        "--refresh",
+    }
+)
+_UV_RUN_VALUED = _UV_GLOBAL_VALUED | frozenset(
+    {
+        "--extra",
+        "--no-extra",
+        "--group",
+        "--no-group",
+        "--only-group",
+        "--no-editable-package",
+        "--env-file",
+        "-w",
+        "--with",
+        "--with-editable",
+        "--with-requirements",
+        "--package",
+        "--python-platform",
+        "--index",
+        "--default-index",
+        "-i",
+        "--index-url",
+        "--extra-index-url",
+        "-f",
+        "--find-links",
+        "--index-strategy",
+        "--keyring-provider",
+        "-P",
+        "--upgrade-package",
+        "--upgrade-group",
+        "--resolution",
+        "--prerelease",
+        "--prerelease-package",
+        "--fork-strategy",
+        "--exclude-newer",
+        "--exclude-newer-package",
+        "--no-sources-package",
+        "--reinstall-package",
+        "--link-mode",
+        "-C",
+        "--config-setting",
+        "--config-settings-package",
+        "--no-build-isolation-package",
+        "--no-build-package",
+        "--no-binary-package",
+        "--refresh-package",
+        "-p",
+        "--python",
+    }
+)
 
 
 class Heredoc(NamedTuple):
@@ -786,20 +901,21 @@ def segments(tokens: list[str]) -> list[list[str]]:
 
 def command_words(segment: list[str]) -> list[str]:
     """This segment's own command and arguments, with any leading environment-assignment
-    tokens and the small `_SINGLE_WRAPPERS`/`_DOUBLE_WRAPPER` wrapper prefixes stripped off
-    the front -- repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run pytest` both resolve
-    to `pytest` as the real command, not to the assignment or the launcher.
+    tokens and the wrapper prefixes -- `_SINGLE_WRAPPERS`, and `uv run` with uv's options --
+    stripped off the front, repeatedly, so `env FOO=1 pytest` and `FOO=1 uv run --locked
+    pytest` both resolve to `pytest` as the real command, not to the assignment or the
+    launcher.
 
     `Path(segment[0]).name` alone missed `PYTHONPATH=src pytest` and `FOO=1 BAR=2 pytest`
     entirely, and neither is contrived: an assignment prefix is the ordinary way to run a
     suite against a checkout that has no venv of its own.
 
-    THE UNDER-REPORT IS DOCUMENTED, not accidental: `uv run --python 3.11 pytest` is NOT
-    unwrapped, because a flag between `run` and the real command is not the exact two-token
-    pair, and no launcher outside these two tables is recognised at all. Under-reporting is
-    the safe direction for the warn-only callers this serves -- an unrecognised wrapper
-    leaves a note undelivered rather than wrongly delivered -- so the tables grow only when
-    a real shape has been reproduced.
+    THE UNDER-REPORT IS DOCUMENTED, not accidental: a `uv` command with an option outside
+    uv's tables above (`uv run --frobnicate pytest`), or one that is not `uv run`, is left
+    whole and its program is `uv`, and no launcher outside these is recognised at all.
+    Under-reporting is the safe direction for the warn-only callers this serves -- an
+    unrecognised wrapper leaves a note undelivered rather than wrongly delivered -- so the
+    tables grow only when a real shape has been reproduced.
     """
 
     index = 0
@@ -809,15 +925,65 @@ def command_words(segment: list[str]) -> list[str]:
             index += 1
             continue
         name = Path(token).name
-        if (
-            name == _DOUBLE_WRAPPER[0]
-            and index + 1 < len(segment)
-            and segment[index + 1] == _DOUBLE_WRAPPER[1]
-        ):
-            index += 2
+        if name == _UV:
+            launched = _past_uv_run(segment, index + 1)
+            if launched is None:
+                break
+            index = launched
             continue
         if name in _SINGLE_WRAPPERS:
             index += 1
             continue
         break
     return segment[index:]
+
+
+def _past_uv_run(segment: list[str], index: int) -> int | None:
+    """Where the program `uv run` launches starts in `segment`, read from `index`, just past
+    the word `uv`; `None` when these words are not a `uv run` the tables can read whole.
+
+    Before `run` only uv's global options are skipped; after it `run`'s too, `--` ends them,
+    and the first word that is not an option is the program.
+    """
+    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED
+    running = False
+    while index < len(segment):
+        word = segment[index]
+        if not running and word == _UV_RUN:
+            flags, valued = _UV_RUN_FLAGS, _UV_RUN_VALUED
+            running = True
+            index += 1
+            continue
+        if running and word == "--":
+            return index + 1
+        if not word.startswith("-") or word == "-":
+            return index if running else None
+        width = _uv_option_width(word, flags, valued)
+        if width is None:
+            return None
+        index += width
+    return min(index, len(segment)) if running else None
+
+
+def _uv_option_width(token: str, flags: frozenset[str], valued: frozenset[str]) -> int | None:
+    """How many words the uv option `token` spans -- one, or two when its value is the next
+    word -- or `None` for an option in neither table.
+
+    `--name=value` is one word. A short cluster is read the way uv reads it: `-qq` and `-nq`
+    are flags, and the first value-taking letter takes the rest of the word as its value
+    (`-p3.12`, `-np3.12`) or, at the word's end, the next word (`-p 3.12`).
+    """
+    if token.startswith("--"):
+        name, equals, _ = token.partition("=")
+        if name in valued:
+            return 1 if equals else 2
+        if name in flags and not equals:
+            return 1
+        return None
+    for position in range(1, len(token)):
+        short = "-" + token[position]
+        if short in valued:
+            return 1 if position + 1 < len(token) else 2
+        if short not in flags:
+            return None
+    return 1

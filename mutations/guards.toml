@@ -28,25 +28,146 @@ reddens = [
   "tests/guards/test_bashscan.py::test_a_newline_after_a_separator_arrives_as_its_own_token",
 ]
 
-# `uv run pytest` is an exact two-token wrapper pair, and stripping it is what lets an
-# argv0-keyed caller see the program instead of the launcher. Dropping the branch reddens the
-# unwrapped case and the documented under-report alike: the latter's expected value is what
-# the pair-strip leaves behind, so it pins that the pair IS stripped and that nothing past it
-# is.
+# `uv run pytest` is CI's own shape, and stripping `uv run` is what lets an argv0-keyed caller
+# see the program instead of the launcher.
 [[mutation]]
-name = "the two-token wrapper pair stops being stripped off a segment"
+name = "`uv run` stops being stripped off a segment"
 file = "src/stayfixed/guards/bashscan.py"
-before = '            name == _DOUBLE_WRAPPER[0]'
-after = '            False'
+before = '        if name == _UV:'
+after = '        if False:'
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_the_two_token_uv_run_prefix",
-  "tests/guards/test_bashscan.py::test_command_words_does_not_unwrap_a_launcher_it_does_not_recognise",
+]
+
+# The exact pair alone, the scanner before uv's options were read: `uv run --locked pytest`,
+# the shape the documentation recommends, got no red-run notice at all, and a backgrounded
+# `uv run --no-project sleep 30` met no sleep rule. Each caller's end-to-end test reddens.
+[[mutation]]
+name = "uv's options stop being read past `run`"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        width = _uv_option_width(word, flags, valued)'
+after = '        width = None'
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_red_pytest_run_behind_uvs_options_gets_the_same_note",
+  "tests/guards/test_bgcleanup.py::test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused",
+]
+
+# The branches of `_past_uv_run` and `_uv_option_width`, one entry each. A global option
+# before `run` (`uv --quiet run pytest`) is accepted by uv, so skipping none of them leaves
+# that run unread.
+[[mutation]]
+name = "uv's global options stop being skipped before `run`"
+file = "src/stayfixed/guards/bashscan.py"
+before = '    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED'
+after = '    flags, valued = frozenset(), frozenset()'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_uv_run_past_uvs_own_options",
+]
+
+# `uv --locked run pytest` exits 2 and runs nothing, so it is no pytest run.
+[[mutation]]
+name = "`run`'s options are skipped before `run`"
+file = "src/stayfixed/guards/bashscan.py"
+before = '    flags, valued = _UV_GLOBAL_FLAGS, _UV_GLOBAL_VALUED'
+after = '    flags, valued = _UV_RUN_FLAGS, _UV_RUN_VALUED'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
+]
+
+# `uv run -- pytest`: `--` ends uv's options, and the word after it is the program.
+[[mutation]]
+name = "`--` stops ending uv's options"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        if running and word == "--":'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_uv_run_past_uvs_own_options",
+]
+
+# `uv run -` runs the script on standard input; read as a flag, the word after it would be
+# taken for the program.
+[[mutation]]
+name = "a lone `-` is read as a uv option"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        if not word.startswith("-") or word == "-":'
+after = '        if not word.startswith("-"):'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_uv_run_past_uvs_own_options",
+]
+
+# `uv sync --locked` launches nothing, and neither does a `uv` that never reaches `run`.
+[[mutation]]
+name = "a uv command other than `run` is unwrapped"
+file = "src/stayfixed/guards/bashscan.py"
+before = '            return index if running else None'
+after = '            return index'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
+]
+
+[[mutation]]
+name = "a uv command that never reaches `run` is unwrapped"
+file = "src/stayfixed/guards/bashscan.py"
+before = '    return min(index, len(segment)) if running else None'
+after = '    return min(index, len(segment))'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
+]
+
+# The wrong-note direction: read as a flag, `--with pytest echo` makes `pytest` the program.
+[[mutation]]
+name = "a value-taking uv option stops taking the next word"
+file = "src/stayfixed/guards/bashscan.py"
+before = '            return 1 if equals else 2'
+after = '            return 1'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_never_reads_a_uv_options_value_as_the_program",
+  "tests/guards/test_bgcleanup.py::test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep",
+]
+
+# `-p3.11` carries its value; taking the next word too skips the program.
+[[mutation]]
+name = "a fused short value stops being one word"
+file = "src/stayfixed/guards/bashscan.py"
+before = '            return 1 if position + 1 < len(token) else 2'
+after = '            return 2'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_uv_run_past_uvs_own_options",
+]
+
+# An option in no table might take a value, so guessing it a flag can read that value as the
+# program; the unwrap stops instead, long or short, and so it does for a flag given a value.
+[[mutation]]
+name = "an unknown uv option is read as a flag"
+file = "src/stayfixed/guards/bashscan.py"
+before = "        return None\n    for position in range(1, len(token)):"
+after = "        return 1\n    for position in range(1, len(token)):"
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
+]
+
+[[mutation]]
+name = "an unknown short uv option is read as a flag"
+file = "src/stayfixed/guards/bashscan.py"
+before = "        if short not in flags:\n            return None"
+after = "        if short not in flags:\n            continue"
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
+]
+
+[[mutation]]
+name = "a uv flag given a value is read as a flag"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        if name in flags and not equals:'
+after = '        if name in flags:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_leaves_a_uv_command_it_cannot_read_whole",
 ]
 
 # The other two branches `command_words` implements, one entry each: a single mutation cannot pin
-# both, since each branch strips a different prefix and `mutations/`'s "the two-token wrapper pair
-# stops being stripped off a segment" pins only the `uv run` pair. Leaving the assignment on the
-# front is what made an argv0 test read `FOO=1` as the program.
+# both, since each branch strips a different prefix and `mutations/`'s "`uv run` stops being
+# stripped off a segment" pins only `uv run`. Leaving the assignment on the front is what made an
+# argv0 test read `FOO=1` as the program.
 [[mutation]]
 name = "a leading environment assignment stops being stripped off a segment"
 file = "src/stayfixed/guards/bashscan.py"

@@ -36,3 +36,6 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed overlay upgrade` and `overlay init` remove the overlay template's copy of the
     `attach` skill and `common/rules/README.md`, keeping and naming a copy you edited (Changed,
     "`stayfixed overlay upgrade` and `overlay init` remove two files").
+  - The background guard refuses a backgrounded command that begins with `uv run <options>
+    sleep`, such as `uv run --no-project sleep 30`, which 0.2.0 allowed (Fixed, "The note after a
+    failing test run now reaches a run started through `uv run`").

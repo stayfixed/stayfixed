@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from stayfixed.guards import bashscan
 
 
@@ -425,17 +427,94 @@ def test_command_words_strips_a_leading_assignment_and_wrapper() -> None:
 
 
 def test_command_words_strips_the_two_token_uv_run_prefix() -> None:
-    """CI's own invocation shape: the pair is exact, so the program behind it is visible."""
+    """CI's own invocation shape, with nothing between `uv run` and the program it launches.
+    Oracle: `mutations/`, "`uv run` stops being stripped off a segment"."""
     assert bashscan.command_words(["uv", "run", "pytest"]) == ["pytest"]
 
 
-def test_command_words_does_not_unwrap_a_launcher_it_does_not_recognise() -> None:
-    """The documented under-report, pinned rather than left as a claim: a flag between `run`
-    and the real command is not the exact two-token pair, so nothing is stripped and the
-    caller's argv0 test simply does not fire. Under-reporting is the safe direction — an
-    unrecognised launcher leaves a note undelivered, never wrongly delivered."""
-    assert bashscan.command_words(["uv", "run", "--python", "3.11", "pytest"]) == [
-        "--python",
-        "3.11",
-        "pytest",
-    ]
+@pytest.mark.parametrize(
+    ("command", "program"),
+    [
+        # The shapes the README, the `attribute-failure` skill and `docs/cli.md` recommend.
+        ("uv run --locked pytest -q", ["pytest", "-q"]),
+        ("uv run --locked pytest tests/x.py::t", ["pytest", "tests/x.py::t"]),
+        # `--` ends uv's options, and the word after it is the program whatever it looks like.
+        ("uv run -- pytest", ["pytest"]),
+        ("uv run -- -x", ["-x"]),
+        # A lone `-` is the program too: uv reads the script from standard input (measured).
+        ("uv run --no-project -", ["-"]),
+        # uv's global options may stand before `run`, with their values.
+        ("uv --quiet run pytest", ["pytest"]),
+        ("uv -n --directory . run pytest", ["pytest"]),
+        ("uv --directory run run pytest", ["pytest"]),
+        # A value-taking option takes its value, as the next word or fused to it.
+        ("uv run --python 3.11 pytest", ["pytest"]),
+        ("uv run --python=3.11 pytest", ["pytest"]),
+        ("uv run -p 3.11 pytest", ["pytest"]),
+        ("uv run -p3.11 pytest", ["pytest"]),
+        ("uv run -np3.11 pytest", ["pytest"]),
+        # Stacked short flags are one word, and `-m` is a flag: uv runs the module.
+        ("uv run -qq -m pytest", ["pytest"]),
+        # The first word that is not an option is the program, and every later word is its own.
+        ("uv run --frozen echo --locked", ["echo", "--locked"]),
+        ("uv run env FOO=1 pytest", ["pytest"]),
+        ("uv run", []),
+    ],
+)
+def test_command_words_strips_uv_run_past_uvs_own_options(command: str, program: list[str]) -> None:
+    """`uv run --locked pytest`, the shape the documentation recommends, used to arrive as
+    `--locked pytest`, so no hint recognised the run and the red-run notice said nothing at
+    all. uv's options are read by its own tables (`uv --help`, `uv run --help`), so the word
+    `uv run` launches is the one resolved. Oracle: `mutations/`, "uv's global options stop
+    being skipped before `run`", "`--` stops ending uv's options", "a lone `-` is read as a uv
+    option", "a fused short value stops being one word"."""
+    assert bashscan.command_words(command.split()) == program
+
+
+@pytest.mark.parametrize(
+    ("command", "program"),
+    [
+        ("uv run --with pytest echo hi", ["echo", "hi"]),
+        ("uv run -w pytest echo hi", ["echo", "hi"]),
+        ("uv --cache-dir pytest run echo hi", ["echo", "hi"]),
+    ],
+)
+def test_command_words_never_reads_a_uv_options_value_as_the_program(
+    command: str, program: list[str]
+) -> None:
+    """The wrong-note direction: `--with pytest` names a package, and `echo` is what runs. An
+    option that takes a value and was read as a flag would make `pytest` the program and hand
+    a pytest note to an `echo`. Oracle: `mutations/`, "a value-taking uv option stops taking
+    the next word"."""
+    assert bashscan.command_words(command.split()) == program
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # An option in neither table: uv's hidden and future options among them.
+        "uv run --frobnicate pytest",
+        "uv run -x pytest",
+        "uv run -nx pytest",
+        # A flag given a value is not a flag uv accepts.
+        "uv run --locked=yes pytest",
+        # `-h` prints uv's help, and the word after it never runs.
+        "uv run -h pytest",
+        # `run`'s own options are refused before `run` (measured: uv exits 2).
+        "uv --locked run pytest",
+        "uv --python 3.11 run pytest",
+        # Another uv command launches nothing.
+        "uv sync --locked",
+        "uv --quiet",
+    ],
+)
+def test_command_words_leaves_a_uv_command_it_cannot_read_whole(command: str) -> None:
+    """The under-report, kept where it is still the safe direction: an option this scanner
+    cannot classify might take a value, and guessing it a flag reads that value as the program
+    (`--with pytest echo` would become a pytest run). So such a command is left as written and
+    its program is `uv`, which no hint recognises and no guard refuses. Oracle: `mutations/`,
+    "an unknown uv option is read as a flag", "an unknown short uv option is read as a flag", "a
+    uv flag given a value is read as a flag", "`run`'s options are skipped before `run`", "a uv
+    command other than `run` is unwrapped", "a uv command that never reaches `run` is
+    unwrapped"."""
+    assert bashscan.command_words(command.split()) == command.split()

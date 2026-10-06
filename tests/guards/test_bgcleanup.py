@@ -323,6 +323,23 @@ def test_a_backgrounded_leading_sleep_is_refused_however_it_is_spelled(command: 
     assert judge(command, background=True).deny == SLEEP_REASON
 
 
+def test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused() -> None:
+    """`uv run --no-project sleep 30` launches `sleep` as surely as `uv run sleep 30` does,
+    and was allowed while only the exact pair `uv run` was unwrapped. A refusal this guard did
+    not make before, and the right one: the call returns at once whatever it sleeps for.
+    Oracle: `mutations/`, "uv's options stop being read past `run`"."""
+    assert judge("uv run --no-project sleep 30", background=True).deny == SLEEP_REASON
+    assert judge("uv --quiet run -- sleep 30", background=True).deny == SLEEP_REASON
+
+
+def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
+    """The legitimate call beside it: a suite started in the background through uv's options
+    is ordinary work, and neither the sleep rule nor a value uv takes may refuse it. Oracle:
+    `mutations/`, "a value-taking uv option stops taking the next word"."""
+    assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) == ALLOW
+    assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) == ALLOW
+
+
 def test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep() -> None:
     """`X=$(sleep 5) pytest -q` does not begin with `sleep`; it begins with an assignment whose
     value a substitution computes. It segments to
