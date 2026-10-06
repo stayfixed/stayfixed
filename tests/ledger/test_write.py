@@ -638,3 +638,114 @@ def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
     assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
     assert near.read_text(encoding="utf-8") == "# XBR-001 is a different thing\n"
     assert near.stat().st_mtime_ns == before
+
+
+class _Killed(BaseException):
+    """A kill between two writes: a `BaseException`, so no `except Exception` on the way out can
+    swallow it, as none swallows the `KeyboardInterrupt` of a real interrupt."""
+
+
+def _renumber_tree(root: Path) -> None:
+    # The tree every kill-point case starts from: a sibling that relates to the moved entry and
+    # two files that mention it, so the move makes six writes — the two endpoints, three sweeps
+    # (the sibling's `related` and the two files) and the index.
+    (root / "docs" / "bugs" / "BR-002.md").write_text(
+        entry(2, related="[BR-001]"), encoding="utf-8"
+    )
+    (root / "src" / "a.py").write_text("x = 1  # see BR-001\n", encoding="utf-8")
+    (root / "docs" / "notes.md").write_text("BR-001 is the first one.\n", encoding="utf-8")
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("killed_at", [1, 2, 3, 4, 5, 6, 7])
+def test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, killed_at: int
+) -> None:
+    # The reproduction: there is no journal and each of the six writes is atomic on its own, so
+    # a kill between two of them left a tree a re-run refused ("BR-009 already has an entry
+    # file") and `bugs check` reported only as a stale index — whose remedy, `bugs index`, turned
+    # check green over two live entries for one bug (killed before the void pointer) or over
+    # mentions of the old number the sweep never reached, which the void pointer makes look
+    # intentional forever. So a re-run of the same move finishes it, and the tree it leaves is
+    # the one an uninterrupted run leaves, byte for byte. Case 7 is no kill at all: a re-run of
+    # a move that finished changes nothing. Mutations: `mutations/`, "a re-run of a renumber
+    # killed before its void pointer refuses again" and "a re-run of a renumber killed after
+    # its void pointer writes both endpoints again".
+    (tmp_path / "clean").mkdir()
+    (tmp_path / "killed").mkdir()
+    clean, config = project(tmp_path / "clean")
+    seed(clean, config, 1, 2)
+    _renumber_tree(clean)
+    renumber(clean, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    expected = _snapshot(clean)
+
+    root, config = project(tmp_path / "killed")
+    seed(root, config, 1, 2)
+    _renumber_tree(root)
+    from stayfixed import fsops
+
+    real = fsops.write_within
+    writes: list[str] = []
+
+    def counted(within: Path, target: str, text: str, **kwargs: Any) -> None:
+        if len(writes) + 1 == killed_at:
+            raise _Killed(target)
+        writes.append(target)
+        real(within, target, text, **kwargs)
+
+    monkeypatch.setattr(fsops, "write_within", counted)
+    if killed_at <= 6:
+        with pytest.raises(_Killed):
+            renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    else:
+        renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    monkeypatch.setattr(fsops, "write_within", real)
+    # Each case is the kill point it names: the writes before it are on disk and no other.
+    assert len(writes) == min(killed_at - 1, 6)
+    renumber(root, config, bug_register(config), "BR-001", "BR-009", today="2026-01-02")
+    assert _snapshot(root) == expected
+    assert register_gate(root, config, bug_register(config)) == []
+
+
+def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half(
+    tmp_path: Path,
+) -> None:
+    # The resumption is for this move's own half-done states and nothing else: an entry at the
+    # target that differs from the moved text by one byte, and an old number already void
+    # toward another identifier, are each an entry the move would destroy, and each is refused
+    # with nothing written; so is a symlink at the target, even to the moved text itself, which
+    # the move would otherwise adopt as its new entry. Mutations: `mutations/`, "a renumber
+    # resumes over a target that is not the moved text", "a renumber resumes from a void
+    # pointer toward another identifier" and "a renumber adopts a symlink at its target".
+    root, config = project(tmp_path)
+    seed(root, config, 1, 3)
+    bugs = root / "docs" / "bugs"
+    moved = entry(1).replace("id: BR-001", "id: BR-009", 1)
+    (bugs / "BR-009.md").write_text(moved + "\n", encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert _snapshot(root) == before
+
+    renumber(root, config, bug_register(config), "BR-003", "BR-007", today="2026-01-02")
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-003", "BR-009")
+    assert _snapshot(root) == before
+
+    (bugs / "BR-009.md").unlink()
+    outside = tmp_path / "outside.md"
+    outside.write_text(moved, encoding="utf-8")
+    (bugs / "BR-009.md").symlink_to(outside)
+    before = _snapshot(root)
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, bug_register(config), "BR-001", "BR-009")
+    assert _snapshot(root) == before
+    assert (bugs / "BR-009.md").is_symlink()

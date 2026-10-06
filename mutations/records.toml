@@ -523,6 +523,56 @@ reddens = [
   "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
 ]
 
+# A `renumber` killed between two of its writes left a tree the re-run refused as an occupied
+# target, and `bugs check` named only a stale index, whose remedy turned check green over two
+# live entries for one bug or over mentions the sweep never reached. The re-run tells this move's
+# own half-done states by their bytes and finishes them; anything else at the target stays an
+# entry of its own and is refused.
+[[mutation]]
+name = "a re-run of a renumber killed before its void pointer refuses again"
+file = "src/stayfixed/ledger/write.py"
+before = "    if held == moved:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again[2]",
+]
+
+[[mutation]]
+name = "a re-run of a renumber killed after its void pointer writes both endpoints again"
+file = "src/stayfixed/ledger/write.py"
+before = "        return 2"
+after = "        return 0"
+reddens = [
+  "tests/ledger/test_write.py::test_a_renumber_killed_before_any_of_its_writes_is_finished_by_running_it_again[3]",
+]
+
+[[mutation]]
+name = "a renumber resumes over a target that is not the moved text"
+file = "src/stayfixed/ledger/write.py"
+before = "    if held == moved:"
+after = "    if True:"
+reddens = [
+  "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
+]
+
+[[mutation]]
+name = "a renumber resumes from a void pointer toward another identifier"
+file = "src/stayfixed/ledger/write.py"
+before = "    if pointer.status == register.schema.void and pointer.related == (new,):"
+after = "    if pointer.status == register.schema.void:"
+reddens = [
+  "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
+]
+
+[[mutation]]
+name = "a renumber adopts a symlink at its target"
+file = "src/stayfixed/ledger/write.py"
+before = "    if target.is_symlink() or not target.is_file():"
+after = "    if not target.is_file():"
+reddens = [
+  "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
+]
+
 # The ledger engine serves any register, and the bug ledger is one value of it. A literal the bug
 # ledger owns, reached by another register, is a second register inheriting the first one's
 # output; the bug ledger's own index, changed by one byte, is every project's index gone stale.

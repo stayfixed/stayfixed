@@ -274,6 +274,39 @@ def _scaffold(
     )
 
 
+def _endpoints_written(
+    register: Register, source_text: str, moved: str, target: Path, *, old: str, new: str
+) -> int:
+    """How many of its two endpoint writes an interrupted run of this same move made — 0 when
+    the target is free — or the occupied-target refusal.
+
+    There is no journal, and each write is atomic on its own, so a kill between two of them
+    leaves one of two states, and each is told by the bytes alone. Killed after the first write,
+    the target is exactly the old entry's text with its `id:` line rewritten while the old file
+    is untouched, and finishing leaves it as it is. Killed after the second, the old file is the
+    void pointer toward this target, which is what a finished move leaves too — so a re-run of a
+    finished move sweeps again, and finds nothing to rewrite unless a mention of `old` was
+    written since. Anything else at the target is an entry of its own, which the move would
+    destroy, and is refused as it always was. A symlink there is refused before it is read, as
+    anything but a regular file is: the move writes its target, it never adopts one.
+    """
+    if not target.exists():
+        return 0
+    occupied = LedgerError(f"{new} already has an entry file; pick a free identifier")
+    if target.is_symlink() or not target.is_file():
+        raise occupied
+    where = Path(register.directory) / f"{new}.md"
+    held = read_ledger_text(target, where=where)
+    if held == moved:
+        return 1
+    pointer = parse_entry(
+        source_text, path=Path(register.directory) / f"{old}.md", register=register
+    )
+    if pointer.status == register.schema.void and pointer.related == (new,):
+        return 2
+    raise occupied
+
+
 def _void_pointer(register: Register, *, old: str, new: str, title: str, today: str) -> str:
     """The entry `renumber` leaves at `old`: the register's void status, the day of the move for
     each date every entry must carry, and `new` in `related`, in the order the schema's keys
@@ -308,6 +341,11 @@ def renumber(
     claiming a rewrite it did not fully deliver. A file that is not text at all is a different
     thing and is skipped in silence, exactly as the scan skips it: it holds no identifier to
     rewrite, and reporting one would fail this command on any repository tracking one image.
+
+    A run killed part-way is finished by running the same move again (`_endpoints_written`): it
+    skips the endpoint writes already on disk and makes the rest, so the tree it leaves is the
+    one an uninterrupted run would have left. Refusing that re-run, as the occupied-target check
+    once did, left a half-moved ledger nothing could finish and `check` could not name.
     """
     ids = register.ids
     if not (ids.is_identifier(old) and ids.is_identifier(new)):
@@ -317,8 +355,15 @@ def renumber(
     target = root / directory / f"{new}.md"
     if not source.is_file():
         raise LedgerError(f"{directory}/{old}.md does not exist")
-    if target.exists():
-        raise LedgerError(f"{new} already has an entry file; pick a free identifier")
+    # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
+    # names the file in every message either of them raises.
+    where = Path(directory) / f"{old}.md"
+    source_text = read_ledger_text(source, where=where)
+    # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
+    # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
+    # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
+    moved = _ID_LINE.sub(f"id: {new}", source_text, count=1)
+    written = _endpoints_written(register, source_text, moved, target, old=old, new=new)
     # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
     # renders the index from every entry file in the directory, so one malformed sibling — a
     # file this call never touches — failed the command AFTER both endpoints and the whole sweep
@@ -336,30 +381,24 @@ def renumber(
     committed_index = index_text(root, register)
     refuse_index_overwrite(root, register, committed_index)
 
-    # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
-    # names the file in every message either of them raises.
-    where = Path(directory) / f"{old}.md"
-    source_text = read_ledger_text(source, where=where)
-    entry = parse_entry(source_text, path=where, register=register)
-    # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
-    # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
-    # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
-    fsops.write_within(
-        root, f"{directory}/{new}.md", _ID_LINE.sub(f"id: {new}", source_text, count=1)
-    )
-    # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve to
-    # something at every instant from here on, including if the sweep below is interrupted.
-    fsops.write_within(
-        root,
-        f"{directory}/{old}.md",
-        _void_pointer(
-            register,
-            old=old,
-            new=new,
-            title=f"renumbered to {new} — {entry.title}",
-            today=today or date.today().isoformat(),
-        ),
-    )
+    if written < 1:
+        fsops.write_within(root, f"{directory}/{new}.md", moved)
+    if written < 2:
+        entry = parse_entry(source_text, path=where, register=register)
+        # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve
+        # to something at every instant from here on, including if the sweep below is
+        # interrupted.
+        fsops.write_within(
+            root,
+            f"{directory}/{old}.md",
+            _void_pointer(
+                register,
+                old=old,
+                new=new,
+                title=f"renumbered to {new} — {entry.title}",
+                today=today or date.today().isoformat(),
+            ),
+        )
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
