@@ -106,10 +106,9 @@ SHARE_CANNOT_EXIST = (
 # the other way to reach it.
 PATH_CANNOT_EXIST = (
     "{projects}/<this project's name>/ would hold a path, or a name in one, longer than this "
-    "machine allows -- the "
-    "binding record " + PROJECT_RECORD + ", the notes index or a memory group's directory -- so "
-    "attach could not record the binding or link the notes there; choose a shorter `name` under "
-    "[project] in stayfixed.toml, or shorter memory.groups entries"
+    "machine allows -- the binding record " + PROJECT_RECORD + ", the notes index or a memory "
+    "group's directory -- so attach could not record the binding or link the notes there; "
+    "choose a shorter `name` under [project] in stayfixed.toml, or shorter memory.groups entries"
 )
 
 
@@ -227,20 +226,11 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     for path in (path for path in made if path.is_relative_to(share)):
         if any(_name_too_long(there, part) for part in path.relative_to(share).parts):
             raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
-        try:
-            path.lstat()
-        except OSError as exc:
-            # Only the length decides here: an absent path is a first attach, and a record that
-            # is there and cannot be read was already refused by `_recorded` on the way to
-            # `binding`.
-            if exc.errno == errno.ENAMETOOLONG:
-                raise Refusal(
-                    PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS)
-                ) from None
-        except ValueError:
-            # A group holding a NUL, which no path can: not a question of length, and the
-            # `memory.groups` containment both callers ask next refuses it by name of the key.
-            continue
+        # The whole path too: only its length decides here, since an absent path is a first
+        # attach, and a record that is there and cannot be read was already refused by
+        # `_recorded` on the way to `binding`.
+        if _too_long(path):
+            raise Refusal(PATH_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
 
 
 def _nearest_directory(path: Path) -> Path | None:
@@ -265,13 +255,19 @@ def _name_too_long(directory: Path | None, component: str) -> bool:
     """
     if directory is None:
         return False
+    return _too_long(directory / component)
+
+
+def _too_long(path: Path) -> bool:
+    """Whether the kernel refuses `path` as too long -- a name in it, or the whole path -- asked
+    with an `lstat`, which answers that before it looks anything up. A NUL, which no path can
+    hold, is not a question of length: the `memory.groups` containment both callers ask next
+    refuses it by name of the key."""
     try:
-        (directory / component).lstat()
+        path.lstat()
     except OSError as exc:
         return exc.errno == errno.ENAMETOOLONG
     except ValueError:
-        # A NUL, which no name can hold: not a question of length, and the `memory.groups`
-        # containment both callers ask next refuses it by name of the key.
         return False
     return False
 

@@ -41,3 +41,15 @@ def overflowing_indent(value: object, *args: Any, indent: int | None = None, **k
 # `jsonobject.DEPTH_CAP` to 4: every parser follows it, so only the shared reader's bound refuses
 # it, and a reader that bypasses that reader reads it.
 DEEPER_THAN_FOUR = '{"a": [[[[]]]]}'
+
+# An integer `tomllib` converts at any length, a power-of-two base being exempt from the
+# 4,300-digit limit, and whose `str` raises: no decimal spelling exists for it.
+LONG_HEX = "0x" + "f" * 5_000
+
+# A decimal inside the 4,300-digit limit that no `float` holds: `float()` of it overflows.
+PAST_FLOAT = "9" * 401
+
+
+def overflowing(*args: Any, **kwargs: Any) -> str:
+    """An encoder that overflows at once, as an interpreter's does on a document too deep for it."""
+    raise RecursionError

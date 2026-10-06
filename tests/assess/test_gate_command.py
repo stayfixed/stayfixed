@@ -28,7 +28,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
-from tests.parserlimits import LONG_NUMBER
+from tests.parserlimits import LONG_HEX, LONG_NUMBER, PAST_FLOAT
 
 pytestmark = needs_git
 
@@ -1008,7 +1008,7 @@ def test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configuratio
     # limit, so each reached the custom gate and ended `gate` in an internal error. The loader
     # refuses it, so the gate fails closed on the configuration's own error. Mutation (declared):
     # the bound on a schema integer dropped -> exit 2.
-    large = "0x" + "f" * 5_000 if shape == "hex" else "9" * 401
+    large = LONG_HEX if shape == "hex" else PAST_FLOAT
     config = BASE + f"\n[gates]\ncustom_timeout_seconds = {large}\n" + MARKER
     # On both sides, so the configuration the gate runs under holds it whichever side it judges.
     project = clone(tmp_path, config)

@@ -83,6 +83,12 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
     return found
 
 
+def _past_parser(label: str) -> Callable[[str], ParserLimitError]:
+    """The refusal for a settings document past a limit of the parser, named by `label`: a kind of
+    its own, for the reason `ParserLimitError` gives."""
+    return lambda clause: ParserLimitError(f"{label} {clause}")
+
+
 def settings_object(
     document: str, label: str = _DOCUMENT, *, numbers: Callable[[str], object] = int
 ) -> dict[str, Any]:
@@ -102,7 +108,7 @@ def settings_object(
         document,
         label,
         error=EntriesError,
-        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
+        limit=_past_parser(label),
         numbers=numbers,
     )
 
@@ -116,7 +122,7 @@ def settings_text(raw: dict[str, Any], label: str = _DOCUMENT, *, sort_keys: boo
         raw,
         label,
         error=EntriesError,
-        limit=lambda clause: ParserLimitError(f"{label} {clause}"),
+        limit=_past_parser(label),
         indent=2,
         sort_keys=sort_keys,
     )

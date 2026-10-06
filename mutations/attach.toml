@@ -2012,8 +2012,8 @@ reddens = [
 [[mutation]]
 name = "attach and --check go on for a name whose share holds a path past the longest one"
 file = "src/stayfixed/attach/binding.py"
-before = "            if exc.errno == errno.ENAMETOOLONG:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
-after = "            if False:\n                raise Refusal(\n                    PATH_CANNOT_EXIST"
+before = "        if _too_long(path):"
+after = "        if False:"
 reddens = [
   "tests/attach/test_commands.py::test_a_name_whose_binding_record_is_past_the_longest_path_is_refused_by_check_as_by_attach",
   "tests/attach/test_commands.py::test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_by_check_too[the-index]",
@@ -2195,16 +2195,14 @@ file = "src/stayfixed/attach/binding.py"
 before = """
     if directory is None:
         return False
-    try:
-        (directory / component).lstat()
+    return _too_long(directory / component)
 """
 after = """
     if directory is None:
         return False
     if len(component.encode()) > 255:
         return True
-    try:
-        (directory / component).lstat()
+    return _too_long(directory / component)
 """
 reddens = [
   "tests/attach/test_binding.py::test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count[no-such-file]",

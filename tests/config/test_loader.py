@@ -27,7 +27,6 @@ from stayfixed.config.schema import (
     Config,
     CustomGate,
 )
-from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
@@ -798,10 +797,10 @@ def test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_n
 ) -> None:
     # `[stayfixed] preset` was spelled with `str()` before it was checked, and `tomllib` converts
     # a hex literal of any length, whose `str` raises past 4,300 digits: every command loading
-    # the file ended in an internal error. A value that is not a string is refused as a preset
-    # name that is not one, as `preset = 5` already was. Mutation (declared): the preset spelled
-    # with `str` again -> `ValueError`.
+    # the file ended in an internal error. A value that is not a string is refused as the
+    # configuration's own error, before anything spells it. Mutation (declared): the preset
+    # spelled with `str` again -> `ValueError`.
     text = '[stayfixed]\nversion = "0.1.0"\npreset = 0x' + "f" * 5_000 + "\n"
     text += '\n[project]\nname = "sample"\n'
-    with pytest.raises(Failure, match=r"\[stayfixed\] preset is not a plain identifier"):
+    with pytest.raises(ConfigError, match=r"^stayfixed\.preset must be a string$"):
         loads(text, tmp_path, machine=tmp_path / "no-machine.toml")

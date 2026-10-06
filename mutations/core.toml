@@ -2992,8 +2992,8 @@ reddens = [
 [[mutation]]
 name = "the loader spells a preset that is not a string with str"
 file = "src/stayfixed/config/loader.py"
-before = '    preset_name = chosen if isinstance(chosen, str) else ""'
-after = "    preset_name = str(chosen)"
+before = '    preset_name = head.get("preset", "recommended")'
+after = '    preset_name = str(head.get("preset", "recommended"))'
 reddens = [
   "tests/config/test_loader.py::test_a_preset_that_is_a_number_past_the_conversion_limit_is_refused_as_any_non_name",
 ]

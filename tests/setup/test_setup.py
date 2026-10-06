@@ -24,6 +24,7 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
+from tests.parserlimits import overflowing
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -2054,9 +2055,6 @@ def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_
     # `RecursionError` while the merge was encoded. Forced on every interpreter: it is the
     # failure a file nested past the parser gets, and the file is left as it was. Mutation
     # (declared): setup encodes the merged settings with a bare `json.dumps` again.
-    def overflowing(*args: object, **kwargs: object) -> str:
-        raise RecursionError
-
     from stayfixed import jsonobject
 
     home = tmp_path / "home"

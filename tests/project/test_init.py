@@ -22,6 +22,7 @@ from stayfixed.project.upgrade import upgrade
 from stayfixed.release.api import Pin
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX
 from tests.project.repos import repository
 from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -698,7 +699,7 @@ def test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configur
     # before anything is written and without printing the value. Mutation (declared): the
     # serialiser spells an integer with `str` alone again -> `ValueError`.
     root = _repo(tmp_path)
-    large = "0x" + "f" * 5_000
+    large = LONG_HEX
     if case == "string-key":
         document = f'[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = {large}\n'
     else:

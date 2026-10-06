@@ -15,7 +15,7 @@ from stayfixed.scaffold.entries import (
     owned_ids,
     placed_entries,
 )
-from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING
+from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing
 
 
 def document(*commands: tuple[str, str]) -> str:
@@ -395,9 +395,6 @@ def test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested(
     # by `indent`; forced here, the engine's two encodes of a parsed document answer it as the
     # reader answers a document nested past the parser. Mutations (declared): either encode made
     # with a bare `json.dumps` again -> `RecursionError` escapes.
-    def overflowing(*args: object, **kwargs: object) -> str:
-        raise RecursionError
-
     monkeypatch.setattr(jsonobject, "_encode", overflowing)
     marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
     with pytest.raises(ParserLimitError, match="nested deeper than this reader follows"):

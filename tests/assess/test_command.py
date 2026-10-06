@@ -17,6 +17,7 @@ from stayfixed.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
+from tests.parserlimits import LONG_HEX, PAST_FLOAT
 from tests.project.repos import DOCUMENT as BASE_DOCUMENT
 from tests.project.repos import repository
 from tests.runners import LsRemote
@@ -272,7 +273,7 @@ def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
 # Integers `tomllib` converts whatever their length, each too large for what reads the key: a hex
 # literal (a power-of-two base is exempt from the 4,300-digit limit) that no `str` can print, and
 # a decimal of 401 digits, inside the limit, that no `float` can hold.
-TOO_LARGE = {"hex": "0x" + "f" * 5_000, "decimal": "9" * 401}
+TOO_LARGE = {"hex": LONG_HEX, "decimal": PAST_FLOAT}
 
 
 @needs_git

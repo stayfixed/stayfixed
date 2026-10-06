@@ -47,4 +47,6 @@ differently. Each has its own entry in these notes, with the detail:
     accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
     a settings file that opens with").
   - A `stayfixed.toml` integer of 2,147,483,648 or more is refused when the file loads, where
-    0.2.0 loaded it (Fixed, "Every integer in `stayfixed.toml`").
+    0.2.0 loaded it, and a `[stayfixed] preset` that is not a string is refused as
+    "stayfixed.preset must be a string" rather than as a name that is not a plain identifier
+    (Fixed, "Every integer in `stayfixed.toml`").

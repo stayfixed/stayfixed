@@ -554,11 +554,11 @@ def loads(
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "stayfixed")
-    # Never `str()` of the value: a hex literal of any length converts, and its `str` raises
-    # past 4,300 digits. A value that is not a string is no preset's name, and `load_preset`
-    # refuses it, as it refuses any other name that is not a plain identifier.
-    chosen = head.get("preset", "recommended")
-    preset_name = chosen if isinstance(chosen, str) else ""
+    # Asked before anything spells it: a hex literal of any length converts, and its `str`
+    # raises past 4,300 digits.
+    preset_name = head.get("preset", "recommended")
+    if not isinstance(preset_name, str):
+        raise ConfigError("stayfixed.preset must be a string")
     preset = load_preset(preset_name)
     defaults = dict(preset.get("defaults", {}))
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}

@@ -13,7 +13,7 @@ from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.naming import owner_of
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER, NESTED, overflowing
 from tests.runners import Recorder
 
 MANIFESTS = (
@@ -1099,9 +1099,6 @@ def test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_re
     # deep manifest was read and then ended `overlay init` in `RecursionError` while it was
     # renamed. Forced on every interpreter: it stops as it stops on a manifest it cannot read,
     # with the tree as it was. Mutation (declared): `renamed` encodes with a bare `json.dumps`.
-    def overflowing(*args: object, **kwargs: object) -> str:
-        raise RecursionError
-
     from stayfixed import jsonobject
 
     root = _an_overlay(tmp_path)
