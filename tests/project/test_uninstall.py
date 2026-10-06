@@ -993,3 +993,29 @@ def test_an_id_prefix_the_ledger_refuses_stops_init_and_upgrade_and_never_uninst
     code, out, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert tree(root) == {"README.md", CONFIG_FILE}
+
+
+@needs_git
+def test_a_boundary_level_the_ledger_refuses_stops_init_and_upgrade_and_never_uninstall(
+    tmp_path: Path,
+) -> None:
+    # The second `[ledger]` value the register refuses, held to the same rule as `id_prefix`
+    # above: a level in `evidence_boundary_required_for` that names no severity stops `init` and
+    # `upgrade`, which render the bug index, and never `uninstall`, the way out. Mutation:
+    # `mutations/`, "the footprint builds the bug ledger's register before anything renders" —
+    # measured to redden this case on its own as well as the one above.
+    malformed = '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
+    refusal = "[ledger] evidence_boundary_required_for names 1 value(s) that are not a severity"
+    fresh = repository(tmp_path, directory="fresh")
+    (fresh / CONFIG_FILE).write_text(DOCUMENT + malformed, encoding="utf-8")
+    code, out, err = cli(fresh, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 2 and refusal in err, (out, err)
+    assert tree(fresh) == {"README.md", CONFIG_FILE}
+    root = initialised(tmp_path, document=DOCUMENT)
+    config = root / CONFIG_FILE
+    config.write_text(config.read_text(encoding="utf-8") + malformed, encoding="utf-8")
+    code, out, err = cli(root, tmp_path, "upgrade")
+    assert code == 2 and refusal in err, (out, err)
+    code, out, err = cli(root, tmp_path, "uninstall")
+    assert code == 0, err
+    assert tree(root) == {"README.md", CONFIG_FILE}

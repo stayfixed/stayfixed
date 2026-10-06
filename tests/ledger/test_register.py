@@ -21,7 +21,7 @@ import pytest
 
 from stayfixed.config.loader import load, preset_defaults
 from stayfixed.config.schema import Config
-from stayfixed.errors import Failure, StayfixedError
+from stayfixed.errors import Failure, Refusal, StayfixedError
 from stayfixed.findings import Finding
 from stayfixed.identifiers import Identifiers
 from stayfixed.ledger import write
@@ -974,3 +974,48 @@ def test_the_bug_ledgers_refusals_are_unchanged(tmp_path: Path, case: str) -> No
         base = ""
     found = bugs_gate(root, config, base)
     assert [(f.rule, f.path, f.line, f.detail) for f in found] == BUG_REFUSALS[case]
+
+
+@pytest.mark.parametrize(
+    ("levels", "count"),
+    [
+        (["critical"], 1),
+        (["High"], 1),
+        (["hgih", "medium"], 1),
+        (["sev-one", "high", "sev-two"], 2),
+    ],
+)
+def test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted(
+    tmp_path: Path, levels: list[str], count: int
+) -> None:
+    # `[ledger] evidence_boundary_required_for` was taken as it was written, so a value naming
+    # no severity — a misspelling, a capital, a level another tool has — loaded and required the
+    # evidence line of no entry at all, and every high entry passed without one. It is refused
+    # where the register is built, beside `id_prefix`'s refusal, counted and never quoted: the
+    # values are the repository's. Mutation: `mutations/`, "a boundary level outside the
+    # severities builds the register".
+    root = tmp_path / "widget"
+    root.mkdir()
+    document = CONFIG + f"\n[ledger]\nevidence_boundary_required_for = {levels!r}\n"
+    (root / "stayfixed.toml").write_text(document.replace("'", '"'), encoding="utf-8")
+    config = load(root, machine=tmp_path / "m.toml")
+    with pytest.raises(Refusal) as raised:
+        bug_register(config)
+    message = str(raised.value)
+    assert message.startswith(f"[ledger] evidence_boundary_required_for names {count} value(s)")
+    assert message.endswith("the severities are high, medium, low")
+    assert not any(level in message for level in levels if level not in ("high", "medium"))
+
+
+@pytest.mark.parametrize("levels", [[], ["low"], ["high", "medium", "low"]])
+def test_every_set_of_severities_builds_the_register_the_empty_one_included(
+    tmp_path: Path, levels: list[str]
+) -> None:
+    # The legitimate users the refusal must not stop: any subset of the severities, the empty
+    # one included, which is a project requiring the line of no entry on purpose.
+    root = tmp_path / "widget"
+    root.mkdir()
+    document = CONFIG + f"\n[ledger]\nevidence_boundary_required_for = {levels!r}\n"
+    (root / "stayfixed.toml").write_text(document.replace("'", '"'), encoding="utf-8")
+    register = bug_register(load(root, machine=tmp_path / "m.toml"))
+    assert register.evidence_boundary_for == tuple(levels)

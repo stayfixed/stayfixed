@@ -15,6 +15,7 @@ import pytest
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import Finding
 from stayfixed.printed import UNPRINTABLE
+from tests.cli import cli
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import git, needs_git
 
@@ -346,3 +347,31 @@ def test_check_answers_with_the_bugs_gate_s_own_function(
     planted = [Finding("planted", "", None, "")]
     monkeypatch.setattr("stayfixed.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
     assert invoke(["bugs", "check", *common]) == 1
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["bugs", "check"], ["plan", "check", "{plan}"], ["memory", "refs"]],
+    ids=["bugs-check", "plan-check", "memory-refs"],
+)
+def test_a_boundary_level_that_names_no_severity_is_a_refusal_in_every_command_that_reads_it(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    # `bug_register` is reached from `plan check` and `memory refs` as well as the `bugs`
+    # group, so the refusal is a `Refusal`, which each prints as a normal `refused:` line with
+    # exit 2, and never a `ValueError`, which each would print as an internal error.
+    root, _ = project(tmp_path)
+    document = CONFIG + '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
+    document += (
+        '\n[paths]\nmemory = "notes"\n\n[memory]\nmode = "in-repo"\ngroups = ["developer"]\n'
+    )
+    (root / "stayfixed.toml").write_text(document, encoding="utf-8")
+    (root / "notes" / "developer").mkdir(parents=True)
+    (root / "docs" / "plans").mkdir()
+    (root / "docs" / "plans" / "p.md").write_text("# A plan\n", encoding="utf-8")
+    plan = str(root / "docs" / "plans" / "p.md")
+    argv = [arg.format(plan=plan) for arg in argv]
+    code, out, err = cli(root, tmp_path, *argv, machine=tmp_path / "m.toml")
+    assert (code, out) == (2, ""), (out, err)
+    assert err.startswith("stayfixed: refused: [ledger] evidence_boundary_required_for names 1")
+    assert "critical" not in err

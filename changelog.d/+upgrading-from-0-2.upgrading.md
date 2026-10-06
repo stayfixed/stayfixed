@@ -41,3 +41,7 @@ differently. Each has its own entry in these notes, with the detail:
     `[ledger] id_prefix` answers for every base entry it does not carry along, and a base whose
     `stayfixed.toml` does not load fails the check (exit 1) where it passed (Fixed,
     "`stayfixed bugs check --base`, and the `bugs` gate under `stayfixed gate`, now read").
+  - A `[ledger] evidence_boundary_required_for` value that is not `high`, `medium` or `low`,
+    which 0.2.0 loaded and enforced nothing for, is refused (exit 2) by `stayfixed bugs`, `plan
+    check`, `memory refs`, `init` and `upgrade`: correct the value (Fixed,
+    "`[ledger] evidence_boundary_required_for` is now checked").

@@ -3148,7 +3148,12 @@ outside it is a refusal (`2`), not a finding. The number is three digits or more
 are the trees `bugs check` sweeps for mentions of an identifier, each of which must have an
 entry behind it; `evidence_boundary_required_for` names the severities whose entries must carry
 a filled `**What this evidence does not establish:**` line, the template's placeholder not
-counting. Widening it is how a project asks the same of `medium`.
+counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
+severities, `high`, `medium` and `low`, spelled as the table below spells it: a value that names
+none would require the line of no entry, so it is a refusal (`2`) of every command that reads the
+ledger, `bugs`, `plan check`, `memory refs`, `init` and `upgrade` among them, and never of
+`uninstall`, counted and not quoted. An empty list
+is the project asking it of no severity.
 
 **The two ledger vocabularies**, neither of them configurable — they are the entry contract, and
 a value outside either is a finding (`1`) naming the file:

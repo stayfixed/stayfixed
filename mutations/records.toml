@@ -2268,3 +2268,16 @@ after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)
 reddens = [
   "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
 ]
+
+# A `[ledger] evidence_boundary_required_for` level that names no severity loaded and enforced the
+# evidence line of no entry. `bug_register` refuses it, beside `id_prefix`'s refusal, so every
+# command that builds the register refuses it as a `Refusal` and `uninstall` is not stopped.
+[[mutation]]
+name = "a boundary level outside the severities builds the register"
+file = "src/stayfixed/ledger/register.py"
+before = "    if unknown:\n        raise Refusal(BOUNDARY_LEVELS_UNKNOWN"
+after = "    if False:\n        raise Refusal(BOUNDARY_LEVELS_UNKNOWN"
+reddens = [
+  "tests/ledger/test_register.py::test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted[levels0-1]",
+  "tests/ledger/test_commands.py::test_a_boundary_level_that_names_no_severity_is_a_refusal_in_every_command_that_reads_it[memory-refs]",
+]
