@@ -33,13 +33,12 @@ import contextlib
 import json
 import os
 import re
-import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed.config.schema import PATH_VALUE
 from stayfixed.errors import Refusal
-from stayfixed.fsops import open_within, remove_within, write_within
+from stayfixed.fsops import read_bounded, remove_within, write_within
 from stayfixed.jsonobject import json_object
 
 LOCAL_ROOT = ".stayfixed/local"
@@ -62,25 +61,21 @@ GENERATED = (
 # An artifact id as this build spells them, bounded. An entry under any other id is a fault.
 _ID = re.compile(r"\A[a-z0-9][a-z0-9._-]{0,63}\Z")
 _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
-_READ_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
 
 
 def _read_bounded(root: Path) -> bytes | None:
-    """At most `MAX_BYTES + 1` bytes of a regular file at `LOCAL_DIGESTS`, or `None`.
+    """The bytes of a regular file at `LOCAL_DIGESTS`, or `None` for one past `MAX_BYTES` and for
+    anything else there.
 
-    Through `open_within`, so no component, the file included, is followed if it is a symlink,
-    and `O_NONBLOCK` so a FIFO planted there cannot hang the run; anything but a regular file is
+    Under `root` (`fsops.read_bounded`), so no component, the file included, is followed if it is
+    a symlink, and a FIFO planted there cannot hang the run; anything but a regular file is
     absent.
     """
     try:
-        with open_within(root, LOCAL_DIGESTS) as (dir_fd, name):
-            handle = os.open(name, _READ_FLAGS, dir_fd=dir_fd)
-            with os.fdopen(handle, "rb") as stream:
-                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    return None
-                return stream.read(MAX_BYTES + 1)
+        raw, over = read_bounded(LOCAL_DIGESTS, MAX_BYTES, root=root)
     except OSError:
         return None
+    return None if over else raw
 
 
 Entries = dict[tuple[str, str], str]
@@ -88,8 +83,6 @@ Entries = dict[tuple[str, str], str]
 
 def _entries(raw: bytes) -> Entries | None:
     """The entries `raw` holds, or `None` for anything but exactly this module's own shape."""
-    if len(raw) > MAX_BYTES:
-        return None
     try:
         data = json_object(raw.decode("utf-8"), LOCAL_DIGESTS, error=ValueError)
     except ValueError:  # bytes that are not UTF-8 too: `UnicodeDecodeError` is a `ValueError`

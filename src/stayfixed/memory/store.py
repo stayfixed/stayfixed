@@ -57,6 +57,7 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.findings import listed
+from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import GitUnavailable, git_answer, origin_remote
 from stayfixed.printed import clipped, quoted
 
@@ -280,8 +281,11 @@ def read_binding_record(record: Path) -> dict[str, str]:
     stops the run, so a broken record never becomes a first attach; and `attach`'s
     `_first_attach` keeps today's date, which is a note and binds nothing. Whether there is a
     record at all is the caller's question too, asked before this.
+
+    Read through `fsops.read_regular_text`, so a record swapped for a FIFO or a device after that
+    question is refused unread, an `OSError` like any other, and one past the cap is refused too.
     """
-    raw = tomllib.loads(record.read_text(encoding="utf-8"))
+    raw = tomllib.loads(read_regular_text(record))
     return {key: value for key, value in raw.items() if isinstance(value, str) and value}
 
 

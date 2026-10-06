@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import stat
 import struct
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed.fsops import read_bounded
 from stayfixed.guards.api import contained_roots
 
 if TYPE_CHECKING:
@@ -71,13 +71,6 @@ _PYC_HASH_BASED = 0b1
 # there -- compares a 33-bit number against the 32 bits the header can hold and mismatches
 # forever.
 _PYC_MTIME_MASK = 0xFFFFFFFF
-# Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe was
-# put there by whoever wrote the tree, and opening it reads what it names, or waits on a pipe's
-# writer for good (a link to `/dev/stdin` hung a terminal). So the open refuses a symlink, returns
-# at once from a pipe, and what it opened is judged by its descriptor, which nothing can swap
-# between the check and the read. The source is not held to this: the interpreter follows a
-# symlinked source too.
-_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 # The two bounds on the walk for `.pyc` files, past either of which it stops and reports that it
 # could not tell. Named caps (CONTRIBUTING.md#named-caps), and the shipped file that changes with
 # them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook that runs this walk after a red test
@@ -95,7 +88,9 @@ _PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 # up to the read cap took 1.2-1.6 s at 10k reads, 1.6-3.0 s at 20k and 3.8-7.6 s at 50k. 20k is
 # the largest of those under a third of the timeout, which leaves room for a slower disk, a cold
 # cache and the `git status` the same hook runs; it is more bytecode, and 500k more entries, than
-# a code root holds once virtual environments and dependency trees are outside it.
+# a code root holds once virtual environments and dependency trees are outside it. Each `.pyc` is
+# now read under its `__pycache__`, which opens that directory once more per file: on the same
+# laptop, 20k reads of one `__pycache__` went from 0.45 s to 0.67 s, inside that room.
 # `docs/cli.md`'s `test hygiene` section states both numbers.
 BYTECODE_WALK_ENTRIES = 500_000
 BYTECODE_READ_FILES = 20_000
@@ -120,27 +115,27 @@ UNTOLD = (
 )
 
 
-def _recorded_source_mtime(pyc: Path) -> int | None:
-    """The source mtime CPython recorded in `pyc`'s header, or `None` when there is not one.
+def _recorded_source_mtime(cache: Path, name: str) -> int | None:
+    """The source mtime CPython recorded in the header of `cache`'s `.pyc` called `name`, or `None`
+    when there is not one.
 
     Five things produce `None` and they all mean the same thing to the caller -- skip this
-    file: it is not a regular file (see `_PYC_OPEN` above), the header could not be read, it is
-    short, it was written by another interpreter and this one will never open it (see
-    `_PYC_MAGIC` above), or it is hash-based and therefore carries a hash fragment where an mtime
-    would be (see `_PYC_HASH_BASED` above).
+    file: it is not a regular file, the header could not be read, it is short, it was written by
+    another interpreter and this one will never open it (see `_PYC_MAGIC` above), or it is
+    hash-based and therefore carries a hash fragment where an mtime would be (see
+    `_PYC_HASH_BASED` above).
+
+    Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe
+    was put there by whoever wrote the tree, and opening it reads what it names, or waits on a
+    pipe's writer for good (a link to `/dev/stdin` hung a terminal). So it is read under its
+    `__pycache__` (`fsops.read_bounded`), which refuses a symlink, returns at once from a pipe,
+    and judges what it opened by its descriptor, which nothing can swap between the check and the
+    read. The source is not held to this: the interpreter follows a symlinked source too.
     """
     try:
-        descriptor = os.open(pyc, _PYC_OPEN)
+        header, _ = read_bounded(name, _PYC_HEADER, root=cache)
     except OSError:
         return None
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            return None
-        header = os.read(descriptor, _PYC_HEADER)
-    except OSError:
-        return None
-    finally:
-        os.close(descriptor)
     if len(header) < _PYC_HEADER:
         return None
     if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:
@@ -207,7 +202,7 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
             try:
                 if not source.is_file():
                     continue
-                recorded = _recorded_source_mtime(cache / name)
+                recorded = _recorded_source_mtime(cache, name)
                 if recorded is None:
                     continue
                 if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:

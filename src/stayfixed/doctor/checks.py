@@ -67,7 +67,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import stayfixed
-from stayfixed import REPOSITORY_URL
+from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path, override_is_honoured, passwd_home
 from stayfixed.config.schema import Config
@@ -723,8 +723,9 @@ def _ci_ref(context: Context) -> Row:
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
     try:
-        with workflow.open("rb") as handle:
-            raw = handle.read(WORKFLOW_MAX_BYTES + 1)
+        # Through `fsops.read_bounded`, so what is opened is asked again: a FIFO swapped in after
+        # the check above is refused unread rather than waited on.
+        raw, over = fsops.read_bounded(workflow, WORKFLOW_MAX_BYTES)
     except OSError as exc:
         return Row(
             WARN,
@@ -732,7 +733,7 @@ def _ci_ref(context: Context) -> Row:
             f"pins the same ref as [ci] ref was not checked",
             CI_REF_REMEDY,
         )
-    if len(raw) > WORKFLOW_MAX_BYTES:
+    if over:
         # Over the cap is itself an answer, the way it is for the hook sink's log: this is not a
         # file `init` rendered, and a `uses:` line past the cap would be compared against bytes
         # that were never read. Never the ref's own verdict, for the reason the arms around it
@@ -841,15 +842,13 @@ def _diagnostics(context: Context) -> Row:
     if not log.is_file():
         return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
     try:
-        with log.open("rb") as handle:
-            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)
+        raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)
     except OSError as exc:
         return Row(
             WARN,
             f"the hook sink's log is there and could not be read ({type(exc).__name__})",
             DIAGNOSTICS_REMEDY,
         )
-    over = len(raw) > DIAGNOSTICS_MAX_BYTES
     count = sum(1 for line in raw.splitlines() if _is_record(line))
     if not count and not over:
         return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")

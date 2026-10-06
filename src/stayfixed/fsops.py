@@ -220,7 +220,8 @@ def open_regular(path: Path) -> BinaryIO:
     between that check and the open can still be opened -- without blocking and without becoming
     the controlling terminal -- and is refused unread, because the descriptor must be the same
     file the check saw. A link to a regular file is read, as before. No bound on what is then
-    read: `read_regular_bytes` and `read_regular_text` hold the read to `REGULAR_READ_LIMIT`.
+    read: `read_bounded` holds the read to a bound, and `read_regular_bytes` and
+    `read_regular_text` to `REGULAR_READ_LIMIT`.
     """
     checked = os.stat(path)
     if not stat.S_ISREG(checked.st_mode):
@@ -240,12 +241,47 @@ def open_regular(path: Path) -> BinaryIO:
     return os.fdopen(descriptor, "rb")
 
 
-def read_regular_bytes(path: Path) -> bytes:
-    """The bytes of `path`, a regular file followed through links: `open_regular`'s rules, and
-    `TooLarge` for a file longer than `REGULAR_READ_LIMIT`."""
-    with open_regular(path) as stream:
-        content = stream.read(REGULAR_READ_LIMIT + 1)
-    if len(content) > REGULAR_READ_LIMIT:
+# The open `read_bounded` makes of the last component under a root: `_REGULAR_OPEN`'s, and a link
+# there is refused as every component above it is.
+_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)
+
+
+def _opened_within(root: Path, relative: str) -> BinaryIO:
+    """`root/relative` opened for reading in binary, no component of it followed if it is a
+    symbolic link, the file included; `NotRegularFile` if the descriptor is anything else."""
+    with open_within(root, relative) as (dir_fd, name):
+        descriptor = os.open(name, _WITHIN_OPEN, dir_fd=dir_fd)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return os.fdopen(descriptor, "rb")
+
+
+def read_bounded(path: Path | str, limit: int, *, root: Path | None = None) -> tuple[bytes, bool]:
+    """At most `limit` bytes of a regular file, and whether it holds more than that.
+
+    The one reader of a file held to a bound, whatever the bound is. Without `root`, `path` is
+    opened by `open_regular`'s rules: followed through symbolic links, and a regular file only.
+    With `root`, `path` is relative to it and reached as `open_within` reaches a file: no component
+    is followed if it is a symbolic link, the file included, and the descriptor opened is asked
+    whether it is a regular file. Either way the open never waits on a FIFO, anything but a regular
+    file is `NotRegularFile`, and one byte past `limit` is asked for and no more, so a file that
+    reads on for as long as anyone asks costs `limit + 1` bytes and is over.
+    """
+    stream = open_regular(Path(path)) if root is None else _opened_within(root, str(path))
+    with stream:
+        content = stream.read(limit + 1)
+    return content[:limit], len(content) > limit
+
+
+def read_regular_bytes(path: Path | str, *, root: Path | None = None) -> bytes:
+    """The bytes of a regular file, reached as `read_bounded` reaches it, and `TooLarge` for one
+    longer than `REGULAR_READ_LIMIT`."""
+    content, over = read_bounded(path, REGULAR_READ_LIMIT, root=root)
+    if over:
         raise TooLarge(errno.EFBIG, "larger than this reader reads", str(path))
     return content
 

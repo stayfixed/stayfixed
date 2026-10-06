@@ -26,7 +26,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
-from stayfixed.fsops import open_regular, write_atomically
+from stayfixed.fsops import write_atomically
 from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
@@ -169,14 +169,13 @@ def _content_digest(path: Path) -> str:
     try:
         # A regular file only, followed through a link: `MEMORY.md` is one in overlay mode and
         # is hashed through it. Anything else is unreadable, and still moves the digest. Read to
-        # one byte past the cap, as `fsops.read_regular_bytes` reads, and a file that has that
-        # byte is hashed as what was read under `_TOO_LARGE`, never as one constant.
-        with open_regular(path) as stream:
-            content = stream.read(fsops.REGULAR_READ_LIMIT + 1)
+        # the cap `fsops.read_regular_bytes` reads to, and a file past it is hashed as what was
+        # read under `_TOO_LARGE`, never as one constant.
+        content, over = fsops.read_bounded(path, fsops.REGULAR_READ_LIMIT)
     except OSError:
         content = _UNREADABLE
     else:
-        if len(content) > fsops.REGULAR_READ_LIMIT:
+        if over:
             content = _TOO_LARGE + content
     return hashlib.sha256(content).hexdigest()
 

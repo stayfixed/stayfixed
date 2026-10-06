@@ -2822,19 +2822,18 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
 def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
     """Over the bound is an answer, and it is not "the workflow agrees".
 
-    The read is `WORKFLOW_MAX_BYTES + 1` bytes, the shape `_diagnostics` reads its log with: a
-    file past the cap is not one `init` rendered, and a `uses:` line beyond it would be compared
-    against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can only be
-    the cap — a file that agrees would otherwise be green either way.
+    The read is `fsops.read_bounded` to `WORKFLOW_MAX_BYTES`, the shape `_diagnostics` reads its
+    log with: a file past the cap is not one `init` rendered, and a `uses:` line beyond it would be
+    compared against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can
+    only be the cap — a file that agrees would otherwise be green either way.
 
     What this case pins is the *arm* and not the number of bytes held to reach it: a bounded read
-    and an unbounded one answer `len(raw) > WORKFLOW_MAX_BYTES` alike, so no assertion here can
-    tell them apart. Measured, not assumed — the oracle entry's first spelling replaced
-    `handle.read(WORKFLOW_MAX_BYTES + 1)` with `handle.read()` and survived. The entry is on the
-    comparison instead, and says so.
+    and an unbounded one answer "over the cap" alike, so no assertion here can tell them apart.
+    Measured, not assumed — the oracle entry's first spelling replaced the bounded read with an
+    unbounded one and survived. The entry is on the arm instead, and says so.
 
     Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
-    comparison is deleted -> this case fails on the status.
+    arm is skipped -> this case fails on the status.
     """
     stub = LsRemote(stdout=LISTING)
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)

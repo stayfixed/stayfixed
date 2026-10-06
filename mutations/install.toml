@@ -454,8 +454,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads an environment-named log with no bound of its own"
 file = "src/stayfixed/doctor/checks.py"
-before = "            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)"
-after = "            raw = handle.read()"
+before = "        raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)"
+after = "        raw = log.read_bytes()\n        over = len(raw) > DIAGNOSTICS_MAX_BYTES"
 reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
@@ -1984,18 +1984,19 @@ reddens = [
 # would be compared against bytes nobody read. So the arm must not fall through to the ref's own
 # verdict, which is what this entry breaks.
 #
-# **What has no entry, and why: the `+ 1` on the read itself.** `handle.read(WORKFLOW_MAX_BYTES + 1)`
-# and `handle.read()` answer `len(raw) > WORKFLOW_MAX_BYTES` identically -- the difference is how
-# many bytes were held to answer it, and no assertion at a testable file size can see that.
-# Measured rather than assumed: this entry's `after` was `raw = handle.read()` on its first run and
-# the oracle reported it survived, which is the finding that produced this paragraph. The sibling
-# `_diagnostics` entry does redden, because that row counts records *inside* what it read and an
-# unbounded read counts more of them; this row returns above its count.
+# **What has no entry, and why: an unbounded read itself.** A read of the whole file and the bounded
+# one answer "over the bound" identically -- the difference is how many bytes were held to answer
+# it, and no assertion at a testable file size can see that. Measured rather than assumed: this
+# entry's `after` was an unbounded read on its first run and the oracle reported it survived, which
+# is the finding that produced this paragraph. The sibling `_diagnostics` entry does redden, because
+# that row counts records *inside* what it read and an unbounded read counts more of them; this row
+# returns above its count. The bound on the read itself is `fsops.read_bounded`'s, held by the core
+# entries "the regular-file reader reads past its limit" and "... refuses a file at its limit".
 [[mutation]]
 name = "doctor reads the rendered workflow with no bound of its own"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if len(raw) > WORKFLOW_MAX_BYTES:"
-after = "    if False:"
+before = "    if over:\n        # Over the cap is itself an answer"
+after = "    if False:\n        # Over the cap is itself an answer"
 reddens = [
   "tests/doctor/test_checks.py::test_a_workflow_over_the_cap_is_not_the_refs_own_verdict",
 ]
