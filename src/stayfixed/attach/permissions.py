@@ -361,7 +361,8 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     ]
     document = local_document(root)
     _refuse_unless_written_back(document)
-    held = set(_allow_rules(document, root / LOCAL_SETTINGS))
+    # Named by its project path, as every refusal of the project's own settings file is.
+    held = set(_allow_rules(document, Path(LOCAL_SETTINGS)))
     present = _commands(document, LOCAL_SETTINGS)
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))

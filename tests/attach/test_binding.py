@@ -410,8 +410,14 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
         json.dumps({"permissions": {"allow": "all"}}), encoding="utf-8"
     )
     binding = read_binding(root, store=store, machine=_machine(tmp_path, overlay=overlay))
-    with pytest.raises(EntriesError):
+    with pytest.raises(EntriesError) as refused:
         diff_permissions(root, binding)
+    # Named as the project names it, never by the machine's absolute path. Mutation (oracle):
+    # `mutations/`'s "the allow-list refusal names the project's settings file by its absolute
+    # path" -> the message carries the temporary directory.
+    assert str(refused.value) == (
+        ".claude/settings.local.json: 'permissions.allow' is not a list of strings"
+    )
     # And a rule that is not a string, in the overlay's own file: refused, not dropped.
     (overlay / COMMON_CLAUDE / "permissions.json").write_text(
         json.dumps({"permissions": {"allow": [42]}}), encoding="utf-8"

@@ -2317,3 +2317,12 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write[check]",
   "tests/attach/test_write.py::test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not[1000-check]",
 ]
+
+[[mutation]]
+name = "the allow-list refusal names the project's settings file by its absolute path"
+file = "src/stayfixed/attach/permissions.py"
+before = "    held = set(_allow_rules(document, Path(LOCAL_SETTINGS)))"
+after = "    held = set(_allow_rules(document, root / LOCAL_SETTINGS))"
+reddens = [
+  "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
