@@ -2152,17 +2152,10 @@ reddens = [
 ]
 
 # In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `attach` and `detach` write the settings file they merge into back through `settings_text`, so a
-# document read and then too deep for the encoder is refused before anything is written.
-[[mutation]]
-name = "detach encodes the withdrawn settings with a bare json.dumps"
-file = "src/stayfixed/attach/write.py"
-before = '        emptied = settings_text(_emptied(raw), LOCAL_SETTINGS) + "\n"'
-after = '        emptied = json.dumps(_emptied(raw), indent=2) + "\n"'
-reddens = [
-  "tests/attach/test_detach.py::test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing",
-]
-
+# `attach` writes the settings file it merges into back through `settings_text`, so a document
+# read and then too deep for the encoder is refused before anything is written. (`detach`'s encode
+# sits inside the guard of "detach copies and compares the settings document unguarded", which
+# answers a bare encode's overflow the same way, so it carries no entry of its own.)
 [[mutation]]
 name = "attach encodes the settings merge with a bare json.dumps"
 file = "src/stayfixed/attach/write.py"
@@ -2266,4 +2259,5 @@ after = """
 reddens = [
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[copy]",
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[compare]",
+  "tests/attach/test_detach.py::test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_removes_nothing",
 ]
