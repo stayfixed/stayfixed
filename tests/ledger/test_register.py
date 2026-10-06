@@ -28,7 +28,14 @@ from stayfixed.ledger import write
 from stayfixed.ledger.check import bugs_gate, register_gate, uninitialised
 from stayfixed.ledger.entries import LedgerError, load_entries, parse_entry
 from stayfixed.ledger.index import header, render_index
-from stayfixed.ledger.register import EVIDENCE_LABEL, Register, Schema, Section, bug_register
+from stayfixed.ledger.register import (
+    BUG_SCHEMA,
+    EVIDENCE_LABEL,
+    Register,
+    Schema,
+    Section,
+    bug_register,
+)
 from stayfixed.ledger.write import Allocation, file_entry, renumber
 from stayfixed.project.api import project_templates
 from stayfixed.release.api import Resolution
@@ -488,6 +495,15 @@ CONFIGURATIONS = [
         id="moved-and-renamed",
     ),
 ]
+
+
+def test_the_bug_entry_template_names_no_one_stacks_location_syntax() -> None:
+    # The entry `bugs new` writes said `path/to/file.py::symbol`, a Python file and pytest's
+    # node syntax, in every project whatever it is written in. The template shapes only the
+    # entries filed after it, so no recorded byte moves with it. Oracle: `mutations/`, "the bug
+    # entry template names a Python file again".
+    (where,) = [line for line in BUG_SCHEMA.template.splitlines() if "**Where:**" in line]
+    assert ".py" not in where and "::" not in where
 
 
 @pytest.mark.parametrize("build", SHIPPED_REGISTERS, ids=lambda build: build.__name__)

@@ -189,7 +189,7 @@ fixed_in:
 ---
 
 - **Found:** {{today}}
-- **Where:** `path/to/file.py::symbol`
+- **Where:** `path/to/file`, and the symbol or line in it
 
 What goes wrong, what the user sees, and the evidence for it.
 

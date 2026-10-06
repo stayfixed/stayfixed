@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -171,6 +173,42 @@ def test_a_reference_through_a_symlink_loop_is_a_finding_and_never_an_internal_e
 
     monkeypatch.setattr(Path, "resolve", resolve_as_older_pythons_do)
     assert findings(root, config) == [("developer/a.md", 8, "loop/x.py", "dead-reference")]
+
+
+def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
+    tmp_path: Path,
+) -> None:
+    # A note's path and a symlink out of the tree are both bytes a clone can commit, and
+    # `exists()` follows the symlink: `memory refs` answered, one bit per path, whether a file
+    # exists anywhere on the machine. A symlink that stays inside the tree is still followed.
+    # Oracle: `mutations/`, "memory refs follows a symlink out of the tree", "a path claim is
+    # followed through a symlink out of the tree".
+    root, config = project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("", encoding="utf-8")
+    (root / "src" / "l").symlink_to(outside)
+    (root / "src" / "in").symlink_to("widget")
+    note(root, "developer", "a", "`src/l/secret.py` `src/l/absent.py` `src/in/gone.py`\n")
+    assert findings(root, config) == [("developer/a.md", 8, "src/in/gone.py", "dead-reference")]
+
+
+def test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Oracle: `mutations/`, "a path the filesystem cannot name crashes the reference checks".
+    root, config = project(tmp_path)
+    long = "src/" + "a" * 5000 + ".py"
+    note(root, "developer", "a", f"`{long}`\n")
+    real = Path.exists
+
+    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
+        if len(str(self)) > 4096:
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    assert findings(root, config) == [("developer/a.md", 8, long, "dead-reference")]
 
 
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
