@@ -163,11 +163,17 @@ def _read_entries(document: str) -> Iterator[tuple[str, dict[str, Any], dict[str
     than the interpreter converts must not keep a reader from the entries beside it. A settings
     file is one a clone can commit, and the harness reads such a number.
     """
-    raw = settings_object(document, numbers=str)
+    raw = _entry_document(document)
     for event in _hooks_table(raw):
         for group in _groups(raw, event):
             for entry in _entries_of(group):
                 yield event, group, entry
+
+
+def _entry_document(document: str) -> dict[str, Any]:
+    """The settings document as every walk for entries reads it: integers as their text, for the
+    reason `_read_entries` gives."""
+    return settings_object(document, numbers=str)
 
 
 def owned_ids(document: str) -> dict[str, str]:
@@ -220,12 +226,53 @@ def placed_entries(document: str) -> list[Placed]:
     is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
+    return [_placed(event, group, entry) for event, group, entry in _read_entries(document)]
+
+
+def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
+    """One entry as `Placed` holds it: one place for every walk, so a grant read back through
+    `placed_entries` and an entry `live_entries` reads are compared in the same terms."""
+    command = entry.get("command")
+    text = command if isinstance(command, str) else ""
+    return Placed(event, _matcher(group), text)
+
+
+def live_entries(document: str) -> tuple[list[Placed], bool]:
+    """Every hook entry a harness runs out of the document, as `placed_entries` places it, and
+    whether some part of the `hooks` section could not be read for entries at all.
+
+    `placed_entries` reads as strictly as `apply_entries` writes, because a merge must not rewrite
+    a shape it cannot read; that is the wrong question for which entries are live. Claude Code
+    2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a settings file whose
+    `hooks` section held, beside them, an event whose value is not a list, a group that is not an
+    object, a group whose `hooks` is not a list, and an entry that is not an object — each a
+    scalar, which holds no command. So a scalar in any of those places is skipped. A container
+    there was not measured and may hold a command a harness runs: it is skipped too, and the
+    second answer says so, so a reader still reports a part of the file it could not account for.
+    Refuses what `placed_entries` refuses above the events — a document that is not a JSON object,
+    and a `hooks` that is not an object — which was not measured either.
+    """
+    raw = _entry_document(document)
     found: list[Placed] = []
-    for event, group, entry in _read_entries(document):
-        command = entry.get("command")
-        text = command if isinstance(command, str) else ""
-        found.append(Placed(event, _matcher(group), text))
-    return found
+    unread = False
+    for event, groups in _hooks_table(raw).items():
+        if not isinstance(groups, list):
+            unread = unread or isinstance(groups, dict)
+            continue
+        for group in groups:
+            if not isinstance(group, dict):
+                unread = unread or isinstance(group, list)
+                continue
+            entries = group.get("hooks", [])
+            if not isinstance(entries, list):
+                unread = unread or isinstance(entries, dict)
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    unread = unread or isinstance(entry, list)
+                    continue
+                found.append(_placed(event, group, entry))
+    return found, unread
 
 
 def entry_commands(document: str) -> list[str]:

@@ -40,3 +40,7 @@ differently. Each has its own entry in these notes, with the detail:
     levels is refused as nested deeper than the reader follows, as 3.11 to 3.13 already refused
     it; `stayfixed doctor` and an `attach` with nothing to write read one before (Fixed, "On Python
     3.14, a JSON file nested deeper than").
+  - `stayfixed doctor`'s `hook-entries` row is red, and the report exits `1`, for a marked entry
+    nothing vouches for in a settings file that opens with a byte-order mark or holds a malformed
+    value beside its valid hooks, where it warned and exited `0` (Fixed, "`stayfixed doctor`'s
+    `hook-entries` row now judges the hook entries in a settings file that opens with").

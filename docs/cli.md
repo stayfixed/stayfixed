@@ -2678,7 +2678,13 @@ unlisted, so "all accounted for" must never mean "could not look". One that is v
 deeper than Python's parser follows is reported by path as `red`: a harness may still read it, as
 Claude Code does, so the hooks in it may run, and nothing here can check them. A number longer
 than Python converts to an integer is read as its text, and the entries beside it are judged as
-usual.
+usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
+beside valid entries, a value that is not a list where an event's list goes, a group that is not an
+object, a group whose `hooks` is not a list, or an entry that is not an object: Claude Code 2.1.288
+still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are judged
+like any other. Where such a misplaced value is itself an object or a list, which could hold a
+command, the file is also reported as one that could not be read, since that shape was not
+measured.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

@@ -1,7 +1,7 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
 Everything a consumer needs is re-exported here, including the primitives other areas reach for
-directly: `placed_entries` for `doctor`'s provenance list, each entry a `Placed`, and
+directly: `live_entries` for `doctor`'s provenance list, each entry a `Placed`, and
 `wanted_placements` for the grants it is compared with, which `attach` answers; `entry_commands`
 for `assess`, which asks only for commands; `owned_ids` for the ids `attach` records in its
 ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
@@ -42,11 +42,11 @@ from stayfixed.scaffold.entries import (
     Placed,
     apply_entries,
     entry_commands,
+    live_entries,
     mark,
     marker_id,
     owned,
     owned_ids,
-    placed_entries,
     settings_object,
     wanted_placements,
 )
@@ -96,13 +96,13 @@ __all__ = [
     "entry_commands",
     "extract",
     "left_copies",
+    "live_entries",
     "local_copies",
     "mark",
     "marker_id",
     "ours_locally",
     "owned",
     "owned_ids",
-    "placed_entries",
     "plan",
     "printable",
     "render_report",

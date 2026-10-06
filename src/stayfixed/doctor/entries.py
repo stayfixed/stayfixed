@@ -23,7 +23,7 @@ from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import names_regular_file
 from stayfixed.harnesses import HARNESSES
-from stayfixed.scaffold import ParserLimitError, Placed, marker_id, placed_entries
+from stayfixed.scaffold import ParserLimitError, Placed, live_entries, marker_id
 from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
@@ -356,15 +356,20 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             found.append((_BLIND, None, label))
             continue
         try:
-            # The engine's own reader, so a document `apply_entries` would refuse is one this walk
-            # names rather than silently tolerates.
-            entries = placed_entries(document)
+            # The entries a harness runs out of the file, as Claude Code 2.1.288 was measured
+            # reading it (macOS, 2026-10-05): past a leading byte-order mark, and past a scalar
+            # where an event's list, a group, a group's `hooks` or an entry belongs, it still ran
+            # the valid hooks, so those are live and judged like any other. A part this cannot
+            # read for entries is still named as one the walk is blind to.
+            entries, partly = live_entries(document.removeprefix("\ufeff"))
         except ParserLimitError:
             found.append((_UNCHECKED, None, label))
             continue
         except Refusal:
             found.append((_BLIND, None, label))
             continue
+        if partly:
+            found.append((_BLIND, None, label))
         for position, placed in enumerate(entries, start=1):
             entry_id = marker_id(placed.command)
             if entry_id is None:
@@ -489,25 +494,33 @@ def hook_entries(context: Context) -> Row:
     once, so two areas' entries of one kind each get their area's way out. An entry no record holds
     names every record it is missing from, and with no area claiming anything, none.
 
-    **Entries are counted, never keys.** `scaffold.placed_entries` answers one element per entry,
+    **Entries are counted, never keys.** `scaffold.live_entries` answers one element per entry,
     in document order, so N entries sharing one id are N entries and one id under two events is
     two. Keyed by id, as `owned_ids` answers, the claimed count would deflate and `foreign` inflate
     by exactly the difference. The count comes from `marker_id`, the predicate `owned_ids` is built
     on and the one `attach.write` keys its ledger with.
 
     **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
-    read and a document the engine refuses are each named, because "all accounted for" is the one
-    answer this check must never give about entries it did not see. `placed_entries` reads the
-    document with the engine's own strict walk, the one `apply_entries` rewrites through, so a
-    shape the merge would refuse is exactly the shape this walk admits it cannot account for. The
-    report names the file and never its contents.
+    read, a document that will not parse or is not an object, a `hooks` that is not an object, and
+    a part of the `hooks` section that could hold a command it cannot read are each named, because
+    "all accounted for" is the one answer this check must never give about entries it did not see.
+    The report names the file and never its contents.
+
+    **The entries a harness runs are judged, wherever they sit.** The walk is not the engine's
+    strict one, the one `apply_entries` rewrites through: Claude Code 2.1.288 (measured on macOS,
+    2026-10-05) still ran the valid hooks of a file whose `hooks` section held a scalar where an
+    event's list, a group, a group's `hooks` or an entry belongs, so a marked entry beside such a
+    part is live, and one nothing vouches for is red. Read strictly, the whole file was `blind`,
+    a warning, and a clone kept the exit code at 0 by committing one such scalar beside a forged
+    entry. Not measured, and so not assumed: a container in one of those places, which may hold a
+    command, leaves the file `blind` as well as judging the entries beside it.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
     byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
     are judged as they would be without the byte; a harness may read the file the same way, so
-    a marked entry in it nothing vouches for is red. Only what then fails to parse is `blind` —
-    a UTF-8 byte-order mark among it, which `json.loads` refuses as Node's parser does — and an
-    `OSError` on the read.
+    a marked entry in it nothing vouches for is red. A UTF-8 byte-order mark ahead of the
+    document is read past: `json.loads` refuses it, and Claude Code 2.1.288 runs the hooks of
+    such a file (measured on macOS, 2026-10-05), so it is no reason to be `blind` either.
 
     **A file this walk refuses only for a limit of Python's parser is red, never `blind`.** Blind
     is a warning, which is right for a file this machine will not let anything read and for one
@@ -516,7 +529,7 @@ def hook_entries(context: Context) -> Row:
     it may run, and a warning there would let a clone commit a marked entry beside such nesting and
     keep the exit code at 0 whatever the ledger or the overlay said. Only this machine's state may
     leave unknown the provenance of an entry a harness may run. A number longer than the
-    interpreter converts is not refused at all: `placed_entries` reads it as its text, and the
+    interpreter converts is not refused at all: `live_entries` reads it as its text, and the
     entries beside it are judged as they would be without it.
     """
     return _told(*_classify(context))

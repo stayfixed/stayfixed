@@ -1267,19 +1267,15 @@ def test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report(
 
 # Bytes a clone can commit in its settings file that are not plain UTF-8: one Latin-1 byte in a
 # string no entry reads, beside the forged entry and beside an unmarked one, and a UTF-8 byte-order
-# mark ahead of the document.
+# mark ahead of the document. The byte-order mark's row was a warning, the file one the walk could
+# not read, until Claude Code 2.1.288 was measured running the hooks of such a file (macOS,
+# 2026-10-05): its forged entry is live, and red like any other.
 SETTINGS_BYTES = {
     "latin-1-beside-a-forged-entry": TABLE["forged-right-store"],
     "latin-1-beside-no-marked-entry": Check(
         "hook-entries", OK, "0 stayfixed entr(ies), 1 foreign; all accounted for", ""
     ),
-    "byte-order-mark": Check(
-        "hook-entries",
-        WARN,
-        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
-        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
-        "check that each file named above is readable and is valid JSON",
-    ),
+    "byte-order-mark": TABLE["forged-right-store"],
 }
 
 
@@ -1288,10 +1284,12 @@ def test_a_byte_that_is_not_utf8_changes_no_entrys_verdict(tmp_path: Path, case:
     # The marker and every command it marks are ASCII, so one byte that is not UTF-8 elsewhere in
     # the file is no part of any entry's provenance. Refused, it made the whole file one the walk
     # was blind to, a warning, and a forged entry in it lost its red: the report exited 0. Node's
-    # parser reads such a file with the byte replaced, and so does the walk now. The byte-order
-    # mark is the other side: `json.loads` refuses it, as Node's `JSON.parse` does, so that file
-    # is still one the walk cannot read. Mutation (oracle): `mutations/`'s "hook-entries is blind
-    # to a settings file holding a byte that is not UTF-8" -> both `latin-1-` cases warn.
+    # parser reads such a file with the byte replaced, and so does the walk now. A byte-order mark
+    # ahead of the document is read past too: `json.loads` refuses it, and Claude Code 2.1.288
+    # runs the hooks of such a file (measured on macOS, 2026-10-05). Mutations (oracle):
+    # `mutations/`'s "hook-entries is blind to a settings file holding a byte that is not UTF-8"
+    # -> both `latin-1-` cases warn; "hook-entries is blind to a settings file opening with a
+    # byte-order mark" -> `byte-order-mark` warns.
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     if case == "latin-1-beside-no-marked-entry":
@@ -1936,4 +1934,61 @@ def test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wr
         "the overlay records a different remote URL under this project's name (the same "
         "repository under another URL form, https or ssh, counts as different too)",
         "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
+    )
+
+
+# A committed `.claude/settings.json` whose `hooks` section is partly malformed, beside the forged
+# entry: each shape measured in a live Claude Code 2.1.288 session (macOS, 2026-10-05), where the
+# valid hooks beside it still ran. Each malformed part is a scalar where an event's list, a group, a
+# group's `hooks` list or an entry belongs, so nothing in it is a command anything could run.
+PARTLY_MALFORMED = {
+    "event-not-a-list": lambda hooks: hooks.update({"Stop": "notalist"}),
+    "group-not-an-object": lambda hooks: hooks.update({"Stop": [5]}),
+    "group-hooks-not-a-list": lambda hooks: hooks["PreToolUse"].append({"hooks": "x"}),
+    "entry-not-an-object": lambda hooks: hooks["PreToolUse"][0]["hooks"].append("str"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PARTLY_MALFORMED))
+def test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red(
+    tmp_path: Path, case: str
+) -> None:
+    # The row read the file with the engine's strict walk, so one malformed part made the whole
+    # file one it was blind to, a warning, and the forged entry beside it lost its red. Claude
+    # Code 2.1.288 (measured on macOS, 2026-10-05) still runs the valid hooks of such a file, so
+    # the forged entry is live and is judged like any other; the malformed part, a scalar, holds
+    # nothing that could run. Mutation (declared): hook-entries reads the file with the strict
+    # walk again -> every case warns.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    PARTLY_MALFORMED[case](document["hooks"])
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == TABLE["forged-right-store"]
+
+
+def test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for(
+    tmp_path: Path,
+) -> None:
+    # A malformed part that is a container — here an object where a group's `hooks` list goes —
+    # was not measured, and could hold a command a harness runs: the walk still judges the live
+    # entry beside it and says it could not account for the rest. Mutation (declared): a
+    # container in the wrong place is skipped like a scalar -> the clause about the unread part
+    # goes.
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["hooks"]["PreToolUse"].append(
+        {"hooks": {"x": {"type": "command", "command": "echo hidden"}}}
+    )
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    readable = TABLE["forged-right-store"]
+    assert check == Check(
+        "hook-entries",
+        "red",
+        f"{readable.detail}; 1 settings file(s) exist and could not be read as hook entries, "
+        f"so nothing here accounts for what is in them: {COMMITTED}",
+        readable.remedy,
     )
