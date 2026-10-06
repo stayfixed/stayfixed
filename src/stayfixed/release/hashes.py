@@ -11,6 +11,7 @@ checkout, a partial update: those are.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from stayfixed.errors import Failure
@@ -73,7 +74,10 @@ def read_record(root: Path) -> dict[str, str] | None:
     # Neither reached the `except UnreadableRecord` arm whose sentence is "present and
     # unreadable", which is the arm this class exists to select.
     try:
-        text = path.read_bytes().decode("utf-8")
+        raw = path.read_bytes()
+        # Decoded as `json.loads` decodes bytes, which is how 0.2.0 read the record: UTF-8, with
+        # or without a byte-order mark, UTF-16 or UTF-32, as the first bytes say.
+        text = raw.decode(json.detect_encoding(raw), "surrogatepass")
     except UnicodeDecodeError as exc:
         raise UnreadableRecord(f"{RECORD} is present and is not UTF-8 text: {exc}") from None
     except OSError as exc:

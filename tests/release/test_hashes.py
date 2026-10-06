@@ -112,6 +112,21 @@ def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
         read_record(root)
 
 
+@pytest.mark.parametrize("encoding", ["utf-8-sig", "utf-16", "utf-32-le"])
+def test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did(
+    tmp_path: Path, encoding: str
+) -> None:
+    # 0.2.0 handed the record's bytes to `json.loads`, which detects UTF-8 with a byte-order mark,
+    # UTF-16 and UTF-32 and reads each, so a record saved that way read. Reading it through the
+    # one JSON object reader must keep that. Mutation (oracle): `mutations/`'s "the release
+    # record is decoded as UTF-8 alone" -> each of these is refused.
+    root = hashed_plugin(tmp_path)
+    written = {relative: f"{index:064x}" for index, relative in enumerate(HASHED_FILES)}
+    body = json.dumps({"format": FORMAT, "files": written})
+    (root / RECORD).write_bytes(body.encode(encoding))
+    assert read_record(root) == written
+
+
 def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
     tmp_path: Path,
 ) -> None:

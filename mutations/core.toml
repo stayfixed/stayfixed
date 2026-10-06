@@ -3210,3 +3210,12 @@ after = "            places = 0\n            for entry in entries:\n            
 reddens = [
   "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
 ]
+
+[[mutation]]
+name = "the release record is decoded as UTF-8 alone"
+file = "src/stayfixed/release/hashes.py"
+before = '        text = raw.decode(json.detect_encoding(raw), "surrogatepass")'
+after = '        text = raw.decode("utf-8")'
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did",
+]
