@@ -421,3 +421,64 @@ def test_a_seam_counts_for_the_launch_it_reaches_and_no_other() -> None:
         "    subprocess.run([str(other / 'hooks' / WRAPPER.name), 'open'])\n"
     )
     assert [seamed for _, seamed in _probe(bound)] == [True, False]
+
+
+# The roots a `_run` in the wrapper tests may run under: a fake launcher that runs no stayfixed,
+# or a root whose launcher pins the database's home.
+_WRAPPER_TESTS = "tests/hooks/test_wrapper.py"
+_FAKE_OR_SEAMED = frozenset({"_plugin_root", "plugin_root_with_owner_home"})
+
+
+def _wrapper_runs() -> list[tuple[int, str, bool]]:
+    """Every `_run(...)` call in the wrapper tests: its line, its `plugin_root=`, and whether that
+    root reads no home — a fake or seamed root, or this checkout's for `--version` alone. A name
+    counts as such a root where the function holding the call, or one enclosing it, binds it so."""
+    tree = ast.parse((ROOT / _WRAPPER_TESTS).read_text(encoding="utf-8"))
+    found: list[tuple[int, str, bool]] = []
+
+    def binds(function: ast.AST) -> set[str]:
+        return {
+            target.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assign) and _called(node.value) & _FAKE_OR_SEAMED
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+
+    def judge(call: ast.Call, bound: set[str]) -> None:
+        root = next((k.value for k in call.keywords if k.arg == "plugin_root"), None)
+        if root is None:
+            found.append((call.lineno, "<none>", False))
+            return
+        words = {a.value for a in call.args if isinstance(a, ast.Constant)}
+        only_version = all(isinstance(a, ast.Constant) for a in call.args) and words - {
+            "open",
+            "closed",
+        } == {"--version"}
+        safe = (
+            bool(_called(root) & _FAKE_OR_SEAMED)
+            or (isinstance(root, ast.Name) and root.id in bound)
+            or (isinstance(root, ast.Name) and root.id == "ROOT" and only_version)
+        )
+        found.append((call.lineno, ast.unparse(root), safe))
+
+    def visit(node: ast.AST, bound: set[str]) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef):
+                visit(child, bound | binds(child))
+                continue
+            if isinstance(child, ast.Call) and getattr(child.func, "id", None) == "_run":
+                judge(child, bound)
+            visit(child, bound)
+
+    visit(tree, set())
+    return found
+
+
+def test_every_wrapper_run_uses_a_root_that_reads_no_home() -> None:
+    # `EXEMPT` excuses `_run` for every caller, so what it excuses is held here instead: each
+    # call's plugin root is `_plugin_root`'s fake, a seamed root, or this checkout's with
+    # `--version` and nothing else. A new real launch through `_run` is a finding, not an excuse.
+    runs = _wrapper_runs()
+    assert len(runs) > 20, runs
+    assert [(line, root) for line, root, safe in runs if not safe] == []
