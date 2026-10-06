@@ -18,6 +18,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
+from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.permissions import check, settings_document
 from stayfixed.attach.write import (
     GROUP_ESCAPES,
@@ -2285,3 +2286,43 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     assert result.exit_code == 0, result.summary
     assert result.data["added_allow"] == [RULE]
     assert result.data["added_hooks"] == ["echo hello  # stayfixed:overlay-PreToolUse-1"]
+
+
+# The two shapes of an overlay that is damaged rather than one a project's name rules out: its
+# `projects/` a file, and the overlay root itself a file. Each is the owner's own state, and no
+# `project.name` could be chosen that a directory would exist for.
+DAMAGED = {"projects-is-a-file": "projects", "overlay-root-is-a-file": ""}
+
+
+@pytest.mark.parametrize("command", ["attach", "check"])
+@pytest.mark.parametrize("shape", sorted(DAMAGED))
+def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged(
+    tmp_path: Path, shape: str, command: str
+) -> None:
+    # `share.stat()` raised `NotADirectoryError` for both shapes, which `cannot_exist` reads as a
+    # name no directory can carry: the refusal blamed the project's name and told the owner to
+    # choose another, for a bound project whose overlay is what broke. It names the path that is
+    # not a directory, says the overlay is damaged, and never asks for another name; and it is
+    # still made before the first write. The name is the repository's and is never printed.
+    # Mutation (declared): the damaged-overlay check skipped -> the name is blamed again.
+    name = "a-distinctive-project-name"
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    overlay = store.parents[2]
+    (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
+    store = overlay / "projects" / name / "memory"
+    store.mkdir(parents=True)
+    _attach_it(root, store, machine, tmp_path / "home")
+    broken = overlay / DAMAGED[shape] if DAMAGED[shape] else overlay
+    shutil.rmtree(broken)
+    broken.write_text("not a directory\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        if command == "attach":
+            _attach_it(root, store, machine, tmp_path / "home")
+        else:
+            check(root, store=store, machine=machine)
+    said = str(refused.value)
+    assert said == OVERLAY_DAMAGED.format(path=broken)
+    assert "choose another" not in said
+    assert name not in said
+    assert _everything(tmp_path) == before

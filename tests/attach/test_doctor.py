@@ -1676,7 +1676,40 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     attached = _by_name(rows, "attached")
     if ledger == "readable":
         assert attached.status == WARN, attached
-        assert "has no binding for this project" in attached.detail
+        # It said "has no binding for this project", sending the owner of a bound project to
+        # remove the ledger; it names the path that is not a directory instead, as the
+        # damaged-overlay rows below pin whole.
+        assert f"{projects} is not a directory" in attached.detail
+    assert not [row.name for row in rows if row.status == "red"]
+
+
+@pytest.mark.parametrize("shape", ["projects-is-a-file", "overlay-root-is-a-file"])
+def test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger(
+    tmp_path: Path, shape: str
+) -> None:
+    # A bound project whose overlay's `projects/`, or whose overlay root, became a file. The
+    # overlay holds no record of the binding it does have, so the row warned that the overlay "has
+    # no binding for this project" and offered to remove the ledger, which is the one remedy that
+    # destroys this checkout's record of a real attach. It names the path that is not a directory
+    # and says to repair the overlay; it stays a warning and no row turns red, since `hook-entries`
+    # still counts what `common/` grants where it can. Mutation (declared): the attached row asks
+    # nothing about the overlay's shape -> "has no binding" comes back.
+    root = _attached(tmp_path)
+    overlay = tmp_path / "overlay"
+    broken = overlay / PROJECTS if shape == "projects-is-a-file" else overlay
+    shutil.rmtree(broken)
+    broken.write_text("not a directory\n", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=_machine(tmp_path))
+    attached = _by_name(rows, "attached")
+    assert attached == Check(
+        "attached",
+        WARN,
+        f"{LEDGER} records an attach, but {broken} is not a directory, so the overlay this "
+        f"machine records is damaged and cannot say whether this checkout is bound",
+        f"repair the overlay so that {broken} is a directory again (or clone the overlay afresh), "
+        f"then run `stayfixed doctor` again",
+    )
+    assert "remove the ledger" not in attached.remedy
     assert not [row.name for row in rows if row.status == "red"]
 
 

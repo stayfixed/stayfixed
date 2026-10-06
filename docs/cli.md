@@ -2063,6 +2063,11 @@ there fits under the longest path the system allows while a path `attach` makes 
 not — the `project.toml` that records the binding, the notes index `MEMORY.md`, or the directory
 of one of `memory.groups` — because nothing could read that record back or link the notes to that
 path; a long `memory.groups` entry reaches it as a long name does, and the refusal names neither.
+Both hold where the overlay has no directory for the project yet, `projects/` included. An overlay
+whose root, or whose `projects/`, is there and is not a directory is refused (`2`) as damaged, by
+`--check` as well, with that path named and the overlay's repair as the way out; no name is blamed
+for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than offering to
+remove the ledger.
 
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes

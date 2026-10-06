@@ -2103,3 +2103,51 @@ after = "        if False:"
 reddens = [
   "tests/attach/test_commands.py::test_a_group_longer_than_a_file_name_under_a_share_not_there_yet_is_refused_by_both",
 ]
+
+# An overlay whose root or `projects/` is a file is the owner's overlay in a broken state, and the
+# share check read its `NotADirectoryError` as a name no directory can carry: `attach` and
+# `--check` told the owner of a bound project to choose another `name`, and `doctor`'s `attached`
+# row said the overlay has no binding and offered to remove the ledger. Both name the path that is
+# not a directory and ask for the overlay's repair.
+[[mutation]]
+name = "attach blames the project's name for an overlay whose projects/ or root is a file"
+file = "src/stayfixed/attach/binding.py"
+before = """
+    if damaged is not None:
+        raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
+"""
+after = """
+    if False:
+        raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
+"""
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged[overlay-root-is-a-file-check]",
+  "tests/attach/test_write.py::test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged[projects-is-a-file-attach]",
+]
+
+[[mutation]]
+name = "the damaged-overlay probe never looks past the overlay root"
+file = "src/stayfixed/attach/binding.py"
+before = "    for path in (overlay, overlay / PROJECTS):"
+after = "    for path in (overlay,):"
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_damaged[projects-is-a-file-check]",
+  "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-file]",
+]
+
+[[mutation]]
+name = "doctor tells a bound checkout of a damaged overlay that it has no binding"
+file = "src/stayfixed/attach/doctor.py"
+before = """
+        damaged = damaged_overlay(answer.overlay)
+        if damaged is not None:
+"""
+after = """
+        damaged = damaged_overlay(answer.overlay)
+        if False:
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-file]",
+  "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[overlay-root-is-a-file]",
+  "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[readable]",
+]

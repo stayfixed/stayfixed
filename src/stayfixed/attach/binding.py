@@ -113,6 +113,37 @@ PATH_CANNOT_EXIST = (
 )
 
 
+# The refusal for an overlay whose root, or whose `projects/`, is there and is not a directory.
+# That is the owner's overlay in a broken state and never a name the repository chose, so it names
+# the path — the owner's, from the machine file, holding no project's name — and asks for the
+# overlay to be repaired, never for another `name`.
+OVERLAY_DAMAGED = (
+    "{path} is not a directory, so the overlay this machine records is damaged: no project's "
+    "binding record or notes can be kept under it; repair the overlay so that path is a "
+    "directory again (or clone the overlay afresh), then run the command again"
+)
+
+
+def damaged_overlay(overlay: Path) -> Path | None:
+    """The overlay root, or its `projects/`, when it is there and is not a directory; else `None`.
+
+    Asked of the owner's own paths and never of anything `project.name` spells, so it answers
+    the same for every project: an overlay in this state holds no project's binding, and a
+    reader that took its `NotADirectoryError` for a name no directory can carry blamed the
+    repository's name and sent a bound project's owner to choose another one. A path that is
+    not there, or cannot be asked about, is not this answer: an overlay with no `projects/` yet
+    is a fresh one, and the callers have their own answers for the rest.
+    """
+    for path in (overlay, overlay / PROJECTS):
+        try:
+            mode = path.stat().st_mode
+        except OSError:
+            return None
+        if not stat.S_ISDIR(mode):
+            return path
+    return None
+
+
 def cannot_exist(exc: OSError) -> bool:
     """Whether `exc` says its path cannot exist on this filesystem, whatever the overlay holds.
 
@@ -154,6 +185,11 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     """
     share = binding.overlay / PROJECTS / binding.project
     where = f"{binding.overlay / PROJECTS}/<this project's name>"
+    # The overlay's own shape first: a root or a `projects/` that is a file is the owner's to
+    # repair, whatever the name, and every question below would blame the name for it.
+    damaged = damaged_overlay(binding.overlay)
+    if damaged is not None:
+        raise Refusal(OVERLAY_DAMAGED.format(path=damaged))
     # A name, or a group, longer than a file name may be is asked by its length and not by what a
     # lookup says: an overlay with no `projects/` yet answers every path under it with "no such
     # file", the over-long name included, so a 300-character name read as a first attach and the
