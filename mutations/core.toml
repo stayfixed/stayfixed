@@ -3201,3 +3201,12 @@ file = "src/stayfixed/committed.py"
 before = '    if ".." in lexical.parts:'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+
+[[mutation]]
+name = "the live walk numbers each list from one"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            for entry in entries:\n                places += 1\n"
+after = "            places = 0\n            for entry in entries:\n                places += 1\n"
+reddens = [
+  "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
+]

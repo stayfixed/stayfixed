@@ -2650,7 +2650,7 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every project skill whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; `.claude/skills/<name>/SKILL.md` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -2745,15 +2745,17 @@ like any other. Where such a misplaced value is itself an object or a list, whic
 command, the file is also reported as one that could not be read, since that shape was not
 measured; so is an entry object where a group goes, and a command claiming the stayfixed marker
 inside any such part is `red`. That is a conservative reading and not a measurement: whether a
-harness runs a command there is not known. An entry is named by its place among every element
-of its list, skipped scalars included, so `entry 5 of 5` is where you find it. Only Claude Code's
-settings files are read this way: `.codex/hooks.json`, which no measurement covers, is read as
-strictly as the merge that rewrites it.
+harness runs a command there is not known. An entry is named by its place in the whole file:
+every element of every group's `hooks` list, in every event, counted in document order, skipped
+scalars included, so `entry 2 of 2` may be the only entry of the second event's list. Only
+Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
+is read as strictly as the merge that rewrites it.
 
-`hook-entries` walks settings files and nothing else, and Claude Code can load hooks from three
-more places a repository can commit. What was measured of each, with Claude Code 2.1.288 on macOS
-(2026-10-05, `claude -p` in a scratch project under a configuration directory of its own, with no
-login, so no model call ran):
+`hook-entries` judges the entries of settings files and nothing else. Three more places a
+repository can commit were measured for whether Claude Code runs a hook from them, and one of the
+three did. What was measured of each, with Claude Code 2.1.288 on macOS (2026-10-06, `claude -p`
+in a scratch project under a configuration directory of its own, with no login, so no model call
+ran):
 
 | Source | What ran |
 |---|---|
@@ -2761,11 +2763,18 @@ login, so no model call ran):
 | A project skill's `SKILL.md` frontmatter `hooks` | none on a plain prompt; its `UserPromptSubmit` hook ran when the prompt invoked the skill by name (`/<skill>`) |
 | A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
 
-So a skill a repository commits does run its own hooks once it is invoked, and `hook-entries`
-does not read them; whether the model can invoke a skill, and so run them, without a person
-asking was not measured, because no model call ran. The plugin and agent rows held under that
-same limit, and say nothing about a logged-in session that has accepted the repository's trust
-prompt.
+So a skill a repository commits does run its own hooks once it is invoked. `hook-entries` does
+not judge them, and says so: each project skill whose `.claude/skills/<name>/SKILL.md` opens with
+a frontmatter (the lines between a first `---` line and the next one) holding a `hooks:` key at
+the start of a line is named as one whose hooks the row does not judge, a `warn` that never makes
+the row `red`. Nothing else of the YAML is parsed, and a frontmatter with no closing `---` is
+none. A `SKILL.md` the row cannot read, such as a link to a device or a directory, is named as
+one it cannot say anything about, also a `warn`. A skill's directory
+name is the repository's, so one outside the path grammar is named as a skill whose name the row
+does not print. Agents are not read. Whether the model can invoke a skill, and so run its hooks,
+without a person asking was not measured, because no model call ran. The plugin and agent rows
+held under that same limit, and say nothing about a logged-in session that has accepted the
+repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

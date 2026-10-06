@@ -15,14 +15,18 @@ claims, and that docstring says why.
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
-from stayfixed.fsops import names_regular_file
+from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
 from stayfixed.harnesses import HARNESSES, LENIENT_SETTINGS
+from stayfixed.printed import printable
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
 from stayfixed.setup.api import USER_SETTINGS
 
@@ -34,6 +38,22 @@ from stayfixed.setup.api import USER_SETTINGS
 SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
+
+# Where Claude Code finds a project's skills, each one a directory holding `SKILL.md`. A skill's
+# YAML frontmatter can declare hooks, and Claude Code ran one so declared once the skill was
+# invoked (2.1.288, measured 2026-10-06), so this row names every skill whose frontmatter has a
+# top-level `hooks:` key as one it does not judge (`_skills`).
+SKILLS = ".claude/skills"
+_SKILL_FILE = "SKILL.md"
+# The line that opens a frontmatter and the next one that closes it.
+_FENCE = "---"
+# A top-level `hooks` key: at the start of its line, not indented under another key, and the whole
+# key, not the start of a longer one. Nothing else of YAML is parsed.
+_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")
+# What a skill whose directory name is outside the path grammar is named as: the name is the
+# repository's, and this row's detail is what `--json` carries too, so there is nowhere else to
+# point.
+_UNPRINTED_SKILL = "a skill whose name this row does not print"
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
@@ -242,6 +262,20 @@ def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
     )
 
 
+def _skill_hooks(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} project skill(s) declare hooks in their frontmatter, which this row does "
+        f"not judge: {listed(wheres)}"
+    )
+
+
+def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} project skill file(s) could not be read, so this row cannot say whether "
+        f"they declare hooks: {listed(wheres)}"
+    )
+
+
 # Each kind of finding, in the order the row tells them. A record that cannot be read and a source
 # that cannot be asked withhold judgement and warn; the kinds after them, up to the last, are an
 # entry nothing vouches for or a file nothing can check, and red; and the last, a file the walk
@@ -285,6 +319,24 @@ _BLIND = _Kind(
     _blind,
     lambda areas: "check that each file named above is readable and is valid JSON",
 )
+# A project skill declaring hooks, and one whose file could not be read: warnings, never red, at
+# the lowest step, so either one softens a row with nothing else to say and never a red one. This
+# row judges settings files; a skill's hooks are named, not judged.
+_SKILL_HOOKS = _Kind(
+    WARN,
+    0,
+    _skill_hooks,
+    lambda areas: (
+        "open each skill named above and check the hooks its frontmatter declares: Claude Code "
+        "runs them once the skill is invoked"
+    ),
+)
+_SKILL_UNREAD = _Kind(
+    WARN,
+    0,
+    _skill_unread,
+    lambda areas: "check that each skill file named above is a readable regular file",
+)
 _KINDS = (
     _UNREADABLE,
     _UNASKABLE,
@@ -296,6 +348,8 @@ _KINDS = (
     _UNCHECKED,
     _HIDDEN,
     _BLIND,
+    _SKILL_HOOKS,
+    _SKILL_UNREAD,
 )
 
 
@@ -328,6 +382,55 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
                 wheres = [where for where in mine if where is not None]
                 gathered.append(_Finding(kind, areas, wheres))
     return gathered
+
+
+def _declares_hooks(text: str) -> bool:
+    """Whether `text`, a `SKILL.md`, opens with a frontmatter holding a top-level `hooks:` key.
+
+    The frontmatter is the lines between a first line of `---` and the next `---` line; without
+    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
+    a byte-order mark ahead of the first line is read past."""
+    lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if lines[0].rstrip() != _FENCE:
+        return False
+    for end, line in enumerate(lines[1:], 1):
+        if line.rstrip() == _FENCE:
+            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
+    return False
+
+
+def _skills(root: Path) -> list[_Found]:
+    """A finding for each project skill whose frontmatter declares hooks, and for each whose
+    `SKILL.md` could not be read, in name order.
+
+    Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to a
+    device or a FIFO is refused unread, and a file past the cap is refused, each a skill file this
+    row could not read. A skill directory without a `SKILL.md`, and a path under `SKILLS` that is
+    not a directory, name no skill and are passed over, as a `SKILLS` that names nothing is. Each
+    skill is named by its path, through `printed.printable`, because its directory name is the
+    repository's."""
+    directory = root / SKILLS
+    try:
+        with os.scandir(directory) as listing:
+            names = sorted(entry.name for entry in listing)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return [(_SKILL_UNREAD, None, SKILLS)]
+    found: list[_Found] = []
+    for name in names:
+        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)
+        try:
+            content = read_regular_bytes(directory / name / _SKILL_FILE)
+        except OSError as exc:
+            if exc.errno not in NAMES_NO_FILE:
+                found.append((_SKILL_UNREAD, None, label))
+            continue
+        # Replaced rather than refused, for the reason the settings walk replaces: the key is
+        # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
+        if _declares_hooks(content.decode("utf-8", errors="replace")):
+            found.append((_SKILL_HOOKS, None, label))
+    return found
 
 
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
@@ -433,6 +536,7 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
                     found.append((_UNVOUCHED, holders[0], where))
+    found.extend(_skills(context.root))
     return claimed, foreign, _gathered(answers, found)
 
 
@@ -559,5 +663,12 @@ def hook_entries(context: Context) -> Row:
     leave unknown the provenance of an entry a harness may run. A number longer than the
     interpreter converts is not refused at all: either walk reads it as its text, and the
     entries beside it are judged as they would be without it.
+
+    **A project skill's hooks are named, never judged.** Claude Code runs a hook a committed
+    skill's frontmatter declares once the skill is invoked (`SKILLS` says what was measured), and
+    this row judges settings files, so "all accounted for" beside such a skill would claim more
+    than the row looked at. Each skill whose frontmatter holds a top-level `hooks:` key, and each
+    whose `SKILL.md` could not be read, is a warning naming it (`_skills`): never red, because
+    what a skill's hooks are and whether stayfixed put them there is nothing this row reads.
     """
     return _told(*_classify(context))

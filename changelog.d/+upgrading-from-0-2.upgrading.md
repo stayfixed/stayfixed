@@ -72,7 +72,12 @@ differently. Each has its own entry in these notes, with the detail:
     such a value or in an entry object written where a group goes, where it warned or read "all
     accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
     a settings file that opens with").
+  - `stayfixed doctor`'s `hook-entries` row warns, where 0.2.0 could read "all accounted for",
+    for a project skill whose `SKILL.md` frontmatter declares hooks and for a `SKILL.md` it cannot
+    read; the report's exit code is unchanged (Fixed, "`stayfixed doctor`'s `hook-entries` row now
+    warns about each project skill").
   - A `stayfixed.toml` integer of 2,147,483,648 or more is refused when the file loads, where
     0.2.0 loaded it, and a `[stayfixed] preset` that is not a string is refused as
-    "stayfixed.preset must be a string" rather than as a name that is not a plain identifier
-    (Fixed, "Every integer in `stayfixed.toml`").
+    "stayfixed.preset must be a string; available: …", where 0.2.0 refused `preset = 5` or
+    `true` as a name it does not ship and ended in an internal error on a hexadecimal one past
+    4,300 decimal digits (Fixed, "Every integer in `stayfixed.toml`").
