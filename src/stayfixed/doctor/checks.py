@@ -86,7 +86,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import Unregistered, contributions
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.harnesses import CODEX, Tier
+from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -180,13 +180,20 @@ def _own_root() -> Path | None:
     return own if (own / WRAPPER).is_file() else None
 
 
+# Every registered harness's name for the plugin root, `CANONICAL`'s first, read off the registry.
 # Both names, because both reach this process: Codex exports `PLUGIN_ROOT` and also
 # `CLAUDE_PLUGIN_ROOT`, as the spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`)
 # measured in its *Codex plugin hooks* trial, so a rule written against one of them is
 # `config/machine.py`'s own finding again — "gating one of a pair of equivalent inputs is not a
 # partial defence, it is a redirect with a longer name". Neither is ever executed; see
 # `plugin_root`.
-NAMED_ROOTS = ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
+NAMED_ROOTS = tuple(
+    dict.fromkeys(
+        harness.plugin_root_env
+        for harness in (CANONICAL, *HARNESSES)
+        if harness.plugin_root_env is not None
+    )
+)
 
 
 def _named_root(env: Mapping[str, str]) -> Path | None:
@@ -431,8 +438,10 @@ def _wrapper(context: Context) -> Row:
         for key, value in context.env.items()
         if not key.startswith(("CLAUDE_", "PLUGIN_", "STAYFIXED_"))
     }
-    env["CLAUDE_PLUGIN_ROOT"] = str(root)
-    env["CLAUDE_PROJECT_DIR"] = str(context.root)
+    # Under Claude Code's names for the two roots, as `hooks/hooks.json` runs the wrapper.
+    for variable, value in ((CLAUDE.plugin_root_env, root), (CLAUDE.project_dir_env, context.root)):
+        if variable is not None:
+            env[variable] = str(value)
     try:
         done = subprocess.run(  # noqa: S603 - list form, never a shell; stayfixed's own wrapper
             [str(root / WRAPPER), "open", "--version"],

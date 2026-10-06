@@ -1408,6 +1408,18 @@ reddens = [
   "tests/doctor/test_entries.py::test_the_row_reads_the_machines_settings_file_off_the_harness_registry",
 ]
 
+# The wrapper row runs the wrapper under Claude Code's names for the plugin root and the project
+# root, read off the harness registry. A name the row stopped setting would run the wrapper with no
+# project root, which it reads before any Python runs.
+[[mutation]]
+name = "the wrapper row names the project root in no variable"
+file = "src/stayfixed/doctor/checks.py"
+before = "(CLAUDE.project_dir_env, context.root)"
+after = "(None, context.root)"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_wrapper_runs_under_the_variables_the_harness_registry_names",
+]
+
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
 # and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
 # fault". An empty remedy there is the report's loudest finding rendered as its quietest.

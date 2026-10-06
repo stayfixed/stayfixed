@@ -45,6 +45,7 @@ from stayfixed.doctor.checks import (
     plugin_root,
 )
 from stayfixed.doctor.entries import SETTINGS_FILES
+from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -555,6 +556,32 @@ def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
         "wrapper",
     )
     assert check.status == "ok"
+
+
+def test_the_wrapper_runs_under_the_variables_the_harness_registry_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The row runs the wrapper as `hooks/hooks.json` does, under Claude Code's names for the
+    # plugin root and the project root, and reads both names off the registry rather than spelling
+    # them. A wrapper planted as this process's own root records what it was handed. Mutation
+    # (oracle): `mutations/`'s "the wrapper row names the project root in no variable" -> the
+    # second line is empty.
+    planted = tmp_path / "plugin-root"
+    (planted / "hooks").mkdir(parents=True)
+    seen = tmp_path / "seen"
+    wrapper = planted / "hooks" / "run-hook.sh"
+    wrapper.write_text(
+        f'#!/bin/sh\nprintf "%s\\n%s\\n" "${CLAUDE.plugin_root_env}" "${CLAUDE.project_dir_env}" '
+        f'> "{seen}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setattr(checks, "_own_root", lambda: planted)
+    root = _initialised(tmp_path)
+    check = _by_name(_checks(tmp_path, root), "wrapper")
+    assert check.status == "ok", check
+    assert seen.read_text(encoding="utf-8").splitlines() == [str(planted), str(root)]
+    assert checks.NAMED_ROOTS == ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
 
 
 def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Path) -> None:

@@ -36,8 +36,9 @@ Claude Code or Codex, and a harness that differs from both in any of it is an ed
   `hooks/hashes.json` records for it (`scripts/release.py hashes`).
 - `hooks.api.DATA_ROOT_VARIABLES` names the variables the sink and `doctor` find the harness's
   data root by.
-- `doctor` names the plugin-root variables in `NAMED_ROOTS`, runs the wrapper for its `wrapper`
-  row under Claude Code's variables, and reads `CODEX` by name in its `codex-trust` row.
+- `doctor` runs the wrapper for its `wrapper` row under `CLAUDE`'s two root variables whichever
+  harness is in use, names `CLAUDE_PLUGIN_ROOT` in the remedy of the rows that find no plugin
+  root, and reads `CODEX` by name in its `codex-trust` row.
 - `memory session-context` writes a bundle to a `SessionStart` entry's stdout as it is, never
   through a `render`, so a harness that reads that event's output in another shape is an edit
   there.
@@ -134,6 +135,10 @@ class Harness:
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
     render_profile: Callable[[Profile, str], Rendition] | None = None
+    # The variable this harness names the plugin's own root in, if any: where `doctor` looks for
+    # the installed plugin when this process cannot name it, and the one it sets when it runs the
+    # wrapper.
+    plugin_root_env: str | None = None
 
 
 def hook_specific_output(event_name: str, context: str) -> str:
@@ -230,6 +235,7 @@ CLAUDE = Harness(
         }
     ),
     render_profile=_claude_rule,
+    plugin_root_env="CLAUDE_PLUGIN_ROOT",
 )
 # Codex reads `AGENTS.md` from the root down and no other instruction file, and follows no
 # import; `.codex/rules` holds command-execution policy, not instructions. The region is how a
@@ -261,6 +267,8 @@ CODEX = Harness(
         }
     ),
     detects=_codex_detects,
+    # Codex sets Claude Code's name for it too (`_codex_detects`).
+    plugin_root_env="PLUGIN_ROOT",
 )
 # Claude Code's hook schema is the de-facto one, which other harnesses imitate, so it answers
 # whatever no other value claims and detects nothing of its own.
