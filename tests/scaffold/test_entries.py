@@ -9,11 +9,11 @@ from stayfixed.scaffold.entries import (
     EntriesError,
     ParserLimitError,
     apply_entries,
-    entry_commands,
     mark,
     marker_id,
     owned,
     owned_ids,
+    placed_entries,
 )
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING
 
@@ -214,6 +214,12 @@ def test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge(
         apply_entries(long, {})
 
 
+def _commands(document: str) -> list[str]:
+    """The strict walk's commands, in its order: the walk `doctor` reads a file no measurement
+    covers with, and `attach`'s grants are read back through."""
+    return [placed.command for placed in placed_entries(document)]
+
+
 def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_refuses() -> None:
     # `doctor`'s `hook-entries` names an entry by its position in this list, so every entry holds
     # a place: two entries sharing one id are two, and one whose command is absent or not a string
@@ -232,18 +238,18 @@ def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_r
             "SessionStart": [{"hooks": [{"command": shared}]}],
         },
     }
-    assert entry_commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
-    assert entry_commands("") == []
-    assert entry_commands(json.dumps({"permissions": {}})) == []
+    assert _commands(json.dumps(raw)) == [shared, "", "", "7", "plain.sh", shared]
+    assert _commands("") == []
+    assert _commands(json.dumps({"permissions": {}})) == []
     # The walk is the engine's strict one: a shape `apply_entries` would refuse is refused here,
     # as `owned_ids` refuses it, and a number past the parser's reach is read as its text.
     for refused in ("not json", "[]", '{"hooks": []}', '{"hooks": {"Stop": [1]}}'):
         with pytest.raises(EntriesError):
             owned_ids(refused)
         with pytest.raises(EntriesError):
-            entry_commands(refused)
+            _commands(refused)
     long = json.dumps(raw)[:-1] + ', "n": ' + LONG_NUMBER + "}"
-    assert entry_commands(long) == [shared, "", "", "7", "plain.sh", shared]
+    assert _commands(long) == [shared, "", "", "7", "plain.sh", shared]
 
 
 def test_an_empty_document_gains_the_wanted_entries() -> None:

@@ -2603,7 +2603,7 @@ reddens = [
 
 # Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
 # id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `entry_commands` walks
+# claimed count and inflates `foreign` by exactly the difference. `placed_entries` walks
 # positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
 # walk key by id instead of counting entries, which is precisely the defect positional counting
 # exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
@@ -2999,6 +2999,7 @@ reddens = [
   "tests/test_tomlout.py::test_an_integer_past_the_conversion_limit_round_trips_in_hexadecimal",
   "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[integer-key]",
   "tests/project/test_init.py::test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configurations_error[string-key]",
+  "tests/setup/test_machine.py::test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite",
 ]
 
 [[mutation]]

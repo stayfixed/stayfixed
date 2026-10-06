@@ -303,12 +303,6 @@ def judged_entries(document: str, *, lenient: bool) -> tuple[list[Placed], bool]
     return placed_entries(document), False
 
 
-def entry_commands(document: str) -> list[str]:
-    """`placed_entries`' commands alone, in its order, for a reader that asks only whether an
-    entry claims the marker."""
-    return [placed.command for placed in placed_entries(document)]
-
-
 def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
     """Where `apply_entries` puts each entry of `wanted`, as `placed_entries` reads it back.
 
