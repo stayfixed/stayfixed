@@ -80,6 +80,7 @@ exit code.
 
 from __future__ import annotations
 
+import os.path
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -386,6 +387,26 @@ def asserted_outcomes(prose: str) -> list[int]:
     return sorted(found)
 
 
+def _present(root: Path, landed: Path) -> bool | None:
+    """Whether the lexically contained claim at `landed` names something in the tree, or `None`
+    when its real path leaves `root`.
+
+    `resolves_within` is lexical and `exists()` follows symlinks, so a committed `docs/l -> /`
+    made every claim under it a question about the machine: one bit of existence for any path,
+    a present file passing and an absent one reported. A claim whose real path leaves the root
+    is not settled, as one whose spelling leaves it is not; a symlink that stays inside the tree
+    is followed. A name the filesystem cannot take (`ENAMETOOLONG` for a 5,000-character path on
+    Python 3.11 to 3.13) names nothing, and is reported rather than crashing the lint.
+    """
+    try:
+        real = Path(os.path.realpath(landed))
+        if not real.is_relative_to(os.path.realpath(root)):
+            return None
+        return real.exists()
+    except OSError:
+        return False
+
+
 def _lint_one(
     path: Path, where: str, root: Path, *, fixes: re.Pattern[str], judged: set[int] | None = None
 ) -> list[Finding]:
@@ -412,7 +433,7 @@ def _lint_one(
                 # answer would be about this disk rather than about the repository, and a plan
                 # naming an absolute path that exists locally would pass here and fail in CI.
                 landed = resolves_within(root, target)
-                if landed is None or landed.exists() or target in declared:
+                if landed is None or target in declared or _present(root, landed) is not False:
                     continue
                 found.append(Finding("dead-reference", where, number, target))
         if _LEADING.search(line):

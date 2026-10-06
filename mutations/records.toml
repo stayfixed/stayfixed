@@ -800,6 +800,28 @@ reddens = [
   "tests/ledger/test_register.py::test_the_bug_entry_template_names_no_one_stacks_location_syntax",
 ]
 
+# A plan's claim is settled only inside the tree, by its real path: a committed symlink out of
+# it made the lint an existence oracle for the machine, a present file passing and an absent one
+# reported.
+[[mutation]]
+name = "the plan lint follows a symlink out of the tree"
+file = "src/stayfixed/docs/plans.py"
+before = "        if not real.is_relative_to(os.path.realpath(root)):"
+after = "        if False:"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+# A name too long for the filesystem names nothing: it is reported, never a crash of the lint.
+[[mutation]]
+name = "a path the filesystem cannot name crashes the plan lint"
+file = "src/stayfixed/docs/plans.py"
+before = "    except OSError:\n        return False\n"
+after = "    except NotImplementedError:\n        return False\n"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash",
+]
+
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
 # permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
 # as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
