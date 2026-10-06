@@ -99,7 +99,7 @@ def test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash
     # A 5,000-character backticked path made `exists()` raise `ENAMETOOLONG` on Python 3.11 to
     # 3.13, which crashed the lint on the author's own plan instead of reporting the claim.
     # Forced here, portably, by making `exists` raise for that path. Oracle: `mutations/`, "a
-    # path the filesystem cannot name crashes the plan lint".
+    # path the filesystem cannot name crashes the reference checks".
     root, config = project(tmp_path)
     long = "src/" + "a" * 5000 + ".py"
     real = Path.exists
@@ -137,7 +137,7 @@ def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_files
     # passing and an absent one reported. A claim whose real path leaves the root is now not
     # settled at all, as one whose spelling leaves it is not. A symlink that stays inside the
     # tree is still followed. Oracle: `mutations/`, "the plan lint follows a symlink out of
-    # the tree".
+    # the tree", "a path claim is followed through a symlink out of the tree".
     root, config = project(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()

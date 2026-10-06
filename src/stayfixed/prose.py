@@ -112,3 +112,25 @@ def resolves_within(root: Path, target: str, *, base: Path | None = None) -> Pat
     """
     landed = Path(os.path.normpath(os.path.join(str(base if base is not None else root), target)))
     return landed if landed.is_relative_to(os.path.normpath(str(root))) else None
+
+
+def present_within(root: Path, landed: Path) -> bool | None:
+    """Whether the path at `landed` names something inside `root`: `True` or `False`, or `None`
+    when its real path leaves `root`, so the claim is not settled at all.
+
+    `resolves_within` is lexical, and `exists()` follows symlinks: a committed `docs/l -> /`
+    made every claim under it a question about the machine, one bit of existence for any path,
+    a present file passing and an absent one reported. So the answer is taken from the claim's
+    real path and only inside the root's, as a claim whose spelling leaves the root is not asked
+    either; a symlink that stays inside the tree is followed. A name the filesystem cannot take
+    (`ENAMETOOLONG` for a 5,000-character path on Python 3.11 to 3.13) names nothing, and is
+    `False` rather than an exception. The plan lint, the always-loaded document's link check and
+    `memory refs` each ask it.
+    """
+    try:
+        real = Path(os.path.realpath(landed))
+        if not real.is_relative_to(os.path.realpath(root)):
+            return None
+        return real.exists()
+    except OSError:
+        return False

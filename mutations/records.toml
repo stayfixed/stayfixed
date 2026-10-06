@@ -800,26 +800,33 @@ reddens = [
   "tests/ledger/test_register.py::test_the_bug_entry_template_names_no_one_stacks_location_syntax",
 ]
 
-# A plan's claim is settled only inside the tree, by its real path: a committed symlink out of
-# it made the lint an existence oracle for the machine, a present file passing and an absent one
-# reported.
+# Each reader of a path claim asks `prose.present_within` rather than `exists()`, which follows a
+# committed symlink out of the tree and answers about the machine.
 [[mutation]]
 name = "the plan lint follows a symlink out of the tree"
 file = "src/stayfixed/docs/plans.py"
-before = "        if not real.is_relative_to(os.path.realpath(root)):"
-after = "        if False:"
+before = "                if present_within(root, landed) is not False:"
+after = "                if landed.exists():"
 reddens = [
   "tests/docs/test_plans.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
 ]
 
-# A name too long for the filesystem names nothing: it is reported, never a crash of the lint.
 [[mutation]]
-name = "a path the filesystem cannot name crashes the plan lint"
-file = "src/stayfixed/docs/plans.py"
-before = "    except OSError:\n        return False\n"
-after = "    except NotImplementedError:\n        return False\n"
+name = "the AGENTS.md link check follows a symlink out of the tree"
+file = "src/stayfixed/docs/hygiene.py"
+before = "        if present_within(root, landed) is False"
+after = "        if not landed.exists()"
 reddens = [
-  "tests/docs/test_plans.py::test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash",
+  "tests/docs/test_hygiene.py::test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+[[mutation]]
+name = "memory refs follows a symlink out of the tree"
+file = "src/stayfixed/memory/refs.py"
+before = "    return present_within(root, path) is not False"
+after = "    return path.exists()"
+reddens = [
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
 ]
 
 # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as

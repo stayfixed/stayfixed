@@ -31,7 +31,7 @@ from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
 from stayfixed.memory.notes import Note, Walk, walk
 from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
-from stayfixed.prose import blank_fences, path_references
+from stayfixed.prose import blank_fences, path_references, present_within
 
 # Deliberate placeholders a note may write without claiming a file. Not a config key.
 _PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
@@ -70,8 +70,14 @@ def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
     if target.startswith("/"):
         # A path from another host's filesystem: notes quote deployment layouts verbatim. An
         # absolute path that does happen to sit in this checkout is still checked.
-        return not Path(target).is_relative_to(root) or Path(target).exists()
-    return any((root / prefix / target).exists() for prefix in roots)
+        return not Path(target).is_relative_to(root) or _settled(root, Path(target))
+    return any(_settled(root, root / prefix / target) for prefix in roots)
+
+
+def _settled(root: Path, path: Path) -> bool:
+    """A candidate names something in the tree, or leads out of it through a symlink and is
+    not this repository's to answer (`prose.present_within`): either way it is not reported."""
+    return present_within(root, path) is not False
 
 
 def _inside_store(root: Path, store: Store, target: str) -> bool:
