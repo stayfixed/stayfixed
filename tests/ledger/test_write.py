@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -787,29 +788,51 @@ def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
     assert_snapshot_unchanged(root, before)
 
 
+OCCUPIED_BY_AN_EDIT = (
+    "BR-009 already has an entry file that is not this move half done; pick a free identifier, "
+    "or, if an interrupted `stayfixed bugs renumber BR-001 BR-009` wrote it and it was edited "
+    "since, make it BR-001's text again with only its `id:` line changed and run this again"
+)
+
+
+@pytest.mark.parametrize(
+    ("edit", "said"),
+    [
+        (
+            lambda text: text.replace("body mentioning", "a body edited, mentioning"),
+            OCCUPIED_BY_AN_EDIT,
+        ),
+        (
+            lambda text: text + "\n",
+            OCCUPIED_BY_AN_EDIT.replace(
+                "not this move half done;",
+                "not this move half done — it differs from BR-001's moved text only in the line "
+                "breaks at its end;",
+            ),
+        ),
+    ],
+    ids=["body-edited", "final-newline"],
+)
 def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edit: Callable[[str], str], said: str
 ) -> None:
-    # Killed after the first write, and the moved file then touched — an end-of-file fixer, an
-    # editor's save: the target is no longer the moved text, so the re-run cannot tell it from
+    # Killed after the first write, and the moved file then touched — an editor's save, an
+    # end-of-file fixer: the target is no longer the moved text, so the re-run cannot tell it from
     # an entry of its own and refuses. The refusal says so and how to finish, naming only the two
     # identifiers, which the identifier grammar has already held: nothing the repository wrote.
-    # Mutation: `mutations/`, "the occupied-target refusal says nothing of an interrupted move".
+    # When the line breaks at the end are the only difference, it says that too, since a fixer's
+    # newline is invisible in an editor. Mutations: `mutations/`, "the occupied-target refusal
+    # says nothing of an interrupted move" and "the occupied-target refusal does not say a final
+    # newline is the only difference".
     root, config = project(tmp_path)
     seed(root, config, 1)
     with killed_at(monkeypatch, KILL_POINTS["before-pointer"]), pytest.raises(Killed):
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
     moved = root / "docs" / "bugs" / "BR-009.md"
-    moved.write_text(moved.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    moved.write_text(edit(moved.read_text(encoding="utf-8")), encoding="utf-8")
     with pytest.raises(LedgerError) as raised:
         renumber(root, config, bug_register(config), "BR-001", "BR-009")
-    assert str(raised.value) == (
-        "BR-009 already has an entry file, and it is not the half-done state of this move — "
-        "BR-001's entry with only its `id:` line rewritten, with BR-001 untouched or left as the "
-        "void pointer to it — so it is an entry of its own; pick a free identifier. If an "
-        "interrupted `stayfixed bugs renumber BR-001 BR-009` wrote it and it was edited since, "
-        "make it BR-001's text again with only its `id:` line changed, and run this again"
-    )
+    assert str(raised.value) == said
 
 
 def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finished(

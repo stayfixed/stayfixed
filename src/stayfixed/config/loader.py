@@ -519,7 +519,9 @@ def loads(
     `personal` is the `[personal]` a load earlier in the same command already read, taken in
     place of reading the machine file again: a caller that holds a `Config` and not the path
     its machine file came from — a gate, handed `(root, config, base)` — loads a second
-    document with it, and so reads no machine file but the one the command was given.
+    document with it, and so reads no machine file but the one the command was given. Given
+    both, `personal` wins and `machine` is never read. Every argument after `root` is
+    keyword-only.
     """
     path = label or root / CONFIG_FILE
     try:

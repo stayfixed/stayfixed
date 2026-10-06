@@ -558,7 +558,7 @@ reddens = [
 name = "a renumber resumes from any void entry toward its target"
 file = "src/stayfixed/ledger/write.py"
 before = "    if source_text == pointer:"
-after = "    if carried.status == register.schema.void and carried.related == (new,):"
+after = "    if source.status == register.schema.void and source.related == (new,):"
 reddens = [
   "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[void]",
 ]
@@ -567,7 +567,7 @@ reddens = [
 name = "a renumber resumes from any entry that relates to its target"
 file = "src/stayfixed/ledger/write.py"
 before = "    if source_text == pointer:"
-after = "    if carried.related == (new,):"
+after = "    if source.related == (new,):"
 reddens = [
   "tests/ledger/test_write.py::test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer[open]",
 ]
@@ -577,8 +577,8 @@ reddens = [
 [[mutation]]
 name = "the void pointer is recognised by the target's current title"
 file = "src/stayfixed/ledger/write.py"
-before = "    pointer = _void_pointer(register, old=old, new=new, title=carried.title, today=day)"
-after = '''    pointer = _void_pointer(register, old=old, new=new, title=f"renumbered to {new} — {parse_entry(held, path=where, register=register).title}", today=day)'''
+before = "    pointer = _void_pointer(register, old=old, new=new, title=source.title, today=day)"
+after = '''    pointer = _void_pointer(register, old=old, new=new, title=f"renumbered to {new} — {parse_entry(held, path=Path(register.directory) / f'{new}.md', register=register).title}", today=day)'''
 reddens = [
   "tests/ledger/test_write.py::test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finished",
 ]
@@ -586,7 +586,7 @@ reddens = [
 [[mutation]]
 name = "the void pointer's title is not held to the prefix the move writes"
 file = "src/stayfixed/ledger/write.py"
-before = '''    if not carried.title.startswith(f"renumbered to {new} — "):'''
+before = '''    if not source.title.startswith(f"renumbered to {new} — "):'''
 after = "    if False:"
 reddens = [
   "tests/ledger/test_write.py::test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused",
@@ -616,6 +616,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the occupied-target refusal does not say a final newline is the only difference"
+file = "src/stayfixed/ledger/write.py"
+before = '    if held.rstrip("\r\n") == moved.rstrip("\r\n"):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand[final-newline]",
+]
+
+[[mutation]]
 name = "renumber moves an entry onto its own identifier"
 file = "src/stayfixed/ledger/write.py"
 before = "    if old == new:"
@@ -627,10 +636,10 @@ reddens = [
 [[mutation]]
 name = "the occupied-target refusal says nothing of an interrupted move"
 file = "src/stayfixed/ledger/write.py"
-before = "    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name))"
+before = '    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=""))'
 after = '    occupied = LedgerError(f"{new} already has an entry file; pick a free identifier")'
 reddens = [
-  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand",
+  "tests/ledger/test_write.py::test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand[body-edited]",
 ]
 
 [[mutation]]
@@ -2448,8 +2457,10 @@ reddens = [
 [[mutation]]
 name = "memory index and fit ask a narrower question than the harness link"
 file = "src/stayfixed/memory/commands.py"
-before = "    return harness_link_needed(store, config)"
-after = "    return trust.may_inject(store, config, repository_data=_holds_repository_data(store, config))"
+before = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = harness_link_needed(store, config)"""
+after = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = trust.may_inject(store, config, repository_data=_holds_repository_data(store, config))"""
 reddens = [
   "tests/memory/test_commands.py::test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow",
 ]

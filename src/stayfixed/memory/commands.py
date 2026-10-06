@@ -92,7 +92,9 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 # What the trust gate withholds until there is a record, said where a person will read it:
 # `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
 # withholds the harness memory link from a store whose directory is inside the repository.
-# `_trusted` decides when one of these is said, and `_holds_repository_data` which. The failure
+# `harness_link_needed` decides when one of these is said — the link's question, which is the
+# wider one: whenever the notes or a committed index are withheld, so is the link — and
+# `_holds_repository_data` which. The failure
 # this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
 # so it used to revoke the very record it depends on, and nothing in any summary said why the
 # model had stopped receiving standing rules.
@@ -142,20 +144,6 @@ _EXTRA_NOT_PUBLISHED = (
 )
 
 
-def _trusted(store: Store, config: Config) -> bool:
-    """Whether everything this store hands a session may reach it — the question the harness
-    memory link asks, `worktree.harness_link_needed`, and no other.
-
-    This asked a narrower one, whether the notes or a committed `MEMORY.md` are repository data,
-    while the link asks whether the *directory* it exposes is inside the repository, which in
-    overlay mode it always is. So an overlay store with no record read as trusted, and `memory
-    index --check` and `memory fit` said nothing, while its link waited for a record all the
-    same. One function now answers both, and the wider one: whenever the narrower question
-    withholds anything, the link is withheld too. `_holds_repository_data` says which words fit.
-    """
-    return harness_link_needed(store, config)
-
-
 def _holds_repository_data(store: Store, config: Config) -> bool:
     """Whether the notes or a committed index are repository data, which the bundles withhold
     too, rather than only the directory the harness link exposes.
@@ -170,15 +158,16 @@ def _holds_repository_data(store: Store, config: Config) -> bool:
     return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
 
 
-def _gate(store: Store, config: Config) -> str | None:
-    """Whether the trust gate is what a person should be told about, after a command ran.
+def _gate(store: Store, config: Config, trusted: bool) -> str | None:
+    """Whether the trust gate is what a person should be told about, after a command ran;
+    `trusted` is the caller's own answer to `harness_link_needed`, asked once per command.
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
     text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    if _trusted(store, config):
+    if trusted:
         return None
     return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
 
@@ -274,8 +263,9 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
+        trusted = harness_link_needed(store, config)
         return Result(
-            _with(summary, _gate(store, config)),
+            _with(summary, _gate(store, config, trusted)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -288,7 +278,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
-                "trusted": _trusted(store, config),
+                "trusted": trusted,
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
@@ -296,7 +286,9 @@ def run_index(args: argparse.Namespace) -> Result:
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
     carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
-    note = _DROPPED if before.trusted and not carried else _gate(store, config)
+    # Asked after the write and its refresh, which is the state the next session meets.
+    trusted = harness_link_needed(store, config)
+    note = _DROPPED if before.trusted and not carried else _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -317,7 +309,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": _trusted(store, config),
+            "trusted": trusted,
         },
     )
 
@@ -370,9 +362,9 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = _trusted(store, config)
+    trusted = harness_link_needed(store, config)
     return Result(
-        _with(summary, _gate(store, config)),
+        _with(summary, _gate(store, config, trusted)),
         {"bundles": report, "trusted": trusted},
         exit_code=1 if bad else 0,
     )

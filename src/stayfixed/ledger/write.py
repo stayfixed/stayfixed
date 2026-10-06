@@ -14,6 +14,7 @@ from stayfixed.gitenv import NO_ANSWER, QUERY_TIMEOUT_SECONDS, git_run, in_work_
 from stayfixed.identifiers import DIGITS
 from stayfixed.ledger.entries import (
     ID_LINE,
+    Entry,
     LedgerError,
     entry_dir,
     field_line,
@@ -39,13 +40,14 @@ FETCH_TIMEOUT_SECONDS = 10
 # What `renumber` says of an occupied target it cannot tell from this move half-done. Built from
 # the two identifiers alone, which the identifier grammar has held, and the register's command
 # group, which is stayfixed's: nothing the repository wrote reaches the line.
+# `{why}` is empty, or `LINE_BREAKS_ONLY` when those are the only difference: an end-of-file
+# fixer's newline is invisible in an editor, and the remedy is then one keystroke.
 OCCUPIED = (
-    "{new} already has an entry file, and it is not the half-done state of this move — {old}'s "
-    "entry with only its `id:` line rewritten, with {old} untouched or left as the void "
-    "pointer to it — so it is an entry of its own; pick a free identifier. If an interrupted "
-    "`stayfixed {name} renumber {old} {new}` wrote it and it was edited since, make it {old}'s "
-    "text again with only its `id:` line changed, and run this again"
+    "{new} already has an entry file that is not this move half done{why}; pick a free "
+    "identifier, or, if an interrupted `stayfixed {name} renumber {old} {new}` wrote it and it was "
+    "edited since, make it {old}'s text again with only its `id:` line changed and run this again"
 )
+LINE_BREAKS_ONLY = " — it differs from {old}'s moved text only in the line breaks at its end"
 _VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
@@ -287,7 +289,14 @@ def _scaffold(
 
 
 def _endpoints_written(
-    register: Register, source_text: str, moved: str, target: Path, *, old: str, new: str
+    register: Register,
+    source_text: str,
+    source: Entry,
+    moved: str,
+    target: Path,
+    *,
+    old: str,
+    new: str,
 ) -> int:
     """How many of its two endpoint writes an interrupted run of this same move made — 0 when
     the target is free — or the occupied-target refusal.
@@ -306,28 +315,25 @@ def _endpoints_written(
     """
     if not target.exists():
         return 0
-    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name))
+    occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=""))
     if target.is_symlink() or not target.is_file():
         raise occupied
-    where = Path(register.directory) / f"{new}.md"
-    where_old = Path(register.directory) / f"{old}.md"
-    held = read_ledger_text(target, where=where)
+    held = read_ledger_text(target, where=Path(register.directory) / f"{new}.md")
     if held == moved:
         return 1
+    if held.rstrip("\r\n") == moved.rstrip("\r\n"):
+        why = LINE_BREAKS_ONLY.format(old=old)
+        raise LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=why))
     # The pointer this move writes, rebuilt with the title and the date it carries and compared
     # byte for byte, its title held only to the prefix the move writes: the target's own title is
     # the owner's to change after the move, and a pointer rebuilt from it stopped matching then. A
     # pointer anyone wrote by hand toward a genuine `new`, and a live entry that merely relates to
     # it, still differ from it in their other bytes — the status, the related list, the body.
-    try:
-        carried = parse_entry(source_text, path=where_old, register=register)
-    except LedgerError:
-        raise occupied from None
-    if not carried.title.startswith(f"renumbered to {new} — "):
+    if not source.title.startswith(f"renumbered to {new} — "):
         raise occupied
     schema = register.schema
-    day = next((carried.fields.get(key, "") for key in schema.dates if key in schema.required), "")
-    pointer = _void_pointer(register, old=old, new=new, title=carried.title, today=day)
+    day = next((source.fields.get(key, "") for key in schema.dates if key in schema.required), "")
+    pointer = _void_pointer(register, old=old, new=new, title=source.title, today=day)
     if source_text == pointer:
         return 2
     raise occupied
@@ -393,11 +399,16 @@ def renumber(
     # names the file in every message either of them raises.
     where = Path(directory) / f"{old}.md"
     source_text = read_ledger_text(source, where=where)
+    # Parsed once: the half-done check reads the pointer it may be, and the pointer this run
+    # writes is titled from the entry it is.
+    source_entry = parse_entry(source_text, path=where, register=register)
     # A literal `"id: {old}"` substring match would miss a hand-edited entry whose `id:` line
     # uses different spacing or quoting than this tool writes; `parse_entry` already accepts
     # those (`_KEY_VALUE` allows `[ \t]*` after the colon), so the rewrite must too.
     moved = ID_LINE.sub(f"id: {new}", source_text, count=1)
-    written = _endpoints_written(register, source_text, moved, target, old=old, new=new)
+    written = _endpoints_written(
+        register, source_text, source_entry, moved, target, old=old, new=new
+    )
     # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
     # renders the index from every entry file in the directory, so one malformed sibling — a
     # file this call never touches — failed the command AFTER both endpoints and the whole sweep
@@ -424,7 +435,6 @@ def renumber(
     if written < 1:
         fsops.write_within(root, f"{directory}/{new}.md", moved)
     if written < 2:
-        entry = parse_entry(source_text, path=where, register=register)
         # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve
         # to something at every instant from here on, including if the sweep below is
         # interrupted.
@@ -435,7 +445,7 @@ def renumber(
                 register,
                 old=old,
                 new=new,
-                title=f"renumbered to {new} — {entry.title}",
+                title=f"renumbered to {new} — {source_entry.title}",
                 today=today or date.today().isoformat(),
             ),
         )

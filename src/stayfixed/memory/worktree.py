@@ -419,8 +419,8 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
 
     A link to a directory exposes every file under it, so the question here is whether the
     **directory** is repository data, not whether the notes or the index are. `memory index
-    --check` and `memory fit` warn by this same question (`memory.commands._trusted`), so a
-    store whose link waits is a store they warn about.
+    --check` and `memory fit` warn by this same question, so a store whose link waits is a store
+    they warn about.
 
     Nothing narrower than `may_inject` will do. It is already the predicate that means "these
     bytes may reach the model at all": it short-circuits to True when neither
