@@ -621,8 +621,8 @@ reddens = [
 [[mutation]]
 name = "a preset name outside the rule is quoted back again"
 file = "src/stayfixed/presets/__init__.py"
-before = '        raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {_available()}")'
-after = '        raise Failure(f"{key} {name!r} is not a plain identifier ({NAME_RULE}); {_available()}")'
+before = '        raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {available()}")'
+after = '        raise Failure(f"{key} {name!r} is not a plain identifier ({NAME_RULE}); {available()}")'
 reddens = [
   "tests/scaffold/test_containment.py::test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted",
   "tests/scaffold/test_containment.py::test_load_preset_names_the_key_its_caller_passes",
@@ -631,8 +631,8 @@ reddens = [
 [[mutation]]
 name = "a preset this build does not ship is quoted back again"
 file = "src/stayfixed/presets/__init__.py"
-before = '            f"{key} names a preset this version of stayfixed does not ship; {_available()}"'
-after = '            f"{key} names {name!r}, which this version of stayfixed does not ship; {_available()}"'
+before = '            f"{key} names a preset this version of stayfixed does not ship; {available()}"'
+after = '            f"{key} names {name!r}, which this version of stayfixed does not ship; {available()}"'
 reddens = [
   "tests/scaffold/test_containment.py::test_a_preset_this_build_does_not_ship_is_refused_and_never_quoted",
 ]
