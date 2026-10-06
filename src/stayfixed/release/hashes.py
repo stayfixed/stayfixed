@@ -82,8 +82,9 @@ def read_record(root: Path) -> dict[str, str] | None:
     except RecursionError:
         raise UnreadableRecord(f"{RECORD} {NESTED}") from None
     except ValueError:
-        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
-        # than the interpreter converts, whose own message would tell the owner to raise a limit.
+        # Valid JSON too: past the `JSONDecodeError` and `UnicodeDecodeError` arms, what reaches
+        # this one is an integer literal longer than the interpreter converts, whose own message
+        # would tell the owner to raise a limit.
         raise UnreadableRecord(f"{RECORD} {LONG_NUMBER}") from None
     except OSError as exc:
         raise UnreadableRecord(f"{RECORD} is present and could not be read: {exc}") from None

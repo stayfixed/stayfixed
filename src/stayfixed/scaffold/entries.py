@@ -290,6 +290,19 @@ def live_entries(document: str) -> tuple[list[Placed], bool]:
     return found, unread
 
 
+def judged_entries(document: str, *, lenient: bool) -> tuple[list[Placed], bool]:
+    """The hook entries a reader judges in a settings file, and whether part of it went unread.
+
+    `lenient` for a file a harness was measured running partly malformed (`harnesses.
+    LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
+    `placed_entries`, which refuses every shape the merge would. One spelling, for `doctor`'s
+    `hook-entries` and `assess`'s `foreign-hooks`, so the two never give two answers about one file.
+    """
+    if lenient:
+        return live_entries(document.removeprefix("\ufeff"))
+    return placed_entries(document), False
+
+
 def entry_commands(document: str) -> list[str]:
     """`placed_entries`' commands alone, in its order, for a reader that asks only whether an
     entry claims the marker."""

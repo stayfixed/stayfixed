@@ -2680,11 +2680,11 @@ name = "the hash record's reader lets a number past the parser escape"
 file = "src/stayfixed/release/hashes.py"
 before = """
     except ValueError:
-        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
+        # Valid JSON too: past the `JSONDecodeError` and `UnicodeDecodeError` arms, what reaches
 """
 after = """
     except ZeroDivisionError:
-        # Valid JSON too: what reaches this arm past the two above is an integer literal longer
+        # Valid JSON too: past the `JSONDecodeError` and `UnicodeDecodeError` arms, what reaches
 """
 reddens = [
   "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
@@ -2920,4 +2920,44 @@ before = '        _positive(f"budgets.{key}", value)'
 after = "        pass"
 reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
+]
+
+# In the block led by "the live-entry walk refuses an event whose value is not a list": a file a
+# harness was measured running is read past a leading byte-order mark too, and a container in one
+# of the four places the walk skips a scalar was not measured and may hold a command, so the walk
+# says it skipped one.
+[[mutation]]
+name = "hook-entries is blind to a settings file opening with a byte-order mark"
+file = "src/stayfixed/scaffold/entries.py"
+before = 'return live_entries(document.removeprefix("\ufeff"))'
+after = 'return live_entries(document)'
+reddens = [
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips an event's object without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            unread = unread or isinstance(groups, dict)"
+after = "            unread = unread or False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[event-an-object]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a list where a group goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "                unread = unread or isinstance(group, list)"
+after = "                unread = unread or False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[group-a-list]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a list where an entry goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "                    unread = unread or isinstance(entry, list)"
+after = "                    unread = unread or False"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for[entry-a-list]",
 ]

@@ -2583,15 +2583,17 @@ reddens = [
 ]
 
 # In the block led by "the live-entry walk refuses an event whose value is not a list": the row
-# asks that walk past a leading byte-order mark, since Claude Code 2.1.288 runs the hooks of such a
-# file (measured on macOS, 2026-10-05), and names a file the walk could only partly read.
+# reads Claude Code's settings files by that walk and every other strictly, since only Claude
+# Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and names a file
+# the walk could only partly read.
 [[mutation]]
-name = "hook-entries is blind to a settings file opening with a byte-order mark"
+name = "hook-entries reads every settings file leniently, Codex's included"
 file = "src/stayfixed/doctor/entries.py"
-before = 'live_entries(document.removeprefix("\ufeff"))'
-after = 'live_entries(document)'
+before = "            entries, partly = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
+after = "            entries, partly = judged_entries(document, lenient=True)"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[scalar-event]",
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[byte-order-mark]",
 ]
 
 [[mutation]]

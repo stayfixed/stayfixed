@@ -294,9 +294,9 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
 is a destination and is honoured, and a committed `env` block does not choose it: measured in Claude
 Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming another
-`CLAUDE_PROJECT_DIR` reached neither a project hook nor a plugin hook, on `SessionStart` or
-`UserPromptSubmit` — Claude Code set the real project root over it, while the block's other keys
-were applied. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
+`CLAUDE_PROJECT_DIR` reached neither a project hook nor a plugin hook on `UserPromptSubmit`, nor
+a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
+set the real project root over it, while the block's other keys were applied. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
 candidate only to exit `0` for a trivial `-I -c`, so an unguarded list picks the interpreter that
 runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
 gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
@@ -2693,7 +2693,8 @@ object, a group whose `hooks` is not a list, or an entry that is not an object: 
 still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are judged
 like any other. Where such a misplaced value is itself an object or a list, which could hold a
 command, the file is also reported as one that could not be read, since that shape was not
-measured.
+measured. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no
+measurement covers, is read as strictly as the merge that rewrites it.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

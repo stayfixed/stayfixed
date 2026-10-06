@@ -6,6 +6,9 @@ running the valid hooks of each such file, so a stayfixed-marked entry there tha
 or grants is red, as anywhere else. The row used to read each of these files as one it could not
 read, a warning, so a repository could commit one stray value beside a forged entry and keep the
 report at exit `0`. This reverses the earlier reading of a byte-order mark, decided before the
-measurement, as a file Claude Code could not load. A file that is not valid JSON, and one whose
-misplaced value is an object or a list that could hold a command, are still reported as files the
-row could not read.
+measurement, as a file Claude Code could not load. A file that is not valid JSON is still
+reported as one the row could not read. So is one whose misplaced value is an object or a list
+that could hold a command, but the entries beside that value are now judged too, so such a file
+can turn the row red where it used to warn. Codex's `.codex/hooks.json`, which nobody measured, is
+read as strictly as before, and `stayfixed assess`'s `foreign-hooks` item now reads Claude Code's
+settings files the way `doctor` does.

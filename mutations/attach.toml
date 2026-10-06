@@ -1872,7 +1872,6 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_project_name_the_overlay_has_no_directory_for_grants_only_what_common_grants[a-file-holds-it-readable]",
   "tests/attach/test_doctor.py::test_a_forged_entry_under_a_name_the_overlay_has_no_directory_for_fails_the_report[a-file-holds-it]",
   "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[readable]",
-  "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[unreadable]",
 ]
 
 # The binding record is read on the way to what the overlay grants, and `Path.is_file()` raises for

@@ -22,8 +22,8 @@ from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, 
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import names_regular_file
-from stayfixed.harnesses import HARNESSES
-from stayfixed.scaffold import ParserLimitError, Placed, live_entries, marker_id
+from stayfixed.harnesses import HARNESSES, LENIENT_SETTINGS
+from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
 from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
@@ -357,11 +357,12 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         try:
             # The entries a harness runs out of the file, as Claude Code 2.1.288 was measured
-            # reading it (macOS, 2026-10-05): past a leading byte-order mark, and past a scalar
-            # where an event's list, a group, a group's `hooks` or an entry belongs, it still ran
-            # the valid hooks, so those are live and judged like any other. A part this cannot
-            # read for entries is still named as one the walk is blind to.
-            entries, partly = live_entries(document.removeprefix("\ufeff"))
+            # reading its own (macOS, 2026-10-05): past a leading byte-order mark, and past a
+            # scalar where an event's list, a group, a group's `hooks` or an entry belongs, it
+            # still ran the valid hooks, so those are live and judged like any other. A file no
+            # measurement covers is read strictly. A part this cannot read for entries is still
+            # named as one the walk is blind to.
+            entries, partly = judged_entries(document, lenient=relative in LENIENT_SETTINGS)
         except ParserLimitError:
             found.append((_UNCHECKED, None, label))
             continue

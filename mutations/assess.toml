@@ -1742,3 +1742,31 @@ after = """        if True:
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
 ]
+
+# `foreign-hooks` reads settings files by the walk `doctor`'s `hook-entries` reads them with, so a
+# file Claude Code runs partly malformed is one both count, and a part the walk skipped that could
+# hold a command is one both say they could not read.
+[[mutation]]
+name = "the foreign-hook probe reads every settings file strictly"
+file = "src/stayfixed/assess/probes.py"
+before = "            entries, partly = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
+after = "            entries, partly = judged_entries(text, lenient=False)"
+reddens = [
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[byte-order-mark]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[scalar-event]",
+]
+
+[[mutation]]
+name = "the foreign-hook probe says nothing of a file it could only partly read"
+file = "src/stayfixed/assess/probes.py"
+before = """
+        if partly:
+            unread.append(relative)
+"""
+after = """
+        if False:
+            unread.append(relative)
+"""
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found",
+]

@@ -36,6 +36,7 @@ EXPORTED = [
     "effective_target",
     "entry_commands",
     "extract",
+    "judged_entries",
     "left_copies",
     "live_entries",
     "local_copies",

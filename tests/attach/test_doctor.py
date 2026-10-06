@@ -1653,13 +1653,14 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     tmp_path: Path, ledger: str
 ) -> None:
     # A file where the overlay's `projects/` goes holds no record of this checkout, so its binding
-    # is unbound: `attached` warns that the overlay has no binding for it, and `hook-entries` counts
-    # what `common/` grants and never opens `projects/`. The owner's one entry, which `common/`
-    # grants, is accounted for. While every binding was granted its project's sources, this row
-    # warned that the overlay could not be asked; the `attached` row is the one that now says what
-    # is wrong. Mutation (oracle): `mutations/`'s "a file where the project's directory would be is
-    # an overlay that cannot be asked" -> the record cannot be read, and `hook-entries` says the
-    # overlay could not be asked.
+    # is unbound: `attached` warns that the overlay is damaged, naming `projects/`, and
+    # `hook-entries` counts what `common/` grants and never opens `projects/`. The owner's one
+    # entry, which `common/` grants, is accounted for. While every binding was granted its
+    # project's sources, this row warned that the overlay could not be asked; the `attached` row
+    # is the one that now says what is wrong. Mutation (oracle): `mutations/`'s "a file where the
+    # project's directory would be is an overlay that cannot be asked" -> the record cannot be
+    # read, and `hook-entries` says the overlay could not be asked (the `readable` case: with the
+    # ledger unreadable the row says that whatever the overlay answers).
     root = _attached(tmp_path)
     if ledger == "unreadable":
         (root / LEDGER).write_text(UNREADABLE_LEDGERS["not-json"], encoding="utf-8")
@@ -1674,11 +1675,12 @@ def test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_gr
     )
     assert _by_name(rows, "hook-entries") == expected
     attached = _by_name(rows, "attached")
+    # It said "has no binding for this project", sending the owner of a bound project to remove
+    # the ledger; it names the path that is not a directory instead, as
+    # `test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger`
+    # pins whole.
     if ledger == "readable":
         assert attached.status == WARN, attached
-        # It said "has no binding for this project", sending the owner of a bound project to
-        # remove the ledger; it names the path that is not a directory instead, as the
-        # damaged-overlay rows below pin whole.
         assert f"{projects} is not a directory" in attached.detail
     assert not [row.name for row in rows if row.status == "red"]
 
@@ -1925,8 +1927,8 @@ def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_
     # Valid TOML that `tomllib` answers with a plain `ValueError`, which none of the record's
     # readers caught: `attached`, `bundles` and `store-debris` each went red "this check could
     # not run: ValueError", and `attach --check` ended in an internal error. Each now answers as
-    # it answers the record above that does not parse. Mutation (declared): `ValueError` dropped
-    # from `UNPARSEABLE`.
+    # it answers `UNPARSEABLE_RECORD`, a record that does not parse. Mutation (declared):
+    # `ValueError` dropped from `UNPARSEABLE`.
     root = _granting_project(tmp_path, OWN_NAME)
     record_path = tmp_path / "overlay" / PROJECTS / OWN_NAME / PROJECT_RECORD
     record_path.write_text(f"x = {LONG_NUMBER}\n", encoding="utf-8")
@@ -2025,3 +2027,58 @@ def test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unacco
         f"so nothing here accounts for what is in them: {COMMITTED}",
         readable.remedy,
     )
+
+
+# A container where the `hooks` section expects an event's list, a group or an entry, holding the
+# forged entry: none of these shapes was measured, and each could hold a command a harness runs.
+CONTAINED_FORGERIES = {
+    "event-an-object": lambda hooks, group: hooks.update({"Stop": {"wrapped": [group]}}),
+    "group-a-list": lambda hooks, group: hooks.update({"Stop": [[group]]}),
+    "entry-a-list": lambda hooks, group: hooks.update({"Stop": [{"hooks": [group["hooks"]]}]}),
+}
+
+
+@pytest.mark.parametrize("case", sorted(CONTAINED_FORGERIES))
+def test_a_forged_entry_inside_a_container_the_walk_skips_leaves_the_file_unaccounted_for(
+    tmp_path: Path, case: str
+) -> None:
+    # The live-entry walk skips a misplaced container, and says it skipped one, so the row names
+    # the file as one it could not read rather than "all accounted for" over the entry inside.
+    # Mutations (declared): "the live-entry walk skips an event's object without saying so",
+    # "... a list where a group goes ..." and "... a list where an entry goes ..." -> the row
+    # reads "all accounted for".
+    root = _forged_clone(tmp_path)
+    path = root / COMMITTED
+    document = json.loads(path.read_text(encoding="utf-8"))
+    group = document["hooks"].pop("PreToolUse")[0]
+    CONTAINED_FORGERIES[case](document["hooks"], group)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check == Check(
+        "hook-entries",
+        WARN,
+        f"0 stayfixed entr(ies), 0 foreign; 1 settings file(s) exist and could not be read as "
+        f"hook entries, so nothing here accounts for what is in them: {COMMITTED}",
+        "check that each file named above is readable and is valid JSON",
+    )
+
+
+@pytest.mark.parametrize("shape", ["scalar-event", "byte-order-mark"])
+def test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # The lenient walk and the byte-order mark are what Claude Code 2.1.288 was measured to run;
+    # no such measurement covers Codex's `.codex/hooks.json`, so a file there with a misplaced
+    # scalar or a leading byte-order mark stays one the row could not read. Mutation (declared):
+    # every settings file read leniently -> the Codex file is counted.
+    root = _attached(tmp_path)
+    codex = root / ".codex" / "hooks.json"
+    codex.parent.mkdir(parents=True, exist_ok=True)
+    hooks = {"PreToolUse": [{"hooks": [{"type": "command", "command": "echo foreign"}]}]}
+    if shape == "scalar-event":
+        codex.write_text(json.dumps({"hooks": {**hooks, "Stop": "notalist"}}), encoding="utf-8")
+    else:
+        codex.write_bytes(b"\xef\xbb\xbf" + json.dumps({"hooks": hooks}).encode())
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert "could not be read as hook entries" in check.detail
+    assert check.detail.endswith(": .codex/hooks.json")

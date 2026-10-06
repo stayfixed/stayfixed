@@ -1,9 +1,10 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
 Everything a consumer needs is re-exported here, including the primitives other areas reach for
-directly: `live_entries` for `doctor`'s provenance list, each entry a `Placed`, and
-`wanted_placements` for the grants it is compared with, which `attach` answers; `entry_commands`
-for `assess`, which asks only for commands; `owned_ids` for the ids `attach` records in its
+directly: `judged_entries` (over `live_entries`) for `doctor`'s provenance list, each entry a
+`Placed`, and for `assess`'s foreign-hook probe, which reads the same walk; `wanted_placements`
+for the grants it is compared with, which `attach` answers; `entry_commands` for a caller that
+asks only for commands; `owned_ids` for the ids `attach` records in its
 ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
 `uninstall`. The three refusals a consumer has to catch by name
 are here too: a caller that cannot import `ManifestError`, `RegionError` or `EntriesError`
@@ -42,6 +43,7 @@ from stayfixed.scaffold.entries import (
     Placed,
     apply_entries,
     entry_commands,
+    judged_entries,
     live_entries,
     mark,
     marker_id,
@@ -96,6 +98,7 @@ __all__ = [
     "effective_target",
     "entry_commands",
     "extract",
+    "judged_entries",
     "left_copies",
     "live_entries",
     "local_copies",
