@@ -5,9 +5,8 @@ a list, or an entry that is not an object. Claude Code 2.1.288 was measured (mac
 running the valid hooks of each such file, so a stayfixed-marked entry there that nothing records
 or grants is red, as anywhere else. The row used to read each of these files as one it could not
 read, a warning, so a repository could commit one stray value beside a forged entry and keep the
-report at exit `0`. This reverses the earlier reading of a byte-order mark, decided before the
-measurement, as a file Claude Code could not load. A file that is not valid JSON is still
-reported as one the row could not read. So is one whose misplaced value is an object or a list
+report at exit `0`. A file that is not valid JSON is still reported as one the row could not
+read. So is one whose misplaced value is an object or a list
 that could hold a command, but the entries beside that value are now judged too, so such a file
 can turn the row red where it used to warn. Codex's `.codex/hooks.json`, which nobody measured, is
 read as strictly as before, and `stayfixed assess`'s `foreign-hooks` item now reads Claude Code's

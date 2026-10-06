@@ -42,7 +42,9 @@ differently. Each has its own entry in these notes, with the detail:
     deeper than").
   - `stayfixed doctor`'s `hook-entries` row is red, and the report exits `1`, for a marked entry
     nothing vouches for in a settings file that opens with a byte-order mark or holds a malformed
-    value beside its valid hooks, where it warned and exited `0` (Fixed, "`stayfixed doctor`'s
-    `hook-entries` row now judges the hook entries in a settings file that opens with").
+    value beside its valid hooks, where it warned and exited `0`, and for a marked command inside
+    such a value or in an entry object written where a group goes, where it warned or read "all
+    accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
+    a settings file that opens with").
   - A `stayfixed.toml` integer of 2,147,483,648 or more is refused when the file loads, where
     0.2.0 loaded it (Fixed, "Every integer in `stayfixed.toml`").
