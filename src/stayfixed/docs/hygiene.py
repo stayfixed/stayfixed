@@ -12,7 +12,7 @@ from stayfixed.errors import Failure
 from stayfixed.findings import Finding
 from stayfixed.fsops import read_regular_text
 from stayfixed.printed import quoted
-from stayfixed.prose import blank_fences, resolves_within
+from stayfixed.prose import blank_fences, present_within, resolves_within
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -184,7 +184,7 @@ def check_links(root: Path, config: Config) -> list[Finding]:
     return [
         Finding("missing-link", config.paths.agents_md, None, target)
         for target, landed in _links(root, config)
-        if not landed.exists()
+        if present_within(root, landed) is False
     ]
 
 

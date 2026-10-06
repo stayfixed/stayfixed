@@ -344,13 +344,91 @@ before = '            raise Refusal(f"{identifier!r} is not a {self.shape} ident
 after = '            return 0'
 reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]
 
-# The extension list is a decision: a repository storing TypeScript needs `.ts` to be a path claim.
+# The extension is any word that starts with a letter, a decision rather than a default: a
+# closed list leaves every stack it does not name unchecked (`src/lib.rs`, `cmd/main.go`).
 [[mutation]]
-name = "a TypeScript reference stops being a path claim"
+name = "the reference grammar closes its extension list again"
 file = "src/stayfixed/prose.py"
-before = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")'
-after = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml))(?::\d+|::[\w.]+)?`")'
-reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_this_grammar_stores"]
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))"'
+reddens = ["tests/docs/test_prose.py::test_a_file_any_stack_stores_is_a_path_claim"]
+
+# The letter is what keeps a version number (`releases/0.1.9596`) from reading as a file.
+[[mutation]]
+name = "an extension may start with a digit"
+file = "src/stayfixed/prose.py"
+before = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"'
+after = '    r"`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"'
+reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"]
+
+# `src/b.c:3:14` names a line and a column; without the column the span claims no path.
+[[mutation]]
+name = "a column stops being part of a location suffix"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+after = '    r"(?::\d+|(?:::[\w.]+)+)?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
+
+# `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
+[[mutation]]
+name = "a symbol path stops being read past its first `::`"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+after = '    r"(?::\d+(?::\d+)?|::[\w.]+)?`"'
+reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
+
+# A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
+# directory of this repository: read as one, a Go module path fails the plan gate.
+[[mutation]]
+name = "a host-shaped first component is read as a directory"
+file = "src/stayfixed/prose.py"
+before = '        if "/" in target and not HOST.match(target):'
+after = '        if "/" in target:'
+reddens = [
+  "tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose",
+  "tests/docs/test_plans.py::test_a_dependency_named_by_its_host_is_not_a_dead_reference",
+]
+
+# The host's label has two characters or more, so `changelog.d/` stays a directory.
+[[mutation]]
+name = "a `.d` directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]*/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# The dot comes after some other character, so `.github/` stays a hidden directory.
+[[mutation]]
+name = "a hidden directory reads as a host"
+file = "src/stayfixed/prose.py"
+before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
+after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
+reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# A claim is settled by its real path and only inside the root's: a committed symlink out of the
+# tree made each reader an existence oracle for the machine.
+[[mutation]]
+name = "a path claim is followed through a symlink out of the tree"
+file = "src/stayfixed/prose.py"
+before = "        if not real.is_relative_to(os.path.realpath(root)):"
+after = "        if False:"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+  "tests/docs/test_hygiene.py::test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+  "tests/memory/test_refs.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
+]
+
+# A name too long for the filesystem names nothing: it is reported, never a crash of the check.
+[[mutation]]
+name = "a path the filesystem cannot name crashes the reference checks"
+file = "src/stayfixed/prose.py"
+before = "    except OSError:\n        return False\n"
+after = "    except NotImplementedError:\n        return False\n"
+reddens = [
+  "tests/docs/test_plans.py::test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash",
+  "tests/docs/test_hygiene.py::test_a_link_the_filesystem_cannot_name_is_missing_rather_than_a_crash",
+  "tests/memory/test_refs.py::test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash",
+]
 
 # One digit rule, and every reader takes it from the constant. The allocator's `git log` source
 # respelled it inline, where widening the rule would have left it counting by the old one and

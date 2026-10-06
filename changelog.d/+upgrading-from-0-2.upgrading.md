@@ -36,6 +36,16 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed overlay upgrade` and `overlay init` remove the overlay template's copy of the
     `attach` skill and `common/rules/README.md`, keeping and naming a copy you edited (Changed,
     "`stayfixed overlay upgrade` and `overlay init` remove two files").
+  - The background guard refuses a backgrounded command that begins with `uv run <options>
+    sleep`, such as `uv run --no-project sleep 30`, which 0.2.0 allowed, and `stayfixed guard
+    bg-cleanup` can exit `1` where 0.2.0 exited `0`, and the reverse, for a backgrounded chain
+    whose `; echo` or the command before it runs through `uv run <options>` (Fixed, "The
+    background guard now reads a command started through `uv run`").
+  - `stayfixed plan check`, the `plan` gate and `stayfixed memory refs` report a dead reference for
+    a missing backticked path whatever its extension (`src/lib.rs`, `secrets/.env`), and for one
+    followed by a column or a nested symbol path, which 0.2.0 did not check (Fixed,
+    "`stayfixed plan check`, the `plan` gate and `stayfixed memory refs` now check a backticked
+    path in any language").
   - On Python 3.14, a settings file, ledger, manifest or trust record nested deeper than 10,000
     levels is refused as nested deeper than the reader follows; `stayfixed doctor` and an
     `attach` with nothing to write read one in 0.2.0 (Fixed, "On Python 3.14, a JSON file nested

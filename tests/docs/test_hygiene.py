@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -62,6 +64,49 @@ def rules(findings: list[Finding]) -> list[str]:
 def test_a_compliant_project_has_no_findings(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
+    tmp_path: Path,
+) -> None:
+    # The link check is lexical before it asks `exists()`, which follows symlinks: a committed
+    # `docs/l` pointing out of the tree made it an existence oracle for the machine, a present
+    # file passing and an absent one reported. A symlink that stays inside the tree is still
+    # followed. Oracle: `mutations/`, "the AGENTS.md link check follows a symlink out of the
+    # tree", "a path claim is followed through a symlink out of the tree".
+    agents = AGENTS + "- [a](docs/l/secret.md)\n- [b](docs/l/absent.md)\n- [c](docs/in/gone.md)\n"
+    root, config = project(tmp_path, agents=agents)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    (root / "docs" / "l").symlink_to(outside)
+    (root / "docs" / "in").symlink_to(".")
+    assert [(f.rule, f.detail) for f in check_links(root, config)] == [
+        ("missing-link", "docs/in/gone.md")
+    ]
+
+
+def test_a_link_the_filesystem_cannot_name_is_missing_rather_than_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Oracle: `mutations/`, "a path the filesystem cannot name crashes the reference checks".
+    long = "docs/" + "a" * 5000 + ".md"
+    root, config = project(tmp_path, agents=AGENTS + f"- [x]({long})\n")
+    _exists_raising_past(monkeypatch, 4096)
+    assert [(f.rule, f.detail) for f in check_links(root, config)] == [("missing-link", long)]
+
+
+def _exists_raising_past(monkeypatch: pytest.MonkeyPatch, length: int) -> None:
+    """`exists()` raising `ENAMETOOLONG` for a path longer than `length`, as Python 3.11 to 3.13
+    do for a 5,000-character name; forced so the case holds on every interpreter."""
+    real = Path.exists
+
+    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
+        if len(str(self)) > length:
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
 
 
 def test_a_missing_agents_file_is_a_finding(tmp_path: Path) -> None:
