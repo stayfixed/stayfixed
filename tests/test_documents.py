@@ -17,6 +17,7 @@ belongs.
 
 from __future__ import annotations
 
+import argparse
 import inspect
 import io
 import re
@@ -445,26 +446,32 @@ def test_every_readme_row_parses() -> None:
 # scripting against it would have treated a `findings` list as "this command does not report
 # findings". Bound to the real parser's functions rather than to a second hand-written list.
 _FINDINGS_SENTENCE = re.compile(
-    r"The commands that report a list of\nfindings — (.+?) —\nall spell it `findings`", re.MULTILINE
+    r"The commands that report a list of\s+findings — (.+?) —\s+all spell it `findings`", re.DOTALL
 )
+
+
+def command_parsers() -> dict[str, argparse.ArgumentParser]:
+    """`group command` -> the parser of every command the real parser registers; a group with no
+    subcommands (`hook <event>`) is its own command, under its bare name."""
+    groups = subparsers(build_parser(discover_registrars()))
+    assert groups is not None
+    found: dict[str, argparse.ArgumentParser] = {}
+    for group, sub in groups.choices.items():
+        nested = subparsers(sub)
+        if nested is None:
+            found[group] = sub
+        else:
+            found.update((f"{group} {command}", leaf) for command, leaf in nested.choices.items())
+    return found
 
 
 def command_functions() -> dict[str, object]:
     """`group command` -> the `run_*` callable the real parser dispatches to."""
-    groups = subparsers(build_parser(discover_registrars()))
-    assert groups is not None
     found: dict[str, object] = {}
-    for group, sub in groups.choices.items():
-        nested = subparsers(sub)
-        leaves = (
-            {group: sub}
-            if nested is None
-            else {f"{group} {command}": leaf for command, leaf in nested.choices.items()}
-        )
-        for name, leaf in leaves.items():
-            func = leaf.get_default("func")
-            if func is not None:
-                found[name] = func
+    for name, leaf in command_parsers().items():
+        func = leaf.get_default("func")
+        if func is not None:
+            found[name] = func
     return found
 
 
@@ -571,6 +578,24 @@ def test_the_readme_states_each_agents_reach_as_the_registry_does() -> None:
     assert set(_MEASURED_AT.findall(match.group(1))) == measured
 
 
+def test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one() -> None:
+    # A blocked agent's first question is how to get past the block, and a user's is how to turn
+    # it off. The section answers both where the table says a guard blocks: the one blocking
+    # guard judges only backgrounded commands, so the same command run in the foreground passes;
+    # nothing turns a guard off; and a false block is a defect to report. Each clause is one
+    # needle, read from the section alone, so a paragraph moved elsewhere in the README reddens
+    # too. Mutations (declared), one per needle: the foreground sentence deleted, the scope's
+    # "only" dropped, the guards given a switch, and the false block no longer called a defect ->
+    # each reddens this.
+    match = _REACH_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What each agent enforces section"
+    section = " ".join(match.group(1).split())
+    assert "judges only a command the agent runs in the background" in section
+    assert "The same command run in the foreground passes." in section
+    assert "stayfixed has no switch that turns a guard off" in section
+    assert "a false block is a defect" in section
+
+
 # A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table
 # runs to the next table header or the end of the block, so a `version` key in another table
 # is not taken for it.
@@ -664,6 +689,43 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
         for flag, sentence in expected.items()
         if rows.get(flag) != sentence
     }
+
+
+# The Shared flags sentence naming the commands that take neither `--root` nor `--machine`, up to
+# the reason it gives, so the list it holds is the one the sentence states and nothing around it.
+_TAKES_NEITHER = re.compile(
+    r"Neither flag is taken by (.+?),\s+because none of them reads a project", re.DOTALL
+)
+_PROJECT_FLAGS = frozenset({"--root", "--machine"})
+
+
+def test_shared_flags_names_every_command_that_takes_neither_root_nor_machine() -> None:
+    # The rule is stated once, in Shared flags, and the README and the `memory` bullet link to it:
+    # it was spelled by hand in both, in two wordings, and nothing held either to the parser. Held
+    # here to the same walk as the command table: the commands named as taking neither flag are
+    # exactly those whose parser declares neither, every other `overlay` command takes `--root`
+    # alone, and every command besides takes both.
+    #
+    # Mutation (declared): a command dropped from the takes-neither sentence -> this reddens.
+    section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `## Shared flags` section"
+    match = _TAKES_NEITHER.search(section.group(1))
+    assert match is not None, "Shared flags no longer names the commands that take neither flag"
+    named = {" ".join(name.split()) for name in re.findall(r"`stayfixed ([^`]+)`", match.group(1))}
+    options = {
+        name: {flag for action in leaf._actions for flag in action.option_strings}
+        for name, leaf in command_parsers().items()
+    }
+    # The walk's floor, for the reason the command-table test gives: a walk that found nothing
+    # would make every comparison below vacuously true.
+    assert len(options) >= 20, sorted(options)
+    neither = {name for name, flags in options.items() if not flags & _PROJECT_FLAGS}
+    assert named == neither, (sorted(named), sorted(neither))
+    overlay = {name for name in options if name.startswith("overlay ")} - neither
+    assert overlay, "no `overlay` command takes `--root`"
+    assert {name for name in overlay if options[name] & _PROJECT_FLAGS != {"--root"}} == set()
+    rest = set(options) - neither - overlay
+    assert {name for name in rest if not options[name] >= _PROJECT_FLAGS} == set()
 
 
 _REUSABLE_WORKFLOW_SECTION = re.compile(

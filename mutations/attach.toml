@@ -1,4 +1,4 @@
-# The attach group: binding a repository to its private overlay, and unbinding it again.
+# The attach group: binding a repository to its private overlay, and taking back what that wrote.
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 

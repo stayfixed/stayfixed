@@ -1134,6 +1134,7 @@ def test_a_row_routes_its_files_wherever_it_stands_in_the_table() -> None:
     assert module.group_for("src/stayfixed/newarea/x.py") == "newarea"
     assert module.group_for("src/stayfixed/fsops.py") == "core"
     assert module.group_for("README.md") == "repository"
+    assert module.group_for(".github/workflows/ci.yml") == "tooling"
 
 
 def test_no_prefix_is_routed_twice() -> None:

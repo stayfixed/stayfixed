@@ -17,6 +17,8 @@ from tests import gitfixture
 from tests.floor import floor_env
 
 ROOT = Path(__file__).resolve().parents[2]
+# The hook exactly as stayfixed 0.2.0 wrote it into a repository, generated once from the tag.
+RELEASED_0_2_0 = ROOT / "tests" / "fixtures" / "prepare-commit-msg-0.2.0"
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
@@ -235,6 +237,37 @@ def test_install_is_idempotent_over_its_own_hook(tmp_path: Path) -> None:
     again = install(root)
     assert again.replaced is True and again.preserved is None
     assert not again.path.with_name(HOOK_NAME + ".local").exists()
+
+
+def test_a_hook_an_earlier_release_wrote_is_still_ours(tmp_path: Path) -> None:
+    # The hook's text changes between releases, and every repository keeps the bytes the release
+    # that installed it wrote. The marker line, not the text, is what makes a hook stayfixed's:
+    # an install over an earlier text rewrites it in place rather than preserving it as a
+    # stranger's `.local` and chaining to it, and an uninstall removes it rather than leaving it
+    # orphaned. The earlier text is frozen in a file, `HOOK_TEXT` as the v0.2.0 tag evaluates it,
+    # and never rebuilt from today's module: a hook built from today's text carries today's marker,
+    # so a changed marker, which would orphan every hook 0.2.0 installed, would pass unseen.
+    # Mutation (declared): a hook is ours only when its bytes equal today's text -> this reddens.
+    # Mutation (declared): the marker line changes -> this reddens.
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    old_text = RELEASED_0_2_0.read_text(encoding="utf-8")
+    assert old_text != HOOK_TEXT
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(old_text, encoding="utf-8")
+    hook.chmod(0o755)
+
+    again = install(root)
+    assert again.replaced is True and again.preserved is None
+    assert hook.read_text(encoding="utf-8") == HOOK_TEXT
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
+
+    hook.write_text(old_text, encoding="utf-8")
+    removed = uninstall(root)
+    assert removed.restored is None
+    assert not hook.exists()
 
 
 def test_install_refuses_to_overwrite_a_stale_local_hook(tmp_path: Path) -> None:

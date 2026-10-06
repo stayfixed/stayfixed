@@ -60,15 +60,15 @@ ROOT = Path(__file__).resolve().parents[1]
 # `GROUP_OF`'s.
 DECLARATIONS = ROOT / "mutations"
 # Which group file an entry belongs in, by the path its `file` names: the longest prefix that
-# matches wins, so the order of the rows decides nothing, and the empty prefix takes everything
-# outside the package. This table is the one place the groups are spelled: each group file's header
+# matches wins, so the order of the rows decides nothing, and the empty prefix takes everything no
+# other row names. This table is the one place the groups are spelled: each group file's header
 # says what its group holds in words and points here, `scripts/check_artifacts.py` globs the
 # directory rather than naming its files, and the tests hold every entry to the file its `file`
 # routes to.
 #
 # **A hand-kept table, and a deliberate exception to CONTRIBUTING's "areas are discovered by
 # name — there is no shared registry to edit".** One file per area would need no table, and it
-# would be about twenty files where these are eight. The plugin directory holds the version for a
+# would be about twenty files where these are nine. The plugin directory holds the version for a
 # reviewer past 512 files as well as at a file of 256 KiB, and with the repository root as the
 # plugin folder every tracked file counts against the 512 (`tests/test_payload.py` holds the tree
 # to the size, and `scripts/release.py check --tag` a release to the count), so the groups are as
@@ -89,6 +89,8 @@ GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/docs/", "records"),
     ("src/stayfixed/ledger/", "records"),
     ("src/stayfixed/", "core"),
+    ("scripts/", "tooling"),
+    (".github/", "tooling"),
     ("", "repository"),
 )
 # Where scratch checkouts are made and where the sweep looks for leaked ones. A module-level

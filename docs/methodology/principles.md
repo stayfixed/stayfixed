@@ -141,18 +141,22 @@ platform blocks on a non-zero exit — before a tool call — and never on sessi
 exit codes are ignored, or on prompt submission, where a blocking exit erases the prompt.
 A guard that cannot fail closed must say so rather than pretend.
 
-**What stayfixed does today.** Every handler declares its policy, `open` or `closed`; the
-guards over a shell call, a commit message and a test run are closed, the memory handlers
-open. Not this, yet: the guarantee belongs in a shell wrapper rather than in Python, because
-a Python process cannot fail closed about its own absence — the wrapper is designed to probe
-for an interpreter at or above the floor, refuse with the blocking exit when none is found,
-and map every other exit code to it with a printed reason. It ships with the hooks file that
-calls it, in the `hooks-core` package; neither is in the tree today.
+**What stayfixed does today.** Every handler declares its policy, `open` or `closed`, and one is
+closed: `bg-cleanup`, the guard over a backgrounded shell call, which runs before the tool call.
+The note after a failing test run and the session-start handlers are open, and the
+commit-message hook git runs locally never fails a commit itself, though a hook it chains to can
+— its gate is `stayfixed commit check` in CI. The guarantee lives in a shell wrapper rather than
+in Python, because a Python process cannot fail closed about its own absence: every entry in
+`hooks/hooks.json` runs `hooks/run-hook.sh` with its policy, and the wrapper looks for a
+`python3` of 3.11 or newer outside the project root. On every fault it can see — no interpreter,
+no `git`, a project root it cannot enter, a launcher it cannot read, and afterwards an exit
+other than `0` or `2` — it prints its reason and refuses with the blocking exit under `closed`,
+or continues under `open`.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
 runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
 binary is missing exits 127, which the harness treats as a non-blocking error — so the
-guard silently becomes permission, which is why the wrapper is specified at all.
+guard silently becomes permission, which is why the wrapper exists.
 
 **Backing:** sourced. The per-event semantics are the platforms' [S3] [S7], and that is the
 claim the label is about: where fail-closed is expressible at all is a platform fact, not a
@@ -192,10 +196,15 @@ travel as a plugin that declares a dependency on the public one and carries its 
 manifest — installable on a fresh machine by the same command that installs everything
 else, private by construction, and never a prerequisite for the public tool to be useful.
 
-**What stayfixed does today.** The public plugin runs with `memory.mode = "local-only"` and
-no overlay; `overlay` mode, `attach` and the template repository are later work packages.
-The memory store's resolution already honours an overlay symlink only when its target lies
-inside a recorded overlay root that binds this repository's remote.
+**What stayfixed does today.** The public plugin needs no overlay: with `[memory] mode` set to
+`local-only` or `in-repo` it runs whole. The overlay is its delivery layer, and the core runs
+without it. `stayfixed overlay create` makes a private overlay repository from the template
+repository, or renders one locally. `overlay init` names it after its owner, `overlay upgrade`
+refreshes the files nobody edited, `stayfixed setup --overlay` records it on a machine, and
+`stayfixed attach` binds a repository to it in `overlay` mode; `detach` takes back what `attach`
+wrote and keeps the overlay's record of the binding. The memory store honours an overlay link
+only when its target lies inside this project's share of the recorded overlay root and the
+overlay's record binds this repository's `origin`.
 
 **Why.** A plugin with a declared dependency and a manifest is now a specified, portable
 unit [S15]; one plugin root serves both harnesses, because each reads its own manifest from

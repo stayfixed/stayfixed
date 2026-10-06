@@ -68,6 +68,14 @@ CITATIONS = (
     # public-anchor gate lets a snake_case name carry the plans' unit of work", are not refused for
     # quoting it; the bookkeeping arm below spells its word the same way.
     ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),
+    # A plan's name for a package of work, which names no module, command or file here: two module
+    # docstrings and one function docstring used `hooks-core` as if it named a part of the tree,
+    # the first two as the owner of the entries `hooks/hooks.json` holds. Only that name is
+    # refused, hyphenated, because the plans' other package names are commands and ordinary words
+    # (`setup`, `attach`, `upgrade`, onboarding) that a refusal would take from correct sentences.
+    # It is spelled `hooks-c[o]re` so the entry in `mutations/` that quotes this line is not
+    # refused for quoting it.
+    ("plan package", re.compile(r"(?i:\bhooks-c[o]re\b)")),
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
@@ -183,6 +191,8 @@ def test_the_citation_gate_discriminates() -> None:
         "the foundation lane",
         "Lanes that scaffold",
         "def test_what_every_downstream_lane_reaches_for",
+        "`hooks-core` owns the entries that invoke them",
+        "the Hooks-Core package",
     ):
         assert citations(planted), planted
     for clean in (
@@ -197,6 +207,8 @@ def test_the_citation_gate_discriminates() -> None:
         "a global constant",
         "a plane of glass",
         "planes and lanemarks",
+        "the core's `hooks` area answers through it",
+        "the `hooks` area's sink",
     ):
         assert citations(clean) == [], clean
 
