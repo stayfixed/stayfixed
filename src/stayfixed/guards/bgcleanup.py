@@ -340,7 +340,8 @@ def _begins_with_sleep(tokens: list[str]) -> bool:
     commands = bashscan.segments(tokens)
     if not commands:
         return False
-    words = bashscan.command_words(list(dropwhile(lambda t: t == "(", commands[0])))
+    segment = list(dropwhile(lambda t: t == "(", commands[0]))
+    words = bashscan.command_words(segment, programs_only=True)
     return bool(words) and Path(words[0]).name == "sleep"
 
 
@@ -396,12 +397,12 @@ def _echo_after_a_semicolon(tokens: list[str]) -> tuple[str, str] | None:
     if not breaks or pieces[breaks[-1]] != ";":
         return None
     tail = pieces[breaks[-1] + 1 :]
-    words = bashscan.command_words(tail)
+    words = bashscan.command_words(tail, programs_only=True)
     if not words or Path(words[0]).name not in _ECHO_COMMANDS:
         return None
     start = breaks[-2] + 1 if len(breaks) > 1 else 0
     masked = _command_head(pieces[start : breaks[-1]])
-    head = bashscan.command_words(masked)
+    head = bashscan.command_words(masked, programs_only=True)
     if not head:
         return None
     program = Path(head[0]).name

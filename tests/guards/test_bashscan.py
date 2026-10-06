@@ -426,7 +426,7 @@ def test_command_words_strips_a_leading_assignment_and_wrapper() -> None:
     assert bashscan.command_words(["FOO=1", "env", "sleep", "3"]) == ["sleep", "3"]
 
 
-def test_command_words_strips_the_two_token_uv_run_prefix() -> None:
+def test_command_words_strips_uv_run_with_nothing_before_the_program() -> None:
     """CI's own invocation shape, with nothing between `uv run` and the program it launches.
     Oracle: `mutations/`, "`uv run` stops being stripped off a segment"."""
     assert bashscan.command_words(["uv", "run", "pytest"]) == ["pytest"]
@@ -469,6 +469,22 @@ def test_command_words_strips_uv_run_past_uvs_own_options(command: str, program:
     being skipped before `run`", "`--` stops ending uv's options", "a lone `-` is read as a uv
     option", "a fused short value stops being one word"."""
     assert bashscan.command_words(command.split()) == program
+
+
+@pytest.mark.parametrize(
+    "command", ["uv run -m pytest -q", "uv run -qm pytest", "uv run --script tests/run.py"]
+)
+def test_a_module_or_script_uv_runs_is_a_program_only_when_the_caller_asks_for_one(
+    command: str,
+) -> None:
+    """`-m pytest` runs the pytest module, so a hint asking which runner ran reads `pytest`;
+    but the word after `-m` or `--script` is a module or a file, never a program on the path,
+    so a caller asking for the program (`programs_only`) gets the command whole. Oracle:
+    `mutations/`, "a module or script name reads as the program for every caller", "a module
+    or script name is never read as what uv runs"."""
+    words = command.split()
+    assert bashscan.command_words(words) == words[3:]
+    assert bashscan.command_words(words, programs_only=True) == words
 
 
 @pytest.mark.parametrize(
