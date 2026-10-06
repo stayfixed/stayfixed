@@ -58,13 +58,21 @@ REVOKED = (
 # answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
+# Off a terminal the only home a hook trusts is the password database's, and the harness finds
+# its memory directory through `HOME`. Where the two differ, a link made under the first is one
+# the harness never reads, so none is made and the session is told; at a terminal `attach` reads
+# `HOME`, which is the person's own there.
+NO_HARNESS_LINK = (
+    "stayfixed: HOME is not this user's home in the password database, so this hook made no "
+    "harness memory link; run `stayfixed attach` from a terminal to make it"
+)
 
 
 def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
-        from stayfixed.config.machine import owner_home
+        from stayfixed.config.machine import homes_agree, owner_home
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.store import resolve
         from stayfixed.memory.worktree import PartialLink, link
@@ -79,11 +87,11 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             return HookResult(context=NO_STORE)
         # Said rather than sniffed, as `hooks.commands` says it for the machine file: a hook is
         # never a person at a terminal, so `HOME` does not choose where the harness link goes.
-        home = owner_home(interactive=False)
-        if home is None:
-            return HookResult(context=NOT_LINKED)
+        # Where `HOME` is not that home, the harness looks somewhere else, so the hook makes the
+        # tree's links and no harness link (`NO_HARNESS_LINK`).
+        home = owner_home(interactive=False) if homes_agree() else None
         try:
-            links = link(event.project_root, store, config, home=home)
+            links = link(event.project_root, store, config, home=home, harness=home is not None)
         except PartialLink as partial:
             # A write failed part-way. `link` makes one symlink at a time, so the tree now
             # holds some names and not the rest — and `worktree`'s own docstring says a group
@@ -109,9 +117,10 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             # lapsed is what the owner has to act on, and the two never co-occur — the same
             # gate decides both.
             return HookResult(context=REVOKED)
-        if not links.created:
-            return HookResult()
-        return HookResult(context=LINKED.format(count=len(links.created)))
+        lines = [LINKED.format(count=len(links.created))] if links.created else []
+        if links.withheld:
+            lines.append(NO_HARNESS_LINK)
+        return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two

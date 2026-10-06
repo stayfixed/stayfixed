@@ -81,6 +81,22 @@ def owner_home(interactive: bool | None = None) -> Path | None:
     return passwd_home()
 
 
+def homes_agree(env: Mapping[str, str] | None = None) -> bool:
+    """Whether `HOME` names the home the password database records, or is not set at all.
+
+    Where they agree, the home stayfixed trusts off a terminal is also the one every other program
+    finds through `HOME` — the harness locating its memory directory among them. An unset `HOME`
+    agrees, because a program with no `HOME` asks the database too; a user the database lists
+    no home for never agrees, since there is nothing to agree with.
+    """
+    env = os.environ if env is None else env
+    recorded = passwd_home()
+    if recorded is None:
+        return False
+    chosen = env.get("HOME")
+    return not chosen or Path(chosen).resolve() == recorded.resolve()
+
+
 def in_owner_home(value: str) -> Path | None:
     """`value` with a leading `~` read as the machine owner's home directory, never as `HOME`.
 

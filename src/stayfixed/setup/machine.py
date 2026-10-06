@@ -56,7 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops, tomlout
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
 
 # The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s
@@ -170,5 +170,16 @@ def write_machine(
             f"to be able to write back everything in it; remove or rename that key and run the "
             f"command again"
         ) from exc
-    fsops.write_atomically(path, text)
+    try:
+        fsops.write_atomically(path, text)
+    except OSError as exc:
+        # With no `--machine` the directory is under the home the password database records,
+        # which a system user's entry often names as a directory that is not there or not
+        # theirs; no other place is one a hook reads, so the failure names the directory.
+        reason = exc.strerror or type(exc).__name__
+        raise Failure(
+            f"{path.parent} cannot be written ({reason}), so the machine configuration cannot be "
+            f"kept there; without --machine it is under the home the password database records "
+            f"for this user, which is the only place a hook reads it"
+        ) from None
     return Written(path)

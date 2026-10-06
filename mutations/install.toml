@@ -3199,3 +3199,37 @@ after = '    if False:'
 reddens = [
   "tests/setup/test_commands.py::test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing",
 ]
+
+# Off a terminal `HOME` may be a directory a clone ships, so the upgrader's remedy to move the
+# files under it is given only to a person at a terminal.
+[[mutation]]
+name = "doctor advises moving files from HOME off a terminal"
+file = "src/stayfixed/doctor/checks.py"
+before = '        _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,'
+after = '        _MOVE_YOUR_FILES.format(owner=owner),'
+reddens = ["tests/doctor/test_checks.py::test_off_a_terminal_doctor_never_advises_moving_files_from_home"]
+
+[[mutation]]
+name = "ignored-env drops the HOME remedy when a variable is set too"
+file = "src/stayfixed/doctor/checks.py"
+before = '        detail, remedy = f"{detail}; {home[0]}", f"{remedy}; {home[1]}"'
+after = '        detail, remedy = f"{detail}; {home[0]}", remedy'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_variable_and_a_home_that_both_go_unhonoured_get_both_remedies",
+]
+
+[[mutation]]
+name = "setup keeps quiet about which home it wrote under while the homes differ"
+file = "src/stayfixed/setup/commands.py"
+before = '        if args.machine is None and not homes_agree()'
+after = '        if False'
+reddens = ["tests/setup/test_commands.py::test_setup_where_the_homes_differ_says_which_home_it_wrote_under"]
+
+[[mutation]]
+name = "an unwritable machine file directory ends as an internal error"
+file = "src/stayfixed/setup/machine.py"
+before = "    except OSError as exc:\n        # With no `--machine`"
+after = "    except LookupError as exc:\n        # With no `--machine`"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]

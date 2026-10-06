@@ -1248,3 +1248,24 @@ def test_no_home_in_the_database_is_a_refusal_off_a_terminal(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     with pytest.raises(Refusal, match="lists no home directory"):
         worktree.harness_link_parts(tmp_path / "tree")
+
+
+def test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # For a hook whose only trusted home is not the one the harness reads: the tree's links are
+    # made, no harness link is made or withdrawn under any home, and `withheld` says whether the
+    # store was approved for one, which is what the hook tells the session.
+    owner = a_home(tmp_path)
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    untrusted = link(tree, store, config, harness=False)
+    assert (tree / "docs" / "memory" / "developer").is_symlink()
+    assert untrusted.withheld is False
+    record(store, config)
+    trusted = link(tree, store, config, harness=False)
+    assert trusted.withheld is True
+    assert not harness_memory_path(tree, owner).exists()
+    assert not (owner / ".claude").exists()

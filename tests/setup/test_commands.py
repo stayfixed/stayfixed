@@ -268,3 +268,35 @@ def test_setup_with_no_home_in_the_password_database_names_machine_and_writes_no
     assert "--machine PATH" in capsys.readouterr().err
     assert not stub.calls
     assert list(tmp_path.rglob("config.toml")) == []
+
+
+def test_setup_where_the_homes_differ_says_which_home_it_wrote_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    owner, chosen = tmp_path / "owner", tmp_path / "chosen"
+    chosen.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", str(chosen))
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(chosen)]) == 0
+    said = capsys.readouterr().out
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    assert f"written to {machine}, under the home the password database records" in said
+
+
+def test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    locked, home = tmp_path / "locked-home", tmp_path / "home"
+    locked.mkdir()
+    home.mkdir()
+    locked.chmod(0o555)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    try:
+        as_owner_home(monkeypatch, locked)
+        assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+    finally:
+        locked.chmod(0o755)
+    err = capsys.readouterr().err
+    assert f"{locked / '.config' / 'stayfixed'} cannot be written" in err
+    assert "internal error" not in err

@@ -21,6 +21,7 @@ from pathlib import Path
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags
 from stayfixed.config.loader import load
+from stayfixed.config.machine import homes_agree
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
@@ -329,8 +330,17 @@ def run_trust(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     before = trust.state(store, config)
     after = trust.record(store, config)
+    summary = f"recorded the store hash for {store.path}"
+    written = trust.record_path(store.machine)
+    if store.machine is None and written is not None and not homes_agree():
+        # Said where `HOME` is not the database's home, because a person who looks under `HOME`
+        # for the record finds an older one or none (`config.machine`'s docstring says why).
+        summary = (
+            f"{summary}, in {written}: under the home the password database records for this "
+            f"user, not under HOME, because that is where a hook reads it"
+        )
     return Result(
-        f"recorded the store hash for {store.path}",
+        summary,
         {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
     )
 

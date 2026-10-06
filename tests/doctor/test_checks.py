@@ -993,19 +993,51 @@ def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_d
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A container or home-manager setup whose `HOME` is not its database entry is not refused:
-    # off a terminal stayfixed reads the entry's home, and this row says which, so the owner is
-    # not left wondering why the hook path ignores files under `HOME`. `HOME`'s own value is not
-    # printed, since an agent's environment may be a repository's choice.
+    # off a terminal stayfixed reads the entry's home, and this row says which, and that a hook
+    # makes no harness memory link while the two differ. `HOME`'s own value is not printed, since
+    # an agent's environment may be a repository's choice. From a terminal, the remedy is the
+    # upgrader's: move the files of your own, checked first, before the commands that write.
     owner = tmp_path / "owner"
     as_owner_home(monkeypatch, owner)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     check = _by_name(
         _checks(tmp_path, _initialised(tmp_path), env=_env(tmp_path, HOME="fakehome")),
         "ignored-env",
     )
     assert check.status == "warn"
     assert str(owner / ".config" / "stayfixed") in check.detail
-    assert "fakehome" not in check.detail
-    assert "stayfixed memory trust" in check.remedy
+    assert "no harness memory link" in check.detail
+    assert "fakehome" not in check.detail + check.remedy
+    assert f"move them to {owner / '.config' / 'stayfixed'} before" in check.remedy
+    assert "check that they are yours" in check.remedy
+
+
+def test_off_a_terminal_doctor_never_advises_moving_files_from_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Off a terminal `HOME` may be a directory a clone ships, and an agent told to move the files
+    # under it would carry the clone's `trust.json` into the owner's own home. So the remedy there
+    # only sends the reader to a terminal, and names no file and no move.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    check = _by_name(
+        _checks(tmp_path, _initialised(tmp_path), env=_env(tmp_path, HOME="fakehome")),
+        "ignored-env",
+    )
+    assert check.status == "warn"
+    assert "move" not in check.remedy
+    assert "from your own terminal" in check.remedy
+
+
+def test_a_variable_and_a_home_that_both_go_unhonoured_get_both_remedies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    env = _env(tmp_path, HOME="fakehome", XDG_CONFIG_HOME=str(tmp_path / "xdg"))
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert "XDG_CONFIG_HOME" in check.detail and "password database" in check.detail
+    assert "--machine" in check.remedy and "move them to" in check.remedy
 
 
 def test_a_user_the_password_database_does_not_list_is_told_no_file_is_read(

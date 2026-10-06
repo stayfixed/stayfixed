@@ -63,6 +63,13 @@ Out of scope:
 
 - Anything that requires the attacker to already be able to write to the machine owner's home
   directory or to `PATH`. stayfixed runs the `git` on your `PATH` by design.
+- A committed `env` block choosing what the `git` stayfixed runs inside a hook executes. Two
+  variables do it, and stayfixed passes both to its `git` on purpose: `PATH`, which chooses the
+  binary, and `HOME`, which chooses git's global configuration (`$HOME/.gitconfig` and
+  `$HOME/.config/git/config`), whose `core.fsmonitor` names a program git runs on `status`,
+  `ls-files` and `diff`. `XDG_CONFIG_HOME` is dropped before any `git` runs. Both are recorded
+  here as one accepted, harness-level exposure until the owner decides whether to contain them
+  together; this is unlike the machine file and `trust.json`, which no variable chooses.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.

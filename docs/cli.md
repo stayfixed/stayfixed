@@ -2660,7 +2660,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead | the environment, the password database |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead and that hooks make no harness memory link meanwhile; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes | the note store |
@@ -3339,11 +3339,26 @@ directory the repository ships, with a `trust.json` in it. Every command reads a
 file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
 still decides what it decides from your own terminal: `--home`'s default, and where an
-interactive `attach` puts the harness memory link. A container or home-manager setup whose `HOME`
-is not its database entry is not refused: its files live under the entry's home, and `doctor`'s
-`ignored-env` row names that directory. A user the database lists no home for has no such file
-off `--machine`: nothing is read, `memory trust` and `setup` fail and say so, and a hook links no
-harness memory.
+interactive `attach` puts the harness memory link.
+
+A container or home-manager setup whose `HOME` is not its database entry is not refused:
+
+- Its files live under the entry's home. `memory trust` and `setup` say which directory they
+  wrote under, and `doctor`'s `ignored-env` row names it.
+- A hook gives no sign that a file under `HOME` is no longer read: approved notes stop arriving
+  and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
+  own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
+  them to the entry's home **before** running `setup` or `memory trust`, which write there, or
+  merge them afterwards. Move only files you put there yourself: a repository's `env` block can
+  point `HOME` at a directory it ships.
+- A hook makes no harness memory link while the two homes differ, because the harness finds its
+  memory directory through `HOME`; the session is told so, and `stayfixed attach` from a terminal
+  makes the link under `HOME`.
+
+A user the database lists no home for has no such file off `--machine`: nothing is read,
+`memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
+database records that cannot be written fails the same two commands naming the directory; no
+other place is one a hook reads.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
 the environment, so one command could read the two halves of this file out of two different

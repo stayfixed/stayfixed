@@ -2633,18 +2633,48 @@ before = '    if base is None:'
 after = '    if False:'
 reddens = ["tests/memory/test_worktree.py::test_no_home_in_the_database_is_a_refusal_off_a_terminal"]
 
-# The hook says it is not at a terminal rather than sniffing it, so `HOME` never chooses where a
-# hook makes the harness link.
+# A hook trusts only the password database's home, and the harness finds its memory directory
+# through `HOME`: where the two differ the hook makes no harness link, and says so, rather than
+# making one the harness never reads.
 [[mutation]]
-name = "the worktree-link hook makes the harness link under HOME"
+name = "the worktree-link hook makes the harness link where HOME is not the database's home"
 file = "src/stayfixed/memory/hooks.py"
-before = '        home = owner_home(interactive=False)'
-after = '        home = owner_home(interactive=True)'
-reddens = ["tests/memory/test_hooks.py::test_the_harness_link_goes_under_the_owners_home_and_never_under_home"]
+before = '        home = owner_home(interactive=False) if homes_agree() else None'
+after = '        home = owner_home(interactive=False)'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
 
 [[mutation]]
-name = "the worktree-link hook links with no home to anchor on"
+name = "the worktree-link hook says nothing of the harness link it withheld"
 file = "src/stayfixed/memory/hooks.py"
-before = '        if home is None:'
+before = '        if links.withheld:'
 after = '        if False:'
-reddens = ["tests/memory/test_hooks.py::test_a_user_with_no_home_in_the_database_gets_no_harness_link"]
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+[[mutation]]
+name = "a link without the harness half makes the harness link anyway"
+file = "src/stayfixed/memory/worktree.py"
+before = "        if not harness:\n            return Links(created, revoked, withheld=harness_link_needed(store, config))"
+after = "        if False:\n            return Links(created, revoked, withheld=harness_link_needed(store, config))"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
+]
+
+# A trust record that cannot be written under the database's home is a failure naming the
+# directory, never an internal error; and where the homes differ the command says where it wrote.
+[[mutation]]
+name = "an unwritable trust record directory ends as an internal error"
+file = "src/stayfixed/memory/trust.py"
+before = "    except OSError as exc:\n        where = ("
+after = "    except LookupError as exc:\n        where = ("
+reddens = [
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "memory trust keeps quiet about where it wrote while the homes differ"
+file = "src/stayfixed/memory/commands.py"
+before = '    if store.machine is None and written is not None and not homes_agree():'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+]

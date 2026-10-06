@@ -319,6 +319,9 @@ class Links:
 
     created: list[Path] = field(default_factory=list)
     revoked: list[Path] = field(default_factory=list)
+    # The harness link this store is approved for, not made because the caller said not to make
+    # one (`link(harness=False)`): a third thing to say, since the harness cannot see the store.
+    withheld: bool = False
 
 
 def _tree_base(worktree: Path, store: Store) -> str | None:
@@ -402,7 +405,14 @@ def _apply_harness_link(
     return created, revoked
 
 
-def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> Links:
+def link(
+    worktree: Path,
+    store: Store,
+    config: Config,
+    *,
+    home: Path | None = None,
+    harness: bool = True,
+) -> Links:
     """Create what is missing, withdraw what is no longer authorised, and report both.
 
     A no-op for the main checkout itself: it already holds the real store, not a link to it,
@@ -474,6 +484,10 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     `SessionStart` touched. `symlink_within` creates a target's parents through the same
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
+
+    `harness=False` makes the tree's links and neither makes nor withdraws the harness link, and
+    reports in `withheld` whether the store is approved for one. For a caller whose only home
+    is not the one the harness reads (`memory.hooks`): a link made there is a link nothing sees.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
@@ -490,7 +504,8 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     # the refusal in front of. `_apply_harness_link` asks the same question again as its first
     # statement, above its own gate, which is what keeps it correct when `attach_main` calls
     # it on its own; asked twice, it is the same answer.
-    harness_anchor(worktree, home)
+    if harness:
+        harness_anchor(worktree, home)
     created: list[Path] = []
     revoked: list[Path] = []
     try:
@@ -509,6 +524,8 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
                 target = contained(worktree / base, name, allow_final_symlink=True)
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
+        if not harness:
+            return Links(created, revoked, withheld=harness_link_needed(store, config))
         made, withdrawn = _apply_harness_link(worktree, store, config, home)
         created += made
         revoked += withdrawn

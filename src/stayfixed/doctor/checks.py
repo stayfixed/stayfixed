@@ -69,7 +69,7 @@ from pathlib import Path
 import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
-from stayfixed.config.machine import machine_config_path, passwd_home
+from stayfixed.config.machine import machine_config_path, override_is_honoured, passwd_home
 from stayfixed.config.schema import Config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
@@ -879,9 +879,22 @@ def _ignored_env(context: Context) -> Row:
         f"{listed(set_here)} is set and is not honoured on the hook path: the machine "
         f"configuration is ~/.config/stayfixed/config.toml and nothing else there"
     )
+    remedy = "pass --machine <path> to a command that must read a different file"
     if home is not None:
-        detail = f"{detail}; {home[0]}"
-    return Row(WARN, detail, "pass --machine <path> to a command that must read a different file")
+        detail, remedy = f"{detail}; {home[0]}", f"{remedy}; {home[1]}"
+    return Row(WARN, detail, remedy)
+
+
+# What an upgrade from a release that read `HOME` asks of a person whose `HOME` is not the
+# database's home. Given only to a person at a terminal: off one, `HOME` may be a directory a
+# clone ships, and an agent told to move the files under it would carry the clone's `trust.json`
+# into the owner's own home. Nothing under `HOME` is ever looked at or named, either way.
+_MOVE_YOUR_FILES = (
+    "if you kept a config.toml or trust.json of your own under HOME's .config/stayfixed before "
+    "this release, check that they are yours and move them to {owner} before you run `stayfixed "
+    "setup` or `stayfixed memory trust`, which write there; otherwise nothing"
+)
+_FROM_A_TERMINAL = "run `stayfixed doctor` from your own terminal to see what to do about it"
 
 
 def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
@@ -891,8 +904,9 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     Off a terminal the home directory is the database's entry and not `HOME`
     (`config.machine.owner_home`), and the machine file and `trust.json` are under it for every
     command. A container or home-manager setup whose `HOME` is another directory is not refused
-    for that; it is told here which home its stayfixed files are under. The value of `HOME` is
-    not printed: `doctor` may be run by an agent whose environment a repository chose.
+    for that; it is told here which home its stayfixed files are under, and that a hook makes no
+    harness memory link while the two differ (`memory.hooks.NO_HARNESS_LINK`). The value of
+    `HOME` is not printed: `doctor` may be run by an agent whose environment a repository chose.
     """
     chosen = env.get("HOME")
     if not chosen:
@@ -901,18 +915,19 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     if recorded is None:
         return (
             "the password database lists no home directory for this user, so off a terminal "
-            "no machine configuration and no trust record is read, whatever HOME says",
+            "no machine configuration and no trust record is read, whatever HOME says, and a "
+            "hook makes no harness memory link",
             "pass --machine <path> to a command that must read a machine configuration file",
         )
     if Path(chosen).resolve() == recorded.resolve():
         return None
+    owner = recorded / ".config" / "stayfixed"
     return (
         f"HOME is not the home directory the password database records for this user, and is "
         f"not honoured on the hook path: the machine configuration and trust record are under "
-        f"{recorded / '.config' / 'stayfixed'}, and a hook links the harness memory under "
-        f"{recorded}",
-        "nothing, if that is intended: `stayfixed setup` and `stayfixed memory trust` write "
-        "under that directory too",
+        f"{owner}, and while the two differ a hook makes no harness memory link; "
+        f"`stayfixed attach` from a terminal makes it under HOME",
+        _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,
     )
 
 

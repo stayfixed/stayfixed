@@ -93,7 +93,7 @@ def run_setup(args: argparse.Namespace) -> Result:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from stayfixed.config.machine import machine_config_path
+    from stayfixed.config.machine import homes_agree, machine_config_path
     from stayfixed.setup.run import setup
 
     # `interactive=False`, like every *reader* of this file (`config.loader.load`,
@@ -136,9 +136,17 @@ def run_setup(args: argparse.Namespace) -> Result:
         "overlay": str(report.overlay) if report.overlay is not None else None,
         "notes": list(report.notes),
     }
+    # Where `HOME` is not the database's home, the file is not where the person may look for it,
+    # so the line says which home it went under (`config.machine`'s docstring says why).
+    under = (
+        ", under the home the password database records for this user rather than HOME, "
+        "because that is where a hook reads it"
+        if args.machine is None and not homes_agree()
+        else ""
+    )
     summary = "; ".join(
         (
-            f"machine configuration written to {machine}",
+            f"machine configuration written to {machine}{under}",
             f"{len(report.plugins_installed)} plugin(s) installed",
             "deny rules merged" if report.deny_written else "deny rules unchanged",
             "stayfixed is on PATH" if report.cli_on_path else "stayfixed is not on PATH",

@@ -174,14 +174,40 @@ def test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_un
     as_owner_home(monkeypatch, owner)
     monkeypatch.setenv("HOME", str(chosen))
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    capsys.readouterr()
     assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 0
-    assert (owner / ".config" / "stayfixed" / "trust.json").is_file()
+    record = owner / ".config" / "stayfixed" / "trust.json"
+    assert record.is_file()
     assert not (chosen / ".config").exists()
+    # And says where it went, since a person who looks under `HOME` finds an older record or none.
+    said = capsys.readouterr().out
+    assert f"in {record}: under the home the password database records" in said
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     capsys.readouterr()
     argv = ["memory", "session-context", "--bundle", "standing-rules", "--root", str(project)]
     assert invoke(argv) == 0
     assert "Body." in capsys.readouterr().out
+
+
+def test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # A system user's entry often names a home that is missing or not theirs, and no other place
+    # is one a hook reads: a failure naming the directory, never an internal error.
+    locked = tmp_path / "locked-home"
+    locked.mkdir()
+    locked.chmod(0o555)
+    try:
+        as_owner_home(monkeypatch, locked)
+        assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 1
+    finally:
+        locked.chmod(0o755)
+    err = capsys.readouterr().err
+    assert f"{locked / '.config' / 'stayfixed'} cannot be written" in err
+    assert "internal error" not in err
 
 
 def test_trust_with_no_home_in_the_database_fails_and_writes_nothing(

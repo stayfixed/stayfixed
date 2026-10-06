@@ -9,11 +9,20 @@ your user, which no environment variable moves.
   home by every command, `stayfixed setup` and `stayfixed memory trust` included, so the file
   you write from a terminal is the one a hook reads. A `~` in `[overlay] root` means that home
   too.
-- A hook makes the harness memory link under that home. From your own terminal, `HOME` still
-  decides `--home`'s default and where `stayfixed attach` puts the link.
+- From your own terminal, `HOME` still decides `--home`'s default and where `stayfixed attach`
+  puts the harness memory link.
 - Where `HOME` is not the database's home, as in some containers and home-manager setups,
-  nothing is refused: `stayfixed doctor`'s `ignored-env` row warns and names the directory your
-  machine files are under. Move a machine file or trust record you kept under `HOME` there.
+  nothing is refused, and `stayfixed doctor`'s `ignored-env` row warns and names the directory
+  your machine files are under. `stayfixed memory trust` and `stayfixed setup` say which
+  directory they wrote under.
+- In that case a hook gives no sign that a file under `HOME` is no longer read: approved notes
+  stop being injected and `[personal]` falls back to the preset. Move a `config.toml` or
+  `trust.json` you kept under `HOME`'s `.config/stayfixed` to the database's home **before**
+  running `stayfixed setup` or `stayfixed memory trust`, or merge them afterwards. Move only
+  files you put there yourself.
+- In that case too, a hook makes no harness memory link, since the harness finds its memory
+  through `HOME`; the session is told so, and `stayfixed attach` from a terminal makes it.
 - A user the database lists no home for reads no machine file and no trust record off
   `--machine`. `stayfixed setup` and `stayfixed memory trust` fail and ask for `--machine`, and a
-  hook links no harness memory.
+  hook makes no harness memory link. A database home that cannot be written fails the same two
+  commands naming the directory.

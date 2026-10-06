@@ -18,6 +18,17 @@ answer — a hardcoded path is what picks the Xcode shim on macOS over the worki
 installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
 session, which is a harness-level exposure this module cannot close and does not pretend to.
 
+**`HOME` is the second entry with the same cost, and it is accepted with `PATH`, not apart from
+it.** It is kept so that the owner's global configuration answers — `safe.directory`, excludes —
+and it is therefore also how that configuration is chosen: `$HOME/.gitconfig` and
+`$HOME/.config/git/config`. Set by the same `env` block, relative or not, it can name a file the
+clone ships whose `core.fsmonitor` is a program git runs on `status`, `ls-files` and `diff`;
+measured on PostToolUse's dirty count. Dropping every `GIT_CONFIG_*` variable closes the other
+doors to that configuration, and `XDG_CONFIG_HOME` is not kept either, so `HOME` is the one left.
+Handing git the password database's home here instead would close it and leave `PATH` open, and
+would change which global configuration a user whose `HOME` differs gets; whether to contain the
+two together is the owner's decision, and `SECURITY.md` records both as accepted until then.
+
 `git_run` is the one runner for every question this project asks git about a repository it works on
 — the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
 `origin_remote` read and its usability probe, the hooks directory, the dirty count and the commit

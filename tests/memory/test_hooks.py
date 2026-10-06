@@ -10,7 +10,7 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
 from stayfixed.memory import worktree as worktree_module
-from stayfixed.memory.hooks import NOT_LINKED, PARTIAL, REVOKED, register
+from stayfixed.memory.hooks import NO_HARNESS_LINK, NOT_LINKED, PARTIAL, REVOKED, register
 from stayfixed.memory.worktree import Links, PartialLink
 from tests.ownerhome import as_owner_home
 
@@ -249,45 +249,60 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
                 assert fragment not in NOT_LINKED
 
 
-def test_the_harness_link_goes_under_the_owners_home_and_never_under_home(
+def _recording(seen: list[tuple[object, object]], *, withheld: bool = False) -> object:
+    def recorded(*_args: object, **kwargs: object) -> Links:
+        seen.append((kwargs.get("home"), kwargs.get("harness")))
+        return Links(withheld=withheld and kwargs.get("harness") is False)
+
+    return recorded
+
+
+def test_the_harness_link_goes_under_the_owners_home_where_home_agrees(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A hook is never a person at a terminal, so the home the harness link is made under is the
-    # password database's, whatever `HOME` a committed `env` block set; relative, that would be
-    # a directory inside the clone.
+    # password database's. Where `HOME` names the same directory, the harness reads it there.
     owner = tmp_path / "owner"
+    owner.mkdir()
     as_owner_home(monkeypatch, owner)
-    monkeypatch.setenv("HOME", "fakehome")
-    seen: list[object] = []
-
-    def recorded(*_args: object, **kwargs: object) -> Links:
-        seen.append(kwargs.get("home"))
-        return Links()
-
-    monkeypatch.setattr(worktree_module, "link", recorded)
+    monkeypatch.setenv("HOME", str(owner))
+    seen: list[tuple[object, object]] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    for handler in register():
-        handler.run(an_event(root), config)
-    assert seen == [owner]
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [(owner, True)]
+    assert contexts == [None]
 
 
-def test_a_user_with_no_home_in_the_database_gets_no_harness_link(
+@pytest.mark.parametrize("database", ["another home", "no entry"])
+def test_no_harness_link_is_made_where_home_is_not_the_databases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str
+) -> None:
+    # The harness finds its memory directory through `HOME`, and a hook trusts only the database's
+    # home. Where the two differ, a link made under the second is one the harness never reads, so
+    # the tree's links are made, the harness link is not, and the session is told how to make it.
+    # Relative, `HOME` would also name a directory inside the clone; nothing is made under it.
+    as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
+    monkeypatch.setenv("HOME", "fakehome")
+    seen: list[tuple[object, object]] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [(None, False)]
+    assert contexts == [NO_HARNESS_LINK]
+
+
+def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withheld(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No anchor that `HOME` did not choose, so no link at all, and the fixed line a refused
-    # link gets; never the session's cost.
-    as_owner_home(monkeypatch, None)
-    seen: list[object] = []
-
-    def recorded(*_args: object, **kwargs: object) -> Links:
-        seen.append(kwargs)
-        return Links()
-
-    monkeypatch.setattr(worktree_module, "link", recorded)
+    # The vacuity guard for the line above: it is said only when a link was due, so an untrusted
+    # store under a differing `HOME` is as quiet as it is anywhere else.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setenv("HOME", "fakehome")
+    seen: list[tuple[object, object]] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen))
     root = a_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    for handler in register():
-        result = handler.run(an_event(root), config)
-        assert result.context == NOT_LINKED
-    assert seen == []
+    assert [handler.run(an_event(root), config).context for handler in register()] == [None]

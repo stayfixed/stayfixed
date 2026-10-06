@@ -46,7 +46,6 @@ reddens = [
   "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
   "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
   "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
-  "tests/memory/test_hooks.py::test_the_harness_link_goes_under_the_owners_home_and_never_under_home",
   "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
   "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
@@ -103,7 +102,7 @@ name = "the overlay root is read from a machine file that has no home"
 file = "src/stayfixed/config/overlay.py"
 before = '    raw = None if path is None else read_machine_toml(path)'
 after = '    raw = read_machine_toml(path)'
-reddens = ["tests/memory/test_hooks.py::test_a_user_with_no_home_in_the_database_gets_no_harness_link"]
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases[no entry]"]
 
 # Half a file behind a gate is not a gate. `load` resolved the machine file with the `isatty` sniff
 # while `overlay_root` and `_trust_file` — the two anchors store resolution and the trust record
@@ -3371,3 +3370,12 @@ after = '    slug = project.replace("/", "-")'
 reddens = [
   "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
 ]
+
+# `HOME` agrees with the database's home only when it resolves to it; read as agreeing anyway, a
+# hook makes the harness link where the harness does not look.
+[[mutation]]
+name = "any HOME agrees with the password database's home"
+file = "src/stayfixed/config/machine.py"
+before = '    return not chosen or Path(chosen).resolve() == recorded.resolve()'
+after = '    return True'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]

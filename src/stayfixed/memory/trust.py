@@ -94,11 +94,41 @@ NO_HOME = (
 )
 
 
+def record_path(machine: Path | None) -> Path | None:
+    """Where this machine's trust record is, for a command that says where it wrote."""
+    return _trust_file(machine)
+
+
 def _writable_trust_file(machine: Path | None) -> Path:
     path = _trust_file(machine)
     if path is None:
         raise Failure(NO_HOME)
     return path
+
+
+def _write_record(machine: Path | None, raw: dict[str, str]) -> None:
+    """Write the record, and fail naming its directory when that cannot be written.
+
+    With no `--machine` the directory is under the home the password database records, which a
+    system user's entry often names as a directory that is not there or not theirs. There is no
+    second place to put it that a hook would read, so the failure says which directory it was
+    rather than ending as an internal error about a temporary file.
+    """
+    path = _writable_trust_file(machine)
+    try:
+        write_atomically(path, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    except OSError as exc:
+        where = (
+            "it is under the home the password database records for this user, which is the "
+            "only place a hook reads a trust record"
+            if machine is None
+            else "it is beside the machine configuration file --machine names"
+        )
+        reason = exc.strerror or type(exc).__name__
+        raise Failure(
+            f"{path.parent} cannot be written ({reason}), so the trust record cannot be kept "
+            f"there; {where}"
+        ) from None
 
 
 @dataclass(frozen=True)
@@ -352,9 +382,7 @@ def state(store: Store, config: Config) -> TrustState:
 def record(store: Store, config: Config) -> TrustState:
     raw = _recorded(store.machine)
     raw[_key(store)] = store_digest(store, config)
-    write_atomically(
-        _writable_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n"
-    )
+    _write_record(store.machine, raw)
     return state(store, config)
 
 
@@ -422,9 +450,7 @@ def refresh_if_trusted(
         return False  # an approved file is gone, and stayfixed does not delete notes
     raw = _recorded(store.machine)
     raw[_key(store)] = _digest_of(expected)
-    write_atomically(
-        _writable_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n"
-    )
+    _write_record(store.machine, raw)
     return True
 
 
