@@ -1488,7 +1488,7 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
 def test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Read through `fsops.read_regular_bytes`, as every other reader of a committed file is, so a
+    # Read through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the read cap, so a
     # regular file that never ends is refused at the cap rather than read until memory runs out,
     # and named as a file the walk could not read. The cap is lowered so the case is small.
     # Mutation (oracle): `mutations/`'s "hook-entries reads a settings file past the cap" -> the
@@ -1716,10 +1716,10 @@ def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -
 def test_a_skill_file_that_is_no_regular_file_is_refused_and_named(
     tmp_path: Path, target: str
 ) -> None:
-    # Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a directory
-    # where the file goes is refused, a FIFO inside the checkout is refused without waiting on a
-    # writer, and each is named as a skill file this row could not read, a warning. Mutation
-    # (oracle): `mutations/`'s "hook-entries passes over a skill file it cannot read" ->
+    # Read through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the read cap: a
+    # directory where the file goes is refused, a FIFO inside the checkout is refused without
+    # waiting on a writer, and each is named as a skill file this row could not read, a warning.
+    # Mutation (oracle): `mutations/`'s "hook-entries passes over a skill file it cannot read" ->
     # `a-directory` and `a-fifo` are green. A link to `/dev/zero` leads out of the checkout, so it
     # is not followed and is told as one leading out; followed, the reader would refuse a device.
     root = _initialised(tmp_path)

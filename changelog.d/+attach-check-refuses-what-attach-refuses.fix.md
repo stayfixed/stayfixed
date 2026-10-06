@@ -9,8 +9,17 @@ allow list and hook table with filters of its own, reported a clean diff and exi
 - an entry that is not an object.
 
 `null` is now read the same way wherever `attach` reads a settings document: as a value that is
-not the object or list that goes there, and never as an absent key. So the overlay's own
-`common/claude/hooks.json` or a project's `hooks.json` with an entry group whose `hooks` is `null`
-is refused by both commands too, where both read it as granting nothing. A refusal that names an
-event prints it escaped when it holds a line break or a control character, as other names a
-repository chose already print.
+not the object or list that goes there, and never as an absent key. So your overlay's own grant
+files are refused by both commands too, where both read them as granting nothing:
+
+- a `permissions.json` under `common/claude/` or a project's `claude/` whose `"permissions"` or
+  `"allow"` is `null`;
+- a `hooks.json` there with an entry group whose `hooks` is `null`.
+
+For a repository already attached under such an overlay, `stayfixed doctor`'s `hook-entries` row
+now warns that the overlay could not be asked which entries it grants, where it reported every
+entry accounted for. Remove the `null` key, or give it `{}` or `[]`, and `stayfixed attach
+--check` names the clause until you do.
+
+A refusal that names an event prints it escaped when it holds a line break or a control
+character, as other names a repository chose already print.

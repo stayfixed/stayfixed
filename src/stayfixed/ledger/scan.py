@@ -209,8 +209,8 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         try:
             if not stat.S_ISREG(path.lstat().st_mode):
                 continue
-            # To the read cap, as every reader of a committed file reads one: a file past it is
-            # one this scan could not read, never one read to its end.
+            # To the read cap, by the bounded reader every reader of a committed file uses: a file
+            # past it is one this scan could not read, never one read to its end.
             raw = read_regular_bytes(path)
         except OSError as error:
             yield Scanned(path, relative, None, said(error))

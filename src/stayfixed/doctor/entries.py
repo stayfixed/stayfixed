@@ -617,9 +617,10 @@ def _frontmatter(root: Path, real_root: Path, relative: str) -> list[_Found]:
     read, or it leads out of the checkout, or none. A link that leads out is not followed and is
     named as one that does (`_LINKED_OUT`): what it leads to is not the repository's. Whether a
     path names a file is asked first, so a dangling link names none wherever it points. Read
-    through `fsops.read_regular_bytes`, as every reader of a committed file is: a device or a FIFO
-    is refused unread, and a file past the cap is refused, each one this row could not read; a
-    path that names no file is passed over."""
+    through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the regular-file cap, which
+    every reader of a committed file goes through at its own cap: a device or a FIFO is refused
+    unread, and a file past the cap is refused, each one this row could not read; a path that
+    names no file is passed over."""
     path = root / relative
     try:
         path.stat()
@@ -881,10 +882,10 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         try:
             # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read to the
-            # regular-file reader's cap, as every reader of a committed file is, so a file that
-            # never ends, or one swapped for a device after the question above, is one this walk
-            # cannot read.
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read by
+            # `fsops`' one bounded reader, which every reader of a committed file goes through,
+            # here at the regular-file cap, so a file that never ends, or one swapped for a device
+            # after the question above, is one this walk cannot read.
             document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))
