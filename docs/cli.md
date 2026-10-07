@@ -163,7 +163,11 @@ stops this from being a bare, trivially scripted command.
 The hash covers every note, `MEMORY.md`, and the repository-controlled configuration rendered
 into it, keyed by the store's absolute path. Change any of it and the approval lapses — you are
 asked again rather than silently kept. Notes that are *yours* (an overlay store) need no
-approval; recording one is inert rather than dangerous.
+approval to reach a session: the standing-rules and volatile-notes bundles deliver them without
+one. A record for an overlay store is not inert, though. The store's directory of links sits
+inside the repository, and the record is what lets `stayfixed attach` create the harness memory
+link to it: until one exists, `memory index` and `memory fit` say the link waits for it and
+`attach` names this command instead of making the link.
 
 Exits `2` if `trust.json` exists and does not parse. It holds every project's approval on the
 machine, so nothing will overwrite a file it could not read — repair or delete it.
@@ -434,6 +438,16 @@ guessed would be guessing. That is about the JSON, not about the command inside 
 longer than the 64 KiB cap is not read either, and is allowed (`0`) rather than refused,
 because tokenizing an unbounded string in front of every Bash call is the larger fault.
 
+"Begins with `sleep`" is read off the first simple command's program, past a leading `(`,
+environment assignments (`FOO=1 sleep 30`), an absolute path (`/bin/sleep 30`), an `env` prefix
+(`env sleep 30`), and `uv run` with uv's own options before and after `run` (`uv run --no-project
+sleep 30`, `uv --quiet run --locked sleep 30`); `uv run -m sleep` and `uv run --script sleep`
+run a module or a file of that name and are not a `sleep`. The `; echo …` advice reads its
+`echo`, and the command before it, the same way. No other wrapper is read through: a
+backgrounded `nohup sleep 30`, `timeout 60 sleep 30`, `command sleep 30`, `time sleep 30`, `uvx
+sleep 30`, `uv tool run sleep 30` or `bash -c "sleep 30"` is not judged as a `sleep`, and answers
+`0`.
+
 This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
 smoke test and a person can ask it without a harness.
 
@@ -516,7 +530,11 @@ The `PostToolUse` `Bash` hook delivers the same note once per context after a re
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
-delivered together. A red command no profile recognises gets no note. When Python's walk stopped
+delivered together. A runner is recognised behind environment assignments, an `env` prefix and
+`uv run` with uv's own options (`uv run --locked pytest`, `uv --quiet run pytest`, `uv run --
+pytest`); a `uv` command carrying an option outside uv's own list (`uv run --with pytest echo`)
+is left whole, so its value is never taken for the program. A red command no profile recognises
+gets no note. When Python's walk stopped
 at its bound, its line says the walk could not tell whether a stale build was imported, and
 names neither stale bytecode nor its absence.
 
@@ -811,8 +829,10 @@ differ from every merge base's copy and from `REF`'s — so a change editing a d
 plan was written; a new plan is all such lines. Naming a plan as `PATH` settles every reference in
 it.
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
-an absolute one, or one that walks out through `..` — which is never settled against the
-filesystem, because that answer would be about the machine rather than about the repository. A
+an absolute one, one that walks out through `..`, or one that runs through a committed symlink
+pointing out of the tree — which is never settled against the filesystem, because that answer
+would be about the machine rather than about the repository. A symlink that stays inside the
+tree is followed. A
 base that does not resolve, one that shares no commit with `HEAD`, any base in a shallow clone,
 where the commits `HEAD` forked from can be cut off and an older commit stand in for them, and
 any base in a clone git refuses to say is shallow or not, are this command's `base-unresolvable`
@@ -2292,6 +2312,12 @@ answer, in the order the run meets them:
 - A Codex rule file in the overlay cannot be read or is not UTF-8.
 - `git worktree list` fails.
 
+A file that "cannot be read" includes one that is not a regular file once a link to it is
+followed, such as a link to `/dev/zero` or to a FIFO, which is never waited on, and one longer than
+64 MiB, the most stayfixed reads of one file: `stayfixed.toml`, the overlay's record of this
+project, `.claude/settings.local.json` and the ledger are each read only that far. A ledger that is
+itself a link is refused (`2`) before it is read, as a path that passes through a symlink.
+
 Every failure in that list happens before anything is written. One way to exit `1` comes later,
 and leaves behind what was written before it: a store that still does not resolve once the link
 tree is built.
@@ -2308,6 +2334,10 @@ It exits `2` on a refusal, in the order the run meets them:
   anything but an object, a list of strings, a list of entry groups or a list of entries where
   one goes, `null` included. An absent key is no rules and no entries. `--check` reads both with
   the run's own readers, so it refuses exactly these documents.
+- A `.claude/settings.local.json` that stayfixed's indented write-back would make longer than the
+  64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
+  grows by its depth on every line, and `would be longer than this reader reads once written
+  back` keeps a run from leaving a file its next read refuses. `--check` refuses it too.
 - A widening without `--yes`; a checkout with no `origin`, whether or not the overlay records the
   project; a mismatch without `--trust-remote`; an `origin` whose URL is not UTF-8 text, which the
   overlay's record cannot hold.
@@ -2434,7 +2464,13 @@ Exits `0` on success. It exits `1` on a failure, in the order the run meets them
   TOML.
 - `.claude/settings.local.json` cannot be read or is not UTF-8.
 - `git` cannot list this repository's worktrees.
-- `.gitignore` cannot be read or is not UTF-8.
+- `.gitignore` cannot be read or is not UTF-8, when the `stayfixed:ignore` region in it is the one
+  `attach` wrote; a region `stayfixed init`'s footprint records is left where it is, and the file
+  is not read.
+
+"Cannot be read" means here what it means for `attach`: a link to a device or a FIFO, or a file
+longer than 64 MiB, which neither command reads past. A settings file an earlier release's
+`attach` wrote back past that size has to be cut down by hand before `detach` can run.
 
 It exits `2` on a refusal, in the order the run meets them:
 
@@ -2442,7 +2478,7 @@ It exits `2` on a refusal, in the order the run meets them:
 - A ledger naming files, settings keys or directories `attach` could not have written.
 - A `[paths]` value that leaves the project or passes through a symlink.
 - A `.claude/settings.local.json` that is not JSON or not a JSON object, or whose `hooks` has a
-  shape the withdrawal cannot read.
+  shape the withdrawal cannot read, or whose indented write-back would pass 64 MiB.
 - A home directory that is not there, or a component below it, `~/.claude` included, that is a
   symlink, in any checkout of the repository.
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
