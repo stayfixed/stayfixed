@@ -3,7 +3,8 @@
 `upgrade` refuses to move a project backward, `doctor`'s `versions` row points by direction, and
 `stayfixed gate` admits an upgrade only where `upgrade` would move to it: one comparison, so the
 three cannot disagree about which way a recorded version lies. The overlay's `requires` reader
-compares a floor through the same component grammar, so the two bound a component alike.
+reads a floor through the same component grammar and decides it through `later` wherever `later`
+answers, so a pre-release does not meet the floor of the release it comes before.
 
 A leaf module: it imports nothing from `stayfixed`.
 """

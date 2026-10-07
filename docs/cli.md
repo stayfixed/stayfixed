@@ -389,7 +389,7 @@ under this project's name, or this checkout having **no `origin`** to check the 
 **a memory path refused**, so the notes were not examined at all; how
 many note groups are **real directories** rather than links into the overlay; the overlay's
 `stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
-does not meet**; and — only when none of those fired — the overlay's branch having **no
+does not meet**, a pre-release of the floor's version included; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
 up-to-date repository on a satisfied stayfixed hears nothing. Not one byte a repository wrote
 reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are

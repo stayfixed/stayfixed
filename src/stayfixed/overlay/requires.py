@@ -14,7 +14,7 @@ from pathlib import Path
 
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.overlay.naming import manifest
-from stayfixed.semver import COMPONENT, VERSION
+from stayfixed.semver import COMPONENT, VERSION, later
 
 # A floor is built from `semver`'s component, so a declared floor and a running version bound each
 # component alike; `semver.COMPONENT` says why the bound is what it is.
@@ -40,7 +40,13 @@ def requires_of(root: Path) -> str | None:
 
 
 def satisfies(spec: str, version: str) -> bool | None:
-    """`True`/`False` for `>=X.Y.Z` against an `X.Y.Z[...]` version, compared as integer tuples.
+    """`True`/`False` for `>=X.Y.Z` against an `X.Y.Z[...]` version: met unless `semver.later`
+    says the floor comes after the version.
+
+    One order with `later`, so a pre-release of the floor (`1.0.0rc1` against `>=1.0.0`) does not
+    meet it, as `later` orders the release after it. Where `later` declines to order the two —
+    equal triples and a suffix that is not a pre-release, such as `.post1` or `+local` — the
+    integer tuples decide, which is the answer such a build always had.
 
     `None` for any other spec shape or a version this reader cannot parse — a caller that gets
     `None` back has an unreadable declaration, not a false one.
@@ -58,6 +64,9 @@ def satisfies(spec: str, version: str) -> bool | None:
     running = VERSION.match(version)
     if floor is None or running is None:
         return None
+    after = later(".".join(floor.groups()), version)
+    if after is not None:
+        return not after
     return tuple(int(part) for part in running.groups()) >= tuple(
         int(part) for part in floor.groups()
     )

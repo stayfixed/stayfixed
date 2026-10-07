@@ -130,6 +130,26 @@ def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     assert satisfies(">=0.1.0", "0.0.9") is False
 
 
+@pytest.mark.parametrize("version", ["1.0.0rc1", "1.0.0.dev0", "1.0.0-rc.1", "1.0.0a1"])
+def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
+    # `semver.later` orders a release after its own pre-release, and the floor compared the
+    # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
+    # it comes before: the session line and the `overlay-requires` row read it as met. The
+    # floor is decided by `later` wherever `later` answers. Mutation: `mutations/`, "the
+    # declared floor is met by a pre-release of it".
+    assert satisfies(">=1.0.0", version) is False
+    assert satisfies(">=0.9.9", version) is True
+
+
+def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -> None:
+    # The legitimate user: `.post1` and `+local` builds, which `later` declines to order against
+    # the bare version, keep the answer the triple gives, a floor equal to it met. Mutation:
+    # `mutations/`, "the declared floor stops being met by the version that equals it".
+    assert satisfies(">=1.0.0", "1.0.0.post1") is True
+    assert satisfies(">=1.0.0", "1.0.0+local") is True
+    assert satisfies(">=1.0.1", "1.0.0.post1") is False
+
+
 def test_any_other_form_is_unreadable_never_satisfied() -> None:
     for spec in ("~=1.0", ">1.0.0", "==0.1.0", ">=1.0", ">=a.b.c", ""):
         assert satisfies(spec, "0.1.0") is None, spec

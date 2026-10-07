@@ -1918,6 +1918,29 @@ file = "src/stayfixed/overlay/requires.py"
 before = "    return tuple(int(part) for part in running.groups()) >= tuple("
 after = "    return tuple(int(part) for part in running.groups()) > tuple("
 reddens = [
+  "tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple",
+]
+
+# The floor is decided by `semver.later` wherever it answers, so the two orders of a version agree:
+# by the triple alone a `1.0.0rc1` build met `>=1.0.0`, which `later` orders after it.
+[[mutation]]
+name = "the declared floor is met by a pre-release of it"
+file = "src/stayfixed/overlay/requires.py"
+before = "    if after is not None:\n        return not after\n"
+after = "    if False:\n        return not after\n"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1]",
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev0]",
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0-rc.1]",
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0a1]",
+]
+
+[[mutation]]
+name = "the declared floor is not met by the version equal to it"
+file = "src/stayfixed/overlay/requires.py"
+before = '    after = later(".".join(floor.groups()), version)'
+after = '    after = not later(version, ".".join(floor.groups()))'
+reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
 
