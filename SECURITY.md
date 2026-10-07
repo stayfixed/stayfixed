@@ -67,9 +67,10 @@ Out of scope:
   variables do it, and stayfixed passes both to its `git` on purpose: `PATH`, which chooses the
   binary, and `HOME`, which chooses git's global configuration (`$HOME/.gitconfig` and
   `$HOME/.config/git/config`), whose `core.fsmonitor` names a program git runs on `status`,
-  `ls-files` and `diff`. `XDG_CONFIG_HOME` is dropped before any `git` runs. Both are recorded
-  here as one accepted, harness-level exposure until the owner decides whether to contain them
-  together; this is unlike the machine file and `trust.json`, which no variable chooses.
+  `ls-files` and `diff`. `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped
+  before any `git` runs. Both are recorded here as one accepted, harness-level exposure until a
+  harness is measured applying a committed `env` block's `PATH` or `HOME` to a hook; this is unlike
+  the machine file and `trust.json`, which no variable chooses.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
