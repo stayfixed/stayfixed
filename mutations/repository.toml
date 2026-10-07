@@ -1232,7 +1232,7 @@ reddens = [
 [[mutation]]
 name = "the README stops saying a foreground run passes the blocking guard"
 file = "README.md"
-before = "The same command run in the\nforeground passes. "
+before = "The same\ncommand run in the foreground passes. "
 after = ""
 reddens = [
   "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
