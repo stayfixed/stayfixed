@@ -201,3 +201,10 @@ differently. Each has its own entry in these notes, with the detail:
     "stayfixed.preset must be a string; available: …", where 0.2.0 failed on `preset = 5` or
     `true` as a name it does not ship and ended in an internal error on a hexadecimal one past
     4,300 decimal digits (Fixed, "Every integer in `stayfixed.toml`").
+  - Off a terminal, in a hook, a CI step or a script, stayfixed runs `git` only from fixed
+    absolute paths and hands it a fixed `PATH`, where 0.2.0 ran whatever `git` the inherited
+    `PATH` named. A `git` found only elsewhere is not the one that answers there, and a program
+    git runs by name, such as a `git-lfs` filter or a `core.fsmonitor` hook, found only elsewhere
+    is not found: the git query that needs it gives no answer, as when git is missing, and after
+    a red test run, for one, the note counting uncommitted files is gone (Fixed, "Off a terminal,
+    stayfixed now runs `git` only from fixed absolute paths").
