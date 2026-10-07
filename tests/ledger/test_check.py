@@ -922,9 +922,15 @@ def _killed_at_the_index(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # The two trees whose sweep rewrites a row of the index before the index write: a void pointer an
 # earlier move left toward the entry, which the sweep retitles toward the new number, and a live
-# entry whose title names the moved one. The third is the legitimate user of the sweep left in
-# place: a title that named the new number before the move, which the sweep never touched.
-SWEPT_ROWS = ("a-chained-move", "a-title-naming-it", "a-title-naming-the-new-number")
+# entry whose title names the moved one. The third is the legitimate user of a row the sweep left
+# as it was: a title that named the new number before the move, which the sweep never touched. The
+# fourth holds both kinds of row at once, so neither reading of the whole ledger explains it.
+SWEPT_ROWS = (
+    "a-chained-move",
+    "a-title-naming-it",
+    "a-title-naming-the-new-number",
+    "both-kinds-of-row",
+)
 
 
 @pytest.mark.parametrize("tree", SWEPT_ROWS)
@@ -935,18 +941,25 @@ def test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_ro
     # names the new one: re-rendering the found index with the moved entry put back alone missed
     # it, and the line named `bugs index`, which turned the check green over a mention of the old
     # number nothing would ever rewrite, since the re-run then read the move as finished. So each
-    # entry's sweep is undone too before the comparison. Mutations: `mutations/`, "a stale index
-    # a killed renumber left is matched with the sweep left in place" and "… only with the sweep
-    # undone".
+    # line is matched with the found index's as it was or as the sweep writes it; read back over
+    # the whole ledger instead, both kinds of row at once still named `bugs index`. Mutations:
+    # `mutations/`, "a stale index a killed renumber left is matched with the sweep left in
+    # place" and "… only with the sweep applied".
     root, config = project(tmp_path)
     register = bug_register(config)
+
+    def titled(number: int, named: str) -> str:
+        return entry(number).replace("title: a title", f"title: follow-up to {named}")
+
     if tree == "a-chained-move":
         ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
         renumber(root, config, register, "BR-001", "BR-007", today="2026-01-02")
+    elif tree == "both-kinds-of-row":
+        entries = {"BR-001": titled(1, "BR-013"), "BR-002": titled(2, "BR-007")}
+        ledger(root, config, {**entries, "BR-007": entry(7)})
     else:
         named = "BR-007" if tree == "a-title-naming-it" else "BR-013"
-        titled = entry(2).replace("title: a title", f"title: follow-up to {named}")
-        ledger(root, config, {"BR-002": titled, "BR-007": entry(7)})
+        ledger(root, config, {"BR-002": titled(2, named), "BR-007": entry(7)})
     (root / "docs" / "roadmap.md").write_text("also BR-007 matters\n", encoding="utf-8")
     with monkeypatch.context() as patched:
         _killed_at_the_index(patched)

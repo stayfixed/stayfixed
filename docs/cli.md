@@ -692,8 +692,9 @@ A stale index is sent to `bugs index`, except the one a `bugs renumber OLD NEW` 
 last write leaves: when `NEW` holds `OLD`'s text, or `OLD` is the pointer that move titles toward
 `NEW`, and the index is exactly the one rendered before the move, the line names `run: stayfixed
 bugs renumber OLD NEW`, which finishes it. The sweep may already have rewritten other entries, so
-the index is compared with their mentions of `NEW` read back as `OLD` too: a void pointer an
-earlier move left toward `OLD`, or a title that names it, no longer sends the line to `bugs index`.
+each line is compared with the found index's line both as it was and with `OLD` rewritten to
+`NEW`: a void pointer an earlier move left toward `OLD`, a title that names it, and either one
+beside a title that already named `NEW` still name the renumber.
 
 **Writes** nothing.
 
