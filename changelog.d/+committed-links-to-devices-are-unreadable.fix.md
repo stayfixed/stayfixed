@@ -20,5 +20,6 @@ and `MEMORY.md` into the overlay, and those read as they did. The trust digest r
 `MEMORY.md` up to 64 MiB, so a change to one longer than that moves the store's digest only where it
 falls inside its first 64 MiB. `attach` and `detach` name each of these files as the project does,
 in this refusal and in the one for such a file that is not UTF-8, rather than by its absolute path
-on this machine. Every one of these files is also read only up to 64 MiB, and a longer one is
-refused as too large, because some regular files never end.
+on this machine. Every one of these files is also read only up to 64 MiB, and a longer one is a
+file stayfixed cannot read, met as each command above meets one, because some regular files never
+end.

@@ -127,14 +127,21 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed attach`, `attach --check` and `detach` refuse (exit `2`) a
     `.claude/settings.local.json` whose indented write-back would pass 64 MiB, a short file nested
     thousands of levels deep, which 0.2.0 wrote back; `attach` and `--check` refuse it even when
-    the run would not rewrite it (Changed, "`stayfixed attach`, `attach --check` and `stayfixed
-    detach` now refuse, before anything is written, a `.claude/settings.local.json`").
+    the run would not rewrite it. `stayfixed setup` fails (exit `1`) on such a
+    `~/.claude/settings.json`, which 0.2.0's `setup` wrote back, and on the 72 MB file 0.2.0's
+    `setup` left there from a 12 KB one: cut that file down by hand before running `setup` (Changed,
+    "`stayfixed attach`, `attach --check` and `stayfixed detach` now refuse, before anything is
+    written, a `.claude/settings.local.json`").
   - A file stayfixed reads is read only up to 64 MiB, and one longer, which 0.2.0 read whole, is
     one it cannot read: `stayfixed attach`, `attach --check` and `detach` fail (exit `1`) on such a
     `.claude/settings.local.json`, `attach` and `detach` on such a `.stayfixed/local/attach.json`,
     and `detach` on such a `.gitignore` when the region in it is the one `attach` wrote. A settings
     file 0.2.0's own `attach` wrote back past that size has to be cut down by hand before `detach`
-    can run. A `stayfixed.toml` past the cap fails (exit `1`) every command that loads it (Fixed,
+    can run. A `stayfixed.toml` past the cap fails (exit `1`) every command that loads it. A memory
+    note past the cap makes `stayfixed memory index --check` exit `1` naming it as a file that
+    cannot be read as a note, and `memory refs` exit `1` counting it among the notes it could not
+    parse (its path is in `--json`'s `unreadable`); a bug-ledger entry past it makes `stayfixed bugs
+    check` exit `1` with `unreadable-entry`, where 0.2.0 read each whole and exited `0` (Fixed,
     "Every file a repository commits that stayfixed reads is now read only up to 64 MiB").
   - Many refusals and failures say why a file could not be read, written or removed in words, and
     name it relative to the project or the overlay, where they quoted an error class or the error's
@@ -143,22 +150,24 @@ differently. Each has its own entry in these notes, with the detail:
     messages, `AGENTS.md cannot be read: not a regular file` in `init`, `upgrade` and `overlay
     upgrade`. A script that matched the old text has to match the new (Fixed, "Every
     file a repository commits that stayfixed reads", in its last list).
-  - A `.stayfixed/manifest.json` whose `format` is `true`, which 0.2.0 read as the format it
-    writes, is refused as damaged, as is every `format` that is not a positive integer, where
-    0.2.0 called the rest "written by a newer stayfixed" (Fixed, "A `.stayfixed/manifest.json`
-    whose `format` is not a positive integer").
+  - A `.stayfixed/manifest.json` whose `format` is `true`, `0` or a negative integer, which 0.2.0
+    read as the format it writes and went on, is refused as damaged (exit `2`) by `upgrade` and
+    `uninstall`; `detach` still goes on, as in 0.2.0. Every other `format` that is not
+    a positive integer is refused as damaged too, where 0.2.0 refused it as "written by a newer
+    stayfixed" (Fixed, "A `.stayfixed/manifest.json` whose `format` is not a positive integer").
   - `stayfixed bugs renumber` whose own write fails, and `stayfixed bugs new` and `bugs index`
     whose index write fails, now exit `1`, naming the file and what to run, where each ended in
     `internal error` with exit `2` (Fixed, "`stayfixed bugs renumber OLD NEW` killed part-way"
     and "`stayfixed bugs new` and `stayfixed bugs index` no longer end in `internal error`").
   - `stayfixed setup --git-hooks --uninstall` prints what it found, `there is no stayfixed hook
     at <hook>; nothing was removed` or `left <hook> as it was: …`, where 0.2.0 printed `removed …`
-    for every case, and `--json` gains `found`. Over a hook it cannot read as a regular file
-    (stayfixed's own at mode 000, a FIFO, a directory) `--uninstall` refuses (exit `2`) where 0.2.0
-    exited `0` or hung, and `setup --git-hooks` refuses (exit `2`) stayfixed's own unreadable hook,
-    which 0.2.0 renamed to `prepare-commit-msg.local` and chained, and a FIFO, on which 0.2.0 hung.
-    A foreign hook past the 64 MiB read cap is still chained and left alone, as in 0.2.0 (Fixed,
-    "`stayfixed setup --git-hooks --uninstall` now says what it found").
+    for every case, and `--json` gains `found`. Over a hook it cannot read as a regular file (one
+    at mode 000, stayfixed's own or anyone's, a FIFO, a directory) `--uninstall` refuses (exit `2`)
+    where 0.2.0 exited `0` or hung, and `setup --git-hooks` refuses (exit `2`) a hook at mode 000,
+    stayfixed's own or anyone's, which 0.2.0 renamed to `prepare-commit-msg.local`, chained and
+    later restored, and a FIFO, on which 0.2.0 hung: make such a hook readable, or move it aside,
+    first. A foreign hook past the 64 MiB read cap is still chained and left alone, as in 0.2.0
+    (Fixed, "`stayfixed setup --git-hooks --uninstall` now says what it found").
   - `stayfixed attach` run from a linked worktree no longer records `autoMemoryDirectory` in that
     worktree's `.claude/settings.local.json` after making the harness memory link, and run again it
     takes back the key 0.2.0 recorded there, deleting the file when the key was all it held; where

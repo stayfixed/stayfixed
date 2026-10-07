@@ -11,8 +11,9 @@ and a FIFO there is no longer waited on. Both commands now refuse (exit `2`), wi
 not be read (<reason>)`, and leave what is there where it is:
 
 - a FIFO, on which `setup --git-hooks` and `--uninstall` used to hang;
-- stayfixed's own hook at mode 000, which `--uninstall` used to report as removed while leaving it
-  in place, and `setup --git-hooks` renamed to `prepare-commit-msg.local` and chained;
+- a hook at mode 000, stayfixed's own or anyone's, which `setup --git-hooks` used to rename to
+  `prepare-commit-msg.local` and chain, and which `--uninstall` reported as removed while leaving
+  it in place, or restored when it had been chained;
 - a directory, which `--uninstall` used to report as removed (exit `0`); `setup --git-hooks`
   already refused one, saying it is a directory.
 
