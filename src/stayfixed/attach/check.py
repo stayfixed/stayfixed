@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from stayfixed.attach.binding import (
+    Binding,
     not_overlay,
     read_binding,
     refuse_unless_share_can_exist,
@@ -22,6 +23,8 @@ from stayfixed.attach.binding import (
 from stayfixed.attach.permissions import codex_rules, diff_permissions
 from stayfixed.attach.write import plan_writes, refuse_unless_share_holds
 from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal, StayfixedError
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE
 from stayfixed.result import Result
 
@@ -48,6 +51,11 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     rather than reporting a count for a `paths.memory` no walk could contain. At a checkout with no
     `origin` no group is counted, since the run refuses there before it counts.
 
+    **Outside overlay mode the run refuses right after the binding**, and `--check` reports that
+    refusal on its line and goes on to report the rest. What it reads for the rest the run never
+    reads, so a refusal or failure there is not the run's answer: it gives way to the run's own
+    refusal of the mode, raised with the run's code and line.
+
     `home` is the home the harness memory link goes under, which `plan_writes` asks about as the
     run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
     own `~/.claude/` by leaving it out. The command passes `None`, the machine owner's own.
@@ -62,6 +70,20 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
+    try:
+        return _report(root, config, binding, machine=machine, home=home)
+    except StayfixedError:
+        refused = not_overlay(config)
+        if refused is None:
+            raise
+        raise Refusal(refused) from None
+
+
+def _report(
+    root: Path, config: Config, binding: Binding, *, machine: Path | None, home: Path | None
+) -> Result:
+    """`check` past the binding: the diff, what the run asks before its first write where it would
+    reach it, the groups and the rule files, and the report made of them."""
     refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
     # What the run asks past its gates and before its first write, asked by the run's own
@@ -98,7 +120,8 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     # The refusal `attach` makes for a repository that is not in overlay mode, reported with the
     # code the real run refuses with: a `--check` that answered 0 or 1 for a run that then
     # refuses previews something else. Reported and not raised, so the rest of the report —
-    # the binding state above all — still reaches the reader.
+    # the binding state above all — still reaches the reader; `check` raises it only where the
+    # rest could not be read.
     refused = not_overlay(config)
     if refused is not None:
         summary = f"{refused}; {summary}"

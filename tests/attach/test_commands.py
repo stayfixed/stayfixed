@@ -926,6 +926,50 @@ def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_i
     assert "attach.json" not in checked.out + checked.err + attached.err
 
 
+def _settings_permissions_null(root: Path, _: Path) -> None:
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"permissions": null}', encoding="utf-8")
+
+
+def _settings_not_text(root: Path, _: Path) -> None:
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_bytes(b"\xff\xfe")
+
+
+# What `--check` reads for the rest of its report outside overlay mode, where the run has already
+# refused: a group outside `paths.memory`, which the count refuses; a settings file whose
+# `permissions` is `null`, which the diff refuses; and one that is not UTF-8, which it fails on.
+PAST_THE_MODE = {
+    "group-leaves-the-share": PAST_THE_GATES["group-leaves-the-share"],
+    "settings-permissions-null": _settings_permissions_null,
+    "settings-not-text": _settings_not_text,
+}
+
+
+@pytest.mark.parametrize("case", sorted(PAST_THE_MODE))
+def test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` right after the binding, and reads
+    # nothing else. `--check` reports that refusal on its line with the rest of its report, so it
+    # reads the diff, the groups and the rule files the run never reaches, and whatever refused or
+    # failed there ended it instead, in other words and at times with another code. A refusal or
+    # failure there now gives way to the run's own refusal of the mode. Mutation (oracle):
+    # `mutations/`'s "check lets the rest of its report decide a repository outside overlay mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    PAST_THE_MODE[case](root, tmp_path)
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith("stayfixed: refused: memory.mode is 'in-repo'")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
 def test_attach_reads_each_of_its_two_documents_once_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

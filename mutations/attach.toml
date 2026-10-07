@@ -2497,7 +2497,8 @@ reddens = [
 ]
 
 # And only where the run reads them: the run refuses a `memory.mode` other than `overlay` before the
-# ledger, so a `--check` that read it first ended such a repository with the ledger's code.
+# ledger, so a `--check` that read it first ended such a repository with the ledger's code. Read
+# there now, the ledger's failure gives way to the mode's refusal, and the report is lost with it.
 [[mutation]]
 name = "check reads the attach ledger whatever the memory mode"
 file = "src/stayfixed/attach/check.py"
@@ -2537,4 +2538,18 @@ before = "    real = 0 if binding.state == NO_ORIGIN else len(unlinked_groups(ro
 after = "    real = len(unlinked_groups(root, config))"
 reddens = [
   "tests/attach/test_commands.py::test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none",
+]
+
+# Outside overlay mode the run refuses right after the binding, so what `--check` reads for the rest
+# of its report is never the run's answer: a refusal or failure there gives way to the run's own
+# refusal of the mode, where it ended `--check` in its own words and at times with exit 1.
+[[mutation]]
+name = "check lets the rest of its report decide a repository outside overlay mode"
+file = "src/stayfixed/attach/check.py"
+before = "        raise Refusal(refused) from None"
+after = "        raise"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[group-leaves-the-share]",
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-not-text]",
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-permissions-null]",
 ]
