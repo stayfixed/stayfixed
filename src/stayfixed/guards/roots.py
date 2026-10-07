@@ -1,6 +1,7 @@
 """`ledger.code_roots`, contained. `config.paths` guards `[paths]` and names this field as one
-the consuming module must check itself; every consumer, the Python profile's red-run hint among
-them, reaches it through `stayfixed.guards.api`."""
+the consuming module must check itself; every consumer outside this area reaches it through
+`stayfixed.guards.api`, and a profile's red-run hint is handed what it returns by the guard that
+asks the hint, so a stack's code never imports this area."""
 
 from __future__ import annotations
 

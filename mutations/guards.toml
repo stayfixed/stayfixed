@@ -1098,10 +1098,10 @@ reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"
 name = "a hint's note is computed outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
 before = """    try:
-        return answer(hint, root, config)[1]
+        return answer(hint, contained_roots(root, config))[1]
     except Exception:
         return None"""
-after = "    return answer(hint, root, config)[1]"
+after = "    return answer(hint, contained_roots(root, config))[1]"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
 
 [[mutation]]

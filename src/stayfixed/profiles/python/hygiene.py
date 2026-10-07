@@ -27,10 +27,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed.fsops import open_directory, read_bounded
-from stayfixed.guards.api import contained_roots
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
     from stayfixed.profiles.hints import RedRunHint
 
 _PYTEST = "pytest"
@@ -246,8 +244,7 @@ class PythonHint:
             current == "-m" and following == _PYTEST for current, following in pairwise(argv)
         )
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
-        roots = contained_roots(root, config)
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int] | None:
         stale = _stale_bytecode(roots)
         if stale is None:
             return None

@@ -1995,8 +1995,8 @@ reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothi
 [[mutation]]
 name = "test hygiene prints a report as the hint returned it"
 file = "src/stayfixed/profiles/hints.py"
-before = "    report = counts(hint, root, config)"
-after = "    report = dict(hint.report(root, config))"
+before = "    report = counts(hint, roots)"
+after = "    report = dict(hint.report(roots))"
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]

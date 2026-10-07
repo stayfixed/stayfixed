@@ -226,6 +226,7 @@ _NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
     from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.guards.roots import contained_roots
     from stayfixed.profiles import detects, load_profile
     from stayfixed.profiles.hints import NotText, answer, shipped_hints
 
@@ -248,7 +249,7 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     reports: dict[str, dict[str, int]] = {}
     for name, hint in ((name, hint) for name, hint in hints if hint is not None):
         try:
-            report, note = answer(hint, root, config)
+            report, note = answer(hint, contained_roots(root, config))
         except NotText:
             raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
         except Exception as exc:

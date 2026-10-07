@@ -56,9 +56,14 @@ def config(root: Path) -> Config:
     return load(root, machine=root.parent / "absent.toml")
 
 
+def reported(root: Path) -> Mapping[str, int] | None:
+    """The hint's report over the roots the guard hands it: `ledger.code_roots`, contained."""
+    return HINT.report(contained_roots(root, config(root)))
+
+
 def counted(root: Path) -> Mapping[str, int]:
     """The hint's counts for a walk that finished; a test that wants `None` asks `report`."""
-    report = HINT.report(root, config(root))
+    report = reported(root)
     assert report is not None
     return report
 
@@ -119,9 +124,9 @@ def test_a_walk_cut_short_by_its_cap_could_not_tell(
     # ignores its cap".
     root = a_stale_tree_of_eight_entries(tmp_path)
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 8)
-    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 1}
+    assert reported(root) == {"stale": 1, "roots": 1}
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 7)
-    counts = HINT.report(root, config(root))
+    counts = reported(root)
     assert counts is None
     # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
     assert HINT.note(counts) == UNTOLD.format(entries=7, files=READ_FILES)
@@ -144,9 +149,9 @@ def test_bytecode_past_the_read_cap_could_not_tell(
     for tag in ("one", "two"):
         (compiled.parent / f"mod.{tag}.pyc").write_bytes(compiled.read_bytes())
     monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 3)
-    assert HINT.report(root, config(root)) == {"stale": 3, "roots": 1}
+    assert reported(root) == {"stale": 3, "roots": 1}
     monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 2)
-    counts = HINT.report(root, config(root))
+    counts = reported(root)
     assert counts is None
     assert HINT.note(counts) == UNTOLD.format(entries=ENTRIES, files=2)
 
@@ -167,9 +172,9 @@ def test_the_entry_cap_is_one_total_across_the_code_roots(
     for name in ("a.py", "b.py", "c.py"):
         (root / "tests" / name).write_text("", encoding="utf-8")
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 6)
-    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 2}
+    assert reported(root) == {"stale": 1, "roots": 2}
     monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 4)
-    assert HINT.report(root, config(root)) is None
+    assert reported(root) is None
 
 
 def test_bytecode_under_a_hidden_directory_is_judged(tmp_path: Path) -> None:

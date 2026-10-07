@@ -85,7 +85,7 @@ class FakeHint:
         self._maybe_raise("recognises")
         return argv[0] == self.runner
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int]:
         self._maybe_raise("report")
         return {"found": 1}
 
@@ -113,7 +113,7 @@ class EmptyHint(FakeHint):
 class NamedUndeterminedHint(FakeHint):
     """A hint with a real count called `undetermined`, which is a count name like any other."""
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int]:
         return {"found": 1, "undetermined": 1}
 
 
@@ -139,10 +139,10 @@ class LoudHint(FakeHint):
         self.returned: dict[object, object] = {}
         self.given: object = None
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int]:
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int]:
         self.returned = {
             "found": 1,
-            "path": str(root),
+            "path": "/etc/passwd",
             "flag": True,
             "ratio": 0.5,
             "below": -1,
@@ -150,7 +150,7 @@ class LoudHint(FakeHint):
             "subclassed": Count(4),
             Word("worded"): 5,
             7: 3,
-            str(root / "notes.txt"): 2,
+            "src/notes.txt": 2,
         }
         return self.returned  # type: ignore[return-value]
 
