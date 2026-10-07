@@ -58,19 +58,30 @@ In scope, and treated as security rather than as an ordinary bug:
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
+- **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
+  resolves a relative entry against the project (measured on Claude Code 2.1.293). So off a
+  terminal, a hook among others, stayfixed runs `git` from fixed absolute paths and hands it a
+  fixed `PATH` for the programs git runs by name, such as `git-lfs`, and the hook wrapper runs
+  nothing by name but the interpreter it contains (`docs/cli.md`). A committed `PATH` that makes
+  a hook run a program the repository chose is in scope; it is no longer an accepted exposure.
 
 Out of scope:
 
 - Anything that requires the attacker to already be able to write to the machine owner's home
-  directory or to `PATH`. stayfixed runs the `git` on your `PATH` by design.
-- A committed `env` block choosing what the `git` stayfixed runs inside a hook executes. Two
-  variables do it, and stayfixed passes both to its `git` on purpose: `PATH`, which chooses the
-  binary, and `HOME`, which chooses git's global configuration (`$HOME/.gitconfig` and
-  `$HOME/.config/git/config`), whose `core.fsmonitor` names a program git runs on `status`,
-  `ls-files` and `diff`. `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped
-  before any `git` runs. Both are recorded here as one accepted, harness-level exposure until a
-  harness is measured applying a committed `env` block's `PATH` or `HOME` to a hook; this is unlike
-  the machine file and `trust.json`, which no variable chooses.
+  directory or to a directory on their own `PATH`. At a terminal stayfixed runs the `git` on your
+  `PATH` by design. In the commands an agent runs through its own shell tool, `PATH` is the
+  harness's to choose, and that includes which `stayfixed` runs, which nothing inside stayfixed
+  can decide.
+- `HOME` choosing git's global configuration: `$HOME/.gitconfig` and `$HOME/.config/git/config`,
+  whose `core.fsmonitor` names a program git runs on `status`, `ls-files` and `diff`. stayfixed
+  hands its `git` your `HOME` on purpose, so that your `safe.directory` and excludes answer.
+  Claude Code never applies `HOME`, or any `XDG_*` variable, from a project's or a local `env`
+  block: its settings reference says so under "Variables Claude Code ignores in `env`", and
+  Claude Code 2.1.293 was measured keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in
+  project and plugin hooks. `XDG_CONFIG_HOME`, git's other door to that configuration, is
+  dropped before any `git` runs all the same. A direnv, mise or devcontainer environment can set
+  `HOME` for a checkout; that is the person's own environment, the same class as `PATH` at a
+  terminal.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
