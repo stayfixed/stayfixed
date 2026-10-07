@@ -784,13 +784,43 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
 
 
 # The standard modules that import a module named by a string without either name the rule above
-# reads: `pkgutil.resolve_name`, `importlib.util`'s `find_spec` and `module_from_spec` with a
-# loader's `exec_module`, `runpy`'s `run_module` and `run_path`, a `zipimporter`. Reading every
-# such function by name is a list that grows with the standard library, so the rule below reads
-# the door instead: which core files import these modules at all, and what each reaches in them.
-# `importlib.resources` reads package data and imports nothing, so it is outside the rule.
-MACHINERY = frozenset({"importlib", "pkgutil", "runpy", "zipimport"})
-DATA_ONLY = "importlib.resources"
+# reads, each measured loading `stayfixed.memory.store` from one: `pkgutil.resolve_name`,
+# `importlib.util`'s `find_spec` and `module_from_spec` with a loader's `exec_module`,
+# `importlib.resources.files` handed a module's name, `runpy`'s `run_module` and `run_path`, a
+# `zipimporter`, `pydoc.locate`, an unpickler (`pickle`, `_pickle`, `shelve`'s values,
+# `multiprocessing.reduction`'s), the resolver behind `logging.config`'s `()` and `ext://` values,
+# `unittest`'s loader and `mock.patch`, `doctest`'s suites and `xml.sax.make_parser`; and `marshal`,
+# whose code objects import whatever they name once run. Reading every such function by name is a
+# list that grows with the standard library, so the rule below reads the door instead: which core
+# files import these modules at all, and what each reaches in them. What no rule here reads is code
+# built from text (`exec`, `eval`, `compile` and the modules that run a string of source) and a
+# module reached through `sys.modules`.
+MACHINERY = frozenset(
+    {
+        "_pickle",
+        "doctest",
+        "importlib",
+        "logging.config",
+        "marshal",
+        "multiprocessing",
+        "pickle",
+        "pkgutil",
+        "pydoc",
+        "runpy",
+        "shelve",
+        "unittest",
+        "xml.sax",
+        "zipimport",
+    }
+)
+# `importlib.resources` reads package data, and imports a module only as the anchor `files` is
+# handed: given a module's name, it imports that module. So it is outside the rule for exactly two
+# reads, which import nothing that is not already loaded. One is `files` called on the package
+# itself, `__package__` (a core module's own package) or the literal `"stayfixed"`, in a module
+# that never binds `__package__` itself. The other is `importlib.resources.abc`, which holds types.
+# Every other read of it, the same function given any other argument, the module handed on and the
+# functions that take an anchor of their own (`read_text`, `open_binary` …), is the machinery.
+RESOURCES = "importlib.resources"
 
 # Every core import of `MACHINERY`, one row per statement: the file relative to `src/stayfixed/`,
 # the module the statement names, and what the file reaches through it -- the names a `from`
@@ -809,68 +839,114 @@ MACHINERY_IMPORTERS = (
 )
 
 
-def _attribute_path(node: ast.AST, parents: dict[int, ast.AST]) -> str:
+def _attribute_path(node: ast.AST, parents: dict[int, ast.AST]) -> tuple[str, ast.AST]:
     """The dotted attributes read off the name `node`, outermost last (`util.MAGIC_NUMBER` for
     `importlib.util.MAGIC_NUMBER`), or `<value>` when the name is used as anything but the root
-    of an attribute read."""
+    of an attribute read; and the outermost node of that read, which a call would be made on."""
     path: list[str] = []
     while isinstance(parent := parents.get(id(node)), ast.Attribute) and parent.value is node:
         path.append(parent.attr)
         node = parent
-    return ".".join(path) or "<value>"
+    return ".".join(path) or "<value>", node
+
+
+def _within(module: str, doors: Iterable[str]) -> bool:
+    return any(module == door or module.startswith(f"{door}.") for door in doors)
+
+
+def _reads_data(dotted: str, node: ast.AST, parents: dict[int, ast.AST], rebound: bool) -> bool:
+    """Whether reading `dotted` at `node` is one of the two reads of `RESOURCES` that import
+    nothing: anything in its `abc`, or a call of its `files` with one positional argument, the
+    literal `"stayfixed"` or `__package__` in a module that never binds it (`rebound`)."""
+    if _within(dotted, {f"{RESOURCES}.abc"}):
+        return True
+    call = parents.get(id(node))
+    if dotted != f"{RESOURCES}.files" or not isinstance(call, ast.Call) or call.func is not node:
+        return False
+    if call.keywords or len(call.args) != 1:
+        return False
+    (anchor,) = call.args
+    if isinstance(anchor, ast.Name):
+        return anchor.id == "__package__" and not rebound
+    return isinstance(anchor, ast.Constant) and anchor.value == "stayfixed"
 
 
 def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
-    """Every statement in `tree` that imports a `MACHINERY` module other than `DATA_ONLY`, as
-    `(module, reach)`: for `from m import a, b` the names taken (`resources` dropped from
-    `from importlib import`), for `import m.n [as x]` every attribute path read off the name it
-    binds, anywhere in the file."""
+    """Every statement in `tree` that imports a `MACHINERY` module, as `(module, reach)`: for
+    `from m import a, b` the names taken, for `import m.n [as x]` every attribute path read off
+    the name it binds, anywhere in the file. A `RESOURCES` name, and `import` of it, counts only
+    for its reads `_reads_data` does not pass, and is no row when that leaves none. A statement
+    that imports the package a door sits in (`import logging`, `from logging import config`)
+    counts only for the door: the names that are one, and the reads that reach into one or hand
+    the package on."""
     parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    # A module that binds `__package__` itself can point it at any module at all.
+    rebound = any(
+        (isinstance(node, ast.Name) and node.id == "__package__" and type(node.ctx) is not ast.Load)
+        or (isinstance(node, ast.arg) and node.arg == "__package__")
+        for node in ast.walk(tree)
+    )
+
+    def reached(bound: str, dotted: str, door: bool) -> set[str]:
+        """The reads off the name `bound`, which stands for `dotted`, past what imports nothing,
+        and only those into a door unless `dotted` is one."""
+        paths: set[str] = set()
+        for name in ast.walk(tree):
+            if isinstance(name, ast.Name) and name.id == bound:
+                path, outer = _attribute_path(name, parents)
+                full = dotted if path == "<value>" else f"{dotted}.{path}"
+                if not door and full != dotted and not _within(full, MACHINERY):
+                    continue
+                if not _reads_data(full, outer, parents, rebound):
+                    paths.add(path)
+        return paths
+
     found: list[tuple[str, frozenset[str]]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and not node.level and node.module:
-            module = node.module
-            if module.split(".")[0] not in MACHINERY or module.startswith(DATA_ONLY):
-                continue
-            names = {alias.name for alias in node.names}
-            if module == "importlib":
-                names -= {"resources"}
+            names: set[str] = set()
+            for alias in node.names:
+                dotted = f"{node.module}.{alias.name}"
+                if not _within(node.module, MACHINERY) and not _within(dotted, MACHINERY):
+                    continue
+                data = alias.name != "*" and _within(dotted, {RESOURCES})
+                if data and not reached(alias.asname or alias.name, dotted, door=True):
+                    continue
+                names.add(alias.name)
             if names:
-                found.append((module, frozenset(names)))
+                found.append((node.module, frozenset(names)))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] not in MACHINERY:
-                    continue
-                data_only = alias.name.startswith(DATA_ONLY)
-                if data_only and alias.asname:
+                door = _within(alias.name, MACHINERY)
+                if not door and not any(d.startswith(f"{alias.name}.") for d in MACHINERY):
                     continue
                 bound = alias.asname or alias.name.split(".")[0]
-                reach = {
-                    _attribute_path(name, parents)
-                    for name in ast.walk(tree)
-                    if isinstance(name, ast.Name) and name.id == bound
-                }
-                # `import importlib.resources` binds `importlib` itself, and what is read off it
-                # past `resources` is the machinery all the same.
-                if data_only:
-                    reach = {path for path in reach if path.split(".")[0] != "resources"}
-                    if not reach:
-                        continue
-                found.append((alias.name, frozenset(reach)))
+                dotted = alias.name if alias.asname else bound
+                reach = reached(bound, dotted, door)
+                if reach or (door and not _within(alias.name, {RESOURCES})):
+                    found.append((alias.name, frozenset(reach)))
     return found
 
 
 def test_no_core_module_reaches_the_import_machinery_but_where_pinned() -> None:
     # The rule above reads two names, and `pkgutil.resolve_name("stayfixed.memory.store")`, or
     # `importlib.util.find_spec` and a loader's `exec_module`, in a core function crossed into the
-    # private layer with every boundary test green. So the core's imports of the modules that
-    # can import by name are pinned, each with what it reaches: a new importer is a new row, and
-    # a pinned importer reaching one more name changes its row. What stays unread is a module
-    # reached without an import statement of its own -- `__import__`, which the rule above
-    # reads, or `sys.modules` -- and code built from text, which no rule here reads.
+    # private layer with every boundary test green. So did `importlib.resources.files` handed the
+    # store's name, `pydoc.locate`, `pickle.loads` of a pickle naming it and `logging.config`'s
+    # resolver. So the core's imports of the modules that can import by name are pinned, each with
+    # what it reaches: a new importer is a new row, and a pinned importer reaching one more name
+    # changes its row. `importlib.resources` is no row while it only reads the package's own data.
+    # What stays unread is a module reached without an import statement of its own --
+    # `__import__`, which the rule above reads, or `sys.modules` -- and code built from text,
+    # which no rule here reads.
     #
     # Mutations (declared): `mutations/`'s "a core function imports the note store through
-    # pkgutil.resolve_name" and "profile discovery reaches importlib.util as well".
+    # pkgutil.resolve_name", "profile discovery reaches importlib.util as well", "a core function
+    # opens the note store's resources by its module name", "a core function opens the note
+    # store's resources through files imported by name", "a core function imports the note store
+    # through pydoc.locate", "a core function unpickles a reference to the note store", "a core
+    # function loads code through marshal" and "a core function resolves the note store through
+    # logging.config".
     source = ROOT / "src" / "stayfixed"
     rows = [
         (where, module, reach)
@@ -884,12 +960,13 @@ def test_no_core_module_reaches_the_import_machinery_but_where_pinned() -> None:
 def test_the_machinery_rule_reads_every_spelling() -> None:
     # The walk above can show the rule holding only for the spellings the tree carries, so it is
     # put in front of the ones it does not: a `from` import of a submodule, an aliased `import`,
-    # the name handed on as a value, and `importlib.resources` in each spelling left alone, though
-    # not what is read off the `importlib` its `import` binds. Measured by hand: dropping the
-    # `resources` subtraction, the `<value>` fallback, or that filter each reddens it.
+    # the name handed on as a value, and `importlib.resources` read for the package's own data in
+    # each spelling left alone, though not what is read off the `importlib` its `import` binds.
+    # Measured by hand: dropping the `RESOURCES` check of the `from` arm of `_machinery_imports`,
+    # the `<value>` fallback, or `_reads_data`'s `files` arm each reddens it.
     spellings = (
         "from importlib import resources\nfrom importlib.resources.abc import Traversable\n"
-        "import importlib.resources\nimportlib.resources.files('x')\n"
+        "import importlib.resources\nimportlib.resources.files(__package__)\n"
         "importlib.import_module('x')\nfrom importlib import resources, util\n"
         "from importlib.util import find_spec\nimport pkgutil as p\np.resolve_name('x')\n"
         "import runpy\nf(runpy)\nrunpy.run_module('x')\n"
@@ -904,6 +981,115 @@ def test_the_machinery_rule_reads_every_spelling() -> None:
         ],
         key=str,
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "rows"),
+    [
+        pytest.param(
+            "from importlib import resources\nresources.files(__package__).joinpath('x')\n"
+            "resources.files('stayfixed')\n",
+            [],
+            id="files-on-the-package",
+        ),
+        pytest.param(
+            "import importlib.resources\nimport importlib.resources as r\n"
+            "importlib.resources.files(__package__)\nr.files('stayfixed')\n",
+            [],
+            id="files-on-the-package-through-import",
+        ),
+        pytest.param(
+            "from importlib.resources.abc import Traversable\nx: Traversable\n", [], id="abc"
+        ),
+        pytest.param(
+            "from importlib import resources\nresources.files('stayfixed.memory.store')\n",
+            [("importlib", frozenset({"resources"}))],
+            id="files-on-a-module-name",
+        ),
+        pytest.param(
+            "import importlib.resources\nimportlib.resources.files(name)\n",
+            [("importlib.resources", frozenset({"resources.files"}))],
+            id="files-on-a-computed-name",
+        ),
+        pytest.param(
+            "import importlib.resources as r\nr.files(anchor=__package__)\n",
+            [("importlib.resources", frozenset({"files"}))],
+            id="files-by-keyword",
+        ),
+        pytest.param(
+            "from importlib.resources import files\nfiles('stayfixed.memory.store')\n",
+            [("importlib.resources", frozenset({"files"}))],
+            id="files-imported-by-name",
+        ),
+        pytest.param(
+            "from importlib import resources\nresources.read_text(__package__, 'x')\n",
+            [("importlib", frozenset({"resources"}))],
+            id="an-anchor-of-its-own",
+        ),
+        pytest.param(
+            "from importlib import resources\nload(resources)\n",
+            [("importlib", frozenset({"resources"}))],
+            id="handed-on",
+        ),
+        pytest.param(
+            "from importlib import resources\n__package__ = 'stayfixed.memory.store'\n"
+            "resources.files(__package__)\n",
+            [("importlib", frozenset({"resources"}))],
+            id="package-rebound",
+        ),
+        pytest.param(
+            "from importlib import resources\ndef f(__package__):\n"
+            "    return resources.files(__package__)\n",
+            [("importlib", frozenset({"resources"}))],
+            id="package-a-parameter",
+        ),
+        pytest.param(
+            "import pydoc\npydoc.locate('x')\n", [("pydoc", frozenset({"locate"}))], id="pydoc"
+        ),
+        pytest.param(
+            "from pickle import loads as load\n", [("pickle", frozenset({"loads"}))], id="pickle"
+        ),
+        pytest.param(
+            "import marshal as m\nm.loads(data)\n",
+            [("marshal", frozenset({"loads"}))],
+            id="marshal",
+        ),
+        pytest.param(
+            "import logging.config\nlogging.config.dictConfig({})\n",
+            [("logging.config", frozenset({"config.dictConfig"}))],
+            id="logging-config",
+        ),
+        pytest.param(
+            "from logging import config, getLogger\n",
+            [("logging", frozenset({"config"}))],
+            id="logging-config-taken-from-its-package",
+        ),
+        pytest.param(
+            "import logging\nlogging.config.dictConfig({})\nlogging.getLogger('x')\n",
+            [("logging", frozenset({"config.dictConfig"}))],
+            id="logging-config-read-off-its-package",
+        ),
+        pytest.param("import logging\nlogging.getLogger('x')\n", [], id="logging-alone"),
+        pytest.param(
+            "from multiprocessing.reduction import ForkingPickler\n",
+            [("multiprocessing.reduction", frozenset({"ForkingPickler"}))],
+            id="a-door-below-its-name",
+        ),
+        pytest.param(
+            "from xml import etree, sax\n", [("xml", frozenset({"sax"}))], id="xml-sax-only"
+        ),
+    ],
+)
+def test_the_machinery_rule_reads_resources_by_its_anchor_and_every_door(
+    source: str, rows: list[tuple[str, frozenset[str]]]
+) -> None:
+    # `importlib.resources.files` imports the anchor it is handed when that names a module, so
+    # it is data only on the package itself, and every other read of `importlib.resources` is a
+    # row. Each door is read through the package it sits in as well (`logging` for
+    # `logging.config`), for that door alone. Measured by hand: dropping the `rebound` check, the
+    # keyword check, the `abc` arm, the `RESOURCES` check of the `import` arm, the `not door`
+    # filter of `reached`, or the package-of-a-door arm of either statement each reddens a case.
+    assert _machinery_imports(ast.parse(source)) == rows
 
 
 # The two functions through which discovery imports `stayfixed.<area>.<submodule>`: the one the CLI

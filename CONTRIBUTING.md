@@ -154,8 +154,12 @@ That rule reads import statements, so a module named to `importlib.import_module
 it, and two rules of their own hold that door. No core module but `areas.py` imports by a string
 through `importlib.import_module` or `__import__`, under any alias, except the profile discovery
 `DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
-that can import by a string any other way (`importlib` beyond `importlib.resources`, `pkgutil`,
-`runpy`, `zipimport`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
+that can import by a string any other way (`MACHINERY` there: `importlib`, `pkgutil`, `runpy` and
+`zipimport`, and `pydoc`, the unpicklers, `marshal`, `logging.config`, `unittest`, `doctest` and
+`xml.sax`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
+`importlib.resources` is held too: `files` imports the anchor it is handed when that names a module,
+so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
+of it is the machinery like the rest.
 Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
 
 What source cannot show is when a pardoned statement runs, so

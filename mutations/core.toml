@@ -2711,6 +2711,76 @@ after = '''    import pkgutil
     return [module.register for module in area_modules("commands")]'''
 reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
+# `importlib.resources.files` imports the anchor it is handed when that names a module, so it reads
+# only the package's own data when handed `__package__` or `"stayfixed"`, and is the import
+# machinery in every other spelling.
+[[mutation]]
+name = "a core function opens the note store's resources by its module name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import resources
+
+    resources.files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function opens the note store's resources through files imported by name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib.resources import files
+
+    files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# The standard library's other doors that import a module named by a string, each of which crossed
+# with every boundary test green: `pydoc.locate`, an unpickler, `marshal`'s code objects and
+# `logging.config`'s resolver. `logging.config` is a network module as well, which the outbound
+# rule holds on its own.
+[[mutation]]
+name = "a core function imports the note store through pydoc.locate"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pydoc
+
+    pydoc.locate("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function unpickles a reference to the note store"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pickle
+
+    pickle.loads(b"cstayfixed.memory.store\nresolve\n.")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function loads code through marshal"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import marshal
+
+    marshal.loads(marshal.dumps(None))
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function resolves the note store through logging.config"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import logging.config
+
+    logging.config.BaseConfigurator({}).resolve("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = [
+  "tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
+  "tests/test_outbound.py::test_no_module_imports_a_network_or_native_module",
+]
+
 # Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
 # it is for walks every area through it, the private layer's included.
 [[mutation]]
