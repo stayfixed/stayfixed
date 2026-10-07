@@ -119,7 +119,7 @@ def test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole(
     monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
     with pytest.raises(ManifestError) as refused:
         Manifest.read(tmp_path)
-    assert str(refused.value) == f"{MANIFEST_PATH} is unreadable: larger than this reader reads"
+    assert str(refused.value) == f"{MANIFEST_PATH} cannot be read (larger than this reader reads)"
 
 
 def test_an_unknown_kind_refuses(tmp_path: Path) -> None:

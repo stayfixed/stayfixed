@@ -47,11 +47,20 @@ class or quoted the error's raw text:
   `(Permission denied)`, where they said `(IsADirectoryError)` or `(PermissionError)`;
 - so do `stayfixed doctor`'s `ci-ref` and `diagnostics` rows;
 - `stayfixed init`, `upgrade` and `overlay upgrade` name a file they cannot read relative to the
-  tree they write, the project or the overlay, as in `AGENTS.md cannot be read: not a regular
-  file`, where the refusal gave its absolute path twice and the error's raw text; this
-  holds for a directory in the file's place, a file past the cap and one that is not UTF-8 text;
+  tree they write, the project or the overlay, as in `AGENTS.md cannot be read (not a regular
+  file)`, where the refusal gave its absolute path twice and the error's raw text; this holds for
+  a directory in the file's place and a file past the cap, and one that is not UTF-8 text is
+  `AGENTS.md is not UTF-8 text`;
 - `stayfixed uninstall` says why `.stayfixed/manifest.json`, `.stayfixed/assessment.json` or
   `.stayfixed/local/artifacts.json` could not be removed;
 - every command that rewrites `stayfixed.toml` (`upgrade`, `init`, `adopt promote`) says why it
   could not be written;
-- the refusal over a trust record that cannot be read names it once, with the reason in words.
+- the refusal over a trust record that cannot be read names it once, with the reason in words;
+- `stayfixed setup` says why it cannot read `~/.claude/settings.json` in words, as in `cannot be
+  read (Is a directory)`, where it quoted the error's raw text, the path again included;
+- `.stayfixed/manifest.json` that cannot be read says `cannot be read (…)`, and one that is not
+  UTF-8 says `is not UTF-8 text`, where both said `is unreadable:` and the error's text.
+
+Every such reason now stands in parentheses after what could not be done, `cannot be read
+(Permission denied)`, `cannot be written (…)`, `cannot be removed (…)`, where some messages put it
+after a colon.

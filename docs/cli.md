@@ -1955,7 +1955,7 @@ no release could ever refresh it again. A manifest you edited is renamed all the
 record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
 refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
 read stops `init` with none of them changed. One it reads and then cannot write is named with a
-`<path> cannot be written: <reason>` line and left as it was, record included; the others are
+`<path> cannot be written (<reason>)` line and left as it was, record included; the others are
 renamed and recorded all the same, and the next run names the one left.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the

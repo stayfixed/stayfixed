@@ -126,7 +126,7 @@ def test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure(
     # the write went through. Mutation: `mutations/`, "a stayfixed.toml that cannot be written is
     # reported with the error's own text".
     reason = os.strerror(errno.ENOSPC)
-    assert str(refused.value) == f"{CONFIG_FILE} cannot be written: {reason}"
+    assert str(refused.value) == f"{CONFIG_FILE} cannot be written ({reason})"
     assert isinstance(refused.value.__cause__, ManifestError)
 
 

@@ -471,7 +471,7 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
             fsops.write_within(root, relative, body)
         except OSError as exc:  # named and passed over; see the docstring
             unwritable.append(
-                f"{relative} cannot be written: {fsops.said(exc)}; "
+                f"{relative} cannot be written ({fsops.said(exc)}); "
                 "`stayfixed overlay init` names it once it can be"
             )
             continue
@@ -561,7 +561,7 @@ def _retire(
             try:
                 fsops.remove_within(root, action.target)
             except OSError as exc:
-                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+                notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")
                 continue
             notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
             removed.append(action.target)
@@ -597,7 +597,7 @@ def _retire(
             fsops.write_within(root, action.target, action.payload)
         except OSError as exc:
             notes.append(
-                f"{action.target} cannot be written: {fsops.said(exc)}; "
+                f"{action.target} cannot be written ({fsops.said(exc)}); "
                 "`stayfixed overlay upgrade` writes it"
             )
             unwritten.add(action.target)

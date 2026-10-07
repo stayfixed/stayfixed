@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from stayfixed.errors import Failure
+from stayfixed.fsops import said
 from stayfixed.jsonobject import json_object
 
 # The three files the harness runs on its own, with no interpreter of ours in front of them:
@@ -81,7 +82,7 @@ def read_record(root: Path) -> dict[str, str] | None:
     except UnicodeDecodeError as exc:
         raise UnreadableRecord(f"{RECORD} is present and is not UTF-8 text: {exc}") from None
     except OSError as exc:
-        raise UnreadableRecord(f"{RECORD} is present and could not be read: {exc}") from None
+        raise UnreadableRecord(f"{RECORD} is present and could not be read ({said(exc)})") from None
     # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
     # not JSON, nested past the parser or its depth bound, an integer longer than the interpreter
     # converts -- is this record's refusal in the words every reader uses.

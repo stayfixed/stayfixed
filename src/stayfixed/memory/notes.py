@@ -302,7 +302,7 @@ def read_note(path: Path) -> Note:
         # and the note is quarantined as unreadable.
         text = read_regular_text(path, newline="")
     except OSError as exc:
-        raise NoteError(f"{path} cannot be read: {said(exc)}") from exc
+        raise NoteError(f"{path} cannot be read ({said(exc)})") from exc
     # `UnicodeDecodeError` is not an `OSError`. Without it one latin-1 byte in a note left this
     # walk as `internal error: UnicodeDecodeError` and exit 2 — a repository's malformed input
     # reading as this tool being broken. It is a note this reader cannot read, exactly like the

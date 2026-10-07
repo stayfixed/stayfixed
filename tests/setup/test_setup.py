@@ -1,6 +1,7 @@
 # tests/setup/test_setup.py
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -192,6 +193,30 @@ def test_a_user_settings_file_past_the_parsers_reach_is_a_failure_naming_it(
         )
     assert str(caught.value) == f"{home / USER_SETTINGS} {clause}"
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == document
+
+
+def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words(
+    tmp_path: Path,
+) -> None:
+    # The failure quoted the error whole, `[Errno 21] Is a directory: '<the path again>'`, where
+    # every other reader of a file says its reason in words, in parentheses (`fsops.said`).
+    # Mutation (oracle): `mutations/`'s "setup reports a settings file it cannot read with the
+    # error's own text".
+    home = tmp_path / "home"
+    (home / USER_SETTINGS).mkdir(parents=True)
+    with pytest.raises(Failure) as caught:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert (
+        str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EISDIR)})"
+    )
 
 
 def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:

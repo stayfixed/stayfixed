@@ -46,8 +46,8 @@ reddens = [
 [[mutation]]
 name = "the manifest reader lets undecodable bytes out as a crash again"
 file = "src/stayfixed/scaffold/manifest.py"
-before = """        except UnicodeDecodeError as exc:
-            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
+before = """        except UnicodeDecodeError:
+            raise ManifestError(f"{MANIFEST_PATH} is not UTF-8 text") from None
 """
 after = ""
 reddens = [
@@ -124,8 +124,8 @@ reddens = [
 [[mutation]]
 name = "the footprint manifest's read refusal prints the path it opened"
 file = "src/stayfixed/scaffold/manifest.py"
-before = 'raise ManifestError(f"{MANIFEST_PATH} is unreadable: {said(exc)}") from exc'
-after = 'raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc'
+before = 'raise ManifestError(f"{MANIFEST_PATH} cannot be read ({said(exc)})") from exc'
+after = 'raise ManifestError(f"{MANIFEST_PATH} cannot be read ({exc})") from exc'
 reddens = [
   "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
 ]
@@ -816,15 +816,15 @@ reddens = [
 [[mutation]]
 name = "the scaffold engine names an unreadable artifact by its absolute path"
 file = "src/stayfixed/scaffold/engine.py"
-before = '        return None, f"{quoted(relative)} cannot be read: {said(exc)}"'
-after = '        return None, f"{path} cannot be read: {exc}"'
+before = '        return None, f"{quoted(relative)} cannot be read ({said(exc)})"'
+after = '        return None, f"{path} cannot be read ({exc})"'
 reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[directory]", "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[too-large]"]
 
 [[mutation]]
 name = "the scaffold engine names an artifact that is not UTF-8 by its absolute path"
 file = "src/stayfixed/scaffold/engine.py"
-before = '        return None, f"{quoted(relative)} cannot be read: it is not UTF-8 text"'
-after = '        return None, f"{path} cannot be read: it is not UTF-8 text"'
+before = '        return None, f"{quoted(relative)} is not UTF-8 text"'
+after = '        return None, f"{path} is not UTF-8 text"'
 reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[not-utf8]"]
 
 # Each caller names the file the reason is about: the recorded old place of a relocation and the

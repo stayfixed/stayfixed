@@ -10,7 +10,7 @@ link to `/dev/stdin` or a FIFO waited for input that never came:
   session-context` waited;
 - a plan that `stayfixed plan check` finds outside a git repository;
 - `.claude/settings.local.json`: `stayfixed attach`, `attach --check` and `stayfixed detach` fail
-  (exit `1`), "cannot be read: not a regular file", before anything is written or removed;
+  (exit `1`), "cannot be read (not a regular file)", before anything is written or removed;
 - `.stayfixed/local/attach.json`: `stayfixed detach` fails (exit `1`) the same way, and `attach`
   refuses a ledger that is a link at all, as before;
 - `.gitignore`: `stayfixed attach` refuses it (exit `2`) when it needs to add its region there.

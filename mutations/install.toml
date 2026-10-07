@@ -1544,8 +1544,8 @@ reddens = [
 [[mutation]]
 name = "overlay init prints a recorded path it cannot remove unescaped"
 file = "src/stayfixed/overlay/create.py"
-before = '            notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")'
-after = '            notes.append(f"left {action.target}: cannot be removed: {fsops.said(exc)}")'
+before = '            notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")'
+after = '            notes.append(f"left {action.target}: cannot be removed ({fsops.said(exc)})")'
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[cannot-remove]",
 ]
@@ -2300,9 +2300,9 @@ reddens = [
 [[mutation]]
 name = "overlay init stops at a retired file it cannot remove"
 file = "src/stayfixed/overlay/create.py"
-before = """                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+before = """                notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")
                 continue"""
-after = """                raise Refusal(f"{quoted(action.target)} cannot be removed: {fsops.said(exc)}") from exc"""
+after = """                raise Refusal(f"{quoted(action.target)} cannot be removed ({fsops.said(exc)})") from exc"""
 reddens = [
   "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
 ]
@@ -3457,3 +3457,13 @@ reddens = [
   "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev3+g1234abc]",
 ]
 
+# `setup` says why it cannot read the user settings file in words, as every reader of a file does,
+# and not with the error's text, which repeats the path.
+[[mutation]]
+name = "setup reports a settings file it cannot read with the error's own text"
+file = "src/stayfixed/setup/run.py"
+before = '        raise Failure(f"{path} cannot be read ({fsops.said(exc)})") from exc'
+after = '        raise Failure(f"{path} cannot be read: {exc}") from exc'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
+]

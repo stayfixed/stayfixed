@@ -139,9 +139,9 @@ class Manifest:
         try:
             text = read_regular_text(path)
         except OSError as exc:
-            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {said(exc)}") from exc
-        except UnicodeDecodeError as exc:
-            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
+            raise ManifestError(f"{MANIFEST_PATH} cannot be read ({said(exc)})") from exc
+        except UnicodeDecodeError:
+            raise ManifestError(f"{MANIFEST_PATH} is not UTF-8 text") from None
         raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)
         version = raw.get("format", FORMAT)
         # Damage, not a newer stayfixed: `null`, `"1"`, `0` and the rest are no format any

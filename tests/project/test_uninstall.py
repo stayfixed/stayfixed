@@ -678,7 +678,7 @@ def test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_word
     remove = module._remove_ledger if manifest else module._remove_local_artifacts
     with pytest.raises(Refusal) as failed:
         remove(tmp_path)
-    assert str(failed.value) == f"{target} cannot be removed: {os.strerror(errno.EACCES)}"
+    assert str(failed.value) == f"{target} cannot be removed ({os.strerror(errno.EACCES)})"
 
 
 @needs_git

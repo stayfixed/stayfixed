@@ -729,8 +729,8 @@ reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_
 [[mutation]]
 name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
 file = "src/stayfixed/project/rewrite.py"
-before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written: {said(exc)}\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
-after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {said(exc)}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n"
+before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written ({said(exc)})\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written ({said(exc)})\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n"
 reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
 
 # The record is re-stamped before the write, so a write that fails must put it back: left naming
@@ -2074,21 +2074,21 @@ reddens = [
 [[mutation]]
 name = "a ledger file that cannot be removed is reported with the error's own text"
 file = "src/stayfixed/project/uninstall.py"
-before = '            raise Refusal(f"{target} cannot be removed: {said(exc)}") from exc'
-after = '            raise Refusal(f"{target} cannot be removed: {exc}") from exc'
+before = '            raise Refusal(f"{target} cannot be removed ({said(exc)})") from exc'
+after = '            raise Refusal(f"{target} cannot be removed ({exc})") from exc'
 reddens = ["tests/project/test_uninstall.py::test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_words[.stayfixed/manifest.json]"]
 
 [[mutation]]
 name = "the local ledger that cannot be removed is reported with the error's own text"
 file = "src/stayfixed/project/uninstall.py"
-before = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {said(exc)}") from exc'
-after = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {exc}") from exc'
+before = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({said(exc)})") from exc'
+after = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({exc})") from exc'
 reddens = ["tests/project/test_uninstall.py::test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_words[.stayfixed/local/artifacts.json]"]
 
 [[mutation]]
 name = "a stayfixed.toml that cannot be written is reported with the error's own text"
 file = "src/stayfixed/project/rewrite.py"
-before = '        failure = Refusal(f"{CONFIG_FILE} cannot be written: {said(exc)}")'
-after = '        failure = Refusal(f"{CONFIG_FILE} cannot be written: {exc}")'
+before = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({said(exc)})")'
+after = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({exc})")'
 reddens = ["tests/project/test_rewrite.py::test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure"]
 

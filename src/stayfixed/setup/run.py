@@ -253,7 +253,7 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
     except FileNotFoundError:
         return {}, ""
     except OSError as exc:
-        raise Failure(f"{path} cannot be read: {exc}") from exc
+        raise Failure(f"{path} cannot be read ({fsops.said(exc)})") from exc
     except UnicodeDecodeError:
         raise Failure(f"{path} is not UTF-8 text") from None
     if not text.strip():

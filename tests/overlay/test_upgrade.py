@@ -278,7 +278,7 @@ def test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded(
     done = init_instance(root, "acme", runner=Recorder())
     monkeypatch.undo()
     assert (
-        ".codex-plugin/plugin.json cannot be written: Permission denied; "
+        ".codex-plugin/plugin.json cannot be written (Permission denied); "
         "`stayfixed overlay init` names it once it can be"
     ) in done.notes, done.notes
     assert done.renamed == (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
@@ -600,7 +600,7 @@ def test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on(tmp_pat
         rules.chmod(0o755)
     assert f"removed {ATTACH_SKILL}, which this release no longer ships" in done.notes
     left = [note for note in done.notes if note.startswith(f"left {RULES_README}: ")]
-    assert left == [f"left {RULES_README}: cannot be removed: Permission denied"], done.notes
+    assert left == [f"left {RULES_README}: cannot be removed (Permission denied)"], done.notes
     # `init` went on to its last step, the secret scan.
     assert any("pre-commit" in note for note in done.notes), done.notes
     assert not (root / ATTACH_SKILL).exists()
@@ -644,7 +644,7 @@ def test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on(
     monkeypatch.undo()
     assert f"removed {MEMORY_README}, which this release no longer ships" in done.notes
     assert (
-        "common/memory/_README.md cannot be written: Permission denied; "
+        "common/memory/_README.md cannot be written (Permission denied); "
         "`stayfixed overlay upgrade` writes it"
     ) in done.notes
     assert any("pre-commit" in note for note in done.notes), done.notes
@@ -947,7 +947,7 @@ def test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped(
         assert f"removed {variant!r}, which this release no longer ships" in done.notes
         assert not copy.exists()
     else:
-        assert f"left {variant!r}: cannot be removed: Permission denied" in done.notes
+        assert f"left {variant!r}: cannot be removed (Permission denied)" in done.notes
         assert copy.is_file()
 
 

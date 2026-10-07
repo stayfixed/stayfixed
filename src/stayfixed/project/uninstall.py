@@ -283,7 +283,7 @@ def _remove_local_artifacts(root: Path) -> None:
         except FileNotFoundError:
             pass
         except OSError as exc:
-            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {said(exc)}") from exc
+            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({said(exc)})") from exc
     base = contained(root, LOCAL_ARTIFACTS)
     if base.is_dir() and not base.is_symlink():
         below = (p for p in base.rglob("*") if p.is_dir() and not p.is_symlink())
@@ -305,7 +305,7 @@ def _remove_ledger(root: Path) -> None:
         try:
             remove_within(root, target)
         except OSError as exc:
-            raise Refusal(f"{target} cannot be removed: {said(exc)}") from exc
+            raise Refusal(f"{target} cannot be removed ({said(exc)})") from exc
     _rmdirs(root, set(LEDGER_DIRS))
 
 

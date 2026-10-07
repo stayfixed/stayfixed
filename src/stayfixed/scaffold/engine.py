@@ -230,9 +230,9 @@ def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
     except FileNotFoundError:
         return None, None
     except OSError as exc:
-        return None, f"{quoted(relative)} cannot be read: {said(exc)}"
+        return None, f"{quoted(relative)} cannot be read ({said(exc)})"
     except UnicodeDecodeError:
-        return None, f"{quoted(relative)} cannot be read: it is not UTF-8 text"
+        return None, f"{quoted(relative)} is not UTF-8 text"
 
 
 def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, str]:

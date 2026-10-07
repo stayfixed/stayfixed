@@ -53,7 +53,7 @@ def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
     try:
         write_within(root, CONFIG_FILE, document)
     except OSError as exc:
-        failure = Refusal(f"{CONFIG_FILE} cannot be written: {said(exc)}")
+        failure = Refusal(f"{CONFIG_FILE} cannot be written ({said(exc)})")
         if stamped is not None:
             try:
                 manifest.write(root)

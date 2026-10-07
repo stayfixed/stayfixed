@@ -154,8 +154,9 @@ differently. Each has its own entry in these notes, with the detail:
     name it relative to the project or the overlay, where they quoted an error class or the error's
     text beside an absolute path: `(Permission denied)` for `(PermissionError)` in `stayfixed
     doctor`'s `diagnostics` row and in the `stayfixed.toml`, machine-file and project-record
-    messages, `AGENTS.md cannot be read: not a regular file` in `init`, `upgrade` and `overlay
-    upgrade`. A script that matched the old text has to match the new (Fixed, "Every
+    messages, `AGENTS.md cannot be read (not a regular file)` in `init`, `upgrade` and `overlay
+    upgrade`, with every such reason in parentheses where some followed a colon. A script that
+    matched the old text has to match the new (Fixed, "Every
     file a repository commits that stayfixed reads", in its last list).
   - A `.stayfixed/manifest.json` whose `format` is `true`, `0` or a negative integer, which 0.2.0
     read as the format it writes and went on, is refused as damaged (exit `2`) by `upgrade` and

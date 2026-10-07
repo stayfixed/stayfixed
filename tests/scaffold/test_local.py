@@ -143,7 +143,7 @@ def test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is(tmp_path: 
     (tmp_path / LOCAL).mkdir()
     planned = plan(tmp_path, a_config(tmp_path), [a_template()])
     assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
-        (Verb.SKIP_MODIFIED, LOCAL, f"{LOCAL} cannot be read: not a regular file"),
+        (Verb.SKIP_MODIFIED, LOCAL, f"{LOCAL} cannot be read (not a regular file)"),
         (Verb.CREATE, "AGENTS.md", "new"),
     ]
 

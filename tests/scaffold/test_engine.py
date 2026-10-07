@@ -554,9 +554,9 @@ def test_a_file_past_the_read_cap_refuses_only_its_own_artifact(
 @pytest.mark.parametrize(
     ("shape", "reason"),
     [
-        ("a directory", "not a regular file"),
-        ("past the cap", "larger than this reader reads"),
-        ("not UTF-8", "it is not UTF-8 text"),
+        ("a directory", "AGENTS.md cannot be read (not a regular file)"),
+        ("past the cap", "AGENTS.md cannot be read (larger than this reader reads)"),
+        ("not UTF-8", "AGENTS.md is not UTF-8 text"),
     ],
     ids=["directory", "too-large", "not-utf8"],
 )
@@ -577,7 +577,7 @@ def test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason
     else:
         agents.write_bytes(b"\xff\xfe not utf-8 \xff")
     result = plan(tmp_path, a_config(tmp_path), [a_template()])
-    assert [r.reason for r in result.refusals] == [f"AGENTS.md cannot be read: {reason}"]
+    assert [r.reason for r in result.refusals] == [reason]
 
 
 def test_an_unreadable_old_home_of_a_relocated_artifact_is_named_where_it_is(
@@ -591,7 +591,7 @@ def test_an_unreadable_old_home_of_a_relocated_artifact_is_named_where_it_is(
     Manifest({}).with_record(a_record(target=local, location=Location.LOCAL)).write(tmp_path)
     result = plan(tmp_path, a_config(tmp_path), [a_template()])
     skipped = [(a.target, a.reason) for a in result.actions if a.verb is Verb.SKIP_MODIFIED]
-    assert skipped == [(local, f"{local} cannot be read: not a regular file")]
+    assert skipped == [(local, f"{local} cannot be read (not a regular file)")]
 
 
 def test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on(tmp_path: Path) -> None:

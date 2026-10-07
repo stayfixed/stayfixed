@@ -2462,7 +2462,7 @@ def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
     # Named as the project names it, never by the machine's absolute path, as the `.gitignore`
     # refusal is. Mutation (oracle): `mutations/`'s "the settings refusal prints the path it
     # opened" -> the message carries the temporary directory.
-    assert str(refused.value) == f"{SETTINGS} cannot be read: not a regular file"
+    assert str(refused.value) == f"{SETTINGS} cannot be read (not a regular file)"
     assert _everything(tmp_path) == before
 
 
