@@ -405,6 +405,9 @@ def register_gate(
 
     entries: list[Entry] = []
     texts: dict[str, str] = {}
+    # Every parsed entry's text by its path, which `texts` cannot be: it keeps one holder of an
+    # identifier, and the half-done check undoes the sweep in each entry file.
+    sources: dict[Path, str] = {}
     required = set(register.evidence_boundary_for)
     restated = _body_state_bullet(register)
     for path in sorted(directory.glob(f"{ids.prefix}-*.md")):
@@ -453,6 +456,7 @@ def register_gate(
             )
         entries.append(entry)
         texts.setdefault(entry.id, text)
+        sources[entry.path] = text
 
     known = {entry.id for entry in entries}
     by_id: defaultdict[str, list[Entry]] = defaultdict(list)
@@ -499,7 +503,7 @@ def register_gate(
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        move = _half_done_move(register, entries, texts, current)
+        move = _half_done_move(register, entries, texts, sources, current)
         remedy = f"renumber {move[0]} {move[1]}" if move else "index"
         stale = f"is stale; run: stayfixed {register.name} {remedy}"
         found.append(Finding("stale-index", index_name, None, stale))
@@ -513,7 +517,11 @@ def register_gate(
 
 
 def _half_done_move(
-    register: Register, entries: list[Entry], texts: dict[str, str], current: str
+    register: Register,
+    entries: list[Entry],
+    texts: dict[str, str],
+    sources: dict[Path, str],
+    current: str,
 ) -> tuple[str, str] | None:
     """The renumber, `(old, new)`, whose interruption explains the stale index `current`
     exactly, or `None`.
@@ -522,10 +530,14 @@ def _half_done_move(
     rendered from the ledger as it stood before the move. That state is recognised as
     `renumber` recognises it — `new` holding `old`'s text with its `id:` line rewritten, or
     `old` the void pointer the move titles toward `new` — and confirmed by the index alone: the
-    entries with `new`'s text restored to `old` render it byte for byte. Sent to `bugs index`
-    instead, the operator turned the check green over two live entries for one bug or over
-    mentions the sweep never reached. Anything else stale, a finished move's neighbour edited
-    since included, is `bugs index`'s.
+    entries with `new`'s text restored to `old`, and the sweep undone in every other entry,
+    render it byte for byte. The sweep runs before the index write and rewrites the other entry
+    files too: a void pointer an earlier move left toward `old` is retitled toward `new`, and so
+    is a live entry whose title names `old`, so their rows no longer match the index the move
+    found. Sent to `bugs index` instead, the operator turned the check green over two live
+    entries for one bug or over mentions the sweep never reached, which a re-run then took for a
+    finished move's and left alone. Anything else stale, a finished move's neighbour edited since
+    included, is `bugs index`'s.
     """
     by_text: defaultdict[str, list[str]] = defaultdict(list)
     for identifier, text in texts.items():
@@ -549,10 +561,33 @@ def _half_done_move(
             )
         except LedgerError:
             continue
-        before = [entry for entry in entries if entry.id not in (old, new)] + [moved]
-        if render_index(sorted(before, key=lambda e: e.number), register) == current:
-            return old, new
+        others = [entry for entry in entries if entry.id not in (old, new)]
+        # As they stand first, then with the sweep undone: an entry that named `new` before the
+        # move, which nothing forbids, is matched by the first.
+        for before in (others, _unswept(register, others, sources, old=old, new=new)):
+            if render_index(sorted([*before, moved], key=lambda e: e.number), register) == current:
+                return old, new
     return None
+
+
+def _unswept(
+    register: Register, entries: list[Entry], sources: dict[Path, str], *, old: str, new: str
+) -> list[Entry]:
+    """`entries` with a move's sweep undone in each: every mention of `new` in an entry file read
+    back as `old`, which is what the sweep rewrote. An entry whose text names no `new`, or that
+    would no longer parse, stands as it is."""
+    swept = re.compile(rf"\b{re.escape(new)}\b")
+    found: list[Entry] = []
+    for entry in entries:
+        text = sources.get(entry.path, "")
+        if new not in text:
+            found.append(entry)
+            continue
+        try:
+            found.append(parse_entry(swept.sub(old, text), path=entry.path, register=register))
+        except LedgerError:
+            found.append(entry)
+    return found
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:

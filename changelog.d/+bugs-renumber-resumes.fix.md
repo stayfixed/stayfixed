@@ -10,4 +10,8 @@ already at `NEW` is still refused, and the refusal says how to finish by hand a 
 was edited after it was interrupted. A re-run of a move that finished changes nothing and says
 so, leaving any mention of `OLD` written since as it was. `stayfixed bugs check` now names that
 re-run, `stayfixed bugs renumber OLD NEW`, rather than `stayfixed bugs index`, when the stale
-index is the one an interrupted move left. `stayfixed bugs renumber X X` is refused outright.
+index is the one an interrupted move left, including after the move had already rewritten another
+entry's title: a void pointer an earlier move left toward `OLD`, or a title that names `OLD`. A
+write of the move's own that fails, such as an index in a directory that cannot be written, ends
+the command with exit `1`, naming the file and that re-run, where it was an internal error with
+exit `2`. `stayfixed bugs renumber X X` is refused outright.

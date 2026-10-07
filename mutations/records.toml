@@ -615,6 +615,51 @@ reddens = [
   "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-sibling-sweep]",
 ]
 
+# A write of the move's own that fails is the move's failure, naming the re-run that finishes it:
+# let out as the `OSError` it is, it was an internal error, exit 2, that named no way on.
+[[mutation]]
+name = "a renumber's failed target write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = '            raise unfinished(f"{directory}/{new}.md", error) from error'
+after = "            raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[target]"]
+
+[[mutation]]
+name = "a renumber's failed pointer write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = '            raise unfinished(f"{directory}/{old}.md", error) from error'
+after = "            raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[pointer]"]
+
+[[mutation]]
+name = "a renumber's failed index write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = "        raise unfinished(register.index, error) from error"
+after = "        raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[index]"]
+
+# The sweep runs before the index write and retitles the other entries that name the old number,
+# so the index the move found is matched only with that sweep undone in them; and an entry that
+# named the new number before the move, which the sweep never touched, only with it left in place.
+[[mutation]]
+name = "a stale index a killed renumber left is matched with the sweep left in place"
+file = "src/stayfixed/ledger/check.py"
+before = "        for before in (others, _unswept(register, others, sources, old=old, new=new)):"
+after = "        for before in (others,):"
+reddens = [
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-chained-move]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-title-naming-it]",
+]
+
+[[mutation]]
+name = "a stale index a killed renumber left is matched only with the sweep undone"
+file = "src/stayfixed/ledger/check.py"
+before = "        for before in (others, _unswept(register, others, sources, old=old, new=new)):"
+after = "        for before in (_unswept(register, others, sources, old=old, new=new),):"
+reddens = [
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-title-naming-the-new-number]",
+]
+
 [[mutation]]
 name = "the occupied-target refusal does not say a final newline is the only difference"
 file = "src/stayfixed/ledger/write.py"

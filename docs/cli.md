@@ -691,7 +691,9 @@ identifiers and is neither scanned nor swept.
 A stale index is sent to `bugs index`, except the one a `bugs renumber OLD NEW` killed before its
 last write leaves: when `NEW` holds `OLD`'s text, or `OLD` is the pointer that move titles toward
 `NEW`, and the index is exactly the one rendered before the move, the line names `run: stayfixed
-bugs renumber OLD NEW`, which finishes it.
+bugs renumber OLD NEW`, which finishes it. The sweep may already have rewritten other entries, so
+the index is compared with their mentions of `NEW` read back as `OLD` too: a void pointer an
+earlier move left toward `OLD`, or a title that names it, no longer sends the line to `bugs index`.
 
 **Writes** nothing.
 
@@ -721,7 +723,9 @@ because once the pointer exists a stale mention in that file looks intentional t
 forever. The line counts them and names up to eight; `--json`'s `unswept` carries every one, each
 an object with `path` and `reason`. The path is relative to the root, and the reason is the error
 in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
-The moved entry's own body is the operator's to rewrite and is not swept.
+The moved entry's own body is the operator's to rewrite and is not swept. A write of the move's
+own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and the
+reason, and says that running the same move again once the file can be written finishes it.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 

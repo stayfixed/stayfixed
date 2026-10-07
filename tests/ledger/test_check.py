@@ -906,6 +906,60 @@ def test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_i
     assert stale == ["is stale; run: stayfixed bugs renumber BR-001 BR-009"]
 
 
+def _killed_at_the_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`fsops.write_within` killed on the index write alone, every write before it made."""
+    from stayfixed import fsops
+
+    real = fsops.write_within
+
+    def counted(within: Path, target: str, text: str, **kwargs: Any) -> None:
+        if target == "docs/bug-reports.md":
+            raise Killed(target)
+        real(within, target, text, **kwargs)
+
+    monkeypatch.setattr(fsops, "write_within", counted)
+
+
+# The two trees whose sweep rewrites a row of the index before the index write: a void pointer an
+# earlier move left toward the entry, which the sweep retitles toward the new number, and a live
+# entry whose title names the moved one. The third is the legitimate user of the sweep left in
+# place: a title that named the new number before the move, which the sweep never touched.
+SWEPT_ROWS = ("a-chained-move", "a-title-naming-it", "a-title-naming-the-new-number")
+
+
+@pytest.mark.parametrize("tree", SWEPT_ROWS)
+def test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tree: str
+) -> None:
+    # The sweep runs before the index write, so a row whose title names the old number already
+    # names the new one: re-rendering the found index with the moved entry put back alone missed
+    # it, and the line named `bugs index`, which turned the check green over a mention of the old
+    # number nothing would ever rewrite, since the re-run then read the move as finished. So each
+    # entry's sweep is undone too before the comparison. Mutations: `mutations/`, "a stale index
+    # a killed renumber left is matched with the sweep left in place" and "… only with the sweep
+    # undone".
+    root, config = project(tmp_path)
+    register = bug_register(config)
+    if tree == "a-chained-move":
+        ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
+        renumber(root, config, register, "BR-001", "BR-007", today="2026-01-02")
+    else:
+        named = "BR-007" if tree == "a-title-naming-it" else "BR-013"
+        titled = entry(2).replace("title: a title", f"title: follow-up to {named}")
+        ledger(root, config, {"BR-002": titled, "BR-007": entry(7)})
+    (root / "docs" / "roadmap.md").write_text("also BR-007 matters\n", encoding="utf-8")
+    with monkeypatch.context() as patched:
+        _killed_at_the_index(patched)
+        with pytest.raises(Killed):
+            renumber(root, config, register, "BR-007", "BR-013", today="2026-01-02")
+    stale = [p.detail for p in register_gate(root, config, register) if p.rule == "stale-index"]
+    assert stale == ["is stale; run: stayfixed bugs renumber BR-007 BR-013"]
+    renumber(root, config, register, "BR-007", "BR-013", today="2026-01-02")
+    roadmap = (root / "docs" / "roadmap.md").read_text(encoding="utf-8")
+    assert roadmap == "also BR-013 matters\n"
+    assert register_gate(root, config, register) == []
+
+
 def test_a_stale_index_beside_a_finished_renumber_is_sent_to_bugs_index(tmp_path: Path) -> None:
     # The legitimate user: a move that finished, and an entry edited since without the index.
     # Re-running that move would change nothing, so the line still names `bugs index`.

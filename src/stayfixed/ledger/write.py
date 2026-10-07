@@ -28,6 +28,7 @@ from stayfixed.ledger.entries import (
 from stayfixed.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
 from stayfixed.ledger.register import Register
 from stayfixed.ledger.scan import citation_roots, scannable
+from stayfixed.printed import quoted
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -48,6 +49,13 @@ OCCUPIED = (
     "edited since, make it {old}'s text again with only its `id:` line changed and run this again"
 )
 LINE_BREAKS_ONLY = " — it differs from {old}'s moved text only in the line breaks at its end"
+# What `renumber` says of a write of its own that failed. Whichever write it was, running the same
+# move again once the file can be written finishes it, since a re-run makes only the writes still
+# missing; the move's own failure, exit 1, and never an internal error that names no way on.
+UNFINISHED = (
+    "the move is not finished: {path} could not be written ({reason}); once it can be, run "
+    "`stayfixed {name} renumber {old} {new}` again to finish it"
+)
 _VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
@@ -432,23 +440,34 @@ def renumber(
     if written == 2 and committed_index == render_index(entries, register):
         return Renumbered(source, (), moved=False)
 
+    def unfinished(path: str, error: OSError) -> LedgerError:
+        reason = fsops.said(error)
+        return LedgerError(
+            UNFINISHED.format(
+                path=quoted(path), reason=reason, name=register.name, old=old, new=new
+            )
+        )
+
     if written < 1:
-        fsops.write_within(root, f"{directory}/{new}.md", moved)
+        try:
+            fsops.write_within(root, f"{directory}/{new}.md", moved)
+        except OSError as error:
+            raise unfinished(f"{directory}/{new}.md", error) from error
     if written < 2:
         # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve
         # to something at every instant from here on, including if the sweep below is
         # interrupted.
-        fsops.write_within(
-            root,
-            f"{directory}/{old}.md",
-            _void_pointer(
-                register,
-                old=old,
-                new=new,
-                title=f"renumbered to {new} — {source_entry.title}",
-                today=today or date.today().isoformat(),
-            ),
+        pointer = _void_pointer(
+            register,
+            old=old,
+            new=new,
+            title=f"renumbered to {new} — {source_entry.title}",
+            today=today or date.today().isoformat(),
         )
+        try:
+            fsops.write_within(root, f"{directory}/{old}.md", pointer)
+        except OSError as error:
+            raise unfinished(f"{directory}/{old}.md", error) from error
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
@@ -478,5 +497,8 @@ def renumber(
             unswept.append(
                 Unswept(item.relative.as_posix(), f"could not be written ({fsops.said(error)})")
             )
-    _write_index(root, register)
+    try:
+        _write_index(root, register)
+    except OSError as error:
+        raise unfinished(register.index, error) from error
     return Renumbered(source, tuple(unswept))

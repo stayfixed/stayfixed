@@ -264,6 +264,50 @@ def test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_me
     )
 
 
+# Each write of its own a move can fail at: the sealed directory, and the file its message names.
+UNWRITABLE = {
+    "target": ("docs/bugs", "docs/bugs/BR-009.md"),
+    "pointer": ("docs/bugs", "docs/bugs/BR-001.md"),
+    "index": ("docs", "docs/bug-reports.md"),
+}
+
+
+@pytest.mark.parametrize(("sealed", "named"), UNWRITABLE.values(), ids=UNWRITABLE.keys())
+def test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sealed: str, named: str
+) -> None:
+    # A failure at the index, the move's last write, leaves both endpoints and the sweep on disk;
+    # it ended in `internal error: PermissionError`, exit 2, which said nothing of the re-run that
+    # now finishes the move. Each of the move's own writes fails as the move's failure, exit 1,
+    # naming that re-run and the file by its root-relative path. `pointer` is the move killed
+    # after its first write, re-run with the old file unwritable. Mutations: `mutations/`, "a
+    # renumber's failed target write escapes as an internal error", and the same of its pointer
+    # and its index.
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    if sealed == "docs/bugs" and named.endswith("BR-001.md"):
+        moved = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+        target = root / "docs" / "bugs" / "BR-009.md"
+        target.write_text(moved.replace("id: BR-001", "id: BR-009", 1), encoding="utf-8")
+    directory = root / sealed
+    directory.chmod(0o555)
+    try:
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 1
+    finally:
+        directory.chmod(0o755)
+    err = capsys.readouterr().err
+    assert err == (
+        f"stayfixed: failed: the move is not finished: {named} could not be written "
+        f"({DENIED}); once it can be, run `stayfixed bugs renumber BR-001 BR-009` again to "
+        "finish it\n"
+    )
+    assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
+    assert invoke(["bugs", "check", *common]) == 0
+
+
 def test_a_missing_configuration_is_a_failure_not_a_refusal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
