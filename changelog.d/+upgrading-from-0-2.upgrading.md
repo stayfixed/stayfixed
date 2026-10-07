@@ -136,17 +136,20 @@ differently. Each has its own entry in these notes, with the detail:
     `setup` left there from a 12 KB one: cut that file down by hand before running `setup` (Changed,
     "`stayfixed attach`, `attach --check` and `stayfixed detach` now refuse, before anything is
     written, a `.claude/settings.local.json`").
-  - A file stayfixed reads is read only up to 64 MiB, and one longer, which 0.2.0 read whole, is
-    one it cannot read: `stayfixed attach`, `attach --check` and `detach` fail (exit `1`) on such a
-    `.claude/settings.local.json` and on such a `.stayfixed/local/attach.json`, and `detach` on such
-    a `.gitignore` when the region in it is the one `attach` wrote. A settings file 0.2.0's own
-    `attach` wrote back past that size has to be cut down by hand before `detach` can run. A
-    `stayfixed.toml` past the cap fails (exit `1`) every command that loads it. A memory note past
-    the cap makes `stayfixed memory index --check` exit `1` naming it as a file that cannot be read
-    as a note, and `memory refs` exit `1` counting it among the notes it could not parse (its path
-    is in `--json`'s `unreadable`); a bug-ledger entry past it makes `stayfixed bugs check` exit `1`
-    with `unreadable-entry`, where 0.2.0 read each whole and exited `0` (Fixed,
-    "Every file a repository commits that stayfixed reads is now read only up to 64 MiB").
+  - A file a repository commits that stayfixed reads, and your overlay's record of a project, is
+    read only up to 64 MiB, and one longer, which 0.2.0 read whole, is one stayfixed cannot read;
+    the machine configuration, `trust.json`, `~/.claude/settings.json` and the overlay's Codex rule
+    files are still read whole. `stayfixed attach`, `attach --check` and `detach` fail (exit `1`)
+    on such a `.claude/settings.local.json` and on such a `.stayfixed/local/attach.json`, and
+    `detach` on such a `.gitignore` when the region in it is the one `attach` wrote. A settings
+    file 0.2.0's own `attach` wrote back past that size has to be cut down by hand before
+    `detach` can run. A `stayfixed.toml` past the cap fails (exit `1`) every command that loads
+    it. A memory note past the cap makes `stayfixed memory index --check` exit `1` naming it as a
+    file that cannot be read as a note, and `memory refs` exit `1` counting it among the notes it
+    could not parse (its path is in `--json`'s `unreadable`); a bug-ledger entry past it makes
+    `stayfixed bugs check` exit `1` with `unreadable-entry`, where 0.2.0 read each whole and exited
+    `0` (Fixed, "Every file a repository commits that stayfixed reads is now read only up to 64
+    MiB").
   - Many refusals and failures say why a file could not be read, written or removed in words, and
     name it relative to the project or the overlay, where they quoted an error class or the error's
     text beside an absolute path: `(Permission denied)` for `(PermissionError)` in `stayfixed

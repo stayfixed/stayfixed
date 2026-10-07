@@ -42,9 +42,9 @@ A file stayfixed cannot read, write or remove is now said why in words, such as 
 denied`, `not a regular file` or `larger than this reader reads`, where the message named an error
 class or quoted the error's raw text:
 
-- `stayfixed.toml`, the machine configuration file and the overlay's project record say
-  `(not a regular file)`, `(Permission denied)` or `(larger than this reader reads)` where they said
-  `(IsADirectoryError)` or `(PermissionError)`;
+- `stayfixed.toml` and the overlay's project record say `(not a regular file)`,
+  `(Permission denied)` or `(larger than this reader reads)`, and the machine configuration file
+  `(Permission denied)`, where they said `(IsADirectoryError)` or `(PermissionError)`;
 - so do `stayfixed doctor`'s `ci-ref` and `diagnostics` rows;
 - `stayfixed init`, `upgrade` and `overlay upgrade` name a file they cannot read relative to the
   tree they write, the project or the overlay, as in `AGENTS.md cannot be read: not a regular

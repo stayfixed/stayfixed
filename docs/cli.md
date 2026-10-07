@@ -2316,11 +2316,13 @@ answer, in the order the run meets them:
 - A Codex rule file in the overlay cannot be read or is not UTF-8.
 - `git worktree list` fails.
 
-A file that "cannot be read" includes one that is not a regular file once a link to it is
-followed, such as a link to `/dev/zero` or to a FIFO, which is never waited on, and one longer than
-64 MiB, the most stayfixed reads of one file: `stayfixed.toml`, the overlay's record of this
-project, `.claude/settings.local.json` and the ledger are each read only that far. A ledger that is
-itself a link is refused (`2`) before it is read, as a path that passes through a symlink.
+For `stayfixed.toml`, the overlay's record of this project, its `permissions.json` and
+`hooks.json`, `.claude/settings.local.json` and the ledger, a file that "cannot be read" includes
+one that is not a regular file once a link to it is followed, such as a link to `/dev/zero` or to
+a FIFO, which is never waited on, and one longer than 64 MiB, which is as far as each of these is
+read. The machine configuration and the overlay's Codex rule files are read whole, and one that is
+not a regular file is passed over as absent. A ledger that is itself a link is refused (`2`) before
+it is read, as a path that passes through a symlink.
 
 Every failure in that list happens before anything is written. One way to exit `1` comes later,
 and leaves behind what was written before it: a store that still does not resolve once the link
