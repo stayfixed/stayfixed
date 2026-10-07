@@ -39,6 +39,7 @@ PROFILES = PACKAGE / "profiles"
 # `"run"`.
 STACK_WORDS = (
     "python",
+    "python3",
     "pyproject",
     "pytest",
     "pyc",
@@ -94,6 +95,9 @@ STACK_NAMED = {
     ("src/stayfixed/doctor/checks.py", "uv"),
     ("src/stayfixed/overlay/doctor.py", "uv"),
     ("src/stayfixed/setup/run.py", "uv"),
+    # The git hook stayfixed installs runs stayfixed itself, under the `python3` that can import it:
+    # stayfixed's own interpreter in its own hook, not the interpreter of a project's stack.
+    ("src/stayfixed/guards/githooks.py", "python3"),
 }
 
 

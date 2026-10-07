@@ -1317,3 +1317,13 @@ after = """def _memory_registrar() -> object:
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"""
 reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+[[mutation]]
+name = "the core names the Python interpreter by its shell name"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """INTERPRETER = "python3"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
