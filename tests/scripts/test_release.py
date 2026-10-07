@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -833,17 +834,61 @@ def test_no_record_and_a_missing_file_are_both_drift(tmp_path: Path) -> None:
     [b"{not json\n", b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n'],
     ids=["not-json", "not-utf8"],
 )
-def test_a_record_that_cannot_be_read_fails_the_drift_check_and_never_reads_clean(
+def test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean(
     tmp_path: Path, body: bytes
 ) -> None:
-    # `drift` has no arm of its own for this: the reader's `UnreadableRecord` passes through it,
-    # and that class is a `Failure`, so the check exits 1 naming the record rather than reading
-    # a corrupt one as no drift. No mutation of its own — the raise is the reader's, and the
-    # entries on `read_record` that name `tests/release/test_hashes.py` pin it there.
+    # A corrupt record is never read as no drift. It is drift like any other, naming the record
+    # and the command that writes it again: let out as the reader's `UnreadableRecord`, it was
+    # `stayfixed: failed:` on stderr, a third spelling of a record problem, and `--json` lost the
+    # object both commands otherwise print. Mutation: `mutations/`, "a record that cannot be read
+    # leaves the drift check as a failure".
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_bytes(body)
-    with pytest.raises(Failure, match=re.escape(RECORD)):
-        release.drift(root)
+    [problem] = release.drift(root)
+    assert problem.startswith(f"{RECORD} is ")
+    assert problem.endswith("; run `uv run python scripts/release.py hashes`")
+
+
+# Each way the tree and its record disagree, and what both commands then say of it.
+RECORD_PROBLEMS = {
+    "missing": (
+        lambda root: (root / RECORD).unlink(),
+        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`",
+    ),
+    "a-file-gone": (
+        lambda root: (root / "hooks" / "run-hook.sh").unlink(),
+        f"{RECORD} names hooks/run-hook.sh, which is not in the tree",
+    ),
+    "a-file-edited": (
+        lambda root: (root / "hooks" / "run-hook.sh").write_text("# edited\n", encoding="utf-8"),
+        f"{RECORD} does not match hooks/run-hook.sh; run `uv run python scripts/release.py hashes`",
+    ),
+    "not-a-record": (
+        lambda root: (root / RECORD).write_text("[]\n", encoding="utf-8"),
+        f"{RECORD} is present and is not a format-1 record; run "
+        "`uv run python scripts/release.py hashes`",
+    ),
+}
+
+
+@pytest.mark.parametrize(("spoil", "problem"), RECORD_PROBLEMS.values(), ids=RECORD_PROBLEMS)
+def test_both_commands_spell_a_record_problem_one_way(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    spoil: Callable[[Path], object],
+    problem: str,
+) -> None:
+    # `check` said "version drift" of a record no version disagrees with, `hashes --check` said
+    # "release record drift" of the same state, and a record that was not one was `stayfixed:
+    # failed:`. One spelling now, on stdout, from both, with the exit code and the remedy as they
+    # were. Mutation: `mutations/`, "the release check reports a record problem as version drift".
+    root = hashed_plugin(_repo(tmp_path))
+    release.write_record(root)
+    spoil(root)
+    for argv in (["check"], ["hashes", "--check"]):
+        assert release.main([*argv, "--root", str(root)]) == 1
+        captured = capsys.readouterr()
+        assert (captured.out, captured.err) == (f"release record drift: {problem}\n", "")
 
 
 def test_the_cli_writes_the_record_and_check_exits_one_on_drift(

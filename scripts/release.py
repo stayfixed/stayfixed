@@ -49,6 +49,7 @@ from stayfixed.release.api import (
     HASHED_FILES,
     PACKAGE,
     RECORD,
+    UnreadableRecord,
     digests,
     read_record,
     tag_for,
@@ -231,6 +232,33 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+# The words `check` reports each kind of problem under. A record problem is no version
+# disagreeing, and is spelled as `hashes --check` spells it, so one state reads one way whichever
+# command found it; the folder count is a third kind, found only at a tag.
+VERSION_DRIFT = "version drift"
+RECORD_DRIFT = "release record drift"
+FOLDER_COUNT = "plugin folder count"
+
+
+def _unusable_root(root: Path) -> str | None:
+    """Why `root` is not a repository root `check` can read, or `None`.
+
+    Four different conditions used to share one wrong message, so a user who typoed --root, or
+    ran the command in their own project (--root defaults to "."), was told their pyproject.toml
+    lacked a version key. A path that exists but is not a directory needs its own line rather
+    than the missing-path one: `--root ./pyproject.toml` was told the file does not exist, and a
+    gate that exists to stop asserting untrue things about the user's tree must not assert one
+    itself.
+    """
+    if not root.exists():
+        return f"{root} does not exist; --root must name a repository root"
+    if not root.is_dir():
+        return f"{root} is not a directory; --root must name a repository root"
+    if not (root / PYPROJECT).is_file():
+        return f"{root} has no {PYPROJECT}; --root must name a repository root"
+    return None
+
+
 def check(root: Path, *, tag: str | None = None) -> list[str]:
     """What stops this tree from being released as one version, at `tag` when one is given."""
     return checked(root, tag=tag)[0]
@@ -239,22 +267,22 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
 def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str, str | None]]:
     """`check`'s problems, and the version each source carried as it read them, so a caller that
     reports both reads the tree once."""
-    # Four different conditions used to share one wrong message, so a user who typoed --root,
-    # or ran the command in their own project (--root defaults to "."), was told their
-    # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
-    # own line rather than the missing-path one: `--root ./pyproject.toml` was told the file
-    # does not exist, and a gate that exists to stop asserting untrue things about the user's
-    # tree must not assert one itself.
+    kinds, found = checked_by_kind(root, tag=tag)
+    return [problem for problems in kinds.values() for problem in problems], found
+
+
+def checked_by_kind(
+    root: Path, *, tag: str | None = None
+) -> tuple[dict[str, list[str]], dict[str, str | None]]:
+    """`checked`'s problems under the word each kind is reported under, in the order `checked`
+    lists them: the versions', the record's, then the folder count's."""
     found = collect(root)
-    if not root.exists():
-        return [f"{root} does not exist; --root must name a repository root"], found
-    if not root.is_dir():
-        return [f"{root} is not a directory; --root must name a repository root"], found
-    if not (root / PYPROJECT).is_file():
-        return [f"{root} has no {PYPROJECT}; --root must name a repository root"], found
+    unusable = _unusable_root(root)
+    if unusable is not None:
+        return {VERSION_DRIFT: [unusable]}, found
     canonical = found[PYPROJECT]
     if canonical is None:
-        return [f"{PYPROJECT} has no [project].version"], found
+        return {VERSION_DRIFT: [f"{PYPROJECT} has no [project].version"]}, found
     pending = fragments(root)
     problems: list[str] = []
     if tag is not None:
@@ -298,13 +326,14 @@ def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str,
     # spelling of this actually tested. Either the record is here, or every file it would name
     # is: the first keeps a tree whose wrapper was deleted honest, the second is how a checkout
     # with no record yet is told to write one.
+    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], FOLDER_COUNT: []}
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
-        problems += drift(root)
+        kinds[RECORD_DRIFT] = drift(root)
     # At a tag and never on a pull request: a pull request may carry the tree past the count, and
     # a release is what the directory lists.
     if tag is not None:
-        problems += plugin_folder_counts(root)
-    return problems, found
+        kinds[FOLDER_COUNT] = plugin_folder_counts(root)
+    return kinds, found
 
 
 def plugin_folder_counts(root: Path) -> list[str]:
@@ -396,7 +425,13 @@ def drift(root: Path) -> list[str]:
     Both directions on purpose: a file the record names and the tree lacks is drift, and so is
     one whose bytes moved. A walk over the record alone would call a deleted file a match.
     """
-    recorded = read_record(root)
+    # A record that is there and is not one is drift too, naming the record and the command
+    # that writes it again: let out as the reader's `UnreadableRecord`, a `Failure`, it was a
+    # third spelling of a record problem, and `--json` lost the object both commands print.
+    try:
+        recorded = read_record(root)
+    except UnreadableRecord as exc:
+        return [f"{exc}; run `{COMMAND} hashes`"]
     if recorded is None:
         return [f"{RECORD} is missing; run `{COMMAND} hashes`"]
     actual = digests(root)
@@ -418,10 +453,14 @@ def drift(root: Path) -> list[str]:
 
 def run_check(args: argparse.Namespace) -> Result:
     root = Path(args.root)
-    problems, versions = checked(root, tag=args.tag)
+    kinds, versions = checked_by_kind(root, tag=args.tag)
+    problems = [problem for found in kinds.values() for problem in found]
     data = {"problems": problems, "versions": versions}
     if problems:
-        return Result("version drift: " + "; ".join(problems), data, exit_code=1)
+        summary = "; ".join(
+            f"{kind}: " + "; ".join(found) for kind, found in kinds.items() if found
+        )
+        return Result(summary, data, exit_code=1)
     return Result(f"one version everywhere: {versions['pyproject.toml']}", data)
 
 
@@ -439,7 +478,7 @@ def run_hashes(args: argparse.Namespace) -> Result:
         problems = drift(root)
         data = {"problems": problems, "files": sorted(HASHED_FILES)}
         if problems:
-            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)
+            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)
         return Result(f"{len(HASHED_FILES)} shipped file(s) match the release record", data)
     write_record(root)
     return Result(f"recorded {len(HASHED_FILES)} shipped file(s)", {"files": sorted(HASHED_FILES)})
