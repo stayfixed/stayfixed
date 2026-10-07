@@ -8,5 +8,5 @@ the ledger refuses, refuses (exit 2), rather than reading as a base with no ledg
 `stayfixed.toml` is still read at the change's paths. A change to `[ledger] id_prefix` now
 answers for every entry under the old prefix, and a ledger deleted along with a `[paths]` move is
 named at the paths the base kept it at. The base's copy is found the way `stayfixed gate` finds
-it, so `bugs check --base` refuses (exit 2) a project root reached through a symlink, as the gate
-does.
+it, so `bugs check --base` refuses (exit 2) a project root whose path inside the repository runs
+through a symlink, as the gate does.

@@ -16,10 +16,10 @@ files are refused by both commands too, where both read them as granting nothing
   `"allow"` is `null`;
 - a `hooks.json` there with an entry group whose `hooks` is `null`.
 
-For a repository already attached under such an overlay, `stayfixed doctor`'s `hook-entries` row
-now warns that the overlay could not be asked which entries it grants, where it reported every
-entry accounted for. Remove the `null` key, or give it `{}` or `[]`, and `stayfixed attach
---check` names the clause until you do.
+For a repository already attached under an overlay whose `hooks.json` holds such a group,
+`stayfixed doctor`'s `hook-entries` row now warns that the overlay could not be asked which entries
+it grants, where it judged the entries against the rest of the file. Remove the `null` key, or give
+it `{}` or `[]`, and `stayfixed attach --check` names the clause until you do.
 
 A refusal that names an event prints it escaped when it holds a line break or a control
 character, as other names a repository chose already print.

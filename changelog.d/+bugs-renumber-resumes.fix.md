@@ -14,4 +14,4 @@ index is the one an interrupted move left, including after the move had already 
 entry's title: a void pointer an earlier move left toward `OLD`, or a title that names `OLD`. A
 write of the move's own that fails, such as an index in a directory that cannot be written, ends
 the command with exit `1`, naming the file and that re-run, where it was an internal error with
-exit `2`. `stayfixed bugs renumber X X` is refused outright.
+exit `2`. `stayfixed bugs renumber X X` fails (exit `1`): there is nothing to move.
