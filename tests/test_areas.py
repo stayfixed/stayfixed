@@ -785,14 +785,18 @@ def test_the_delivery_rule_judges_the_importer_and_the_imported() -> None:
 
 # The names through which a module is loaded without an import statement of its own, which the
 # delivery rule above reads no more than discovery's caller does: `import_module` and `__import__`
-# import by a string, and a module's own `__spec__` and `__loader__` and the finders on `sys`'s
+# import by a string, a module's own `__spec__` and `__loader__` and the finders on `sys`'s
 # `meta_path`, `path_hooks` and `path_importer_cache` load a module by its file with no import at
-# all. Each is read as an attribute of anything, as a bare name and inside a string constant.
+# all, and `sys.breakpointhook` and `sys.__breakpointhook__` import whatever `PYTHONBREAKPOINT`
+# names. Each is read as an attribute of anything, as a bare name, and inside a string constant
+# that is not a docstring: a message that names one is a row, to pin or to reword.
 DYNAMIC_IMPORTS = frozenset(
     {
+        "__breakpointhook__",
         "__import__",
         "__loader__",
         "__spec__",
+        "breakpointhook",
         "import_module",
         "meta_path",
         "path_hooks",
@@ -800,15 +804,24 @@ DYNAMIC_IMPORTS = frozenset(
     }
 )
 # The builtins that run code built from text, and the module that holds every builtin, which hands
-# `__import__` over by a computed name. Read as a bare name and as a whole string constant only:
-# as an attribute, `compile` is `re.compile`, and `builtins.exec` needs `builtins`, which the
-# machinery rule below holds.
+# `__import__` over by a computed name. Read as a bare name unless, by Python's scoping, it resolves
+# to a function's own binding, a comprehension's variable or an import from any module but
+# `builtins`, in that scope or one around it; as a binding made in a module or a class body, which
+# Python looks up at run time, so that the binding may not have run, may have been deleted, or may
+# be the builtin itself (`exec = exec`), and which therefore hides nothing and is a row to pin or
+# rename; under any alias `from builtins import` gives one; and as a whole string constant (a
+# choice spelled `"eval"` is a row too, to pin or to reword). Not as an attribute: `compile` is
+# `re.compile` there, and `builtins.exec` needs `builtins`, which the machinery rule below holds.
+# `__builtins__` is the exception: every module carries it, so it is read as an attribute of
+# anything (`json.__builtins__`), and a `from` of it from any module is a row, under any alias.
 TEXT_RUNNERS = frozenset({"__builtins__", "breakpoint", "compile", "eval", "exec"})
 
 # The one core module whose job is importing modules by name: discovery, which imports
 # `stayfixed.<area>.<submodule>` for the submodules `area_modules` is called with (held below), and
 # is how every area, delivery included, plugs into the core.
 DISCOVERY_MODULE = "areas.py"
+# What discovery itself reads of the names below, by function: its two imports by name.
+DISCOVERY_READS = (("area_modules", "import_module"), ("area_imports", "import_module"))
 
 # Every other place a core module imports by a string, one row per reference: the file relative to
 # `src/stayfixed/`, the innermost function, and the name it reaches. Held as a multiset and by
@@ -822,51 +835,228 @@ DISCOVERY_MODULE = "areas.py"
 DYNAMIC_IMPORTERS = (("profiles/hints.py", "_hint", "import_module"),)
 
 
+# The nodes that open a scope of their own, by Python's rules: a function, a lambda, a class body
+# and a comprehension.
+_FUNCTION_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+_SCOPES = (*_FUNCTION_SCOPES, ast.ClassDef, *_COMPREHENSIONS)
+# The scopes Python looks a name up in at run time, in the namespace and then in the builtins.
+_RUN_TIME_SCOPES = (ast.Module, ast.ClassDef)
+
+_Chain = Sequence[tuple[ast.AST, tuple[set[str], set[str], set[str]]]]
+
+
+def _scope_parts(node: ast.AST) -> tuple[list[ast.AST], list[ast.AST]]:
+    """A scope node's children split by where Python evaluates them: in the enclosing scope (a
+    function's decorators, type parameters, defaults and annotations, a class's decorators, type
+    parameters and bases, a comprehension's first iterable) and in the scope the node opens (the
+    body, a comprehension's targets and the rest). Type parameters are read through `getattr`,
+    since the 3.11 syntax tree has none."""
+    if isinstance(node, _FUNCTION_SCOPES):
+        args = node.args
+        every = [*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg]
+        outer: list[ast.AST] = [*args.defaults, *(d for d in args.kw_defaults if d is not None)]
+        outer += [a.annotation for a in every if a is not None and a.annotation is not None]
+        if isinstance(node, ast.Lambda):
+            return outer, [node.body]
+        outer += [*node.decorator_list, *getattr(node, "type_params", [])]
+        outer += [node.returns] if node.returns else []
+        return outer, list(node.body)
+    if isinstance(node, ast.ClassDef):
+        outer = [*node.decorator_list, *getattr(node, "type_params", [])]
+        return [*outer, *node.bases, *node.keywords], list(node.body)
+    if isinstance(node, _COMPREHENSIONS):
+        first, *rest = node.generators
+        results = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+        return [first.iter], [first.target, *first.ifs, *rest, *results]
+    return [], list(ast.iter_child_nodes(node))
+
+
+def _bound_name(node: ast.AST) -> str | None:
+    """The name `node` binds, an import aside: a name stored or deleted, a `def` or `class` name,
+    or an `except … as` or `match` capture."""
+    if isinstance(node, ast.Name) and type(node.ctx) is not ast.Load:
+        return node.id
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name
+    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+        return node.name
+    if isinstance(node, ast.MatchMapping):
+        return node.rest
+    return None
+
+
+def _scope_bindings(node: ast.AST) -> tuple[set[str], set[str], set[str]]:
+    """The names that hide a builtin throughout the scope `node` opens, and those it declares
+    `global` and `nonlocal`.
+
+    A function's names are fixed when it is compiled, so every name it binds hides there: its
+    parameters, each `_bound_name` in its own body, an import from any module but `builtins`, and
+    a walrus target in a comprehension inside it, which Python binds in the function. A
+    comprehension hides only its own iteration variables. A module or a class body is looked up at
+    run time, where a binding may not have run, may have been deleted, or may be the builtin
+    itself (`exec = exec`), so only an import hides there. What a nested scope binds is that
+    scope's own."""
+    bound: set[str] = set()
+    imported: set[str] = set()
+    if isinstance(node, _FUNCTION_SCOPES):
+        args = node.args
+        every = [*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg]
+        bound |= {a.arg for a in every if a is not None}
+    declared_global: set[str] = set()
+    declared_nonlocal: set[str] = set()
+    # Each part with whether it sits in a comprehension nested in this scope, where only a walrus
+    # binds a name of this scope's.
+    pending = [(part, False) for part in _scope_parts(node)[1]]
+    while pending:
+        child, nested = pending.pop()
+        if isinstance(child, ast.NamedExpr):
+            if not isinstance(node, _COMPREHENSIONS):
+                bound.add(child.target.id)
+            pending.append((child.value, nested))
+            continue
+        name = None if nested else _bound_name(child)
+        if name is not None:
+            bound.add(name)
+        elif isinstance(child, ast.Global):
+            declared_global |= set(child.names)
+        elif isinstance(child, ast.Nonlocal):
+            declared_nonlocal |= set(child.names)
+        elif isinstance(child, ast.Import):
+            imported |= {
+                alias.asname or alias.name.split(".")[0]
+                for alias in child.names
+                if alias.name != "builtins"
+            }
+        elif isinstance(child, ast.ImportFrom) and child.module != "builtins":
+            imported |= {alias.asname or alias.name for alias in child.names}
+        if isinstance(child, _SCOPES):
+            outer, inner = _scope_parts(child)
+            pending += [(part, nested) for part in outer]
+            if isinstance(child, _COMPREHENSIONS):
+                pending += [(part, True) for part in inner]
+        else:
+            pending += [(part, nested) for part in ast.iter_child_nodes(child)]
+    hiding = imported if isinstance(node, _RUN_TIME_SCOPES) else bound | imported
+    return hiding - declared_global - declared_nonlocal, declared_global, declared_nonlocal
+
+
+def _shadowed(name: str, chain: _Chain) -> bool:
+    """Whether `name`, read in the innermost scope of `chain` (the module first), resolves to a
+    binding of the file's rather than to the builtin: Python's own lookup, the innermost scope
+    outward, past every enclosing class body, which a nested scope does not see, and through a
+    `global` straight to the module, where only an import hides (`_scope_bindings`)."""
+    for depth, (node, (bound, declared_global, _)) in enumerate(reversed(chain)):
+        if depth and isinstance(node, ast.ClassDef):
+            continue
+        if name in declared_global:
+            return name in chain[0][1][0]
+        if name in bound:
+            return True
+    return False
+
+
+def _binds_at_run_time(name: str, chain: _Chain, *, walrus: bool) -> bool:
+    """Whether a binding of `name` made in the innermost scope of `chain` lands in a module or a
+    class body, which Python looks up at run time: made there, made in a function under `global`,
+    or a walrus target in a comprehension, which binds in the nearest scope around it that is not
+    a comprehension."""
+    depth = len(chain) - 1
+    while walrus and isinstance(chain[depth][0], _COMPREHENSIONS):
+        depth -= 1
+    node, (_, declared_global, _) = chain[depth]
+    return isinstance(node, _RUN_TIME_SCOPES) or name in declared_global
+
+
 def _dynamic_imports(tree: ast.AST) -> list[tuple[str, str]]:
     """Every reference in `tree` to a `DYNAMIC_IMPORTS` or `TEXT_RUNNERS` name, as `(function,
     name)`, `function` being the innermost enclosing `def` or `<module>`.
 
     Read as: a `DYNAMIC_IMPORTS` name as an attribute of anything (`importlib.import_module`,
-    `builtins.__import__`, `sys.meta_path`, `module.__spec__`); either kind by its bare name, and
-    by any name a `from … import` binds one to, under its alias, with that `from` statement itself
-    and a `from importlib import *`; a `TEXT_RUNNERS` name as a whole string constant, which is how
-    `getattr(builtins, "exec")` spells it; and a `DYNAMIC_IMPORTS` name anywhere inside a string
-    constant, which covers `getattr(importlib, "import_module")` and a string annotation that
-    `typing.get_type_hints` would evaluate.
+    `builtins.__import__`, `sys.meta_path`, `module.__spec__`), by its bare name, by any name a
+    `from … import` binds it to, and anywhere inside a string constant that is not a docstring,
+    which covers `getattr(importlib, "import_module")` and a string annotation that
+    `typing.get_type_hints` would evaluate; a `TEXT_RUNNERS` name by its bare name unless it
+    resolves, by Python's scoping (`_shadowed`), to a binding that hides it (`_scope_bindings`: a
+    function's local or parameter, a comprehension's variable, or an import from any module but
+    `builtins`), by any name `from builtins import` binds it to (`from` any module, for
+    `__builtins__`, which is also read as an attribute of anything), as a whole string constant,
+    which is how `getattr(builtins, "exec")` spells it, and as a binding that lands in a module or a
+    class body (`exec = exec`, `del exec`, `def breakpoint`, a walrus in a module-level
+    comprehension), which Python looks up at run time. The `from` statement itself is a row: of any
+    module for a `DYNAMIC_IMPORTS` name or `__builtins__`, of `builtins` for another `TEXT_RUNNERS`
+    one, and `from importlib import *`.
     """
-    names = DYNAMIC_IMPORTS | TEXT_RUNNERS
-    bound = set(names) | {
+
+    def binds(node: ast.ImportFrom, names: frozenset[str]) -> list[ast.alias]:
+        if names is TEXT_RUNNERS and node.module != "builtins":
+            return [alias for alias in node.names if alias.name == "__builtins__"]
+        return [alias for alias in node.names if alias.name in names]
+
+    bound = set(DYNAMIC_IMPORTS) | {
         alias.asname or alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-        if alias.name in names
+        for names in (DYNAMIC_IMPORTS, TEXT_RUNNERS)
+        for alias in binds(node, names)
     }
+    walrus = {id(node.target) for node in ast.walk(tree) if isinstance(node, ast.NamedExpr)}
     found: list[tuple[str, str]] = []
 
-    def visit(node: ast.AST, function: str) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.Attribute) and child.attr in DYNAMIC_IMPORTS:
-                found.append((function, child.attr))
-            elif isinstance(child, ast.Name) and child.id in bound:
-                found.append((function, child.id))
-            elif isinstance(child, ast.Constant) and isinstance(child.value, str):
-                if child.value in TEXT_RUNNERS:
-                    found.append((function, child.value))
-                found.extend(
-                    (function, name) for name in sorted(DYNAMIC_IMPORTS) if name in child.value
-                )
-            elif isinstance(child, ast.ImportFrom) and (
-                any(alias.name in names for alias in child.names)
-                or (child.module == "importlib" and any(a.name == "*" for a in child.names))
-            ):
-                found.append((function, f"from {child.module} import"))
-            inner = function
+    def read(child: ast.AST, function: str, chain: _Chain) -> None:
+        if (
+            isinstance(child, ast.Expr)
+            and isinstance(child.value, ast.Constant)
+            and isinstance(child.value.value, str)
+        ):
+            return  # a docstring, or a string standing alone as a statement, which is prose
+        if isinstance(child, ast.Attribute) and (
+            child.attr in DYNAMIC_IMPORTS or child.attr == "__builtins__"
+        ):
+            found.append((function, child.attr))
+        elif isinstance(child, ast.Name) and (
+            child.id in bound
+            or (
+                child.id in TEXT_RUNNERS
+                and type(child.ctx) is ast.Load
+                and not _shadowed(child.id, chain)
+            )
+        ):
+            found.append((function, child.id))
+        elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+            if child.value in TEXT_RUNNERS:
+                found.append((function, child.value))
+            found.extend(
+                (function, name) for name in sorted(DYNAMIC_IMPORTS) if name in child.value
+            )
+        elif isinstance(child, ast.ImportFrom) and (
+            binds(child, DYNAMIC_IMPORTS)
+            or binds(child, TEXT_RUNNERS)
+            or (child.module == "importlib" and any(a.name == "*" for a in child.names))
+        ):
+            found.append((function, f"from {child.module} import"))
+        elif (
+            (binding := _bound_name(child)) is not None
+            and binding in TEXT_RUNNERS
+            and _binds_at_run_time(binding, chain, walrus=id(child) in walrus)
+        ):
+            found.append((function, binding))
+        if isinstance(child, _SCOPES):
+            outer, inner = _scope_parts(child)
+            name = function
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                inner = child.name
-            visit(child, inner)
+                name = child.name
+            for part in outer:
+                read(part, function, chain)
+            for part in inner:
+                read(part, name, [*chain, (child, _scope_bindings(child))])
+        else:
+            for part in ast.iter_child_nodes(child):
+                read(part, function, chain)
 
-    visit(tree, "<module>")
+    module: _Chain = [(tree, _scope_bindings(tree))]
+    for part in ast.iter_child_nodes(tree):
+        read(part, "<module>", module)
     return found
 
 
@@ -906,30 +1096,37 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
             discovery += found
         else:
             rows += [(where, function, name) for function, name in found]
-    # The walk reads discovery's own `importlib.import_module`, so a reader that stopped seeing
-    # the spelling the pardon is written in cannot keep the equality below green by finding nothing.
-    assert ("area_modules", "import_module") in discovery, discovery
+    # Discovery's exemption is its two `importlib.import_module` calls and nothing else, so an
+    # `exec` or a `sys.meta_path` read in `areas.py` is caught like one anywhere else, and a reader
+    # that stopped seeing the spelling the pardon is written in cannot pass by finding nothing.
+    assert Counter(discovery) == Counter(DISCOVERY_READS), discovery
     found_rows, pinned = Counter(rows), Counter(DYNAMIC_IMPORTERS)
     assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
 
 
 # The standard library modules a core module may import with no row, by name or as a package whose
 # submodules are all allowed: the 34 the core imports today, each one whose public functions import
-# no module named by a string or run code built from text. Every other module is the machinery:
-# a core import of one is a row of `MACHINERY_IMPORTERS` below, with what the file reaches in it.
+# no module named by a string and run no code built from text but through a name the rule above
+# reads (`sys.breakpointhook`, `typing.get_type_hints` of a string spelling `__import__`). Every
+# other module is the machinery: a core import of one is a row of `MACHINERY_IMPORTERS` below, with
+# what the file reaches in it.
 # Read the other way round, a deny-list of the modules that can import by a string stayed open to
 # every one nobody had measured yet (`timeit`, `xml.dom.pulldom`'s `xml.sax`, `inspect`'s
 # `importlib`, `builtins`). `importlib` and `pkgutil` are not on the list: discovery imports through
-# them, and their rows say what each file reaches. `urllib` is allowed as `urllib.parse` alone.
+# them, and their rows say what each file reaches. `urllib` is listed as `urllib.parse`: an import
+# of any other submodule of it is a row, while a read off the `urllib` that `import urllib.parse`
+# binds is not judged, since no read off an allowed import is (an attribute chain, below).
 #
 # This rule and the name rule above are a tripwire, not a proof: they read import statements and a
 # list of names, so they catch a crossing written the ordinary way and prove nothing about one
 # written to hide. What they cannot read: an attribute chain through an allowed module
 # (`dataclasses.inspect.importlib`, `typing.sys.modules`), a module already in `sys.modules`, a
-# loader or a finder reached by a computed name (`getattr(sys, "meta" + "_path")`), code built from
-# text at run time, and a string an allowed module evaluates (`typing.get_type_hints` of an
-# annotation built at run time). `test_in_isolation_no_core_module_loads_a_delivery_area` sees what
-# loads at import time and nothing a function does later.
+# loader or a finder reached by a computed name (`getattr(sys, "meta" + "_path")`), an import in a
+# module or a class body that fails and is caught, which hides a builtin the name rule then takes
+# for the file's own, code built from text at run time, and a string an allowed module evaluates
+# (`typing.get_type_hints` of an annotation built at run time).
+# `test_in_isolation_no_core_module_loads_a_delivery_area` sees what loads at import time and
+# nothing a function does later.
 STANDARD_IMPORTS = frozenset(
     {
         "__future__",
@@ -1005,8 +1202,8 @@ def _attribute_path(node: ast.AST, parents: dict[int, ast.AST]) -> tuple[str, as
     return ".".join(path) or "<value>", node
 
 
-def _within(module: str, doors: Iterable[str]) -> bool:
-    return any(module == door or module.startswith(f"{door}.") for door in doors)
+def _within(module: str, listed: Iterable[str]) -> bool:
+    return any(module == entry or module.startswith(f"{entry}.") for entry in listed)
 
 
 def _reads_data(dotted: str, node: ast.AST, parents: dict[int, ast.AST], rebound: bool) -> bool:
@@ -1071,6 +1268,8 @@ def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
                 found.append((node.module, frozenset(names)))
         elif isinstance(node, ast.Import):
             for alias in node.names:
+                # An allowed import is no row, and nothing read off the name it binds is judged:
+                # `import urllib.parse` binds `urllib`, and `urllib.request` read off it passes.
                 if allowed(alias.name):
                     continue
                 bound = alias.asname or alias.name.split(".")[0]
@@ -1379,11 +1578,25 @@ def test_the_string_import_rules_read_every_spelling() -> None:
     # The walks above can only show the rules holding for the spellings the tree carries, so they
     # are put in front of the ones it does not. Measured by hand: reading `from importlib import`
     # aliases no more reddens the first assertion, dropping the string-constant arm the second,
-    # dropping the attribute arm of `_discovery_references` the third and the fourth, and reading
-    # a call of any function as an ask the fourth. In the last, dropping the attribute arm of
+    # dropping the attribute arm of `_discovery_references` the third and the fourth, and reading a
+    # call of any function as an ask the fourth. In the last, dropping the attribute arm of
     # `_dynamic_imports`, any one of its names, the bare reading of `TEXT_RUNNERS`, their whole
-    # constant arm, the substring arm, or reading `from` statements of `importlib` alone each
-    # reddens it.
+    # constant arm, the substring arm, reading `from` statements of `importlib` alone, or reading
+    # `__builtins__` as no attribute or in a `from` of `builtins` alone each reddens it. In `quiet`,
+    # reading docstrings, reading a `TEXT_RUNNERS` `from` of any module, or reading a name the file
+    # binds itself (a local, a parameter, an import) each reddens it. In `scoped`, hiding a builtin
+    # wherever the file binds its name, letting a class body be seen by its methods, not following
+    # `global`, letting a `global` alone hide the builtin, giving a comprehension no scope, binding
+    # no parameter, reading a store as a use, or reading a function's annotations in its own scope
+    # each reddens it. In `generic`, on 3.12 and later, leaving a function's or a class's type
+    # parameters unread reddens it. Mutations (declared): `mutations/`'s "the name rule hides a
+    # builtin across the whole file again", "a module or a class body hides a builtin by any binding
+    # again", "a binding of a text runner in a module or a class body is no row", "a function's
+    # store of a text runner under global is no row", "a walrus in a comprehension binds in the
+    # comprehension", "a walrus target is taken to land in its comprehension", "import builtins
+    # under a text runner's name hides the builtin", "a function's type parameters are not read", "a
+    # class's type parameters are not read", "__builtins__ read off another module is no row" and "a
+    # from of __builtins__ out of another module is no row".
     aliased = "from importlib import import_module as load\ndef f():\n    load('x')\n"
     assert _dynamic_imports(ast.parse(aliased)) == [
         ("<module>", "from importlib import"),
@@ -1420,18 +1633,77 @@ def test_the_string_import_rules_read_every_spelling() -> None:
         "    sys.meta_path\n    m.__loader__\n    getattr(importlib, 'import_module')\n"
         "exec(text)\ngetattr(builtins, 'eval')\nfrom builtins import compile as c\nbreakpoint()\n"
         "__builtins__\nre.compile('x')\nfrom sys import path_hooks\nsys.path_importer_cache\n"
+        "sys.breakpointhook(None, None)\nsys.__breakpointhook__\n"
+        "json.__builtins__\nfrom re import __builtins__ as b\nb\n"
     )
     assert sorted(_dynamic_imports(ast.parse(texts))) == [
+        ("<module>", "__breakpointhook__"),
         ("<module>", "__builtins__"),
+        ("<module>", "__builtins__"),
+        ("<module>", "__import__"),
+        ("<module>", "b"),
         ("<module>", "breakpoint"),
+        ("<module>", "breakpointhook"),
         ("<module>", "eval"),
         ("<module>", "exec"),
         ("<module>", "from builtins import"),
+        ("<module>", "from re import"),
         ("<module>", "from sys import"),
         ("<module>", "path_importer_cache"),
-        ("f", "__import__"),
         ("f", "__loader__"),
         ("f", "__spec__"),
         ("f", "import_module"),
         ("f", "meta_path"),
     ]
+    # Prose and a name of the file's own are not the builtin: a docstring naming a finder, a
+    # `compile` imported from another module under its name or an alias, and a parameter or a
+    # local named after a builtin that runs text.
+    quiet = (
+        '"""Names no finder on sys.meta_path."""\n'
+        "from re import compile as _c\n_R = _c('x')\nfrom re import compile\ncompile('y')\n"
+        "def f(eval):\n    exec = 1\n    return eval, exec\n"
+    )
+    assert _dynamic_imports(ast.parse(quiet)) == []
+    # A function's binding hides a builtin in that function and the scopes it encloses, never
+    # beyond: the builtin read in another function, beside a comprehension's variable, in a method
+    # beside a class attribute, or after another function's `global` names it, is still the
+    # builtin, while a nested function reading its enclosing function's parameter, and a function
+    # reading what a walrus in its comprehension bound, read the file's own. A binding that lands
+    # in a module or a class body is a row of its own and hides nothing, since Python looks it up
+    # at run time: a class attribute, a store under `global`, `__builtins__ = {}`, `exec = exec`
+    # and a walrus in a module-level comprehension. `import builtins` under the name hides nothing.
+    scoped = (
+        "def g(exec):\n    return exec\nexec('x')\n"
+        "_ = [0 for eval in ()]\ndef h():\n    return eval('x')\n"
+        "class K:\n    compile = len\n    def m(self):\n        return compile('x')\n"
+        "def r():\n    global breakpoint\n    breakpoint = print\ndef s():\n    breakpoint()\n"
+        "def outer(compile):\n    def inner():\n        return compile\n    return inner\n"
+        "__builtins__ = {}\ndef t():\n    return __builtins__\n"
+        "def u(exec):\n    def v():\n        global exec\n        return exec('x')\n    return v\n"
+        "exec = exec\n_ = [(eval := e) for e in ()]\n"
+        "def w():\n    _ = [(compile := c) for c in ()]\n    return compile('x')\n"
+        "import builtins as breakpoint\nbreakpoint.exec('x')\n"
+    )
+    assert sorted(_dynamic_imports(ast.parse(scoped))) == [
+        ("<module>", "__builtins__"),
+        ("<module>", "breakpoint"),
+        ("<module>", "compile"),
+        ("<module>", "eval"),
+        ("<module>", "exec"),
+        ("<module>", "exec"),
+        ("<module>", "exec"),
+        ("h", "eval"),
+        ("m", "compile"),
+        ("r", "breakpoint"),
+        ("s", "breakpoint"),
+        ("t", "__builtins__"),
+        ("v", "exec"),
+    ]
+    # Type parameters are evaluated around the `def` or `class` they belong to. The syntax is
+    # 3.12's, so this case is parsed from text there and has nothing to read on 3.11.
+    if sys.version_info >= (3, 12):
+        generic = "def f[T: exec('x')]():\n    pass\nclass C[T: __import__('x')]:\n    pass\n"
+        assert _dynamic_imports(ast.parse(generic)) == [
+            ("<module>", "exec"),
+            ("<module>", "__import__"),
+        ]

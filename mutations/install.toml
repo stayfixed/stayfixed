@@ -3396,3 +3396,19 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
         return getattr(builtins, "__imp" + "ort__")("stayfixed.memory.store")'''
 reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# `sys.breakpointhook` imports whatever `PYTHONBREAKPOINT` names, and `sys` is on the core's list, so
+# the name rule reads the hook by its name.
+[[mutation]]
+name = "a core function hands an import to sys.breakpointhook"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import sys
+
+        return sys.breakpointhook()'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]

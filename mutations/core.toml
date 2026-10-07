@@ -2234,6 +2234,18 @@ reddens = [
   "tests/test_outbound.py::test_no_module_imports_a_network_or_native_module",
 ]
 
+# Discovery is exempt from the name rule for its two imports by name and nothing else, so it may
+# not run text, read a finder or reach a loader the way no other core module may.
+[[mutation]]
+name = "discovery runs text beside its two imports by name"
+file = "src/stayfixed/areas.py"
+before = "    return [importlib.import_module(name) for name in _qualified(submodule)]"
+after = """    def _load() -> None:
+        exec("import stayfixed.memory.store")
+
+    return [importlib.import_module(name) for name in _qualified(submodule)]"""
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
 # Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
 # it is for walks every area through it, the private layer's included.
 [[mutation]]

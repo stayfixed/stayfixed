@@ -2318,3 +2318,100 @@ file = "tests/hooks/test_wrapper.py"
 before = "        \"closed\",\n        \"--version\",\n        plugin_root=ROOT,"
 after = "        \"closed\",\n        \"memory\",\n        plugin_root=ROOT,"
 reddens = ["tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home"]
+
+# A name a scope binds hides the builtin of that name there and in the scopes it encloses, never
+# beyond: a parameter named `exec` in one function left every `exec(...)` in the file unread.
+[[mutation]]
+name = "the name rule hides a builtin across the whole file again"
+file = "tests/test_areas.py"
+before = "                and not _shadowed(child.id, chain)"
+after = """                and not any(
+                    child.id in _scope_bindings(scope)[0]
+                    for scope in [tree, *(n for n in ast.walk(tree) if isinstance(n, _SCOPES))]
+                )"""
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# A module or a class body is looked up at run time, so a binding there can be unrun, deleted or
+# the builtin itself (`exec = exec`); only an import hides the builtin there.
+[[mutation]]
+name = "a module or a class body hides a builtin by any binding again"
+file = "tests/test_areas.py"
+before = "    hiding = imported if isinstance(node, _RUN_TIME_SCOPES) else bound | imported"
+after = "    hiding = bound | imported"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# A binding of a builtin that runs text, made in a module or a class body, is a row to pin or
+# rename; unread, `exec = exec` at module level reaches the builtin with no row.
+[[mutation]]
+name = "a binding of a text runner in a module or a class body is no row"
+file = "tests/test_areas.py"
+before = "            and _binds_at_run_time(binding, chain, walrus=id(child) in walrus)"
+after = "            and False"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# A function's store under `global` binds the module's name, which is looked up at run time.
+[[mutation]]
+name = "a function's store of a text runner under global is no row"
+file = "tests/test_areas.py"
+before = "    return isinstance(node, _RUN_TIME_SCOPES) or name in declared_global"
+after = "    return isinstance(node, _RUN_TIME_SCOPES)"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# A walrus target in a comprehension binds in the scope around it, not in the comprehension.
+[[mutation]]
+name = "a walrus in a comprehension binds in the comprehension"
+file = "tests/test_areas.py"
+before = "            if not isinstance(node, _COMPREHENSIONS):"
+after = "            if isinstance(node, _COMPREHENSIONS):"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# A walrus in a module-level comprehension binds the module's name, which is a row.
+[[mutation]]
+name = "a walrus target is taken to land in its comprehension"
+file = "tests/test_areas.py"
+before = "    while walrus and isinstance(chain[depth][0], _COMPREHENSIONS):"
+after = "    while False:"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# `import builtins as exec` binds the module of builtins under the name, not something of the
+# file's own.
+[[mutation]]
+name = "import builtins under a text runner's name hides the builtin"
+file = "tests/test_areas.py"
+before = '                if alias.name != "builtins"'
+after = "                if alias.name"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# Type parameters are evaluated around their `def` or `class`; unread, `def f[T: exec(...)]()` is
+# no row. The case is parsed on 3.12 and later, which the oracle runs on.
+[[mutation]]
+name = "a function's type parameters are not read"
+file = "tests/test_areas.py"
+before = '        outer += [*node.decorator_list, *getattr(node, "type_params", [])]'
+after = "        outer += [*node.decorator_list]"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+[[mutation]]
+name = "a class's type parameters are not read"
+file = "tests/test_areas.py"
+before = '        outer = [*node.decorator_list, *getattr(node, "type_params", [])]'
+after = "        outer = [*node.decorator_list]"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# Every module carries `__builtins__`, so `json.__builtins__` hands over `__import__` by a computed
+# name as the bare name does.
+[[mutation]]
+name = "__builtins__ read off another module is no row"
+file = "tests/test_areas.py"
+before = '            child.attr in DYNAMIC_IMPORTS or child.attr == "__builtins__"'
+after = "            child.attr in DYNAMIC_IMPORTS"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# `from json import __builtins__ as b` binds the builtins under any name; the `from` and the name
+# are rows whatever module it is taken out of.
+[[mutation]]
+name = "a from of __builtins__ out of another module is no row"
+file = "tests/test_areas.py"
+before = '            return [alias for alias in node.names if alias.name == "__builtins__"]'
+after = "            return []"
+reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
