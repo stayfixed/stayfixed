@@ -783,9 +783,27 @@ def test_the_delivery_rule_judges_the_importer_and_the_imported() -> None:
     ) == [("setup/run.py", "stayfixed.overlay.api", frozenset({"create", "target_root"}))]
 
 
-# The two names through which a module is imported from a string rather than by a statement, which
-# the delivery rule above reads no more than discovery's caller does.
-DYNAMIC_IMPORTS = frozenset({"import_module", "__import__"})
+# The names through which a module is loaded without an import statement of its own, which the
+# delivery rule above reads no more than discovery's caller does: `import_module` and `__import__`
+# import by a string, and a module's own `__spec__` and `__loader__` and the finders on `sys`'s
+# `meta_path`, `path_hooks` and `path_importer_cache` load a module by its file with no import at
+# all. Each is read as an attribute of anything, as a bare name and inside a string constant.
+DYNAMIC_IMPORTS = frozenset(
+    {
+        "__import__",
+        "__loader__",
+        "__spec__",
+        "import_module",
+        "meta_path",
+        "path_hooks",
+        "path_importer_cache",
+    }
+)
+# The builtins that run code built from text, and the module that holds every builtin, which hands
+# `__import__` over by a computed name. Read as a bare name and as a whole string constant only:
+# as an attribute, `compile` is `re.compile`, and `builtins.exec` needs `builtins`, which the
+# machinery rule below holds.
+TEXT_RUNNERS = frozenset({"__builtins__", "breakpoint", "compile", "eval", "exec"})
 
 # The one core module whose job is importing modules by name: discovery, which imports
 # `stayfixed.<area>.<submodule>` for the submodules `area_modules` is called with (held below), and
@@ -805,21 +823,24 @@ DYNAMIC_IMPORTERS = (("profiles/hints.py", "_hint", "import_module"),)
 
 
 def _dynamic_imports(tree: ast.AST) -> list[tuple[str, str]]:
-    """Every reference in `tree` to `importlib.import_module` or `__import__`, as `(function,
+    """Every reference in `tree` to a `DYNAMIC_IMPORTS` or `TEXT_RUNNERS` name, as `(function,
     name)`, `function` being the innermost enclosing `def` or `<module>`.
 
-    Read as: either name as an attribute of anything (`importlib.import_module`, the same through
-    an alias of `importlib`, `builtins.__import__`), `__import__` by its bare name, any name a
-    `from importlib import` binds either to, under its alias, that `from` statement itself and a
-    `from importlib import *`, and either name as a string constant, which is how
-    `getattr(importlib, "import_module")` spells it.
+    Read as: a `DYNAMIC_IMPORTS` name as an attribute of anything (`importlib.import_module`,
+    `builtins.__import__`, `sys.meta_path`, `module.__spec__`); either kind by its bare name, and
+    by any name a `from … import` binds one to, under its alias, with that `from` statement itself
+    and a `from importlib import *`; a `TEXT_RUNNERS` name as a whole string constant, which is how
+    `getattr(builtins, "exec")` spells it; and a `DYNAMIC_IMPORTS` name anywhere inside a string
+    constant, which covers `getattr(importlib, "import_module")` and a string annotation that
+    `typing.get_type_hints` would evaluate.
     """
-    bound = {"__import__"} | {
+    names = DYNAMIC_IMPORTS | TEXT_RUNNERS
+    bound = set(names) | {
         alias.asname or alias.name
         for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "importlib"
+        if isinstance(node, ast.ImportFrom)
         for alias in node.names
-        if alias.name in DYNAMIC_IMPORTS
+        if alias.name in names
     }
     found: list[tuple[str, str]] = []
 
@@ -829,14 +850,17 @@ def _dynamic_imports(tree: ast.AST) -> list[tuple[str, str]]:
                 found.append((function, child.attr))
             elif isinstance(child, ast.Name) and child.id in bound:
                 found.append((function, child.id))
-            elif isinstance(child, ast.Constant) and child.value in DYNAMIC_IMPORTS:
-                found.append((function, str(child.value)))
-            elif (
-                isinstance(child, ast.ImportFrom)
-                and child.module == "importlib"
-                and any(alias.name in DYNAMIC_IMPORTS | {"*"} for alias in child.names)
+            elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+                if child.value in TEXT_RUNNERS:
+                    found.append((function, child.value))
+                found.extend(
+                    (function, name) for name in sorted(DYNAMIC_IMPORTS) if name in child.value
+                )
+            elif isinstance(child, ast.ImportFrom) and (
+                any(alias.name in names for alias in child.names)
+                or (child.module == "importlib" and any(a.name == "*" for a in child.names))
             ):
-                found.append((function, "from importlib import"))
+                found.append((function, f"from {child.module} import"))
             inner = function
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = child.name
@@ -861,12 +885,18 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
     # `importlib.import_module("stayfixed.memory.store")` or `__import__(...)` in a core file
     # crossed into the private layer with every boundary test green. A string import in the core
     # is discovery's alone, and the one other one — profile discovery — is pinned with its reason.
-    # This reads the two names; the standard library's other ways to import by a string are held
-    # where they must be imported from, by `test_no_core_module_reaches_the_import_machinery_…`.
+    # So were a module's own loader (`type(__spec__.loader)(name, path).exec_module(module)`), a
+    # finder on `sys.meta_path`, and `exec` of a string that imports. This reads those names; the
+    # standard library's other ways to import by a string are held where they must be imported
+    # from, by `test_no_core_module_reaches_the_import_machinery_…`.
     #
     # Mutations (declared): `mutations/`'s "a core function imports the note store through
-    # importlib", "a core function imports the note store through __import__" and "a core function
-    # imports the note store through an alias of import_module".
+    # importlib", "a core function imports the note store through __import__", "a core function
+    # imports the note store through an alias of import_module", "a core function loads the note
+    # store through its own module's loader", "a core function loads the note store through a
+    # finder on sys.meta_path", "a core function imports the note store by running text", "a core
+    # function reaches __import__ through __builtins__" and "a core function's string annotation
+    # imports the note store".
     source = ROOT / "src" / "stayfixed"
     rows: list[tuple[str, str, str]] = []
     discovery: list[tuple[str, str]] = []
@@ -883,34 +913,59 @@ def test_no_core_module_imports_by_a_string_but_discovery() -> None:
     assert found_rows == pinned, {"unpinned": found_rows - pinned, "gone": pinned - found_rows}
 
 
-# The standard modules that import a module named by a string without either name the rule above
-# reads, each measured loading `stayfixed.memory.store` from one: `pkgutil.resolve_name`,
-# `importlib.util`'s `find_spec` and `module_from_spec` with a loader's `exec_module`,
-# `importlib.resources.files` handed a module's name, `runpy`'s `run_module` and `run_path`, a
-# `zipimporter`, `pydoc.locate`, an unpickler (`pickle`, `_pickle`, `shelve`'s values,
-# `multiprocessing.reduction`'s), the resolver behind `logging.config`'s `()` and `ext://` values,
-# `unittest`'s loader and `mock.patch`, `doctest`'s suites and `xml.sax.make_parser`; and `marshal`,
-# whose code objects import whatever they name once run. Reading every such function by name is a
-# list that grows with the standard library, so the rule below reads the door instead: which core
-# files import these modules at all, and what each reaches in them. What no rule here reads is code
-# built from text (`exec`, `eval`, `compile` and the modules that run a string of source) and a
-# module reached through `sys.modules`.
-MACHINERY = frozenset(
+# The standard library modules a core module may import with no row, by name or as a package whose
+# submodules are all allowed: the 34 the core imports today, each one whose public functions import
+# no module named by a string or run code built from text. Every other module is the machinery:
+# a core import of one is a row of `MACHINERY_IMPORTERS` below, with what the file reaches in it.
+# Read the other way round, a deny-list of the modules that can import by a string stayed open to
+# every one nobody had measured yet (`timeit`, `xml.dom.pulldom`'s `xml.sax`, `inspect`'s
+# `importlib`, `builtins`). `importlib` and `pkgutil` are not on the list: discovery imports through
+# them, and their rows say what each file reaches. `urllib` is allowed as `urllib.parse` alone.
+#
+# This rule and the name rule above are a tripwire, not a proof: they read import statements and a
+# list of names, so they catch a crossing written the ordinary way and prove nothing about one
+# written to hide. What they cannot read: an attribute chain through an allowed module
+# (`dataclasses.inspect.importlib`, `typing.sys.modules`), a module already in `sys.modules`, a
+# loader or a finder reached by a computed name (`getattr(sys, "meta" + "_path")`), code built from
+# text at run time, and a string an allowed module evaluates (`typing.get_type_hints` of an
+# annotation built at run time). `test_in_isolation_no_core_module_loads_a_delivery_area` sees what
+# loads at import time and nothing a function does later.
+STANDARD_IMPORTS = frozenset(
     {
-        "_pickle",
-        "doctest",
-        "importlib",
-        "logging.config",
-        "marshal",
-        "multiprocessing",
-        "pickle",
-        "pkgutil",
-        "pydoc",
-        "runpy",
-        "shelve",
-        "unittest",
-        "xml.sax",
-        "zipimport",
+        "__future__",
+        "argparse",
+        "collections",
+        "configparser",
+        "contextlib",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "errno",
+        "functools",
+        "hashlib",
+        "io",
+        "itertools",
+        "json",
+        "os",
+        "pathlib",
+        "posixpath",
+        "pwd",
+        "re",
+        "shlex",
+        "shutil",
+        "signal",
+        "stat",
+        "string",
+        "struct",
+        "subprocess",
+        "sys",
+        "tempfile",
+        "time",
+        "tomllib",
+        "types",
+        "typing",
+        "urllib.parse",
     }
 )
 # `importlib.resources` reads package data, and imports a module only as the anchor `files` is
@@ -922,11 +977,11 @@ MACHINERY = frozenset(
 # functions that take an anchor of their own (`read_text`, `open_binary` …), is the machinery.
 RESOURCES = "importlib.resources"
 
-# Every core import of `MACHINERY`, one row per statement: the file relative to `src/stayfixed/`,
-# the module the statement names, and what the file reaches through it -- the names a `from`
-# statement takes, or each attribute path read off the name an `import` binds (`<value>` when the
-# name itself is handed on, where anything could be read off it). Held as a multiset and by
-# equality in both directions, as `DYNAMIC_IMPORTERS` is.
+# Every core import of a module off `STANDARD_IMPORTS`, one row per statement: the file relative
+# to `src/stayfixed/`, the module the statement names, and what the file reaches through it -- the
+# names a `from` statement takes, or each attribute path read off the name an `import` binds
+# (`<value>` when the name itself is handed on, where anything could be read off it). Held as a
+# multiset and by equality in both directions, as `DYNAMIC_IMPORTERS` is.
 MACHINERY_IMPORTERS = (
     # Discovery: imports `stayfixed.<area>.<submodule>` by name, and lists the areas.
     ("areas.py", "importlib", frozenset({"import_module"})),
@@ -972,13 +1027,12 @@ def _reads_data(dotted: str, node: ast.AST, parents: dict[int, ast.AST], rebound
 
 
 def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
-    """Every statement in `tree` that imports a `MACHINERY` module, as `(module, reach)`: for
-    `from m import a, b` the names taken, for `import m.n [as x]` every attribute path read off
-    the name it binds, anywhere in the file. A `RESOURCES` name, and `import` of it, counts only
-    for its reads `_reads_data` does not pass, and is no row when that leaves none. A statement
-    that imports the package a door sits in (`import logging`, `from logging import config`)
-    counts only for the door: the names that are one, and the reads that reach into one or hand
-    the package on."""
+    """Every statement in `tree` that imports a module neither `stayfixed`'s own nor on
+    `STANDARD_IMPORTS`, as `(module, reach)`: for `from m import a, b` the names taken that are not
+    allowed modules themselves (`from urllib import parse` takes none), for `import m.n [as x]`
+    every attribute path read off the name it binds, anywhere in the file. A `RESOURCES` name,
+    and an `import` of it, counts only for its reads `_reads_data` does not pass, and is no row
+    when that leaves none."""
     parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     # A module that binds `__package__` itself can point it at any module at all.
     rebound = any(
@@ -987,19 +1041,19 @@ def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
         for node in ast.walk(tree)
     )
 
-    def reached(bound: str, dotted: str, door: bool) -> set[str]:
-        """The reads off the name `bound`, which stands for `dotted`, past what imports nothing,
-        and only those into a door unless `dotted` is one."""
+    def reached(bound: str, dotted: str) -> set[str]:
+        """The reads off the name `bound`, which stands for `dotted`, past what imports nothing."""
         paths: set[str] = set()
         for name in ast.walk(tree):
             if isinstance(name, ast.Name) and name.id == bound:
                 path, outer = _attribute_path(name, parents)
                 full = dotted if path == "<value>" else f"{dotted}.{path}"
-                if not door and full != dotted and not _within(full, MACHINERY):
-                    continue
                 if not _reads_data(full, outer, parents, rebound):
                     paths.add(path)
         return paths
+
+    def allowed(module: str) -> bool:
+        return module.split(".")[0] == "stayfixed" or _within(module, STANDARD_IMPORTS)
 
     found: list[tuple[str, frozenset[str]]] = []
     for node in ast.walk(tree):
@@ -1007,46 +1061,46 @@ def _machinery_imports(tree: ast.AST) -> list[tuple[str, frozenset[str]]]:
             names: set[str] = set()
             for alias in node.names:
                 dotted = f"{node.module}.{alias.name}"
-                if not _within(node.module, MACHINERY) and not _within(dotted, MACHINERY):
+                if allowed(node.module) or allowed(dotted):
                     continue
                 data = alias.name != "*" and _within(dotted, {RESOURCES})
-                if data and not reached(alias.asname or alias.name, dotted, door=True):
+                if data and not reached(alias.asname or alias.name, dotted):
                     continue
                 names.add(alias.name)
             if names:
                 found.append((node.module, frozenset(names)))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                door = _within(alias.name, MACHINERY)
-                if not door and not any(d.startswith(f"{alias.name}.") for d in MACHINERY):
+                if allowed(alias.name):
                     continue
                 bound = alias.asname or alias.name.split(".")[0]
                 dotted = alias.name if alias.asname else bound
-                reach = reached(bound, dotted, door)
-                if reach or (door and not _within(alias.name, {RESOURCES})):
+                reach = reached(bound, dotted)
+                if reach or not _within(alias.name, {RESOURCES}):
                     found.append((alias.name, frozenset(reach)))
     return found
 
 
 def test_no_core_module_reaches_the_import_machinery_but_where_pinned() -> None:
-    # The rule above reads two names, and `pkgutil.resolve_name("stayfixed.memory.store")`, or
-    # `importlib.util.find_spec` and a loader's `exec_module`, in a core function crossed into the
-    # private layer with every boundary test green. So did `importlib.resources.files` handed the
-    # store's name, `pydoc.locate`, `pickle.loads` of a pickle naming it and `logging.config`'s
-    # resolver. So the core's imports of the modules that can import by name are pinned, each with
-    # what it reaches: a new importer is a new row, and a pinned importer reaching one more name
-    # changes its row. `importlib.resources` is no row while it only reads the package's own data.
-    # What stays unread is a module reached without an import statement of its own --
-    # `__import__`, which the rule above reads, or `sys.modules` -- and code built from text,
-    # which no rule here reads.
+    # The rule above reads a list of names, and `pkgutil.resolve_name("stayfixed.memory.store")`,
+    # `importlib.util.find_spec` and a loader's `exec_module`, `importlib.resources.files` handed
+    # the store's name, `pydoc.locate`, `pickle.loads`, `logging.config`'s resolver, `timeit` and
+    # `xml.sax.make_parser` each crossed into the private layer from a core function with every
+    # boundary test green. So the core imports the standard library from `STANDARD_IMPORTS` alone,
+    # and any other import is pinned with what it reaches: a new importer is a new row, and a
+    # pinned importer reaching one more name changes its row. `importlib.resources` is no row while
+    # it only reads the package's own data. What this cannot see is in the comment over
+    # `STANDARD_IMPORTS`: it is a tripwire, not a proof.
     #
     # Mutations (declared): `mutations/`'s "a core function imports the note store through
     # pkgutil.resolve_name", "profile discovery reaches importlib.util as well", "a core function
     # opens the note store's resources by its module name", "a core function opens the note
     # store's resources through files imported by name", "a core function imports the note store
     # through pydoc.locate", "a core function unpickles a reference to the note store", "a core
-    # function loads code through marshal" and "a core function resolves the note store through
-    # logging.config".
+    # function loads code through marshal", "a core function resolves the note store through
+    # logging.config", "a core function runs an import through timeit", "a core function reaches
+    # xml.sax through a sibling submodule's import" and "a core function takes __import__ from
+    # builtins by a computed name".
     source = ROOT / "src" / "stayfixed"
     rows = [
         (where, module, reach)
@@ -1161,34 +1215,59 @@ def test_the_machinery_rule_reads_every_spelling() -> None:
         ),
         pytest.param(
             "from logging import config, getLogger\n",
-            [("logging", frozenset({"config"}))],
-            id="logging-config-taken-from-its-package",
+            [("logging", frozenset({"config", "getLogger"}))],
+            id="logging-off-the-list",
         ),
-        pytest.param(
-            "import logging\nlogging.config.dictConfig({})\nlogging.getLogger('x')\n",
-            [("logging", frozenset({"config.dictConfig"}))],
-            id="logging-config-read-off-its-package",
-        ),
-        pytest.param("import logging\nlogging.getLogger('x')\n", [], id="logging-alone"),
         pytest.param(
             "from multiprocessing.reduction import ForkingPickler\n",
             [("multiprocessing.reduction", frozenset({"ForkingPickler"}))],
-            id="a-door-below-its-name",
+            id="a-submodule-off-the-list",
         ),
         pytest.param(
-            "from xml import etree, sax\n", [("xml", frozenset({"sax"}))], id="xml-sax-only"
+            "import xml.dom.pulldom\nxml.sax.make_parser(['x'])\n",
+            [("xml.dom.pulldom", frozenset({"sax.make_parser"}))],
+            id="a-sibling-read-off-the-package-an-import-binds",
+        ),
+        pytest.param(
+            "from xml.dom import pulldom\n", [("xml.dom", frozenset({"pulldom"}))], id="xml-dom"
+        ),
+        pytest.param(
+            "import timeit\ntimeit.timeit('x')\n", [("timeit", frozenset({"timeit"}))], id="timeit"
+        ),
+        pytest.param(
+            "import builtins\ngetattr(builtins, name)\n",
+            [("builtins", frozenset({"<value>"}))],
+            id="builtins",
+        ),
+        pytest.param(
+            "import inspect\ninspect.importlib\n",
+            [("inspect", frozenset({"importlib"}))],
+            id="inspect",
+        ),
+        pytest.param(
+            "import os.path\nfrom collections.abc import Mapping\nimport urllib.parse\n"
+            "from urllib import parse\nfrom os import path\nimport stayfixed.areas\n"
+            "from . import sibling\n",
+            [],
+            id="on-the-list-or-our-own",
+        ),
+        pytest.param(
+            "from urllib import parse, request\nimport urllib.request\n",
+            [("urllib", frozenset({"request"})), ("urllib.request", frozenset())],
+            id="a-package-allowed-in-part",
         ),
     ],
 )
-def test_the_machinery_rule_reads_resources_by_its_anchor_and_every_door(
+def test_the_machinery_rule_reads_resources_by_its_anchor_and_every_other_module(
     source: str, rows: list[tuple[str, frozenset[str]]]
 ) -> None:
     # `importlib.resources.files` imports the anchor it is handed when that names a module, so
     # it is data only on the package itself, and every other read of `importlib.resources` is a
-    # row. Each door is read through the package it sits in as well (`logging` for
-    # `logging.config`), for that door alone. Measured by hand: dropping the `rebound` check, the
-    # keyword check, the `abc` arm, the `RESOURCES` check of the `import` arm, the `not door`
-    # filter of `reached`, or the package-of-a-door arm of either statement each reddens a case.
+    # row. Every module off `STANDARD_IMPORTS` is a row, a submodule of an allowed package
+    # included, and nothing on it is. Measured by hand: dropping the `rebound` check, the keyword
+    # check, the `abc` arm, the `RESOURCES` check of the `import` arm, the `allowed` check of
+    # either statement, the dotted name's own check in the `from` arm, the `stayfixed` exemption,
+    # or reading the list by top-level name each reddens a case.
     assert _machinery_imports(ast.parse(source)) == rows
 
 
@@ -1211,21 +1290,30 @@ DISCOVERY_CALLERS = (
 )
 
 
-def _discovery_references(tree: ast.AST) -> list[ast.Name | ast.Attribute]:
-    """Every reference to a discovery function in `tree`: by any name a `from … import` binds it
+# A reader's own seam that hands back what discovery found, by the one module allowed to refer to
+# it: `cli.discover_registrars` returns every area's `register`, so any other module could pick one
+# area's out of it by `__module__` as it could out of `area_modules`. The doctor report's seam and
+# the hook registry's are private modules of their packages, which the surface rule already holds.
+DISCOVERY_SEAMS = {"discover_registrars": "cli.py"}
+
+
+def _discovery_references(
+    tree: ast.AST, functions: frozenset[str] = DISCOVERY_FUNCTIONS
+) -> list[ast.Name | ast.Attribute]:
+    """Every reference to one of `functions` in `tree`: by any name a `from … import` binds it
     to, and as an attribute of anything (`stayfixed.areas.area_modules`)."""
-    bound = set(DISCOVERY_FUNCTIONS) | {
+    bound = set(functions) | {
         alias.asname
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
-        if alias.name in DISCOVERY_FUNCTIONS and alias.asname
+        if alias.name in functions and alias.asname
     }
     return [
         node
         for node in ast.walk(tree)
         if (isinstance(node, ast.Name) and node.id in bound)
-        or (isinstance(node, ast.Attribute) and node.attr in DISCOVERY_FUNCTIONS)
+        or (isinstance(node, ast.Attribute) and node.attr in functions)
     ]
 
 
@@ -1259,10 +1347,12 @@ def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
     # has one, so a core caller asking for `"api"` loads every area's surface, the private layer's
     # included, through the one door the delivery rule leaves open. Every call under
     # `src/stayfixed/` names one of the three submodules discovery is for, as a literal, and is
-    # made by that submodule's reader alone (`DISCOVERY_CALLERS`).
+    # made by that submodule's reader alone (`DISCOVERY_CALLERS`). No module but its own refers to a
+    # reader's seam that hands discovery's answer on (`DISCOVERY_SEAMS`).
     #
-    # Mutations (declared): `mutations/`'s "a core module asks discovery for every area's api.py"
-    # and "a core module picks one area's commands out of discovery".
+    # Mutations (declared): `mutations/`'s "a core module asks discovery for every area's api.py",
+    # "a core module picks one area's commands out of discovery" and "a core module picks one
+    # area's commands out of the CLI frame's registrars".
     source = ROOT / "src" / "stayfixed"
     allowed = frozenset(name.removesuffix(".py") for name in DISCOVERED_SUBMODULES)
     offences: list[str] = []
@@ -1271,6 +1361,12 @@ def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
         where = path.relative_to(source).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
         offences += _area_module_offences(where, tree, allowed)
+        offences += [
+            f"{where}:{node.lineno}"
+            for seam, home in DISCOVERY_SEAMS.items()
+            if where != home
+            for node in _discovery_references(tree, frozenset({seam}))
+        ]
         asked += [(where, submodule) for submodule in _discovery_asks(tree, allowed).values()]
     assert offences == []
     # Each reader's call is a row, so a walk that stopped finding calls cannot pass by finding no
@@ -1284,7 +1380,10 @@ def test_the_string_import_rules_read_every_spelling() -> None:
     # are put in front of the ones it does not. Measured by hand: reading `from importlib import`
     # aliases no more reddens the first assertion, dropping the string-constant arm the second,
     # dropping the attribute arm of `_discovery_references` the third and the fourth, and reading
-    # a call of any function as an ask the fourth.
+    # a call of any function as an ask the fourth. In the last, dropping the attribute arm of
+    # `_dynamic_imports`, any one of its names, the bare reading of `TEXT_RUNNERS`, their whole
+    # constant arm, the substring arm, or reading `from` statements of `importlib` alone each
+    # reddens it.
     aliased = "from importlib import import_module as load\ndef f():\n    load('x')\n"
     assert _dynamic_imports(ast.parse(aliased)) == [
         ("<module>", "from importlib import"),
@@ -1310,3 +1409,29 @@ def test_the_string_import_rules_read_every_spelling() -> None:
         "from stayfixed.areas import area_imports as ask\nask('doctor')\nprint('hooks')\n"
     )
     assert sorted(_discovery_asks(ast.parse(asking), allowed).values()) == ["commands", "doctor"]
+    seams = (
+        "from stayfixed.cli import discover_registrars as found\nfound()\n"
+        "import stayfixed.cli\nstayfixed.cli.discover_registrars()\n"
+    )
+    seam = frozenset(DISCOVERY_SEAMS)
+    assert [node.lineno for node in _discovery_references(ast.parse(seams), seam)] == [2, 4]
+    texts = (
+        "def f(x: \"__import__('stayfixed.memory.store')\"):\n    type(__spec__.loader)\n"
+        "    sys.meta_path\n    m.__loader__\n    getattr(importlib, 'import_module')\n"
+        "exec(text)\ngetattr(builtins, 'eval')\nfrom builtins import compile as c\nbreakpoint()\n"
+        "__builtins__\nre.compile('x')\nfrom sys import path_hooks\nsys.path_importer_cache\n"
+    )
+    assert sorted(_dynamic_imports(ast.parse(texts))) == [
+        ("<module>", "__builtins__"),
+        ("<module>", "breakpoint"),
+        ("<module>", "eval"),
+        ("<module>", "exec"),
+        ("<module>", "from builtins import"),
+        ("<module>", "from sys import"),
+        ("<module>", "path_importer_cache"),
+        ("f", "__import__"),
+        ("f", "__loader__"),
+        ("f", "__spec__"),
+        ("f", "import_module"),
+        ("f", "meta_path"),
+    ]

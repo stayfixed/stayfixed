@@ -1302,3 +1302,18 @@ LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\
 reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
+
+# The CLI frame's seam hands on every area's `register`, which a module could pick one area's out
+# of by `__module__`, so no module but the frame refers to it.
+[[mutation]]
+name = "a core module picks one area's commands out of the CLI frame's registrars"
+file = "src/stayfixed/guards/hygiene.py"
+before = "def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"
+after = """def _memory_registrar() -> object:
+    from stayfixed.cli import discover_registrars
+
+    return [r for r in discover_registrars() if r.__module__ == "stayfixed.memory.commands"]
+
+
+def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"""
+reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]

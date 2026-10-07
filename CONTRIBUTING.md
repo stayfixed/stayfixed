@@ -151,18 +151,27 @@ whose import has gone alike. `scripts/` is repository tooling and stays under th
 alone.
 
 That rule reads import statements, so a module named to `importlib.import_module` is invisible to
-it, and two rules of their own hold that door. No core module but `areas.py` imports by a string
-through `importlib.import_module` or `__import__`, under any alias, except the profile discovery
-`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
-that can import by a string any other way (`MACHINERY` there: `importlib`, `pkgutil`, `runpy` and
-`zipimport`, and `pydoc`, the unpicklers, `marshal`, `logging.config`, `unittest`, `doctest` and
-`xml.sax`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
-`importlib.resources` is held too: `files` imports the anchor it is handed when that names a module,
-so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
-of it is the machinery like the rest.
+it, and two rules of their own in `tests/test_areas.py` hold that door. The first reads names: no
+core module but `areas.py` names `import_module` or `__import__`, a module's own `__spec__` or
+`__loader__`, the finders on `sys` (`meta_path`, `path_hooks`, `path_importer_cache`) or the
+builtins that run text (`exec`, `eval`, `compile`, `breakpoint`, `__builtins__`), under any alias,
+except the profile discovery `DYNAMIC_IMPORTERS` pins with its reason. The second reads imports:
+the core imports the standard library from the modules `STANDARD_IMPORTS` lists, none of which
+imports a module named by a string, and any other import (`importlib` and `pkgutil` among them) is
+a row of `MACHINERY_IMPORTERS`, with what each file reaches in it. `importlib.resources` is held
+too: `files` imports the anchor it is handed when that names a module, so the core calls it only on
+its own package, `__package__` or `"stayfixed"`, and every other read of it is a row.
+
 Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
 and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
-`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`.
+`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`. No other module refers
+to `cli.discover_registrars`, which hands on what discovery found.
+
+These rules are a tripwire, not a proof: they catch a crossing written the ordinary way. They cannot
+see an attribute chain through an allowed module (`dataclasses.inspect.importlib`), a module
+already in `sys.modules`, a loader or finder reached by a computed name (`getattr(sys, "meta" +
+"_path")`), code built from text at run time, or a string an allowed module evaluates (an
+annotation built at run time and handed to `typing.get_type_hints`). Review is what holds those.
 
 What source cannot show is when a pardoned statement runs, so
 `test_in_isolation_no_core_module_loads_a_delivery_area` imports every core module in a clean

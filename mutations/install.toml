@@ -3282,3 +3282,117 @@ after = '''def _joined(words: Sequence[str]) -> str:
     (memory,) = [m for m in area_modules("commands") if m.__name__ == "stayfixed.memory.commands"]
     memory.register'''
 reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+# A module is loaded with no import statement through its own module's loader, a finder on `sys`, a
+# builtin that runs text, `__builtins__` and a string annotation `typing.get_type_hints` evaluates:
+# the name rule reads each by its name.
+[[mutation]]
+name = "a core function loads the note store through its own module's loader"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return type(__spec__.loader)("stayfixed.memory.store", "store.py")'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function loads the note store through a finder on sys.meta_path"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import sys
+
+        return sys.meta_path[-1].find_spec("stayfixed.memory.store", ["memory"])'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store by running text"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return exec("import stayfixed.memory.store")'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function reaches __import__ through __builtins__"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return getattr(__builtins__, "__imp" + "ort__")("stayfixed.memory.store")'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function's string annotation imports the note store"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        def hinted(x: "__import__('stayfixed.memory.store')") -> None:
+            pass
+
+        return hinted'''
+reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The core imports the standard library from an allowlist, so a module nobody has measured as a
+# door is a row all the same: `timeit` runs an import written as text, `xml.dom.pulldom` binds
+# `xml`, off which `xml.sax.make_parser` imports a parser by its name, and `builtins` hands
+# `__import__` over by a computed name.
+[[mutation]]
+name = "a core function runs an import through timeit"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import timeit
+
+        return timeit.timeit("import stayfixed.memory.store", number=1)'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function reaches xml.sax through a sibling submodule's import"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import xml.dom.pulldom
+
+        return xml.sax.make_parser(["stayfixed.memory.store"])'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function takes __import__ from builtins by a computed name"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import builtins
+
+        return getattr(builtins, "__imp" + "ort__")("stayfixed.memory.store")'''
+reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
