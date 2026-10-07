@@ -15,10 +15,10 @@ uv run python scripts/mutation_oracle.py          # every declared mutation stil
 uv run python scripts/release.py check            # version discipline
 ```
 
-All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
-the mutation oracle, which is this project's headline obligation and not an optional extra, and
-the coverage floor, which is why `pytest -q` alone will give you a green tree and a red pull
-request. CI runs three more steps you can reproduce only from a build (`uv build`, then
+All five run in CI. The first four, the coverage floor among them, run on Linux for Python 3.11,
+3.12 and 3.13 and on macOS for 3.13, which is why `pytest -q` alone will give you a green tree and
+a red pull request. The mutation oracle, which is this project's headline obligation and not an
+optional extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs three more steps you can reproduce only from a build (`uv build`, then
 `scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
 reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
 in either is ours to diagnose, not yours.
@@ -388,6 +388,10 @@ reddens when the set outgrows it, so you find that out here rather than from a c
 Say plainly what narrowed: your local run is still the full check, and CI's guarantee is now
 that the set holds on Linux under 3.13. A mutation that holds there and not on macOS would
 reach `main`, where before it would have been caught in the pull request.
+
+Run the oracle on Python 3.12 or later. Two entries, a function's and a class's type parameters
+going unread, are caught by a case written in 3.12's syntax for them, which is skipped below
+3.12, so on 3.11 both survive and the run reports them.
 
 Four things are findings: a mutation that *survives*; one whose `before`
 line no longer exists, because the assertion and the line it is about have drifted apart; one
