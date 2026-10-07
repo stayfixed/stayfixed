@@ -26,8 +26,9 @@ clone ships whose `core.fsmonitor` is a program git runs on `status`, `ls-files`
 measured on PostToolUse's dirty count. Dropping every `GIT_CONFIG_*` variable closes the other
 doors to that configuration, and `XDG_CONFIG_HOME` is not kept either, so `HOME` is the one left.
 Handing git the password database's home here instead would close it and leave `PATH` open, and
-would change which global configuration a user whose `HOME` differs gets; whether to contain the
-two together is the owner's decision, and `SECURITY.md` records both as accepted until then.
+would change which global configuration a user whose `HOME` differs gets. So the two are accepted
+together, as `SECURITY.md` records, until a harness is measured applying a committed `env` block's
+`PATH` or `HOME` to a hook.
 
 `git_run` is the one runner for every question this project asks git about a repository it works on
 — the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
