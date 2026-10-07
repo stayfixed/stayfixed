@@ -45,7 +45,8 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     two halves read different documents is exactly what it exists to rule out.
 
     A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
-    rather than reporting a count for a `paths.memory` no walk could contain.
+    rather than reporting a count for a `paths.memory` no walk could contain. At a checkout with no
+    `origin` no group is counted, since the run refuses there before it counts.
 
     `home` is the home the harness memory link goes under, which `plan_writes` asks about as the
     run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
@@ -73,7 +74,10 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
     reads = not_overlay(config) is None and binding.state != NO_ORIGIN
     if reads:
         refuse_unless_share_holds(binding, config)
-    real = len(unlinked_groups(root, config))
+    # Nor are the groups counted at a checkout with no `origin`, which the run refuses before it
+    # counts them: the count refuses a group outside `paths.memory`, and asked here it ended
+    # `--check` with that refusal where the run ends with the missing `origin`.
+    real = 0 if binding.state == NO_ORIGIN else len(unlinked_groups(root, config))
     if reads and not real:
         plan_writes(root, config, binding, diff, machine=machine, home=home)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the

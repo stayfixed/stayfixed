@@ -872,6 +872,32 @@ def test_check_reads_nothing_past_where_the_run_stops(
     assert "trust.json" not in capsys.readouterr().err
 
 
+def test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a checkout with no `origin` before it counts the groups that never moved, and
+    # that count is what refuses a `memory.groups` entry outside `paths.memory`. `--check` counted
+    # them all the same, so it refused for the entry (2) where the run refused for the `origin`,
+    # each in its own words. It reports the missing `origin` as its finding now, exit 1, and counts
+    # no group until there is one. Mutation (oracle): `mutations/`'s "check counts the groups at a
+    # checkout with no origin".
+    from stayfixed.memory.api import NO_REMOTE
+
+    root, store, machine = _granting(tmp_path)
+    run_git(root, "remote", "remove", "origin")
+    PAST_THE_GATES["group-leaves-the-share"](root, tmp_path)
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags, "--json"]) == 1
+    checked = capsys.readouterr()
+    assert checked.err == ""
+    data = json.loads(checked.out)
+    assert data["state"] == "no-origin" and data["real_directories"] == 0
+    assert invoke(["attach", "--yes", *flags]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {NO_REMOTE}\n"
+    assert_snapshot_unchanged(tmp_path, before)
+
+
 def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

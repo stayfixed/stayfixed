@@ -2526,3 +2526,15 @@ after = "    if reads:"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
 ]
+
+# The groups are counted only where the run counts them: at a checkout with no `origin` the run
+# refuses first, and a `--check` that counted there ended with the count's refusal of a group
+# outside `paths.memory` instead.
+[[mutation]]
+name = "check counts the groups at a checkout with no origin"
+file = "src/stayfixed/attach/check.py"
+before = "    real = 0 if binding.state == NO_ORIGIN else len(unlinked_groups(root, config))"
+after = "    real = len(unlinked_groups(root, config))"
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none",
+]
