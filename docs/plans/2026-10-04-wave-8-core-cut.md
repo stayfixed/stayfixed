@@ -1504,19 +1504,28 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   written, a relative entry resolved against the project, while `HOME` stays the real home and
   `XDG_CONFIG_HOME` empty. The settings reference agrees: project and local settings cannot set
   `HOME` or `XDG_*`, and `PATH` is not on that list. So, by the owner's decision:
-  - off a terminal, `gitenv` runs the first executable of the wrapper's absolute `git` candidates,
-    one list spelled twice and held equal by a test, and hands it a `PATH` of their directories and
-    the system's, so a `git-lfs` filter or an fsmonitor program is not the clone's either; no
-    candidate is no answer;
+  - in a stayfixed the hook wrapper launched, `gitenv` runs the first executable of the wrapper's
+    absolute `git` candidates, one list spelled twice and held equal by a test, and hands it a
+    `PATH` of their directories and the system's, so a `git-lfs` filter or an fsmonitor program is
+    not the clone's either; no candidate is no answer. The wrapper exports
+    `STAYFIXED_HOOK_WRAPPER=1` immediately before it runs the launcher, over any inherited value,
+    and `gitenv` asks nothing else, so a value set elsewhere can only make git stricter;
   - the wrapper no longer runs `dirname` or `env` by name, which a clone's `fakebin` also reached;
-  - at a terminal, `git` and its `PATH` are the person's, as before, and `HOME` stays kept for
-    git, since Claude Code cannot set it.
+  - anywhere else, `git` and its `PATH` are the environment's, as before: at a terminal, and in
+    `stayfixed gate` in CI or a command an agent runs, where a fixed list buys nothing (the job is
+    the repository's own, and the agent's `PATH` already chose the `stayfixed` binary) and would
+    cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer. The
+    first cut of this fix keyed on "off a terminal", which covered those too; it was narrowed to
+    the wrapper, since the owner's decision was for the hook. `HOME` stays kept for git, since
+    Claude Code cannot set it.
 
   Measured against `v0.2.0` through each shipped wrapper and launcher: every hook entry with a
   planted program for every name in `/bin` and `/usr/bin` ran `git`, `git-lfs`, `dirname`, `env`
-  and `cat` from the clone under 0.2.0, and none under the branch. One residual cannot be closed
-  inside stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed`
-  that `PATH` names.
+  and `cat` from the clone under 0.2.0, and none under the branch, also with the block presetting
+  `STAYFIXED_HOOK_WRAPPER=0`. `stayfixed gate` run without the wrapper, stdin not a terminal, ran
+  a `git` found only elsewhere on `PATH` under both. One residual cannot be closed inside
+  stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed` that
+  `PATH` names, and that `stayfixed` runs the `git` `PATH` names.
 - **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
   It holds 37 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
   entry.
@@ -1553,9 +1562,9 @@ Left for later, by the owner's decision of 2026-10-07:
 
 Near limits:
 
-- `mutations/install.toml` holds 180,715 of 196,608 bytes. It is the next group to split, along
+- `mutations/install.toml` holds 181,291 of 196,608 bytes. It is the next group to split, along
   `doctor/`.
-- `docs/cli.md` is 187 bytes under the 256 KiB a plugin directory allows one file
+- `docs/cli.md` is 188 bytes under the 256 KiB a plugin directory allows one file
   (`tests/test_payload.py`). The next addition needs a split or a cut first.
 - An unreadable overlay `codex/` directory makes `attach` fail with an internal error
   (`PermissionError`), as 0.2.0 did. Since the run refuses a missing `origin` before it reads that
