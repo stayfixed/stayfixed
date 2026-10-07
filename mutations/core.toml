@@ -34,8 +34,8 @@ reddens = [
   "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
 ]
 
-# Off a terminal the home directory is the password database's, never `HOME`: a committed `env`
-# block sets `HOME` as readily as the two variables above, and relative, it names a directory
+# Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
+# devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
 # inside the clone a hook runs in, with a `trust.json` the clone ships.
 [[mutation]]
 name = "the hook path takes the home directory from HOME again"

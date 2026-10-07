@@ -151,11 +151,12 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     `home` is the machine owner's own home directory: `config.machine.anchor_home`, which is
     `HOME` from a terminal and, everywhere else, the password database's entry, resolved once so
     that a home which is itself a symlink can be opened as a root, or a `--home` value only a
-    person typing a command can supply. `HOME` alone was not that: a committed
-    `.claude/settings.json` `env` block can set it in a session no person is watching, and
-    relative, it names a directory inside the clone. So the hook path never reads it. It is
-    never read from `stayfixed.toml`, from a note, from a committed settings file or from
-    anything else the repository authored, and the repository is the party being contained here:
+    person typing a command can supply. `HOME` alone was not that: direnv, mise or a
+    devcontainer can set it from a file the clone commits, in a session no person is watching
+    (Claude Code's `env` block cannot), and relative, it names a directory inside the clone. So
+    the hook path never reads it. It is never read from `stayfixed.toml`, from a note, from a
+    committed settings file or from anything else the repository authored, and the repository is
+    the party being contained here:
     what it controls is `memory.groups` and `paths.memory`, which appear only in the *relative*
     half the walk refuses to follow out. The home directory itself is found and never created:
     `open_within` opens the root, and every component below it, without following a link, so

@@ -298,8 +298,9 @@ def main(argv: list[str]) -> int:
         f"canary={CANARY in without.stdout}",
     )
 
-    # --- a home the clone's env block names -----------------------------------------------
-    # The block can set `HOME` as readily as `STAYFIXED_CONFIG`, and the wrapper enters the clone
+    # --- a home the clone names ------------------------------------------------------------
+    # Claude Code applies no `HOME` from the clone's `env` block, but direnv, mise or a
+    # devcontainer can set one from a file the clone commits, and the wrapper enters the clone
     # before Python starts, so `HOME=fakehome` is a directory the clone ships. It ships the
     # owner's own record there, moved out of the owner's home: the digest is one a clone computes
     # from its own content. Relative and absolute, the note stays out; moved back, the same record

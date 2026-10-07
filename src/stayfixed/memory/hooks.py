@@ -166,9 +166,9 @@ def _lapsed_link_home() -> Path | None:
     Not a home this hook makes anything under: `HOME`, which it does not trust. A link there is
     every upgrader's state, made under `HOME` by an earlier release, and the harness keeps
     reading it after the store's approval lapses unless something takes it back. Withdrawal only
-    ever removes a link pointing at this very store (`worktree._unlink`), so a `HOME` an `env`
-    block chose gains nothing from it. A relative `HOME` is never used: it names a directory
-    relative to the clone this hook runs in.
+    ever removes a link pointing at this very store (`worktree._unlink`), so a `HOME` that
+    direnv, mise or a devcontainer chose from a file the clone commits gains nothing from it. A
+    relative `HOME` is never used: it names a directory relative to the clone this hook runs in.
     """
     import os
     from pathlib import Path

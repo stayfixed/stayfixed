@@ -2,9 +2,11 @@
 
 **Both variables that can name this file are gated, and for one reason.** A committed
 `.claude/settings.json` may carry an `env` block, which applies without a trust prompt in a
-non-interactive session, so a repository able to redirect this path would declare its own
-overlay root and its own pre-recorded trust hash — the two anchors that locating the note store
-and trusting in-repo notes by hash rest on.
+non-interactive session and can set `STAYFIXED_CONFIG`; Claude Code ignores `XDG_CONFIG_HOME`
+there (below), but direnv, mise or a devcontainer can set it from a file the repository commits.
+So a repository able to redirect this path would declare its own overlay root and its own
+pre-recorded trust hash — the two anchors that locating the note store and trusting in-repo
+notes by hash rest on.
 
 `STAYFIXED_CONFIG` was gated and `XDG_CONFIG_HOME` was not, which left the gate worth nothing:
 the two variables reach the same file, and the second one costs a repository exactly one extra

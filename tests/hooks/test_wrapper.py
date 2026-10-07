@@ -222,7 +222,7 @@ def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path:
     # into the *command string* of `hooks/hooks.json`, so the wrapper that runs is always the
     # plugin's own, and the program it hands to Python is derived from that wrapper's path. A
     # variable of the same name arriving from anywhere else — a committed `.claude/settings.json`
-    # `env` block is the case `config/machine.py` gates two other variables against — must change
+    # `env` block is the case `config/machine.py` gates `STAYFIXED_CONFIG` against — must change
     # nothing, because this choice is made before any stayfixed guard runs.
     #
     # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,
@@ -913,11 +913,12 @@ CANARY = "CANARY-IN-REPO-RULE"
 def test_a_trust_record_under_a_home_the_environment_names_is_never_read(
     tmp_path: Path, spelling: str
 ) -> None:
-    # A committed `env` block can set `HOME`, and the wrapper enters the project root before
-    # Python starts, so `HOME=fakehome` is a directory the clone ships. The clone ships the
-    # owner's own record there, moved out of the owner's home: a digest the clone can compute from
-    # its own content. The shipped wrapper and launcher run it, with only the password database's
-    # answer pinned to the owner's home (`tests/ownerhome.py`), since nothing else can choose it.
+    # A direnv, mise or devcontainer setup can set `HOME` from a file the clone commits (Claude
+    # Code's `env` block cannot), and the wrapper enters the project root before Python starts,
+    # so `HOME=fakehome` is a directory the clone ships. The clone ships the owner's own record
+    # there, moved out of the owner's home: a digest the clone can compute from its own content.
+    # The shipped wrapper and launcher run it, with only the password database's answer pinned to
+    # the owner's home (`tests/ownerhome.py`), since nothing else can choose it.
     owner = tmp_path / "owner"
     owner.mkdir()
     project = tmp_path / "project"

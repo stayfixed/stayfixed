@@ -75,11 +75,12 @@ def _trust_file(machine: Path | None) -> Path | None:
 
     `machine=None` resolves it through `machine_config_path`, which gates **both** variables
     that can name that file behind `interactive`. It gated only `STAYFIXED_CONFIG` once, and
-    `XDG_CONFIG_HOME` beside it chose this very file for a committed `.claude/settings.json`
-    `env` block, wherever no `--machine` was threaded — the gate the security record of this
-    module rests on, bypassed by the variable three lines below it. `store.py`'s module
-    docstring states what that exposure was and what bounded it. `HOME` chose it the same way
-    until the home directory, too, came from the password database off a terminal.
+    `XDG_CONFIG_HOME` beside it chose this very file for direnv, mise or a devcontainer applying
+    a file the clone commits (Claude Code's `env` block cannot set it), wherever no `--machine`
+    was threaded — the gate the security record of this module rests on, bypassed by the
+    variable three lines below it. `store.py`'s module docstring states what that exposure was
+    and what bounded it. `HOME` chose it the same way until the home directory, too, came from
+    the password database off a terminal.
 
     `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
     so nothing is trusted, and `record` refuses to invent a place for one.

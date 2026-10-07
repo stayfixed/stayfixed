@@ -214,10 +214,10 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     `Context` carries both this and `own_root`, and the executing check takes the second.
 
     **This stayfixed's own root first, and the named variable only after it.** A plugin-root
-    variable is the same class of input `config/machine.py` gates `STAYFIXED_CONFIG` and
-    `XDG_CONFIG_HOME` on: a committed `.claude/settings.json` `env` block reaches this process
-    without a trust prompt. `hooks/run-hook.sh` derives its launcher from its own path for that
-    reason, and this is the same rule one layer up.
+    variable is the same class of input `config/machine.py` gates `STAYFIXED_CONFIG` on: a
+    committed `.claude/settings.json` `env` block reaches this process without a trust prompt.
+    `hooks/run-hook.sh` derives its launcher from its own path for that reason, and this is the
+    same rule one layer up.
 
     The variable is still consulted, because there is one arrangement self-derivation cannot
     answer for: a stayfixed installed as a wheel beside a separately installed plugin — which is

@@ -32,8 +32,10 @@ applies with no trust prompt in a non-interactive session.
 password database's), since gating one alone is worth nothing: each of them reaches the same
 file, and this area routes the store's overlay anchor
 (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`) through it. A committed
-`env` block that could set either would choose which overlay root `permitted_roots` is computed
-from, and which `trust.json` `may_inject` consults, wherever no `--machine` is threaded.
+`env` block setting `STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting
+`XDG_CONFIG_HOME` or `HOME` from a file the clone commits, would choose which overlay root
+`permitted_roots` is computed from, and which `trust.json` `may_inject` consults, wherever no
+`--machine` is threaded.
 
 Stated exactly, because the exposure is not the same size as the invariant: pointing a variable
 somewhere of the author's choosing would **suppress** memory — no overlay root and no recorded

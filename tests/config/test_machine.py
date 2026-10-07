@@ -72,9 +72,10 @@ def test_xdg_config_home_selects_the_directory_from_an_interactive_shell(tmp_pat
 def test_home_is_ignored_when_the_caller_is_not_interactive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
 ) -> None:
-    # `HOME` reaches a hook from the same committed `env` block as the two variables above, and
-    # relative, it lands inside the clone the hook runs in. Off a terminal the home directory is
-    # the password database's, so the file is the owner's whatever the block says.
+    # A direnv, mise or devcontainer setup can set `HOME` for a hook from a file the clone
+    # commits (Claude Code's `env` block cannot), and relative, it lands inside the clone the
+    # hook runs in. Off a terminal the home directory is the password database's, so the file is
+    # the owner's whatever `HOME` says.
     owner = tmp_path / "owner"
     as_owner_home(monkeypatch, owner)
     monkeypatch.chdir(tmp_path)

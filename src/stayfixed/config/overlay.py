@@ -41,5 +41,6 @@ def overlay_root(machine: Path | None) -> Path | None:
         return None
     value = section.get("root")
     # A leading `~` is the home this file lives under, and never `HOME`: the path anchors where
-    # the note store may resolve, and `HOME` is a variable a committed `env` block can set.
+    # the note store may resolve, and direnv, mise or a devcontainer can set `HOME` from a file
+    # the clone commits.
     return in_owner_home(value) if isinstance(value, str) and value else None

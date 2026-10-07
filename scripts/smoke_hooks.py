@@ -123,10 +123,11 @@ def owner_home_prelude(home: Path) -> str:
     """Python source that has the password database record `home` as this user's home directory.
 
     stayfixed takes the machine owner's home from the password database whenever no person is at
-    a terminal, and never from `HOME`, which a committed `env` block can set. So a scratch `HOME`
-    no longer keeps a run away from the owner's own `~/.config/stayfixed`: recording trust here
-    would write the owner's real `trust.json`. No variable can say otherwise, because a variable
-    is what that block sets, so the scratch home goes in through the launcher instead.
+    a terminal, and never from `HOME`, which direnv, mise or a devcontainer can set from a file
+    the repository commits. So a scratch `HOME` no longer keeps a run away from the owner's own
+    `~/.config/stayfixed`: recording trust here would write the owner's real `trust.json`. No
+    variable can say otherwise, because the point is that no variable moves that home, so the
+    scratch home goes in through the launcher instead.
     """
     return (
         "import pwd as _pwd\n"

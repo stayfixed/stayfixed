@@ -138,9 +138,10 @@ def test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_t
     spelling: str,
 ) -> None:
     # A clone ships `fakehome/.config/stayfixed/trust.json` recording its own store, and a
-    # committed `env` block sets `HOME=fakehome`; a hook runs in the project root, so the relative
-    # value lands inside the clone. The record is the owner's own here, moved, which is the
-    # digest a clone computes from its own content. No `--machine`: the default is the case.
+    # direnv, mise or devcontainer setup applying a file it commits sets `HOME=fakehome` (Claude
+    # Code's `env` block cannot); a hook runs in the project root, so the relative value lands
+    # inside the clone. The record is the owner's own here, moved, which is the digest a clone
+    # computes from its own content. No `--machine`: the default is the case.
     as_owner_home(monkeypatch, _a_home_of_its_own)
     argv = ["memory", "session-context", "--bundle", "standing-rules", "--root", str(project)]
     assert invoke(["memory", "trust", "--in-repo-memory", "--root", str(project)]) == 0

@@ -73,8 +73,9 @@ def test_a_root_under_tilde_is_the_owners_home_and_never_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Every command reads this file with `interactive=False`, so a `~` in it is the home the
-    # file lives under: the password database's. `HOME` is what a committed `env` block sets,
-    # and relative, it is a directory inside the clone a hook runs in.
+    # file lives under: the password database's. A direnv, mise or devcontainer setup can set
+    # `HOME` from a file the clone commits, and relative, it is a directory inside the clone a
+    # hook runs in.
     owner = tmp_path / "owner"
     as_owner_home(monkeypatch, owner)
     monkeypatch.setenv("HOME", "fakehome")

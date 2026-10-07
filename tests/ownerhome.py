@@ -9,8 +9,8 @@ from the password database and not from `HOME` (`stayfixed.config.machine.owner_
 one test. `tests/conftest.py` has the database follow `HOME` for every test, and a test about the
 two homes differing pins it to another directory.
 
-**In a process a test starts,** nothing in this process reaches it, and no variable can: a
-variable is exactly what a committed `env` block sets. The smoke scripts' prelude is the seam
+**In a process a test starts,** nothing in this process reaches it, and no variable can: the
+point is that no variable moves that home. The smoke scripts' prelude is the seam
 instead (`scripts/smoke_hooks.py`, `owner_home_prelude`). `stayfixed_argv` runs it ahead of the
 command line. `checkout_with_owner_home` puts it where a `PYTHONPATH` entry runs it at start-up,
 for a command whose argv a test does not write. `plugin_root_with_owner_home` puts it in front of

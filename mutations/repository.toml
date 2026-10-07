@@ -415,7 +415,7 @@ reddens = ["tests/test_manifests.py::test_the_repository_itself_carries_a_curren
 
 # The launcher is chosen by the wrapper's own path and never by a variable in its environment. A
 # committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` gates
-# two other variables on exactly that -- and this one would pick the Python program that runs before
+# `STAYFIXED_CONFIG` on exactly that -- and this one would pick the Python program that runs before
 # any stayfixed guard does.
 [[mutation]]
 name = "the wrapper takes its launcher from the environment again"
