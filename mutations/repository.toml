@@ -420,7 +420,7 @@ reddens = ["tests/test_manifests.py::test_the_repository_itself_carries_a_curren
 [[mutation]]
 name = "the wrapper takes its launcher from the environment again"
 file = "hooks/run-hook.sh"
-before = 'launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"'
+before = 'launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"'
 after = 'launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/stayfixed"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_plugin_root_in_the_environment_does_not_choose_the_launcher",
@@ -479,8 +479,8 @@ reddens = [
 [[mutation]]
 name = "the interpreter containment compares a candidate's spelling instead of its resolved path"
 file = "hooks/run-hook.sh"
-before = '  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1'
-after = '  dir=$(dirname -- "$1") || return 1'
+before = '  dir=$(CDPATH= cd -- "${dir:-/}" 2>/dev/null && pwd -P) || return 1'
+after = '  dir=${dir:-/}'
 reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked PATH entry]",
 ]
@@ -517,10 +517,49 @@ reddens = [
 [[mutation]]
 name = "the wrapper's git inherits the session's GIT_DIR again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
+# `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
+# Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.
+[[mutation]]
+name = "the wrapper runs env through PATH again to ask git for the root"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs env through PATH again to list the checkouts"
+file = "hooks/run-hook.sh"
+before = '  /usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs dirname through PATH again to find its launcher"
+file = "hooks/run-hook.sh"
+before = 'case $0 in */*) here=${0%/*} ;; *) here=. ;; esac'
+after = 'here=$(dirname -- "$0")'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs dirname through PATH again to contain an interpreter"
+file = "hooks/run-hook.sh"
+before = '  case $1 in */*) dir=${1%/*} ;; *) dir=. ;; esac'
+after = '  dir=$(dirname -- "$1")'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
@@ -617,8 +656,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper resolves git through PATH again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
-after = 'git_root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(/usr/bin/env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
 ]

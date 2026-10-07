@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pty
 import shutil
@@ -13,6 +14,7 @@ from typing import NamedTuple
 import pytest
 
 from stayfixed import __version__
+from stayfixed.gitenv import GIT_CANDIDATES
 from tests.gitfixture import git
 from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
 from tests.test_launcher import _old_python
@@ -943,3 +945,86 @@ def test_a_trust_record_under_a_home_the_environment_names_is_never_read(
     planted.rename(owners)
     admitted = bundle()
     assert CANARY in admitted.stdout, admitted.stderr
+
+
+# The absolute paths both the wrapper and `stayfixed.gitenv` take `git` from off a terminal.
+ABSOLUTE_GIT = [path for path in GIT_CANDIDATES if os.access(path, os.X_OK)]
+# What a committed `env` block can put first on `PATH` for every hook, and Claude Code resolves
+# the relative entry against the project (measured on 2.1.293): the `git` every stayfixed query
+# asked, the `git-lfs` git runs for a `filter.lfs.process`, and the two programs the wrapper itself
+# ran by name.
+PLANTED = ("git", "git-lfs", "dirname", "env")
+
+
+def _plant(project: Path, ran: Path) -> None:
+    """`<project>/fakebin` holding each of `PLANTED`: each appends its name and argv to `ran`, then
+    hands over to the real program where this machine has one, so a run that reached a stub
+    goes on as it would have and the next stub can still be reached."""
+    fakebin = project / "fakebin"
+    fakebin.mkdir()
+    for name in PLANTED:
+        real = shutil.which(name) if name != "git-lfs" else None
+        then = f'exec "{real}" "$@"' if real else "exit 1"
+        stub = fakebin / name
+        stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{ran}"\n{then}\n', encoding="utf-8")
+        stub.chmod(0o755)
+
+
+@pytest.mark.skipif(not ABSOLUTE_GIT, reason="no git at any of the absolute candidate paths")
+def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_path: Path) -> None:
+    # End to end, through the shipped wrapper and launcher: PostToolUse after a red `pytest` over
+    # a dirty tree, whose notice counts the dirty files with `git status`. The clone ships
+    # `fakebin/git` and `fakebin/git-lfs` and a `PATH` of `fakebin:…`, and the owner's global
+    # configuration names a `git-lfs` clean filter for `* filter=lfs`, which the clone's
+    # `.gitattributes` sets: `git status` runs it on the modified file. A `clean` command and not
+    # `process`, because a process filter that cannot start is fatal to `status` and git would
+    # then give no answer to count; a clean filter that fails is not, so the count below is held.
+    # Measured before the fix: every query ran the clone's `git`, the absolute `git` it handed
+    # over to ran the clone's `git-lfs`, and the wrapper ran the clone's `dirname` and `env`.
+    # Mutations
+    # (declared): `git_run` resolves `git` through `PATH` again, or hands it the inherited
+    # `PATH`; the wrapper runs `env` or `dirname` by name again — each reddens this.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\nstate = "installed"\npreset = "recommended"\n'
+        'profile = ""\nagents = ["claude"]\n\n[project]\nname = "widget"\n'
+        'base_branch = "main"\nrelease_branch = "main"\n',
+        encoding="utf-8",
+    )
+    (project / "m.py").write_text("x = 1\n", encoding="utf-8")
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "chore: seed"]):
+        git(project, *args, home=tmp_path)
+    (project / "m.py").write_text("x = 2\n", encoding="utf-8")
+    (project / ".gitattributes").write_text("* filter=lfs\n", encoding="utf-8")
+    with (Path.home() / ".gitconfig").open("a", encoding="utf-8") as config:
+        config.write('[filter "lfs"]\n\tclean = git-lfs clean -- %f\n')
+    ran = tmp_path / "planted-ran"
+    _plant(project, ran)
+    plugin = plugin_root_with_owner_home(tmp_path, owner)
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "session_id": "s",
+        "cwd": str(project),
+        "tool_name": "Bash",
+        "tool_input": {"command": "pytest -q"},
+        "tool_response": {"exit_code": 1},
+    }
+    env = _env(plugin, None, None)
+    env.update(CLAUDE_PROJECT_DIR=str(project), PATH=f"fakebin:{os.environ.get('PATH', '')}")
+    result = subprocess.run(
+        [str(plugin / "hooks" / WRAPPER.name), "open", "hook", "PostToolUse"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=project,
+    )
+    assert not ran.exists(), ran.read_text(encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+    # Non-vacuous: the dirty count is in the notice, so git was asked and answered, by a `git`
+    # the clone did not choose.
+    assert "uncommitted" in result.stdout, (result.stdout, result.stderr)

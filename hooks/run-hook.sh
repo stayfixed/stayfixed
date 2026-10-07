@@ -56,6 +56,14 @@
 # variables are stripped from its environment and never reach the interpreter below. Measured
 # with an ad-hoc-signed copy of `/bin/bash` running this file: `DYLD_INSERT_LIBRARIES` reached
 # both the probe and the launcher, `-I` notwithstanding. Keep the shebang a protected shell.
+#
+# **No program this file runs is found through `PATH`, but the interpreter it contains.** Claude
+# Code applies a committed `env` block's `PATH` to every hook, and resolves a relative entry against
+# the project (measured on 2.1.293), so a command named bare here is one the clone can ship.
+# Measured before this rule: a clone's `fakebin/dirname` and `fakebin/env` ran on every hook. So
+# every other command below is a shell builtin, the two programs this file needs are named by
+# absolute path — `git` from the list below, and `/usr/bin/env`, which every supported system has
+# — and `dirname`'s answer is a parameter expansion.
 set -u
 
 refuse() { echo "stayfixed: $1; refusing" >&2; exit 2; }
@@ -80,7 +88,11 @@ fail() {
 # process from somewhere else would choose the Python program we then execute, before any
 # stayfixed guard runs. Whether a project `env` block can in fact shadow a plugin-provided
 # variable is unmeasured, and this does not depend on the answer.
-launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
+#
+# `${0%/*}` is `dirname`'s answer for every path this file is run by, without running `dirname`; a
+# bare `run-hook.sh`, given to `sh` or found through `PATH`, is in `.`, and one at `/` is in `/`.
+case $0 in */*) here=${0%/*} ;; *) here=. ;; esac
+launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 
 # Every entry but the dispatcher's relies on `--root` defaulting to the current directory, and
 # no harness promises to launch a hook inside the project. Resolved here, once, rather than
@@ -95,12 +107,10 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 # its own tree had that binary executed on every hook invocation, before any guard of ours, with
 # its stdout becoming the root every entry then runs against.
 #
-# `gitenv.GIT_ENV_KEEP` keeps `PATH` on purpose and says why: the machine owner's `git` must
-# answer rather than the macOS shim. That ruling holds where it is made, one layer down, where
-# `git` answers a question inside a stayfixed that has already chosen its interpreter. Here its
-# answer decides which programs may run at all, so the trade goes the other way — and the
-# ruling's concern is kept without keeping `PATH`, by asking the machine owner's own installs
-# before `/usr/bin/git`. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
+# The same list, in the same order, is `stayfixed.gitenv.GIT_CANDIDATES`, where every `git` a hook
+# asks inside stayfixed comes from off a terminal; `tests/test_git_run.py` holds the two equal.
+# The machine owner's own installs come before `/usr/bin/git`, so the macOS shim answers only where
+# nothing else is installed. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
 # environment-chosen too, so that would be the same hole one directory along.
 #
 # The first candidate that exists is *the* git. Trying the next one when it answers nothing would
@@ -109,9 +119,9 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 # takes the answer the code already gives for a root it cannot trust: a token, `open` degrading
 # and `closed` refusing.
 #
-# `env -i` with a *fixed* PATH and HOME — `gitenv.GIT_ENV_KEEP` minus the locale names this query
-# has no use for, and minus the inherited `PATH`, which no longer chooses the binary and has no
-# further business here. `gitenv._git_toplevel` scrubs the identical call one layer down
+# `/usr/bin/env -i` with a *fixed* PATH and HOME — `gitenv.GIT_ENV_KEEP` minus the locale names
+# this query has no use for, and minus the inherited `PATH`, which no longer chooses the binary and
+# has no further business here. `gitenv._git_toplevel` scrubs the identical call one layer down
 # and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
 # a different repository, and every `--root`-defaulting entry then reads that repository's
 # `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
@@ -136,7 +146,7 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
   fi
 done
 [ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
-git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
+git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
 # answer; what it no longer does is decide it alone for the containment.
@@ -184,7 +194,7 @@ git_project=
 # A function and not a bare substitution: a `case` inside `$( )` is a parse error on the
 # `/bin/sh` macOS ships (bash 3.2), which this file has to run under.
 list_checkouts() {
-  env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
+  /usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
     while IFS= read -r line; do
       case "$line" in
         "worktree "*)
@@ -243,7 +253,8 @@ under_root() {
 }
 
 in_project() {
-  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
+  case $1 in */*) dir=${1%/*} ;; *) dir=. ;; esac
+  dir=$(CDPATH= cd -- "${dir:-/}" 2>/dev/null && pwd -P) || return 1
   [ -n "$dir" ] || return 1
   under_root "$dir" "$project" && return 0
   # One checkout per line, `git_project` among them: `IFS` is a newline for this split and is

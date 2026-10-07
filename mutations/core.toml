@@ -143,6 +143,7 @@ before = '    program = git_program()'
 after = '    program = GitProgram("git", None)'
 reddens = [
   "tests/test_git_run.py::test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
@@ -154,6 +155,7 @@ before = '            env=scrubbed_env(program.path),'
 after = '            env=scrubbed_env(),'
 reddens = [
   "tests/test_git_run.py::test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # The trusted `PATH` names each candidate's directory once.
