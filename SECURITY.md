@@ -54,7 +54,9 @@ In scope, and treated as security rather than as an ordinary bug:
   repository-data region it is wrapped in.
 - **The machine anchors.** Any way a repository can choose which machine configuration file,
   overlay root or `trust.json` stayfixed reads — for example through an environment variable a
-  committed settings file can set, `HOME` among them.
+  committed settings file can set, such as `STAYFIXED_CONFIG`, or through a `HOME` that direnv,
+  mise or a devcontainer applies from a file the repository commits. Claude Code's own `env`
+  block cannot set `HOME`.
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.

@@ -1,9 +1,10 @@
 stayfixed no longer takes your home directory from `HOME` when no person is at a terminal. A
-repository's `.claude/settings.json` `env` block can set `HOME`, and a hook runs inside the
-project, so `HOME=fakehome` named a directory the repository ships: a `trust.json` committed
-there approved the repository's own notes as standing rules with no `stayfixed memory trust`
-from you. Off a terminal, the home directory is now the one the password database records for
-your user, which no environment variable moves.
+tool that applies a file the repository commits, such as direnv, mise or a devcontainer, can set
+`HOME` for a hook, and a hook runs inside the project, so `HOME=fakehome` named a directory the
+repository ships: a `trust.json` committed there approved the repository's own notes as standing
+rules with no `stayfixed memory trust` from you. Claude Code's own `.claude/settings.json` `env`
+block cannot set `HOME`. Off a terminal, the home directory is now the one the password database
+records for your user, which no environment variable moves.
 
 - `~/.config/stayfixed/config.toml` and `~/.config/stayfixed/trust.json` are found under that
   home by every command, `stayfixed setup` and `stayfixed memory trust` included, so the file
