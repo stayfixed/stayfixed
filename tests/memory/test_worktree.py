@@ -1342,6 +1342,8 @@ def test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing(
     # it may not search is no more its business: either way nothing is withdrawn, and the hook is
     # not handed a `PartialLink` it would report as links that could not be made. The exact link
     # behind the symlink is left standing, since only the walk's own path is ever touched.
+    if shape == "unsearchable" and os.geteuid() == 0:
+        pytest.skip("root searches everything")
     as_owner_home(monkeypatch, tmp_path / "owner")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     root, store, config = a_checkout(tmp_path)

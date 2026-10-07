@@ -13,6 +13,7 @@ from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
 from stayfixed.memory import hooks as memory_hooks
 from stayfixed.memory import worktree as worktree_module
 from stayfixed.memory.hooks import (
+    LINKED,
     NO_HARNESS_LINK,
     NO_HARNESS_LINK_NO_HOME,
     NO_HARNESS_LINK_OVERLAY,
@@ -307,6 +308,40 @@ def test_no_harness_link_is_made_where_home_is_not_the_databases(
     contexts = [handler.run(an_event(root), config).context for handler in register()]
     assert seen == [(None, False, None)]
     assert contexts == [line]
+
+
+def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shipped path for an entry naming a symlink (`/Users/me` linking to a volume) with `HOME`
+    # agreeing: the hook hands `link` the entry resolved once, since the walk opens its root with
+    # `O_NOFOLLOW`, and the link is made under the real directory, where `HOME` finds it. The
+    # worktree tests reach the same rule through `link`'s own default and cannot see this call.
+    # Mutation: `mutations/`, "the worktree-link hook anchors the harness link on the database's
+    # home unresolved".
+    from stayfixed.memory.store import resolve
+    from stayfixed.memory.trust import record
+    from stayfixed.memory.worktree import harness_memory_path
+    from tests.memory.test_worktree import a_checkout, a_worktree
+
+    real = tmp_path / "real-home"
+    real.mkdir()
+    linked = tmp_path / "linked-home"
+    linked.symlink_to(real, target_is_directory=True)
+    as_owner_home(monkeypatch, linked)
+    monkeypatch.setenv("HOME", str(linked))
+    root, _, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    # Resolved as the hook resolves it, with the machine file where the database's home puts it,
+    # so the approval is the one the hook reads.
+    store = resolve(tree, config)
+    assert store is not None
+    record(store, config)
+    contexts = [handler.run(an_event(tree), config).context for handler in register()]
+    harness = harness_memory_path(tree, real)
+    assert harness.is_symlink()
+    assert harness.resolve() == store.path.resolve()
+    assert contexts == [LINKED.format(count=4)]
 
 
 def test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs(
