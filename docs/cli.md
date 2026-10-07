@@ -532,9 +532,9 @@ red run is offered to every shipped profile's hint, and the dirty-tree line and 
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
 delivered together. A runner is recognised behind environment assignments, an `env` prefix and
 `uv run` with uv's own options (`uv run --locked pytest`, `uv --quiet run pytest`, `uv run --
-pytest`); a `uv` command carrying an option outside uv's own list (`uv run --with pytest echo`)
-is left whole, so its value is never taken for the program. A red command no profile recognises
-gets no note. When Python's walk stopped
+pytest`). A value-taking option takes its value, so `uv run --with pytest echo` runs `echo`; an
+option outside uv's own list (`uv run --frobnicate pytest`) leaves the command whole, so no value
+is ever taken for the program. A red command no profile recognises gets no note. When Python's walk stopped
 at its bound, its line says the walk could not tell whether a stale build was imported, and
 names neither stale bytecode nor its absence.
 
