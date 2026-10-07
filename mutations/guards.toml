@@ -1327,3 +1327,19 @@ LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\
 reddens = [
   "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
 ]
+
+# `setup --git-hooks --uninstall` says whether it removed stayfixed's hook, found none, or left a
+# foreign one alone: it said "removed" of all three, both halves false where a foreign hook stood.
+[[mutation]]
+name = "uninstall says it removed a hook when there was none"
+file = "src/stayfixed/guards/githooks.py"
+before = "        return Removed(target, None, removed=False, foreign=False)"
+after = "        return Removed(target, None, removed=True, foreign=False)"
+reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[nothing]"]
+
+[[mutation]]
+name = "uninstall says it removed a hook when the hook there is not stayfixed's"
+file = "src/stayfixed/guards/githooks.py"
+before = "        return Removed(target, None, removed=False, foreign=True)"
+after = "        return Removed(target, None, removed=True, foreign=False)"
+reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[foreign]"]

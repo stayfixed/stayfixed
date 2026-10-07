@@ -53,13 +53,21 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
     root = Path(args.root).resolve()
     if args.uninstall:
         removed = uninstall(root)
-        if removed.restored is not None:
+        if removed.foreign:
+            summary = (
+                f"left {removed.path} as it was: it is not stayfixed's hook; nothing was removed"
+            )
+        elif not removed.removed:
+            summary = f"there is no stayfixed hook at {removed.path}; nothing was removed"
+        elif removed.restored is not None:
             summary = f"removed {removed.path}; restored the foreign hook chained to it"
         else:
             summary = f"removed {removed.path}; there was no foreign hook to restore"
         data: dict[str, Any] = {
             "path": str(removed.path),
             "restored": str(removed.restored) if removed.restored is not None else None,
+            "removed": removed.removed,
+            "foreign": removed.foreign,
         }
         return Result(summary, data)
 

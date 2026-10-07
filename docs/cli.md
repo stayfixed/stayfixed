@@ -2610,7 +2610,10 @@ the two.
 **Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only
 when a foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes
 the hook file only when it is stayfixed's, and renames the `.local` file beside it, when there is
-one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
+one, back to `prepare-commit-msg`. Its line says which it met: `removed <hook>` with whether a
+foreign hook was restored, `there is no stayfixed hook at <hook>; nothing was removed`, or `left
+<hook> as it was: it is not stayfixed's hook; nothing was removed`; `--json` carries `removed` and
+`foreign` beside `path` and `restored`. Exits `0`; `2` when `--preset` is also given.
 
 ---
 

@@ -97,8 +97,16 @@ class Installed(NamedTuple):
 
 
 class Removed(NamedTuple):
+    """What `uninstall` found at the hook path and did there.
+
+    `removed` is whether stayfixed's hook was there and is gone; `foreign` is whether something
+    stayfixed did not write is there and was left as it was; neither is no hook at all. A report
+    built from `restored` alone said "removed" of all three."""
+
     path: Path
     restored: Path | None
+    removed: bool
+    foreign: bool
 
 
 def git_path(root: Path, name: str, what: str) -> Path:
@@ -174,8 +182,10 @@ def uninstall(root: Path) -> Removed:
     directory = hooks_dir(root)
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
-    if not target.exists() or target.is_symlink() or not _ours(target):
-        return Removed(target, None)
+    if not os.path.lexists(target):
+        return Removed(target, None, removed=False, foreign=False)
+    if target.is_symlink() or not _ours(target):
+        return Removed(target, None, removed=False, foreign=True)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it
     # there. It cannot: `install` refuses a stray `.local` only while our hook is absent, so a
@@ -186,5 +196,5 @@ def uninstall(root: Path) -> Removed:
     # unconditional refusal here would be this module inventing a different one.
     if local.exists():
         local.rename(target)
-        return Removed(target, target)
-    return Removed(target, None)
+        return Removed(target, target, removed=True, foreign=False)
+    return Removed(target, None, removed=True, foreign=False)

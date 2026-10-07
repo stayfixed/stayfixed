@@ -340,12 +340,17 @@ def test_reinstalling_over_a_chained_setup_keeps_the_preserved_hook(tmp_path: Pa
 
 
 def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
+    # And says so: `removed` is false and `foreign` true, where the answer was the one an
+    # uninstall of stayfixed's own hook with nothing chained gave. With no hook at all, both are
+    # false. Mutations: `mutations/`, "uninstall says it removed a hook when the hook there is not
+    # stayfixed's" and "uninstall says it removed a hook when there was none".
     root = repo(tmp_path)
     foreign = hooks_dir(root) / HOOK_NAME
     foreign.parent.mkdir(parents=True, exist_ok=True)
+    assert uninstall(root) == (foreign, None, False, False)
     foreign.write_text("#!/bin/sh\necho foreign\n", encoding="utf-8")
     removed = uninstall(root)
-    assert removed.restored is None
+    assert removed == (foreign, None, False, True)
     assert "foreign" in foreign.read_text(encoding="utf-8")
 
 
