@@ -3445,3 +3445,15 @@ before = "            f\"the hook sink's session markers could not be listed ({f
 after = "            f\"the hook sink's session markers could not be listed ({type(exc).__name__}), so \""
 reddens = ["tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning"]
 
+# Where `later` declines a compound suffix on the floor's own triple, a pre-release segment in it
+# still keeps the floor unmet: by the triple alone `1.0.0rc1.post2` met `>=1.0.0`.
+[[mutation]]
+name = "the declared floor is met by a compound pre-release of it"
+file = "src/stayfixed/overlay/requires.py"
+before = "    if pre_release(version):\n        return False\n"
+after = "    if False:\n        return False\n"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1.post2]",
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev3+g1234abc]",
+]
+

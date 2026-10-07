@@ -2857,3 +2857,21 @@ reddens = [
   "tests/config/test_machine.py::test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_terminal",
   "tests/memory/test_worktree.py::test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link",
 ]
+
+# Whether a version orders before its release by its suffix, as PEP 440 orders one: the local label
+# after `+` is no segment of the version's, and a `dev` after a post-release is a development release
+# of that post-release, which comes after the release.
+[[mutation]]
+name = "a local label is read as a segment of the version"
+file = "src/stayfixed/semver.py"
+before = '    public = version[found.end() :].split("+", 1)[0]'
+after = "    public = version[found.end() :]"
+reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
+
+[[mutation]]
+name = "a development release of a post-release reads as a pre-release"
+file = "src/stayfixed/semver.py"
+before = "    return dev is not None and (post is None or dev.start() < post.start())"
+after = "    return dev is not None"
+reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
+

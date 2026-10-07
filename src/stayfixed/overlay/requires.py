@@ -14,7 +14,7 @@ from pathlib import Path
 
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.overlay.naming import manifest
-from stayfixed.semver import COMPONENT, VERSION, later
+from stayfixed.semver import COMPONENT, VERSION, later, pre_release
 
 # A floor is built from `semver`'s component, so a declared floor and a running version bound each
 # component alike; `semver.COMPONENT` says why the bound is what it is.
@@ -45,8 +45,10 @@ def satisfies(spec: str, version: str) -> bool | None:
 
     One order with `later`, so a pre-release of the floor (`1.0.0rc1` against `>=1.0.0`) does not
     meet it, as `later` orders the release after it. Where `later` declines to order the two —
-    equal triples and a suffix that is not a pre-release, such as `.post1` or `+local` — the
-    integer tuples decide, which is the answer such a build always had.
+    equal triples and a suffix it does not read as a pre-release — a suffix carrying a pre-release
+    segment anywhere (`semver.pre_release`: `1.0.0rc1.post2`, `1.0.0.dev3+g1234abc`) does not meet
+    it either, and for any other (`.post1`, `+local`) the integer tuples decide, which is the
+    answer such a build always had.
 
     `None` for any other spec shape or a version this reader cannot parse — a caller that gets
     `None` back has an unreadable declaration, not a false one.
@@ -67,6 +69,10 @@ def satisfies(spec: str, version: str) -> bool | None:
     after = later(".".join(floor.groups()), version)
     if after is not None:
         return not after
+    # `later` declines a compound suffix on the floor's own triple; one with a pre-release segment
+    # in it still comes before the release.
+    if pre_release(version):
+        return False
     return tuple(int(part) for part in running.groups()) >= tuple(
         int(part) for part in floor.groups()
     )

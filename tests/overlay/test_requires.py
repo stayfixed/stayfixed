@@ -130,13 +130,17 @@ def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     assert satisfies(">=0.1.0", "0.0.9") is False
 
 
-@pytest.mark.parametrize("version", ["1.0.0rc1", "1.0.0.dev0", "1.0.0-rc.1", "1.0.0a1"])
+@pytest.mark.parametrize(
+    "version",
+    ["1.0.0rc1", "1.0.0.dev0", "1.0.0-rc.1", "1.0.0a1", "1.0.0rc1.post2", "1.0.0.dev3+g1234abc"],
+)
 def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
     # `semver.later` orders a release after its own pre-release, and the floor compared the
     # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
     # it comes before: the session line and the `overlay-requires` row read it as met. The
-    # floor is decided by `later` wherever `later` answers. Mutation: `mutations/`, "the
-    # declared floor is met by a pre-release of it".
+    # floor is decided by `later` wherever `later` answers, and a compound suffix carrying a
+    # pre-release segment does not meet it either. Mutations: `mutations/`, "the declared floor
+    # is met by a pre-release of it" and "… by a compound pre-release of it".
     assert satisfies(">=1.0.0", version) is False
     assert satisfies(">=0.9.9", version) is True
 
@@ -147,6 +151,12 @@ def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -
     # `mutations/`, "the declared floor stops being met by the version that equals it".
     assert satisfies(">=1.0.0", "1.0.0.post1") is True
     assert satisfies(">=1.0.0", "1.0.0+local") is True
+    # A local label is no segment of the version's own, whatever it spells, and a development
+    # release of a post-release comes after the release. Mutations: `mutations/`, "a local label
+    # is read as a segment of the version" and "a development release of a post-release reads
+    # as a pre-release".
+    assert satisfies(">=1.0.0", "1.0.0+local.rc1") is True
+    assert satisfies(">=1.0.0", "1.0.0.post1.dev2") is True
     assert satisfies(">=1.0.1", "1.0.0.post1") is False
 
 

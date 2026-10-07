@@ -47,6 +47,37 @@ _PRE_RELEASE = re.compile(
 )
 
 
+# The segments PEP 440 orders a suffix by, each a word of its own in what follows an `X.Y.Z`:
+# at the start, after a separator or after a digit, and ended by a digit run, a separator or the
+# end. A pre-release segment (`a`, `b`, `rc` and their spellings), a post-release one (`post`,
+# `rev`, `r`, or `-N` straight after the release) and a development one (`dev`).
+_SEGMENT = r"(?:\A|(?<=[-_.0-9])){}[-_.]?[0-9]{{0,9}}(?=\Z|[-_.])"
+_PRE_SEGMENT = re.compile(_SEGMENT.format("(?:alpha|beta|preview|pre|rc|a|b|c)"), re.IGNORECASE)
+_POST_SEGMENT = re.compile(rf"\A-[0-9]|{_SEGMENT.format('(?:post|rev|r)')}", re.IGNORECASE)
+_DEV_SEGMENT = re.compile(_SEGMENT.format("dev"), re.IGNORECASE)
+
+
+def pre_release(version: str) -> bool:
+    """Whether `version` orders before the release its leading `X.Y.Z` names, by its suffix.
+
+    PEP 440's order: a pre-release segment anywhere in the public part makes one, so
+    `1.0.0rc1.post2` comes before `1.0.0` as `1.0.0rc1` does; so does a `dev` segment with no
+    post-release before it (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2` is a development
+    release of a post-release, which comes after. The local label after `+` is no segment of the
+    version's (`1.0.0+local.rc1` is not one), nor is a version with no leading `X.Y.Z`, which is no
+    version this module reads.
+    """
+    found = VERSION.match(version)
+    if found is None:
+        return False
+    public = version[found.end() :].split("+", 1)[0]
+    if _PRE_SEGMENT.search(public) is not None:
+        return True
+    dev = _DEV_SEGMENT.search(public)
+    post = _POST_SEGMENT.search(public)
+    return dev is not None and (post is None or dev.start() < post.start())
+
+
 def later(version: str, than: str) -> bool | None:
     """Whether `version` is later than `than`, by the leading `X.Y.Z` and then by what follows it.
 
