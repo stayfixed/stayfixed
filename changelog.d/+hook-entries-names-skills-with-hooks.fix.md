@@ -17,7 +17,8 @@ directory the row cannot read, a FIFO among them, is named as one it cannot say 
 A link inside those directories is read where it leads inside the checkout, to a directory or to a
 `*.md` or `SKILL.md` file. One that leads out of the checkout, as a dotfiles setup's does, is not
 followed and is named as one that leads out, which marks no fault. Only a link to a file the row
-would not read, such as a skill's `LICENSE`, is passed over. Names are compared without case.
+would not read, such as a skill's `LICENSE`, wherever it points, a dangling link and a link that
+loops are passed over. Names are compared without case.
 Outside a git work tree, looking for nested `.claude/skills` walks the tree instead, skipping
 `.git`, up to 500,000 directory entries; the walk follows no link but one that is itself a nested
 `.claude/skills`, and a walk that stops at the bound says so. Each of these is a warning: none

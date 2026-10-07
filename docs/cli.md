@@ -2863,8 +2863,8 @@ or a `SKILL.md`, is read when it leads to a file inside the checkout. A link of 
 leads out, as a dotfiles setup links `.claude/agents`, is named as a path that leads out of the
 checkout and was not followed, a `warn` that marks no fault: what it leads to is not the
 repository's, so the row does not read it and leaves that to you. Only a link to a file the row
-would not read, a skill's `LICENSE` say, is passed over wherever it points, and so is a dangling
-link.
+would not read, a skill's `LICENSE` say, is passed over wherever it points, and so are a dangling
+link and a link that loops.
 
 A `.claude/skills` below the root is found by asking git (`git ls-files --cached --others
 --exclude-standard`): the files a clone commits and the untracked ones git does not ignore, each
