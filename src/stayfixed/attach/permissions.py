@@ -432,6 +432,14 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
+    # The ledger, read as the run reads it and where the run reads it: one the run cannot take
+    # ends this command with the run's code and line, where it was never read and `--check`
+    # answered clean. Not in a repository outside overlay mode, which the run refuses before it
+    # reaches the ledger. A function-level import, because `write` imports this module.
+    from stayfixed.attach.write import existing_ledger
+
+    if not_overlay(config) is None:
+        existing_ledger(root)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
     # diff's three fields say what `attach` would add and what is already there, `widens` is
     # computed from them, and a fourth of another kind would blur what it means. These names

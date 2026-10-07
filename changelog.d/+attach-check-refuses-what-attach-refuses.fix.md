@@ -21,5 +21,11 @@ For a repository already attached under an overlay whose `hooks.json` holds such
 it grants, where it judged the entries against the rest of the file. Remove the `null` key, or give
 it `{}` or `[]`, and `stayfixed attach --check` names the clause until you do.
 
+`--check` also reads an existing `.stayfixed/local/attach.json` the way the run does, so a ledger
+the run cannot take ends both with one code and one line: one that is not valid JSON, past the
+64 MiB read cap or otherwise unreadable fails (exit `1`), and one naming what `attach` never writes,
+or one that is itself a link, is refused (exit `2`). `--check` used to leave the ledger unread and
+exit `0` over it.
+
 A refusal that names an event prints it escaped when it holds a line break or a control
 character, as other names a repository chose already print.

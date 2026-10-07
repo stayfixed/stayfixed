@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
@@ -644,6 +645,78 @@ def test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_ali
     attached = capsys.readouterr()
     assert checked.err == attached.err
     assert checked.err.endswith(": an entry group's 'hooks' is not a list\n")
+
+
+# Ledgers the real run cannot take, and the code it ends with: one it cannot read is a failure,
+# one naming what `attach` never writes is a refusal, and one that is itself a link is refused
+# before it is read, as a path that passes through a symlink.
+UNREADABLE_LEDGERS = {
+    "not-json": ("{", 1),
+    "not-a-record": (json.dumps({"rules": ["Bash(rm -rf /)"]}), 2),
+    # Longer than every other file either command reads, so the lowered cap stops this one alone.
+    "past-the-cap": (json.dumps({"store": "x" * 1_000_000}), 1),
+    "a-link": ("", 2),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNREADABLE_LEDGERS))
+def test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    # `--check` did not read `.stayfixed/local/attach.json`, so it answered 0 over a ledger that
+    # stopped the run, and a CI step running it passed where `attach` failed. It reads the ledger
+    # with the run's reader now, so the two end with one code and one line. Mutation (oracle):
+    # `mutations/`'s "check does not read the attach ledger".
+    text, code = UNREADABLE_LEDGERS[shape]
+    root, store, machine = _granting(tmp_path)
+    ledger = root / LEDGER
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    if shape == "a-link":
+        (tmp_path / "elsewhere.json").write_text("{}", encoding="utf-8")
+        ledger.symlink_to(tmp_path / "elsewhere.json")
+    else:
+        ledger.write_text(text, encoding="utf-8")
+    if shape == "past-the-cap":
+        monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text) - 1)
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags]) == code
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == code
+    attached = capsys.readouterr()
+    assert checked.err == attached.err and checked.err.startswith("stayfixed: ")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` before it reaches the ledger, so a
+    # leftover ledger it could not take never decides its code. `--check` reads the ledger only
+    # where the run would, so the two still end with one code: read first, `--check` exited 1 on
+    # the ledger where the run exited 2 on the mode. Mutation (oracle): `mutations/`'s "check
+    # reads the attach ledger whatever the memory mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    ledger = root / LEDGER
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{", encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    # `--check` reports the refusal in its report, and the run refuses with it; neither names the
+    # ledger.
+    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
+    assert "attach.json" not in checked.out + checked.err + attached.err
 
 
 def test_attach_reads_each_of_its_two_documents_once_too(

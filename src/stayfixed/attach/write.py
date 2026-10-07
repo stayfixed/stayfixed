@@ -399,8 +399,16 @@ def ledger(root: Path) -> AttachLedger:
     )
 
 
-def _existing_ledger(root: Path) -> AttachLedger | None:
-    """The ledger, or `None` when there is none — the one caller that may carry on without it."""
+def existing_ledger(root: Path) -> AttachLedger | None:
+    """The ledger, or `None` when there is none: `attach` and `attach --check`, the two callers
+    that may carry on without it, read it here, so the two end with one code on a ledger the run
+    cannot take.
+
+    Its path is held to the project before anything reads it: it is the one path `attach` writes
+    inside the project that no other candidate names, so a `.stayfixed` committed as a link is
+    refused here by name rather than by the walk that writes the ledger, after every write before
+    it."""
+    contained(root, ATTACH_LEDGER)
     if not (root / ATTACH_LEDGER).is_file():
         return None
     return ledger(root)
@@ -1223,8 +1231,8 @@ def _plan(
     # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
     # ledger make `attach` write the ignore region, copy `.codex/rules/*` and merge
     # `.claude/settings.local.json` before exiting 2, with the committed ledger still on disk for
-    # `doctor._attached` to read as "attached", and with `attach --check` reporting clean
-    # beforehand because it does not read the ledger at all. The `Config` the two checks below
+    # `doctor._attached` to read as "attached"; `attach --check` reads it through the same
+    # `existing_ledger`, so it no longer reports clean beforehand. The `Config` the two checks below
     # read is loaded at the top of this function, which is where the binding needs it anyway: a
     # check cannot happen above the writes while what it reads is loaded below them.
     _check_groups(binding, config)
@@ -1253,12 +1261,7 @@ def _plan(
     # here for all of them. A `<slug>` component that is itself a symlink is left to the
     # per-call floor in `harness_anchor`, which is a `Refusal` either way.
     harness_anchor(root, home)
-    # The ledger's own path, held to the project before anything reads or writes under it: it is
-    # the one path this run writes inside the project that no candidate below names, so a
-    # `.stayfixed` committed as a link is refused here by name rather than by the walk that
-    # writes the ledger, after every write before it.
-    contained(root, ATTACH_LEDGER)
-    previous = _existing_ledger(root)
+    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)

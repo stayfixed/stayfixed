@@ -1121,8 +1121,8 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
     # used to be the thing that asked for it — from the fourth write of the run. So a clone
     # committing such a ledger got `attach` to write the `stayfixed:ignore` region, copy
     # `.codex/rules/*` and merge `.claude/settings.local.json`, and only then exit 2 — with the
-    # committed ledger still on disk, which `doctor._attached` keys on. `attach --check` reports
-    # clean beforehand, because it does not read the ledger at all.
+    # committed ledger still on disk, which `doctor._attached` keys on. `attach --check`, which
+    # used to report clean beforehand, now reads the ledger with the run's reader and refuses too.
     #
     # Nothing the repository gains here differs from a successful attach, so this is not a trust
     # boundary being crossed. What it is, is `docs/cli.md` asserting that every cause of exit 2

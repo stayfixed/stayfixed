@@ -2294,8 +2294,9 @@ characters and its length).
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
 **or** on a non-zero count of memory groups that are still real directories, which are the findings
 the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other
-than `overlay`; the loading, binding and diff failures below end `--check` with the same codes as a
-real run.
+than `overlay`; the loading, binding, ledger and diff failures below end `--check` with the same
+codes as a real run, since `--check` reads an existing `.stayfixed/local/attach.json` with the run's
+reader.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:

@@ -321,7 +321,7 @@ reddens = [
 [[mutation]]
 name = "the ledger is read after attach has already written"
 file = "src/stayfixed/attach/write.py"
-before = '''    previous = _existing_ledger(root)
+before = '''    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
@@ -330,7 +330,7 @@ before = '''    previous = _existing_ledger(root)
 # read by the settings-candidate question above the first write, so moving the read would break
 # the name instead of the order.
 after = '''    _write_ignore_region(root, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
-    previous = _existing_ledger(root)
+    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
@@ -526,8 +526,8 @@ reddens = [
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
-before = "    harness_anchor(root, home)\n    # The ledger's own path, held to the project"
-after = "    # The ledger's own path, held to the project"
+before = "    harness_anchor(root, home)\n    previous = existing_ledger(root)"
+after = "    previous = existing_ledger(root)"
 reddens = [
   "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
 ]
@@ -2447,3 +2447,26 @@ file = "src/stayfixed/attach/write.py"
 before = "    fsops.remove_within(root, ATTACH_LEDGER)\n    # Last, because the ledger lives in one of them."
 after = "    # Last, because the ledger lives in one of them."
 reddens = ["tests/attach/test_detach.py::test_uninstall_after_a_real_detach_takes_the_footprint_back"]
+
+# `attach --check` reads the ledger with the run's reader, so a ledger the run cannot take ends both
+# with one code; unread, `--check` answered clean over a ledger that stopped the run.
+[[mutation]]
+name = "check does not read the attach ledger"
+file = "src/stayfixed/attach/permissions.py"
+before = "        existing_ledger(root)\n"
+after = "        pass\n"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[not-json]",
+  "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[a-link]",
+]
+
+# And only where the run reads it: the run refuses a `memory.mode` other than `overlay` before the
+# ledger, so a `--check` that read it first ended such a repository with the ledger's code.
+[[mutation]]
+name = "check reads the attach ledger whatever the memory mode"
+file = "src/stayfixed/attach/permissions.py"
+before = "    if not_overlay(config) is None:\n        existing_ledger(root)"
+after = "    if True:\n        existing_ledger(root)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
+]
