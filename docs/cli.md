@@ -2815,12 +2815,14 @@ in a path is the repository's, so a path outside the path grammar is named as a 
 the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
-The read follows a link inside them only while it leads to a directory still inside the checkout,
-and lists a directory a link leads back to once. A link that leads out, as a dotfiles setup links
-`.claude/agents`, is named as a path that leads out of the checkout and was not followed, a `warn`
-that marks no fault: what it leads to is not the repository's, so the row does not read it and
-leaves that to you. A link that names no directory to look in, a skill's `LICENSE` say, is passed
-over wherever it points, and so is a dangling link.
+The read follows a link inside them while it leads to a directory still inside the checkout, and
+lists a directory a link leads back to once. A link whose name the row reads as a file, a `*.md`
+or a `SKILL.md`, is read when it leads to a file inside the checkout. A link of either kind that
+leads out, as a dotfiles setup links `.claude/agents`, is named as a path that leads out of the
+checkout and was not followed, a `warn` that marks no fault: what it leads to is not the
+repository's, so the row does not read it and leaves that to you. Only a link to a file the row
+would not read, a skill's `LICENSE` say, is passed over wherever it points, and so is a dangling
+link.
 
 A `.claude/skills` below the root is found by asking git (`git ls-files --cached --others
 --exclude-standard`): the files a clone commits and the untracked ones git does not ignore, each

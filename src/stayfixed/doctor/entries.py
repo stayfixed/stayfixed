@@ -652,8 +652,10 @@ def _read_place(
     Links are followed, as the harness follows them, while they lead to a directory still inside
     the checkout; one that leads out is named as one that does (`_LINKED_OUT`), and one that cannot
     be listed as a directory this row could not read. A directory reached twice is listed once,
-    so a link back up the tree ends rather than circling until the cap. One that names no
-    directory is passed over, as `top` itself is when there is none."""
+    so a link back up the tree ends rather than circling until the cap. A name `place` reads goes
+    to `_frontmatter`, which reads a link to a file inside the checkout and names one that leads
+    out; any other link that names no directory is passed over, as `top` itself is when there is
+    none."""
     found: list[_Found] = []
     listed_once: set[tuple[int, int]] = set()
     pending = [top]
@@ -725,7 +727,8 @@ def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
 
     `--cached` lists a submodule as one entry and none of its files, and `--recurse-submodules`
     takes no `--others`, so a work tree with a `.gitmodules` at or above the root is asked a second
-    time, through each checked-out submodule's index: what each submodule commits. An entry under
+    time, through each checked-out submodule's index: what that index holds, its staged files as
+    well as its committed ones. An entry under
     one of the root's own places is left out: those are read off the disk (`_read_place`)."""
     places = [place for place in HOOKED if place.nested]
     if not places or not in_work_tree(root):
