@@ -148,19 +148,21 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     reason for existing.
 
     **Where the root comes from, because a containment rule that cannot say is not one.**
-    `home` is the machine owner's own home directory: `config.machine.owner_home`, which is
-    `HOME` from a terminal and the password database's entry everywhere else, or a `--home`
-    value only a person typing a command can supply. `HOME` alone was not that: a committed
+    `home` is the machine owner's own home directory: `config.machine.anchor_home`, which is
+    `HOME` from a terminal and, everywhere else, the password database's entry, resolved once so
+    that a home which is itself a symlink can be opened as a root, or a `--home` value only a
+    person typing a command can supply. `HOME` alone was not that: a committed
     `.claude/settings.json` `env` block can set it in a session no person is watching, and
     relative, it names a directory inside the clone. So the hook path never reads it. It is
     never read from `stayfixed.toml`, from a note, from a committed settings file or from
     anything else the repository authored, and the repository is the party being contained here:
     what it controls is `memory.groups` and `paths.memory`, which appear only in the *relative*
     half the walk refuses to follow out. The home directory itself is found and never created:
-    `open_within` applies `O_NOFOLLOW` to every component below the root and never to the
-    root, so an anchor stayfixed made up would be an anchor the walk cannot vouch for — and a
-    user the password database lists no home for has no anchor off a terminal, which is a
-    refusal here.
+    `open_within` opens the root, and every component below it, without following a link, so
+    the database's answer is resolved once before the walk while a `HOME` or `--home` that is
+    itself a link fails at it; an anchor stayfixed made up would be an anchor the walk cannot
+    vouch for — and a user the password database lists no home for has no anchor off a
+    terminal, which is a refusal here.
     """
     base = anchor_home() if home is None else home
     if base is None:

@@ -443,8 +443,9 @@ def _check_settings_parent(settings: Path) -> None:
 
     `is_dir() and not is_symlink()` and not `exists()`: it is exactly the pair the write refuses
     one frame down, so this check adds no rule of its own. It moves the existing one earlier.
-    A symlinked *home* stays fine, and is a different question — `_check_settings_path` answers
-    that one, and `open_within` never applies `O_NOFOLLOW` to the root it is handed.
+    A symlinked *home* is a different question, which `_check_settings_path` answers; here the
+    root is the file's own directory, and `open_within` opens the root it is handed with
+    `O_NOFOLLOW`, as it opens every component below it, so that directory may not be a link.
 
     **And the file itself, which the write does not refuse.** With `--settings` the root is the
     file's own directory and the walk is one component deep, so `open_within` never opens the
