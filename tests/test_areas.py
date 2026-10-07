@@ -637,6 +637,106 @@ def test_the_doctor_import_rule_reads_both_spellings_of_type_checking() -> None:
     assert _doctor_offences("x.py", ast.parse(carried)) == ["x.py:1", "x.py:2", "x.py:6"]
 
 
+def _package_imports(where: str, text: str, packages: frozenset[str]) -> set[tuple[str, str]]:
+    """The package graph's edges one file gives: `(its package, a package it imports)` for every
+    import statement that runs when the file is imported (`_imports_run_on_import`), to a package
+    out of `packages` other than its own. A package is a subpackage or a module directly under
+    `src/stayfixed/`, named by its first path component."""
+    parts = Path(where).parts
+    importer = parts[0].removesuffix(".py")
+    edges: set[tuple[str, str]] = set()
+    for node in _imports_run_on_import([ast.parse(text)]):
+        for _, module in _imported_modules(node, ("stayfixed", *parts[:-1])):
+            bits = module.split(".")
+            if bits[0] == "stayfixed" and bits[1:2] and bits[1] in packages - {importer}:
+                edges.add((importer, bits[1]))
+    return edges
+
+
+def _cycles(edges: set[tuple[str, str]]) -> list[list[str]]:
+    """Every strongly connected component of more than one package, each sorted, in sorted
+    order: the packages that import one another, directly or around a longer loop."""
+    after: dict[str, set[str]] = {}
+    for importer, imported in edges:
+        after.setdefault(importer, set()).add(imported)
+
+    def reachable(start: str) -> set[str]:
+        seen: set[str] = set()
+        pending = [start]
+        while pending:
+            for following in after.get(pending.pop(), set()) - seen:
+                seen.add(following)
+                pending.append(following)
+        return seen
+
+    reach = {package: reachable(package) for package in sorted(after)}
+    components = {
+        frozenset(
+            {package} | {other for other in reach if package in reach[other] and other in found}
+        )
+        for package, found in reach.items()
+    }
+    return sorted(sorted(component) for component in components if len(component) > 1)
+
+
+def test_the_packages_import_one_another_without_a_cycle_at_module_level() -> None:
+    # Two package cycles stood in the tree: the session guard imported the profiles' hint
+    # machinery while the Python profile's hint imported the guard's roots, and the configuration
+    # loader printed through `findings`, which printed through `printed`, which read its grammar
+    # from the configuration's schema. Neither failed an import, because each was entered from
+    # one side only, so nothing said so until a review drew the graph.
+    #
+    # What is counted is an import that runs when its module is imported -- the same reading the
+    # doctor rule above makes: module level, a class body, a `try`, a `with`, an `if` and the
+    # `else` of `if TYPE_CHECKING:`. What is not: an import inside a function, which is how this
+    # codebase defers a load until a command asks for it (the pinned crossing into the overlay
+    # area, every import of a discovered `hooks.py` and `doctor.py`), cannot leave a module
+    # half-initialised, and is held where it crosses into delivery by
+    # `test_core_never_imports_delivery`; and an `if TYPE_CHECKING:` body, which never runs and
+    # is the idiom for naming a type from a package that depends on this one. The nodes are the
+    # packages under `src/stayfixed/`, delivery areas included, and imports within one package are
+    # not edges.
+    #
+    # Mutations (declared): `mutations/`'s "the Python profile's hint imports the session guard
+    # again" and "printed reads the configuration's schema again".
+    source = ROOT / "src" / "stayfixed"
+    packages = frozenset(
+        path.name.removesuffix(".py")
+        for path in source.iterdir()
+        if path.suffix == ".py" or (path / "__init__.py").is_file()
+    )
+    edges: set[tuple[str, str]] = set()
+    for path in sorted(source.rglob("*.py")):
+        relative = path.relative_to(source).as_posix()
+        edges |= _package_imports(relative, path.read_text(encoding="utf-8"), packages)
+    # The walk reads the edges the two cycles were made of, so a reader that stopped finding
+    # imports cannot pass by finding no cycle.
+    assert {("config", "findings"), ("findings", "printed"), ("guards", "profiles")} <= edges
+    assert _cycles(edges) == []
+
+
+def test_the_package_graph_reads_imports_that_run_and_finds_every_cycle() -> None:
+    # The walk above can show the reading only for the spellings the tree carries. Measured by
+    # hand: reading function bodies, reading `if TYPE_CHECKING:` bodies or dropping the
+    # own-package filter each reddens the first assertion, and a `_cycles` that kept components
+    # of one package, or read reachability one way only, reddens the second.
+    packages = frozenset({"config", "findings", "guards", "printed", "profiles"})
+    text = (
+        "from stayfixed.findings import listed\n"
+        "if TYPE_CHECKING:\n    from stayfixed.config.schema import Config\n"
+        "else:\n    import stayfixed.printed\n"
+        "def f():\n    from stayfixed.guards.api import contained_roots\n"
+        "from . import sibling\nfrom stayfixed.profiles import shipped\n"
+        "from stayfixed import nothing_here\n"
+    )
+    assert _package_imports("profiles/python/hygiene.py", text, packages) == {
+        ("profiles", "findings"),
+        ("profiles", "printed"),
+    }
+    edges = {("a", "b"), ("b", "c"), ("c", "a"), ("c", "d"), ("d", "e"), ("e", "d"), ("f", "a")}
+    assert _cycles(edges) == [["a", "b", "c"], ["d", "e"]]
+
+
 def test_the_delivery_areas_are_attach_memory_and_overlay() -> None:
     # The three areas CONTRIBUTING's "Areas" names as delivery, pinned as a literal rather than
     # read back: the crossing meant to stay exercises only `overlay`, so a change that dropped

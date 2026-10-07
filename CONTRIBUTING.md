@@ -169,6 +169,13 @@ What source cannot show is when a pardoned statement runs, so
 interpreter and refuses any delivery module among what it loaded: the core loads the private layer
 only when a command asks for it.
 
+The packages under `src/stayfixed/` import one another without a cycle
+(`test_the_packages_import_one_another_without_a_cycle_at_module_level`), counting each import that
+runs when its module is imported. An import inside a function, which defers a load until a command
+asks for it, and one under `if TYPE_CHECKING:`, which never runs, are not counted. A leaf that two
+packages share, such as the path grammar in `printed.py`, lives where neither has to import the
+other for it.
+
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean

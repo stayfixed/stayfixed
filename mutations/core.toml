@@ -2791,6 +2791,20 @@ after = '''                area_modules("api")
                 raise UnknownHookEvent('''
 reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
+# The path grammar lives in `printed`, which imports nothing from the package, because the
+# configuration loader prints through `findings`, which prints through `printed`: with the grammar
+# read from `config.schema` again, the three import one another.
+[[mutation]]
+name = "printed reads the configuration's schema again"
+file = "src/stayfixed/printed.py"
+before = "from typing import Protocol"
+after = """from typing import Protocol
+
+from stayfixed.config.schema import Config"""
+reddens = [
+  "tests/test_areas.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+]
+
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
 # could not run" and the session handler's backstop swallows along with every other line of the
