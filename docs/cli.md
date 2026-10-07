@@ -3400,13 +3400,13 @@ it: a committed `.claude/settings.json` `env` block would otherwise choose your 
 and your trust record. Pass `--machine <path>` to read a different file — a path you typed
 rather than one an environment chose, and honoured by every reader of it.
 
-**`~` here is your home directory as the password database records it, not `HOME`.** The same
-`env` block can set `HOME`, and a hook runs inside the project, so `HOME=fakehome` would name a
-directory the repository ships, with a `trust.json` in it. Every command reads and writes this
-file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
+**`~` here is your home directory as the password database records it, not `HOME`.** A direnv,
+mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `HOME=fakehome`
+would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
+this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
-still decides what it decides from your own terminal: `--home`'s default, and where an
-interactive `attach` puts the harness memory link.
+still decides what it decides from your own terminal: `--home`'s default, and where an interactive
+`attach` puts the harness memory link.
 
 A container or home-manager setup whose `HOME` is not its database entry is not refused:
 
@@ -3416,8 +3416,8 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
   own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
   them to the entry's home **before** running `setup` or `memory trust`, which write there, or
-  merge them afterwards. Move only files you put there yourself: a repository's `env` block can
-  point `HOME` at a directory it ships.
+  merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
+  `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
   memory directory through `HOME`, and the session is told so. For an overlay store,
   `stayfixed attach` run from a terminal links every worktree under `HOME`. For an in-repo or

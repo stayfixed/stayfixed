@@ -23,16 +23,18 @@ A caller that knows it is a hook, the MCP server or a `stayfixed gate` run says
 `interactive=False` rather than relying on the terminal check — `config.loader.load` takes the
 same keyword for exactly that reason.
 
-**`HOME` is a third such variable, and it is gated the same way.** It reaches a hook from the same
-`env` block, and `run-hook.sh` enters the project root before Python starts, so `HOME=fakehome`
-names a directory inside the clone: a `trust.json` committed there approved the clone's own notes
-with no word from the owner. So off a terminal the home directory is the password database's
-entry for this process's user (`owner_home`), which no variable moves, and every reader and
-writer of this file asks with `interactive=False` — `setup` and `memory trust` included, so the
+**`HOME` is a third such variable, and it is gated the same way.** Claude Code never applies
+`HOME`, or any `XDG_*` variable, from a project's `env` block (its settings reference, "Variables
+Claude Code ignores in `env`"; measured on 2.1.293), but a direnv, mise or devcontainer environment
+can set it for a checkout, and `run-hook.sh` enters the project root before Python starts, so
+`HOME=fakehome` names a directory inside the clone: a `trust.json` committed there approved the
+clone's own notes with no word from the owner. So off a terminal the home directory is the password
+database's entry for this process's user (`owner_home`), which no variable moves, and every reader
+and writer of this file asks with `interactive=False` — `setup` and `memory trust` included, so the
 file a person writes is the file a hook reads. A container or home-manager setup whose `HOME`
-differs from that entry therefore keeps this file and `trust.json` under the entry's directory,
-and `stayfixed doctor`'s `ignored-env` row says so. A user the database does not list has no home
-off a terminal at all: no machine file is read, rather than one `HOME` chose.
+differs from that entry therefore keeps this file and `trust.json` under the entry's directory, and
+`stayfixed doctor`'s `ignored-env` row says so. A user the database does not list has no home off a
+terminal at all: no machine file is read, rather than one `HOME` chose.
 """
 
 from __future__ import annotations
