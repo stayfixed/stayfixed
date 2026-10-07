@@ -159,9 +159,12 @@ differently. Each has its own entry in these notes, with the detail:
     file a repository commits that stayfixed reads", in its last list).
   - A `.stayfixed/manifest.json` whose `format` is `true`, `0` or a negative integer, which 0.2.0
     read as the format it writes and went on, is refused as damaged (exit `2`) by `upgrade` and
-    `uninstall`; `detach` still goes on, as in 0.2.0. Every other `format` that is not
-    a positive integer is refused as damaged too, where 0.2.0 refused it as "written by a newer
-    stayfixed" (Fixed, "A `.stayfixed/manifest.json` whose `format` is not a positive integer").
+    `uninstall`. `detach` still finishes (exit `0`), and leaves the `stayfixed:ignore` region in
+    `.gitignore` in place, as for any manifest it cannot read (`ignore_region_removed: false`),
+    where 0.2.0 took the region out when such a manifest did not record it, and the file with it
+    when the region was all it held. Every other `format` that is not a positive integer is
+    refused as damaged too, where 0.2.0 refused it as "written by a newer stayfixed" (Fixed, "A
+    `.stayfixed/manifest.json` whose `format` is not a positive integer").
   - `stayfixed bugs renumber` whose own write fails, and `stayfixed bugs new` and `bugs index`
     whose index write fails, now exit `1`, naming the file and what to run, where each ended in
     `internal error` with exit `2` (Fixed, "`stayfixed bugs renumber OLD NEW` killed part-way"
