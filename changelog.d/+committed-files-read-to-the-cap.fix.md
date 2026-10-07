@@ -37,4 +37,9 @@ A file stayfixed cannot read is now said why in words wherever it used to name a
 `(IsADirectoryError)` or `(PermissionError)`, and so do `stayfixed doctor`'s `ci-ref` and
 `diagnostics` rows. `stayfixed init` and `stayfixed upgrade` name an artifact they cannot read
 relative to the project, as in `AGENTS.md cannot be read: not a regular file`, where the refusal
-gave its absolute path twice and the error's raw text.
+gave its absolute path twice and the error's raw text. `stayfixed uninstall` says why
+`.stayfixed/manifest.json`, `.stayfixed/assessment.json` or `.stayfixed/local/artifacts.json`
+could not be removed, and every command that rewrites `stayfixed.toml` (`upgrade`, `init`, `adopt
+promote`) why it could not be written, in words such as `Permission denied` where they
+quoted the error's text; the refusal over a trust record that cannot be read names it once, with
+the reason in words.
