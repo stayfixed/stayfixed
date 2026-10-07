@@ -1499,8 +1499,26 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   re-review found two more gaps: the module graph gave a module no edge to the packages above the
   module it imports, and `--check` counted memory groups at a checkout with no `origin`. Both were
   fixed before the push.
+- **`PATH` reached git on the hook path; it no longer does.** The owner measured Claude Code 2.1.293
+  on 2026-10-07. A committed settings env block's `PATH` reaches project and plugin hooks as
+  written, a relative entry resolved against the project, while `HOME` stays the real home and
+  `XDG_CONFIG_HOME` empty. The settings reference agrees: project and local settings cannot set
+  `HOME` or `XDG_*`, and `PATH` is not on that list. So, by the owner's decision:
+  - off a terminal, `gitenv` runs the first executable of the wrapper's absolute `git` candidates,
+    one list spelled twice and held equal by a test, and hands it a `PATH` of their directories and
+    the system's, so a `git-lfs` filter or an fsmonitor program is not the clone's either; no
+    candidate is no answer;
+  - the wrapper no longer runs `dirname` or `env` by name, which a clone's `fakebin` also reached;
+  - at a terminal, `git` and its `PATH` are the person's, as before, and `HOME` stays kept for
+    git, since Claude Code cannot set it.
+
+  Measured against `v0.2.0` through each shipped wrapper and launcher: every hook entry with a
+  planted program for every name in `/bin` and `/usr/bin` ran `git`, `git-lfs`, `dirname`, `env`
+  and `cat` from the clone under 0.2.0, and none under the branch. One residual cannot be closed
+  inside stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed`
+  that `PATH` names.
 - **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
-  It holds 36 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
+  It holds 37 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
   entry.
 
 Recorded, not changed:
@@ -1515,10 +1533,6 @@ Recorded, not changed:
   background, directly, through `env`, or through `uv run <options>`. `nohup`, `timeout`,
   `command`, `uvx`, `uv tool run` and `bash -c` wrappers are not judged. The owner decided on
   2026-10-07 to document this scope rather than widen the guard.
-- **`PATH` and `HOME` reach git on the hook path, and are accepted together.** `SECURITY.md` and
-  `gitenv.py` say so. A clone cannot set either one unless the harness applies a settings env block
-  to the hook's process. Whether Claude Code does that for `HOME` has not been measured. The owner
-  measures it, and the measurement decides whether hook-path git gets a scrubbed `HOME`.
 - **`CLAUDE.md` is still written for a Codex-only project.** Changing it would make `upgrade` remove
   a tracked file. The owner confirmed this on 2026-10-07.
 - **The overlay floor's pre-release ordering has no fragment.** No build ever carried a pre-release
@@ -1541,7 +1555,7 @@ Near limits:
 
 - `mutations/install.toml` holds 180,715 of 196,608 bytes. It is the next group to split, along
   `doctor/`.
-- `docs/cli.md` is 139 bytes under the 256 KiB a plugin directory allows one file
+- `docs/cli.md` is 187 bytes under the 256 KiB a plugin directory allows one file
   (`tests/test_payload.py`). The next addition needs a split or a cut first.
 - An unreadable overlay `codex/` directory makes `attach` fail with an internal error
   (`PermissionError`), as 0.2.0 did. Since the run refuses a missing `origin` before it reads that
