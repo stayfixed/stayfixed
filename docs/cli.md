@@ -2152,7 +2152,8 @@ remove the ledger.
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
 anything; `--check` says so first on its line, still reports the rest, and exits `2`, the code
-the real run refuses with.
+the real run refuses with. Where the rest cannot be read, `--check` ends with the run's refusal
+instead, the same code and the same line.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound`, `mismatch` or
 `no-origin`, the last with the cause and the way out ahead of the counts — the permission diff
@@ -2165,10 +2166,11 @@ write, through the run's own code, so where the run fails or refuses there — a
 that is not UTF-8, a `~/.claude` that is a symlink, a `trust.json` that does not parse, a doubled
 `stayfixed:ignore` region or `stayfixed:attach` block, a `.git/info` you cannot write, or any other
 case the two lists below give before the first write — `--check` ends with the same code and the
-same line. The exceptions are where a flag or a finding decides: a widening without `--yes` and a
-mismatch without `--trust-remote` it reports and goes past, asking what follows as a run given the
-flag would; outside overlay mode, at a checkout with no `origin` and at a memory group that never
-moved, it reports that and asks nothing after it, as the run refuses there before the rest.
+same line. The exceptions, besides overlay mode above, are where a flag or a finding decides: a
+widening without `--yes` and a mismatch without `--trust-remote` it reports and goes past, asking
+what follows as a run given the flag would; at a checkout with no `origin` and at a memory group
+that never moved it reports the finding, exits `1`, and of what the run asks next reads only the
+Codex rule files' names, so with no `origin` it counts no group (`real_directories` is `0`).
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
 `origin` and for the same reason — all three are findings you act on before the real run, and

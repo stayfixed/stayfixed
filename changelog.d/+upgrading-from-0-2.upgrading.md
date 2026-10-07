@@ -111,13 +111,14 @@ differently. Each has its own entry in these notes, with the detail:
     accounted for" (Fixed, "`stayfixed doctor`'s `hook-entries` row now judges the hook entries in
     a settings file that").
   - `stayfixed attach --check` ends with the real run's code and line wherever the run fails or
-    refuses before its first write, where 0.2.0 reported a clean diff and exited `0`: `2` for a
-    `.claude/settings.local.json` the run refuses, such as one whose `permissions` is `null`, a
-    `~/.claude` that is a symlink, a `trust.json` that does not parse or a doubled
-    `stayfixed:ignore` region, and `1` or `2` for a `.stayfixed/local/attach.json` the run cannot
-    take, such as one that is not valid JSON, and `1` for an overlay Codex rule that is not UTF-8.
-    A CI step that ran it goes red (Fixed, "`stayfixed attach --check` now refuses, with exit
-    `2`").
+    refuses before its first write, past the gates it reports instead of refusing (`memory.mode`, a
+    widening, a mismatch, a checkout with no `origin`, a group that never moved), where 0.2.0
+    reported a clean diff and exited `0`: `2` for a `.claude/settings.local.json` the run refuses,
+    such as one whose `permissions` is `null`, a `~/.claude` that is a symlink, a `trust.json` that
+    does not parse or a doubled `stayfixed:ignore` region, and `1` or `2` for a
+    `.stayfixed/local/attach.json` the run cannot take, such as one that is not valid JSON, and `1`
+    for an overlay Codex rule that is not UTF-8. A CI step that ran it goes red (Fixed, "`stayfixed
+    attach --check` now refuses, with exit `2`").
   - Your overlay's `permissions.json` with `"permissions": null` or `"allow": null`, or its
     `hooks.json` with an entry group whose `hooks` is `null`, which 0.2.0 read as granting nothing,
     is refused (exit `2`) by `stayfixed attach` and `attach --check`: remove the key, or give it

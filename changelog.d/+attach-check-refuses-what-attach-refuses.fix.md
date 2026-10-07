@@ -37,8 +37,16 @@ line, where it used to leave the file unread, report a clean diff and exit `0`:
 
 A `memory.groups` entry that leaves this project's share of the overlay, which `--check` refused
 in other words, is refused in the run's. Where the run refuses before the rest, at a checkout with
-no `origin` or a memory group that never moved, `--check` still reports it and exits `1`, and asks
-nothing after it.
+no `origin` or a memory group that never moved, `--check` still reports it and exits `1`, and of
+what the run would ask after that it reads only the names of the Codex rule files it lists. So at a
+checkout with no `origin` it no longer counts the groups that never moved, and a `memory.groups`
+entry outside `paths.memory` no longer ends it with that entry's refusal (exit `2`) where the run
+refuses for the missing `origin`; `real_directories` is `0` there until the `origin` is added.
+
+Outside overlay mode, `--check` still reports the run's refusal on its line with the rest of its
+report and exits `2`. Where the rest cannot be read, such as a settings file the run would refuse
+had it got that far, it now ends with the run's refusal of the mode, the same code and line, where
+it ended with whatever stopped the rest, in other words and at times with exit `1`.
 
 A refusal that names an event prints it escaped when it holds a line break or a control
 character, as other names a repository chose already print.
