@@ -99,7 +99,7 @@ from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.paths import STAYFIXED_DIRECTORY, contained
 from stayfixed.errors import Refusal
-from stayfixed.fsops import path_key, remove_within, rmdir_within
+from stayfixed.fsops import path_key, remove_within, rmdir_within, said
 from stayfixed.project.footprint import prepare
 from stayfixed.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
 from stayfixed.release.api import Resolution
@@ -283,7 +283,7 @@ def _remove_local_artifacts(root: Path) -> None:
         except FileNotFoundError:
             pass
         except OSError as exc:
-            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {exc}") from exc
+            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {said(exc)}") from exc
     base = contained(root, LOCAL_ARTIFACTS)
     if base.is_dir() and not base.is_symlink():
         below = (p for p in base.rglob("*") if p.is_dir() and not p.is_symlink())
@@ -305,7 +305,7 @@ def _remove_ledger(root: Path) -> None:
         try:
             remove_within(root, target)
         except OSError as exc:
-            raise Refusal(f"{target} cannot be removed: {exc}") from exc
+            raise Refusal(f"{target} cannot be removed: {said(exc)}") from exc
     _rmdirs(root, set(LEDGER_DIRS))
 
 

@@ -2857,3 +2857,13 @@ file = "src/stayfixed/memory/worktree.py"
 before = '    except (Refusal, OSError):'
 after = '    except Refusal:'
 reddens = ["tests/memory/test_worktree.py::test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing"]
+
+# The machine's trust record that cannot be read is named once with the reason in words: the
+# error's own text named the same absolute path a second time.
+[[mutation]]
+name = "a trust record that cannot be read is reported with the error's own text"
+file = "src/stayfixed/memory/trust.py"
+before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
+after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
+reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
+

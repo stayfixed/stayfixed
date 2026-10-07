@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
+import os
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -33,6 +35,7 @@ from stayfixed.project.uninstall import (
 )
 from stayfixed.project.upgrade import upgrade
 from stayfixed.scaffold import (
+    LOCAL_DIGESTS,
     MANIFEST_PATH,
     Kind,
     LocalDigests,
@@ -652,6 +655,30 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
     )
     report = _uninstall(root, tmp_path)
     assert not (root / ".github").exists() and report.orphans == 0
+
+
+@pytest.mark.parametrize("target", [MANIFEST_PATH.as_posix(), LOCAL_DIGESTS])
+def test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    # The refusal named the file by its root-relative path and then quoted the error's own text,
+    # `[Errno 13] Permission denied: 'manifest.json'`; it says the reason in words, as every other
+    # refusal does. Mutations: `mutations/`, "a ledger file that cannot be removed is reported
+    # with the error's own text", and the same of the local ledger.
+    from stayfixed.project import uninstall as module
+
+    def refused(within: Path, relative: str) -> None:
+        if relative == target:
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), Path(relative).name)
+
+    (tmp_path / target).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / target).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(module, "remove_within", refused)
+    manifest = target == MANIFEST_PATH.as_posix()
+    remove = module._remove_ledger if manifest else module._remove_local_artifacts
+    with pytest.raises(Refusal) as failed:
+        remove(tmp_path)
+    assert str(failed.value) == f"{target} cannot be removed: {os.strerror(errno.EACCES)}"
 
 
 @needs_git

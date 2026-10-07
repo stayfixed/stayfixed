@@ -328,7 +328,8 @@ def _recorded(machine: Path | None) -> dict[str, str]:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise UnreadableTrustRecord(
-            f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
+            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "
+            "overwrite it"
         ) from exc
     except UnicodeDecodeError:
         raise UnreadableTrustRecord(

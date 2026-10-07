@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
@@ -389,6 +390,27 @@ def test_a_corrupt_record_is_never_overwritten(tmp_path: Path) -> None:
     with pytest.raises(UnreadableTrustRecord):
         record(store, config)
     assert broken.read_text(encoding="utf-8") == original
+
+
+def test_a_record_that_cannot_be_read_says_why_in_words(tmp_path: Path) -> None:
+    # It named the file and then the error, whose text names the same absolute path again; the
+    # reason is said in words, the file named once. Mutation: `mutations/`, "a trust record that
+    # cannot be read is reported with the error's own text".
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config)
+    path = _trust_json(machine)
+    path.chmod(0o000)
+    try:
+        with pytest.raises(UnreadableTrustRecord) as refused:
+            state(store, config)
+    finally:
+        path.chmod(0o600)
+    assert str(refused.value) == (
+        f"{path} cannot be read ({os.strerror(errno.EACCES)}); refusing to answer about trust or "
+        "to overwrite it"
+    )
 
 
 def test_a_record_that_is_not_an_object_refuses(tmp_path: Path) -> None:
