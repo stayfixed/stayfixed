@@ -259,18 +259,27 @@ class _Stdin:
 
 def at_a_terminal(monkeypatch: pytest.MonkeyPatch, tty: bool) -> None:
     """Have this process be run from a terminal, or not, for the length of one test: the seam
-    `stayfixed.config.machine.override_is_honoured` reads, and with it which `git` the product
-    runs (`stayfixed.gitenv.git_program`). A test is off one already unless pytest runs with `-s`
-    from a terminal; a case about the difference says which it is about."""
+    `stayfixed.config.machine.override_is_honoured` reads. It does not choose the `git` the
+    product runs, which only `launched_by_the_hook_wrapper` does; a case that shows so sets both."""
     monkeypatch.setattr("sys.stdin", _Stdin(tty))
+
+
+def launched_by_the_hook_wrapper(monkeypatch: pytest.MonkeyPatch, launched: bool) -> None:
+    """Have this process be one `hooks/run-hook.sh` launched, or not, for the length of one test:
+    the variable `stayfixed.gitenv.git_program` reads, and with it which `git` the product runs.
+    A test is not one unless its environment says so; a case about the difference says which."""
+    if launched:
+        monkeypatch.setenv(gitenv.HOOK_WRAPPER_VARIABLE, gitenv.HOOK_WRAPPER_LAUNCHED)
+    else:
+        monkeypatch.delenv(gitenv.HOOK_WRAPPER_VARIABLE, raising=False)
 
 
 def stand_in_git(monkeypatch: pytest.MonkeyPatch, stand_in: Path) -> None:
     """Have the product run `stand_in` wherever it runs `git`, for the length of one test.
 
-    The one candidate `stayfixed.gitenv` takes off a terminal, which is where a test runs, and the
-    first `git` on `PATH`, which a `Runner` launch and a run at a terminal resolve it through. A
-    `git` put on `PATH` alone is never run off a terminal: that is the rule, not a seam.
+    The first `git` on `PATH`, which a `Runner` launch and every `git_run` outside a hook resolve
+    it through, and the one candidate `stayfixed.gitenv` takes in a stayfixed the hook wrapper
+    launched. A `git` put on `PATH` alone is never run there: that is the rule, not a seam.
     """
     monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(stand_in),))
     monkeypatch.setenv("PATH", f"{stand_in.parent}{os.pathsep}{os.environ.get('PATH', '')}")

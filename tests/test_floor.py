@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -54,10 +55,10 @@ def test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor(tmp_path: Pat
     )
     stand_in.chmod(0o755)
     env = developer_free_environ()
-    # The home the password database answers is the test's own `HOME`, and the stand-in is the
-    # one `git` the run takes (`tests/ownerhome.py`).
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    # The home the password database answers is the test's own `HOME` (`tests/ownerhome.py`).
     done = subprocess.run(
-        [*stayfixed_argv(Path(env["HOME"]), git=stand_in), "hook", "SessionStart"],
+        [*stayfixed_argv(Path(env["HOME"])), "hook", "SessionStart"],
         input=json.dumps({"cwd": str(nowhere)}),
         capture_output=True,
         text=True,

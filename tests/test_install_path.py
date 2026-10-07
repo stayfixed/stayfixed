@@ -726,11 +726,9 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     assert len(launched) == DOCTOR_LAUNCHES, launched
     # And they are the six the paragraph names, not six of something else: one wrapper probe,
     # and five `git` questions. Asserted by shape rather than by full argv, because each of the
-    # five `git` calls carries the temporary checkout or overlay it asks about, and by the
-    # program's name, because off a terminal `git` is run by the absolute path this machine
-    # holds it at (`stayfixed.gitenv.git_program`).
+    # five `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if Path(argv[0]).name == "git") == 5
+    assert sum(1 for argv in launched if argv[0] == "git") == 5
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:

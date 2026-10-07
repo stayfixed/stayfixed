@@ -82,20 +82,12 @@ def as_owner_home(monkeypatch: pytest.MonkeyPatch, home: Path | str | None) -> N
     monkeypatch.setattr(pwd, "getpwuid", lookup)
 
 
-def stayfixed_argv(home: Path, git: Path | None = None) -> list[str]:
+def stayfixed_argv(home: Path) -> list[str]:
     """The argv of a `stayfixed` run from this checkout with the database recording `home`, as
-    `scripts/stayfixed` runs it; the command's own arguments follow.
-
-    `git`, when given, is the one candidate the run takes its `git` from off a terminal: what
-    `tests/gitfixture.py`'s `stand_in_git` does in this process, for one a test starts. Code and
-    not a variable, for the reason the home is."""
-    candidates = ""
-    if git is not None:
-        candidates = f"from stayfixed import gitenv\ngitenv.GIT_CANDIDATES = ({str(git)!r},)\n"
+    `scripts/stayfixed` runs it; the command's own arguments follow."""
     bootstrap = (
         f"{_smoke_hooks().owner_home_prelude(home)}"
         f"import sys\nsys.path.insert(0, {str(ROOT / 'src')!r})\n"
-        f"{candidates}"
         "from stayfixed.cli import main\nraise SystemExit(main())\n"
     )
     return [sys.executable, "-c", bootstrap]

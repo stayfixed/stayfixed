@@ -9,26 +9,29 @@ the session's `GIT_DIR` or `GIT_WORK_TREE` would make every handler in the proce
 different repository than the one the user is sitting in; the memory store's queries decide
 whose notes a session reads, and the same variable would choose another project's.
 
-Nearly a leaf module: from `stayfixed` it imports `stayfixed.errors` and the terminal predicate
-of `stayfixed.config.machine`, neither of which imports anything that reaches back here, so the
-hook path pays no area import to reach it, and no caller has to import another's area to share
-the constants.
+A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed`, so the hook path
+pays no area import to reach it, and no caller has to import another's area to share the
+constants.
 
-**Off a terminal, `git` is never found through `PATH`.** A committed `.claude/settings.json`
-`env` block can set `PATH` for every hook — Claude Code applies it, and resolves a relative entry
-against the project (measured on 2.1.293) — so a bare `git` there was whatever binary the clone
-ships. Instead `git_program` takes the first executable of `GIT_CANDIDATES`, the absolute paths
-`hooks/run-hook.sh` takes its own `git` from, in the same order, and hands it a `PATH` of those
-paths' directories and the system's (`trusted_path`) and never an inherited entry: git runs
-helpers by name — the program a `filter.<driver>.process` names, such as `git-lfs`, and a
-`core.fsmonitor` hook — and an inherited `PATH` would choose those for an absolute `git` just
-the same. No candidate is no answer, as a `git` that cannot be launched is, and never a lookup
-on `PATH`. "Off a terminal" is `config.machine.override_is_honoured`, the same predicate that
-decides where the machine owner's home comes from.
+**In a stayfixed the hook wrapper launched, `git` is never found through `PATH`.** A committed
+`.claude/settings.json` `env` block can set `PATH` for every hook — Claude Code applies it, and
+resolves a relative entry against the project (measured on 2.1.293) — so a bare `git` there was
+whatever binary the clone ships. There `git_program` takes the first executable of
+`GIT_CANDIDATES`, the absolute paths `hooks/run-hook.sh` takes its own `git` from, in the same
+order, and hands it a `PATH` of those paths' directories and the system's (`trusted_path`) and
+never an inherited entry: git runs helpers by name — the program a `filter.<driver>.process`
+names, such as `git-lfs`, and a `core.fsmonitor` hook — and an inherited `PATH` would choose
+those for an absolute `git` just the same. No candidate is no answer, as a `git` that cannot be
+launched is, and never a lookup on `PATH`. The wrapper says it launched this process through
+`HOOK_WRAPPER_VARIABLE`, and nothing else is asked: not whether a terminal is attached, since a
+hook run by hand from one is still a hook.
 
-**At a terminal, `git` and its `PATH` are the person's.** That is their own shell, and a fixed
-list is what picks the Xcode shim at `/usr/bin/git` on macOS over the working `git` they
-installed, so `git` resolves through their `PATH` and is handed it as it is.
+**Anywhere else, `git` and its `PATH` are the environment's**, as they always were. At a
+terminal that is the person's own shell, where a fixed list is what picks the Xcode shim at
+`/usr/bin/git` on macOS over the working `git` they installed. A `stayfixed gate` step
+in CI runs in the repository's own job, and in a command an agent runs through its shell tool
+`PATH` has already chosen the `stayfixed` binary itself, so a fixed list would buy nothing there
+and would cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer.
 
 **`HOME` is kept, and it chooses git's global configuration**: `$HOME/.gitconfig` and
 `$HOME/.config/git/config`, whose `core.fsmonitor` names a program git runs on `status`,
@@ -60,18 +63,26 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from stayfixed.config.machine import override_is_honoured
 from stayfixed.errors import Failure
 
-# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. `PATH` is this process's
-# own only at a terminal; off one, `git_program` replaces it (the module docstring).
+# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. In a stayfixed the hook
+# wrapper launched, `git_program` replaces `PATH` (the module docstring).
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
-# Where `git` is taken from off a terminal: the first of these that is executable, the test
-# `[ -x ]` makes. The list `hooks/run-hook.sh` takes its own `git` from, in its order, and one list
-# spelled twice, since a shell script cannot import it: `tests/test_git_run.py` holds the two
-# equal. The machine owner's own installs come before `/usr/bin/git`, for the reason a `PATH` lookup
-# is kept at a terminal, and nothing under `HOME` is on it, since `HOME` is the environment's too.
+# The variable `hooks/run-hook.sh` exports, with this value, immediately before it runs the
+# launcher: "this process is one the hook wrapper launched", and the one thing `git_program` asks.
+# The wrapper overwrites whatever value it inherited, so on the hook path no `env` block or parent
+# can turn it off; set anywhere else, it can only make the `git` choice stricter, never looser.
+# Spelled twice, here and in the wrapper; `tests/hooks/test_wrapper.py` holds the two equal.
+HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"
+HOOK_WRAPPER_LAUNCHED = "1"
+
+# Where `git` is taken from in a stayfixed the hook wrapper launched: the first of these that is
+# executable, the test `[ -x ]` makes. The list `hooks/run-hook.sh` takes its own `git` from, in
+# its order, and one list spelled twice, since a shell script cannot import it:
+# `tests/test_git_run.py` holds the two equal. The machine owner's own installs come before
+# `/usr/bin/git`, for the reason a `PATH` lookup is kept everywhere else, and nothing under `HOME`
+# is on it, since `HOME` is the environment's too.
 GIT_CANDIDATES: tuple[str, ...] = (
     "/opt/homebrew/bin/git",
     "/usr/local/bin/git",
@@ -80,7 +91,7 @@ GIT_CANDIDATES: tuple[str, ...] = (
     "/usr/bin/git",
     "/bin/git",
 )
-# What follows the candidates' own directories in the `PATH` git is handed off a terminal.
+# What follows the candidates' own directories in the `PATH` git is handed there.
 SYSTEM_PATH: tuple[str, ...] = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
 
 # Wall-clock bound on one `git` call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
@@ -112,12 +123,13 @@ QUERY_TIMEOUT_SECONDS = 30
 # caller's bound, so no value of it shortens any bound, and one that is not a positive number is
 # ignored. A repository reaches a process's environment only through something that applies a file
 # it commits — a harness's `.claude/settings.json` `env` block, which applies without a trust
-# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment. Off a
-# terminal none of those chooses the `git` a call runs or the `PATH` it is handed (the module
-# docstring), and at a terminal they are the person's own; so a repository that sets this variable
-# gains a longer wait on a `git` it did not choose, and never a different answer. In a hook that
-# wait can outlast the harness's own timeout on the entry, which ends the hook unanswered where
-# the bound would have ended git with no answer, so the wait is capped, at `FLOOR_CEILING_SECONDS`.
+# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment. In a
+# stayfixed the hook wrapper launched none of those chooses the `git` a call runs or the `PATH` it
+# is handed (the module docstring), and anywhere else whatever sets this variable can set `PATH`
+# as readily, which chooses that `git` outright; so a repository that sets it gains a longer wait,
+# and never an answer it could not have had without it. In a hook that wait can outlast the
+# harness's own timeout on the entry, which ends the hook unanswered where the bound would have
+# ended git with no answer, so the wait is capped, at `FLOOR_CEILING_SECONDS`.
 FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
 # Ten minutes: far above what any load makes a local `git` take, and far below a timeout that
 # `subprocess` cannot represent — `timeout=1e300` raises `OverflowError`, which `git_run` does
@@ -170,11 +182,17 @@ def scrubbed_env(path: str | None = None) -> dict[str, str]:
     return {**scrubbed_env(), "PATH": path}
 
 
+def launched_by_the_hook_wrapper() -> bool:
+    """Whether `hooks/run-hook.sh` launched this process: `HOOK_WRAPPER_VARIABLE` holds exactly
+    `HOOK_WRAPPER_LAUNCHED`. Read at every call, like the list below."""
+    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED
+
+
 def trusted_path() -> str:
-    """The `PATH` git is handed off a terminal: the directory of each of `GIT_CANDIDATES`, once and
-    in the list's order, then `SYSTEM_PATH`. Built from constants alone, so no entry of it is
-    inherited, and the helpers an installed `git` runs by name — `git-lfs` beside a Homebrew `git`,
-    `ssh` — are found where that `git` was."""
+    """The `PATH` git is handed in a stayfixed the hook wrapper launched: the directory of each of
+    `GIT_CANDIDATES`, once and in the list's order, then `SYSTEM_PATH`. Built from constants
+    alone, so no entry of it is inherited, and the helpers an installed `git` runs by name —
+    `git-lfs` beside a Homebrew `git`, `ssh` — are found where that `git` was."""
     directories = [os.path.dirname(candidate) for candidate in GIT_CANDIDATES]
     return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))
 
@@ -189,15 +207,15 @@ class GitProgram:
 
 
 def git_program() -> GitProgram | None:
-    """The `git` to run here, or `None` off a terminal when no candidate is executable.
+    """The `git` to run here, or `None` in a hook when no candidate is executable.
 
-    At a terminal, `git` through the person's `PATH`, which git is handed as it is. Off one, the
-    first of `GIT_CANDIDATES` that is executable, with `trusted_path`; the first that exists is
-    *the* `git`, as in `hooks/run-hook.sh`, and one that then fails to answer is no answer rather
-    than a reason to try the next. Read at every call, so a test that changes either the terminal
-    or the list is under its own choice from its next call.
+    In a stayfixed the hook wrapper launched, the first of `GIT_CANDIDATES` that is executable,
+    with `trusted_path`; the first that exists is *the* `git`, as in `hooks/run-hook.sh`, and one
+    that then fails to answer is no answer rather than a reason to try the next. Anywhere else,
+    `git` through this process's `PATH`, which git is handed as it is. Read at every call, so a
+    test that changes the variable or the list is under its own choice from its next call.
     """
-    if override_is_honoured():
+    if not launched_by_the_hook_wrapper():
         return GitProgram("git", None)
     for candidate in GIT_CANDIDATES:
         if os.access(candidate, os.X_OK):
@@ -254,11 +272,11 @@ def git_run(
     The one place this project runs `git` to ask it something: every argument list is built
     from constants by the caller, every pathspec follows `--` or `--end-of-options`, and no
     configuration value reaches this list without `contained()` having refused the `-`-shaped
-    ones. The `git` and the `PATH` it is handed are `git_program`'s: off a terminal, an absolute
-    candidate and a `PATH` of fixed directories, so a `PATH` a repository commits chooses neither
-    git nor a helper git runs by name; at a terminal, the person's own. A non-zero exit is
-    returned, not collapsed — `check-ignore` answers 1 for "nothing matched", and that is an
-    answer.
+    ones. The `git` and the `PATH` it is handed are `git_program`'s: in a stayfixed the hook
+    wrapper launched, an absolute candidate and a `PATH` of fixed directories, so a `PATH` a
+    repository commits chooses neither git nor a helper git runs by name; anywhere else, the
+    environment's own. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
+    "nothing matched", and that is an answer.
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
     common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot
@@ -282,7 +300,7 @@ def git_run(
     `assess.rule.read_base` does for the base's `stayfixed.toml`.
 
     No answer is three things, and `NO_ANSWER` names all three: git could not be launched —
-    off a terminal, no candidate is executable — it ran past `timeout`, or `stdin` held a
+    in a hook, no candidate is executable — it ran past `timeout`, or `stdin` held a
     character the filesystem's codec has no bytes for: a name from a note or a file written in
     UTF-8, asked on Linux under a locale that is not. A name read off the disk never does,
     because it was decoded with that same codec.

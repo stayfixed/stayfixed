@@ -562,6 +562,29 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
+# stayfixed takes every `git` a hook asks from the fixed list only when the wrapper tells the
+# launcher it launched it, and the wrapper overwrites a value an `env` block or a parent preset:
+# left standing, one that is not the wrapper's hands every hook's `git` back to that block's `PATH`.
+[[mutation]]
+name = "the wrapper stops telling the launcher it launched it"
+file = "hooks/run-hook.sh"
+before = 'export STAYFIXED_HOOK_WRAPPER=1'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper keeps a value of its launcher's marker the environment preset"
+file = "hooks/run-hook.sh"
+before = 'export STAYFIXED_HOOK_WRAPPER=1'
+after = 'export STAYFIXED_HOOK_WRAPPER="${STAYFIXED_HOOK_WRAPPER:-1}"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[another value]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
 # "Permission denied" and exited 2 with no SF_ token, passed through by `case "$rc" in 0|2)` -- the
 # unattributed exit 2 the wrapper exists to make impossible, and a state `doctor`'s wrapper row

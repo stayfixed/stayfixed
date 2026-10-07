@@ -14,7 +14,7 @@ from typing import NamedTuple
 import pytest
 
 from stayfixed import __version__
-from stayfixed.gitenv import GIT_CANDIDATES
+from stayfixed.gitenv import GIT_CANDIDATES, HOOK_WRAPPER_LAUNCHED, HOOK_WRAPPER_VARIABLE
 from tests.gitfixture import git
 from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
 from tests.test_launcher import _old_python
@@ -30,6 +30,7 @@ def _plugin_root(
     echo_cwd: bool = False,
     with_launcher: bool = True,
     git_candidates: str | None = None,
+    prints: str | None = None,
 ) -> Path:
     """A plugin root: a copy of the shipped wrapper, and a launcher beside it.
 
@@ -75,6 +76,9 @@ def _plugin_root(
     # what `Path.resolve()` names, so the assertion is about the directory and not about which
     # of its spellings the shell kept.
     body = "import os\n\nprint(os.getcwd())\n" if echo_cwd else ""
+    # `prints` is an expression the launcher prints instead, with `os` imported.
+    if prints is not None:
+        body = f"import os\n\nprint({prints})\n"
     launcher.write_text(
         f"#!/usr/bin/env python3\n{body}raise SystemExit({exit_code})\n", encoding="utf-8"
     )
@@ -87,6 +91,7 @@ def _env(plugin_root: Path, env_root: Path | None, candidates: str | None) -> di
     env.pop("CLAUDE_PLUGIN_ROOT", None)
     env.pop("CLAUDE_PROJECT_DIR", None)
     env.pop("STAYFIXED_PYTHON_CANDIDATES", None)
+    env.pop(HOOK_WRAPPER_VARIABLE, None)
     if env_root is not None:
         env["CLAUDE_PLUGIN_ROOT"] = str(env_root)
     if candidates is not None:
@@ -947,7 +952,24 @@ def test_a_trust_record_under_a_home_the_environment_names_is_never_read(
     assert CANARY in admitted.stdout, admitted.stderr
 
 
-# The absolute paths both the wrapper and `stayfixed.gitenv` take `git` from off a terminal.
+@pytest.mark.parametrize("inherited", [None, "0", ""], ids=["unset", "another value", "empty"])
+def test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited(
+    tmp_path: Path, inherited: str | None
+) -> None:
+    # stayfixed takes `git` from the fixed list only in a process the wrapper launched, and
+    # knows it by `gitenv.HOOK_WRAPPER_VARIABLE` holding `gitenv.HOOK_WRAPPER_LAUNCHED`, one
+    # name and value spelled twice; this holds the two equal. A committed `env` block or a parent
+    # can preset the variable, and a preset value left standing would hand every hook's `git`
+    # back to the `PATH` that block sets. Mutations (declared): the wrapper stops setting it ->
+    # every case reddens; it keeps a value it inherited -> "another value" reddens.
+    environment = {} if inherited is None else {HOOK_WRAPPER_VARIABLE: inherited}
+    root = _plugin_root(tmp_path, 0, prints=f"os.environ.get({HOOK_WRAPPER_VARIABLE!r})")
+    result = _run("open", "hook", "PreToolUse", plugin_root=root, extra=environment)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{HOOK_WRAPPER_LAUNCHED}\n"
+
+
+# The absolute paths both the wrapper and `stayfixed.gitenv` take `git` from in a hook.
 ABSOLUTE_GIT = [path for path in GIT_CANDIDATES if os.access(path, os.X_OK)]
 # What a committed `env` block can put first on `PATH` for every hook, and Claude Code resolves
 # the relative entry against the project (measured on 2.1.293): the `git` every stayfixed query
@@ -980,10 +1002,11 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     # `process`, because a process filter that cannot start is fatal to `status` and git would
     # then give no answer to count; a clean filter that fails is not, so the count below is held.
     # Measured before the fix: every query ran the clone's `git`, the absolute `git` it handed
-    # over to ran the clone's `git-lfs`, and the wrapper ran the clone's `dirname` and `env`.
-    # Mutations
-    # (declared): `git_run` resolves `git` through `PATH` again, or hands it the inherited
-    # `PATH`; the wrapper runs `env` or `dirname` by name again — each reddens this.
+    # over to ran the clone's `git-lfs`, and the wrapper ran the clone's `dirname` and `env`. The
+    # same block also presets the variable that tells stayfixed the wrapper launched it, to a
+    # value that would turn the fixed list off. Mutations (declared): `git_run` resolves `git`
+    # through `PATH` again, or hands it the inherited `PATH`; the wrapper runs `env` or `dirname`
+    # by name again, or stops overwriting that variable — each reddens this.
     owner = tmp_path / "owner"
     owner.mkdir()
     project = tmp_path / "project"
@@ -1014,6 +1037,7 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     }
     env = _env(plugin, None, None)
     env.update(CLAUDE_PROJECT_DIR=str(project), PATH=f"fakebin:{os.environ.get('PATH', '')}")
+    env[HOOK_WRAPPER_VARIABLE] = "0"
     result = subprocess.run(
         [str(plugin / "hooks" / WRAPPER.name), "open", "hook", "PostToolUse"],
         input=json.dumps(payload),

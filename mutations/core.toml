@@ -131,30 +131,31 @@ reddens = [
   "tests/test_git_run.py::test_the_environment_is_scrubbed",
 ]
 
-# Off a terminal `git` is never found through `PATH`: Claude Code applies a committed `env`
-# block's `PATH` to every hook, so a bare `git` was the one the clone ships, run by every hook that
-# asked git anything. The choice as a whole is mutated, not `argv[0]` alone: `subprocess` resolves a
-# bare name through the `PATH` of the environment it is handed, which is the fixed one, so a bare
-# `git` there finds the same first candidate, and that mutant is equivalent.
+# In a stayfixed the hook wrapper launched `git` is never found through `PATH`: Claude Code applies
+# a committed `env` block's `PATH` to every hook, so a bare `git` was the one the clone ships, run
+# by every hook that asked git anything. The choice as a whole is mutated, not `argv[0]` alone:
+# `subprocess` resolves a bare name through the `PATH` of the environment it is handed, which is
+# the fixed one, so a bare `git` there finds the same first candidate, and that mutant is
+# equivalent.
 [[mutation]]
-name = "the git runner takes git from PATH off a terminal again"
+name = "the git runner takes git from PATH in a hook again"
 file = "src/stayfixed/gitenv.py"
 before = '    program = git_program()'
 after = '    program = GitProgram("git", None)'
 reddens = [
-  "tests/test_git_run.py::test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path",
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
 # `git-lfs` filter, a `core.fsmonitor` program.
 [[mutation]]
-name = "the git runner hands git the inherited PATH off a terminal again"
+name = "the git runner hands git the inherited PATH in a hook again"
 file = "src/stayfixed/gitenv.py"
 before = '            env=scrubbed_env(program.path),'
 after = '            env=scrubbed_env(),'
 reddens = [
-  "tests/test_git_run.py::test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry",
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry",
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
@@ -164,7 +165,7 @@ name = "the trusted PATH repeats a directory"
 file = "src/stayfixed/gitenv.py"
 before = '    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))'
 after = '    return os.pathsep.join([*directories, *SYSTEM_PATH])'
-reddens = ["tests/test_git_run.py::test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry"]
+reddens = ["tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry"]
 
 # The first candidate that is executable is the `git`; one that is missing is passed over.
 [[mutation]]
@@ -173,7 +174,7 @@ file = "src/stayfixed/gitenv.py"
 before = '        if os.access(candidate, os.X_OK):'
 after = '        if True:'
 reddens = [
-  "tests/test_git_run.py::test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path",
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
 ]
 
 # No candidate is no answer, never a lookup on the `PATH` a repository can set.
@@ -185,20 +186,42 @@ before = """            return GitProgram(candidate, trusted_path())
 after = """            return GitProgram(candidate, trusted_path())
     return GitProgram("git", None)"""
 reddens = [
-  "tests/test_git_run.py::test_off_a_terminal_no_candidate_is_no_answer_and_never_a_lookup_on_path",
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_no_candidate_is_no_answer_and_never_a_lookup_on_path",
 ]
 
-# At a terminal the person's own `PATH` chooses `git` and is handed to it: the rule above is for
-# where nobody is.
+# Outside a hook — a person's terminal, a CI step, a command an agent runs — the environment's own
+# `PATH` chooses `git` and is handed to it: the rule above is for the hook wrapper's processes.
 [[mutation]]
-name = "the git runner stops asking whether a person is at a terminal"
+name = "the git runner stops asking whether the hook wrapper launched it"
 file = "src/stayfixed/gitenv.py"
-before = '    if override_is_honoured():'
+before = '    if not launched_by_the_hook_wrapper():'
 after = '    if False:'
 reddens = [
-  "tests/test_git_run.py::test_at_a_terminal_git_and_its_path_are_the_person_s_own",
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[at a terminal]",
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[off a terminal]",
+  "tests/test_git_run.py::test_a_stayfixed_no_hook_wrapper_launched_runs_the_git_on_path_off_a_terminal",
   "tests/test_git_run.py::test_a_git_that_cannot_run_is_minus_one",
   "tests/guards/test_commit.py::test_the_log_is_bounded_scrubbed_and_terminated",
+]
+
+# Only the value the wrapper writes counts, which is what makes its overwriting an inherited one
+# the guard: any value counting would leave the wrapper's overwrite deciding nothing.
+[[mutation]]
+name = "any value of the hook wrapper's variable takes git from the fixed list"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED'
+after = '    return HOOK_WRAPPER_VARIABLE in os.environ'
+reddens = ["tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[another value]"]
+
+# One variable spelled twice, in Python and in the hook wrapper, and held equal.
+[[mutation]]
+name = "the git runner's hook wrapper variable drifts from the one the wrapper sets"
+file = "src/stayfixed/gitenv.py"
+before = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"'
+after = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # One candidate list spelled twice, in Python and in the hook wrapper, and held equal in order.

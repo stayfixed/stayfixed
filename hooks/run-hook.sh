@@ -108,7 +108,8 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # its stdout becoming the root every entry then runs against.
 #
 # The same list, in the same order, is `stayfixed.gitenv.GIT_CANDIDATES`, where every `git` a hook
-# asks inside stayfixed comes from off a terminal; `tests/test_git_run.py` holds the two equal.
+# asks inside stayfixed comes from (the launcher's marker, below); `tests/test_git_run.py` holds
+# the two equal.
 # The machine owner's own installs come before `/usr/bin/git`, so the macOS shim answers only where
 # nothing else is installed. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
 # environment-chosen too, so that would be the same hole one directory along.
@@ -340,6 +341,12 @@ fi
 # keys on finding a token (measured with `chmod 000`).
 [ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
+# **The launcher is told this file launched it**, and only then does stayfixed take every `git` it
+# runs from the list above, with a fixed `PATH` (`stayfixed.gitenv.git_program`): a `stayfixed`
+# run anywhere else, at a terminal or in a CI step, keeps the `git` on its `PATH`. Set here, over
+# whatever value was inherited, so an `env` block or a parent that presets it cannot turn that
+# off; set anywhere else, it can only make stayfixed's `git` stricter, never looser.
+export STAYFIXED_HOOK_WRAPPER=1
 # `-I` for the reason the probe takes it.
 "$p" -I "$launcher" "$@"
 rc=$?
