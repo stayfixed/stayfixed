@@ -20,7 +20,7 @@ from pathlib import Path
 
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
-from stayfixed.fsops import read_regular_text
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.identifiers import Identifiers
 from stayfixed.ledger.register import ENGINE_KEYS, Register
 from stayfixed.printed import quoted
@@ -254,9 +254,7 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     except UnicodeDecodeError as error:
         raise LedgerError(f"{_where(where)}: is not valid UTF-8 ({error.reason})") from error
     except OSError as error:
-        raise LedgerError(
-            f"{_where(where)}: could not be read ({error.strerror or error})"
-        ) from error
+        raise LedgerError(f"{_where(where)}: could not be read ({said(error)})") from error
 
 
 def entry_dir(root: Path, register: Register) -> Path:

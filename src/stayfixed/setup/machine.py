@@ -176,10 +176,9 @@ def write_machine(
         # With no `--machine` the directory is under the home the password database records,
         # which a system user's entry often names as a directory that is not there or not
         # theirs; no other place is one a hook reads, so the failure names the directory.
-        reason = exc.strerror or type(exc).__name__
         raise Failure(
-            f"{path.parent} cannot be written ({reason}), so the machine configuration cannot be "
-            f"kept there; without --machine it is under the home the password database records "
-            f"for this user, which is the only place a hook reads it"
+            f"{path.parent} cannot be written ({fsops.said(exc)}), so the machine configuration "
+            f"cannot be kept there; without --machine it is under the home the password database "
+            f"records for this user, which is the only place a hook reads it"
         ) from None
     return Written(path)

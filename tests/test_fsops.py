@@ -561,6 +561,23 @@ def test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by() ->
     assert fsops.said(OSError("/machine/checkout/src/a.py: refused")) == "OSError"
 
 
+def test_no_module_but_fsops_says_an_error_by_its_strerror() -> None:
+    # One spelling for what an error says about a file, `fsops.said`. Private copies of it drifted
+    # from it twice: two spelt it without its `UnsafePath` arm, and two fell back to the error's
+    # whole message, the path it was opened by included. Any read of `.strerror` under `src/` is
+    # such a copy, so the walk refuses every one but `said`'s own. Mutation (oracle):
+    # `mutations/`'s "a reader spells the error's words again rather than saying them".
+    source = Path(fsops.__file__).parent
+    found = sorted(
+        f"{path.relative_to(source).as_posix()}:{number}"
+        for path in source.rglob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if ".strerror" in line
+    )
+    # The walk finds `said`'s own read, so a walk that stopped finding any cannot pass.
+    assert len(found) == 1 and found[0].startswith("fsops.py:"), found
+
+
 def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers(
     tmp_path: Path,
 ) -> None:

@@ -124,10 +124,9 @@ def _write_record(machine: Path | None, raw: dict[str, str]) -> None:
             if machine is None
             else "it is beside the machine configuration file --machine names"
         )
-        reason = exc.strerror or type(exc).__name__
         raise Failure(
-            f"{path.parent} cannot be written ({reason}), so the trust record cannot be kept "
-            f"there; {where}"
+            f"{path.parent} cannot be written ({fsops.said(exc)}), so the trust record cannot be "
+            f"kept there; {where}"
         ) from None
 
 

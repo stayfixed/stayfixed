@@ -10,7 +10,7 @@ from urllib.parse import unquote
 from stayfixed.config.paths import contained
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
-from stayfixed.fsops import read_regular_text
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.printed import quoted
 from stayfixed.prose import blank_fences, present_within, resolves_within
 
@@ -62,7 +62,7 @@ def read_document(path: Path, where: str | Path) -> str:
     except UnicodeDecodeError as error:
         raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None
     except OSError as error:
-        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None
+        raise Failure(f"{shown}: could not be read ({said(error)})") from None
 
 
 def section_lines(text: str, heading: str) -> int | None:
