@@ -580,6 +580,20 @@ def test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason
     assert [r.reason for r in result.refusals] == [f"AGENTS.md cannot be read: {reason}"]
 
 
+def test_an_unreadable_old_home_of_a_relocated_artifact_is_named_where_it_is(
+    tmp_path: Path,
+) -> None:
+    # The reason names the file it is about: the recorded old place, which is not the artifact's
+    # configured target when the artifact moves back out of `[artifacts] local`. Mutation:
+    # `mutations/`, "a relocation names an unreadable old home by the artifact's target".
+    local = ".stayfixed/local/artifacts/AGENTS.md"
+    (tmp_path / local).mkdir(parents=True)
+    Manifest({}).with_record(a_record(target=local, location=Location.LOCAL)).write(tmp_path)
+    result = plan(tmp_path, a_config(tmp_path), [a_template()])
+    skipped = [(a.target, a.reason) for a in result.actions if a.verb is Verb.SKIP_MODIFIED]
+    assert skipped == [(local, f"{local} cannot be read: not a regular file")]
+
+
 def test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on(tmp_path: Path) -> None:
     # A FIFO cannot be committed, but a local process can leave one where an artifact goes, and
     # the engine opened it for reading and waited for a writer that never came: `init` and

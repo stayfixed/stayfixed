@@ -134,6 +134,20 @@ def test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it(
     ]
 
 
+def test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is(tmp_path: Path) -> None:
+    # The reason names the copy it is about, which is not the artifact's committed target the plan
+    # creates beside it. Mutation: `mutations/`, "a left copy that cannot be read is named by the
+    # artifact's target".
+    _written(tmp_path)
+    (tmp_path / LOCAL).unlink()
+    (tmp_path / LOCAL).mkdir()
+    planned = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, LOCAL, f"{LOCAL} cannot be read: not a regular file"),
+        (Verb.CREATE, "AGENTS.md", "new"),
+    ]
+
+
 def test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest(
     tmp_path: Path,
 ) -> None:

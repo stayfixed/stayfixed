@@ -2431,3 +2431,10 @@ before = "    elif _harness_waits(owner, config, machine=machine):"
 after = "    elif _harness_waits(root, config, machine=machine):"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
 
+[[mutation]]
+name = "the unavailable fallback is asked of a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)"
+after = "        wanted = _fallback_wanted(root, config, owner=root, machine=machine, home=home)"
+reddens = ["tests/attach/test_links.py::test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted"]
+

@@ -827,3 +827,19 @@ before = '        return None, f"{quoted(relative)} cannot be read: it is not UT
 after = '        return None, f"{path} cannot be read: it is not UTF-8 text"'
 reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[not-utf8]"]
 
+# Each caller names the file the reason is about: the recorded old place of a relocation and the
+# copy kept out of git, neither of them the artifact's configured target.
+[[mutation]]
+name = "a relocation names an unreadable old home by the artifact's target"
+file = "src/stayfixed/scaffold/engine.py"
+before = "    old, reason = _read(old_path, record.target)"
+after = "    old, reason = _read(old_path, template.target)"
+reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_old_home_of_a_relocated_artifact_is_named_where_it_is"]
+
+[[mutation]]
+name = "a left copy that cannot be read is named by the artifact's target"
+file = "src/stayfixed/scaffold/engine.py"
+before = "    current, reason = _read(path, copy)"
+after = "    current, reason = _read(path, template.target)"
+reddens = ["tests/scaffold/test_local.py::test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is"]
+

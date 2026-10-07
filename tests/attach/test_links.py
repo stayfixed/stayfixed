@@ -310,6 +310,33 @@ def test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made
     assert _settings(side)["autoMemoryDirectory"] == str(owner.path.resolve())
 
 
+def test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted(
+    tmp_path: Path,
+) -> None:
+    # The other branch of the same question: a worktree whose `.claude` is linked in from
+    # elsewhere takes no fallback and says so when one is wanted. Asked of the worktree's own store,
+    # it said so beside the link it had just made. Mutation: `mutations/`, "the unavailable
+    # fallback is asked of a worktree's own store".
+    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(side, store, machine, home)
+    _trusted(root, machine)
+    _trusted(side, machine)
+    (tmp_path / "dotfiles-claude").mkdir()
+    (side / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    attached = _attach(side, store, machine, home)
+    assert harness_memory_path(side, home).is_symlink()
+    assert FALLBACK_UNAVAILABLE not in attached.notes
+    harness_memory_path(side, home).unlink()
+    harness_memory_path(side, home).mkdir()
+    assert FALLBACK_UNAVAILABLE in _attach(side, store, machine, home).notes
+    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
+
+
 def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
     tmp_path: Path,
 ) -> None:
