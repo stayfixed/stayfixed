@@ -2618,9 +2618,11 @@ one, back to `prepare-commit-msg`. Its line says which it met: `removed <hook>` 
 foreign hook was restored, `there is no stayfixed hook at <hook>; nothing was removed`, or `left
 <hook> as it was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `found`
 (`removed`, `absent` or `foreign`) beside `path` and `restored`. A hook at the path that cannot be
-read as a regular file — a FIFO, a mode that forbids reading, one past the read cap — is neither
+read as a regular file — a FIFO, a directory, a mode that forbids reading — is neither
 stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves it where
-it is. Exits `0`; `2` when `--preset` is also given or the hook cannot be read.
+it is. A regular file longer than the 64 MiB read cap is foreign, since stayfixed's own hook is a
+couple of kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when
+`--preset` is also given or the hook cannot be read.
 
 ---
 

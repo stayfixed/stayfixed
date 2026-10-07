@@ -161,10 +161,13 @@ def _ours(path: Path, outcome: str) -> bool:
     never waited on, as `read_text` waited on it. A hook that cannot be read is neither ours nor
     foreign, and is refused, ending in `outcome`, what the caller did not do: read as foreign, it
     was "not stayfixed's" to `uninstall` and renamed and chained by `install` when it was
-    stayfixed's own at mode 000.
+    stayfixed's own at mode 000. A regular file past the cap is the exception, and is foreign:
+    stayfixed's own hook is a couple of kilobytes, so one that long is certainly not it.
     """
     try:
         content = fsops.read_regular_bytes(path)
+    except fsops.TooLarge:
+        return False
     except OSError as exc:
         raise Refusal(
             UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)

@@ -417,6 +417,33 @@ def test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign(tmp_path: Path, 
     assert not hook.with_name(HOOK_NAME + ".local").exists()
 
 
+def test_a_hook_past_the_read_cap_is_a_foreign_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # stayfixed's own hook is a couple of kilobytes, so a regular file longer than the read cap
+    # is certainly not it: it is foreign, chained by `install` and left alone by `--uninstall`,
+    # as 0.2.0 did, rather than refused as a hook that cannot be read. The cap is lowered to
+    # just past stayfixed's own hook, which is still read whole. Mutation: `mutations/`, "a hook
+    # past the read cap is refused as one that cannot be read".
+    from stayfixed import fsops
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    limit = len(HOOK_TEXT.encode("utf-8")) + 16
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    foreign = "#!/bin/sh\necho foreign\n" + "#" * limit + "\n"
+    hook.write_text(foreign, encoding="utf-8")
+    assert uninstall(root) == (hook, None, Found.FOREIGN)
+    installed = install(root)
+    local = hook.with_name(HOOK_NAME + ".local")
+    assert (installed.replaced, installed.preserved) == (False, local)
+    assert local.read_text(encoding="utf-8") == foreign
+    assert uninstall(root) == (hook, hook, Found.REMOVED)
+    assert hook.read_text(encoding="utf-8") == foreign
+
+
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:
     # `git rev-parse --git-path hooks` rather than `<common-dir>/hooks` computed by hand,
     # which is a directory git never reads when husky has pointed core.hooksPath elsewhere.
