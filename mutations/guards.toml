@@ -1280,3 +1280,25 @@ reddens = [
   "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[long]",
   "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound",
 ]
+
+# The interpreter and the manifest of one stack are stack words like its runner: a core module that
+# names either is moved into that stack's profile or pardoned with its reason.
+[[mutation]]
+name = "the core names the Python interpreter"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """INTERPRETER = "python"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+[[mutation]]
+name = "the core names a Python project's manifest"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """MANIFEST = "pyproject.toml"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]

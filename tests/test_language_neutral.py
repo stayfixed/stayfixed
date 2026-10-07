@@ -38,6 +38,8 @@ PROFILES = PACKAGE / "profiles"
 # scanner's `uv run` reading (`guards/uvrun.py`) spells its wrapper as the two words `"uv"` and
 # `"run"`.
 STACK_WORDS = (
+    "python",
+    "pyproject",
     "pytest",
     "pyc",
     "pycache",
@@ -80,8 +82,11 @@ STACK_NAMED = {
     # stack itself. `uv run` is a Python launcher, and it stays beside the shared scanner rather
     # than in the Python profile because more than the profiles read commands through that
     # unwrapping: the background-cleanup guard (`guards/bgcleanup.py`) judges the command
-    # `uv run` launches, as every profile's `recognises` does.
+    # `uv run` launches, as every profile's `recognises` does. Its option tables name the
+    # interpreter uv picks (`--python`, `--managed-python`, `--python-platform` …) because they
+    # are uv's own options, which the unwrap has to know to step past.
     ("src/stayfixed/guards/uvrun.py", "uv"),
+    ("src/stayfixed/guards/uvrun.py", "python"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
     # (`cli-path` in the core's checks, `overlay-requires` in the overlay area's) and in `setup`'s
     # pinned install command: the tool stayfixed itself is installed with, not a stack a project

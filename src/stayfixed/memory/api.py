@@ -12,7 +12,7 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-two names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-three names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
@@ -26,11 +26,12 @@ does not exist yet (`approval_recorded`, which `attach` asks before a first link
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
 binding's one classifier and the states and causes it answers in (`binding_state`, `UNBOUND`,
-`MISMATCH`, `NO_ORIGIN`, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
-`DIFFERENT_REMOTE`), which `attach` answers the binding question with instead of a second
-classifier of its own, the bundle slots `tests/hooks/test_hooks_json.py` holds the hooks file to
-(`SLOTS`), the note store a `doctor` row reads, resolved once per area per report (`Answers`,
-which the `attach` area's own `doctor.py` creates for its row), and
+`BOUND`, which `attach`'s own doctor row reads, `MISMATCH`, `NO_ORIGIN`, and the causes
+`NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and `DIFFERENT_REMOTE`), which `attach` answers
+the binding question with instead of a second classifier of its own, the bundle slots
+`tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the note store a `doctor` row
+reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
+creates for its row), and
 the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
 link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
 wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
@@ -39,14 +40,14 @@ overlay root the machine file records and the checkout's `origin` are the core's
 `init` asks them too and the core may not import this area; the crossings still pinned are
 listed in `tests/test_areas.py`.
 
-**Ten more have no importer and stay, each for a reason written here**, because a name
+**Nine more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
 - **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and
   a return type absent from a surface is a value a consumer can hold and cannot declare, which
-  `tests/test_surfaces.py` derives rather than restates. `BINDING_STATES` and `BOUND` complete the
-  closed vocabulary `binding_state` answers in, beside the three states that have a caller, for the
-  reason the trust region's bullet below gives.
+  `tests/test_surfaces.py` derives rather than restates. `BINDING_STATES` completes the closed
+  vocabulary `binding_state` answers in, beside the four states that have a caller, for the reason
+  the trust region's bullet below gives.
 
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
