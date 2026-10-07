@@ -22,6 +22,8 @@ from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
+from stayfixed.project.init import init
+from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
@@ -29,7 +31,7 @@ from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
-from tests.runners import git_that_cannot_run
+from tests.runners import LsRemote, git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -68,6 +70,29 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:
+    # The lifecycle's "uninstalled after a detach": `stayfixed uninstall` refuses an attached
+    # repository, so what a detach leaves behind decides whether it runs at all. An `init`
+    # footprint, a real attach that merged a rule and a hook entry, a detach, and the tree is the
+    # one `init` left; `uninstall` then runs and takes the footprint back, and a second one finds
+    # nothing to take. Mutation: `mutations/`, "detach leaves its ledger behind".
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "footprint")
+    initialised = snapshot(root)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert_snapshot_changed(root, initialised)
+    _detach(root, machine, home)
+    assert_snapshot_unchanged(root, initialised)
+    uninstall(root, machine=machine, dry_run=False, force=())
+    assert not (root / MANIFEST_PATH).exists() and not (root / LEDGER).exists()
+    with pytest.raises(Refusal):
+        uninstall(root, machine=machine, dry_run=False, force=())
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:

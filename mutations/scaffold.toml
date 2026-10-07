@@ -843,3 +843,12 @@ before = "    current, reason = _read(path, copy)"
 after = "    current, reason = _read(path, template.target)"
 reddens = ["tests/scaffold/test_local.py::test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is"]
 
+
+# An artifact whose bytes are already the template's is left alone, so a second run of the same
+# release plans nothing: planned again, every artifact reads as an update or as hand-edited.
+[[mutation]]
+name = "an artifact whose bytes are already the template's is planned again"
+file = "src/stayfixed/scaffold/engine.py"
+before = "            if present is not None and digest(present) == digest(stamp):"
+after = "            if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_second_upgrade_to_the_same_release_writes_nothing"]

@@ -27,6 +27,7 @@ from stayfixed.memory.refs import (
 from stayfixed.printed import CLIPPED_CHARS, clipped
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 CONFIG = """
 [stayfixed]
@@ -326,6 +327,21 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
     data = json.loads(capsys.readouterr().out)
     assert data["summary"] == "1 stale reference(s): developer/a.md:8 [dead-reference]"
     assert data["findings"][0]["detail"] == "src/gone.py"
+
+
+def test_a_second_run_answers_as_the_first_and_neither_writes_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": `memory refs` only reads, so a second run over
+    # the same store gives the first one's exit and line, a stale path and a graph notice
+    # included, and leaves the tree as it was. No mutation: the command has no write for one to
+    # take away, so this holds a property of the whole run rather than one line.
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see `src/gone.py` and [[gone]]\n")
+    before = snapshot(root)
+    runs = [(invoke(["memory", "refs", *flags(root)]), capsys.readouterr().out) for _ in "ab"]
+    assert runs[0] == runs[1] and runs[0][0] == 1
+    assert_snapshot_unchanged(root, before)
 
 
 def test_a_stale_path_fails_beside_a_graph_notice_and_the_line_counts_both(

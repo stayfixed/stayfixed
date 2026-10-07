@@ -211,6 +211,25 @@ def test_force_overwrites_exactly_the_edit_it_names(
 
 
 @needs_git
+def test_a_second_upgrade_to_the_same_release_writes_nothing(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": the first run to a release refreshes a document
+    # and moves the version, and the second finds every artifact as the first left it, so it
+    # plans nothing and the tree is the same byte for byte. Mutation: `mutations/`, "an artifact
+    # whose bytes are already the template's is planned again".
+    root = _pinned(tmp_path)
+    newer()
+    first = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    assert first.moved and Verb.UPDATE in {action.verb for action in first.footprint.actions}
+    before = snapshot(root)
+    second = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    assert_snapshot_unchanged(root, before)
+    assert second.moved == () and second.footprint.actions == ()
+    assert second.footprint.unchanged
+
+
+@needs_git
 def test_a_dry_run_writes_nothing_and_reports_everything(
     tmp_path: Path, newer: Callable[[], None]
 ) -> None:

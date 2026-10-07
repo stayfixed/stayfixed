@@ -22,6 +22,7 @@ from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 from tests.test_areas import UNIMPORTABLE, plant_area
 
 
@@ -72,6 +73,23 @@ def test_a_clean_installation_exits_zero_with_one_line(
     out = capsys.readouterr().out
     assert code == 0
     assert len(out.strip().splitlines()) == 1
+
+
+def test_a_second_report_is_the_first_and_neither_writes_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": `doctor` only reads, so a second run over the
+    # same tree reports what the first did and leaves the tree, the home directory included, as
+    # it was. No mutation: the command has no write for one to take away, so this holds a
+    # property of the whole run rather than one line.
+    root = _initialised(tmp_path)
+    argv = ["doctor", "--json", "--root", str(root), "--home", str(tmp_path / "home")]
+    (tmp_path / "home").mkdir(exist_ok=True)
+    before = snapshot(tmp_path)
+    first = (invoke(argv), capsys.readouterr().out)
+    second = (invoke(argv), capsys.readouterr().out)
+    assert first == second and json.loads(first[1])["checks"]
+    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
