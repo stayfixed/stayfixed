@@ -1098,11 +1098,22 @@ def test_the_machinery_rule_reads_resources_by_its_anchor_and_every_door(
 DISCOVERY_FUNCTIONS = frozenset({"area_modules", "area_imports"})
 
 
-def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) -> list[str]:
-    """Every reference to a discovery function in `tree` that is not a call with one literal
-    argument out of `allowed`: a call naming any other submodule, a computed argument, and the
-    function handed on as a value, which would call it out of sight. Read by any name a `from …
-    import` binds it to and as an attribute of anything (`stayfixed.areas.area_modules`)."""
+# Who asks discovery for what, one row per call: the file relative to `src/stayfixed/` and the
+# submodule its call names. Held as a multiset and by equality in both directions, as
+# `DYNAMIC_IMPORTERS` is. Each submodule has its one reader, the CLI frame, the hook registry and
+# the doctor report, and no other module asks: any module that could ask for `commands` could pick
+# one area's module out of the answer by its name and call into the private layer through the door
+# the delivery rule leaves open, though every call named a submodule discovery is for.
+DISCOVERY_CALLERS = (
+    ("cli.py", "commands"),
+    ("doctor/registry.py", "doctor"),
+    ("hooks/registry.py", "hooks"),
+)
+
+
+def _discovery_references(tree: ast.AST) -> list[ast.Name | ast.Attribute]:
+    """Every reference to a discovery function in `tree`: by any name a `from … import` binds it
+    to, and as an attribute of anything (`stayfixed.areas.area_modules`)."""
     bound = set(DISCOVERY_FUNCTIONS) | {
         alias.asname
         for node in ast.walk(tree)
@@ -1110,25 +1121,36 @@ def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) ->
         for alias in node.names
         if alias.name in DISCOVERY_FUNCTIONS and alias.asname
     }
-    literal: set[int] = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and not node.keywords
-            and len(node.args) == 1
-            and isinstance(node.args[0], ast.Constant)
-            and node.args[0].value in allowed
-        ):
-            literal.add(id(node.func))
-    lines = [
-        node.lineno
+    return [
+        node
         for node in ast.walk(tree)
-        if (
-            (isinstance(node, ast.Name) and node.id in bound)
-            or (isinstance(node, ast.Attribute) and node.attr in DISCOVERY_FUNCTIONS)
-        )
-        and id(node) not in literal
+        if (isinstance(node, ast.Name) and node.id in bound)
+        or (isinstance(node, ast.Attribute) and node.attr in DISCOVERY_FUNCTIONS)
     ]
+
+
+def _discovery_asks(tree: ast.AST, allowed: frozenset[str]) -> dict[int, str]:
+    """The submodule each call of a discovery function in `tree` names, keyed by the identity of
+    the reference it calls, for every call with one literal argument out of `allowed`."""
+    references = {id(node) for node in _discovery_references(tree)}
+    return {
+        id(node.func): str(node.args[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and id(node.func) in references
+        and not node.keywords
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value in allowed
+    }
+
+
+def _area_module_offences(where: str, tree: ast.AST, allowed: frozenset[str]) -> list[str]:
+    """Every reference to a discovery function in `tree` that is not a call with one literal
+    argument out of `allowed`: a call naming any other submodule, a computed argument, and the
+    function handed on as a value, which would call it out of sight."""
+    asks = _discovery_asks(tree, allowed)
+    lines = [node.lineno for node in _discovery_references(tree) if id(node) not in asks]
     return [f"{where}:{line}" for line in sorted(lines)]
 
 
@@ -1136,36 +1158,33 @@ def test_discovery_is_asked_only_for_the_submodules_it_names() -> None:
     # `area_modules` and `area_imports` import `stayfixed.<area>.<submodule>` for every area that
     # has one, so a core caller asking for `"api"` loads every area's surface, the private layer's
     # included, through the one door the delivery rule leaves open. Every call under
-    # `src/stayfixed/` names one of the three submodules discovery is for, as a literal.
+    # `src/stayfixed/` names one of the three submodules discovery is for, as a literal, and is
+    # made by that submodule's reader alone (`DISCOVERY_CALLERS`).
     #
-    # Mutation (declared): `mutations/`'s "a core module asks discovery for every area's api.py".
+    # Mutations (declared): `mutations/`'s "a core module asks discovery for every area's api.py"
+    # and "a core module picks one area's commands out of discovery".
     source = ROOT / "src" / "stayfixed"
     allowed = frozenset(name.removesuffix(".py") for name in DISCOVERED_SUBMODULES)
     offences: list[str] = []
-    asked: set[str] = set()
+    asked: list[tuple[str, str]] = []
     for path in sorted(source.rglob("*.py")):
+        where = path.relative_to(source).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        offences += _area_module_offences(path.relative_to(source).as_posix(), tree, allowed)
-        asked |= {
-            str(node.args[0].value)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in DISCOVERY_FUNCTIONS
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-        }
+        offences += _area_module_offences(where, tree, allowed)
+        asked += [(where, submodule) for submodule in _discovery_asks(tree, allowed).values()]
     assert offences == []
-    # Each reader's call was seen, so a walk that stopped finding calls cannot pass by finding
-    # no offence.
-    assert asked == {"commands", "hooks", "doctor"}
+    # Each reader's call is a row, so a walk that stopped finding calls cannot pass by finding no
+    # offence, and a fourth caller is an unpinned row however it spells the call.
+    found, pinned = Counter(asked), Counter(DISCOVERY_CALLERS)
+    assert found == pinned, {"unpinned": found - pinned, "gone": pinned - found}
 
 
 def test_the_string_import_rules_read_every_spelling() -> None:
     # The walks above can only show the rules holding for the spellings the tree carries, so they
     # are put in front of the ones it does not. Measured by hand: reading `from importlib import`
     # aliases no more reddens the first assertion, dropping the string-constant arm the second,
-    # and dropping the attribute arm of `_area_module_offences` the third.
+    # dropping the attribute arm of `_discovery_references` the third and the fourth, and reading
+    # a call of any function as an ask the fourth.
     aliased = "from importlib import import_module as load\ndef f():\n    load('x')\n"
     assert _dynamic_imports(ast.parse(aliased)) == [
         ("<module>", "from importlib import"),
@@ -1186,3 +1205,8 @@ def test_the_string_import_rules_read_every_spelling() -> None:
         "x.py:5",
         "x.py:8",
     ]
+    asking = (
+        "import stayfixed.areas\nstayfixed.areas.area_modules('commands')\n"
+        "from stayfixed.areas import area_imports as ask\nask('doctor')\nprint('hooks')\n"
+    )
+    assert sorted(_discovery_asks(ast.parse(asking), allowed).values()) == ["commands", "doctor"]

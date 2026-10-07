@@ -3266,3 +3266,19 @@ file = "src/stayfixed/doctor/checks.py"
 before = '        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",'
 after = '        f"{_LINK_FROM_A_TERMINAL}",'
 reddens = ["tests/doctor/test_checks.py::test_the_row_names_what_makes_the_harness_link_only_where_it_does"]
+
+# Each submodule discovery imports has one reader. A core module that asks for `commands` itself,
+# naming the submodule as a literal as every call must, can still pick one area's module out of the
+# answer by its name and call into the private layer.
+[[mutation]]
+name = "a core module picks one area's commands out of discovery"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+    from stayfixed.areas import area_modules
+
+    (memory,) = [m for m in area_modules("commands") if m.__name__ == "stayfixed.memory.commands"]
+    memory.register'''
+reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]

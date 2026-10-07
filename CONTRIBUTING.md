@@ -160,7 +160,9 @@ that can import by a string any other way (`MACHINERY` there: `importlib`, `pkgu
 `importlib.resources` is held too: `files` imports the anchor it is handed when that names a module,
 so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
 of it is the machinery like the rest.
-Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
+Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
+and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
+`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`.
 
 What source cannot show is when a pardoned statement runs, so
 `test_in_isolation_no_core_module_loads_a_delivery_area` imports every core module in a clean
