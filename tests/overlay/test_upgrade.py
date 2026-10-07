@@ -11,6 +11,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.naming import owner_of
+from stayfixed.overlay.template import retired
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
 from tests.parserlimits import LONG_NUMBER, NESTED, overflowing
@@ -1093,10 +1094,19 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
     # names no file it removed or left. Mutation (declared): `mutations/`'s "a retired overlay
     # file that is absent is planned for removal" -> the first plan's assertion reddens. The
     # engine's removal and record-dropping paths are the set's other retirement entries.
+    #
+    # Nor does it list a retired file that is gone and unrecorded among the unchanged: every
+    # run after the one that removed them told the owner that the files the release notes say
+    # were removed are "unchanged", and counted them, and so did a fresh overlay's first run.
+    # Mutation (declared): `mutations/`'s "a retired file that is gone and unrecorded is
+    # reported unchanged" -> both `unchanged` assertions redden.
+    gone = {template.id for template in retired()}
     root = _an_overlay(tmp_path)
     for relative in (ATTACH_SKILL, RULES_README):
         assert not (root / relative).exists(), relative
-    assert upgrade(root, dry_run=True).plan.actions == ()
+    fresh = upgrade(root, dry_run=True).plan
+    assert fresh.actions == ()
+    assert gone.isdisjoint(fresh.unchanged), fresh.unchanged
     _with_a_retired_file(
         root,
         ATTACH_SKILL,
@@ -1114,7 +1124,9 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
         version="0.2.0",
     )
     upgrade(root, dry_run=False)
-    assert upgrade(root, dry_run=True).plan.actions == ()
+    again = upgrade(root, dry_run=True).plan
+    assert again.actions == ()
+    assert gone.isdisjoint(again.unchanged), again.unchanged
     done = init_instance(root, "octo", runner=Recorder())
     assert not [note for note in done.notes if note.startswith(("removed ", "left "))], done.notes
 

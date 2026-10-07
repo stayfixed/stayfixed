@@ -2024,7 +2024,9 @@ what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, 
 no manifest (one generated from a template, since `publish-template` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
 other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
-nothing is removed, and its record is dropped. Any other copy may hold your own words, so it is
+nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
+nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
+does not name it. Any other copy may hold your own words, so it is
 listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
 `metadata.startup`, so move your rules into such notes and delete the README. Until then each run

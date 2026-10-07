@@ -485,8 +485,19 @@ reddens = [
 [[mutation]]
 name = "a retired overlay file that is absent is planned for removal"
 file = "src/stayfixed/scaffold/engine.py"
-before = "            return\n        unchanged.append(template.id)\n        return\n    if location is Location.LOCAL:"
-after = "            return\n        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
+before = "        # removed is \"unchanged\", and counted it, and a fresh overlay that never had it the same.\n        return\n    if location is Location.LOCAL:"
+after = "        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
+]
+
+# Nor is it reported: a retired file that is gone and unrecorded, listed among the unchanged, told
+# the owner on every later run that the file the release notes say was removed is unchanged.
+[[mutation]]
+name = "a retired file that is gone and unrecorded is reported unchanged"
+file = "src/stayfixed/scaffold/engine.py"
+before = "        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,"
+after = "        unchanged.append(template.id)"
 reddens = [
   "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
 ]
