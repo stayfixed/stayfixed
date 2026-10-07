@@ -238,6 +238,8 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
 VERSION_DRIFT = "version drift"
 RECORD_DRIFT = "release record drift"
 FOLDER_COUNT = "plugin folder count"
+# A `--root` that is no repository root is none of them, and is said with no word in front of it.
+NOT_A_ROOT = ""
 
 
 def _unusable_root(root: Path) -> str | None:
@@ -279,7 +281,7 @@ def checked_by_kind(
     found = collect(root)
     unusable = _unusable_root(root)
     if unusable is not None:
-        return {VERSION_DRIFT: [unusable]}, found
+        return {NOT_A_ROOT: [unusable]}, found
     canonical = found[PYPROJECT]
     if canonical is None:
         return {VERSION_DRIFT: [f"{PYPROJECT} has no [project].version"]}, found
@@ -458,7 +460,9 @@ def run_check(args: argparse.Namespace) -> Result:
     data = {"problems": problems, "versions": versions}
     if problems:
         summary = "; ".join(
-            f"{kind}: " + "; ".join(found) for kind, found in kinds.items() if found
+            (f"{kind}: " if kind else "") + "; ".join(found)
+            for kind, found in kinds.items()
+            if found
         )
         return Result(summary, data, exit_code=1)
     return Result(f"one version everywhere: {versions['pyproject.toml']}", data)

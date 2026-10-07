@@ -360,6 +360,19 @@ def test_the_four_root_conditions_get_four_different_messages(tmp_path: Path) ->
     assert len({tuple(absent), tuple(a_file), tuple(unrelated), tuple(versionless)}) == 4
 
 
+def test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `--root` that is no repository root is no version disagreeing, and printed under "version
+    # drift:" it read as one. Said alone, exit 1 as before. Mutation: `mutations/`, "a root the
+    # release check cannot read is reported as version drift".
+    missing = tmp_path / "nope"
+    assert release.main(["check", "--root", str(missing)]) == 1
+    assert capsys.readouterr().out == (
+        f"{missing} does not exist; --root must name a repository root\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "body", "kind"),
     [

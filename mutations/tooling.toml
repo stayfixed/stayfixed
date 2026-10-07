@@ -1655,3 +1655,13 @@ after = ""
 reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/__init__.py]",
 ]
+
+# A `--root` that is no repository root is no version disagreeing: printed under "version drift:",
+# it read as one.
+[[mutation]]
+name = "a root the release check cannot read is reported as version drift"
+file = "scripts/release.py"
+before = "        return {NOT_A_ROOT: [unusable]}, found"
+after = "        return {VERSION_DRIFT: [unusable]}, found"
+reddens = ["tests/scripts/test_release.py::test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not"]
+
