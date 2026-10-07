@@ -404,7 +404,7 @@ def read_binding(
     that loader is what holds it to one path segment (`../common` is the value path containment
     protects against here, and the name becomes a directory under the overlay's `projects/`).
 
-    `config` is loaded here only when the caller does not already hold one. `permissions.check`
+    `config` is loaded here only when the caller does not already hold one. `attach.check`
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a

@@ -737,6 +737,95 @@ def test_the_package_graph_reads_imports_that_run_and_finds_every_cycle() -> Non
     assert _cycles(edges) == [["a", "b", "c"], ["d", "e"]]
 
 
+def _imports_that_can_run(nodes: Iterable[ast.AST]) -> list[ast.Import | ast.ImportFrom]:
+    """Every import statement under `nodes` that can run at all: the whole tree, function bodies
+    included, less what the body of an `if TYPE_CHECKING:` holds."""
+    found: list[ast.Import | ast.ImportFrom] = []
+    for node in nodes:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            found.append(node)
+        elif isinstance(node, ast.If) and _type_checking(node.test):
+            found += _imports_that_can_run(node.orelse)
+        else:
+            found += _imports_that_can_run(ast.iter_child_nodes(node))
+    return found
+
+
+def _module_imports(where: str, text: str, modules: frozenset[str]) -> set[tuple[str, str]]:
+    """The module graph's edges one file gives: `(its module, a module it imports)` for every
+    import statement in it that can run (`_imports_that_can_run`), to a module out of `modules`
+    other than itself. `from package import name` is an edge to the module `name` when there is
+    one, and to the package's `__init__` either way, since Python runs it to look the name up."""
+    parts = Path(where).with_suffix("").parts
+    importer = ".".join(("stayfixed", *(parts[:-1] if parts[-1] == "__init__" else parts)))
+    package = ("stayfixed", *Path(where).parts[:-1])
+    edges: set[tuple[str, str]] = set()
+    for node in _imports_that_can_run([ast.parse(text)]):
+        for _, module in _imported_modules(node, package):
+            if module in modules and module != importer:
+                edges.add((importer, module))
+    return edges
+
+
+def test_the_modules_import_one_another_without_a_cycle_even_inside_functions() -> None:
+    # The package graph above leaves out an import inside a function, which defers a load and
+    # cannot leave a module half-initialised. It cannot leave a cycle out of the layering, though:
+    # `attach --check` once lived in `permissions` and imported the ledger's reader from `write`
+    # inside the function, while `write` imports `permissions` at module level. Nothing failed,
+    # and the first change to hoist that import, the house style everywhere a load is not being
+    # deferred, would have stopped every `attach` and `detach` at import. So the modules under
+    # `src/stayfixed/` are a graph of their own here, every import that can run is an edge,
+    # module level or inside a function alike, and only an `if TYPE_CHECKING:` body, which never
+    # runs, is left out. No cycle is pinned: a new one is a layering to fix, not a row to add.
+    #
+    # Mutation (declared): `mutations/`'s "permissions reads the writer again inside a function".
+    source = ROOT / "src" / "stayfixed"
+    files = {path.relative_to(source).as_posix(): path for path in sorted(source.rglob("*.py"))}
+    modules = frozenset(
+        ".".join(("stayfixed", *Path(where).with_suffix("").parts)).removesuffix(".__init__")
+        for where in files
+    )
+    edges: set[tuple[str, str]] = set()
+    for where, path in files.items():
+        edges |= _module_imports(where, path.read_text(encoding="utf-8"), modules)
+    # The walk reads an edge that runs only inside a function, the pinned crossing `setup --overlay`
+    # makes, so a reader that stopped finding those cannot pass by finding no cycle.
+    assert ("stayfixed.setup.run", "stayfixed.overlay.api") in edges
+    assert _cycles(edges) == []
+
+
+def test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported() -> None:
+    # The walk above can show the reading only for the spellings the tree carries. Measured by
+    # hand: skipping function bodies, reading `if TYPE_CHECKING:` bodies, dropping the edge to a
+    # package's `__init__` or reading a relative import from the wrong package each reddens this.
+    modules = frozenset(
+        {
+            "stayfixed.attach",
+            "stayfixed.attach.permissions",
+            "stayfixed.attach.write",
+            "stayfixed.config.schema",
+            "stayfixed.printed",
+        }
+    )
+    text = (
+        "from stayfixed.attach.write import ledger\n"
+        "if TYPE_CHECKING:\n    from stayfixed.config.schema import Config\n"
+        "def f():\n    from stayfixed.printed import quoted\n"
+        "from . import permissions\n"
+        "from stayfixed.attach import nothing_here\n"
+    )
+    assert _module_imports("attach/check.py", text, modules) == {
+        ("stayfixed.attach.check", "stayfixed.attach"),
+        ("stayfixed.attach.check", "stayfixed.attach.permissions"),
+        ("stayfixed.attach.check", "stayfixed.attach.write"),
+        ("stayfixed.attach.check", "stayfixed.printed"),
+    }
+    # A package's own `__init__` is named after the package, and imports nothing of itself.
+    assert _module_imports("attach/__init__.py", "from . import write\n", modules) == {
+        ("stayfixed.attach", "stayfixed.attach.write"),
+    }
+
+
 def test_the_delivery_areas_are_attach_memory_and_overlay() -> None:
     # The three areas CONTRIBUTING's "Areas" names as delivery, pinned as a literal rather than
     # read back: the crossing meant to stay exercises only `overlay`, so a change that dropped

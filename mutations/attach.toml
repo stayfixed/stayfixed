@@ -655,7 +655,7 @@ reddens = [
 # so the count is stayfixed's own and the entries are the repository's.
 [[mutation]]
 name = "check names the groups that never moved instead of counting them"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = '        summary += f"; {real} memory group(s) are real directories and would refuse the attach"'
 after = '        summary += f"; {unlinked_groups(root, config)} are real directories"'
 reddens = [
@@ -667,7 +667,7 @@ reddens = [
 # argument restored two loads with the whole suite still green.
 [[mutation]]
 name = "check loads the configuration twice again"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
 after = "    binding = read_binding(root, store=store, machine=machine)"
 reddens = [
@@ -678,7 +678,7 @@ reddens = [
 # wrong.
 [[mutation]]
 name = "check reports the groups that never moved and still exits zero"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    finding = binding.state in (MISMATCH, NO_ORIGIN) or real"
 after = "    finding = binding.state in (MISMATCH, NO_ORIGIN)"
 reddens = [
@@ -1213,7 +1213,7 @@ reddens = [
 # by the mismatch rule, while the real run refuses it.
 [[mutation]]
 name = "attach --check reports a missing origin without its cause"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = '        summary = f"{NO_REMOTE}; {summary}"'
 after = "        pass"
 reddens = [
@@ -2014,7 +2014,7 @@ reddens = [
 
 [[mutation]]
 name = "attach --check previews a project name the overlay has no directory for"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
@@ -2448,11 +2448,25 @@ before = "    fsops.remove_within(root, ATTACH_LEDGER)\n    # Last, because the 
 after = "    # Last, because the ledger lives in one of them."
 reddens = ["tests/attach/test_detach.py::test_uninstall_after_a_real_detach_takes_the_footprint_back"]
 
+# `write` imports `permissions` at module level, so `permissions` importing the writer back, even
+# inside a function where no import fails, is a cycle in the layering: the one `--check` made while
+# it lived in `permissions`.
+[[mutation]]
+name = "permissions reads the writer again inside a function"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))"
+after = """    from stayfixed.attach.write import existing_ledger  # noqa: F401
+
+    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))"""
+reddens = [
+  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
 # `attach --check` reads the ledger with the run's reader, so a ledger the run cannot take ends both
 # with one code; unread, `--check` answered clean over a ledger that stopped the run.
 [[mutation]]
 name = "check does not read the attach ledger"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "        existing_ledger(root)\n"
 after = "        pass\n"
 reddens = [
@@ -2464,7 +2478,7 @@ reddens = [
 # ledger, so a `--check` that read it first ended such a repository with the ledger's code.
 [[mutation]]
 name = "check reads the attach ledger whatever the memory mode"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    if not_overlay(config) is None:\n        existing_ledger(root)"
 after = "    if True:\n        existing_ledger(root)"
 reddens = [

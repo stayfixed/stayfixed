@@ -801,6 +801,23 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
 ]
 
+# The module graph counts an import inside a function as an edge, which is the whole of what it
+# adds to the package graph: read as that graph reads, it misses the cycle `--check` made through a
+# function-level import, and the edge the pinned crossing makes inside `setup/run.py` with it.
+[[mutation]]
+name = "the module graph stops reading imports inside a function"
+file = "tests/test_areas.py"
+before = """            found += _imports_that_can_run(node.orelse)
+        else:"""
+after = """            found += _imports_that_can_run(node.orelse)
+        elif isinstance(node, _FUNCTIONS):
+            pass
+        else:"""
+reddens = [
+  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/test_areas.py::test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported",
+]
+
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
 # again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
 # stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten

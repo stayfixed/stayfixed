@@ -272,7 +272,7 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     # `skills/attach/SKILL.md` tells the model to relay what detach removed, so an allow rule
     # shaped like an instruction arrived attributed to stayfixed.
     #
-    # `permissions.check` reduces `already_present` to `len(...)` on exactly this reasoning, and
+    # `attach.check` reduces `already_present` to `len(...)` on exactly this reasoning, and
     # this branch removed a marker id **bounded by a grammar** from `doctor`'s output on it. An
     # allow rule is less bounded than that, not more, so counts here or the three disagree.
     #

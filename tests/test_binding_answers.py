@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.permissions import check
+from stayfixed.attach.check import check
 from stayfixed.attach.write import attach
 from stayfixed.config.loader import load
 from stayfixed.doctor.api import run_checks

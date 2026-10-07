@@ -384,7 +384,7 @@ def test_a_project_name_reaches_neither_refusal_of_this_module(tmp_path: Path) -
     # `project.name` is repository-authored and one lowercase segment is a wide enough grammar for
     # instruction-shaped text; `skills/attach/SKILL.md` tells the model to relay these messages. Two
     # of them interpolated a path with the name in it. The rule was already applied correctly in
-    # `permissions.check` and `write.py`; this is the same rule, two messages over. Mutation: either
+    # `attach.check` and `write.py`; this is the same rule, two messages over. Mutation: either
     # message formatted with `expected` / `record` again → reddens.
     root, store = _project_and_store(tmp_path, recorded=None, origin="x", name=HOSTILE_NAME)
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")

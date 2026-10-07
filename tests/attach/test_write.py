@@ -22,7 +22,8 @@ import pytest
 from stayfixed import fsops, jsonobject
 from stayfixed.attach.api import ledger
 from stayfixed.attach.binding import OVERLAY_DAMAGED
-from stayfixed.attach.permissions import check, settings_document
+from stayfixed.attach.check import check
+from stayfixed.attach.permissions import settings_document
 from stayfixed.attach.write import (
     GITIGNORE,
     GROUP_ESCAPES,

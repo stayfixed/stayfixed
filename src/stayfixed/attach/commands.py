@@ -69,7 +69,7 @@ def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
 
 
 def run_attach(args: argparse.Namespace) -> Result:
-    from stayfixed.attach.permissions import check
+    from stayfixed.attach.check import check
     from stayfixed.attach.write import attach
     from stayfixed.runner import subprocess_runner
 
@@ -117,7 +117,7 @@ def run_detach(args: argparse.Namespace) -> Result:
 
     removed = detach(Path(args.root).resolve(), machine=_machine_argument(args.machine), home=None)
     data = {
-        # Counts and not the strings, which is the same ruling `permissions.check` makes about
+        # Counts and not the strings, which is the same ruling `attach.check` makes about
         # `already_present` and this module makes about `project.name` two functions up — and it
         # has to be, or the three are inconsistent again. Every one of these four lists is read
         # out of `.stayfixed/local/attach.json` or out of `.claude/settings.local.json`, and both

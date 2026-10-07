@@ -1181,7 +1181,7 @@ def _plan(
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on."""
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
-    # second of. `permissions.check` took this ruling for `--check` -- "two loads could
+    # second of. `attach.check` took this ruling for `--check` -- "two loads could
     # disagree, and a `--check` whose two halves read different documents is exactly what it
     # exists to rule out" -- and the writing command has the stronger version of that argument:
     # a `--check` that read two documents reports the wrong thing, while an `attach` that reads
@@ -1217,7 +1217,7 @@ def _plan(
     if binding.state == NO_ORIGIN:
         raise Refusal(NO_REMOTE)
     if binding.state == MISMATCH and not trust_remote:
-        # The name is not quoted back, for the reason `permissions.check` states at length:
+        # The name is not quoted back, for the reason `attach.check` states at length:
         # `project.name` is repository-authored and looser than the marker-id grammar `doctor`
         # already refuses to print, and a refusal built out of one is still one.
         raise Refusal(

@@ -291,7 +291,7 @@ LISTED = {
         1,
         "(`attach.permissions`, `attach.write`)",
     ),
-    ("src/stayfixed/attach/permissions.py", "codex"): (3, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
@@ -309,7 +309,8 @@ LISTED = {
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
-    # Messages naming the Codex rule files `attach` places.
+    # Messages naming the Codex rule files `attach` places, and `--check` would place.
+    ("src/stayfixed/attach/check.py", "codex"): 1,
     ("src/stayfixed/attach/commands.py", "codex"): 2,
     # The `hook-entries` remedies, which name the harness that runs a skill's hooks and the
     # directories to look through.

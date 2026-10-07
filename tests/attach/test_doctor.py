@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.attach.api import LOCAL_SETTINGS
-from stayfixed.attach.permissions import check as attach_check
+from stayfixed.attach.check import check as attach_check
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
