@@ -3435,3 +3435,13 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
         return sys.breakpointhook()'''
 reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The diagnostics row says why the session markers could not be listed in words, as its log arm
+# does: it named the error's class, which the fragment that says the row speaks in words denied.
+[[mutation]]
+name = "doctor names the error class of session markers it could not list"
+file = "src/stayfixed/doctor/checks.py"
+before = "            f\"the hook sink's session markers could not be listed ({fsops.said(exc)}), so \""
+after = "            f\"the hook sink's session markers could not be listed ({type(exc).__name__}), so \""
+reddens = ["tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning"]
+

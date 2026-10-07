@@ -40,7 +40,15 @@ from typing import Protocol
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import PROJECT_NAME, Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import UnsafePath, path_key, read_regular_text, remove_within, write_within
+from stayfixed.fsops import (
+    UnsafePath,
+    path_key,
+    read_regular_text,
+    remove_within,
+    said,
+    write_within,
+)
+from stayfixed.printed import quoted
 from stayfixed.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from stayfixed.scaffold.manifest import Kind, Location, Manifest, Record, digest
@@ -201,8 +209,12 @@ def local_copies(
     return (*current, *left_copies(template, config, digests, owners))
 
 
-def _read(path: Path) -> tuple[str | None, str | None]:
+def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
     """`(content, reason)`: a reason is a refusal for this one artifact, never for the plan.
+
+    The reason names the file by `relative`, its path from the project root, and says why in
+    words (`fsops.said`), as every other refusal here does: the error's own text carries the
+    absolute path, this machine's layout, and `path` is a configured target a clone may choose.
 
     `newline=""` and not `read_text`: universal-newline translation turns every `\\r\\n` and
     every lone `\\r` into `\\n` before `regions.py` is reached, and `regions.py` is the module
@@ -217,8 +229,10 @@ def _read(path: Path) -> tuple[str | None, str | None]:
         return read_regular_text(path, newline=""), None
     except FileNotFoundError:
         return None, None
-    except (OSError, UnicodeDecodeError) as exc:
-        return None, f"{path} cannot be read: {exc}"
+    except OSError as exc:
+        return None, f"{quoted(relative)} cannot be read: {said(exc)}"
+    except UnicodeDecodeError:
+        return None, f"{quoted(relative)} cannot be read: it is not UTF-8 text"
 
 
 def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, str]:
@@ -352,7 +366,7 @@ def plan(
         if refused:
             continue
 
-        current, reason = _read(path)
+        current, reason = _read(path, target)
         if reason is not None:
             refusals.append(Refused(template.id, target, reason))
             continue
@@ -497,7 +511,7 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
         old_path = contained(root, record.target, resolved_root=resolved_root)
     except PathEscape as exc:
         return _left_behind(template, record, str(exc))
-    old, reason = _read(old_path)
+    old, reason = _read(old_path, record.target)
     if reason is not None:
         return _left_behind(template, record, reason)
     if old is None:
@@ -541,7 +555,7 @@ def _left_locally(
         path = contained(root, copy, resolved_root=resolved_root)
     except PathEscape as exc:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, str(exc), None)
-    current, reason = _read(path)
+    current, reason = _read(path, copy)
     if reason is not None:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, reason, None)
     if current is None or _present_stamp(template, current) is None:

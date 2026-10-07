@@ -13,6 +13,7 @@ The same `pytestmark` `tests/attach` carries, for the same reason.
 
 from __future__ import annotations
 
+import errno
 import inspect
 import json
 import os
@@ -1272,6 +1273,10 @@ def test_a_harness_data_root_this_process_cannot_read_is_a_warning(tmp_path: Pat
     # check — so without this the two guards are indistinguishable and breaking the near one
     # is invisible. A reader is told what could not be listed, not that something could not be.
     assert "session markers" in check.detail
+    # And why, in words, as the log's arm of the same row says it: the error's class name was
+    # stayfixed's to know, not the reader's. Mutation: `mutations/`, "doctor names the error
+    # class of session markers it could not list".
+    assert f"could not be listed ({os.strerror(errno.EACCES)})" in check.detail
 
 
 def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red(

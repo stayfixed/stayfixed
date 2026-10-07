@@ -551,6 +551,35 @@ def test_a_file_past_the_read_cap_refuses_only_its_own_artifact(
     assert "larger than this reader reads" in result.refusals[0].reason
 
 
+@pytest.mark.parametrize(
+    ("shape", "reason"),
+    [
+        ("a directory", "not a regular file"),
+        ("past the cap", "larger than this reader reads"),
+        ("not UTF-8", "it is not UTF-8 text"),
+    ],
+    ids=["directory", "too-large", "not-utf8"],
+)
+def test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str, reason: str
+) -> None:
+    # The refusal named the file by its absolute path, twice — once of its own and once inside
+    # the raw `OSError` it quoted — where every other refusal names it relative to the project and
+    # says the reason in words: `AGENTS.md  (/…/AGENTS.md cannot be read: [Errno 22] not a regular
+    # file: '/…/AGENTS.md')`. The path is a configured target a clone may choose. Mutation:
+    # `mutations/`, "the scaffold engine names an unreadable artifact by its absolute path".
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 4 * 1024)
+    agents = tmp_path / "AGENTS.md"
+    if shape == "a directory":
+        agents.mkdir()
+    elif shape == "past the cap":
+        agents.write_text("#" * 8 * 1024, encoding="utf-8")
+    else:
+        agents.write_bytes(b"\xff\xfe not utf-8 \xff")
+    result = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert [r.reason for r in result.refusals] == [f"AGENTS.md cannot be read: {reason}"]
+
+
 def test_a_fifo_at_an_artifacts_place_is_its_refusal_and_never_waited_on(tmp_path: Path) -> None:
     # A FIFO cannot be committed, but a local process can leave one where an artifact goes, and
     # the engine opened it for reading and waited for a writer that never came: `init` and

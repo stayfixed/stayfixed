@@ -35,4 +35,6 @@ A file stayfixed cannot read is now said why in words wherever it used to name a
 `stayfixed.toml`, the machine configuration file and the overlay's project record say
 `(not a regular file)`, `(Permission denied)` or `(larger than this reader reads)` where they said
 `(IsADirectoryError)` or `(PermissionError)`, and so do `stayfixed doctor`'s `ci-ref` and
-`diagnostics` rows.
+`diagnostics` rows. `stayfixed init` and `stayfixed upgrade` name an artifact they cannot read
+relative to the project, as in `AGENTS.md cannot be read: not a regular file`, where the refusal
+gave its absolute path twice and the error's raw text.

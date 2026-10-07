@@ -810,3 +810,20 @@ after = "            places = 0\n            for entry in entries:\n            
 reddens = [
   "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
 ]
+
+# An artifact the engine cannot read is named relative to the project, its reason in words: the
+# error's own text carries the absolute path, this machine's layout, twice.
+[[mutation]]
+name = "the scaffold engine names an unreadable artifact by its absolute path"
+file = "src/stayfixed/scaffold/engine.py"
+before = '        return None, f"{quoted(relative)} cannot be read: {said(exc)}"'
+after = '        return None, f"{path} cannot be read: {exc}"'
+reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[directory]", "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[too-large]"]
+
+[[mutation]]
+name = "the scaffold engine names an artifact that is not UTF-8 by its absolute path"
+file = "src/stayfixed/scaffold/engine.py"
+before = '        return None, f"{quoted(relative)} cannot be read: it is not UTF-8 text"'
+after = '        return None, f"{path} cannot be read: it is not UTF-8 text"'
+reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[not-utf8]"]
+

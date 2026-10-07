@@ -834,7 +834,7 @@ def _diagnostics(context: Context) -> Row:
         # where the row can still say what it could and could not count.
         return Row(
             WARN,
-            f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
+            f"the hook sink's session markers could not be listed ({fsops.said(exc)}), so "
             f"neither the session count nor the failure count below can be given",
             DIAGNOSTICS_REMEDY,
         )
