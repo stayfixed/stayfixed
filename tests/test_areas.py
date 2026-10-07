@@ -751,19 +751,33 @@ def _imports_that_can_run(nodes: Iterable[ast.AST]) -> list[ast.Import | ast.Imp
     return found
 
 
+def _packages_above(module: str) -> set[str]:
+    """Every package a dotted name sits in: `a` and `a.b` for `a.b.c`."""
+    bits = module.split(".")
+    return {".".join(bits[:end]) for end in range(1, len(bits))}
+
+
 def _module_imports(where: str, text: str, modules: frozenset[str]) -> set[tuple[str, str]]:
     """The module graph's edges one file gives: `(its module, a module it imports)` for every
     import statement in it that can run (`_imports_that_can_run`), to a module out of `modules`
     other than itself. `from package import name` is an edge to the module `name` when there is
-    one, and to the package's `__init__` either way, since Python runs it to look the name up."""
+    one, and to the package's `__init__` either way, since Python runs it to look the name up.
+
+    **And every import is an edge to each package above the module it names**, relative imports
+    resolved first: `from stayfixed.profiles.model import Check` runs `profiles/__init__.py`
+    before `profiles/model.py`, so whatever that `__init__` imports is reached through it. Not the
+    packages above the importer itself, which Python started before the importer ran and does not
+    run again."""
     parts = Path(where).with_suffix("").parts
     importer = ".".join(("stayfixed", *(parts[:-1] if parts[-1] == "__init__" else parts)))
     package = ("stayfixed", *Path(where).parts[:-1])
+    started = _packages_above(importer) | {importer}
     edges: set[tuple[str, str]] = set()
     for node in _imports_that_can_run([ast.parse(text)]):
         for _, module in _imported_modules(node, package):
-            if module in modules and module != importer:
-                edges.add((importer, module))
+            for name in {module} | (_packages_above(module) - started):
+                if name in modules and name != importer:
+                    edges.add((importer, name))
     return edges
 
 
@@ -778,7 +792,8 @@ def test_the_modules_import_one_another_without_a_cycle_even_inside_functions() 
     # module level or inside a function alike, and only an `if TYPE_CHECKING:` body, which never
     # runs, is left out. No cycle is pinned: a new one is a layering to fix, not a row to add.
     #
-    # Mutation (declared): `mutations/`'s "permissions reads the writer again inside a function".
+    # Mutations (declared): `mutations/`'s "permissions reads the writer again inside a function"
+    # and "gitenv reads the profiles inside a function".
     source = ROOT / "src" / "stayfixed"
     files = {path.relative_to(source).as_posix(): path for path in sorted(source.rglob("*.py"))}
     modules = frozenset(
@@ -789,8 +804,10 @@ def test_the_modules_import_one_another_without_a_cycle_even_inside_functions() 
     for where, path in files.items():
         edges |= _module_imports(where, path.read_text(encoding="utf-8"), modules)
     # The walk reads an edge that runs only inside a function, the pinned crossing `setup --overlay`
-    # makes, so a reader that stopped finding those cannot pass by finding no cycle.
+    # makes, and the edge that import makes to the package above the module it names, so a reader
+    # that stopped finding either cannot pass by finding no cycle.
     assert ("stayfixed.setup.run", "stayfixed.overlay.api") in edges
+    assert ("stayfixed.setup.run", "stayfixed.overlay") in edges
     assert _cycles(edges) == []
 
 
@@ -823,6 +840,54 @@ def test_the_module_graph_reads_imports_inside_functions_and_names_the_module_im
     # A package's own `__init__` is named after the package, and imports nothing of itself.
     assert _module_imports("attach/__init__.py", "from . import write\n", modules) == {
         ("stayfixed.attach", "stayfixed.attach.write"),
+    }
+
+
+def test_the_module_graph_runs_every_package_above_the_module_imported() -> None:
+    # Python runs `profiles/__init__.py` before `profiles/model.py`, and the graph gave
+    # `from stayfixed.profiles.model import Check` no edge to it. A review planted that import
+    # inside a function in `gitenv.py`: `profiles/__init__.py` imports `evaluate`, which imports
+    # `gitenv`, so it closed a cycle, and every cycle test above passed. Hoisted to module level,
+    # the same import stops `import stayfixed.gitenv` on a partially initialised module. Mutations
+    # (declared): `mutations/`'s "the module graph stops running the packages above the module
+    # imported", and "gitenv reads the profiles inside a function", the planted import itself.
+    modules = frozenset(
+        {
+            "stayfixed",
+            "stayfixed.attach",
+            "stayfixed.attach.write",
+            "stayfixed.gitenv",
+            "stayfixed.profiles",
+            "stayfixed.profiles.evaluate",
+            "stayfixed.profiles.model",
+        }
+    )
+    planted = "def _probe():\n    from stayfixed.profiles.model import Check\n    return Check\n"
+    assert _module_imports("gitenv.py", planted, modules) == {
+        ("stayfixed.gitenv", "stayfixed.profiles"),
+        ("stayfixed.gitenv", "stayfixed.profiles.model"),
+    }
+    edges = (
+        _module_imports("gitenv.py", planted, modules)
+        | _module_imports("profiles/__init__.py", "from .evaluate import evaluate\n", modules)
+        | _module_imports("profiles/evaluate.py", "from stayfixed.gitenv import git_run\n", modules)
+    )
+    assert _cycles(edges) == [
+        ["stayfixed.gitenv", "stayfixed.profiles", "stayfixed.profiles.evaluate"],
+    ]
+    # `import a.b.c` runs the same packages, and so does a relative import once resolved. The
+    # packages above the importer itself are not edges: Python started them before it, and an
+    # edge to each would put every package that imports its own submodules in a cycle.
+    text = (
+        "import stayfixed.profiles.model\n"
+        "from .write import ledger\n"
+        "def f():\n    from ..profiles.evaluate import evaluate\n"
+    )
+    assert _module_imports("attach/check.py", text, modules) == {
+        ("stayfixed.attach.check", "stayfixed.attach.write"),
+        ("stayfixed.attach.check", "stayfixed.profiles"),
+        ("stayfixed.attach.check", "stayfixed.profiles.evaluate"),
+        ("stayfixed.attach.check", "stayfixed.profiles.model"),
     }
 
 

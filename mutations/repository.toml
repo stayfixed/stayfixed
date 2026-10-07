@@ -818,6 +818,20 @@ reddens = [
   "tests/test_areas.py::test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported",
 ]
 
+# And every import is an edge to each package above the module it names, since Python runs that
+# package's `__init__` first: without those edges, a function-level import of a submodule closes a
+# cycle through its package's `__init__` that no cycle test sees, the shape a review planted in
+# `gitenv.py`.
+[[mutation]]
+name = "the module graph stops running the packages above the module imported"
+file = "tests/test_areas.py"
+before = "            for name in {module} | (_packages_above(module) - started):"
+after = "            for name in {module}:"
+reddens = [
+  "tests/test_areas.py::test_the_module_graph_runs_every_package_above_the_module_imported",
+  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
 # again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
 # stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten

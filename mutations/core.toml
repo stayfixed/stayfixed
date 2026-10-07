@@ -2270,6 +2270,21 @@ reddens = [
   "tests/test_areas.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
 ]
 
+# `profiles/__init__.py` imports `evaluate`, which imports `gitenv`, so `gitenv` reading any
+# submodule of `profiles`, even inside a function where no import fails, is a cycle through that
+# `__init__`: the import a review planted, which every cycle test passed until the module graph ran
+# the packages above the module imported.
+[[mutation]]
+name = "gitenv reads the profiles inside a function"
+file = "src/stayfixed/gitenv.py"
+before = "    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+after = """    from stayfixed.profiles.model import Check  # noqa: F401
+
+    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+reddens = [
+  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
 # could not run" and the session handler's backstop swallows along with every other line of the

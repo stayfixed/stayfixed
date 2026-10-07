@@ -199,7 +199,8 @@ packages share, such as the path grammar in `printed.py`, lives where neither ha
 other for it. The modules import one another without a cycle too, and there an import inside a
 function counts (`test_the_modules_import_one_another_without_a_cycle_even_inside_functions`):
 deferring a load keeps a module from being left half-initialised, and does not make two modules that
-need each other one layer.
+need each other one layer. An import of a submodule counts as an import of every package above it
+too, since Python runs each package's `__init__.py` first.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
