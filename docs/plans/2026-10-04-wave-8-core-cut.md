@@ -1398,7 +1398,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 
 #### Task 17: Measure the cut, review it, hand over the release
 
-- [ ] **Step 1: Counts.** On merged `dev`, re-run the Premise's measurements and record them in
+- [x] **Step 1: Counts.** On merged `dev`, re-run the Premise's measurements and record them in
   Findings beside the before counts. Every cell comes from a command, so anyone can re-run them:
 
   ```bash
@@ -1420,7 +1420,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
   git ls-files | wc -l
   ```
   If `build_parser` takes arguments by then, adapt the call and say so beside the number.
-- [ ] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
+- [x] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
   request's review could see: the boundary as a whole, the README against the code, the lifecycle
   matrix end to end. Each finding is reproduced before it is acted on.
 - [ ] **Step 3: Publish the plugin from its own repository** (the owner's decision of
@@ -1430,7 +1430,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
   2026-10-05 with pull requests free to add more, and moving the plugin into a subfolder here does not help, because the plugin
   directory holds a subfolder plugin whose hook runs a script that calls other files, as
   `hooks/run-hook.sh` does. `RELEASING.md`, section 2, is the step as the release process states it.
-- [ ] **Step 4: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
+- [x] **Step 4: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
   `0.3.0`, naming the changed release step (`scripts/release.py`).
 
 ## Findings
@@ -1464,6 +1464,91 @@ together, 962 came from follow-up pull requests merged during the wave (#69, #77
 `git ls-tree -r --name-only <rev> -- src/stayfixed`, summed by top-level module.
 
 ### Final review (Task 17)
+
+Four seats reviewed merged `dev` (`a920ba1`): architecture, security, lifecycle and correctness. A
+fifth, independent pass reproduced every finding before anything was fixed, and it is the authority
+on each finding's true boundary. It confirmed 38 findings: 6 Important, 22 Minor or below plus 10
+Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and two narrower.
+
+- **Important:**
+  - **`hook-entries` vouched for a whole entry by its command alone.** An `http` entry carrying a
+    granted marker read as stayfixed's own. It now compares the entry whole.
+  - **The hook path took `HOME` from the environment.** A relative `HOME` from a settings env
+    block could select a clone-planted `trust.json`. The hook path now anchors on the password
+    database's home (`config/machine.py`, `owner_home` and `anchor_home`).
+  - **The release notes described 0.2.0 wrongly in four places:**
+    - a write-back story that never happened;
+    - the 64 MiB read cap as an unnamed upgrade path;
+    - damaged-overlay behaviour from inside the cycle presented as 0.2.0's;
+    - an overlay store's trust record called "inert".
+- **All findings were fixed in one pull request, `wp/core-cut-measure`,** in six sequential waves:
+  - A: what `hook-entries` vouches for, and the harness facts;
+  - B: the machine owner's home on the hook path;
+  - C: one bounded reader, and one reader per document;
+  - D: the boundary guards, now a positive stdlib allowlist and a scope-aware name rule;
+  - E: behaviour at the edges;
+  - F: the release notes, the documents and this plan's lifecycle matrix.
+
+  Each wave had a task review and scoped re-reviews. A final whole-branch review found one more
+  Important issue: an import cycle that `attach --check` introduced. `check` moved to
+  `attach/check.py`, and `tests/test_areas.py` now counts imports inside functions too. The same
+  review found check-versus-run gaps that predate the branch. Eleven cases were measured, and ten
+  of them already ended differently in 0.2.0. `attach --check` now calls the run's own refusals
+  and planning, so it ends with the run's code and line by construction. Outside overlay mode,
+  anything past the binding gives way to the run's refusal of the mode. A last scoped
+  re-review found two more gaps: the module graph gave a module no edge to the packages above the
+  module it imports, and `--check` counted memory groups at a checkout with no `origin`. Both were
+  fixed before the push.
+- **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
+  It holds 36 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
+  entry.
+
+Recorded, not changed:
+
+- **One claimant for the claims protocol.** `doctor`'s `Claims` and `Wording` are shaped for
+  several areas, but only `attach` claims entries today. The tuple shape stays until a second
+  claimant exists or the next wave's debt register shows none will.
+- **Harness detection decides no byte today.** `harnesses.detect` picks a `render`, and every
+  harness renders through the canonical one. This plan asked for that shape. It waits for a
+  non-steerable signal.
+- **`bg-cleanup` judges only the forms `docs/cli.md` names.** That is a command run in the
+  background, directly, through `env`, or through `uv run <options>`. `nohup`, `timeout`,
+  `command`, `uvx`, `uv tool run` and `bash -c` wrappers are not judged. The owner decided on
+  2026-10-07 to document this scope rather than widen the guard.
+- **`PATH` and `HOME` reach git on the hook path, and are accepted together.** `SECURITY.md` and
+  `gitenv.py` say so. A clone cannot set either one unless the harness applies a settings env block
+  to the hook's process. Whether Claude Code does that for `HOME` has not been measured. The owner
+  measures it, and the measurement decides whether hook-path git gets a scrubbed `HOME`.
+- **`CLAUDE.md` is still written for a Codex-only project.** Changing it would make `upgrade` remove
+  a tracked file. The owner confirmed this on 2026-10-07.
+- **The overlay floor's pre-release ordering has no fragment.** No build ever carried a pre-release
+  version, so no user can meet the change. `docs/cli.md` states what the floor does.
+
+Left for later, by the owner's decision of 2026-10-07:
+
+1. **Publish the plugin from its own repository (Step 3), as its own pull request.**
+   - A generator produces the plugin tree.
+   - CI builds it, tests it, and attests the generated tree's digest.
+   - The owner pushes it with one command that checks the digest against the attestation, so CI
+     holds no credential to a second repository (`RELEASING.md`).
+   - The marketplace entry stays here, with a URL source pinned to the tag.
+   - The 512-file check moves to the generated tree.
+2. **A terminal command that makes the harness memory link** for in-repo and local-only stores when
+   `HOME` differs from the password database's home. The hook path no longer makes that link
+   itself.
+
+Near limits:
+
+- `mutations/install.toml` holds 180,715 of 196,608 bytes. It is the next group to split, along
+  `doctor/`.
+- `docs/cli.md` is 139 bytes under the 256 KiB a plugin directory allows one file
+  (`tests/test_payload.py`). The next addition needs a split or a cut first.
+- An unreadable overlay `codex/` directory makes `attach` fail with an internal error
+  (`PermissionError`), as 0.2.0 did. Since the run refuses a missing `origin` before it reads that
+  directory, `--check` and the run end on different lines there. It is a defect of the run, left
+  for its own fix.
+- `hook-entries` reads each candidate skill file up to the general 64 MiB cap only to check its
+  frontmatter. A smaller cap is optional.
 
 ### Pre-dispatch review (2026-10-04)
 
