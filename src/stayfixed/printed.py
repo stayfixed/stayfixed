@@ -21,9 +21,34 @@ something nothing upstream bounds in length, a TOML key, a label or a group.
 
 from __future__ import annotations
 
+import re
 from typing import Protocol
 
-from stayfixed.config.schema import PATH_VALUE
+# The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
+# decides whether it may be written, and a shape rule cannot bound a charset. It lives here, beside
+# the bounds that print by it, rather than with the configuration's other grammars in
+# `config.schema`: this module imports nothing from the package, so the configuration layer, which
+# prints through `findings`, can import it without the two importing each other.
+#
+# The segment shape is part of the grammar because the two readers of a path have to agree about
+# what a path is. A charset alone admitted `docs//x.md`, `docs/x/` and `./docs`: `contained()`
+# read them through `Path(relative).parts`, which drops an empty component, a trailing slash and
+# a leading `./` without a word, so `plan()` reported no refusal — while `fsops` splits the raw
+# string and refuses all three, so `apply()` raised part-way through a pass that had already put
+# earlier artifacts on disk and whose `finally` had already persisted the manifest. The value
+# was never writable; only the two spellings of "a path" disagreed about saying so.
+#
+# So the grammar is written per segment: exactly one `/` between segments, no segment empty, and
+# the lookahead per segment because the charset alone cannot say it. `.` and `..` are spelled
+# entirely out of the charset the segments already use, so a segment rule without the lookahead
+# admits `./docs`, `docs/../x` and `..` itself — measured, on the charset-plus-segments form this
+# started from. `.hidden` and `..foo` are ordinary names and stay admitted: the lookahead refuses
+# a segment that is one or two dots *and nothing else*. What is left is exactly the set
+# `fsops.checked_components` accepts, intersected with the charset, and `contained()` asks that
+# function for the component rule rather than keeping a second copy of it.
+PATH_VALUE = re.compile(
+    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"
+)
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.
 # Fixed text, and it says where the name itself went.

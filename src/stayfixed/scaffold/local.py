@@ -36,10 +36,10 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from stayfixed.config.schema import PATH_VALUE
 from stayfixed.errors import Refusal
 from stayfixed.fsops import read_bounded, remove_within, write_within
 from stayfixed.jsonobject import json_object
+from stayfixed.printed import PATH_VALUE
 
 LOCAL_ROOT = ".stayfixed/local"
 # `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry

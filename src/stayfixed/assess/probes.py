@@ -36,11 +36,11 @@ from typing import TYPE_CHECKING
 
 from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import PATH_VALUE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
+from stayfixed.printed import PATH_VALUE
 from stayfixed.scaffold import EntriesError, judged_entries
 
 if TYPE_CHECKING:

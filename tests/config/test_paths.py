@@ -14,8 +14,9 @@ from stayfixed.config.paths import (
     contained,
     validate_paths,
 )
-from stayfixed.config.schema import PATH_VALUE, Config, Paths
+from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
+from stayfixed.printed import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))

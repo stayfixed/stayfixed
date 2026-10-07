@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stayfixed.config.schema import PATH_VALUE, Config
+from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.fsops import (
     UnsafePath,
@@ -36,6 +36,7 @@ from stayfixed.fsops import (
     names_component,
     names_control_directory,
 )
+from stayfixed.printed import PATH_VALUE
 
 
 class PathEscape(Refusal):

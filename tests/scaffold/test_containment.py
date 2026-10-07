@@ -109,7 +109,7 @@ def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_r
     # `contained()`'s own `..`-shaped message never fires for it, and folding it into
     # `HOSTILE_PATHS` let one guard silently cover for the other. Asserted directly against the
     # grammar instead.
-    from stayfixed.config.schema import PATH_VALUE
+    from stayfixed.printed import PATH_VALUE
 
     assert PATH_VALUE.match("/etc") is None
 
