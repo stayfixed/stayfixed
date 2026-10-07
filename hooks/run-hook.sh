@@ -40,9 +40,12 @@
 # wrapper row names it.
 #
 # **A containment is worth no more than the anchor it measures against, and this one has two.**
-# `CLAUDE_PROJECT_DIR` reaches this process from the same committed `env` block the containment
-# exists to defeat, and `git` was a name resolved through the same `PATH` — so measuring against
-# either one alone was a redirect with a longer name for the third time in this file. Measured:
+# `CLAUDE_PROJECT_DIR` is read out of the same environment a committed `env` block writes to —
+# Claude Code 2.1.288 set the real project root over the block's value on the hooks
+# `docs/cli.md` records it measured on, but that is one harness's answer on some events, not a
+# guarantee this file can lean on — and `git` was a name resolved through the `PATH` that block
+# can set — so measuring against either one alone was a redirect with a longer name for the third
+# time in this file. Measured:
 # `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own `python3`
 # "outside the project root" and it ran the launcher; and on the Codex path, where
 # `CLAUDE_PROJECT_DIR` is unset, a clone shipping a `git` had that binary executed on every hook

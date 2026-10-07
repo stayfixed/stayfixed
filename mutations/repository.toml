@@ -403,6 +403,16 @@ before = '[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
+# The release record holds the wrapper's bytes, comments included, so an edit to its text that
+# skipped `scripts/release.py hashes` is drift. Here, the comment that once said a committed `env`
+# block chooses `CLAUDE_PROJECT_DIR`, which `docs/cli.md` records Claude Code did not do.
+[[mutation]]
+name = "the wrapper's comment goes back to an env block choosing the project root"
+file = "hooks/run-hook.sh"
+before = "# `CLAUDE_PROJECT_DIR` is read out of the same environment a committed `env` block writes to —"
+after = "# `CLAUDE_PROJECT_DIR` reaches this process from the same committed `env` block the containment"
+reddens = ["tests/test_manifests.py::test_the_repository_itself_carries_a_current_release_record"]
+
 # The launcher is chosen by the wrapper's own path and never by a variable in its environment. A
 # committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` gates
 # two other variables on exactly that -- and this one would pick the Python program that runs before
