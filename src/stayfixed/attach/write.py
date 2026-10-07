@@ -1179,7 +1179,13 @@ def _plan(
     home: Path | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
-    nothing written: what it returns is all `_carry_out` may act on."""
+    nothing written: what it returns is all `_carry_out` may act on.
+
+    The gates a flag answers -- `memory.mode`, the widening `--yes` confirms, a checkout with no
+    `origin`, the mismatch `--trust-remote` accepts -- and the groups that never moved are asked
+    here. What lies between and after them is `refuse_unless_share_holds` and `plan_writes`,
+    which `attach --check` asks too, so the preview stops on every refusal the run makes past
+    those gates, with the same code and line, by calling what the run calls."""
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
     # second of. `attach.check` took this ruling for `--check` -- "two loads could
     # disagree, and a `--check` whose two halves read different documents is exactly what it
@@ -1223,19 +1229,7 @@ def _plan(
         raise Refusal(
             f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound to it"
         )
-    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
-        raise Refusal(ORIGIN_NOT_TEXT)
-    # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
-    # the ledger's, is read a few lines below and is above every write too. `ledger()` refuses
-    # a ledger naming files or settings keys `attach` could not have written, and asked for by
-    # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
-    # ledger make `attach` write the ignore region, copy `.codex/rules/*` and merge
-    # `.claude/settings.local.json` before exiting 2, with the committed ledger still on disk for
-    # `doctor._attached` to read as "attached"; `attach --check` reads it through the same
-    # `existing_ledger`, so it no longer reports clean beforehand. The `Config` the two checks below
-    # read is loaded at the top of this function, which is where the binding needs it anyway: a
-    # check cannot happen above the writes while what it reads is loaded below them.
-    _check_groups(binding, config)
+    refuse_unless_share_holds(binding, config)
     # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
     # so a group that is still a real directory under `paths.memory` has its notes in the
     # repository and its share of the overlay empty, and linking over it would leave every
@@ -1248,6 +1242,49 @@ def _plan(
     real = unlinked_groups(root, config)
     if real:
         raise Refusal(REAL_DIRECTORIES.format(count=len(real)))
+    return plan_writes(root, config, binding, diff, machine=machine, home=home)
+
+
+def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
+    """Refuse a binding this project's share of the overlay cannot hold: an `origin` URL its
+    record cannot be written with, and a `memory.groups` entry that leaves the share.
+
+    Asked by `attach` past its gates and above every write, and by `attach --check` where the run
+    would reach it, so the two end alike on either.
+    """
+    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
+        raise Refusal(ORIGIN_NOT_TEXT)
+    # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
+    # the ledger's, is read in `plan_writes` and is above every write too. `ledger()` refuses
+    # a ledger naming files or settings keys `attach` could not have written, and asked for by
+    # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
+    # ledger make `attach` write the ignore region, copy `.codex/rules/*` and merge
+    # `.claude/settings.local.json` before exiting 2, with the committed ledger still on disk for
+    # `doctor._attached` to read as "attached"; `attach --check` reads it through the same
+    # `existing_ledger`, so it no longer reports clean beforehand. The `Config` this and the
+    # never-moved check read is loaded at the top of `_plan`, which is where the binding needs it
+    # anyway: a check cannot happen above the writes while what it reads is loaded below them.
+    _check_groups(binding, config)
+
+
+def plan_writes(
+    root: Path,
+    config: Config,
+    binding: Binding,
+    diff: PermissionDiff,
+    *,
+    machine: Path | None,
+    home: Path | None,
+) -> AttachPlan:
+    """The rest of `_plan`: every read and refusal `attach` makes once the groups have all moved,
+    and nothing written. The anchor for the harness memory link, the ledger, what git already
+    hides and the ignore files' blocks, the settings merge and its fallback, the overlay's rule
+    sources, the checkouts and the machine's trust record, in that order.
+
+    `attach --check` calls it too and drops the plan, which is how the preview meets every one of
+    these refusals with the run's code and line: each read here was once left out of the preview,
+    and `--check` answered clean over a checkout the run then stopped on.
+    """
     # The eighth, and the one that is not about this repository at all: the anchor for the
     # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
     # below every write here — so a home directory that is not there, and the ordinary

@@ -71,7 +71,7 @@ def test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere(
             )
         refusals.append(str(refused.value))
 
-    checked = check(root, store=store, machine=machine)
+    checked = check(root, store=store, machine=machine, home=home)
 
     doctor = next(
         row

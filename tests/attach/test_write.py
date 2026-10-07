@@ -2148,7 +2148,7 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert str(refused.value) == (
         f"{overlay}/projects/<this project's name> cannot be a directory on this machine -- a "
         f"file already holds that name, or the name is longer than the filesystem allows -- so "
@@ -2175,7 +2175,7 @@ def test_a_claude_path_that_is_a_file_is_refused_before_the_first_write(
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert _everything(tmp_path) == before
 
 
@@ -2197,7 +2197,7 @@ def test_an_overlay_whose_common_claude_is_a_file_stops_attach_before_it_writes(
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert _everything(tmp_path) == before
 
 
@@ -2229,7 +2229,7 @@ def test_an_overlay_whose_own_project_claude_is_a_file_stops_attach_before_it_wr
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert (root / SETTINGS).read_bytes() == settings
     assert _everything(tmp_path) == before
 
@@ -2242,7 +2242,7 @@ def test_a_project_the_overlay_has_no_directory_for_yet_is_attached_and_given_on
     # (oracle): `mutations/`'s "attach refuses a project the overlay has no directory for yet".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     shutil.rmtree(store.parent)
-    assert check(root, store=store, machine=machine).exit_code == 0
+    assert check(root, store=store, machine=machine, home=tmp_path / "home").exit_code == 0
     _attach_it(root, store, machine, tmp_path / "home")
     assert (store.parent / PROJECT_RECORD).is_file()
     assert store.is_dir()
@@ -2288,7 +2288,7 @@ def test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_
     (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
     if projects == "projects-absent":
         shutil.rmtree(projects_dir)
-    result = check(root, store=projects_dir / name / "memory", machine=machine)
+    result = check(root, store=projects_dir / name / "memory", machine=machine, home=deep / "home")
     assert result.exit_code == 0, result.summary
     assert result.data["added_allow"] == [RULE]
     assert result.data["added_hooks"] == ["echo hello  # stayfixed:overlay-PreToolUse-1"]
@@ -2345,7 +2345,7 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     said = str(refused.value)
     assert said == OVERLAY_DAMAGED.format(path=broken)
     assert "choose another" not in said
@@ -2458,7 +2458,7 @@ def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     # Named as the project names it, never by the machine's absolute path, as the `.gitignore`
     # refusal is. Mutation (oracle): `mutations/`'s "the settings refusal prints the path it
     # opened" -> the message carries the temporary directory.
@@ -2481,7 +2481,7 @@ def test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert str(refused.value) == f"{SETTINGS} is not UTF-8 text"
     assert _everything(tmp_path) == before
 
@@ -2530,11 +2530,12 @@ def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_befor
     # read of the file, and every `detach` after refused the same way. It is refused while nothing
     # is written, and `--check` refuses it too. On an interpreter whose indenting encoder stops
     # short of that depth the refusal is the one for nesting; elsewhere the one for length.
-    # Mutation (oracle): `mutations/`'s "attach plans a settings write-back the next read refuses"
-    # -> `--check` passes. `attach` is refused by two layers, that one and the merge's own
-    # write-back through `jsonobject.json_text`, so no single mutation reddens its case: the
-    # second is proven alone by `mutations/`'s "the JSON writer writes back a text past the read
-    # cap", in `tests/attach/test_detach.py`.
+    # `attach` and `--check` are each refused by two layers, the diff's and the merge's own
+    # write-back through `jsonobject.json_text`, so no single mutation reddens either case: the
+    # first is proven alone where nothing past the diff is read, by `mutations/`'s "attach plans a
+    # settings write-back the next read refuses" in `tests/attach/test_commands.py`, and the
+    # second by `mutations/`'s "the JSON writer writes back a text past the read cap", in
+    # `tests/attach/test_detach.py`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     settings = root / SETTINGS
     settings.parent.mkdir(exist_ok=True)
@@ -2544,7 +2545,7 @@ def test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_befor
         if command == "attach":
             _attach_it(root, store, machine, tmp_path / "home")
         else:
-            check(root, store=store, machine=machine)
+            check(root, store=store, machine=machine, home=tmp_path / "home")
     assert str(refused.value) in (
         f"{SETTINGS} {jsonobject.WRITTEN_PAST}",
         f"{SETTINGS} {jsonobject.NESTED}",
@@ -2560,9 +2561,7 @@ def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
     # The same rule on every interpreter, with the cap lowered so the document is small: a
     # document whose write-back, with room for the one key the settings fallback adds, would pass
     # the cap is refused before anything is written, by `attach` and `--check` alike, and one
-    # inside it is merged as before. Mutation (oracle): `mutations/`'s "attach plans a settings
-    # write-back the next read refuses" -> `--check` passes the 1,000 case; `attach`'s two
-    # layers are the case above's.
+    # inside it is merged as before. Both commands' two layers are the case above's.
     monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     settings = root / SETTINGS
@@ -2573,7 +2572,7 @@ def test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not(
     def run() -> object:
         if command == "attach":
             return _attach_it(root, store, machine, tmp_path / "home")
-        return check(root, store=store, machine=machine)
+        return check(root, store=store, machine=machine, home=tmp_path / "home")
 
     if siblings == 100:
         run()

@@ -485,8 +485,8 @@ after = """    raw = settings_object(document, label)
         return ()
     return tuple(allow_list(raw, label))"""
 reddens = [
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[permissions-null]",
-  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[allow-null]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[permissions-null]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[allow-null]",
 ]
 
 [[mutation]]
@@ -2391,8 +2391,7 @@ file = "src/stayfixed/attach/permissions.py"
 before = "    document = local_document(root)\n    _refuse_unless_written_back(document)\n"
 after = "    document = local_document(root)\n"
 reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write[check]",
-  "tests/attach/test_write.py::test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not[1000-check]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[written-back-past-the-cap]",
 ]
 
 [[mutation]]
@@ -2462,25 +2461,68 @@ reddens = [
   "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]
 
-# `attach --check` reads the ledger with the run's reader, so a ledger the run cannot take ends both
-# with one code; unread, `--check` answered clean over a ledger that stopped the run.
+# `attach --check` asks what the run asks past its gates and before its first write through the
+# run's own `plan_writes`, so a ledger, a harness anchor, an ignore file, an overlay rule or a trust
+# record the run cannot take ends both with one code and line; each of these was once unread here,
+# and `--check` answered clean over a checkout that stopped the run. Each case named here reddens
+# on its own, measured by hand.
 [[mutation]]
-name = "check does not read the attach ledger"
+name = "check skips the reads the run makes before its first write"
 file = "src/stayfixed/attach/check.py"
-before = "        existing_ledger(root)\n"
+before = "        plan_writes(root, config, binding, diff, machine=machine, home=home)\n"
 after = "        pass\n"
 reddens = [
   "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[not-json]",
   "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[a-link]",
+  "tests/attach/test_commands.py::test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_a_home_whose_claude_is_a_link_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-region-doubled]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-not-text]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[exclude-block-doubled]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[claude-linked-in]",
 ]
 
-# And only where the run reads it: the run refuses a `memory.mode` other than `overlay` before the
+# The two refusals the run makes between its gates and the groups that never moved: an `origin` the
+# overlay's record cannot hold, and a group that leaves the share, which `--check` met only as the
+# never-moved count's own refusal, in other words.
+[[mutation]]
+name = "check does not ask what the share holds"
+file = "src/stayfixed/attach/check.py"
+before = "        refuse_unless_share_holds(binding, config)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[origin-not-text]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[group-leaves-the-share]",
+]
+
+# And only where the run reads them: the run refuses a `memory.mode` other than `overlay` before the
 # ledger, so a `--check` that read it first ended such a repository with the ledger's code.
 [[mutation]]
 name = "check reads the attach ledger whatever the memory mode"
 file = "src/stayfixed/attach/check.py"
-before = "    if not_overlay(config) is None:\n        existing_ledger(root)"
-after = "    if True:\n        existing_ledger(root)"
+before = "    reads = not_overlay(config) is None and binding.state != NO_ORIGIN"
+after = "    reads = binding.state != NO_ORIGIN"
 reddens = [
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
+]
+
+# Nor past a checkout with no `origin`, or a group that never moved, both of which the run refuses
+# before the reads after them, and `--check` reports as findings.
+[[mutation]]
+name = "check reads past a checkout with no origin"
+file = "src/stayfixed/attach/check.py"
+before = "    reads = not_overlay(config) is None and binding.state != NO_ORIGIN"
+after = "    reads = not_overlay(config) is None"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[no-origin]",
+]
+
+[[mutation]]
+name = "check reads past a group that never moved"
+file = "src/stayfixed/attach/check.py"
+before = "    if reads and not real:"
+after = "    if reads:"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
 ]

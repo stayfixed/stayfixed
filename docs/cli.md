@@ -2160,11 +2160,15 @@ the real run refuses with.
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
-content from the overlay is named here first. It does not ask what the real run asks after the
-diff: an overlay rule file that is not UTF-8, which the real run fails on (`1`), and a `trust.json`
-that does not parse, a doubled `stayfixed:ignore` region or `stayfixed:attach` block or a
-`.git/info` you cannot write, which it refuses (`2`). The real run does both before it writes
-anything.
+content from the overlay is named here first. It asks what the real run asks before its first
+write, through the run's own code, so where the run fails or refuses there — an overlay rule file
+that is not UTF-8, a `~/.claude` that is a symlink, a `trust.json` that does not parse, a doubled
+`stayfixed:ignore` region or `stayfixed:attach` block, a `.git/info` you cannot write, or any other
+case the two lists below give before the first write — `--check` ends with the same code and the
+same line. The exceptions are where a flag or a finding decides: a widening without `--yes` and a
+mismatch without `--trust-remote` it reports and goes past, asking what follows as a run given the
+flag would; outside overlay mode, at a checkout with no `origin` and at a memory group that never
+moved, it reports that and asks nothing after it, as the run refuses there before the rest.
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
 `origin` and for the same reason — all three are findings you act on before the real run, and
@@ -2294,9 +2298,8 @@ characters and its length).
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
 **or** on a non-zero count of memory groups that are still real directories, which are the findings
 the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other
-than `overlay`; the loading, binding, ledger and diff failures below end `--check` with the same
-codes as a real run, since `--check` reads an existing `.stayfixed/local/attach.json` with the run's
-reader.
+than `overlay`; a failure or refusal below that the run meets before its first write ends `--check`
+with the run's code and line instead, a mismatch's finding included.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:

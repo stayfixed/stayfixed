@@ -75,7 +75,9 @@ def run_attach(args: argparse.Namespace) -> Result:
 
     root, store, machine = _target(args)
     if args.check:
-        return check(root, store=store, machine=machine)
+        # `None`, for the reason `attach` below is handed it: the real command's home is the
+        # machine owner's own.
+        return check(root, store=store, machine=machine, home=None)
     attached = attach(
         root,
         store=store,

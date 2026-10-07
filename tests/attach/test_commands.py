@@ -20,7 +20,7 @@ from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
-from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants
+from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
 from tests.gitfixture import run_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -596,9 +596,9 @@ def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
     # `--check` read the allow list and the hook table with filters of its own, while the real run
     # refused the same shapes: `null` where an object or a list goes, and a group or an entry that
     # is not an object. `--check` exited 0 promising a clean diff, and `attach --yes` then exited
-    # 2 on the same file. One reader each now, shared by both. Mutations (oracle): `mutations/`'s
-    # "check reads a null allow list as no rules" -> the `null` cases exit 0 under `--check`;
-    # "check filters the hook shapes the merge refuses" -> the hook cases do.
+    # 2 on the same file. One reader each now, shared by both. Mutation (oracle): `mutations/`'s
+    # "check filters the hook shapes the merge refuses" -> the hook cases end `--check` otherwise.
+    # The allow list's reader is proven where nothing past the diff is read, in the case below.
     document, clause = REFUSED_SHAPES[shape]
     root, store, machine = _granting(tmp_path)
     (root / ".claude").mkdir(exist_ok=True)
@@ -611,6 +611,34 @@ def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
     attached = capsys.readouterr()
     assert checked.err == attached.err == f"stayfixed: refused: {SETTINGS}: {clause}\n"
     assert_snapshot_unchanged(tmp_path, before)
+
+
+@pytest.mark.parametrize("shape", ["permissions-null", "allow-null", "written-back-past-the-cap"])
+def test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    # The real run reads the project's settings file in the diff, ahead of its refusal for a
+    # checkout with no `origin`, and refuses these there; `--check` reads it in the same diff and
+    # refuses them alike. Past that refusal `--check` reads nothing more, so the diff's own reading
+    # is the only one that can stop it here: elsewhere the run's later merge refuses the same
+    # documents too, and a `--check` that asks what the run asks meets that one as well.
+    # Mutations (oracle): `mutations/`'s "check reads a null allow list as no rules" -> the `null`
+    # cases, and "attach plans a settings write-back the next read refuses" -> the last, end
+    # `--check` with the finding's `1`.
+    root, store, machine = _granting(tmp_path)
+    run_git(root, "remote", "remove", "origin")
+    (root / ".claude").mkdir(exist_ok=True)
+    if shape == "written-back-past-the-cap":
+        monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+        (root / SETTINGS).write_text(_wide(1_000), encoding="utf-8")
+    else:
+        (root / SETTINGS).write_text(json.dumps(REFUSED_SHAPES[shape][0]), encoding="utf-8")
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith(f"stayfixed: refused: {SETTINGS}")
 
 
 @pytest.mark.parametrize("shape", sorted(READ_SHAPES))
@@ -669,7 +697,7 @@ def test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words
     # `--check` did not read `.stayfixed/local/attach.json`, so it answered 0 over a ledger that
     # stopped the run, and a CI step running it passed where `attach` failed. It reads the ledger
     # with the run's reader now, so the two end with one code and one line. Mutation (oracle):
-    # `mutations/`'s "check does not read the attach ledger".
+    # `mutations/`'s "check skips the reads the run makes before its first write".
     text, code = UNREADABLE_LEDGERS[shape]
     root, store, machine = _granting(tmp_path)
     ledger = root / LEDGER
@@ -689,6 +717,159 @@ def test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words
     attached = capsys.readouterr()
     assert checked.err == attached.err and checked.err.startswith("stayfixed: ")
     assert_snapshot_unchanged(tmp_path, before)
+
+
+def _check_then_attach(
+    flags: list[str], capsys: pytest.CaptureFixture[str]
+) -> tuple[tuple[int, str], tuple[int, str]]:
+    """`attach --check` and then `attach --yes` over one checkout: each one's code and stderr."""
+    checked = invoke(["attach", "--check", *flags])
+    checked_err = capsys.readouterr().err
+    attached = invoke(["attach", "--yes", *flags])
+    return (checked, checked_err), (attached, capsys.readouterr().err)
+
+
+def test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real run reads and decodes every overlay rule source before its first write, and fails
+    # on one that is not UTF-8; `--check` listed the rule files without reading one, so it exited
+    # 0 over a rule the run then failed on, and a CI step running it passed. It reads them with
+    # the run's reader now. Mutation (oracle): `mutations/`'s "check skips the reads the run makes
+    # before its first write".
+    root, store, machine = _granting(tmp_path)
+    rule = store.parents[2] / "common" / "codex" / "z.rules"
+    rule.write_bytes(b"\xff\xfe not text\n")
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    line = f"stayfixed: failed: {rule} is not UTF-8 text, so nothing was written\n"
+    assert checked == attached == (1, line)
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_on_a_home_whose_claude_is_a_link_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The ordinary dotfiles layout, `~/.claude` linked in from elsewhere, refuses the real run
+    # before its first write, because the harness memory link is written under a walk that follows
+    # no symlink. `--check` never asked, so it exited 0 for a run that then refused. It asks the
+    # run's question now, of the home the run asks it of: the one a terminal names, which this
+    # module's fixture makes `tmp_path / "home"`. Mutation (oracle): `mutations/`'s "check skips
+    # the reads the run makes before its first write".
+    root, store, machine = _granting(tmp_path)
+    elsewhere = tmp_path / "dotfiles" / "claude"
+    elsewhere.mkdir(parents=True)
+    (tmp_path / "home" / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    before = snapshot(tmp_path)
+    (checked, checked_err), (attached, attached_err) = _check_then_attach(
+        _flags(root, store, machine), capsys
+    )
+    assert checked == attached == 2
+    assert checked_err == attached_err
+    assert checked_err.startswith("stayfixed: refused: the harness memory link cannot be reached")
+    assert "passes through a symlink at '.claude'" in checked_err
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real run reads the machine's trust record before its first write and refuses one that
+    # does not parse, since the index render and the harness link both read it after the writes.
+    # `--check` never read it, so it exited 0 for a run that then refused. Mutation (oracle):
+    # `mutations/`'s "check skips the reads the run makes before its first write".
+    root, store, machine = _granting(tmp_path)
+    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (checked, checked_err), (attached, attached_err) = _check_then_attach(
+        _flags(root, store, machine), capsys
+    )
+    assert checked == attached == 2
+    assert checked_err == attached_err
+    assert checked_err.startswith(f"stayfixed: refused: {machine.parent / 'trust.json'}")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def _origin_not_text(root: Path, tmp_path: Path) -> None:
+    run_git(root, "remote", "remove", "origin")
+    config = root / ".git" / "config"
+    with config.open("ab") as stream:
+        stream.write(b'[remote "origin"]\n\turl = git@example.com:o/\xff.git\n')
+
+
+def _exclude_file(root: Path) -> Path:
+    exclude = root / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(exist_ok=True)
+    return exclude
+
+
+def _claude_linked_in(root: Path, tmp_path: Path) -> None:
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+
+
+# Refusals the real run makes past its gates and before its first write, each of which `--check`
+# once answered with 0, or with another refusal's line, and the setup that reaches each one.
+PAST_THE_GATES = {
+    "origin-not-text": _origin_not_text,
+    "group-leaves-the-share": lambda root, _: (root / "stayfixed.toml").write_text(
+        (root / "stayfixed.toml")
+        .read_text(encoding="utf-8")
+        .replace('groups = ["developer", "project-stable"]', 'groups = ["../../escape"]'),
+        encoding="utf-8",
+    ),
+    "gitignore-region-doubled": lambda root, _: (root / ".gitignore").write_text(
+        "# stayfixed:ignore:begin\n# stayfixed:ignore:begin\n# stayfixed:ignore:end\n",
+        encoding="utf-8",
+    ),
+    "gitignore-not-text": lambda root, _: (root / ".gitignore").write_bytes(b"\xff\xfe\n"),
+    "exclude-block-doubled": lambda root, _: _exclude_file(root).write_text(
+        "# stayfixed:attach:begin\n# stayfixed:attach:begin\n# stayfixed:attach:end\n",
+        encoding="utf-8",
+    ),
+    "claude-linked-in": _claude_linked_in,
+}
+
+
+@pytest.mark.parametrize("case", sorted(PAST_THE_GATES))
+def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    # The three cases above and these were all the same defect: the run asked a question
+    # `--check` never did, so the preview answered clean, or with another refusal's words, over a
+    # checkout the run then refused. `--check` asks them through the run's own planning now, so
+    # each ends both commands with one code and one line. Mutations (oracle): `mutations/`'s
+    # "check does not ask what the share holds" for the first two, and "check skips the reads
+    # the run makes before its first write" for the rest.
+    root, store, machine = _granting(tmp_path)
+    PAST_THE_GATES[case](root, tmp_path)
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith("stayfixed: refused: ")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+@pytest.mark.parametrize("stop", ["no-origin", "group-never-moved"])
+def test_check_reads_nothing_past_where_the_run_stops(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], stop: str
+) -> None:
+    # The run refuses a checkout with no `origin` and a group that never moved before it reads
+    # what comes after, so a trust record that does not parse never decides its code; `--check`
+    # reports each as the finding it is, exit 1, and reads no further either. Mutations (oracle):
+    # `mutations/`'s "check reads past a checkout with no origin" and "check reads past a group
+    # that never moved".
+    root, store, machine = _granting(tmp_path)
+    if stop == "no-origin":
+        run_git(root, "remote", "remove", "origin")
+    else:
+        (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 1
+    assert capsys.readouterr().err == ""
+    assert invoke(["attach", "--yes", *flags]) == 2
+    assert "trust.json" not in capsys.readouterr().err
 
 
 def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(

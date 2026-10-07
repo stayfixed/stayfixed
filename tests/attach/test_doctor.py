@@ -1936,7 +1936,7 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     # What `attach --check` stops on, which is the message its command line prints.
     store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
     with pytest.raises(Failure, match=f"/{PROJECT_RECORD} is not valid TOML"):
-        attach_check(root, store=store, machine=machine)
+        attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
 def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse(
@@ -1958,7 +1958,7 @@ def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_
         assert "could not run" not in _by_name(rows, name).detail
     store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
     with pytest.raises(Failure, match="is not valid TOML \\(holds a number longer"):
-        attach_check(root, store=store, machine=machine)
+        attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
 # The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this

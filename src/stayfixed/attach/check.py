@@ -2,8 +2,8 @@
 written.
 
 A module of its own, above everything it reads through: the binding and the permission diff
-(`binding`, `permissions`) and the ledger, which it reads with the writer's own reader (`write`),
-as the real run does before its first write. `write` imports `permissions` for the diff it
+(`binding`, `permissions`), and what the real run asks before its first write, which it asks
+through the writer's own planning (`write`). `write` imports `permissions` for the diff it
 merges, so the preview cannot live in `permissions` without the two importing each other; here
 each import runs one way, and `tests/test_areas.py` holds the modules under `src/stayfixed/` to a
 graph without a cycle, imports inside a function included.
@@ -20,13 +20,13 @@ from stayfixed.attach.binding import (
     unlinked_groups,
 )
 from stayfixed.attach.permissions import codex_rules, diff_permissions
-from stayfixed.attach.write import existing_ledger
+from stayfixed.attach.write import plan_writes, refuse_unless_share_holds
 from stayfixed.config.loader import load
 from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE
 from stayfixed.result import Result
 
 
-def check(root: Path, *, store: Path, machine: Path | None) -> Result:
+def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -> Result:
     """`attach --check`: the binding and the diff, with nothing written.
 
     Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
@@ -47,6 +47,10 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
     rather than reporting a count for a `paths.memory` no walk could contain.
 
+    `home` is the home the harness memory link goes under, which `plan_writes` asks about as the
+    run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
+    own `~/.claude/` by leaving it out. The command passes `None`, the machine owner's own.
+
     **Nor does `project.name`, and that is the same rule rather than a second one.** The name is
     repository-authored (principle 5), `config/schema.py`'s `PROJECT_NAME` is looser than the
     marker-id grammar `doctor` already refuses to print, and `skills/attach/SKILL.md` tells the
@@ -59,13 +63,19 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     binding = read_binding(root, store=store, machine=machine, config=config)
     refuse_unless_share_can_exist(binding, config)
     diff = diff_permissions(root, binding)
+    # What the run asks past its gates and before its first write, asked by the run's own
+    # functions in the run's order, so a refusal or failure there ends this command with the run's
+    # code and line: each of them was once left out here, and `--check` answered clean over a
+    # checkout the run then stopped on. Only where the run reaches them: it refuses a repository
+    # outside overlay mode and a checkout with no `origin` before any of them, and a group that
+    # never moved before `plan_writes`, so `--check` reports those as it always has and reads no
+    # further. A mismatch is not one: `--trust-remote` takes the run past it.
+    reads = not_overlay(config) is None and binding.state != NO_ORIGIN
+    if reads:
+        refuse_unless_share_holds(binding, config)
     real = len(unlinked_groups(root, config))
-    # The ledger, read as the run reads it and where the run reads it: one the run cannot take
-    # ends this command with the run's code and line, where it was never read and `--check`
-    # answered clean. Not in a repository outside overlay mode, which the run refuses before it
-    # reaches the ledger.
-    if not_overlay(config) is None:
-        existing_ledger(root)
+    if reads and not real:
+        plan_writes(root, config, binding, diff, machine=machine, home=home)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
     # diff's three fields say what `attach` would add and what is already there, `widens` is
     # computed from them, and a fourth of another kind would blur what it means. These names
