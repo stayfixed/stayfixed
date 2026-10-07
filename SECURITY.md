@@ -59,19 +59,19 @@ In scope, and treated as security rather than as an ordinary bug:
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
 - **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
-  resolves a relative entry against the project (measured on Claude Code 2.1.293). So off a
-  terminal, a hook among others, stayfixed runs `git` from fixed absolute paths and hands it a
-  fixed `PATH` for the programs git runs by name, such as `git-lfs`, and the hook wrapper runs
+  resolves a relative entry against the project (measured on Claude Code 2.1.293). So in a
+  process the hook wrapper launched, stayfixed runs `git` from fixed absolute paths and hands it
+  a fixed `PATH` for the programs git runs by name, such as `git-lfs`, and the hook wrapper runs
   nothing by name but the interpreter it contains (`docs/cli.md`). A committed `PATH` that makes
   a hook run a program the repository chose is in scope; it is no longer an accepted exposure.
 
 Out of scope:
 
 - Anything that requires the attacker to already be able to write to the machine owner's home
-  directory or to a directory on their own `PATH`. At a terminal stayfixed runs the `git` on your
-  `PATH` by design. In the commands an agent runs through its own shell tool, `PATH` is the
-  harness's to choose, and that includes which `stayfixed` runs, which nothing inside stayfixed
-  can decide.
+  directory or to a directory on their own `PATH`. Outside a hook, at a terminal and in a
+  `stayfixed gate` step in CI, stayfixed runs the `git` on your `PATH` by design. In the commands
+  an agent runs through its own shell tool, `PATH` is the harness's to choose, and that includes
+  which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can decide.
 - `HOME` choosing git's global configuration: `$HOME/.gitconfig` and `$HOME/.config/git/config`,
   whose `core.fsmonitor` names a program git runs on `status`, `ls-files` and `diff`. stayfixed
   hands its `git` your `HOME` on purpose, so that your `safe.directory` and excludes answer.

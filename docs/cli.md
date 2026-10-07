@@ -329,9 +329,9 @@ anchor there is, so a bare `git` would let a clone that ships one have that bina
 every hook invocation, before any guard. The wrapper therefore tries a fixed list of absolute
 paths and takes the first that exists, asking the machine owner's own installs before
 `/usr/bin/git`; nothing under `$HOME` is on the list, because `HOME` is environment-chosen too.
-A machine with `git` at none of them gets `SF_NO_GIT`. Off a terminal, `stayfixed`'s own
-`git` calls take theirs from the same list, with a fixed `PATH` for the programs git runs by name;
-at a terminal they resolve it through `PATH`, so the machine owner's `git` answers.
+A machine with `git` at none of them gets `SF_NO_GIT`. A `stayfixed` this wrapper launched
+takes its own `git` from the same list, with a fixed `PATH` for the programs git runs by name;
+anywhere else it resolves `git` through `PATH`, so the machine owner's `git` answers.
 
 **`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
 `python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
