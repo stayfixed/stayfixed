@@ -2616,8 +2616,11 @@ when a foreign hook was there to preserve, by renaming that hook. Under `--unins
 the hook file only when it is stayfixed's, and renames the `.local` file beside it, when there is
 one, back to `prepare-commit-msg`. Its line says which it met: `removed <hook>` with whether a
 foreign hook was restored, `there is no stayfixed hook at <hook>; nothing was removed`, or `left
-<hook> as it was: it is not stayfixed's hook; nothing was removed`; `--json` carries `removed` and
-`foreign` beside `path` and `restored`. Exits `0`; `2` when `--preset` is also given.
+<hook> as it was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `found`
+(`removed`, `absent` or `foreign`) beside `path` and `restored`. A hook at the path that cannot be
+read as a regular file — a FIFO, a mode that forbids reading, one past the read cap — is neither
+stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves it where
+it is. Exits `0`; `2` when `--preset` is also given or the hook cannot be read.
 
 ---
 

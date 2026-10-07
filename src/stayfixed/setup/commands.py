@@ -48,16 +48,16 @@ _BOTH_MODES = (
 
 
 def run_git_hooks(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.api import install, uninstall
+    from stayfixed.guards.api import Found, install, uninstall
 
     root = Path(args.root).resolve()
     if args.uninstall:
         removed = uninstall(root)
-        if removed.foreign:
+        if removed.found is Found.FOREIGN:
             summary = (
                 f"left {removed.path} as it was: it is not stayfixed's hook; nothing was removed"
             )
-        elif not removed.removed:
+        elif removed.found is Found.ABSENT:
             summary = f"there is no stayfixed hook at {removed.path}; nothing was removed"
         elif removed.restored is not None:
             summary = f"removed {removed.path}; restored the foreign hook chained to it"
@@ -66,8 +66,7 @@ def run_git_hooks(args: argparse.Namespace) -> Result:
         data: dict[str, Any] = {
             "path": str(removed.path),
             "restored": str(removed.restored) if removed.restored is not None else None,
-            "removed": removed.removed,
-            "foreign": removed.foreign,
+            "found": removed.found.value,
         }
         return Result(summary, data)
 

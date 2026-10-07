@@ -12,7 +12,14 @@ import pytest
 
 from stayfixed.errors import Refusal
 from stayfixed.guards.commit import offending_lines
-from stayfixed.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
+from stayfixed.guards.githooks import (
+    HOOK_MARKER,
+    HOOK_NAME,
+    Found,
+    hooks_dir,
+    install,
+    uninstall,
+)
 from tests import gitfixture
 from tests.floor import floor_env
 
@@ -340,18 +347,74 @@ def test_reinstalling_over_a_chained_setup_keeps_the_preserved_hook(tmp_path: Pa
 
 
 def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
-    # And says so: `removed` is false and `foreign` true, where the answer was the one an
-    # uninstall of stayfixed's own hook with nothing chained gave. With no hook at all, both are
-    # false. Mutations: `mutations/`, "uninstall says it removed a hook when the hook there is not
-    # stayfixed's" and "uninstall says it removed a hook when there was none".
+    # And says so, `Found.FOREIGN`, where the answer was the one an uninstall of stayfixed's own
+    # hook with nothing chained gave; with no hook at all, `Found.ABSENT`. Mutations:
+    # `mutations/`, "uninstall says it removed a hook when the hook there is not stayfixed's" and
+    # "uninstall says it removed a hook when there was none".
     root = repo(tmp_path)
     foreign = hooks_dir(root) / HOOK_NAME
     foreign.parent.mkdir(parents=True, exist_ok=True)
-    assert uninstall(root) == (foreign, None, False, False)
+    assert uninstall(root) == (foreign, None, Found.ABSENT)
     foreign.write_text("#!/bin/sh\necho foreign\n", encoding="utf-8")
     removed = uninstall(root)
-    assert removed == (foreign, None, False, True)
+    assert removed == (foreign, None, Found.FOREIGN)
     assert "foreign" in foreign.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("verb", ["install", "uninstall"])
+def test_a_fifo_at_the_hook_path_is_refused_and_never_waited_on(tmp_path: Path, verb: str) -> None:
+    # Whether a hook is stayfixed's is read off its bytes, and the read waited on a FIFO for a
+    # writer that never came: `setup --git-hooks` and `--uninstall` both hung. It is read as a
+    # regular file only, to the read cap, so a FIFO is a hook that cannot be read, refused. In a
+    # child under a timeout, so a regression fails this case rather than hanging. Mutation:
+    # `mutations/`, "the hook installer reads a hook with no bound".
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(hook)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.errors import Refusal\n"
+        f"from stayfixed.guards.githooks import {verb}\n"
+        "try:\n"
+        f"    {verb}(Path(sys.argv[1]))\n"
+        "except Refusal as refused:\n"
+        "    print(refused)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{verb} waited on a FIFO at the hook path")
+    assert done.stdout.startswith(f"{hook} could not be read (not a regular file); "), done.stderr
+    assert hook.is_fifo()
+
+
+@pytest.mark.parametrize("verb", ["install", "uninstall"])
+def test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign(tmp_path: Path, verb: str) -> None:
+    # Whether it is stayfixed's cannot be told, so it is neither: read as foreign, `--uninstall`
+    # said "it is not stayfixed's hook" of stayfixed's own hook at mode 000, and `install`
+    # renamed that hook to `.local` and chained it. Each refuses, naming the reason, and leaves it
+    # where it is. Mutation: `mutations/`, "a hook that cannot be read is read as a foreign one".
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root = repo(tmp_path)
+    hook = install(root).path
+    hook.chmod(0o000)
+    try:
+        with pytest.raises(Refusal) as refused:
+            install(root) if verb == "install" else uninstall(root)
+    finally:
+        hook.chmod(0o755)
+    assert str(refused.value).startswith(f"{hook} could not be read (Permission denied); ")
+    assert HOOK_MARKER in hook.read_text(encoding="utf-8")
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
 
 
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) asks of every path a 
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -96,17 +97,22 @@ class Installed(NamedTuple):
     replaced: bool
 
 
-class Removed(NamedTuple):
-    """What `uninstall` found at the hook path and did there.
+class Found(Enum):
+    """What `uninstall` found at the hook path. One value, so no answer can say that it both removed
+    stayfixed's hook and left a foreign one; a report built from `restored` alone said "removed" of
+    all three. A hook that cannot be read is none of them: `uninstall` refuses it."""
 
-    `removed` is whether stayfixed's hook was there and is gone; `foreign` is whether something
-    stayfixed did not write is there and was left as it was; neither is no hook at all. A report
-    built from `restored` alone said "removed" of all three."""
+    REMOVED = "removed"  # stayfixed's hook, which is gone
+    ABSENT = "absent"  # no hook at all
+    FOREIGN = "foreign"  # a hook stayfixed did not write, left as it was
+
+
+class Removed(NamedTuple):
+    """What `uninstall` found at the hook path, and the hook it put back there, if any."""
 
     path: Path
     restored: Path | None
-    removed: bool
-    foreign: bool
+    found: Found
 
 
 def git_path(root: Path, name: str, what: str) -> Path:
@@ -143,10 +149,29 @@ def hooks_dir(root: Path) -> Path:
     return git_path(root, "hooks", "hooks directory")
 
 
-def _ours(path: Path) -> bool:
+# What `install` and `uninstall` say of a hook they cannot read. `{path}` is git's own hooks
+# directory, which the reports name absolutely, as every other line of this module does.
+UNREADABLE = "{path} could not be read ({reason}); {outcome}"
+
+
+def _ours(path: Path, outcome: str) -> bool:
+    """Whether the hook at `path` is stayfixed's, by its marker; bytes that are not UTF-8 are not.
+
+    Read as a regular file only, to the read cap (`fsops.read_regular_bytes`): a FIFO there is
+    never waited on, as `read_text` waited on it. A hook that cannot be read is neither ours nor
+    foreign, and is refused, ending in `outcome`, what the caller did not do: read as foreign, it
+    was "not stayfixed's" to `uninstall` and renamed and chained by `install` when it was
+    stayfixed's own at mode 000.
+    """
     try:
-        return HOOK_MARKER in path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        content = fsops.read_regular_bytes(path)
+    except OSError as exc:
+        raise Refusal(
+            UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)
+        ) from exc
+    try:
+        return HOOK_MARKER in content.decode("utf-8")
+    except UnicodeDecodeError:
         return False
 
 
@@ -158,7 +183,7 @@ def install(root: Path) -> Installed:
         raise Refusal(f"{target} is a symlink; refusing to write through it")
     if target.is_dir():
         raise Refusal(f"{target} is a directory; refusing to install a hook over it")
-    replaced = target.exists() and _ours(target)
+    replaced = target.exists() and _ours(target, "nothing was installed")
     # A `.local` found where our hook is *not* installed was put there by somebody else, and
     # the shipped hook `exec`s whatever sits at that name, so installing over it would run a
     # stranger's file under stayfixed's name. Note the bound, which is the whole of the
@@ -183,9 +208,9 @@ def uninstall(root: Path) -> Removed:
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
     if not os.path.lexists(target):
-        return Removed(target, None, removed=False, foreign=False)
-    if target.is_symlink() or not _ours(target):
-        return Removed(target, None, removed=False, foreign=True)
+        return Removed(target, None, Found.ABSENT)
+    if target.is_symlink() or not _ours(target, "nothing was removed"):
+        return Removed(target, None, Found.FOREIGN)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it
     # there. It cannot: `install` refuses a stray `.local` only while our hook is absent, so a
@@ -196,5 +221,5 @@ def uninstall(root: Path) -> Removed:
     # unconditional refusal here would be this module inventing a different one.
     if local.exists():
         local.rename(target)
-        return Removed(target, target, removed=True, foreign=False)
-    return Removed(target, None, removed=True, foreign=False)
+        return Removed(target, target, Found.REMOVED)
+    return Removed(target, None, Found.REMOVED)

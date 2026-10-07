@@ -22,9 +22,10 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     #
     # What is below is what another area reaches for, with the argument for each in `api.py`.
     required = {
-        # the git hook, for setup, and the two results its verbs return
+        # the git hook, for setup, the two results its verbs return, and what uninstall found
         "HOOK_NAME",
         "HOOK_MARKER",
+        "Found",
         "Installed",
         "Removed",
         "install",

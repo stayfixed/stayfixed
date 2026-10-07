@@ -407,8 +407,8 @@ reddens = [
 [[mutation]]
 name = "a hook is ours only when its bytes are today's text"
 file = "src/stayfixed/guards/githooks.py"
-before = '        return HOOK_MARKER in path.read_text(encoding="utf-8")'
-after = '        return path.read_text(encoding="utf-8") == HOOK_TEXT'
+before = '        return HOOK_MARKER in content.decode("utf-8")'
+after = '        return content.decode("utf-8") == HOOK_TEXT'
 reddens = [
   "tests/guards/test_githooks.py::test_a_hook_an_earlier_release_wrote_is_still_ours",
 ]
@@ -1333,13 +1333,38 @@ reddens = [
 [[mutation]]
 name = "uninstall says it removed a hook when there was none"
 file = "src/stayfixed/guards/githooks.py"
-before = "        return Removed(target, None, removed=False, foreign=False)"
-after = "        return Removed(target, None, removed=True, foreign=False)"
+before = "        return Removed(target, None, Found.ABSENT)"
+after = "        return Removed(target, None, Found.REMOVED)"
 reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[nothing]"]
 
 [[mutation]]
 name = "uninstall says it removed a hook when the hook there is not stayfixed's"
 file = "src/stayfixed/guards/githooks.py"
-before = "        return Removed(target, None, removed=False, foreign=True)"
-after = "        return Removed(target, None, removed=True, foreign=False)"
+before = "        return Removed(target, None, Found.FOREIGN)"
+after = "        return Removed(target, None, Found.REMOVED)"
 reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[foreign]"]
+
+# Whether a hook is stayfixed's is read off its bytes as a regular file, to the read cap: read with
+# `read_text`, a FIFO at the hook path hung `setup --git-hooks` and `--uninstall`. And a hook it
+# cannot read is neither ours nor foreign: read as foreign, stayfixed's own hook at mode 000 was
+# "not stayfixed's" to `--uninstall` and renamed to `.local` and chained by `install`.
+[[mutation]]
+name = "the hook installer reads a hook with no bound"
+file = "src/stayfixed/guards/githooks.py"
+before = "        content = fsops.read_regular_bytes(path)"
+after = "        content = path.read_bytes()"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_and_never_waited_on[install]",
+  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_and_never_waited_on[uninstall]",
+]
+
+[[mutation]]
+name = "a hook that cannot be read is read as a foreign one"
+file = "src/stayfixed/guards/githooks.py"
+before = "    except OSError as exc:\n        raise Refusal(\n            UNREADABLE.format("
+after = "    except OSError as exc:\n        return False\n        raise Refusal(\n            UNREADABLE.format("
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[install]",
+  "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[uninstall]",
+]
+

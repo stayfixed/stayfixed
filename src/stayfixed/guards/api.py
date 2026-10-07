@@ -11,7 +11,8 @@ and one gate:
 
 - `setup` offers and undoes the git hook (`install`, `uninstall`, `HOOK_NAME`), and `Installed`
   and `Removed` come with the two verbs, because a return type absent from this list is a value
-  `setup` can hold and cannot declare.
+  `setup` can hold and cannot declare; so does `Found`, what `uninstall` found, which its report
+  says.
 - `attach`, `doctor` and `setup`'s own tests ask where an overlay's hooks really live rather
   than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
   or one that is a worktree or a submodule, keeps them somewhere else, and both areas had the
@@ -40,6 +41,7 @@ from stayfixed.guards.commit import commit_gate
 from stayfixed.guards.githooks import (
     HOOK_MARKER,
     HOOK_NAME,
+    Found,
     Installed,
     Removed,
     git_path,
@@ -52,6 +54,7 @@ from stayfixed.guards.roots import contained_roots
 __all__ = [
     "HOOK_MARKER",
     "HOOK_NAME",
+    "Found",
     "Installed",
     "Removed",
     "commit_gate",
