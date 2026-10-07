@@ -245,3 +245,39 @@ def answer_shallow_check(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(gitenv, "git_run", answered)
+
+
+class _Stdin:
+    """A `sys.stdin` that is, or is not, a terminal."""
+
+    def __init__(self, tty: bool) -> None:
+        self.tty = tty
+
+    def isatty(self) -> bool:
+        return self.tty
+
+
+def at_a_terminal(monkeypatch: pytest.MonkeyPatch, tty: bool) -> None:
+    """Have this process be run from a terminal, or not, for the length of one test: the seam
+    `stayfixed.config.machine.override_is_honoured` reads, and with it which `git` the product
+    runs (`stayfixed.gitenv.git_program`). A test is off one already unless pytest runs with `-s`
+    from a terminal; a case about the difference says which it is about."""
+    monkeypatch.setattr("sys.stdin", _Stdin(tty))
+
+
+def stand_in_git(monkeypatch: pytest.MonkeyPatch, stand_in: Path) -> None:
+    """Have the product run `stand_in` wherever it runs `git`, for the length of one test.
+
+    The one candidate `stayfixed.gitenv` takes off a terminal, which is where a test runs, and the
+    first `git` on `PATH`, which a `Runner` launch and a run at a terminal resolve it through. A
+    `git` put on `PATH` alone is never run off a terminal: that is the rule, not a seam.
+    """
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(stand_in),))
+    monkeypatch.setenv("PATH", f"{stand_in.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+def no_git(monkeypatch: pytest.MonkeyPatch, nowhere: Path) -> None:
+    """Have no `git` the product can launch, for the length of one test: no candidate exists and
+    `PATH` names only `nowhere`, a directory with no `git` in it."""
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(nowhere / "git"),))
+    monkeypatch.setenv("PATH", str(nowhere))

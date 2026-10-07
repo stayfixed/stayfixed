@@ -24,7 +24,7 @@ from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
-from tests.gitfixture import git, plant_path, run_git
+from tests.gitfixture import git, no_git, plant_path, run_git, stand_in_git
 from tests.ledger.kills import Killed, killed_at
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -275,7 +275,7 @@ def test_outside_a_repository_there_is_no_history_to_warn_about(
     # both cases redden.
     root, config = project(tmp_path)
     if not git_runs:
-        monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
+        no_git(monkeypatch, tmp_path / "no-git-here")
     assert next_identifier(root, bug_register(config), fetch=False).warning is None
 
 
@@ -313,7 +313,7 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
+    stand_in_git(monkeypatch, wrapper)
     allocation = next_identifier(root, bug_register(config), fetch=False)
     assert allocation.identifier == "BR-002"
     assert allocation.warning is not None

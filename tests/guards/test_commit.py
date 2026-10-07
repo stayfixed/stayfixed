@@ -26,7 +26,7 @@ from stayfixed.guards.commit import (
     offending_lines,
     strip_message,
 )
-from tests.gitfixture import git
+from tests.gitfixture import at_a_terminal, git
 
 # Per test, not module-wide: most of this file is pure functions, and a module-level skip
 # would void the POSITIVES, the NEGATIVES and the one test the mutation entry names — which
@@ -689,7 +689,10 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
         return sp.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
     # A `GIT_DIR` the session happens to carry makes git answer for a different repository
-    # than the one the range is about; `scrubbed_env` is what drops it.
+    # than the one the range is about; `scrubbed_env` is what drops it. At a terminal, where
+    # `git_run` hands git this process's own `PATH`, so the expected environment is the plain
+    # scrubbed one and no `git` on this machine is needed to reach `fake`.
+    at_a_terminal(monkeypatch, True)
     monkeypatch.setenv("GIT_DIR", "/elsewhere/.git")
     monkeypatch.setattr(sp, "run", fake)
     # The bound is read below `git_run`, where the suite's floor has already lifted it: at the

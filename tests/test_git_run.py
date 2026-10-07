@@ -4,6 +4,7 @@ import ast
 import importlib
 import locale
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,7 @@ import pytest
 
 from stayfixed import gitenv
 from stayfixed.gitenv import NO_ANSWER, git_run
-from tests.gitfixture import plant_path
+from tests.gitfixture import at_a_terminal, plant_path, stand_in_git
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -41,8 +42,116 @@ def test_a_non_zero_exit_is_returned_not_collapsed(tmp_path: Path) -> None:
 def test_a_git_that_cannot_run_is_minus_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    at_a_terminal(monkeypatch, True)
     monkeypatch.setenv("PATH", str(tmp_path))  # no git here
     assert git_run(tmp_path, "rev-parse") == (-1, "")
+
+
+def _stub(directory: Path, body: str, name: str = "git") -> Path:
+    """An executable `<directory>/<name>` that runs `body` under `/bin/sh`."""
+    directory.mkdir(parents=True, exist_ok=True)
+    stub = directory / name
+    stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return stub
+
+
+def _planted_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A `git` first on `PATH`, as a clone's committed `env` block puts one there, that leaves a
+    marker when it runs; the marker's path is returned."""
+    ran = tmp_path / "planted-ran"
+    planted = tmp_path / "planted"
+    _stub(planted, f"echo ran > '{ran}'")
+    monkeypatch.setenv("PATH", f"{planted}{os.pathsep}{os.environ.get('PATH', '')}")
+    return ran
+
+
+def test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Claude Code applies a project's `env` block `PATH` to every hook, relative entries
+    # resolved against the project (measured on 2.1.293), so a bare `git` off a terminal was
+    # whatever the clone shipped, run by every hook that asks git anything. A scratch candidate
+    # list, so the case reads no `git` this machine happens to have: the first is missing, the
+    # second answers. Mutation (declared): the candidate is taken from `PATH` again -> the
+    # planted `git` runs and this reddens.
+    at_a_terminal(monkeypatch, False)
+    ran = _planted_on_path(tmp_path, monkeypatch)
+    second = _stub(tmp_path / "second", "echo candidate")
+    candidates = (str(tmp_path / "first" / "git"), str(second))
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", candidates)
+    assert git_run(tmp_path, "rev-parse") == (0, "candidate\n")
+    assert not ran.exists()
+
+
+def test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git runs helpers by name through the `PATH` it is handed — a `filter.lfs.process` of
+    # `git-lfs filter-process`, a `core.fsmonitor` program — so an absolute `git` handed the
+    # clone's `PATH` still ran the clone's `git-lfs`. Each candidate's directory once, in the
+    # list's order, then the system's. The `git` on `PATH` prints the same, so the case is red
+    # for the `PATH` and not for which binary answered. Mutation (declared): the inherited
+    # `PATH` is handed on again -> this reddens.
+    at_a_terminal(monkeypatch, False)
+    inherited = tmp_path / "inherited"
+    _stub(inherited, 'printf %s "$PATH"')
+    monkeypatch.setenv("PATH", f"{inherited}{os.pathsep}fakebin")
+    first = _stub(tmp_path / "a", 'printf %s "$PATH"')
+    candidates = (str(first), str(tmp_path / "b" / "git"), str(first))
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", candidates)
+    code, out = git_run(tmp_path, "rev-parse")
+    assert code == 0
+    assert out.split(os.pathsep) == [
+        str(tmp_path / "a"),
+        str(tmp_path / "b"),
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ]
+
+
+def test_at_a_terminal_git_and_its_path_are_the_person_s_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Their own shell: a fixed list is what picks the Xcode shim at `/usr/bin/git` over the
+    # `git` they installed, so `PATH` chooses it there, and git is handed that `PATH` as it is.
+    # Unchanged by the rule above, and held so it stays so. Mutation (declared): the terminal
+    # is no longer asked -> the candidate runs and this reddens.
+    at_a_terminal(monkeypatch, True)
+    theirs = tmp_path / "theirs"
+    _stub(theirs, 'printf %s "$PATH"')
+    path = f"{theirs}{os.pathsep}fakebin"
+    monkeypatch.setenv("PATH", path)
+    ran = tmp_path / "candidate-ran"
+    candidate = _stub(tmp_path / "candidate", f"echo ran > '{ran}'")
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(candidate),))
+    assert git_run(tmp_path, "rev-parse") == (0, path)
+    assert not ran.exists()
+
+
+def test_off_a_terminal_no_candidate_is_no_answer_and_never_a_lookup_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine with `git` at none of the absolute paths has no `git` a hook can trust: the
+    # answer git failing to launch gives, and not the `git` the environment offers instead.
+    # Mutation (declared): no candidate falls back to `PATH` -> the planted `git` runs.
+    at_a_terminal(monkeypatch, False)
+    ran = _planted_on_path(tmp_path, monkeypatch)
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(tmp_path / "none" / "git"),))
+    assert git_run(tmp_path, "rev-parse") == (-1, "")
+    assert not ran.exists()
+
+
+def test_the_hook_wrapper_and_git_run_take_git_from_one_list() -> None:
+    # Two spellings of one list, since a shell script cannot import a Python constant: the
+    # wrapper's `for g in …` words, continuation lines included, in order. By hand: reorder
+    # either list -> this reddens.
+    text = (SRC.parent / "hooks" / "run-hook.sh").read_text(encoding="utf-8")
+    loops = re.findall(r"^for g in ((?:[^;\n\\]|\\\n)*); do$", text, re.MULTILINE)
+    assert len(loops) == 1
+    assert tuple(loops[0].replace("\\\n", " ").split()) == gitenv.GIT_CANDIDATES
 
 
 @needs_git
@@ -226,20 +335,15 @@ def test_a_name_asked_on_stdin_matches_the_rule_that_names_it_whatever_the_local
 
 
 def _a_git_that_sleeps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
-    """A stand-in `git` first on `PATH` that answers nothing, exit 0, after `seconds`."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    stand_in = bin_dir / "git"
-    stand_in.write_text(f"#!/bin/sh\nexec sleep {seconds}\n", encoding="utf-8")
-    stand_in.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    """A stand-in `git` the product runs that answers nothing, exit 0, after `seconds`."""
+    stand_in_git(monkeypatch, _stub(tmp_path / "bin", f"exec sleep {seconds}"))
 
 
 def test_a_git_past_its_time_limit_is_minus_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The third cause `-1` still carries, and the one the callers' safeguards are kept for: a
-    # `git` that hangs is no answer, whatever it would have said. The stand-in on `PATH` sleeps
+    # `git` that hangs is no answer, whatever it would have said. The stand-in `git` sleeps
     # past a bound far below it. The suite's floor is removed, back to the product's zero, or
     # the bound this test is about would be lifted past the sleep.
     monkeypatch.delenv(gitenv.FLOOR_VARIABLE)

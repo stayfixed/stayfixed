@@ -276,8 +276,9 @@ def test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback(
     # `tar` got `FileNotFoundError` out of a library function, which only `cli.py`'s mapping
     # caught — as an internal error, exit 2.
     #
-    # A PATH holding `git` and nothing else, rather than an empty one: an empty PATH breaks
-    # the merge-base first and the test would pass for the wrong reason, never reaching `tar`.
+    # A PATH holding `git` and nothing else, rather than an empty one: where `git` is found
+    # through `PATH`, at a terminal, an empty one breaks the merge-base first and the test would
+    # pass for the wrong reason, never reaching `tar`.
     # The assertion names `tar`, so a `Failure` raised anywhere else on the path does not
     # satisfy it. Mutation (declared): drop the `except OSError` -> `FileNotFoundError`
     # escapes and `pytest.raises(Failure)` reddens.
@@ -303,7 +304,7 @@ def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
     # not on the exception type. The first question asked is whether the clone is shallow, so
     # the cause surfaces there; the merge-base's own arm has the test below.
     root = _repo(tmp_path)
-    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    gitfixture.no_git(monkeypatch, tmp_path / "empty")
     with pytest.raises(Failure, match="git could not be run"):
         attribute(root, command="true", base="main", runner=_Coded({}))
 

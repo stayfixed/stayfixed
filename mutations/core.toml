@@ -123,13 +123,91 @@ reddens = [
 [[mutation]]
 name = "the git runner, and with it the hook path and the store, inherits the session's GIT_DIR"
 file = "src/stayfixed/gitenv.py"
-before = '            env=scrubbed_env(),'
+before = '            env=scrubbed_env(program.path),'
 after = ''
 reddens = [
   "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
   "tests/memory/test_store.py::test_an_inherited_git_dir_never_reaches_the_git_helper",
   "tests/test_git_run.py::test_the_environment_is_scrubbed",
 ]
+
+# Off a terminal `git` is never found through `PATH`: Claude Code applies a committed `env`
+# block's `PATH` to every hook, so a bare `git` was the one the clone ships, run by every hook that
+# asked git anything. The choice as a whole is mutated, not `argv[0]` alone: `subprocess` resolves a
+# bare name through the `PATH` of the environment it is handed, which is the fixed one, so a bare
+# `git` there finds the same first candidate, and that mutant is equivalent.
+[[mutation]]
+name = "the git runner takes git from PATH off a terminal again"
+file = "src/stayfixed/gitenv.py"
+before = '    program = git_program()'
+after = '    program = GitProgram("git", None)'
+reddens = [
+  "tests/test_git_run.py::test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path",
+]
+
+# An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
+# `git-lfs` filter, a `core.fsmonitor` program.
+[[mutation]]
+name = "the git runner hands git the inherited PATH off a terminal again"
+file = "src/stayfixed/gitenv.py"
+before = '            env=scrubbed_env(program.path),'
+after = '            env=scrubbed_env(),'
+reddens = [
+  "tests/test_git_run.py::test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry",
+]
+
+# The trusted `PATH` names each candidate's directory once.
+[[mutation]]
+name = "the trusted PATH repeats a directory"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))'
+after = '    return os.pathsep.join([*directories, *SYSTEM_PATH])'
+reddens = ["tests/test_git_run.py::test_off_a_terminal_git_is_handed_a_path_with_no_inherited_entry"]
+
+# The first candidate that is executable is the `git`; one that is missing is passed over.
+[[mutation]]
+name = "the git runner takes the first candidate whether or not it exists"
+file = "src/stayfixed/gitenv.py"
+before = '        if os.access(candidate, os.X_OK):'
+after = '        if True:'
+reddens = [
+  "tests/test_git_run.py::test_off_a_terminal_the_first_candidate_that_exists_runs_and_never_the_git_on_path",
+]
+
+# No candidate is no answer, never a lookup on the `PATH` a repository can set.
+[[mutation]]
+name = "no git candidate falls back to the one on PATH"
+file = "src/stayfixed/gitenv.py"
+before = """            return GitProgram(candidate, trusted_path())
+    return None"""
+after = """            return GitProgram(candidate, trusted_path())
+    return GitProgram("git", None)"""
+reddens = [
+  "tests/test_git_run.py::test_off_a_terminal_no_candidate_is_no_answer_and_never_a_lookup_on_path",
+]
+
+# At a terminal the person's own `PATH` chooses `git` and is handed to it: the rule above is for
+# where nobody is.
+[[mutation]]
+name = "the git runner stops asking whether a person is at a terminal"
+file = "src/stayfixed/gitenv.py"
+before = '    if override_is_honoured():'
+after = '    if False:'
+reddens = [
+  "tests/test_git_run.py::test_at_a_terminal_git_and_its_path_are_the_person_s_own",
+  "tests/test_git_run.py::test_a_git_that_cannot_run_is_minus_one",
+  "tests/guards/test_commit.py::test_the_log_is_bounded_scrubbed_and_terminated",
+]
+
+# One candidate list spelled twice, in Python and in the hook wrapper, and held equal in order.
+[[mutation]]
+name = "the git runner's candidates drift from the hook wrapper's"
+file = "src/stayfixed/gitenv.py"
+before = """    "/usr/bin/git",
+    "/bin/git","""
+after = """    "/bin/git",
+    "/usr/bin/git","""
+reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
 
 # The atomic write syncs the bytes to disk before it renames the file into place.
 [[mutation]]

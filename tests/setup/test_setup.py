@@ -25,6 +25,7 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
+from tests.gitfixture import stand_in_git
 from tests.parserlimits import overflowing
 from tests.runners import Recorder
 
@@ -1096,7 +1097,7 @@ def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refus
         encoding="utf-8",
     )
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
     with pytest.raises(Refusal, match="same repository"):
         setup(
             "recommended",
@@ -1546,7 +1547,7 @@ def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) ->
         encoding="utf-8",
     )
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
 
 
 @pytest.mark.parametrize("dubious", sorted(DUBIOUS))
