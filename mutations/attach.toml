@@ -2412,3 +2412,22 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    except Refusal:\n        # Refused only for a home it cannot name"
 after = "    except LookupError:\n        # Refused only for a home it cannot name"
 reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check"]
+
+# A linked worktree's harness link points at the store the owning checkout holds, so the fallback
+# and the waiting note are asked of that store: asked of the worktree's own link tree, a run that
+# made the link said it could not be created and recorded `autoMemoryDirectory` beside it, or
+# said it waited for an approval the store it linked already had.
+[[mutation]]
+name = "the settings fallback compares a worktree's link with that worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    store = resolve(owner, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+after = "    store = resolve(root, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made"]
+
+[[mutation]]
+name = "attach says the harness link waits by a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    elif _harness_waits(owner, config, machine=machine):"
+after = "    elif _harness_waits(root, config, machine=machine):"
+reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
+

@@ -276,6 +276,60 @@ def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: 
     assert (side / "docs" / "memory" / "developer").is_symlink()
 
 
+def test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made(
+    tmp_path: Path,
+) -> None:
+    # The worktree's harness link points at the store the owning checkout holds, which is what
+    # `link` hands every worktree; the fallback compared it with the worktree's own resolved
+    # store instead, a different directory, so a run that made the link still said "the harness
+    # memory link could not be created" and recorded `autoMemoryDirectory`. Asked of the store
+    # the link was made to, it takes none. Where a real directory does stand in the way, the
+    # fallback names that same store. Mutation: `mutations/`, "the settings fallback compares a
+    # worktree's link with that worktree's own store".
+    from stayfixed.attach.api import ledger
+    from stayfixed.memory.api import resolve
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(side, store, machine, home)
+    _trusted(root, machine)
+    _trusted(side, machine)
+    attached = _attach(side, store, machine, home)
+    assert harness_memory_path(side, home).is_symlink()
+    assert "autoMemoryDirectory" not in _settings(side)
+    assert ledger(side).settings_keys == ()
+    assert not [note for note in attached.notes if "could not be created" in note]
+
+    owner = resolve(root, _config(root, machine), machine=machine)
+    assert owner is not None
+    harness_memory_path(side, home).unlink()
+    harness_memory_path(side, home).mkdir()
+    _attach(side, store, machine, home)
+    assert _settings(side)["autoMemoryDirectory"] == str(owner.path.resolve())
+
+
+def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
+    tmp_path: Path,
+) -> None:
+    # The same store, asked the same way: with the owning checkout's store approved and the
+    # worktree's own not, the link is made to the approved one, and the line said it waited for
+    # an approval because it asked the worktree's. Mutation: `mutations/`, "attach says the
+    # harness link waits by a worktree's own store".
+    from stayfixed.attach.write import HARNESS_WAITS
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    _attach(side, store, machine, home)
+    _trusted(root, machine)
+    attached = _attach(side, store, machine, home)
+    assert harness_memory_path(side, home).is_symlink()
+    assert HARNESS_WAITS not in attached.notes
+
+
 def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     tmp_path: Path,
 ) -> None:

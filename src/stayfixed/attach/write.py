@@ -957,11 +957,16 @@ def _recorded_keys(root: Path) -> tuple[str, ...]:
 
 
 def _fallback_wanted(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> str | None:
     """The store directory the fallback would record, or `None` when the gate does not want the
-    harness link or the link already points at the store."""
-    store = resolve(root, config, machine=machine)
+    harness link or the link already points at the store.
+
+    The store is the owning checkout's, `owner`, which is the one `_link_everywhere` points every
+    checkout's harness link at. Resolved against `root` instead, a linked worktree answered with
+    its own link tree, a different directory: the link just made never matched it, and the run
+    said the link could not be created and recorded the fallback beside it."""
+    store = resolve(owner, config, machine=machine)
     if store is None or not harness_link_needed(store, config):
         return None
     harness = harness_memory_path(root, home)
@@ -981,7 +986,7 @@ FALLBACK_UNAVAILABLE = (
 
 
 def _harness_fallback(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> tuple[str, ...]:
     """The settings-file fallback, taken only when no symlink could be made — and withdrawn here.
 
@@ -1012,7 +1017,7 @@ def _harness_fallback(
     byte-for-byte. It can only fire when stayfixed's own key was all the file held, so nothing of
     the owner's is ever what goes.
     """
-    wanted = _fallback_wanted(root, config, machine=machine, home=home)
+    wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)
     document = settings_document(local_document(root))
     if document.get(FALLBACK_KEY) == wanted:
         # Includes the ordinary case where the key is absent and is not wanted: nothing to do,
@@ -1042,10 +1047,11 @@ HARNESS_WAITS = (
 )
 
 
-def _harness_waits(root: Path, config: Config, *, machine: Path | None) -> bool:
+def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> bool:
     """Whether the gate kept the harness link from being made: `harness_link_needed`, asked
-    exactly as `_apply_harness_link` asks it, of the store the run just linked."""
-    store = resolve(root, config, machine=machine)
+    exactly as `_apply_harness_link` asks it, of the store the run just linked, which is the
+    owning checkout's (`_fallback_wanted`)."""
+    store = resolve(owner, config, machine=machine)
     return store is not None and not harness_link_needed(store, config)
 
 
@@ -1338,12 +1344,14 @@ def _carry_out(
     _prepare_store(binding, config)
     links = _link_everywhere(planned.checkouts, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
+    owner = planned.checkouts[0]
     unavailable = False
     if _settings_containable(root):
-        keys = _harness_fallback(root, config, machine=machine, home=home)
+        keys = _harness_fallback(root, config, owner=owner, machine=machine, home=home)
     else:
         keys = carried
-        unavailable = _fallback_wanted(root, config, machine=machine, home=home) is not None
+        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)
+        unavailable = wanted is not None
     if keys != carried:
         _write_ledger(root, planned, keys)
         written = True
@@ -1354,7 +1362,7 @@ def _carry_out(
         )
     elif unavailable:
         notes.append(FALLBACK_UNAVAILABLE)
-    elif _harness_waits(root, config, machine=machine):
+    elif _harness_waits(owner, config, machine=machine):
         notes.append(HARNESS_WAITS)
     return Attached(written, rules, recorded, tuple(notes), links)
 
