@@ -602,7 +602,9 @@ rejection happens before the first write: a title or source the flat frontmatter
 hold is quoted for you; a `--related` value that is not an identifier, an index carrying content
 this tool did not generate (`2`), and an allocated identifier whose file already exists (`1`,
 naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
-result line, not hidden.
+result line, not hidden. An index that cannot be written once the entry is filed exits `1`,
+naming the filed entry and the reason, and saying to run `bugs index` once it can be written
+rather than `bugs new` again, which would file the report a second time.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
@@ -623,6 +625,7 @@ something regenerating may delete. A reworded
 header is a stale index, not foreign content. The first paragraph names the generator, and that
 paragraph is recognised structurally rather than by an exact string, so an index left by an
 older generated format is still read as generated rather than refused as hand-written content.
+An index that cannot be written exits `1` with the reason.
 
 **Writes** `<paths.bug_index>`.
 

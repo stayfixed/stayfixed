@@ -56,6 +56,13 @@ UNFINISHED = (
     "the move is not finished: {path} could not be written ({reason}); once it can be, run "
     "`stayfixed {name} renumber {old} {new}` again to finish it"
 )
+# What `new` says of an index it could not write after filing the entry. The entry is on disk by
+# then, so running `new` again files the same report twice; `index` writes the index and files
+# nothing. Built as `UNFINISHED` is: the paths are the register's, root-relative through `quoted`.
+FILED_UNINDEXED = (
+    "filed {path}, but {index} could not be written ({reason}); once it can be, run "
+    "`stayfixed {name} index`, not this command again, which would file it a second time"
+)
 _VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
@@ -271,7 +278,17 @@ def file_entry(
     # leaving a broken entry file that every later `index`, `check` and `new` also fails on.
     parse_entry(text, path=Path(relative), register=register)
     fsops.write_within(root, relative, text)  # creates the ledger directory on the first entry
-    _write_index(root, register)
+    try:
+        _write_index(root, register)
+    except OSError as error:
+        raise LedgerError(
+            FILED_UNINDEXED.format(
+                path=quoted(relative),
+                index=quoted(register.index),
+                reason=fsops.said(error),
+                name=register.name,
+            )
+        ) from error
     return Filed(path, identifier, allocation.warning)
 
 

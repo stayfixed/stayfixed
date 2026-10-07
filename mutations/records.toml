@@ -638,6 +638,23 @@ before = "        raise unfinished(register.index, error) from error"
 after = "        raise"
 reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[index]"]
 
+# The index written after `new` has filed its entry, and by `index` itself: a failure there is the
+# command's, naming what was filed and the command that finishes the job, never an internal error
+# after which an operator files the same report again.
+[[mutation]]
+name = "a filing whose index write fails escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = "        _write_index(root, register)\n    except OSError as error:\n        raise LedgerError(\n            FILED_UNINDEXED.format("
+after = "        _write_index(root, register)\n    except OSError as error:\n        raise\n        raise LedgerError(\n            FILED_UNINDEXED.format("
+reddens = ["tests/ledger/test_commands.py::test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_index"]
+
+[[mutation]]
+name = "an index write that fails escapes as an internal error"
+file = "src/stayfixed/ledger/commands.py"
+before = "        reason = fsops.said(error)\n        raise Failure("
+after = "        raise\n        raise Failure("
+reddens = ["tests/ledger/test_commands.py::test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun"]
+
 # The sweep runs before the index write and retitles the other entries that name the old number,
 # so each line of the entries as they stand is matched with the found index's line as it was or as
 # the sweep writes it: matched only as it was, the retitled rows, alone or beside a title that named

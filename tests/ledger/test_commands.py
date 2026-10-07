@@ -308,6 +308,60 @@ def test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it(
     assert invoke(["bugs", "check", *common]) == 0
 
 
+def test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The entry is written before the index, so a failure there left a filed entry behind an
+    # `internal error`, exit 2, that said nothing of it; an operator who ran `bugs new` again
+    # filed the same bug twice. It is a failure, exit 1, naming the entry it filed and the
+    # command that brings the index up to date, which files nothing: after it, one entry and a
+    # clean check. Mutation: `mutations/`, "a filing whose index write fails escapes as an
+    # internal error".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    argv = ["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common]
+    assert invoke(argv) == 0
+    capsys.readouterr()
+    docs = root / "docs"
+    docs.chmod(0o555)
+    try:
+        assert invoke(argv) == 1
+    finally:
+        docs.chmod(0o755)
+    assert capsys.readouterr().err == (
+        "stayfixed: failed: filed docs/bugs/BR-002.md, but docs/bug-reports.md could not be "
+        f"written ({DENIED}); once it can be, run `stayfixed bugs index`, not this command "
+        "again, which would file it a second time\n"
+    )
+    assert invoke(["bugs", "index", *common]) == 0
+    assert sorted(p.name for p in (docs / "bugs").iterdir()) == ["BR-001.md", "BR-002.md"]
+    assert invoke(["bugs", "check", *common]) == 0
+
+
+def test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same write, from `bugs index` itself: `internal error`, exit 2, where it is the
+    # command's failure, exit 1, with the reason in words. Mutation: `mutations/`, "an index
+    # write that fails escapes as an internal error".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    (root / "docs" / "bug-reports.md").unlink()
+    capsys.readouterr()
+    (root / "docs").chmod(0o555)
+    try:
+        assert invoke(["bugs", "index", *common]) == 1
+    finally:
+        (root / "docs").chmod(0o755)
+    assert capsys.readouterr().err == (
+        f"stayfixed: failed: docs/bug-reports.md could not be written ({DENIED}); once it can "
+        "be, run `stayfixed bugs index` again\n"
+    )
+
+
 def test_a_missing_configuration_is_a_failure_not_a_refusal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
