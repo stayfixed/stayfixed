@@ -15,10 +15,12 @@ uv run python scripts/mutation_oracle.py          # every declared mutation stil
 uv run python scripts/release.py check            # version discipline
 ```
 
-All five run in CI. The first four, the coverage floor among them, run on Linux for Python 3.11,
-3.12 and 3.13 and on macOS for 3.13, which is why `pytest -q` alone will give you a green tree and
-a red pull request. The mutation oracle, which is this project's headline obligation and not an
-optional extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs three more steps you can reproduce only from a build (`uv build`, then
+All five run in CI. Four of them, every one but the mutation oracle (the suite with its coverage
+floor, ruff, mypy and `scripts/release.py check`), run on Linux for Python 3.11, 3.12 and 3.13 and
+on macOS for 3.13, which is why `pytest -q` alone will give you a green tree and a red pull
+request. The mutation oracle, which is this project's headline obligation and not an optional
+extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs three more
+steps you can reproduce only from a build (`uv build`, then
 `scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
 reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
 in either is ours to diagnose, not yours.
