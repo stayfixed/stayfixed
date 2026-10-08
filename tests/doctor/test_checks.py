@@ -1729,6 +1729,28 @@ def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -
     )
 
 
+# Frontmatters the row read as having no end, so as none, which Claude Code may end at the first
+# `---` after the opening line wherever that stands: in a longer run of dashes, or after a key's
+# value on its line. Its program text shows that bound; no run measured it, so the row reads both.
+HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE = {
+    "a-longer-run-of-dashes": "---\nhooks: {}\n----\nThe body.\n",
+    "after-a-value": "---\nhooks: {}\nname: probe---\nThe body.\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE))
+def test_hooks_before_a_fence_within_a_line_are_named(tmp_path: Path, shape: str) -> None:
+    # Mutation (oracle): `mutations/`'s "a frontmatter Claude Code may end within a line is read
+    # only to a line of its own" -> both.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE[shape])
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+    )
+
+
 @pytest.mark.parametrize("target", ["/dev/zero", "a-directory", "a-fifo"])
 def test_a_skill_file_that_is_no_regular_file_is_refused_and_named(
     tmp_path: Path, target: str
@@ -1887,6 +1909,10 @@ HOOKS_SPELLED = {
     "inside-a-value-a-repair-re-quotes": 'description: "a {b}\nhooks: x\nc: d"\n',
     "inside-a-quoted-value-over-lines": 'description: "first\nhooks: x"\n',
     "inside-a-flow-value-over-lines": "metadata: {a: 1,\nhooks: 2}\n",
+    # A mapping indented by tabs, which YAML does not take as indentation: a reader that repairs
+    # the tabs to spaces, as Claude Code may, reads `hooks` among its keys. Mutation (oracle):
+    # `mutations/`'s "a tab-indented frontmatter is read only as it stands".
+    "a-tab-indented-mapping": "\tname: probe\n\thooks: {}\n",
 }
 
 
@@ -1916,6 +1942,9 @@ NO_HOOKS_SPELLED = {
     "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
     "a-longer-quoted-key": '"hooksmith": x\n',
     "a-quoted-merge-key": '"<<": {hooks: x}\n',
+    # A tab inside a value, on a line that opens no key, leaves the reading as it was. Mutation
+    # (oracle): `mutations/`'s "any tab-indented line leaves the reader unsure".
+    "a-tab-inside-a-value": 'description: "a\n\tb"\n',
 }
 
 
@@ -1957,14 +1986,21 @@ UNTOLD_SPELLED = {
     "flow-explicit-key": "{? hooks : {}}\n",
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
     "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
+    # Where Claude Code's reading may differ from the row's: a `---` inside a line, where Claude
+    # Code may end the frontmatter, and a key indented by a tab, which it may read once the tab is
+    # two spaces. Mutations (oracle): `mutations/`'s "a frontmatter read two ways answers no where
+    # neither holds hooks" -> both; "a tab-indented key leaves the reader sure" -> the tab case.
+    "a-fence-within-a-line": "name: a---b\n",
+    "a-tab-indented-key": "name: probe\n\thooks: {}\n",
 }
 SKILL_UNPARSED = (
-    "skill, command or agent file(s) spell a frontmatter key this row cannot read whole, so it "
-    "cannot say whether they declare hooks"
+    "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "
+    "say whether they declare hooks"
 )
 SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
-    "no alias, no merge key, no explicit key past its line and no quoted key over several lines"
+    "no alias, no merge key, no explicit key past its line, no quoted key over several lines, no "
+    "key indented by a tab and no `---` that is not a line of its own"
 )
 
 

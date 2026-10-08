@@ -260,8 +260,8 @@ def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
 
 def _skill_unparsed(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"{len(wheres)} skill, command or agent file(s) spell a frontmatter key this row cannot "
-        f"read whole, so it cannot say whether they declare hooks: {listed(wheres)}"
+        f"{len(wheres)} skill, command or agent file(s) hold a frontmatter this row cannot read "
+        f"whole, so it cannot say whether they declare hooks: {listed(wheres)}"
     )
 
 
@@ -341,16 +341,17 @@ _SKILL_UNREAD = _Kind(
         "can list"
     ),
 )
-# A frontmatter key the reader cannot read whole, which may be `hooks`: the file was read, so its
-# words are its own, and the way out is to look at the key, not at the file's permissions.
+# A frontmatter the reader cannot read whole, a key or where it ends, which may hold `hooks`: the
+# file was read, so its words are its own, and the way out is to look at the frontmatter, not at the
+# file's permissions.
 _SKILL_UNPARSED = _Kind(
     WARN,
     0,
     _skill_unparsed,
     lambda areas: (
         "open each file named above and check whether its frontmatter declares hooks: this row "
-        "reads no alias, no merge key, no explicit key past its line and no quoted key over "
-        "several lines"
+        "reads no alias, no merge key, no explicit key past its line, no quoted key over several "
+        "lines, no key indented by a tab and no `---` that is not a line of its own"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,
@@ -675,7 +676,7 @@ def hook_entries(context: Context) -> Row:
     beside such a file would claim more than the row looked at. The walk (`doctor.hooked`) covers
     every place a registered harness reads such frontmatter, at the root and below it, and reports
     each file whose frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each whose
-    frontmatter holds a top-level key the reader cannot read whole, which may be `hooks`, each path
+    frontmatter the reader cannot read whole, which may hold a top-level `hooks`, each path
     it could not read, each link that leads out of the checkout, which it does not follow, and a
     walk that stopped at its cap. Each is a warning naming what it saw (`_SEEN`), never red, because
     what such a file's hooks are and whether stayfixed put them there is nothing this row reads.

@@ -2841,19 +2841,19 @@ not judge them, and says so, of every file whose frontmatter Claude Code reads f
   carry hooks, though none ran in the measurement above.
 
 Each such file whose frontmatter (the lines between a first `---` line and the next one) holds a
-top-level `hooks` key is named as one whose hooks the row does not judge, a `warn` that never makes
-the row `red`. The top level is the indentation of the frontmatter's first line that is neither
-blank nor a comment. The key is found bare, quoted either way (its escapes read), behind a tag, an
-anchor or `? `, or among the top-level keys of a flow mapping (`{name: x, hooks: {...}}`), tagged or
-not; a `hooks` nested under another key, or inside a quoted or flow value on one line, is not one,
-while a line at the top level inside such a value over lines is read as a key. A top-level key the
-row cannot read whole, an alias (`*name`), a merge key (`<<`), a `? ` key that goes on past its line
-or a quoted key over several lines, may be `hooks`, so beside no `hooks` it can read the file is
-named as one the row cannot tell about, a `warn`. A frontmatter with no closing `---` is none. Names
-are compared without case, so `skill.md` and `.Claude/Skills` count. A FIFO, a directory the row
-cannot list and any other path it cannot read is named as one it cannot say anything about, also a
-`warn`. A path outside the path grammar, every name in it being the repository's, is named as a file
-whose path the row does not print.
+top-level `hooks` key is named as one whose hooks the row does not judge, a `warn`, never `red`. The
+top level is the indentation of the frontmatter's first line that is neither blank nor a comment.
+The key is found bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or
+among a flow mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested
+under another key, or inside a quoted or flow value on its line, is not one, though a top-level line
+inside one over lines is read as one. Claude Code may also end the frontmatter at a `---` within a
+line and read a key indented by a tab (read from its program, not run), so the row reads it those
+ways too, naming the file if any holds `hooks`. Where they may differ, or a top-level key cannot be
+read whole (an alias `*name`, a merge key `<<`, a `? ` key past its line, a quoted key over several
+lines), the file is otherwise named as one the row cannot tell about, a `warn`. Names are compared
+without case (`skill.md`, `.Claude/Skills`). Any path the row cannot read, a FIFO or a directory it
+cannot list among them, is named as one it can say nothing about, also a `warn`, and a path outside
+the path grammar, every name in it the repository's, as a file whose path the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and
@@ -2861,33 +2861,32 @@ lists a directory a link leads back to, and names a file two paths reach, once. 
 the row reads as a file, a `*.md` or a `SKILL.md`, is read when it leads to a file inside the
 checkout. A link of either kind that leads out, as a dotfiles setup links `.claude/agents`, is named
 as a path that leads out of the checkout and was not followed, a `warn` that marks no fault: what it
-leads to is not the repository's, so the row does not read it and leaves that to you. Only a link to
-a file the row would not read, a skill's `LICENSE` say, is passed over wherever it points, and so
-are a dangling link and a link that loops.
+leads to is not the repository's, so the row leaves it to you. Only a link to a file the row would
+not read, a skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and
+a link that loops.
 
-A `.claude/skills` below the root is found by asking git (`git ls-files --cached --others
---exclude-standard`): the files a clone commits and the untracked ones git does not ignore, each
-name compared without case. git lists a link as an entry of its own, so a link inside such a
-directory, such a directory that is a link, and a nested `.claude` that is one are read as the
-project's own are. A submodule is one entry to that query, so where a `.gitmodules` sits at or
-above the root, git is asked again through each checked-out submodule's index (`git ls-files
---cached --recurse-submodules`): what that index holds, its staged files as well as its committed
-ones, and not the files untracked inside a submodule, which git cannot list that way.
+A `.claude/skills` below the root is found by asking git
+(`git ls-files --cached --others --exclude-standard`): the files a clone commits and the untracked
+ones git does not ignore, each name compared without case. git lists a link as an entry of its own,
+so a link inside such a directory, such a directory that is a link, and a nested `.claude` that is
+one are read like the project's own. A submodule is one entry to that query, so where a
+`.gitmodules` sits at or above the root, git is asked again through each checked-out submodule's
+index (`git ls-files --cached --recurse-submodules`): what that index holds, staged or committed,
+not a file untracked inside a submodule, which git cannot list so.
 
 **A skill inside a directory git ignores is not named**, such as one under `node_modules`: no clone
-carries an ignored file, so it is not the repository's to declare, whether Claude Code loads one was
-not measured, and listing those trees would make the row stop short in a large checkout. Outside
-a git work tree, or where `git` fails, the row walks the tree instead, following no link but a
-nested `.claude/skills` or `.claude` that is one, never entering `.git`, whose contents git never
-checks out, and passing over a directory it cannot list. The reads and that walk list at most
-500,000 directory entries between them; past that, the row says the walk stopped and that it cannot
-say whether the files past it declare hooks, a `warn`. In a work tree only the project's own three
-directories, and those links in or above a nested `.claude/skills` lead to, count toward that
-number.
+carries an ignored file, so it is not the repository's to declare (whether Claude Code loads one was
+not measured), and listing those trees would stop the row short in a large checkout. Outside a git
+work tree, or where `git` fails, the row walks the tree instead, following no link but a nested
+`.claude/skills` or `.claude` that is one, never entering `.git`, and passing over a directory it
+cannot list. The reads and that walk list at most 500,000 directory entries in all; past that, the
+row says the walk stopped and it cannot tell about the files past it, a `warn`. In a work tree only
+the project's own three directories, and those links in or above a nested `.claude/skills` lead to,
+count toward that number.
 
 Whether the model can invoke a skill, and so run its hooks, without a person asking was not
-measured, because no model call ran. The plugin and agent rows held under that same limit, and say
-nothing about a logged-in session that has accepted the repository's trust prompt.
+measured: no model call ran. The plugin and agent rows share that limit, and say nothing of a
+logged-in session that accepted the repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

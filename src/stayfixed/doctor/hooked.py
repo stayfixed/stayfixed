@@ -45,7 +45,7 @@ class Seen(Enum):
     DECLARES = "declares"
     # A file or directory that could not be read, so nothing can be said of what it holds.
     UNREAD = "unread"
-    # A file whose frontmatter holds a key the reader cannot read whole, which may be `hooks`.
+    # A file whose frontmatter the reader cannot read whole, which may hold `hooks`.
     UNPARSED = "unparsed"
     # A link that leads out of the checkout, which is not followed.
     LINKED_OUT = "linked-out"
@@ -143,7 +143,7 @@ def _read_place(
     root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget, read: set[_Identity]
 ) -> list[Found]:
     """A report for each file below `top`, a directory `place` names, whose frontmatter declares
-    hooks or holds a key the reader cannot read whole, or that could not be read, in name order,
+    hooks or that the reader cannot read whole, or that could not be read, in name order,
     depth first.
 
     Links are followed, as the harness follows them, while they lead to a directory still inside
@@ -357,8 +357,8 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
 
 
 def hooked(root: Path) -> list[Found]:
-    """A report for each skill, command or agent file whose frontmatter declares hooks or holds a
-    key the reader cannot read whole (`Seen.UNPARSED`), and for each such file or directory that
+    """A report for each skill, command or agent file whose frontmatter declares hooks or that the
+    reader cannot read whole (`Seen.UNPARSED`), and for each such file or directory that
     could not be read or leads out of the checkout: the root's own places first, in `HOOKED`'s
     order, read off the disk, then each file a nested place names, as git lists it (`_queried`), or,
     where git cannot answer, as the bounded walk finds it (`_nested`). The walks list at most

@@ -2728,8 +2728,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "            return _holds_hooks(lines[1:end])"
-after = "            return _holds_hooks(lines[1:])"
+before = "            return lines[1:end], start"
+after = "            return lines[1:], start"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
 ]
@@ -2766,12 +2766,12 @@ reddens = [
 name = "an unterminated frontmatter is read to the end"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-            return _holds_hooks(lines[1:end])
-    return False
+            return lines[1:end], start
+    return None
 """
 after = """
-            return _holds_hooks(lines[1:end])
-    return _holds_hooks(lines[1:])
+            return lines[1:end], start
+    return lines[1:], start
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
@@ -2780,8 +2780,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter keeps its byte-order mark"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    lines = text.removeprefix(chr(0xFEFF))."
-after = "    lines = text."
+before = "    text = text.removeprefix(chr(0xFEFF))."
+after = "    text = text."
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
 ]
@@ -2789,10 +2789,56 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter splits on LF alone"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '.replace("\r\n", "\n").replace("\r", "\n").split("\n")'
-after = '.split("\n")'
+before = '    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")'
+after = '    text = text.removeprefix(chr(0xFEFF))'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+# Claude Code may end a frontmatter at a `---` within a line and read a key indented by a tab: the
+# row reads the frontmatter each way it may be read, says "declares hooks" where any reading holds
+# `hooks`, and "cannot tell" where the readings may differ and none does.
+[[mutation]]
+name = "a frontmatter Claude Code may end within a line is read only to a line of its own"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])"
+after = "    unsure = False"
+reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line_are_named"]
+
+[[mutation]]
+name = "a frontmatter read two ways answers no where neither holds hooks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+    if unsure:
+        return None
+"""
+after = """
+    if False:
+        return None
+"""
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line]", "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-indented-key]"]
+
+[[mutation]]
+name = "a tab-indented frontmatter is read only as it stands"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "            readings.append(_untabbed(lines))"
+after = "            readings.append(lines)"
+reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-mapping]"]
+
+[[mutation]]
+name = "a tab-indented key leaves the reader sure"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "            unsure = True"
+after = "            unsure = unsure"
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-indented-key]"]
+
+[[mutation]]
+name = "any tab-indented line leaves the reader unsure"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '"\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:'
+after = '"\t" in line[: len(line) - len(rest)]:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-inside-a-value]",
 ]
 
 [[mutation]]

@@ -14,6 +14,9 @@ import sys
 
 # The line that opens a frontmatter and the next one that closes it.
 _FENCE = "---"
+# The fence that opens a frontmatter as Claude Code is read to find one, and the blanks and line
+# breaks after it, taken whole so that the text is scanned once.
+_OPENING = re.compile(r"---[\s\ufeff]*+")
 # A key quoted either way: double, with backslash escapes, or single, with `''` for a quote.
 #
 # Every repetition in this module's patterns that a long value can reach is possessive (`*+`, `++`):
@@ -208,15 +211,72 @@ def declares_hooks(text: str) -> bool | None:
     colon follows where it closes, which makes it a block mapping's first key. A key is `hooks`
     bare or quoted either way, its escapes read; nothing else of YAML is parsed.
 
+    Claude Code may read the file otherwise, by what its program text shows rather than by a
+    measured run: it may end the frontmatter at the first `---` after the opening line, wherever in
+    a line that stands (`_harness_fenced`), and read a line indented by tabs as one indented by
+    spaces (`_untabbed`). Where either reading may differ from this one, each is read, and the
+    answer is "yes" if any of them holds `hooks` and "cannot tell" otherwise.
+
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
     (`_UNTOLD`) may be `hooks`, so where no key it reads is, the answer is `None`."""
-    lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
+    fenced, harness = _fenced(text.split("\n")), _harness_fenced(text)
+    readings = [fenced[0]] if fenced else []
+    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])
+    if harness is not None and unsure:
+        readings.append(harness[0].split("\n"))
+    for lines in list(readings):
+        if _tab_indents_a_key(lines):
+            unsure = True
+            readings.append(_untabbed(lines))
+    answers = [_holds_hooks(lines) for lines in readings]
+    if True in answers:
+        return True
+    if unsure:
+        return None
+    return answers[0] if answers else False
+
+
+def _fenced(lines: list[str]) -> tuple[list[str], int] | None:
+    """The frontmatter's lines between a first line of `---` and the next `---` line, and where
+    the closing line starts in the text; `None` without the closing one."""
     if lines[0].rstrip() != _FENCE:
-        return False
+        return None
+    start = 0
     for end, line in enumerate(lines[1:], 1):
+        start += len(lines[end - 1]) + 1
         if line.rstrip() == _FENCE:
-            return _holds_hooks(lines[1:end])
+            return lines[1:end], start
+    return None
+
+
+def _harness_fenced(text: str) -> tuple[str, int] | None:
+    """The frontmatter as Claude Code is read to bound it, and where its closing `---` starts:
+    past a `---` that opens the text and the blanks and line breaks after it, to the first `---`
+    after them, wherever in a line that stands; `None` without one. It and `_fenced` differ only
+    where a `---` stands anywhere but alone on its line."""
+    opening = _OPENING.match(text)
+    if opening is None or "\n" not in opening.group():
+        return None
+    start = opening.start() + opening.group().rindex("\n") + 1
+    end = text.find(_FENCE, start)
+    return None if end < 0 else (text[start:end], end)
+
+
+def _tab_indents_a_key(lines: list[str]) -> bool:
+    """Whether a line's indentation holds a tab, which YAML does not take as indentation, and the
+    line past it opens a key, which a reader taking the tab as indentation reads."""
+    for line in lines:
+        rest = line.lstrip(" \t")
+        if "\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:
+            return True
     return False
+
+
+def _untabbed(lines: list[str]) -> list[str]:
+    """`lines` with each tab that leads a line read as two spaces, as Claude Code is read to
+    repair a frontmatter that does not parse before it parses it again."""
+    return ["  " * (len(line) - len(line.lstrip("\t"))) + line.lstrip("\t") for line in lines]
 
 
 def _holds_hooks(lines: list[str]) -> bool | None:
