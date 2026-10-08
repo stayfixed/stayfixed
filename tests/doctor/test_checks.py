@@ -2052,6 +2052,24 @@ def test_a_committed_nested_skill_is_named_in_any_case(tmp_path: Path, path: str
     )
 
 
+def test_an_uncommitted_nested_skill_is_named_in_a_work_tree(tmp_path: Path) -> None:
+    # The owner's own skill, written and not yet added, is one a session loads and the next
+    # commit ships, so the query lists the untracked files git does not ignore beside the
+    # committed ones. Mutation (oracle): `mutations/`'s "the nested-skill query lists only what
+    # the index holds" -> the skill is missed and the row reads all accounted for.
+    root = _repository(_initialised(tmp_path))
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "the tree")
+    _file(root, "pkg/.claude/skills/draft/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/draft/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
 def test_the_walk_outside_a_work_tree_folds_the_case_of_directories(tmp_path: Path) -> None:
     # Where git cannot answer, the bounded walk finds the nested places, and it compares directory
     # names as the query does, without case. Mutation (oracle): `mutations/`'s "the nested walk

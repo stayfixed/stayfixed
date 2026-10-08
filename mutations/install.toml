@@ -3111,6 +3111,21 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the nested-skill query lists only what the index holds"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            "--cached",
+            "--others",
+            "--exclude-standard",
+"""
+after = """
+            "--cached",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_an_uncommitted_nested_skill_is_named_in_a_work_tree",
+]
+
+[[mutation]]
 name = "the nested-skill query compares names by case"
 file = "src/stayfixed/doctor/hooked.py"
 before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
