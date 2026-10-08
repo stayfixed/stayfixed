@@ -40,6 +40,28 @@ def test_a_location_suffix_is_not_part_of_the_name() -> None:
     ]
 
 
+# Backticked spans whose symbol path has an empty part or a colon outside a `::`: none claims a
+# path, and the next backtick may open one. Python 3.11.0 to 3.11.4 read the first as a claim when
+# the parts were a possessive repeat, which they end where a failed part stopped.
+BROKEN_SYMBOLS = {
+    "an empty last part": ("`src/a.py::x::` here", []),
+    "three colons": ("`src/a.py::x:::y` here", []),
+    "a colon alone": ("`src/a.py::x:y` here", []),
+    "an empty first part": ("`src/a.py:::x` here", []),
+    "a claim at its closing backtick": ("`src/a.py::x::`src/b.py` here", ["src/b.py"]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(BROKEN_SYMBOLS))
+def test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path(case: str) -> None:
+    # Mutations (oracle): `mutations/`'s "a symbol path with an empty last part is read" -> `an
+    # empty last part`; "a symbol path with three colons is read" -> `three colons`; "a symbol path
+    # with a lone colon is read" -> `a colon alone`; "a broken symbol path's closing backtick
+    # opens no claim" -> `a claim at its closing backtick`.
+    line, claims = BROKEN_SYMBOLS[case]
+    assert list(path_references(line)) == claims
+
+
 # A symbol path of a million parts, read with 154 MiB more of match state when `re` kept a record
 # for each part it might give back, and with none when it keeps none. The most the child may grow
 # its peak resident size by: a few copies of the three-mebibyte line, a fifth of that record.

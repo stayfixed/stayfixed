@@ -42,13 +42,18 @@ from stayfixed import fsops
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
 # in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
 # a backticked `owner/lib.js` repository name or a dotted branch (`release/v1.x`) reads as one.
-# The symbol path's parts are possessive: `re` keeps a record for every pass of a repeated group
-# it might give back, 77 MiB over a line of a mebibyte and a half, and giving one back here can
-# only end the path before a `::`, where no closing backtick stands.
-REFERENCE = re.compile(
+# The symbol path is read as one run of word characters, dots and colons, and its colons are judged
+# after (`_BROKEN_SYMBOL`): read as a repeat of its parts, `re` kept a record for every part it
+# might give back, 77 MiB over a line of a mebibyte and a half, and a possessive repeat of them,
+# which keeps none, read `` `src/a.py::x::` `` as a claim on Python 3.11.0 to 3.11.4, which end a
+# failed pass of it where the pass stopped (CONTRIBUTING.md, "Tests").
+_REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
-    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"
+    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"
 )
+# Where such a run is no symbol path: three colons in a row, a colon alone, or a colon at its end.
+# Every other run is parts of word characters and dots, each after its own `::`.
+_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")
 # A fenced block, as the pattern `^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$` (multi-line, `.`
 # matching a line break) reads one: a line opening with three or more backticks or tildes, closed
 # by the first later line that is the same run alone between blanks. `blank_fences` reads it a
@@ -124,7 +129,13 @@ def path_references(line: str) -> Iterator[str]:
     """Every backticked span in ``line`` that claims a path; bare filenames, and a span whose
     first component is a host (`HOST`), are prose."""
 
-    for match in REFERENCE.finditer(line):
+    at = 0
+    while (match := _REFERENCE.search(line, at)) is not None:
+        if match.group(2) is not None and _BROKEN_SYMBOL.search(match.group(2)):
+            # No claim opens at this backtick, and the next may open at the very next one.
+            at = match.start() + 1
+            continue
+        at = match.end()
         target = match.group(1)
         if "/" in target and not HOST.match(target):
             yield target

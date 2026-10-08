@@ -543,16 +543,16 @@ reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"
 [[mutation]]
 name = "a column stops being part of a location suffix"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
-after = '    r"(?::\d+|(?:::[\w.]++)++)?`"'
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+|(::[\w.:]+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
 [[mutation]]
 name = "a symbol path stops being read past its first `::`"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
-after = '    r"(?::\d+(?::\d+)?|::[\w.]++)?`"'
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|(::[\w.]+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
@@ -583,14 +583,56 @@ before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
 after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
 reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
 
-# A symbol path's parts are possessive, so `re` keeps no record per part: greedy, a line of a
-# million parts took 154 MiB more to read.
+# A symbol path is read as one run, so `re` keeps no record per part: read as a greedy repeat of
+# its parts, a line of a million parts took 154 MiB more to read.
 [[mutation]]
 name = "a symbol path's parts are given back"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
-after = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]+)+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_long_symbol_path_is_read_in_memory_linear_in_its_length"]
+
+# A symbol path's run is judged after it is read: no colon alone, no three in a row, and none at its
+# end, which is an empty part. Python 3.11.0 to 3.11.4 read the last as a claim when the parts were
+# a possessive repeat. One entry per rule.
+[[mutation]]
+name = "a symbol path with an empty last part is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty last part]",
+]
+
+[[mutation]]
+name = "a symbol path with three colons is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r"(?<!:):(?!:)|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[three colons]",
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty first part]",
+]
+
+[[mutation]]
+name = "a symbol path with a lone colon is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a colon alone]",
+]
+
+# Where no claim opens at a backtick, the search goes on from the next character, as a search for
+# the pattern does: from the span's end, the backtick that closed it is passed over.
+[[mutation]]
+name = "a broken symbol path's closing backtick opens no claim"
+file = "src/stayfixed/prose.py"
+before = "            at = match.start() + 1"
+after = "            at = match.end()"
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a claim at its closing backtick]",
+]
 
 # Fences are read a line at a time. The pattern they were read by scanned the rest of the text from
 # every opening line no later line closes, and from a long run at every length down to three: a
