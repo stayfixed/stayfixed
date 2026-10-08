@@ -61,9 +61,11 @@ class _Untold:
 
 
 # A key this reader cannot read whole, which may be `hooks` for all it can tell: an alias, which
-# stands for whatever its anchor named; an explicit `? ` key that is not all on its line; and a
-# quoted key over several lines, which YAML folds into one.
+# stands for whatever its anchor named; a merge key (`<<`, plain), which a reader that honours it
+# reads as every key of the mapping it names; an explicit `? ` key that is not all on its line; and
+# a quoted key over several lines, which YAML folds into one.
 _UNTOLD = _Untold()
+_MERGE = "<<"
 
 
 def _unquoted(token: str) -> str:
@@ -92,7 +94,8 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
     the end of the line. An explicit key needs no colon on its line, and is read only where no line
     below it is indented deeper (`continued`), which YAML reads as more of the key: the key itself
     after a `?` or a tag alone, a block scalar's text, or a plain key folded over lines. An alias
-    (`*name`) and a quote that does not close on its line are not read either."""
+    (`*name`), a plain merge key (`<<`) and a quote that does not close on its line are not read
+    either."""
     explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
     rest = line[1:].lstrip(" \t") if explicit else line
     properties = _PROPERTIES.match(rest)
@@ -107,8 +110,12 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
         return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
     colon = _KEY_END.search(rest)
     if colon is not None:
-        return rest[: colon.start()].rstrip(" \t")
-    return rest.rstrip(" \t") if explicit else None
+        key = rest[: colon.start()].rstrip(" \t")
+    elif explicit:
+        key = rest.rstrip(" \t")
+    else:
+        return None
+    return _UNTOLD if key == _MERGE else key
 
 
 def _flow_keys(text: str) -> tuple[set[str], bool]:
@@ -117,8 +124,9 @@ def _flow_keys(text: str) -> tuple[set[str], bool]:
 
     Each is a scalar right after the mapping's `{` or a `,` at its own level, past any tag or
     anchor, and followed by a colon; quoted scalars are read whole, so a brace, a comma or `hooks:`
-    inside one is text. An alias, an explicit `?` key and a quoted key over several lines are keys
-    it cannot read (`_UNTOLD`). Reading stops where the mapping closes."""
+    inside one is text. An alias, a plain merge key (`<<`), an explicit `?` key and a quoted key
+    over several lines are keys it cannot read (`_UNTOLD`). Reading stops where the mapping
+    closes."""
     keys: set[str] = set()
     depth: list[str] = []
     candidate: str | None = None
@@ -147,11 +155,34 @@ def _flow_keys(text: str) -> tuple[set[str], bool]:
             if at_key and len(depth) == 1:
                 untold = untold or (
                     (kind == "plain" and (value == "?" or value[0] == "*"))
+                    or (kind == "plain" and value == _MERGE)
                     or (kind == "quoted" and "\n" in value)
                 )
             candidate = (_unquoted(value) if kind == "quoted" else value) if at_key else None
             at_key = False
     return keys, untold
+
+
+def _closes(text: str) -> int | None:
+    """Where the flow collection `text` opens with closes, just past its last bracket, or `None`
+    where it does not close. Quoted scalars and comments are read whole, as `_flow_keys` reads
+    them, so a bracket inside one closes nothing."""
+    depth = 0
+    for token in _FLOW.finditer(text):
+        if token.lastgroup != "indicator" or token.group() == ",":
+            continue
+        depth += 1 if token.group() in "{[" else -1
+        if depth == 0:
+            return token.end()
+    return None
+
+
+def _keyed(node: str) -> bool:
+    """Whether the flow mapping `node` opens with is a key, a colon following where it closes
+    (`{a: 1}: x`): then it is the first key of a block mapping, whose other keys are on the lines
+    below, and not the frontmatter's whole node."""
+    end = _closes(node)
+    return end is not None and node[end:].lstrip(" \t").startswith(":")
 
 
 def declares_hooks(text: str) -> bool | None:
@@ -162,8 +193,9 @@ def declares_hooks(text: str) -> bool | None:
     the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
     a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
     first line that is neither blank nor a comment: a mapping in block style has its keys there,
-    and one in flow style opens there with `{` (`_flow_keys`), behind any tag or anchor. A key is
-    `hooks` bare or quoted either way, its escapes read; nothing else of YAML is parsed.
+    and one in flow style opens there with `{` (`_flow_keys`), behind any tag or anchor, unless a
+    colon follows where it closes, which makes it a block mapping's first key. A key is `hooks`
+    bare or quoted either way, its escapes read; nothing else of YAML is parsed.
 
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
     (`_UNTOLD`) may be `hooks`, so where no key it reads is, the answer is `None`."""
@@ -186,7 +218,7 @@ def _holds_hooks(lines: list[str]) -> bool | None:
     opened = "\n".join(lines[lines.index(content[0]) :])[indent:]
     ahead = _AHEAD.match(opened)
     node = opened[ahead.end() :] if ahead else opened
-    if node.startswith("{"):
+    if node.startswith("{") and not _keyed(node):
         keys, untold = _flow_keys(node)
     else:
         keys, untold = set(), False

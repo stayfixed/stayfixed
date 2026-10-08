@@ -1846,13 +1846,15 @@ def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -
 # Frontmatter spellings of a top-level `hooks` key besides a bare one at the start of a line: each
 # quoting, a quoted key with an escape in it, a flow mapping (on one line, as JSON, over several,
 # and behind a tag or an anchor, on its line or the line above), a mapping indented as a whole, a
-# key behind a tag, an anchor or `? `, and a key beside one the row cannot read whole. Mutations
-# (oracle): `mutations/`'s "a frontmatter's quoted key is read as no key" -> the quoted cases; "a
-# frontmatter in flow style is read as no mapping" -> the flow cases; "a frontmatter's top level is
-# its first column" -> `indented-mapping`; "a frontmatter key's tag or anchor hides it" ->
-# `tagged` and `anchored`; "a flow mapping's tag or anchor hides it" -> `flow-tagged`,
-# `flow-anchored` and `flow-tagged-above`; "a key the reader cannot read outranks a hooks key it
-# can" -> `beside-an-alias`.
+# key behind a tag, an anchor or `? `, a key beside one the row cannot read whole, and a key below
+# a first key that is a flow mapping, tagged or not. Mutations (oracle): `mutations/`'s "a
+# frontmatter's quoted key is read as no key" -> the quoted cases; "a frontmatter in flow style is
+# read as no mapping" -> the flow cases; "a frontmatter's top level is its first column" ->
+# `indented-mapping`; "a frontmatter key's tag or anchor hides it" -> `tagged` and `anchored`; "a
+# flow mapping's tag or anchor hides it" -> `flow-tagged`, `flow-anchored` and
+# `flow-tagged-above`; "a key the reader cannot read outranks a hooks key it can" ->
+# `beside-an-alias`; "a flow mapping a colon follows is read as the whole frontmatter" -> the two
+# `below-a-flow-mapping-key` cases.
 HOOKS_SPELLED = {
     "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
     "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
@@ -1868,6 +1870,8 @@ HOOKS_SPELLED = {
     "anchored": "&key hooks: {}\n",
     "explicit-key": "? hooks\n: {}\n",
     "beside-an-alias": "name: &k x\n*k : y\nhooks: {}\n",
+    "below-a-flow-mapping-key": "{a: 1}: x\nhooks: {}\n",
+    "below-a-flow-mapping-key-tagged": "!!map {a: 1}: x\nhooks: {}\n",
 }
 
 
@@ -1886,15 +1890,17 @@ def test_every_spelling_of_a_top_level_hooks_key_is_read(tmp_path: Path, spellin
 
 # Flow-style and quoted frontmatter that holds no top-level `hooks` key: one nested under another
 # key or inside a sequence, `hooks:` inside a quoted value or after a comment, and a longer quoted
-# key. The vacuity guards for the spellings above. Mutations (oracle): `mutations/`'s "a flow
-# mapping's keys are read at every depth" -> `flow-nested`; "a flow mapping's quoted scalars are
-# read as tokens" -> `flow-in-a-quoted-value`.
+# key, and a quoted `<<`, which is a key of that name and no merge. The vacuity guards for the
+# spellings above. Mutations (oracle): `mutations/`'s "a flow mapping's keys are read at every
+# depth" -> `flow-nested`; "a flow mapping's quoted scalars are read as tokens" ->
+# `flow-in-a-quoted-value`; "a quoted merge key is read as a merge key" -> `a-quoted-merge-key`.
 NO_HOOKS_SPELLED = {
     "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
     "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
     "flow-in-a-quoted-value": '{name: plain, description: "a, hooks: x"}\n',
     "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
     "a-longer-quoted-key": '"hooksmith": x\n',
+    "a-quoted-merge-key": '"<<": {hooks: x}\n',
 }
 
 
@@ -1909,15 +1915,21 @@ def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_ove
 
 
 # Keys the row cannot read whole, so it cannot say whether the frontmatter declares hooks: an alias
-# (`*k`, which `&k` may have set to `hooks`), an explicit `? ` key whose key is not all on its line,
-# and a quoted key over several lines, which YAML folds into one, in block style and in a flow
-# mapping. Each was passed over as declaring nothing. Mutations (oracle): `mutations/`'s "an
-# alias key is read as no key" -> `alias-key`; "an explicit key past its line is read as no key"
-# -> the explicit cases; "a quoted key over several lines is read as no key" -> the two quoted
-# cases; "a flow mapping reads an alias key as no key", "a flow mapping reads an explicit key as no
-# key" and "a flow mapping reads a quoted key over several lines as no key" -> the flow cases.
+# (`*k`, which `&k` may have set to `hooks`), a merge key (`<<`, which a reader that honours it
+# reads as every key of the mapping it names), an explicit `? ` key whose key is not all on its
+# line, and a quoted key over several lines, which YAML folds into one, in block style and in a
+# flow mapping. Each was passed over as declaring nothing. Mutations (oracle): `mutations/`'s "an
+# alias key is read as no key" -> `alias-key`; "a frontmatter's merge key is read as a plain key"
+# -> the two block merge cases; "an explicit key past its line is read as no key" -> the explicit
+# cases; "a quoted key over several lines is read as no key" -> the two quoted cases; "a flow
+# mapping reads an alias key as no key", "a flow mapping reads a merge key as no key", "a flow
+# mapping reads an explicit key as no key" and "a flow mapping reads a quoted key over several
+# lines as no key" -> the flow cases.
 UNTOLD_SPELLED = {
     "alias-key": "name: &k hooks\n*k : {}\n",
+    "merge-key": "base: &b\n  hooks: {Stop: []}\n<<: *b\n",
+    "merge-key-inline": "<<: {hooks: {}}\nname: a\n",
+    "flow-merge-key": "{<<: {hooks: x}, name: a}\n",
     "explicit-key-below": "?\n  hooks\n: {}\n",
     "explicit-key-continued": "? hoo\n  ks\n: {}\n",
     "explicit-block-scalar": "? |-\n  hooks\n: {}\n",
@@ -1934,7 +1946,7 @@ SKILL_UNPARSED = (
 )
 SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
-    "no alias, no explicit key past its line and no quoted key over several lines"
+    "no alias, no merge key, no explicit key past its line and no quoted key over several lines"
 )
 
 
@@ -2317,23 +2329,6 @@ def test_a_skill_in_a_checked_out_submodule_is_named(tmp_path: Path) -> None:
         f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: vendored/.claude/skills/s/SKILL.md",
         SKILL_HOOKS_REMEDY,
     )
-
-
-# A frontmatter that declares `hooks` only through a merge key, `<<` pulling in an anchored mapping
-# that holds it. Not named: the row parses no merge, as `docs/cli.md` states. A YAML reader that
-# honours `<<` reads a top-level `hooks` here, so this pins the answer the documents give rather
-# than one the row could defend as complete.
-MERGED_HOOKS = "---\nbase: &base\n  hooks:\n    Stop: []\n<<: *base\n---\nThe body.\n"
-
-
-def test_a_hooks_key_reached_only_through_a_merge_key_is_not_named(tmp_path: Path) -> None:
-    # The boundary `docs/cli.md` states, pinned so that changing it is a decision the documents
-    # follow. Mutation (oracle): `mutations/`'s "a frontmatter's merge key reads as a hooks key"
-    # -> the skill is named.
-    root = _initialised(tmp_path)
-    _skill(root, "merged", MERGED_HOOKS)
-    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
 
 
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:

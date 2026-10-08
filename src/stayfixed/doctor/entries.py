@@ -349,7 +349,8 @@ _SKILL_UNPARSED = _Kind(
     _skill_unparsed,
     lambda areas: (
         "open each file named above and check whether its frontmatter declares hooks: this row "
-        "reads no alias, no explicit key past its line and no quoted key over several lines"
+        "reads no alias, no merge key, no explicit key past its line and no quoted key over "
+        "several lines"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,
