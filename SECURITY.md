@@ -61,11 +61,16 @@ In scope, and treated as security rather than as an ordinary bug:
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
 - **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
-  resolves a relative entry against the project (measured on Claude Code 2.1.293). So in a
-  process the hook wrapper launched, stayfixed runs `git` from fixed absolute paths and hands it
-  a fixed `PATH` for the programs git runs by name, such as `git-lfs`, and the hook wrapper runs
-  nothing by name but the interpreter it contains (`docs/cli.md`). A committed `PATH` that makes
-  a hook run a program the repository chose is in scope; it is no longer an accepted exposure.
+  resolves a relative entry against the project (measured on Claude Code 2.1.293). So the hook
+  path looks up no program through the inherited `PATH` but the wrapper's last-resort `python3`,
+  which it refuses inside the project or any checkout of it (`docs/cli.md`): in a process the
+  hook wrapper launched, stayfixed runs `git` from fixed absolute paths and hands it a fixed
+  `PATH` for the programs git runs by name, such as `git-lfs`, and the wrapper names every other
+  program by absolute path. Where `/bin/sh` is bash, which imports a function from any
+  `BASH_FUNC_<name>%%` variable, the wrapper first removes any function named for a command it
+  runs, so none stands in for one of its builtins. A committed `PATH` or exported function that makes
+  the wrapper or stayfixed run a program the repository chose is in scope. What the shell acts
+  on before the wrapper's first line is not; see below.
 
 Out of scope:
 
@@ -93,6 +98,15 @@ Out of scope:
   block or anywhere else. The loader acts on the hook wrapper's own shell before its first line, so
   no wrapper can refuse it. On macOS the wrapper's `/bin/sh` is SIP-protected and drops `DYLD_*`
   before anything below it starts; a shebang that loses that protection is in scope.
+- `SHELLOPTS` and `PS4` reaching a hook. bash, `/bin/sh` on macOS and on the Linux distributions
+  where it is bash, reads both at start-up, and with `xtrace` in `SHELLOPTS` it expands `PS4`
+  before every command, so `PS4='$(program)'` runs that program. Measured against `/bin/sh`
+  (bash 3.2.57) directly: the program ran in a `sh -c` handed a hook's command line, before that
+  command started, and in a script whose first line was `set +x`. The shell that runs a
+  shell-form hook command is the harness's, and the wrapper's own `/bin/sh` acts on both before
+  its first line, so, as with the loader's variables, no wrapper can refuse them: they are the
+  harness's to filter from a hook's environment, and the harness is where to report them.
+  Whether Claude Code applies either from a project's `env` block is not measured here.
 
 ## Supported versions
 

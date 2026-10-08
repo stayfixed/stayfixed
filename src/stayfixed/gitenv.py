@@ -24,7 +24,10 @@ names, such as `git-lfs`, and a `core.fsmonitor` hook — and an inherited `PATH
 those for an absolute `git` just the same. No candidate is no answer, as a `git` that cannot be
 launched is, and never a lookup on `PATH`. The wrapper says it launched this process through
 `HOOK_WRAPPER_VARIABLE`, and nothing else is asked: not whether a terminal is attached, since a
-hook run by hand from one is still a hook.
+hook run by hand from one is still a hook. This rule covers the programs stayfixed runs; the
+wrapper keeps an exported function from standing in for its own builtins, and what the shell
+acts on before the wrapper's first line, `SHELLOPTS` with `PS4` or a loader variable, is the
+harness's to filter (`SECURITY.md`).
 
 **Anywhere else, `git` and its `PATH` are the environment's**, as they always were. At a
 terminal that is the person's own shell, where a fixed list is what picks the Xcode shim at
