@@ -179,6 +179,32 @@ def test_a_file_past_the_read_cap_is_one_the_scan_could_not_read(
     assert items["src/long.py"].error == "larger than this reader reads"
 
 
+def test_a_binary_past_the_read_cap_is_skipped_as_a_binary_is_and_text_past_it_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Past the cap the file is not read to its end, so whether it is text is decided from what
+    # was read: bytes that are not UTF-8 make it a binary, skipped in silence as one under the cap
+    # is, and a model or a database in the tree no longer reads as a file the scan could not read,
+    # which no re-run clears. Text past the cap keeps the reader's error, and so does text whose
+    # last character in the window that decides is cut in two by it. The cap is lowered so the
+    # files are small. Mutations (declared): a file past the cap is an error whatever it holds ->
+    # the binary reddens; the window is decoded as if it were the whole file -> the cut text
+    # reddens.
+    from stayfixed.ledger.scan import TEXT_WINDOW
+
+    root, _config = project(tmp_path)
+    limit = 4 * 1024
+    (root / "src" / "model.onnx").write_bytes(b"\xff\xfe BR-404\n" + bytes(limit))
+    write(root, "src/cut.md", "BR-404 " + "\u00e9" * TEXT_WINDOW)
+    # Seven bytes, then two per character: the window's last byte is the first half of one.
+    assert len(b"BR-404 ") % 2 == 1 and TEXT_WINDOW % 2 == 0
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    items = {item.relative.as_posix(): item for item in scannable(root, ("src",))}
+    assert (items["src/model.onnx"].text, items["src/model.onnx"].error) == (None, None)
+    assert items["src/cut.md"].text is None
+    assert items["src/cut.md"].error == "larger than this reader reads"
+
+
 @needs_git
 def test_git_enumerates_the_candidates_and_an_ignored_file_is_not_one(tmp_path: Path) -> None:
     # The question is "what is in the commit under review"; a walk answers a different one.

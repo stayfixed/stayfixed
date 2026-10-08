@@ -487,6 +487,25 @@ def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> 
     assert (root / "src" / "img.png").read_bytes() == b"BR-001"
 
 
+def test_renumber_leaves_a_binary_past_the_read_cap_alone_and_reports_nothing(
+    tmp_path: Path,
+) -> None:
+    # A database or a model larger than the read cap, under a suffix the scan does not know, is
+    # a binary like any other: a renumber skips it in silence. Read to the cap and refused as too
+    # large, it was a file "must be fixed by hand", exit 1, that no re-run clears. At the real cap,
+    # in a sparse file, so the case is the one a repository meets. Mutation: `mutations/`, "a file
+    # past the read cap is one the scan could not read whatever it holds".
+    from stayfixed import fsops
+
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    model = root / "src" / "weights.sqlite"
+    with model.open("wb") as stream:
+        stream.write(b"SQLite format 3\x00\xff\xfe BR-001")
+        stream.truncate(fsops.REGULAR_READ_LIMIT + 1)
+    assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
+
+
 def test_renumber_does_not_follow_a_symlink_out_of_the_tree(tmp_path: Path) -> None:
     # Passes by construction of `scannable`, which skips anything that is not `S_ISREG`, and
     # again by `fsops.write_within`, which refuses to write through a symlinked component.

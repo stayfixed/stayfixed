@@ -26,7 +26,8 @@ their size:
   the command (exit `1`) naming the note, where it ended in an internal error.
 - Each bug-ledger entry: one past the cap is `stayfixed bugs check`'s `unreadable-entry` (exit
   `1`), where 0.2.0 read it whole and passed. Each other file the ledger's reference scan reads:
-  one past the cap is named as a file that could not be read.
+  one past the cap is named as a file that could not be read, unless its first 8 KiB are not
+  UTF-8 text, as a model or a database is not: it is skipped as a binary, as 0.2.0 skipped it.
 - The committed settings files `stayfixed assess` reads for its `foreign-hooks` finding: one past
   the cap is one it could not look at.
 

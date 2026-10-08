@@ -50,6 +50,12 @@ FIXTURE_MARKER = "stayfixed:ledger:fixtures"
 # (CONTRIBUTING.md#named-caps), and no shipped file changes with it: a marker anywhere else is prose
 # about the marker.
 FIXTURE_MARKER_WINDOW = 2048
+# How much of a file past the read cap is read to tell whether it is text, by the rule a file under
+# the cap is told by: whether its bytes are UTF-8. A named cap (CONTRIBUTING.md#named-caps), and no
+# shipped file changes with it. A binary's first bytes give it away long before this; a text file
+# that stops being UTF-8 only further on is reported as one the scan could not read, which is the
+# direction a guess may err in.
+TEXT_WINDOW = 8 * 1024
 # Directory names neither reader walks into: vendored or generated trees that hold no reference
 # anyone filed. Matched against a name found below a scanned root, never against the checkout's
 # own path.
@@ -190,6 +196,25 @@ def is_fixture_holder(head: bytes) -> bool:
     return FIXTURE_MARKER.encode("utf-8") in head
 
 
+def _starts_as_text(path: Path) -> bool:
+    """Whether the first `TEXT_WINDOW` bytes of `path` are UTF-8, once the up to three bytes of a
+    character the window's end cuts in two are set aside; `True` when they cannot be read, so a
+    file that cannot be told is reported."""
+    try:
+        head, _ = fsops.read_bounded(path, TEXT_WINDOW)
+    except OSError:
+        return True
+    return any(_utf8(head[: len(head) - cut]) for cut in range(4))
+
+
+def _utf8(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
     """Every file under `names` a reference could live in, sorted for determinism.
 
@@ -213,6 +238,12 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
             # To the read cap, by the bounded reader every reader of a committed file uses: a file
             # past it is one this scan could not read, never one read to its end.
             raw = read_regular_bytes(path)
+        except fsops.TooLarge as error:
+            # Not read to its end, so whether it is text is told from its first bytes: a binary has
+            # no text and no error, as one under the cap has, and text keeps the reader's error.
+            told = said(error) if _starts_as_text(path) else None
+            yield Scanned(path, relative, None, told)
+            continue
         except OSError as error:
             yield Scanned(path, relative, None, said(error))
             continue
