@@ -591,6 +591,36 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_name_of_digits_alone_names_no_directory_as_the_wrappers_git_home",
 ]
 
+# Only a plain name reaches the lookup's `eval`. An empty one, what `id` gives under a uid the
+# database does not list, makes it `~` alone, the inherited `HOME`; `~-0` is the directory stack
+# to bash and zsh; and any byte the shell reads as syntax runs as code there.
+[[mutation]]
+name = "the wrapper looks an empty name up"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  -* | *[!A-Za-z0-9._-]*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[no name]",
+]
+
+[[mutation]]
+name = "the wrapper looks a name led by - up"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  '' | *[!A-Za-z0-9._-]*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[a name led by a dash]",
+]
+
+[[mutation]]
+name = "the wrapper looks up a name holding any byte"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  '' | -*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[a name holding shell syntax]",
+]
+
 # No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
 # `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
 # Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.

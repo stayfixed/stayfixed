@@ -1361,6 +1361,49 @@ def test_a_name_of_digits_alone_names_no_directory_as_the_wrappers_git_home(tmp_
     ]
 
 
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, whose ~-0 is the directory stack too")
+@pytest.mark.parametrize(
+    "named",
+    [
+        # What `id -un` does under a uid the database does not list, as in a container run
+        # with a bare `--user`: it names nobody and exits 1.
+        "echo 'id: cannot find name for user ID 12345' >&2; exit 1",
+        "printf '%s\\n' -0",
+        "printf '%s\\n' 'x;h={fakehome}'",
+    ],
+    ids=["no name", "a name led by a dash", "a name holding shell syntax"],
+)
+def test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git(
+    tmp_path: Path, named: str
+) -> None:
+    # The wrapper looks the home up by splicing the name `id` gives into an `eval`, so only a
+    # plain name may reach it, and each other shape has its own way to the wrong home. An empty
+    # name makes the lookup `~` alone, the inherited `HOME`, which direnv, mise or a
+    # devcontainer can point at a directory the clone commits. `~-0` is the top of the
+    # directory stack to bash and zsh, the directory the hook was launched in. And any byte the
+    # shell reads as syntax runs as code inside the `eval`; `;` here sets the home outright.
+    # `HOME` is absolute, so the wrapper's later check for an absolute home cannot be what
+    # refuses it. Mutations (declared): the wrapper looks an empty name up -> "no name"
+    # reddens; the wrapper looks a name led by - up -> "a name led by a dash"; the wrapper
+    # looks up a name holding any byte -> "a name holding shell syntax".
+    project = tmp_path / "project"
+    fakehome = project / "fakehome"
+    fakehome.mkdir(parents=True)
+    stand_in = tmp_path / "id"
+    stand_in.write_text(f"#!/bin/sh\n{named.format(fakehome=fakehome)}\n", encoding="utf-8")
+    stand_in.chmod(0o755)
+    root, log = _plugin_root_recording_git_homes(tmp_path, project, id_candidates=str(stand_in))
+    env = _env(root, None, None)
+    env["HOME"] = str(fakehome)
+    result = _run_under_bash(root, env, project)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{project.resolve()}\n"
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "rev-parse --show-toplevel|no HOME",
+        f"-C {project} worktree list --porcelain|no HOME",
+    ]
+
+
 def _exported_functions(tmp_path: Path, names: tuple[str, ...]) -> tuple[dict[str, str], Path]:
     """`BASH_FUNC_<name>%%` for each of `names`: a function that runs a marker program, which
     records the name, and then hands over to what the name meant, so a wrapper that ran one
