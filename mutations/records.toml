@@ -608,8 +608,8 @@ reddens = [
 [[mutation]]
 name = "a stale index a killed renumber left is sent to bugs index"
 file = "src/stayfixed/ledger/check.py"
-before = '        remedy = f"renumber {move[0]} {move[1]}" if move else "index"'
-after = '        remedy = "index"'
+before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
+after = "    return f\"is stale; run: stayfixed {register.name} index\""
 reddens = [
   "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-pointer]",
   "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-sibling-sweep]",
@@ -654,6 +654,17 @@ file = "src/stayfixed/ledger/commands.py"
 before = "        reason = fsops.said(error)\n        raise Failure("
 after = "        raise\n        raise Failure("
 reddens = ["tests/ledger/test_commands.py::test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun"]
+
+# Two entries that differ only in `id:`, which a `bugs new` run twice files, make a move of either
+# explain the same stale index, and naming the first voided the entry nobody moved.
+[[mutation]]
+name = "a stale index several renumbers explain names the first of them"
+file = "src/stayfixed/ledger/check.py"
+before = "    if len(commands) > 1:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_stale_index_more_than_one_renumber_explains_names_each_and_runs_none",
+]
 
 # The sweep runs before the index write and retitles the other entries that name the old number,
 # so each line of the entries as they stand is matched with the found index's line as it was or as
@@ -2282,8 +2293,8 @@ reddens = [
 [[mutation]]
 name = "a stale index is sent to the bug ledger's index command whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = '        stale = f"is stale; run: stayfixed {register.name} {remedy}"'
-after = '        stale = f"is stale; run: stayfixed bugs {remedy}"'
+before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
+after = "    return f\"is stale; run: {commands[0] if commands else 'stayfixed bugs index'}\""
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]

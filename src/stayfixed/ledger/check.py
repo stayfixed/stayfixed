@@ -500,10 +500,8 @@ def register_gate(
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        move = _half_done_move(register, entries, texts, current)
-        remedy = f"renumber {move[0]} {move[1]}" if move else "index"
-        stale = f"is stale; run: stayfixed {register.name} {remedy}"
-        found.append(Finding("stale-index", index_name, None, stale))
+        moves = _half_done_moves(register, entries, texts, current)
+        found.append(Finding("stale-index", index_name, None, _stale(register, moves)))
 
     found.extend(_dangling_mentions(root, config, register, known))
     # Wider than the scan above, and reported separately because a citation says something a
@@ -513,11 +511,28 @@ def register_gate(
     return found + _dangling_citations(root, config, register, known)
 
 
-def _half_done_move(
+def _stale(register: Register, moves: list[tuple[str, str]]) -> str:
+    """The stale index's line: the one renumber that finishes it, each of several that could,
+    or `index` when none explains it.
+
+    **Several are named and none is chosen.** Two entries that differ only in `id:`, which a
+    `bugs new` run twice files, make a move of either explain the same tree, and the one that
+    was not started voids an entry nobody moved and leaves the other live beside its new number.
+    """
+    commands = [f"stayfixed {register.name} renumber {old} {new}" for old, new in moves]
+    if len(commands) > 1:
+        return (
+            "is stale; more than one unfinished renumber explains it, and only the one that was "
+            f"started finishes it: {', or '.join(commands)}"
+        )
+    return f"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}"
+
+
+def _half_done_moves(
     register: Register, entries: list[Entry], texts: dict[str, str], current: str
-) -> tuple[str, str] | None:
-    """The renumber, `(old, new)`, whose interruption explains the stale index `current`
-    exactly, or `None`.
+) -> list[tuple[str, str]]:
+    """Every renumber, `(old, new)`, whose interruption explains the stale index `current`
+    exactly, once each and in the order they were tried.
 
     A `renumber` writes the index last, so a run killed before it leaves the index it found:
     rendered from the ledger as it stood before the move. That state is recognised as
@@ -529,7 +544,7 @@ def _half_done_move(
     and so is a live entry whose title names `old`. Sent to `bugs index` instead, the operator
     turned the check green over two live entries for one bug or over mentions the sweep never
     reached, which a re-run then took for a finished move's and left alone. Anything else stale,
-    a finished move's neighbour edited since included, is `bugs index`'s.
+    a finished move's neighbour edited since included, is `bugs index`'s, and so is no answer.
     """
     by_text: defaultdict[str, list[str]] = defaultdict(list)
     for identifier, text in texts.items():
@@ -543,7 +558,8 @@ def _half_done_move(
         and len(entry.related) == 1
         and entry.title.startswith(f"renumbered to {entry.related[0]} — ")
     ]
-    for old, new in pairs:
+    explained: list[tuple[str, str]] = []
+    for old, new in dict.fromkeys(pairs):
         if new not in texts:
             continue
         restored = ID_LINE.sub(f"id: {old}", texts[new], count=1)
@@ -556,8 +572,8 @@ def _half_done_move(
         before = [entry for entry in entries if entry.id not in (old, new)] + [moved]
         rendered = render_index(sorted(before, key=lambda e: e.number), register)
         if _swept_from(current, rendered, old=old, new=new):
-            return old, new
-    return None
+            explained.append((old, new))
+    return explained
 
 
 def _swept_from(found: str, rendered: str, *, old: str, new: str) -> bool:

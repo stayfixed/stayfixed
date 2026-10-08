@@ -906,6 +906,31 @@ def test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_i
     assert stale == ["is stale; run: stayfixed bugs renumber BR-001 BR-009"]
 
 
+def test_a_stale_index_more_than_one_renumber_explains_names_each_and_runs_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two entries that differ only in `id:` are what a `bugs new` run twice files, and a renumber
+    # of either one, killed after its first write, leaves a tree both moves explain. The line
+    # named the first it tried: run as advised, it voided the entry that was never moved and left
+    # the other live beside its new number. So where more than one move explains the index, the
+    # line names each and says that only the one that was started finishes it. Mutation:
+    # `mutations/`, "a stale index several renumbers explain names the first of them".
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
+    with killed_at(monkeypatch, 2), pytest.raises(Killed):
+        renumber(root, config, bug_register(config), "BR-002", "BR-009", today="2026-01-02")
+    stale = [
+        p.detail
+        for p in register_gate(root, config, bug_register(config))
+        if p.rule == "stale-index"
+    ]
+    assert stale == [
+        "is stale; more than one unfinished renumber explains it, and only the one that was "
+        "started finishes it: stayfixed bugs renumber BR-001 BR-009, or stayfixed bugs renumber "
+        "BR-002 BR-009"
+    ]
+
+
 def _killed_at_the_index(monkeypatch: pytest.MonkeyPatch) -> None:
     """`fsops.write_within` killed on the index write alone, every write before it made."""
     from stayfixed import fsops

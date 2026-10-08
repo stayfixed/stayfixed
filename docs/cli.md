@@ -710,10 +710,11 @@ identifiers and is neither scanned nor swept.
 A stale index is sent to `bugs index`, except the one a `bugs renumber OLD NEW` killed before its
 last write leaves: when `NEW` holds `OLD`'s text, or `OLD` is the pointer that move titles toward
 `NEW`, and the index is exactly the one rendered before the move, the line names `run: stayfixed
-bugs renumber OLD NEW`, which finishes it. The sweep may already have rewritten other entries, so
-each line is compared with the found index's line both as it was and with `OLD` rewritten to
-`NEW`: a void pointer an earlier move left toward `OLD`, a title that names it, and either one
-beside a title that already named `NEW` still name the renumber.
+bugs renumber OLD NEW`, which finishes it; where several moves explain it, as for two entries that
+differ only in `id:`, it names each and says only the one started finishes it. The sweep may already
+have rewritten other entries, so each line is compared with the found index's line both as it was
+and with `OLD` rewritten to `NEW`: a void pointer an earlier move left toward `OLD`, or a title
+naming either, still names the renumber.
 
 **Writes** nothing.
 
@@ -732,8 +733,7 @@ missing and leaves the tree an uninterrupted run would have left, when resumed t
 pointer written by the resume carries the day it is written. A re-run of a move that finished —
 the pointer in place and the index fresh — changes nothing and says `OLD was already moved to
 NEW; nothing to do`, and `--json`'s `moved` is `false`, so a mention of `OLD` written since stays
-as it was written. While an interrupted move is what left the index stale, `bugs check` names this
-command, `run: stayfixed bugs renumber OLD NEW`, where it would name `bugs index`.
+as it was written. `bugs check` names this command while an interrupted move left the index stale.
 
 Rejects `OLD` equal to `NEW`, a missing `OLD`, and any other occupied `NEW` (`1`); the last says
 how to finish by hand a move whose `NEW` was edited after the kill, which the re-run can no longer
