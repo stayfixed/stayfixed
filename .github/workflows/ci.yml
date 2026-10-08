@@ -35,7 +35,13 @@ jobs:
         # absolute-path containment case is the one that completes on Linux specifically,
         # because `/etc` and `/var` are real directories there and symlinks on macOS. The users
         # of a Claude Code / Codex plugin are overwhelmingly on macOS, and macOS runners are
-        # free on public repositories. One Python version there holds the job count at four.
+        # free on public repositories. One Python version there holds the job count at five.
+        #
+        # Nor is the interpreter axis. `pathlib`'s `is_file()`, `is_dir()`, `exists()` and
+        # `is_symlink()` raise on a name longer than the system takes up to 3.13 and answer
+        # `False` from 3.14, and a suite verified on 3.14 alone went red on every leg here. A
+        # leg is added beside the others and none is renamed: branch protection requires each
+        # existing check by its name.
         include:
           - os: ubuntu-latest
             python: "3.11"
@@ -43,6 +49,8 @@ jobs:
             python: "3.12"
           - os: ubuntu-latest
             python: "3.13"
+          - os: ubuntu-latest
+            python: "3.14"
           - os: macos-latest
             python: "3.13"
     steps:
