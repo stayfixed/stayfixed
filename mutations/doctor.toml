@@ -1253,7 +1253,7 @@ reddens = [
 name = "a skill's frontmatter reads an indented hooks key"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-        if len(line) - len(line.lstrip(" ")) != indent:
+        if indent not in indents:
             continue
         below = content[index + 1 : index + 2]
         continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
@@ -1541,6 +1541,22 @@ after = '''_AHEAD = re.compile(r"(?:[!&]\S*(?:\s+|\Z))+(?:#[^\n]*(?:\n\s*|\Z))*"
 reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[anchors-ahead-of-a-flow-mapping]"]
 
 [[mutation]]
+name = "the run of properties ahead of a block mapping is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+(?:\s++|\Z)|#[^\n]*+(?:\n\s*+|\Z))++")'''
+after = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*(?:\s+|\Z)|#[^\n]*(?:\n\s*|\Z))+")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[anchors-ahead-of-a-block-mapping]"]
+
+[[mutation]]
+name = "a comment ends the properties ahead of a frontmatter's node"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+(?:\s++|\Z)|#[^\n]*+(?:\n\s*+|\Z))++")'''
+after = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+(?:\s++|\Z))++(?:#[^\n]*+(?:\n\s*+|\Z))*+")'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-below-an-anchor-and-a-comment]",
+]
+
+[[mutation]]
 name = "a double-quoted scalar is given back"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = '''_DOUBLE_QUOTED = r'"(?:[^"\\]++|\\.)*+"''''
@@ -1624,20 +1640,11 @@ reddens = [
 [[mutation]]
 name = "a mapping below a tag or an anchor alone on its line is read at the tag's indentation"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        if below:"
-after = "        if False:"
+before = "        keys, untold = _block_keys(content, {indent} | starts)"
+after = "        keys, untold = _block_keys(content, {indent})"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-above-an-indented-mapping]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored-above-an-indented-mapping]",
-]
-
-[[mutation]]
-name = "a mapping below a tag alone on its line hides a key it cannot read whole"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "            keys, untold = keys | deeper, untold or unread"
-after = "            keys, untold = keys | deeper, untold"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key-below-a-tag-alone]",
 ]
 
 [[mutation]]
@@ -1664,6 +1671,7 @@ before = '    if rest[:1] == "*" or (explicit and continued):'
 after = "    if explicit and continued:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key-below-a-tag-alone]",
 ]
 
 [[mutation]]
@@ -1748,9 +1756,9 @@ reddens = [
 [[mutation]]
 name = "the frontmatter reader skips a line it guesses is inside a double-quoted value"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+before = '        if indent not in indents:'
 after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
-        if len(line) - len(line.lstrip(" ")) != indent or sum(above.count('"') for above in top) % 2:'''
+        if indent not in indents or sum(above.count('"') for above in top) % 2:'''
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-double-quote]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-flow-value]",
@@ -1761,11 +1769,11 @@ reddens = [
 [[mutation]]
 name = "the frontmatter reader skips a line it guesses is inside a single-quoted or flow value"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+before = '        if indent not in indents:'
 after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
         quotes = sum(above.count("'") for above in top)
         depth = sum(above.count("[") + above.count("{") - above.count("]") - above.count("}") for above in top)
-        if len(line) - len(line.lstrip(" ")) != indent or quotes % 2 or depth > 0:'''
+        if indent not in indents or quotes % 2 or depth > 0:'''
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-single-quote]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-that-never-closes]",
@@ -1775,9 +1783,9 @@ reddens = [
 [[mutation]]
 name = "the frontmatter reader skips every line below a quote left open on its line"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+before = '        if indent not in indents:'
 after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
-        if len(line) - len(line.lstrip(" ")) != indent or any(above.count('"') % 2 for above in top):'''
+        if indent not in indents or any(above.count('"') % 2 for above in top):'''
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-over-lines]",
 ]

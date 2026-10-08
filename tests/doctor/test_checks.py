@@ -1925,6 +1925,9 @@ HOOKS_SPELLED = {
     # indentation" -> both.
     "tagged-above-an-indented-mapping": "!!map\n  name: probe\n  hooks: {}\n",
     "anchored-above-an-indented-mapping": "&top\n  name: probe\n  hooks: {}\n",
+    # The same with a comment line between the node's properties, which YAML reads past. Mutation
+    # (oracle): `mutations/`'s "a comment ends the properties ahead of a frontmatter's node".
+    "tagged-below-an-anchor-and-a-comment": "&top\n# a comment\n!!map\n  name: probe\n  hooks: x\n",
     # A tag alone on a line a tab leads, which opens no key: repaired, it stands at the mapping's
     # indentation, and the keys below it are the top level. Mutation (oracle): `mutations/`'s "a
     # frontmatter is repaired of its tabs only where a tab leads a key".
@@ -2003,7 +2006,7 @@ UNTOLD_SPELLED = {
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
     "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
     # An alias key in a mapping below a tag alone on its line. Mutation (oracle): `mutations/`'s
-    # "a mapping below a tag alone on its line hides a key it cannot read whole".
+    # "an alias key is read as no key".
     "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
     # Where Claude Code's reading may differ from the row's: a `---` inside a line, where Claude
     # Code may end the frontmatter, and a key indented by a tab, which it may read once the tab is
@@ -2083,13 +2086,15 @@ def test_a_frontmatter_line_is_read_in_time_linear_in_its_length(shape: str) -> 
 
 # Long values the frontmatter reader held hundreds of bytes of match state for per character, each
 # followed by a `hooks` key so that the answer says the value was read past: tags ahead of a key,
-# anchors ahead of a flow mapping, a key quoted either way, and a plain scalar in a flow mapping.
+# anchors ahead of a flow mapping or of a block mapping on the line below, a key quoted either way,
+# and a plain scalar in a flow mapping.
 # Python's `re` keeps a record for every pass of a repeated group it might give back, so a file at
 # the 64 MiB read cap asked gigabytes of one `doctor` run. Each is a mebibyte or so, which the
 # greedy patterns read with 115 to 530 MiB more and the possessive ones with a few.
 LONG_VALUES = {
     "tags-on-a-key": ("x: 1\n", "! ", 1 << 19, "hooks: {}\n"),
     "anchors-ahead-of-a-flow-mapping": ("", "&a ", 1 << 19, "{hooks: {}}\n"),
+    "anchors-ahead-of-a-block-mapping": ("", "&a ", 1 << 19, "\nhooks: {}\n"),
     "double-quoted-key": ('"', "x", 1 << 20, '": 1\nhooks: {}\n'),
     "single-quoted-key": ("'", "x", 1 << 20, "': 1\nhooks: {}\n"),
     "plain-scalar-in-a-flow-mapping": ("{a: ", "x", 1 << 20, ", hooks: {}}\n"),
@@ -2107,6 +2112,8 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
     # with `setrlimit` is no test on macOS, which enforces none on resident size. Mutations
     # (oracle): `mutations/`'s "a frontmatter key's tags are given back" -> `tags-on-a-key`; "the
     # properties ahead of a frontmatter's node are given back" -> `anchors-ahead-of-a-flow-mapping`;
+    # "the run of properties ahead of a block mapping is given back" ->
+    # `anchors-ahead-of-a-block-mapping`;
     # "a double-quoted scalar is given back" -> `double-quoted-key`; "a single-quoted scalar is
     # given back" -> `single-quoted-key`; "a flow mapping's plain scalar is given back" ->
     # `plain-scalar-in-a-flow-mapping`.

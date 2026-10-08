@@ -61,6 +61,9 @@ _HOOKS = "hooks"
 # properties, each a tag (`!x`, `!!map`) or an anchor (`&x`) ended by a blank or a line break, then
 # any comment lines. A flow mapping behind them is still a flow mapping.
 _AHEAD = re.compile(r"(?:[!&]\S*+(?:\s++|\Z))++(?:#[^\n]*+(?:\n\s*+|\Z))*+")
+# The same properties with comments among them as well as after them, which YAML reads past: the
+# lines a block mapping behind them may start on.
+_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+(?:\s++|\Z)|#[^\n]*+(?:\n\s*+|\Z))++")
 # A key's properties on its own line, each a tag or an anchor ended by blanks or the line's end; and
 # the colon that ends a plain key, the first one a blank or the line's end follows. Each is one
 # match over the line, never one per property or per character: a frontmatter is read up to
@@ -298,23 +301,26 @@ def _holds_hooks(lines: list[str]) -> bool | None:
     if node.startswith("{") and not _keyed(node):
         keys, untold = _flow_keys(node)
     else:
-        keys, untold = _block_keys(content, indent)
-        # Past a tag or an anchor alone on its line (`!!map`), the mapping starts on a line below.
-        below = opened.count("\n", 0, ahead.end()) if ahead else 0
-        if below:
-            line = lines[first + below]
-            deeper, unread = _block_keys(content, len(line) - len(line.lstrip(" ")))
-            keys, untold = keys | deeper, untold or unread
+        # Past a tag or an anchor alone on its line (`!!map`), the mapping starts on a line below,
+        # so its keys may stand at the indentation of any line of that run.
+        run = _PROPERTY_RUN.match(opened)
+        spanned = lines[first + 1 : first + 1 + opened.count("\n", 0, run.end())] if run else []
+        starts = {
+            len(line) - len(line.lstrip(" "))
+            for line in spanned
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        keys, untold = _block_keys(content, {indent} | starts)
     if _HOOKS in keys:
         return True
     return None if untold else False
 
 
-def _block_keys(content: list[str], indent: int) -> tuple[set[str], bool]:
-    """The keys of a block mapping whose keys stand at `indent` among a frontmatter's `content`
-    lines, and whether any is one this reader cannot read whole (`_block_key`).
+def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:
+    """The keys of a block mapping whose keys stand at one of `indents` among a frontmatter's
+    `content` lines, and whether any is one this reader cannot read whole (`_block_key`).
 
-    Every line at that indentation is read for a key, a line inside a quoted scalar or a flow
+    Every line at such an indentation is read for a key, a line inside a quoted scalar or a flow
     collection over lines included: `description: "a` and then `hooks: x"` names the file. Telling
     such a line from a key means parsing every value above it, a nested one among them, and a
     reader that guesses wrong there skips a real `hooks` key below, so this one reads the line and
@@ -322,7 +328,8 @@ def _block_keys(content: list[str], indent: int) -> tuple[set[str], bool]:
     keys: set[str] = set()
     untold = False
     for index, line in enumerate(content):
-        if len(line) - len(line.lstrip(" ")) != indent:
+        indent = len(line) - len(line.lstrip(" "))
+        if indent not in indents:
             continue
         below = content[index + 1 : index + 2]
         continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
