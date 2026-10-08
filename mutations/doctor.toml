@@ -1341,6 +1341,13 @@ after = "            readings.append(lines)"
 reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-mapping]"]
 
 [[mutation]]
+name = "a frontmatter is repaired of its tabs only where a tab leads a key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if any(line.startswith("\t") for line in lines):'
+after = "        if _tab_indents_a_key(lines):"
+reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-tag-above-the-mapping]"]
+
+[[mutation]]
 name = "a tab-indented key leaves the reader sure"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = "            unsure = True"

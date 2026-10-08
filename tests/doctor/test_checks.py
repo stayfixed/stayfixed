@@ -1919,6 +1919,10 @@ HOOKS_SPELLED = {
     # the tabs to spaces, as Claude Code may, reads `hooks` among its keys. Mutation (oracle):
     # `mutations/`'s "a tab-indented frontmatter is read only as it stands".
     "a-tab-indented-mapping": "\tname: probe\n\thooks: {}\n",
+    # A tag alone on a line a tab leads, which opens no key: repaired, it stands at the mapping's
+    # indentation, and the keys below it are the top level. Mutation (oracle): `mutations/`'s "a
+    # frontmatter is repaired of its tabs only where a tab leads a key".
+    "a-tab-indented-tag-above-the-mapping": "\t!!map\n  name: probe\n  hooks: {}\n",
 }
 
 

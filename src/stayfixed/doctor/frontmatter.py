@@ -228,6 +228,9 @@ def declares_hooks(text: str) -> bool | None:
     for lines in list(readings):
         if _tab_indents_a_key(lines):
             unsure = True
+        # Repaired wherever a tab leads a line, a key's or not: a tab ahead of a line holding only
+        # a tag (`\t!!map`) moves the top indentation onto the keys below it.
+        if any(line.startswith("\t") for line in lines):
             readings.append(_untabbed(lines))
     answers = [_holds_hooks(lines) for lines in readings]
     if True in answers:
