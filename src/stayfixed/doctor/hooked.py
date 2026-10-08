@@ -95,7 +95,11 @@ def _inside(real_root: Path, path: Path) -> bool:
     return Path(os.path.realpath(path)).is_relative_to(real_root)
 
 
-def _frontmatter(root: Path, real_root: Path, relative: str) -> list[Found]:
+# A file by its identity, `(st_dev, st_ino)`, for naming each file once however many paths reach it.
+_Identity = tuple[int, int]
+
+
+def _frontmatter(root: Path, real_root: Path, relative: str, read: set[_Identity]) -> list[Found]:
     """The report for one file whose frontmatter is read: it declares hooks, or it could not be
     read, or its frontmatter could not be read whole (`Seen.UNPARSED`), or it leads out of the
     checkout, or none. A link that leads out is not followed and is named as one that does
@@ -104,16 +108,21 @@ def _frontmatter(root: Path, real_root: Path, relative: str) -> list[Found]:
     through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the regular-file cap, which
     every reader of a committed file goes through at its own cap: a device or a FIFO is refused
     unread, and a file past the cap is refused, each one this row could not read; a path that
-    names no file is passed over."""
+    names no file is passed over. A file in `read`, one another path reached first through a link,
+    is passed over too: its report would be the same, so each file is named once, under the first
+    path the walk reaches it by."""
     path = root / relative
     try:
-        path.stat()
+        status = path.stat()
     except OSError as exc:
         if exc.errno in NAMES_NO_FILE:
             return []
         return [(Seen.UNREAD, _label(relative))]
     if not _inside(real_root, path):
         return [(Seen.LINKED_OUT, _label(relative))]
+    if (status.st_dev, status.st_ino) in read:
+        return []
+    read.add((status.st_dev, status.st_ino))
     try:
         content = read_regular_bytes(path)
     except OSError as exc:
@@ -131,7 +140,7 @@ def _frontmatter(root: Path, real_root: Path, relative: str) -> list[Found]:
 
 
 def _read_place(
-    root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget
+    root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget, read: set[_Identity]
 ) -> list[Found]:
     """A report for each file below `top`, a directory `place` names, whose frontmatter declares
     hooks or holds a key the reader cannot read whole, or that could not be read, in name order,
@@ -141,9 +150,9 @@ def _read_place(
     the checkout; one that leads out is named as one that does (`Seen.LINKED_OUT`), and one that
     cannot be listed as a directory this row could not read. A directory reached twice is listed
     once, so a link back up the tree ends rather than circling until the cap. A name `place` reads
-    goes to `_frontmatter`, which reads a link to a file inside the checkout and names one that
-    leads out; any other link that names no directory is passed over, as `top` itself is when there
-    is none."""
+    goes to `_frontmatter`, which reads a link to a file inside the checkout, names one that leads
+    out, and passes over a file it has read (`read`); any other link that names no directory is
+    passed over, as `top` itself is when there is none."""
     found: list[Found] = []
     listed_once: set[tuple[int, int]] = set()
     pending = [top]
@@ -171,7 +180,7 @@ def _read_place(
         for name in names:
             child = f"{relative}/{name}"
             if _reads(place, name):
-                found.extend(_frontmatter(root, real_root, child))
+                found.extend(_frontmatter(root, real_root, child, read))
             # Two answers to one fault, kept apart on purpose: a name too long to ask about is
             # a directory that is not there to `fsops.is_dir`, and passed over, while the `stat`
             # above and in `_frontmatter` asks with `NAMES_NO_FILE`, where it is a path this row
@@ -354,24 +363,25 @@ def hooked(root: Path) -> list[Found]:
     order, read off the disk, then each file a nested place names, as git lists it (`_queried`), or,
     where git cannot answer, as the bounded walk finds it (`_nested`). The walks list at most
     `fsops.WALK_ENTRIES` entries between them, past which they stop and say so (`Seen.STOPPED`).
-    Each file is named by its path, through `printed.printable`, because every name in it is the
-    repository's."""
+    Each file is named once, by the first path that reaches it, through `printed.printable`,
+    because every name in it is the repository's."""
     found: list[Found] = []
     budget = _Budget()
+    read: set[_Identity] = set()
     real_root = Path(os.path.realpath(root))
     try:
         for place in HOOKED:
-            found.extend(_read_place(root, real_root, place.directory, place, budget))
+            found.extend(_read_place(root, real_root, place.directory, place, budget, read))
         queried = _queried(root)
         if queried is not None:
             for relative, place in queried:
                 if _reads(place, PurePosixPath(relative).name):
-                    found.extend(_frontmatter(root, real_root, relative))
+                    found.extend(_frontmatter(root, real_root, relative, read))
                 else:
-                    found.extend(_read_place(root, real_root, relative, place, budget))
+                    found.extend(_read_place(root, real_root, relative, place, budget, read))
         else:
             for directory, place in _nested(root, budget):
-                found.extend(_read_place(root, real_root, directory, place, budget))
+                found.extend(_read_place(root, real_root, directory, place, budget, read))
     except _Spent:
         found.append((Seen.STOPPED, None))
     return found

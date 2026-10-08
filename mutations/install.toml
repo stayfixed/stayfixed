@@ -2800,8 +2800,8 @@ reddens = [
 [[mutation]]
 name = "a skill file that names no file is unreadable"
 file = "src/stayfixed/doctor/hooked.py"
-before = "        path.stat()\n    except OSError as exc:\n        if exc.errno in NAMES_NO_FILE:\n            return []\n"
-after = "        path.stat()\n    except OSError as exc:\n        if False:\n            return []\n"
+before = "        status = path.stat()\n    except OSError as exc:\n        if exc.errno in NAMES_NO_FILE:\n            return []\n"
+after = "        status = path.stat()\n    except OSError as exc:\n        if False:\n            return []\n"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link]",
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link-out]",
@@ -3262,7 +3262,6 @@ file = "src/stayfixed/doctor/hooked.py"
 before = '        if not f"{entry}/".casefold().startswith(own):'
 after = "        if True:"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[.claude/skills/top/SKILL.md]",
   "tests/doctor/test_checks.py::test_the_projects_own_claude_directory_as_a_link_is_read_once[queried]",
 ]
 
@@ -3437,6 +3436,15 @@ after = """
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_link_back_up_a_skills_tree_is_listed_once",
+]
+
+[[mutation]]
+name = "the hooked-file walk names a file each time it is reached"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    if (status.st_dev, status.st_ino) in read:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_file_two_paths_reach_is_named_once",
 ]
 
 [[mutation]]

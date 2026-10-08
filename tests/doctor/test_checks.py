@@ -24,6 +24,7 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -34,7 +35,7 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.doctor import checks, entries, registry
+from stayfixed.doctor import checks, entries, hooked, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
 from stayfixed.doctor.checks import (
     VERSION_AHEAD,
@@ -2022,11 +2023,17 @@ def test_a_frontmatter_line_is_read_in_time_linear_in_its_length(shape: str) -> 
     assert done.stdout == "True\n", done.stderr
 
 
-def test_a_link_back_up_a_skills_tree_is_listed_once(tmp_path: Path) -> None:
+def test_a_link_back_up_a_skills_tree_is_listed_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Links are followed, as the harness follows them, so a link back up the tree would be walked
     # until the cap and end in a warning that the walk could not tell. Each directory is listed
-    # once. Mutation (oracle): `mutations/`'s "the hooked-file walk lists a directory each time it
-    # is reached" -> the row also says the walk stopped.
+    # once. A file is named once whichever path reaches it, so the walk's length is what shows a
+    # directory listed again: the cap is lowered to ten times what this tree lists, which a walk
+    # going round the loop passes long before the longest path ends it. Mutation (oracle):
+    # `mutations/`'s "the hooked-file walk lists a directory each time it is reached" -> the row
+    # also says the walk stopped.
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 60)
     root = _initialised(tmp_path)
     _skill(root, "probe", SKILL_WITH_HOOKS)
     (root / ".claude" / "skills" / "probe" / "loop").symlink_to("..")
@@ -2106,10 +2113,10 @@ def test_a_large_ignored_tree_is_neither_walked_nor_named(
 def test_a_committed_nested_skill_is_named_in_any_case(tmp_path: Path, path: str) -> None:
     # What a clone commits is what the row reads below the root, and a filesystem that folds case
     # finds `.Claude/Skills` where `.claude/skills` is looked for; the root's own skill, which the
-    # query lists too, is named once. Mutations (oracle): `mutations/`'s "the nested-skill query
-    # lists only untracked files" -> the committed skills are missed; "the nested-skill query
-    # compares names by case" -> the second case is; "the nested-skill query reads the root's own
-    # places again" -> the third is named twice.
+    # query lists too, is named once, and read once, as the read-once case below holds. Mutations
+    # (oracle): `mutations/`'s "the nested-skill query lists only untracked files" -> the
+    # committed skills are missed; "the nested-skill query compares names by case" -> the second
+    # case is.
     root = _repository(_initialised(tmp_path))
     _file(root, path, SKILL_WITH_HOOKS)
     _git(root, "add", "-A")
@@ -2302,15 +2309,62 @@ def test_a_nested_claude_directory_that_is_a_link_is_read_or_named(
 
 @pytest.mark.parametrize("where", ["queried", "walked"])
 def test_the_projects_own_claude_directory_as_a_link_is_read_once(
-    tmp_path: Path, where: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
 ) -> None:
     # The vacuity guard for the case above, at the root: the project's own `.claude` is read off
     # the disk with its places, so a link standing for it is not read a second time as a nested
-    # one. Mutations (oracle): `mutations/`'s "the nested-skill query reads the root's own places
-    # again" and "the nested walk reads the root's own places again" -> named twice.
+    # one. A file is named once however many paths reach it, so what shows a second read is the
+    # places read, each listed by its real path. Mutations (oracle): `mutations/`'s "the
+    # nested-skill query reads the root's own places again" and "the nested walk reads the root's
+    # own places again" -> `.claude/skills` is read twice.
+    places: list[str] = []
+    read_place = hooked._read_place
+
+    def recorded(root: Path, real_root: Path, top: str, *rest: Any) -> list[hooked.Found]:
+        places.append(os.path.realpath(root / top))
+        return read_place(root, real_root, top, *rest)
+
+    monkeypatch.setattr(hooked, "_read_place", recorded)
     _file(tmp_path / "project" / "kept", "skills/s/SKILL.md", SKILL_WITH_HOOKS)
     root = _initialised(tmp_path)
     (root / ".claude").symlink_to(root / "kept")
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert len(places) == len(set(places)), places
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+# Two paths to one skill file, each a link inside the checkout: a nested `.claude`, or a nested
+# `.claude/skills`, standing for the project's own, and the project's own `.claude/skills` standing
+# for a nested one. Each link, real directory and file below it, as `(path, link target)`.
+TWO_PATHS = {
+    "nested-claude": [("pkg/.claude", "../.claude"), (".claude/skills/s/SKILL.md", None)],
+    "nested-skills": [("pkg/.claude/skills", "../../.claude/skills"), (".claude/skills/s", None)],
+    "own-skills": [(".claude/skills", "../pkg/.claude/skills"), ("pkg/.claude/skills/s", None)],
+}
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("shape", sorted(TWO_PATHS))
+def test_a_skill_file_two_paths_reach_is_named_once(tmp_path: Path, shape: str, where: str) -> None:
+    # One file is one to review, so it is named once, by the first path the walk reaches it by,
+    # the project's own place; it was named again under the link's path, and counted twice.
+    # Mutation (oracle): `mutations/`'s "the hooked-file walk names a file each time it is
+    # reached" -> named twice.
+    root = _initialised(tmp_path)
+    for path, target in TWO_PATHS[shape]:
+        if target is not None:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).symlink_to(target)
+        elif path.endswith(".md"):
+            _file(root, path, SKILL_WITH_HOOKS)
+        else:
+            _file(root, f"{path}/SKILL.md", SKILL_WITH_HOOKS)
     _in_a_work_tree(root, where)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
