@@ -18,6 +18,7 @@ from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
 from stayfixed.printed import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -73,6 +74,52 @@ def test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw(tmp_path: Path)
     assert_never_raw(str(raised.value))
     assert str(raised.value).endswith(f"passes through a symlink at {CRAFTED!r}")
     assert str(tmp_path) not in str(raised.value)
+
+
+# What `contained` answers when an ancestor's `lstat` meets each fault: the path, or the refusal's
+# ending. Only the shapes whose path an `lstat` cannot find something at, since the ones it can are
+# the link and no-link cases above.
+CONTAINED_ANSWERS: dict[str, str | None] = {
+    "nothing-there": None,
+    "below-a-file": None,
+    "a-name-longer-than-a-name": None,
+    "past-the-longest-path": None,
+    # The link is still found: an `lstat` of the link itself does not follow it.
+    "through-a-link-loop": "passes through a symlink at 'loop'",
+    "through-a-link-to-a-name-longer-than-a-name": "passes through a symlink at 'far'",
+    "below-a-directory-that-cannot-be-searched": (
+        "cannot be checked for a symlink at 'locked/child' (Permission denied)"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(CONTAINED_ANSWERS))
+def test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter(
+    tmp_path: Path, shape: str
+) -> None:
+    # `Path.is_symlink()` raised `ENAMETOOLONG` up to Python 3.13 and answered `False` from 3.14,
+    # so `attach` over a group directory that fits, with its placeholder name inside past the
+    # longest path, was an internal error on one interpreter and attached on the other. A path
+    # that reaches no file holds no link to follow; a fault that leaves the question open is a
+    # refusal in words, by the ancestor's place under the root and never its absolute path.
+    #
+    # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
+    # takes as a fault" (the two over-long shapes refuse) and "contained reads an ancestor it
+    # cannot ask about as no link" (the unsearchable directory is contained).
+    if shape == "below-a-directory-that-cannot-be-searched" and os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    relative = shaped(tmp_path, shape)
+    try:
+        assert lstat_fault(tmp_path / relative) == LSTAT_FAULT[shape]
+        refused = CONTAINED_ANSWERS[shape]
+        if refused is None:
+            assert contained(tmp_path, relative) == tmp_path / relative
+        else:
+            with pytest.raises(PathEscape) as raised:
+                contained(tmp_path, relative)
+            assert str(raised.value) == f"{relative!r} {refused}"
+    finally:
+        unlock(tmp_path)
 
 
 def test_a_symlink_pointing_inside_the_root_is_still_refused(tmp_path: Path) -> None:

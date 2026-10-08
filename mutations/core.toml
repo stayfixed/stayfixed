@@ -1930,6 +1930,41 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
 ]
 
+# `contained` asks each ancestor with `lstat` and gives each fault its answer, rather than
+# inheriting `Path.is_symlink()`'s, which differs between Python 3.13 and 3.14. A fault that leaves
+# the question open is a refusal: no path is contained until every ancestor is asked.
+[[mutation]]
+name = "contained reads an ancestor it cannot ask about as no link"
+file = "src/stayfixed/config/paths.py"
+before = "            if exc.errno in REACHES_NO_FILE:"
+after = "            if True:"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# And by its place under the root, for the reason the symlink refusal gives.
+[[mutation]]
+name = "contained names an ancestor it cannot ask about by its absolute path"
+file = "src/stayfixed/config/paths.py"
+before = "            unasked = ancestor.relative_to(root).as_posix()"
+after = "            unasked = str(ancestor)"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# The link check itself, which the explicit `lstat` now answers. A link below one that loops, or
+# below one whose target no file can have, is still found at the link.
+[[mutation]]
+name = "contained lets a symlinked ancestor through"
+file = "src/stayfixed/config/paths.py"
+before = "        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-loop]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+]
+
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
 # itself can have several merge bases, and the one git picks alone, the newest by date, can already
 # hold what the change puts back or deletes.
@@ -2510,6 +2545,86 @@ before = "        if exc.errno in NAMES_NO_FILE:"
 after = "        if True:"
 reddens = [
   "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
+]
+
+# `fsops`' four path predicates answer one way on every interpreter, where `pathlib`'s raise on a
+# fault up to Python 3.13 and answer `False` from 3.14. A name or a path longer than the system
+# takes reaches no file, as a dangling link and a loop do: raised, it ended `attach` over an
+# overlay with nothing wrong with it in an internal error on 3.11 to 3.13 alone. `contained` reads
+# the same set, so an ancestor past the longest path holds no link to follow there either.
+[[mutation]]
+name = "the path predicates read a name longer than the system takes as a fault"
+file = "src/stayfixed/fsops.py"
+before = "REACHES_NO_FILE = NAMES_NO_FILE | {errno.ENAMETOOLONG}"
+after = "REACHES_NO_FILE = NAMES_NO_FILE"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[past-the-longest-path]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[past-the-longest-path]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
+]
+
+# Any other fault leaves the question open, and "cannot tell" is not "no": a directory that cannot
+# be searched raises, as it did up to 3.13, where 3.14 answered `False`.
+[[mutation]]
+name = "the path predicates read a fault they cannot answer as nothing there"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in REACHES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# A NUL names no file anywhere, and `pathlib`'s predicates answer it `False` on every interpreter.
+[[mutation]]
+name = "the path predicates raise on a NUL"
+file = "src/stayfixed/fsops.py"
+before = "        raise\n    except ValueError:\n        return None"
+after = "        raise"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-nul]",
+]
+
+[[mutation]]
+name = "is_file answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISREG(mode)"
+after = "    return mode is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-directory]",
+]
+
+[[mutation]]
+name = "is_dir answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISDIR(mode)"
+after = "    return mode is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-regular-file]",
+]
+
+# `exists` follows a link as `Path.exists()` does: a dangling one reaches nothing.
+[[mutation]]
+name = "exists answers for a link it did not follow"
+file = "src/stayfixed/fsops.py"
+before = "    return _reached_mode(path, follow=True) is not None"
+after = "    return _reached_mode(path, follow=False) is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-dangling-link]",
+]
+
+# `is_symlink` asks `lstat`, as `Path.is_symlink()` does: followed, a link is what it names.
+[[mutation]]
+name = "is_symlink follows the link it is asked about"
+file = "src/stayfixed/fsops.py"
+before = "    mode = _reached_mode(path, follow=False)"
+after = "    mode = _reached_mode(path, follow=True)"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-file]",
 ]
 
 # A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,

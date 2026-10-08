@@ -30,6 +30,7 @@ from stayfixed.fsops import (
     write_atomically_at,
     write_within,
 )
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock
 
 
 def _umasked(mode: int = NEW_FILE_MODE) -> int:
@@ -612,6 +613,62 @@ def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_calle
     with pytest.raises(OSError) as raised:
         fsops.names_regular_file(tmp_path / "past-a-name")
     assert raised.value.errno not in fsops.NAMES_NO_FILE
+
+
+# What `is_file`, `is_dir`, `exists` and `is_symlink` answer for each shape, in that order, or
+# `OSError` where all four raise.
+PREDICATE_ANSWERS: dict[str, tuple[bool, bool, bool, bool] | type[OSError]] = {
+    "a-regular-file": (True, False, True, False),
+    "a-directory": (False, True, True, False),
+    "a-link-to-a-file": (True, False, True, True),
+    "a-link-to-a-directory": (False, True, True, True),
+    "a-dangling-link": (False, False, False, True),
+    "a-link-loop": (False, False, False, True),
+    "a-link-to-a-name-longer-than-a-name": (False, False, False, True),
+    "nothing-there": (False, False, False, False),
+    "below-a-file": (False, False, False, False),
+    "through-a-link-loop": (False, False, False, False),
+    "a-name-longer-than-a-name": (False, False, False, False),
+    "past-the-longest-path": (False, False, False, False),
+    "through-a-link-to-a-name-longer-than-a-name": (False, False, False, False),
+    "below-a-directory-that-cannot-be-searched": OSError,
+    "a-nul": (False, False, False, False),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(LSTAT_FAULT))
+def test_the_path_predicates_answer_each_fault_alike_on_every_interpreter(
+    tmp_path: Path, shape: str
+) -> None:
+    # `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()` raise `ENAMETOOLONG` and
+    # `EACCES` up to Python 3.13 and answer `False` for them from 3.14, so a path a clone shapes
+    # was an internal error on one interpreter and "nothing there" on the other. `fsops` answers
+    # one way on all of them: a name or a path longer than the system takes reaches nothing, as a
+    # dangling link and a loop do, and a fault that leaves the question open raises.
+    #
+    # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
+    # takes as a fault" (the four `ENAMETOOLONG` shapes raise), "the path predicates read a fault
+    # they cannot answer as nothing there" (the unsearchable directory answers), "the path
+    # predicates raise on a NUL" (`a-nul`), "is_file answers for anything that is there",
+    # "is_dir answers for anything that is there", "exists answers for a link it did not follow"
+    # and "is_symlink follows the link it is asked about".
+    if shape == "below-a-directory-that-cannot-be-searched" and os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    path = tmp_path / shaped(tmp_path, shape)
+    try:
+        # The shape meets the fault it is named for, or it proves nothing about that fault.
+        assert lstat_fault(path) == LSTAT_FAULT[shape]
+        expected = PREDICATE_ANSWERS[shape]
+        asks = (fsops.is_file, fsops.is_dir, fsops.exists, fsops.is_symlink)
+        if expected is OSError:
+            for ask in asks:
+                with pytest.raises(OSError) as raised:
+                    ask(path)
+                assert raised.value.errno == errno.EACCES
+        else:
+            assert tuple(ask(path) for ask in asks) == expected
+    finally:
+        unlock(tmp_path)
 
 
 def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(

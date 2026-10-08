@@ -178,6 +178,62 @@ def names_regular_file(path: Path) -> bool:
     return stat.S_ISREG(mode)
 
 
+# `NAMES_NO_FILE`, and a name or a whole path longer than the system takes. The kernel refuses the
+# last before it looks anything up, so it gets the answer a dangling link and a loop get: nothing a
+# reader that names the path whole can open is there. A clone reaches it with a committed link
+# whose target holds a name longer than a file name may be, which makes every path through the
+# link one, and a repository-chosen string joined into a path reaches it too. `names_regular_file`
+# keeps it apart for the readers that must count such a link as a file they cannot read.
+REACHES_NO_FILE = NAMES_NO_FILE | {errno.ENAMETOOLONG}
+
+
+def _reached_mode(path: Path, *, follow: bool) -> int | None:
+    """The mode `stat` (or `lstat`, when not `follow`) finds at `path`, or `None` when the path
+    reaches no file: one of `REACHES_NO_FILE`, or a NUL, which names no file anywhere. Any other
+    fault is raised: a path that cannot be asked about is the caller's to classify."""
+    try:
+        return (os.stat(path) if follow else os.lstat(path)).st_mode
+    except OSError as exc:
+        if exc.errno in REACHES_NO_FILE:
+            return None
+        raise
+    except ValueError:
+        return None
+
+
+# `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()`, answered alike on every interpreter.
+# `pathlib`'s own answer `False` for `NAMES_NO_FILE` and raise any other fault up to Python 3.13,
+# and answer `False` for every fault from 3.14 (`os.path`'s rule), so one path a clone can shape
+# was an internal error on one interpreter and a quiet "nothing there" on the other, and the suite
+# proved only the interpreter it ran on. These choose: `REACHES_NO_FILE` is nothing there, as it
+# was on 3.14, and any other fault -- a directory that cannot be searched, an I/O error -- raises,
+# as it did up to 3.13, because "cannot tell" is not "no". Each follows links as its `pathlib`
+# namesake does: `is_symlink` asks `lstat`, the other three `stat`.
+
+
+def is_file(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches a regular file; see above."""
+    mode = _reached_mode(path, follow=True)
+    return mode is not None and stat.S_ISREG(mode)
+
+
+def is_dir(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches a directory; see above."""
+    mode = _reached_mode(path, follow=True)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def exists(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches anything; see above."""
+    return _reached_mode(path, follow=True) is not None
+
+
+def is_symlink(path: Path) -> bool:
+    """Whether `path` itself, not followed, is a symbolic link; see above."""
+    mode = _reached_mode(path, follow=False)
+    return mode is not None and stat.S_ISLNK(mode)
+
+
 class NotRegularFile(OSError):
     """A path a reader was handed names something other than a regular file. An `OSError`, so
     every reader's existing "could not be read" arm is its answer without a branch of its own."""

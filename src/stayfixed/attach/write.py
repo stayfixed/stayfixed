@@ -675,7 +675,7 @@ def _fallback_possible(
     is answered "possible", because this answer decides a refusal.
     """
     harness = harness_memory_path(root, home)
-    if harness.is_symlink() or not harness.exists():
+    if fsops.is_symlink(harness) or not fsops.exists(harness):
         return False
     store = resolve(root, config, machine=machine)
     if store is None:

@@ -26,15 +26,19 @@ stays the leaf the hook path depends on it being.
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.fsops import (
+    REACHES_NO_FILE,
     UnsafePath,
     checked_components,
     names_component,
     names_control_directory,
+    said,
 )
 from stayfixed.printed import PATH_VALUE
 
@@ -69,7 +73,28 @@ def contained(
     for ancestor in [target, *target.parents]:
         if ancestor == root:
             break
-        if ancestor.is_symlink() and not (allow_final_symlink and ancestor == target):
+        # Asked with `lstat` here and each fault given its answer, never left to
+        # `Path.is_symlink()`, which raises on `ENAMETOOLONG` up to Python 3.13 and answers
+        # `False` from 3.14: `attach` ended in an internal error on one interpreter and attached
+        # on the other over the same overlay. A path that reaches no file holds no link to
+        # follow. That includes one past the longest path, which only the descriptor walk every
+        # write goes through reaches (`fsops.open_within`), and that walk refuses a link of its
+        # own accord; a link above it whose target is too long is still asked, since `lstat`
+        # does not follow the link it is asked about. Any other fault leaves the question
+        # unanswered, which is a refusal: no path is contained until every ancestor is asked.
+        try:
+            mode = os.lstat(ancestor).st_mode
+        except OSError as exc:
+            if exc.errno in REACHES_NO_FILE:
+                continue
+            # By its place under the root and through `repr`, as the refusal below names its
+            # ancestor, and in the fault's own words, never `str(exc)`, which carries the
+            # absolute path.
+            unasked = ancestor.relative_to(root).as_posix()
+            raise PathEscape(
+                f"{relative!r} cannot be checked for a symlink at {unasked!r} ({said(exc)})"
+            ) from exc
+        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):
             # Both through `repr`, which escapes every line break and control character: in a
             # checkout the ancestor's name is the repository's, and a caller may show this refusal
             # to a terminal or a CI runner. Both by their place under the root: the ancestor's
