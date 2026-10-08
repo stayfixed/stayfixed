@@ -256,23 +256,50 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         yield Scanned(path, relative, text, None)
 
 
-def citation_pattern(register: Register) -> re.Pattern[str]:
-    """Loose on purpose: any `…/<ledger dirname>/<PREFIX>-nnn.md`. The decision is made by
-    resolving the match (`_cited_entry`), not by the pattern.
+# A run of the characters a citation is written in. Every citation lies inside one, and starts
+# where the run does: a path cited mid-word is not a citation.
+_CITING_RUN = re.compile(r"[\w./-]++")
+
+
+def citations(text: str, register: Register) -> Iterator[tuple[int, str, str]]:
+    r"""Every `…/<ledger dirname>/<PREFIX>-nnn.md` in `text`: where it starts, the path as written,
+    and the identifier. Loose on purpose: the decision is made by resolving the path
+    (`_cited_entry`), not here.
 
     A citation names an entry's FILE, and a tree writes that path three ways, not two: rooted
     at the repository from code, `../<dirname>/` from a sibling document, and a bare
     `<dirname>/` from a document sitting directly in the documents directory. Widening the
-    pattern instead would report a plan or design document that writes a bare path inside a
+    reading instead would report a plan or design document that writes a bare path inside a
     quoted example of this tool's own output; resolved against its own directory that lands
     somewhere that is not an entry path, and it drops out for the right reason rather than by
     an exclusion.
+
+    Read as the pattern
+    `(?<![\w./-])((?:\.{1,2}/)*(?:[\w.-]+/)*<dirname>/(<PREFIX>-\d+)\.md)` read it, but each run
+    once: the pattern tried every split of a run of `../` between its two repeats, 0.7 s over
+    8,000 of them and four times as long at each doubling, and kept a record for every segment
+    it might give back, 70 MiB over a mebibyte. Its `../` repeat adds nothing its second
+    repeat does not read, so a citation is a run's start to the last `<dirname>/<PREFIX>-nnn.md`
+    in it that follows the run's start or a `/` with no empty segment before it. Every character
+    of a citation is a run character, because a `[paths]` value and a prefix are spelled in them.
     """
     last = PurePosixPath(register.directory).name
     prefix = register.ids.prefix
-    return re.compile(
-        rf"(?<![\w./-])((?:\.{{1,2}}/)*(?:[\w.-]+/)*{re.escape(last)}/({re.escape(prefix)}-\d+)\.md)"
-    )
+    tail = re.compile(rf"{re.escape(last)}/({re.escape(prefix)}-\d+)\.md")
+    needle = f"{last}/{prefix}-"
+    for run in _CITING_RUN.finditer(text):
+        word = run.group()
+        # The last place a segment may end: none past an empty one, and none at all when the run
+        # opens on one.
+        empty = word.find("//")
+        reach = 0 if word.startswith("/") else len(word) if empty < 0 else empty + 1
+        at = word.rfind(needle, 0, reach + len(needle))
+        while at >= 0:
+            cited = tail.match(word, at) if at == 0 or word[at - 1] == "/" else None
+            if cited is not None:
+                yield run.start(), word[: cited.end()], cited.group(1)
+                break
+            at = word.rfind(needle, 0, at + len(needle) - 1)
 
 
 def _cited_entry(
@@ -311,7 +338,6 @@ def entry_citations(
     """
     directory = PurePosixPath(register.directory)
     index = PurePosixPath(register.index)
-    pattern = citation_pattern(register)
     found: defaultdict[str, list[tuple[PurePosixPath, int]]] = defaultdict(list)
     for item in scannable(root, citation_roots(root, config)):
         if item.text is None or item.relative == index or _under(item.relative, directory):
@@ -320,12 +346,15 @@ def entry_citations(
         # ledger directory's name, and few files carry one.
         if f"{directory.name}/" not in item.text:
             continue
-        for match in pattern.finditer(item.text):
-            if not _cited_entry(item.relative, match.group(1), match.group(2), directory):
+        # The line is counted on from the citation before it, never from the file's start, which
+        # took 36 s over a file of 160,000 citations, four times as long at each doubling.
+        line, counted = 1, 0
+        for start, written, identifier in citations(item.text, register):
+            if not _cited_entry(item.relative, written, identifier, directory):
                 continue
-            found[match.group(2)].append(
-                (item.relative, item.text.count("\n", 0, match.start()) + 1)
-            )
+            line += item.text.count("\n", counted, start)
+            counted = start
+            found[identifier].append((item.relative, line))
     return found
 
 

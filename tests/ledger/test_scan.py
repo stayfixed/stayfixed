@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -20,8 +22,8 @@ from stayfixed.ledger.register import bug_register
 from stayfixed.ledger.scan import (
     FIXTURE_MARKER,
     FIXTURE_MARKER_WINDOW,
-    citation_pattern,
     citation_roots,
+    citations,
     code_mentions,
     entry_citations,
     mention_roots,
@@ -282,6 +284,102 @@ def test_an_absolute_path_that_merely_contains_the_entry_path_is_not_a_citation(
     assert entry_citations(root, config, bug_register(config)) == {}
 
 
+# Files the citation scan read in time quadratic in their length, each with what it must find: a
+# run of `../` before a citation of its own, whose every split between the pattern's two repeats
+# was tried, 0.7 s over 8,000; and a file of citations, each of whose lines was counted from the
+# file's start, 36 s over 160,000. Each is sized so that the old reading takes over a minute and a
+# half and the scan a second or less.
+LONG_CITERS = {
+    "a run of parent steps": ((" " + "../" * (1 << 17) + " docs/bugs/BR-001.md\n", 1), [1, 1, 1]),
+    "many citations": (("see docs/bugs/BR-001.md\n", 1 << 18), [1 << 18, 1, 1 << 18]),
+}
+# The child's bound: a fifth of the old reading's time over either file on a laptop, and forty
+# times the scan's there, start-up included.
+_LONG_CITER_SECONDS = 20
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_CITERS))
+def test_a_long_file_s_citations_are_read_in_time_linear_in_its_length(
+    tmp_path: Path, shape: str
+) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # The answer is how many lines cite the entry, and the first and the last of them. Mutations
+    # (oracle): `mutations/`'s "a citation is read for at every split of a run of parent steps" ->
+    # `a run of parent steps`; "a citation's line is counted from the file's start" -> `many
+    # citations`.
+    root, _ = project(tmp_path)
+    (unit, count), expected = LONG_CITERS[shape]
+    write(root, "src/a.py", unit * count)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.config.loader import load\n"
+        "from stayfixed.ledger.register import bug_register\n"
+        "from stayfixed.ledger.scan import entry_citations\n"
+        "root, machine = map(Path, sys.argv[1:])\n"
+        "config = load(root, machine=machine)\n"
+        "found = entry_citations(root, config, bug_register(config))\n"
+        "lines = [line for _, line in found['BR-001']]\n"
+        "print([len(lines), lines[0], lines[-1]])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root), str(tmp_path / "m.toml")],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_CITER_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the citation scan ran past {_LONG_CITER_SECONDS} s on one file")
+    assert done.stdout == f"{expected}\n", done.stderr
+
+
+# A citation behind a million segments, which the pattern read with 140 MiB more of match state when
+# `re` kept a record for each segment it might give back, and with none when it keeps none. The
+# most the child may grow its peak resident size by: a few copies of the two-mebibyte line.
+_LONG_CITATION_SEGMENTS = 1 << 20
+_LONG_CITATION_BYTES = 32 << 20
+
+
+def test_a_citation_behind_many_segments_is_read_in_memory_linear_in_its_length(
+    tmp_path: Path,
+) -> None:
+    # The child measures its own peak resident size before and after (`ru_maxrss`, bytes on macOS
+    # and KiB on Linux), under a timeout. Mutation (oracle): `mutations/`'s "a citation's segments
+    # are read by a pattern that gives them back" -> this reddens.
+    root, _ = project(tmp_path)
+    probe = (
+        "import resource, sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.config.loader import load\n"
+        "from stayfixed.ledger.register import bug_register\n"
+        "from stayfixed.ledger.scan import citations\n"
+        "root, machine, count = sys.argv[1:]\n"
+        "register = bug_register(load(Path(root), machine=Path(machine)))\n"
+        "text = ' ' + 'a/' * int(count) + 'docs/bugs/BR-001.md'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "found = [identifier for _, _, identifier in citations(text, register)]\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(found == ['BR-001'], grown)\n"
+    )
+    arguments = [str(root), str(tmp_path / "m.toml"), str(_LONG_CITATION_SEGMENTS)]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, *arguments],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_CITER_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one long citation ran past {_LONG_CITER_SECONDS} s")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < _LONG_CITATION_BYTES, f"the scan grew its peak by {int(grown) >> 20} MiB"
+
+
 def test_the_index_and_the_entries_are_not_read_as_citers(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     write(root, "docs/bug-reports.md", "| [BR-404](bugs/BR-404.md) |\n")
@@ -289,7 +387,7 @@ def test_the_index_and_the_entries_are_not_read_as_citers(tmp_path: Path) -> Non
     assert entry_citations(root, config, bug_register(config)) == {}
 
 
-def test_the_citation_pattern_follows_the_configured_ledger_directory(tmp_path: Path) -> None:
+def test_the_citation_reader_follows_the_configured_ledger_directory(tmp_path: Path) -> None:
     _root, config = project(tmp_path, '\n[paths]\nbugs = "docs/defects"\n')
-    assert citation_pattern(bug_register(config)).search("docs/defects/BR-001.md")
-    assert not citation_pattern(bug_register(config)).search("docs/bugs/BR-001.md")
+    assert list(citations("docs/defects/BR-001.md", bug_register(config)))
+    assert not list(citations("docs/bugs/BR-001.md", bug_register(config)))
