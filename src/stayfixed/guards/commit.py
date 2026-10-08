@@ -198,7 +198,14 @@ _PRODUCTS = re.compile(
 # this back is what amputates a body sentence, and nothing puts a deleted sentence back — while a
 # footer missed on this surface is still a commit whose paired `Co-Authored-By:` trailer the
 # trailer rule catches, and `commit check` still fails it in CI.
-_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"
+#
+# Each word is read once, and whole where it can be: a word carrying a digit or a `/` first, then
+# one of the product's name, and the run of words is possessive (`*+`), never given back. Read as a
+# choice between the two to backtrack over, a word such as `A1` that is both doubled the work at
+# each one, and a line that went on into prose after forty took longer than any hook can wait; and
+# each word given back rescanned the rest of the line. The verdicts are the same: a word read whole
+# leaves the end of the line no less to match than any shorter reading of it.
+_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"
 # A footer names the vendor as a word, never as a prefix of a package (`openai-python`) or a
 # possessive (`openai's`).
 _FOOTER = re.compile(

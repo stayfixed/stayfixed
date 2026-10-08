@@ -590,11 +590,36 @@ reddens = [
 [[mutation]]
 name = "a generated-with footer may run on into a sentence again"
 file = "src/stayfixed/guards/commit.py"
-before = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
 after = '_FOOTER_TAIL = r""'
 reddens = [
   "tests/guards/test_commit.py::test_negative_samples_are_untouched",
   "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
+]
+
+# The words past a footer's vendor are read once each and never given back. Read as a choice to
+# backtrack over, a line that went on into prose took time exponential in its words that are both
+# a name and a version (`A1`: 7 s at 24) and quadratic in its slashes (1.6 s at 16,000).
+[[mutation]]
+name = "a footer's words are given back to be read again"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+after = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+reddens = [
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer words]",
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer slashes]",
+]
+
+# A word never given back must be read whole the first time, so a word carrying a digit or a `/`
+# is tried before a name word: read first as a name, `2.1-beta` ends at the `-`, and with nothing
+# given back the footer is lost.
+[[mutation]]
+name = "a footer's word is read as a name before a version"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+after = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+reddens = [
+  "tests/guards/test_commit.py::test_a_real_footer_survives_the_bounded_tail",
 ]
 
 # The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL

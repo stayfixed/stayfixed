@@ -1,6 +1,10 @@
 `stayfixed commit check`, and `stayfixed commit strip`, which the `prepare-commit-msg` hook that
-`stayfixed setup --git-hooks` installs runs on every commit, now read a commit message line that
-holds a `-by:` trailer in time linear in its length. The value was found by a pattern that
-rescanned the blanks inside it from every character, so a trailer line padded with 160,000 blanks
-took about two minutes, and one with a million blanks over an hour: any commit message could stall
-the hook or a pull request's `commit check` in CI. The verdicts are unchanged.
+`stayfixed setup --git-hooks` installs runs on every commit, now read every commit message line in
+time linear in its length, with the same verdicts. Two rules read some lines far more slowly than
+that, so any commit message could stall the hook or a pull request's `commit check` in CI:
+
+- a `-by:` trailer line padded with blanks: 160,000 of them took about two minutes, and a million
+  would take over an hour;
+- a line that opens like a generated-with footer and goes on into prose: one with 24 words that
+  are both a name and a version, such as `A1`, took seven seconds, each two more words multiplied
+  that by eight, and one with 16,000 slashes took over a second.

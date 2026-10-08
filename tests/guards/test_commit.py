@@ -152,6 +152,8 @@ FOOTERS = [
     "Generated with Claude Opus 5",
     "Generated with Codex.",
     "Generated with Cursor v1.2",
+    # A version a capital or a digit leads, read whole: read as a name word, it ends at the `-`.
+    "Generated with Claude Code 2.1-beta",
     "Generated with Claude Code (https://claude.com/claude-code)",
     "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code) \U0001f916",
 ]
@@ -487,6 +489,11 @@ LONG_LINES = {
     # A trailer's value read by a lazy pattern ended by blanks, which scanned the blanks again
     # from every character of the value: 116 s over 160,000 blanks.
     "trailer blanks": ("Co-Authored-By: Claude", " ", 1 << 20, " <noreply@anthropic.com>", True),
+    # A footer-shaped line that goes on into prose, its words read as a choice to backtrack over:
+    # `A1` is both a name word and a version, which doubled the work at each one, 7 s at 24 of
+    # them; and every slash given back rescanned the rest of the line, 1.6 s at 16,000.
+    "footer words": ("Generated with Claude", " A1", 64, " and then by hand", False),
+    "footer slashes": ("Generated with Claude", " /", 1 << 19, " and then by hand", False),
 }
 _TRAILER_LABEL = ATTRIBUTION_LABELS[0]
 _LONG_LINE_PROBE = (
@@ -507,7 +514,8 @@ _LONG_LINE_SECONDS = 30
 def test_a_long_message_line_is_judged_in_time_linear_in_its_length(shape: str) -> None:
     # In a child under a timeout, so a regression fails this case rather than holding a worker.
     # Mutations (oracle): `mutations/`'s "a trailer's value is found by a lazy match" ->
-    # `trailer blanks`.
+    # `trailer blanks`; "a footer's words are given back to be read again" -> `footer words` and
+    # `footer slashes`.
     head, unit, count, tail, offends = LONG_LINES[shape]
     try:
         done = subprocess.run(
