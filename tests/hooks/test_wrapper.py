@@ -1137,8 +1137,8 @@ def test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_w
     tmp_path: Path,
 ) -> None:
     # bash imports a function from every `BASH_FUNC_<name>%%` variable, as `/bin/sh` too, and a
-    # function wins over a regular builtin, so a committed `env` block naming the clone's program
-    # in one ran it inside the wrapper, past every guard, with no `PATH` entry at all. Measured on
+    # function wins over a regular builtin, so an environment naming the clone's program in one
+    # ran it inside the wrapper, past every guard, with no `PATH` entry at all. Measured on
     # macOS's `/bin/sh` before the wrapper unset them: `BASH_FUNC_pwd%%` ran the program five times
     # per hook, `BASH_FUNC_[%%` twenty-six, and the hook's answer was unchanged. Run inside a git
     # repository so the checkout listing reads lines, which is where `read` and `printf` run.

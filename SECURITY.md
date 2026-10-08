@@ -106,7 +106,6 @@ Out of scope:
   shell-form hook command is the harness's, and the wrapper's own `/bin/sh` acts on both before
   its first line, so, as with the loader's variables, no wrapper can refuse them: they are the
   harness's to filter from a hook's environment, and the harness is where to report them.
-  Whether Claude Code applies either from a project's `env` block is not measured here.
 
 ## Supported versions
 

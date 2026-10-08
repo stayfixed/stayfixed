@@ -1539,8 +1539,7 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   program in the harness's own `sh -c` before the wrapper starts, and the wrapper's `/bin/sh`
   acts on both before its first line (measured against `/bin/sh` directly, not through Claude
   Code). `SECURITY.md` puts it out of scope beside the loader variables, as the harness's to
-  filter, and it should be reported to the harness. Whether Claude Code applies `BASH_FUNC_*`,
-  `SHELLOPTS` or `PS4` from a project's `env` block is measured separately.
+  filter, and it should be reported to the harness.
 - **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
   It holds 37 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
   entry.

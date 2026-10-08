@@ -67,8 +67,8 @@
 #
 # **No function the environment exports stands in for a command this file runs.** bash imports a
 # function from every variable named `BASH_FUNC_<name>%%`, in POSIX mode too, so wherever `/bin/sh`
-# is bash — macOS, Fedora, Arch — a committed `env` block that reaches a hook can define one, and
-# Claude Code documents no filter for the name. A function wins over a regular builtin. Measured
+# is bash — macOS, Fedora, Arch — any environment that reaches a hook can define one. A function
+# wins over a regular builtin. Measured
 # through this file on bash 3.2.57 as `/bin/sh`: a `BASH_FUNC_pwd%%` naming a program in the clone
 # ran it five times per hook, past the terminal gate and the containment, with no `PATH` entry at
 # all and the hook's answer unchanged; bash 5.2.37 run as `sh` imports the same functions. So the
