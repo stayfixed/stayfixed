@@ -1,7 +1,7 @@
 {
   "files": {
     "hooks/hooks.json": "f6d9b226a028374c5d13ef6bdaf244939bc8b4e88a4b8b11bec3a70e7481e6cf",
-    "hooks/run-hook.sh": "f5057574acf5a32e38cb50be22bb202e807668315223beda1a7eba9b1a8f8881",
+    "hooks/run-hook.sh": "8f50e84c538fa0d3982676e2a2cdbcd0ec07034ec628e5570003f0647124df2c",
     "scripts/stayfixed": "bd34f506ef13dc515dcea8e02e5a66dee40866911b0d661d4e8565684058b7b3"
   },
   "format": 1

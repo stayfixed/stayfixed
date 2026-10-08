@@ -148,11 +148,20 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # `git` stayfixed runs below: the database's entry for this user, asked through the shell's own
 # `~name` for the name `/usr/bin/id` gives. A name that is not a plain one, a user the database
 # lists no absolute home for, or a system without `/usr/bin/id` gets no `HOME`, never the
-# inherited one. `gitenv._git_toplevel` scrubs the identical call one layer down
-# and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
-# a different repository, and every `--root`-defaulting entry then reads that repository's
-# `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
-# GIT_WORK_TREE=repoB <wrapper>` put the launcher in repoB.
+# inherited one. zsh, which `/bin/sh` may be on macOS, expands `~name` from a variable called
+# `name` holding an absolute path before it asks the database, as `sh` too, so a variable in the
+# hook's environment named for the user chose this home. The lookup therefore runs in a subshell
+# that first unsets the variable of that name, spliced into the `eval` so the name is expanded
+# before the unset, and the subshell keeps a name equal to one of this file's own variables from
+# touching it. A name no variable can have, one with a `.` or a `-` or a leading digit, is not
+# unset: dash and zsh end the subshell on `unset` of a name that is not an identifier, which
+# measured as no `HOME` for every such user.
+#
+# `gitenv._git_toplevel` scrubs the identical `env -i` call one layer down and names the failure
+# verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for a different repository,
+# and every `--root`-defaulting entry then reads that repository's `stayfixed.toml`, budgets and
+# note store. Measured: `cd repoA; GIT_DIR=repoB/.git GIT_WORK_TREE=repoB <wrapper>` put the
+# launcher in repoB.
 #
 # Asked **here**, in the directory the harness launched us in, and never after the `cd` below:
 # with `CLAUDE_PROJECT_DIR` naming a tree elsewhere, a `git` asked from inside that tree would
@@ -177,7 +186,8 @@ git_home=
 git_user=$(/usr/bin/id -un 2>/dev/null) || git_user=
 case $git_user in
   '' | -* | *[!A-Za-z0-9._-]*) ;;
-  *) eval "git_home=~$git_user" 2>/dev/null || git_home= ;;
+  [0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
+  *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
 esac
 case $git_home in /*) ;; *) git_home= ;; esac
 git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)

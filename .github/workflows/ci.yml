@@ -140,6 +140,7 @@ jobs:
   # test modules, was resolved to its function and read for skip gates before this was written.
   # The only gates that exist are `shutil.which("git")`, `shutil.which("bash")`, a workflow
   # file's presence, and `os.geteuid() == 0` — none platform-dependent, all satisfied here — and
+  # since then a zsh, which `ubuntu-latest` does not carry and this job installs for that reason;
   # `sys.platform` and `platform.system()` appear nowhere under `tests/`, `src/` or `scripts/`.
   # The errno divergence is absorbed inside one branch rather than by skipping a test, and no
   # entry targets that line.
@@ -179,6 +180,11 @@ jobs:
           python-version: "3.13"
       - name: Install
         run: uv sync --locked
+      - name: zsh, for the wrapper's case that runs under it as sh
+        # The runner image carries bash and dash and no zsh, and the case that proves the wrapper's
+        # home lookup unsets a variable named for the user skips without one: a `reddens` target
+        # skipped here is a finding on the clean run, not a proof.
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: The mutation oracle
         run: uv run python scripts/mutation_oracle.py
 

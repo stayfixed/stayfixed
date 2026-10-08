@@ -544,6 +544,18 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
 ]
 
+# zsh, which `/bin/sh` may be, expands `~name` from a variable called `name` before it asks the
+# password database, so a variable in the hook's environment named for the user chose the
+# wrapper git's home until the lookup unset it.
+[[mutation]]
+name = "the wrapper looks the home up without unsetting the variable named for the user"
+file = "hooks/run-hook.sh"
+before = '''  *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+after = '''  *) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh",
+]
+
 # No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
 # `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
 # Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.

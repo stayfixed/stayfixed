@@ -444,23 +444,10 @@ def test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one(
     # records the `HOME` each call meets; the database is asked here by name, as the wrapper
     # asks it, since this process's own lookup by uid follows the suite's `HOME`. Mutation
     # (declared): the wrapper hands git the inherited `HOME` again -> this reddens.
-    import pwd
-
-    user = subprocess.run(["/usr/bin/id", "-un"], capture_output=True, text=True, check=True)
-    database = pwd.getpwnam(user.stdout.strip()).pw_dir
-    assert os.path.isabs(database), database
+    _, database = _user_and_database_home()
     project = tmp_path / "project"
     project.mkdir()
-    log = tmp_path / "git-homes"
-    stand_in = tmp_path / "bin" / "git"
-    stand_in.parent.mkdir()
-    stand_in.write_text(
-        f"#!/bin/sh\nprintf '%s|%s\\n' \"$*\" \"${{HOME-no HOME}}\" >> '{log}'\n"
-        f"case $1 in rev-parse) echo '{project}' ;; -C) echo 'worktree {project}' ;; esac\n",
-        encoding="utf-8",
-    )
-    stand_in.chmod(0o755)
-    root = _plugin_root(tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in))
+    root, log = _plugin_root_recording_git_homes(tmp_path, project)
     env = _env(root, None, None)
     env["HOME"] = "fakehome"
     result = subprocess.run(
@@ -473,6 +460,75 @@ def test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one(
         stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        f"rev-parse --show-toplevel|{database}",
+        f"-C {project} worktree list --porcelain|{database}",
+    ]
+
+
+def _user_and_database_home() -> tuple[str, str]:
+    """This user's name and the home the password database lists for it, asked by name, as the
+    wrapper asks: this process's own lookup by uid follows the suite's `HOME`."""
+    import pwd
+
+    user = subprocess.run(["/usr/bin/id", "-un"], capture_output=True, text=True, check=True)
+    name = user.stdout.strip()
+    database = pwd.getpwnam(name).pw_dir
+    assert os.path.isabs(database), database
+    return name, database
+
+
+def _plugin_root_recording_git_homes(tmp_path: Path, project: Path) -> tuple[Path, Path]:
+    """A plugin root whose only git is a stand-in that answers `project` for the root and the
+    checkouts and records the `HOME` each call meets, one `<argv>|<HOME>` line per call. The
+    root, and the record."""
+    log = tmp_path / "git-homes"
+    stand_in = tmp_path / "bin" / "git"
+    stand_in.parent.mkdir()
+    stand_in.write_text(
+        f"#!/bin/sh\nprintf '%s|%s\\n' \"$*\" \"${{HOME-no HOME}}\" >> '{log}'\n"
+        f"case $1 in rev-parse) echo '{project}' ;; -C) echo 'worktree {project}' ;; esac\n",
+        encoding="utf-8",
+    )
+    stand_in.chmod(0o755)
+    return _plugin_root(tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in)), log
+
+
+ZSH = "/bin/zsh" if os.access("/bin/zsh", os.X_OK) else shutil.which("zsh")
+
+
+@pytest.mark.skipif(ZSH is None, reason="no zsh, the one shell whose ~name reads a variable first")
+@pytest.mark.skipif(not os.access("/usr/bin/id", os.X_OK), reason="no /usr/bin/id on this system")
+def test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh(
+    tmp_path: Path,
+) -> None:
+    # zsh expands `~name` from a string parameter called `name` whose value starts with `/`
+    # before it asks the password database, and keeps doing so run as `sh` and under
+    # `emulate sh`; macOS lets `/bin/sh` be zsh. So a variable in the hook's environment named
+    # for the user chose the `HOME` the wrapper's git reads, whose global configuration names
+    # programs git runs. Measured before the lookup unset that variable: both of the wrapper's
+    # git calls met the variable's directory, inside the clone. Run as `sh`, the name the kernel
+    # hands the shell from `#!/bin/sh`. Mutation (declared): the wrapper looks the home up
+    # without unsetting the variable named for the user -> this reddens.
+    user, database = _user_and_database_home()
+    project = tmp_path / "project"
+    (project / "fakehome").mkdir(parents=True)
+    root, log = _plugin_root_recording_git_homes(tmp_path, project)
+    env = _env(root, None, None)
+    env[user] = str(project / "fakehome")
+    result = subprocess.run(
+        ["sh", str(root / "hooks" / WRAPPER.name), "open", "hook", "PreToolUse"],
+        executable=ZSH,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(project),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0, result.stderr
+    # Non-vacuous: the launcher ran, from the root the stand-in named.
+    assert result.stdout == f"{project.resolve()}\n"
     assert log.read_text(encoding="utf-8").splitlines() == [
         f"rev-parse --show-toplevel|{database}",
         f"-C {project} worktree list --porcelain|{database}",
