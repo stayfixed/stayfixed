@@ -356,19 +356,39 @@ reddens = ["tests/docs/test_commands.py::test_docs_check_takes_no_store"]
 [[mutation]]
 name = "an empty Premise marker is satisfied by text anywhere later in the plan"
 file = "src/stayfixed/docs/plans.py"
-before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)'
-after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
+before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*[^\S\n]*\S)?", re.MULTILINE)'
+after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*\s*\S)?", re.MULTILINE)'
 reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
+
+# Every premise marker before a colon reaches that colon, so the markers are read on once each:
+# searched for from every marker, 16,000 with no colon after them took half a second, and four
+# times as long at each doubling.
+[[mutation]]
+name = "a premise marker is read on from every marker"
+file = "src/stayfixed/docs/plans.py"
+before = "    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(prose))"
+after = '    return re.search(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", prose, re.MULTILINE) is not None'
+reddens = ["tests/docs/test_plans.py::test_a_long_plan_is_linted_in_time_linear_in_its_length[premise markers]"]
 
 # A plan names what its tasks remove, so once they land a finished plan must not read as dead.
 [[mutation]]
 name = "a path a plan declares on a Delete line reads as a dead reference once it is gone"
 file = "src/stayfixed/docs/plans.py"
-before = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
-after = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)'
+before = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+after = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)'
 reddens = [
   "tests/docs/test_plans.py::test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone",
 ]
+
+# A declaring line's match starts on the dash's own line: led by `^\s*`, it was read for from every
+# line start in the blank lines above, 16,000 of them in a third of a second, four times as long at
+# each doubling.
+[[mutation]]
+name = "a declaring line is read for from every blank line above it"
+file = "src/stayfixed/docs/plans.py"
+before = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+after = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+reddens = ["tests/docs/test_plans.py::test_a_long_plan_is_linted_in_time_linear_in_its_length[blank lines]"]
 
 [[mutation]]
 name = "a line a plan marks (delete) reads as a dead reference once its path is gone"

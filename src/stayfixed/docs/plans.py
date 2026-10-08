@@ -98,7 +98,11 @@ from stayfixed.prose import blank_fences, path_references, present_within, resol
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
+# A line declaring paths: a dash, after blanks on its own line. Led by `^\s*`, the pattern reached
+# the same dash from every line start in the blank lines above it, reading them again from each:
+# 0.33 s over 16,000 of them, and four times as long at each doubling. A match from a line above
+# ends where the one from the dash's own line does, so the paths declared are the same.
+_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
 _LINE_MARK = re.compile(r"\((?:create|delete)\)", re.IGNORECASE)
 # "confirm", "verify", and "check" all phrase a step as already knowing the answer it claims to
 # test. `no(?!-)` keeps a compound word like "no-op" out of the negation: a hyphen is a word
@@ -112,7 +116,12 @@ _LEADING = re.compile(
 # anywhere later in the document — exactly the unfilled-marker case these rules exist to catch.
 # Anchoring to non-newline whitespace forces the content onto the marker's own line.
 _SCOPE_LINE = re.compile(r"^\*\*Scope:\*\*[^\S\n]*\S", re.MULTILINE)
-_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)
+#
+# A premise marker, read to the first colon after it, past line ends; the group holds when the
+# marker closes there and has content on its line. Every marker before that colon reaches the same
+# one, so `_has_premise` reads each stretch once with `finditer`, where a search from each marker
+# read the stretch again: 0.51 s over 16,000 markers with no colon after them.
+_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*[^\S\n]*\S)?", re.MULTILINE)
 # The colour idiom, present tense. `fails`/`passes` are deliberately absent: see the module
 # docstring for the measurement that removed them.
 _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+green)"
@@ -387,6 +396,11 @@ def asserted_outcomes(prose: str) -> list[int]:
     return sorted(found)
 
 
+def _has_premise(prose: str) -> bool:
+    """Whether a premise marker in `prose` closes with content on its line (`_PREMISE_LINE`)."""
+    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(prose))
+
+
 def _lint_one(
     path: Path, where: str, root: Path, *, fixes: re.Pattern[str], judged: set[int] | None = None
 ) -> list[Finding]:
@@ -401,7 +415,7 @@ def _lint_one(
     # Per plan, not per line: these are properties of the document, not of one line in it.
     if not _SCOPE_LINE.search(prose):
         found.append(Finding("scope-missing", where, None, _SCOPE_MISSING))
-    if fixes.search(prose) and not _PREMISE_LINE.search(prose):
+    if fixes.search(prose) and not _has_premise(prose):
         found.append(Finding("premise-missing", where, None, _PREMISE_MISSING))
     declared: set[str] = set()
     for line in _DECLARES.findall(prose):

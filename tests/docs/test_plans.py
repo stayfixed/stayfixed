@@ -9,6 +9,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -237,6 +239,50 @@ def test_a_fixes_claim_names_the_bug_ledgers_configured_prefix(tmp_path: Path) -
     config = replace(config, ledger=replace(config.ledger, id_prefix="DF"))
     assert rules(root, config, plan(root, SCOPE + "Fixes DF-042.\n")) == ["premise-missing"]
     assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n")) == []
+
+
+# Plans the rules read in time quadratic in their length, each with the rules it must end in:
+# blank lines below the scope, which the declaring-line pattern read again from every one of them,
+# 0.33 s over 16,000; and premise markers no colon follows, which the premise pattern read on from
+# every marker to the end, 0.51 s over 16,000. Each is sized so that the old reading takes over
+# two minutes and the lint a quarter of a second.
+LONG_PLANS = {
+    "blank lines": (SCOPE + "\n" * (1 << 19), []),
+    "premise markers": (SCOPE + "Fixes BR-042.\n" + "**Premise\n" * (1 << 18), ["premise-missing"]),
+}
+# The child's bound: a fifteenth of the old reading's time over either plan on a laptop, and thirty
+# times the lint's there, start-up included.
+_LONG_PLAN_SECONDS = 10
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_PLANS))
+def test_a_long_plan_is_linted_in_time_linear_in_its_length(tmp_path: Path, shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a declaring line is read for from every blank line above
+    # it" -> `blank lines`; "a premise marker is read on from every marker" -> `premise markers`.
+    root, _ = project(tmp_path)
+    body, expected = LONG_PLANS[shape]
+    path = plan(root, body)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.config.loader import load\n"
+        "from stayfixed.docs.plans import lint\n"
+        "root, machine, path = map(Path, sys.argv[1:])\n"
+        "found = lint(root, load(root, machine=machine), plans=[path]).findings\n"
+        "print([finding.rule for finding in found])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root), str(tmp_path / "m.toml"), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_PLAN_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the plan lint ran past {_LONG_PLAN_SECONDS} s on one plan")
+    assert done.stdout == f"{expected}\n", done.stderr
 
 
 @pytest.mark.parametrize(
