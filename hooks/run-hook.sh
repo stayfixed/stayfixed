@@ -160,8 +160,10 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # the subshell keeps a name equal to one of this file's own variables from touching it. A name no
 # variable can have, one with a `.` or a `-` or a leading digit, is not unset: dash and zsh end
 # the subshell on `unset` of a name that is not an identifier, which measured as no `HOME` for
-# every such user. A name of digits alone is not looked up at all: to bash and zsh `~0` is the
-# top of the directory stack, the directory the harness launched the hook in, not a user.
+# every such user. A name the shell keeps read-only, such as `PPID` or `UID` under bash, cannot be
+# unset, and the `&&` after the unset gives that user no `HOME`. A name of digits alone is not
+# looked up at all: to bash and zsh `~0` is the top of the directory stack, the directory the
+# harness launched the hook in, not a user.
 #
 # `gitenv._git_toplevel` scrubs the identical `env -i` call one layer down and names the failure
 # verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for a different repository,
