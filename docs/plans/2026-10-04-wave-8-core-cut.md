@@ -1511,6 +1511,12 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
     `STAYFIXED_HOOK_WRAPPER=1` immediately before it runs the launcher, over any inherited value,
     and `gitenv` asks nothing else, so a value set elsewhere can only make git stricter;
   - the wrapper no longer runs `dirname` or `env` by name, which a clone's `fakebin` also reached;
+  - the wrapper's first statement unsets every function named for a command it runs, and it
+    spells `[` as `test`. The git-path security review found that bash, `/bin/sh` on macOS,
+    imports a function from a `BASH_FUNC_<name>%%` variable, also in POSIX mode, and a function
+    wins over a regular builtin: `BASH_FUNC_pwd%%` ran a clone's program five times per hook with
+    no `PATH` entry at all. The review's one-line fix left `[` open, because bash 3.2 in POSIX
+    mode refuses `unset -f [`, and `BASH_FUNC_[%%` still ran it twenty-six times;
   - anywhere else, `git` and its `PATH` are the environment's, as before: at a terminal, and in
     `stayfixed gate` in CI or a command an agent runs, where a fixed list buys nothing (the job is
     the repository's own, and the agent's `PATH` already chose the `stayfixed` binary) and would
@@ -1526,6 +1532,15 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   a `git` found only elsewhere on `PATH` under both. One residual cannot be closed inside
   stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed` that
   `PATH` names, and that `stayfixed` runs the `git` `PATH` names.
+
+  What holds after the review: the hook path looks up no program through the inherited `PATH`
+  but the wrapper's contained last-resort `python3`, and no exported function replaces one of
+  the wrapper's builtins. What does not: `SHELLOPTS=xtrace` with `PS4='$(program)'` runs the
+  program in the harness's own `sh -c` before the wrapper starts, and the wrapper's `/bin/sh`
+  acts on both before its first line (measured against `/bin/sh` directly, not through Claude
+  Code). `SECURITY.md` puts it out of scope beside the loader variables, as the harness's to
+  filter, and it should be reported to the harness. Whether Claude Code applies `BASH_FUNC_*`,
+  `SHELLOPTS` or `PS4` from a project's `env` block is measured separately.
 - **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
   It holds 37 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
   entry.
