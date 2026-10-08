@@ -15,13 +15,24 @@ import sys
 # The line that opens a frontmatter and the next one that closes it.
 _FENCE = "---"
 # A key quoted either way: double, with backslash escapes, or single, with `''` for a quote.
-_QUOTED = r'"(?:[^"\\]|\\.)*"|\'(?:[^\']|\'\')*\''
+#
+# Every repetition in this module's patterns that a long value can reach is possessive (`*+`, `++`):
+# Python's `re` keeps a record for each pass of a repeated group in case it has to give the pass
+# back, hundreds of bytes per character of one long value, so a file at `fsops.REGULAR_READ_LIMIT`
+# asked gigabytes of one `doctor` run. A possessive repetition gives nothing back and keeps no
+# record. None of them changes what is matched, since nothing after one could take back what it
+# read, with one exception: a single-quoted scalar whose quotes never pair up as YAML reads them,
+# which giving back ended at its last `''`. The second single-quoted alternative ends it there, in
+# one scan.
+_DOUBLE_QUOTED = r'"(?:[^"\\]++|\\.)*+"'
+_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"
+_QUOTED = f"{_DOUBLE_QUOTED}|{_SINGLE_QUOTED}"
 # One token of a flow mapping (`{name: x, hooks: {...}}`): a quoted scalar, a flow indicator, a
 # comment, blanks, a plain scalar -- which holds a `:` not followed by a blank or an indicator, and
 # a `#` not after a blank -- or a colon. Whatever else a line holds is one character at a time.
 _FLOW = re.compile(
     rf"(?P<quoted>{_QUOTED})|(?P<indicator>[{{}}\[\],])|(?P<comment>#[^\n]*)|(?P<blank>\s+)"
-    r"|(?P<plain>[^\s{}\[\],:#\"'](?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)|(?P<colon>:)|(?P<other>.)",
+    r"|(?P<plain>[^\s{}\[\],:#\"'](?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*+)|(?P<colon>:)|(?P<other>.)",
     re.DOTALL,
 )
 # A double-quoted scalar's escapes, as YAML spells them.
@@ -46,13 +57,13 @@ _HOOKS = "hooks"
 # What may stand ahead of a frontmatter's top-level node and leave it the node it is: its
 # properties, each a tag (`!x`, `!!map`) or an anchor (`&x`) ended by a blank or a line break, then
 # any comment lines. A flow mapping behind them is still a flow mapping.
-_AHEAD = re.compile(r"(?:[!&]\S*(?:\s+|\Z))+(?:#[^\n]*(?:\n\s*|\Z))*")
+_AHEAD = re.compile(r"(?:[!&]\S*+(?:\s++|\Z))++(?:#[^\n]*+(?:\n\s*+|\Z))*+")
 # A key's properties on its own line, each a tag or an anchor ended by blanks or the line's end; and
 # the colon that ends a plain key, the first one a blank or the line's end follows. Each is one
 # match over the line, never one per property or per character: a frontmatter is read up to
 # `fsops.REGULAR_READ_LIMIT`, and a pattern that rescans the rest of its line at every step takes
 # hours over one long line of blanks or tags.
-_PROPERTIES = re.compile(r"(?:[!&][^ \t]*(?:[ \t]+|\Z))*")
+_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+(?:[ \t]++|\Z))*+")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
 
 

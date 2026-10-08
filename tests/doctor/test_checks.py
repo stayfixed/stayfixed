@@ -1939,7 +1939,9 @@ def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_ove
 # cases; "a quoted key over several lines is read as no key" -> the two quoted cases; "a flow
 # mapping reads an alias key as no key", "a flow mapping reads a merge key as no key", "a flow
 # mapping reads an explicit key as no key" and "a flow mapping reads a quoted key over several
-# lines as no key" -> the flow cases.
+# lines as no key" -> the flow cases; "a single-quoted scalar whose quotes never pair is read as
+# none" -> `flow-quoted-over-lines-unpaired`, a quoted key over lines that ends in an odd `''`,
+# which only a scalar ended at its last pair reads as one.
 UNTOLD_SPELLED = {
     "alias-key": "name: &k hooks\n*k : {}\n",
     "merge-key": "base: &b\n  hooks: {Stop: []}\n<<: *b\n",
@@ -1954,6 +1956,7 @@ UNTOLD_SPELLED = {
     "flow-alias-key": "{name: &k hooks, *k : {}}\n",
     "flow-explicit-key": "{? hooks : {}}\n",
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
+    "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) spell a frontmatter key this row cannot read whole, so it "
@@ -2021,6 +2024,62 @@ def test_a_frontmatter_line_is_read_in_time_linear_in_its_length(shape: str) -> 
     except subprocess.TimeoutExpired:
         pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long line")
     assert done.stdout == "True\n", done.stderr
+
+
+# Long values the frontmatter reader held hundreds of bytes of match state for per character, each
+# followed by a `hooks` key so that the answer says the value was read past: tags ahead of a key,
+# anchors ahead of a flow mapping, a key quoted either way, and a plain scalar in a flow mapping.
+# Python's `re` keeps a record for every pass of a repeated group it might give back, so a file at
+# the 64 MiB read cap asked gigabytes of one `doctor` run. Each is a mebibyte or so, which the
+# greedy patterns read with 115 to 530 MiB more and the possessive ones with a few.
+LONG_VALUES = {
+    "tags-on-a-key": ("x: 1\n", "! ", 1 << 19, "hooks: {}\n"),
+    "anchors-ahead-of-a-flow-mapping": ("", "&a ", 1 << 19, "{hooks: {}}\n"),
+    "double-quoted-key": ('"', "x", 1 << 20, '": 1\nhooks: {}\n'),
+    "single-quoted-key": ("'", "x", 1 << 20, "': 1\nhooks: {}\n"),
+    "plain-scalar-in-a-flow-mapping": ("{a: ", "x", 1 << 20, ", hooks: {}}\n"),
+}
+# The most a child may grow its peak resident size by while reading one of the values above: a
+# few times the copies the reader makes of a mebibyte of text, and a quarter of what the least
+# costly greedy pattern took.
+_LONG_VALUE_BYTES = 32 << 20
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_VALUES))
+def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: str) -> None:
+    # The child measures its own peak resident size before and after the read, which macOS and
+    # Linux both report (`ru_maxrss`, in bytes on the one and in KiB on the other); a limit set
+    # with `setrlimit` is no test on macOS, which enforces none on resident size. Mutations
+    # (oracle): `mutations/`'s "a frontmatter key's tags are given back" -> `tags-on-a-key`; "the
+    # properties ahead of a frontmatter's node are given back" -> `anchors-ahead-of-a-flow-mapping`;
+    # "a double-quoted scalar is given back" -> `double-quoted-key`; "a single-quoted scalar is
+    # given back" -> `single-quoted-key`; "a flow mapping's plain scalar is given back" ->
+    # `plain-scalar-in-a-flow-mapping`.
+    head, unit, count, tail = LONG_VALUES[shape]
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.doctor.frontmatter import declares_hooks\n"
+        "head, unit, count, tail = sys.argv[1:]\n"
+        "text = f'---\\n{head}{unit * int(count)}{tail}---\\n'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "answer = declares_hooks(text)\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(answer, grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long value")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < _LONG_VALUE_BYTES, f"the reader grew its peak by {int(grown) >> 20} MiB"
 
 
 def test_a_link_back_up_a_skills_tree_is_listed_once(

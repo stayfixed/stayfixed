@@ -2955,6 +2955,53 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_line_is_read_in_time_linear_in_its_length[blanks]",
 ]
 
+# A repetition a long value reaches gives nothing back, so the reader keeps no record per character
+# of it; and the one single-quoted scalar that giving back used to end at its last `''` still ends
+# there.
+[[mutation]]
+name = "a frontmatter key's tags are given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+(?:[ \t]++|\Z))*+")'''
+after = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*(?:[ \t]+|\Z))*")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[tags-on-a-key]"]
+
+[[mutation]]
+name = "the properties ahead of a frontmatter's node are given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_AHEAD = re.compile(r"(?:[!&]\S*+(?:\s++|\Z))++(?:#[^\n]*+(?:\n\s*+|\Z))*+")'''
+after = '''_AHEAD = re.compile(r"(?:[!&]\S*(?:\s+|\Z))+(?:#[^\n]*(?:\n\s*|\Z))*")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[anchors-ahead-of-a-flow-mapping]"]
+
+[[mutation]]
+name = "a double-quoted scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_DOUBLE_QUOTED = r'"(?:[^"\\]++|\\.)*+"''''
+after = '''_DOUBLE_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[double-quoted-key]"]
+
+[[mutation]]
+name = "a single-quoted scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
+after = '''_SINGLE_QUOTED = r"'(?:[^']|'')*'"'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[single-quoted-key]"]
+
+[[mutation]]
+name = "a single-quoted scalar whose quotes never pair is read as none"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
+after = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-quoted-over-lines-unpaired]",
+]
+
+[[mutation]]
+name = "a flow mapping's plain scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*+)'''
+after = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[plain-scalar-in-a-flow-mapping]"]
+
 [[mutation]]
 name = "a flow mapping's keys are read at every depth"
 file = "src/stayfixed/doctor/frontmatter.py"
