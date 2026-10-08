@@ -619,6 +619,50 @@ reddens = [
   "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a closer between blanks]",
 ]
 
+# A closer is the same run, of the same mark, alone on its line: indexed under its own mark and
+# length only, so neither a longer run nor the other mark's closes a block.
+[[mutation]]
+name = "a longer run closes a shorter one"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for size in range(_FENCE_MIN, len(bare) + 1):
+                closers.setdefault((bare[0], size), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a longer run closes nothing]",
+]
+
+[[mutation]]
+name = "a closer of either mark closes"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for either in _FENCE_MARKS:
+                closers.setdefault((either, len(bare)), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[the other mark closes nothing]",
+]
+
+# A run is tried at its full length before any shorter one, as the pattern's backtracking did.
+[[mutation]]
+name = "a run is tried from three marks up"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(_FENCE_MIN, run + 1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed at its own length]",
+]
+
+# Each run's pointer into its closers only moves forward: without it every opening line passes
+# over the closers above it again, N²/2 steps over N closed pairs.
+[[mutation]]
+name = "a fence's closers are searched from the first again"
+file = "src/stayfixed/prose.py"
+before = """            passed[mark, length] = index
+            if index < len(later):"""
+after = """            if index < len(later):"""
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[closed pairs]",
+]
+
 # A claim is settled by its real path and only inside the root's: a committed symlink out of the
 # tree made each reader an existence oracle for the machine.
 [[mutation]]

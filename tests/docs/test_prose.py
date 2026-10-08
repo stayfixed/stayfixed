@@ -113,9 +113,11 @@ FENCE_READINGS = {
 
 @pytest.mark.parametrize("case", sorted(FENCE_READINGS))
 def test_a_fence_is_read_as_its_pattern_reads_one(case: str) -> None:
-    # Mutations (oracle): `mutations/`'s "a fence's run is tried at its full length only" ->
-    # `a run closed one mark shorter`; "a fence's closer may not stand between blanks" ->
-    # `a closer between blanks`.
+    # Mutations (oracle), one a case: `mutations/`'s "a fence's run is tried at its full length
+    # only" -> `a run closed one mark shorter`; "a fence's closer may not stand between blanks" ->
+    # `a closer between blanks`; "a run is tried from three marks up" -> `a run closed at its own
+    # length`; "a longer run closes a shorter one" -> `a longer run closes nothing`; "a closer of
+    # either mark closes" -> `the other mark closes nothing`.
     text, blanked = FENCE_READINGS[case]
     assert blank_fences(text) == blanked
 
@@ -124,29 +126,35 @@ def test_a_fence_is_read_as_its_pattern_reads_one(case: str) -> None:
 # closes, so the answer says the text was read to its end: opening lines no later line closes,
 # which the pattern scanned the rest of the text from, 0.31 s at 4,000 of them; and one long run
 # whose closer is one mark short, which it scanned the text from at every length down to three,
-# 0.13 s at 1,000 marks. Each is sized so that the pattern takes over twenty minutes and the line
-# reader a fraction of a second, and spelled as runs, `(unit, count)`, that the child joins: a run
-# passed whole on its command line would pass Linux's limit on one argument.
+# 0.13 s at 1,000 marks. The third holds the line reader's own bound rather than the pattern's
+# defect: closed pairs, where a reader that searched a run's closers from the first again at every
+# opening line passed over N²/2 of them, 1.2 s at 16,000 lines. Each is sized so that the slow
+# reading takes over five minutes and the line reader a fraction of a second, and spelled as runs,
+# `(unit, count)`, that the child joins: a run passed whole on its command line would pass Linux's
+# limit on one argument. Beside the runs, whether the reader blanks them all or gives them back.
 LONG_TEXTS = {
-    "openers no line closes": (("```py\n", 1 << 18),),
-    "a long run": (("`", 1 << 19), ("\n", 1), ("`", (1 << 19) - 1), ("x", 1)),
+    "openers no line closes": ((("```py\n", 1 << 18),), False),
+    "a long run": ((("`", 1 << 19), ("\n", 1), ("`", (1 << 19) - 1), ("x", 1)), False),
+    "closed pairs": ((("```\n", 1 << 18),), True),
 }
-# The child's bound: far below the pattern's time over either text on a laptop, and a hundred
-# times the line reader's there, start-up included, so neither load nor a fast machine moves a
-# case across it.
+# The child's bound: far below the slow reading's time over any of the texts on a laptop, and a
+# hundred times the line reader's there, start-up included, so neither load nor a fast machine
+# moves a case across it.
 _LONG_TEXT_SECONDS = 30
 
 
 @pytest.mark.parametrize("shape", sorted(LONG_TEXTS))
 def test_fences_are_read_in_time_linear_in_the_text(shape: str) -> None:
     # In a child under a timeout, so a regression fails this case rather than holding a worker.
-    # Mutation (oracle): `mutations/`'s "fences are found by a lazy match again" -> both cases.
+    # Mutations (oracle): `mutations/`'s "fences are found by a lazy match again" -> the first two
+    # cases; "a fence's closers are searched from the first again" -> `closed pairs`.
     probe = (
         "import json, sys\n"
         "from stayfixed.prose import blank_fences\n"
-        "runs = json.loads(sys.argv[1])\n"
-        "text = ''.join(unit * count for unit, count in runs) + '\\n~~~\\nx\\n~~~\\n'\n"
-        "print(blank_fences(text) == text[: -len('~~~\\nx\\n~~~\\n')] + '\\n\\n\\n')\n"
+        "runs, blanked = json.loads(sys.argv[1])\n"
+        "head = ''.join(unit * count for unit, count in runs)\n"
+        "kept = '\\n' * head.count('\\n') if blanked else head\n"
+        "print(blank_fences(head + '\\n~~~\\nx\\n~~~\\n') == kept + '\\n\\n\\n\\n')\n"
     )
     try:
         done = subprocess.run(
