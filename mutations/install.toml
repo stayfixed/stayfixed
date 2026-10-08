@@ -707,54 +707,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
 ]
 
-# And the command is compared where it sits: under its event and in a group with its matcher, which
-# say when a harness runs it and for which tools. A grant compared without either vouches for the
-# owner's own command hung anywhere a repository likes, and the row reads "all accounted for".
-[[mutation]]
-name = "hook-entries vouches for a granted command under any event"
-file = "src/stayfixed/doctor/entries.py"
-before = "        and grant.event == placed.event"
-after = "        and True"
-reddens = [
-  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-event]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
-]
-
-[[mutation]]
-name = "hook-entries vouches for a granted command under any matcher"
-file = "src/stayfixed/doctor/entries.py"
-before = "        and grant.matcher == placed.matcher"
-after = "        and True"
-reddens = [
-  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-matcher]",
-  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[no-matcher]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
-]
-
-# And it is compared as the whole entry the area writes. Every field besides the command says what
-# the harness does with the entry: an `http` entry posts the event's input to its `url` and ignores
-# `command`, and `args`, `shell` or `async` change what runs or when. A grant compared by its command
-# alone vouched for such an entry carrying a granted command as a decoy.
-[[mutation]]
-name = "hook-entries vouches for a granted command whatever its entry carries"
-file = "src/stayfixed/doctor/entries.py"
-before = "        and grant.entry == placed.entry"
-after = "        and True"
-reddens = [
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[agent]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[args]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[async]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[http]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[mcp-tool]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[no-type]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[prompt]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[shell]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[timeout]",
-  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[unknown-field]",
-]
-
 # A record one area could not read is not one the next area's answer can stand in for: the ids it
 # would have named are unknown, so every entry's provenance is. Asked of the last area alone, a later
 # area's readable record turns "could not be established" back into a column computed without it.

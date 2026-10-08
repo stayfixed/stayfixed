@@ -852,3 +852,51 @@ file = "src/stayfixed/scaffold/engine.py"
 before = "            if present is not None and digest(present) == digest(stamp):"
 after = "            if False:"
 reddens = ["tests/project/test_upgrade.py::test_a_second_upgrade_to_the_same_release_writes_nothing"]
+
+# `doctor`'s `hook-entries` vouches for an entry only when it is one of an area's grants, compared
+# as a whole `Placed`, so each field of `Placed` is identity. The event and the matcher say when a
+# harness runs the entry and for which tools, and every field of the entry besides its command
+# says what the harness does with it: an `http` entry posts the event's input to its `url` and
+# ignores `command`. A field dropped from the comparison vouches for the owner's command hung
+# anywhere a repository likes, or carried as a decoy in an entry that does something else. The
+# command is in the entry's text as well, so dropping it alone changes no answer and has no entry.
+[[mutation]]
+name = "hook-entries vouches for a granted command under any event"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    event: str\n    matcher: str | None\n    command: str\n    entry: str"
+after = "    event: str = __import__(\"dataclasses\").field(compare=False)\n    matcher: str | None\n    command: str\n    entry: str"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-event]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
+]
+
+[[mutation]]
+name = "hook-entries vouches for a granted command under any matcher"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    event: str\n    matcher: str | None\n    command: str\n    entry: str"
+after = "    event: str\n    matcher: str | None = __import__(\"dataclasses\").field(compare=False)\n    command: str\n    entry: str"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[another-matcher]",
+  "tests/doctor/test_entries.py::test_a_granted_command_somewhere_its_area_does_not_grant_it_is_never_absolved[no-matcher]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
+  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
+]
+
+[[mutation]]
+name = "hook-entries vouches for a granted command whatever its entry carries"
+file = "src/stayfixed/scaffold/entries.py"
+before = "    event: str\n    matcher: str | None\n    command: str\n    entry: str"
+after = "    event: str\n    matcher: str | None\n    command: str\n    entry: str = __import__(\"dataclasses\").field(compare=False)"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[agent]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[args]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[async]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[http]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[mcp-tool]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[no-type]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[prompt]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[shell]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[timeout]",
+  "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[unknown-field]",
+]

@@ -135,24 +135,16 @@ def _area_claims(context: Context) -> list[Claims]:
 
 
 def _grants(area: Claims, placed: Placed) -> bool:
-    """Whether `area` grants the entry `placed` is, where it is: its command, under its event, in a
-    group with its matcher, and the whole entry it sits in.
+    """Whether `area` grants the entry `placed` is, where it is: whether `placed` is one of its
+    grants.
 
-    All of them, because a granted command under another event or matcher is a hook the area never
-    put there — the harness runs it at another time, or for other tools — and so is a granted
-    command inside an entry that does something else with it: an `http` entry carrying it posts
-    every event to a URL and ignores the command. Vouching for either would let a repository hang
-    the owner's command anywhere it liked and read "all accounted for". The whole entry is the one
-    the area writes, so a grant that carries more than a command, a `timeout` say, is compared
-    with what it wrote. Told, where the area records the entry's id, as an entry its source does
-    not grant, which it does not."""
-    return any(
-        grant.command == placed.command
-        and grant.event == placed.event
-        and grant.matcher == placed.matcher
-        and grant.entry == placed.entry
-        for grant in area.granted or ()
-    )
+    Compared as the whole `Placed` and never field by field. Every field of it decides what the
+    entry does (`Placed` says how), so a granted command under another event or matcher, or inside
+    an entry that does something else with it, is a hook the area never put there; and a
+    comparison that names its fields reopens that hole for the next field `Placed` grows. Told,
+    where the area records the entry's id, as an entry its source does not grant, which it does
+    not."""
+    return placed in (area.granted or frozenset())
 
 
 def _rebuild(words: Wording) -> str:
