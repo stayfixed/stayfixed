@@ -46,7 +46,13 @@ REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
     r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"
 )
-FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
+# A fenced block, as the pattern `^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$` (multi-line, `.`
+# matching a line break) reads one: a line opening with three or more backticks or tildes, closed
+# by the first later line that is the same run alone between blanks. `blank_fences` reads it a
+# line at a time, because that pattern scanned the rest of the text from every opening line no
+# later line closes, and took seconds over a few thousand of them.
+_FENCE_MARKS = "`~"
+_FENCE_MIN = 3
 # Inline code, single-line so a stray backtick cannot swallow the lines after it. Blanked
 # AFTER fences (a fence can contain backticks).
 CODE_SPAN = re.compile(r"`[^`\n]*`")
@@ -61,9 +67,44 @@ HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")
 
 
 def blank_fences(text: str) -> str:
-    """``text`` with each fenced block replaced by its own height in blank lines."""
+    """``text`` with each fenced block replaced by its own height in blank lines.
 
-    return FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    An opening line's run is tried at its full length first and then one mark shorter, down to
+    three: the first length some later line closes alone chooses the block, and the first such
+    line ends it. Lines are read top to bottom, so for each run the lines that close it are
+    passed over once each, and the whole text is read in time linear in its length.
+    """
+    lines = text.split("\n")
+    closers: dict[tuple[str, int], list[int]] = {}
+    for number, line in enumerate(lines):
+        bare = line.strip(" \t")
+        if len(bare) >= _FENCE_MIN and bare[0] in _FENCE_MARKS and bare == bare[0] * len(bare):
+            closers.setdefault((bare[0], len(bare)), []).append(number)
+    # For each run, how many of the lines that close it lie above the line being read.
+    passed = dict.fromkeys(closers, 0)
+    number = 0
+    while number < len(lines):
+        body = lines[number].lstrip(" \t")
+        mark = body[:1]
+        run = len(body) - len(body.lstrip(mark)) if mark and mark in _FENCE_MARKS else 0
+        end = None
+        for length in range(run, _FENCE_MIN - 1, -1):
+            later = closers.get((mark, length))
+            if later is None:
+                continue
+            index = passed[mark, length]
+            while index < len(later) and later[index] <= number:
+                index += 1
+            passed[mark, length] = index
+            if index < len(later):
+                end = later[index]
+                break
+        if end is None:
+            number += 1
+            continue
+        lines[number : end + 1] = [""] * (end + 1 - number)
+        number = end + 1
+    return "\n".join(lines)
 
 
 def blank_code_spans(text: str, placeholder: str = "\x00") -> str:

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from stayfixed.prose import (
     blank_code_spans,
@@ -91,6 +96,69 @@ def test_fences_are_blanked_not_deleted_so_line_numbers_hold() -> None:
     assert blanked.count("\n") == text.count("\n")
     assert "x/y.py" not in blanked and "p/q.py" not in blanked
     assert blanked.splitlines()[-1] == "c"
+
+
+# How a fence is read, each line a case the old pattern decided and the line reader must decide
+# alike: an opening run with no closer of its length falls back one mark at a time, down to
+# three; a closer is the same run alone, blanks around it allowed; a run of the other mark, or a
+# longer one, closes nothing.
+FENCE_READINGS = {
+    "a run closed at its own length": ("````\na\n```\nb\n````\n", "\n\n\n\n\n"),
+    "a run closed one mark shorter": ("````\na\n```\nb\n", "\n\n\nb\n"),
+    "a closer between blanks": ("```py\na\n \t```\t \nb\n", "\n\n\nb\n"),
+    "a longer run closes nothing": ("```\na\n````\nb\n", "```\na\n````\nb\n"),
+    "the other mark closes nothing": ("~~~\na\n```\nb\n", "~~~\na\n```\nb\n"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(FENCE_READINGS))
+def test_a_fence_is_read_as_its_pattern_reads_one(case: str) -> None:
+    # Mutations (oracle): `mutations/`'s "a fence's run is tried at its full length only" ->
+    # `a run closed one mark shorter`; "a fence's closer may not stand between blanks" ->
+    # `a closer between blanks`.
+    text, blanked = FENCE_READINGS[case]
+    assert blank_fences(text) == blanked
+
+
+# Texts the fence pattern took in time quadratic in their length, each ending in a block that
+# closes, so the answer says the text was read to its end: opening lines no later line closes,
+# which the pattern scanned the rest of the text from, 0.31 s at 4,000 of them; and one long run
+# whose closer is one mark short, which it scanned the text from at every length down to three,
+# 0.13 s at 1,000 marks. Each is sized so that the pattern takes over twenty minutes and the line
+# reader a fraction of a second, and spelled as runs, `(unit, count)`, that the child joins: a run
+# passed whole on its command line would pass Linux's limit on one argument.
+LONG_TEXTS = {
+    "openers no line closes": (("```py\n", 1 << 18),),
+    "a long run": (("`", 1 << 19), ("\n", 1), ("`", (1 << 19) - 1), ("x", 1)),
+}
+# The child's bound: far below the pattern's time over either text on a laptop, and a hundred
+# times the line reader's there, start-up included, so neither load nor a fast machine moves a
+# case across it.
+_LONG_TEXT_SECONDS = 30
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_TEXTS))
+def test_fences_are_read_in_time_linear_in_the_text(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutation (oracle): `mutations/`'s "fences are found by a lazy match again" -> both cases.
+    probe = (
+        "import json, sys\n"
+        "from stayfixed.prose import blank_fences\n"
+        "runs = json.loads(sys.argv[1])\n"
+        "text = ''.join(unit * count for unit, count in runs) + '\\n~~~\\nx\\n~~~\\n'\n"
+        "print(blank_fences(text) == text[: -len('~~~\\nx\\n~~~\\n')] + '\\n\\n\\n')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, json.dumps(LONG_TEXTS[shape])],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_TEXT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"blanking the fences ran past {_LONG_TEXT_SECONDS} s on one text")
+    assert done.stdout == "True\n", done.stderr
 
 
 def test_code_spans_are_replaced_by_a_placeholder_that_keeps_neighbours_apart() -> None:

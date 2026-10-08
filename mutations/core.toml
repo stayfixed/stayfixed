@@ -583,6 +583,42 @@ before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
 after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
 reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
 
+# Fences are read a line at a time. The pattern they were read by scanned the rest of the text from
+# every opening line no later line closes, and from a long run at every length down to three: a
+# plan of 4,000 unclosed fences took 0.31 s, and the time grew with the square of the length.
+[[mutation]]
+name = "fences are found by a lazy match again"
+file = "src/stayfixed/prose.py"
+before = '''    lines = text.split("\n")
+    closers:'''
+after = '''    return re.sub(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.MULTILINE | re.DOTALL)
+    lines = text.split("\n")
+    closers:'''
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[openers no line closes]",
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[a long run]",
+]
+
+# An opening run no line closes at its own length is closed by the first line of one mark fewer,
+# down to three, as the pattern's backtracking read it.
+[[mutation]]
+name = "a fence's run is tried at its full length only"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(run, max(run - 1, _FENCE_MIN - 1), -1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed one mark shorter]",
+]
+
+[[mutation]]
+name = "a fence's closer may not stand between blanks"
+file = "src/stayfixed/prose.py"
+before = '''        bare = line.strip(" \t")'''
+after = "        bare = line"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a closer between blanks]",
+]
+
 # A claim is settled by its real path and only inside the root's: a committed symlink out of the
 # tree made each reader an existence oracle for the machine.
 [[mutation]]
