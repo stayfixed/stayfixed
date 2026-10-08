@@ -28,7 +28,7 @@ from stayfixed.findings import Finding
 from stayfixed.fsops import read_regular_text, said
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
+from stayfixed.memory.graph import check_memory_graph, wiki_links
 from stayfixed.memory.notes import Note, Walk, walk
 from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
@@ -169,9 +169,9 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
         if note.store_group not in common_groups:
             continue
         for number, line in _lines(note):
-            for target in WIKI_LINK.findall(line):
-                if target in project_notes:
-                    found.append(Finding(AUDIENCE, _where(note, store), number, target))
+            for link in wiki_links(line):
+                if link.group(1) in project_notes:
+                    found.append(Finding(AUDIENCE, _where(note, store), number, link.group(1)))
     return found
 
 

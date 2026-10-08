@@ -6,6 +6,7 @@ finds. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -116,6 +117,46 @@ def test_every_adjacent_repeat_form_is_noted(tmp_path: Path) -> None:
     ] * 3
 
 
+# Notes the link reader took in time quadratic in their length, each ending in a repeated link, so
+# the answer says the note was read to its end: a run of `[`, and of `[[a` no `]]` closes, which a
+# pattern tried again from every `[[` up to the next `]`, half a second over 16,000 `[` and 1.4 s
+# over 16,000 `[[a`. Each is sized so that the old reading takes over a minute and a half and the
+# reader a fraction of a second.
+LONG_NOTES = {
+    "opening brackets": ("[", 1 << 18, "] [[a]], [[a]]"),
+    "unclosed links": ("[[a", 1 << 17, "] [[a]] and [[a]]"),
+}
+_LONG_NOTE_PROBE = (
+    "import sys\n"
+    "from stayfixed.memory.graph import repeated_links, wiki_links\n"
+    "unit, count, tail = sys.argv[1:]\n"
+    "text = unit * int(count) + tail\n"
+    "print([link.group(1) for link in wiki_links(text)], list(repeated_links(text)))\n"
+)
+# The child's bound: a ninth of the old reading's time over either note on a laptop, and a hundred
+# times the reader's there, start-up included.
+_LONG_NOTE_SECONDS = 10
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_NOTES))
+def test_a_long_note_s_links_are_read_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutation (oracle): `mutations/`'s "a wiki link is read for again from every opening bracket"
+    # -> both cases.
+    unit, count, tail = LONG_NOTES[shape]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", _LONG_NOTE_PROBE, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_NOTE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one note's links ran past {_LONG_NOTE_SECONDS} s")
+    assert done.stdout == "['a', 'a'] ['a']\n", done.stderr
+
+
 def test_refs_reports_graph_notices_without_changing_its_exit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -181,3 +222,40 @@ def test_refs_walks_the_store_once_for_its_findings_and_the_graph(
     assert [(n.rule, n.detail) for n in report.notices] == [("dead-wiki-link", "gone")]
     assert calls == [store.path]
     assert reads == ["a.md"]
+
+
+# A mebibyte of blanks between two links that repeat one note, which the repeat pattern read with
+# 154 MiB more of match state when `re` kept a record for each blank it might give back, and with
+# none when it keeps none. The most the child may grow its peak resident size by: a few copies of
+# the note, a fifth of that record.
+_LONG_GAP_BLANKS = 1 << 20
+_LONG_GAP_BYTES = 32 << 20
+
+
+def test_a_long_gap_between_two_links_is_read_in_memory_linear_in_its_length() -> None:
+    # The child measures its own peak resident size before and after (`ru_maxrss`, bytes on macOS
+    # and KiB on Linux), under a timeout. Mutation (oracle): `mutations/`'s "the separators
+    # between two links are given back" -> this reddens.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.memory.graph import repeated_links\n"
+        "text = '[[a]]' + ' ' * int(sys.argv[1]) + '[[a]]'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "repeats = list(repeated_links(text))\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(repeats == ['a'], grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(_LONG_GAP_BLANKS)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_NOTE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading the gap between two links ran past {_LONG_NOTE_SECONDS} s")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < _LONG_GAP_BYTES, f"the reader grew its peak by {int(grown) >> 20} MiB"

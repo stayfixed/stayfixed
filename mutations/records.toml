@@ -474,6 +474,39 @@ after = '''        text = blank_code_spans(
         )'''
 reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
 
+# A link is read once: where none is found from an opening `[[`, none is from any `[[` before the
+# next `]`, so that stretch is taken whole. Found from every `[[`, 16,000 `[` took half a second,
+# four times as long at each doubling.
+[[mutation]]
+name = "a wiki link is read for again from every opening bracket"
+file = "src/stayfixed/memory/graph.py"
+before = "    return (link for link in _LINK.finditer(text) if link.group(1) is not None)"
+after = '    return re.finditer(r"\[\[([^\]]+)\]\]", text)'
+reddens = [
+  "tests/memory/test_graph.py::test_a_long_note_s_links_are_read_in_time_linear_in_its_length[opening brackets]",
+  "tests/memory/test_graph.py::test_a_long_note_s_links_are_read_in_time_linear_in_its_length[unclosed links]",
+]
+
+# The separators are possessive, so `re` keeps no record per separator: greedy, a mebibyte of
+# blanks between two links took 154 MiB more to read.
+[[mutation]]
+name = "the separators between two links are given back"
+file = "src/stayfixed/memory/graph.py"
+before = '_SEPARATORS = re.compile(r"(?:[,\s]|\band\b|\bor\b)*+")'
+after = '_SEPARATORS = re.compile(r"(?:[,\s]|\band\b|\bor\b)*")'
+reddens = ["tests/memory/test_graph.py::test_a_long_gap_between_two_links_is_read_in_memory_linear_in_its_length"]
+
+# Two links repeat only when separators fill the whole gap between them: code between them is not a
+# list of the same note.
+[[mutation]]
+name = "a repeat is noted across code between two links"
+file = "src/stayfixed/memory/graph.py"
+before = "            and _SEPARATORS.fullmatch(text, before.end(), link.start())"
+after = "            and _SEPARATORS.match(text, before.end(), link.start())"
+reddens = [
+  "tests/memory/test_graph.py::test_a_link_inside_a_code_span_or_fence_is_not_a_link_and_code_between_links_is_not_a_repeat",
+]
+
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
 # absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
