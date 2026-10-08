@@ -2670,12 +2670,12 @@ also given or the hook cannot be read.
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Sixteen checks over one installation. It **reports and never repairs**: every finding
+Seventeen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own eleven first, then the five about the
-private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
-private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
+The rows come in a fixed order: the installation's own eleven first, then the six about the
+private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
+`harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
 
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
@@ -2690,9 +2690,8 @@ five `git` questions — and seven where a `.gitmodules` is present; not one of 
 machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a `[ci] ref`
 at all, and it is the only one that does leave: it goes through the `Runner` seam, which is what
 lets the case that pins the six answer it in process instead of launching it. That one is bounded
-at **30 seconds**, and not at the seam's own five minutes: five minutes is the bound for
-`gh repo create --clone` and the clone behind it, and a peer that does not answer must not turn a
-one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
+at **30 seconds**, not at the seam's own five minutes (the bound for `gh repo create --clone`), so a
+peer that does not answer cannot turn a one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
 seconds of its own for a query over a whole tree, so the two together may take up to a minute; the
 other `git` questions are `gitenv`'s five seconds, and the wrapper probe is this area's own
 thirty.
@@ -2707,8 +2706,7 @@ the check could not run, which is a red a clone could force.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
-check with `name`, `status`, `detail` and `remedy`. A remedy that is not in `--json` is a remedy
-nobody sees, so that is where they all are.
+check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 `status` is one of `ok`, `warn`, `red`, `skip`.
 
@@ -2724,21 +2722,22 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead and that hooks make no harness memory link meanwhile (with what makes it for the store's mode); from a terminal, the remedy says to move files of your own there first | the environment, the password database |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes | the note store |
+| `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
-**Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
+**Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
 no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what was
 measured: on Codex the session guards and session notices do not run, and the repository gates
-hold in CI. `ci-ref` was counted beside it and is not any more, and neither is `files`.
+hold in CI.
 `init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
 none — and which state is the ordinary one moves with the release history rather than with any
 code here: while no released tag matches the stayfixed running there is no commit to pin, so
@@ -2782,7 +2781,7 @@ plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROO
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces fifteen of them: with no `stayfixed.toml` in `--root`,
+One more case is not a skip but produces sixteen of them: with no `stayfixed.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
 The red row is the one to act on. A `stayfixed.toml` that is a symbolic link is one that does not
 load, whatever it points at, and the row says it is a link; for any other, the row names
@@ -3418,12 +3417,11 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
-  memory directory through `HOME`, and the session is told so. For an overlay store,
-  `stayfixed attach` run from a terminal links every worktree under `HOME`. For an in-repo or
-  local-only store, `attach` does not apply and no other command makes the link: it is made only
-  by the hook, so start sessions with `HOME` set to the database's home to have it. A link an
-  earlier release made under `HOME` is still withdrawn when the store's approval lapses, as
-  before.
+  memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
+  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`. For an
+  in-repo or local-only store no other command makes the link, so start sessions with `HOME` set
+  to the database's home to have it. A link an earlier release made under `HOME` is still
+  withdrawn when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
 `memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the

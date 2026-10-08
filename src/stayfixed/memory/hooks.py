@@ -30,7 +30,7 @@ without putting a repository's words in front of the model.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
@@ -60,25 +60,44 @@ REVOKED = (
 # answering `None` as for an unrecorded overlay. Saying `NO_STORE` for those would send the
 # user to `stayfixed attach` for a fault that is in their machine, not in their project.
 NOT_ASKABLE = "stayfixed: the memory store could not be located on this machine"
+
+
+class Withheld(NamedTuple):
+    """Why a hook makes no harness memory link, and what makes it for this store.
+
+    One wording with two readers: the session-start line (`line`), and the `harness-link` row this
+    area adds to `stayfixed doctor` (`memory.doctor`), which prints `cause` and `remedy` as its
+    detail and remedy. Owned here, beside the hook that withholds the link, so the two never say
+    different things.
+    """
+
+    cause: str
+    remedy: str
+
+    @property
+    def line(self) -> str:
+        return f"stayfixed: {self.cause}; {self.remedy}"
+
+
 # Off a terminal the only home a hook trusts is the password database's, and the harness finds
 # its memory directory through `HOME`. Where the two differ, a link made under the first is one
 # the harness never reads, so none is made and the session is told what does make it. That
 # depends on the store: in overlay mode `attach`, run from a terminal, links every worktree under
 # the `HOME` it reads there; for any other store this hook is the only thing that makes the link,
 # and it makes it only where the two homes agree.
-NO_HARNESS_LINK_OVERLAY = (
-    "stayfixed: HOME is not this user's home in the password database, so this hook made no "
-    "harness memory link; run `stayfixed attach --store <overlay>/projects/<project>/memory` "
-    "from a terminal to make it"
+NO_HARNESS_LINK_OVERLAY = Withheld(
+    "HOME is not this user's home in the password database, so a hook makes no harness memory link",
+    "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal to make it",
 )
-NO_HARNESS_LINK = (
-    "stayfixed: HOME is not this user's home in the password database, so this hook made no "
-    "harness memory link, and no stayfixed command makes it for this store while that is so; "
-    "start sessions with HOME set to that home and this hook makes it"
+NO_HARNESS_LINK = Withheld(
+    "HOME is not this user's home in the password database, so a hook makes no harness memory "
+    "link, and no stayfixed command makes it for this store while that is so",
+    "start sessions with HOME set to that home and a hook makes it",
 )
-NO_HARNESS_LINK_NO_HOME = (
-    "stayfixed: the password database lists no home directory for this user, so this hook made "
-    "no harness memory link, and no stayfixed command makes it for this store"
+NO_HARNESS_LINK_NO_HOME = Withheld(
+    "the password database lists no home directory for this user, so a hook makes no harness "
+    "memory link, and no stayfixed command makes it for this store",
+    "start sessions as a user the password database lists a home directory for",
 )
 
 
@@ -102,7 +121,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         # Said rather than sniffed, as `hooks.commands` says it for the machine file: a hook is
         # never a person at a terminal, so `HOME` does not choose where the harness link goes.
         # Where `HOME` is not that home, the harness looks somewhere else, so the hook makes the
-        # tree's links and no harness link (`NO_HARNESS_LINK`).
+        # tree's links and no harness link (`no_harness_link`).
         home = anchor_home(interactive=False) if homes_agree() else None
         try:
             links = link(
@@ -140,7 +159,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             return HookResult(context=REVOKED)
         lines = [LINKED.format(count=len(links.created))] if links.created else []
         if links.withheld:
-            lines.append(_no_harness_link(config))
+            lines.append(no_harness_link(config).line)
         return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
@@ -151,8 +170,9 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         return HookResult()
 
 
-def _no_harness_link(config: Config) -> str:
-    """The line for a harness link withheld, saying only what is true of this store."""
+def no_harness_link(config: Config) -> Withheld:
+    """Why a hook withholds the harness link, and what makes it, saying only what is true of this
+    store."""
     from stayfixed.config.machine import passwd_home
     from stayfixed.config.schema import OVERLAY_MODE
 

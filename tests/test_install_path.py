@@ -219,7 +219,8 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The sixteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
+    """The seventeen rows, read back out of what `doctor --json` printed on the launcher's
+    stdout."""
     done = _cli(
         walk,
         "doctor",
@@ -233,7 +234,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 16, rows
+    assert len(rows) == 17, rows
     return rows
 
 
@@ -884,9 +885,9 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
     #
     # What would break it: remove the refusal and step 4's `--check` exits 0 with
     # `real_directories: 0`; remove the link tree and `RULE_BODY` never reaches the bundle;
-    # remove `init`'s footprint and the manifest assertion fails; let any row go red — the
-    # sixteenth, `overlay-requires`, is the one this branch added and it is answered here
-    # against a real overlay rather than a stub.
+    # remove `init`'s footprint and the manifest assertion fails; let any row go red —
+    # `overlay-requires`, the last, is the one this branch added and it is answered here against
+    # a real overlay rather than a stub.
     walk = _install_path(tmp_path, initialised=True)
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr

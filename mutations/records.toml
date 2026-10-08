@@ -2850,14 +2850,40 @@ name = "the withheld link line names attach for every store"
 file = "src/stayfixed/memory/hooks.py"
 before = "    if config.memory.mode == OVERLAY_MODE:\n        return NO_HARNESS_LINK_OVERLAY"
 after = "    if True:\n        return NO_HARNESS_LINK_OVERLAY"
-reddens = ["tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store"]
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store",
+  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link[local-only]",
+]
 
 [[mutation]]
 name = "the withheld link line points a user with no home at a home"
 file = "src/stayfixed/memory/hooks.py"
 before = '    return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME'
 after = '    return NO_HARNESS_LINK'
-reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+reddens = [
+  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link",
+]
+
+# `doctor`'s `harness-link` row warns where a hook withholds the harness link, asked of the
+# report's environment through the predicate the hook asks of its own.
+[[mutation]]
+name = "the harness-link row reads HOME as the database's home whatever it names"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if homes_agree(context.env):"
+after = "    if True:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link",
+]
+
+[[mutation]]
+name = "the harness-link row asks this process's HOME rather than the report's"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if homes_agree(context.env):"
+after = "    if homes_agree():"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook",
+]
 
 # A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse
 # survives the hook making nothing there; and only under an absolute `HOME`.

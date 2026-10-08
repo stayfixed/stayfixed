@@ -66,7 +66,7 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Every command prints a one-line result. Sixteen rows on stdout would make `doctor`
+    # Every command prints a one-line result. Seventeen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
@@ -221,7 +221,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 16
+    assert len(report["checks"]) == 17
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -229,7 +229,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and sixteen checks is already past eight. Asserted over a
+    # off the end of the line, and seventeen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

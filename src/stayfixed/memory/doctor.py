@@ -1,10 +1,11 @@
-"""The note store's rows in `stayfixed doctor`: `bundles` and `store-debris`.
+"""This area's rows in `stayfixed doctor`: `bundles`, `store-debris` and `harness-link`.
 
-Both measure the note store, and the store is this area's to resolve. `doctor`'s core discovers
-this module by name and asks its rows after its own (CONTRIBUTING.md, "Areas"), so the core never
-resolves the store and nothing about it lives in the report's `Context`. The store comes from the
-`Answers` (`memory.answers`) this module's `register()` creates, one per report, so both rows read
-one answer.
+The first two measure the note store, and the store is this area's to resolve. `doctor`'s core
+discovers this module by name and asks its rows after its own (CONTRIBUTING.md, "Areas"), so the
+core never resolves the store and nothing about it lives in the report's `Context`. The store comes
+from the `Answers` (`memory.answers`) this module's `register()` creates, one per report, so both
+rows read one answer. The third says whether a hook can make the harness memory link, which this
+area's hook makes (`memory.hooks`), in that hook's own words.
 
 Every import sits inside a function body, as in a `hooks.py`: this module is imported by
 discovery, and a module-level import here would be one more thing every `doctor` run loads before
@@ -101,8 +102,34 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     return Row(OK, "the note store holds notes and nothing else")
 
 
+def _harness_link(context: Context) -> Row:
+    """Whether a hook can make the harness memory link, as far as the home it trusts goes.
+
+    A hook trusts only the password database's home, and the harness finds its memory directory
+    through `HOME`, so where the two differ the hook makes no harness link (`memory.hooks`). Asked
+    of the report's environment through `config.machine.homes_agree`, the predicate the hook asks
+    of its own, and told in the hook's words (`memory.hooks.no_harness_link`), so the row and the
+    session-start line say one thing. The core's `ignored-env` row says which directory the machine
+    files are under meanwhile; this row says what it costs the harness link, and what makes it for
+    this store.
+    """
+    from stayfixed.config.machine import homes_agree
+    from stayfixed.doctor.api import OK, WARN, Row
+    from stayfixed.memory.hooks import no_harness_link
+
+    if homes_agree(context.env):
+        return Row(
+            OK,
+            "HOME is this user's home in the password database, so a hook can make the harness "
+            "memory link",
+        )
+    withheld = no_harness_link(context.config)
+    return Row(WARN, withheld.cause, withheld.remedy)
+
+
 def register() -> Contribution:
-    """This area's two rows, sharing one `Answers`, so the store resolves once for both."""
+    """This area's three rows, the two that read the store sharing one `Answers`, so the store
+    resolves once for both."""
     from stayfixed.doctor.api import Contribution
     from stayfixed.memory.answers import Answers
 
@@ -111,5 +138,6 @@ def register() -> Contribution:
         checks=(
             ("bundles", lambda context: _bundles(context, answers)),
             ("store-debris", lambda context: _store_debris(context, answers)),
+            ("harness-link", _harness_link),
         )
     )

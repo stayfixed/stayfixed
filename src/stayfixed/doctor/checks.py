@@ -69,8 +69,13 @@ from pathlib import Path
 import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
-from stayfixed.config.machine import machine_config_path, override_is_honoured, passwd_home
-from stayfixed.config.schema import OVERLAY_MODE, Config
+from stayfixed.config.machine import (
+    homes_agree,
+    machine_config_path,
+    override_is_honoured,
+    passwd_home,
+)
+from stayfixed.config.schema import Config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     OK,
@@ -869,7 +874,7 @@ IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    home = _ignored_home(context.env, overlay=context.config.memory.mode == OVERLAY_MODE)
+    home = _ignored_home(context.env)
     if not set_here and home is None:
         return Row(OK, "no environment variable is being ignored")
     if not set_here and home is not None:
@@ -886,54 +891,43 @@ def _ignored_env(context: Context) -> Row:
 
 # What an upgrade from a release that read `HOME` asks of a person whose `HOME` is not the
 # database's home. Given only to a person at a terminal: off one, `HOME` may be a directory a
-# clone ships, and an agent told to move the files under it would carry the clone's `trust.json`
-# into the owner's own home. Nothing under `HOME` is ever looked at or named, either way.
+# clone ships, and an agent told to move the files under it would carry the clone's files into the
+# owner's own home. Nothing under `HOME` is ever looked at or named, either way.
 _MOVE_YOUR_FILES = (
-    "if you kept a config.toml or trust.json of your own under HOME's .config/stayfixed before "
-    "this release, check that they are yours and move them to {owner} before you run `stayfixed "
-    "setup` or `stayfixed memory trust`, which write there; otherwise nothing"
+    "if you kept files of your own under HOME's .config/stayfixed before this release, check that "
+    "they are yours and move them to {owner} before you run `stayfixed setup` or another command "
+    "that writes there; otherwise nothing"
 )
 _FROM_A_TERMINAL = "run `stayfixed doctor` from your own terminal to see what to do about it"
-# What does make the harness link a hook withholds. `attach` links every worktree of an overlay
-# store under the `HOME` it reads at a terminal; for any other store the hook is the only maker.
-_LINK_FROM_A_TERMINAL = "; `stayfixed attach` from a terminal makes it under HOME"
-_LINK_FROM_NOTHING = (
-    "; for this store no stayfixed command makes it while they differ, so start sessions with "
-    "HOME set to the database's home"
-)
 
 
-def _ignored_home(env: Mapping[str, str], *, overlay: bool) -> tuple[str, str] | None:
+def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     """What `HOME` costs on the hook path, when it is not the password database's home: a detail
     and a remedy, or `None` when the two homes are one.
 
     Off a terminal the home directory is the database's entry and not `HOME`
-    (`config.machine.owner_home`), and the machine file and `trust.json` are under it for every
-    command. A container or home-manager setup whose `HOME` is another directory is not refused
-    for that; it is told here which home its stayfixed files are under, and that a hook makes no
-    harness memory link while the two differ (`memory.hooks.NO_HARNESS_LINK`), and what makes
-    it: `attach` from a terminal for an overlay store, and nothing for any other. The value of
-    `HOME` is not printed: `doctor` may be run by an agent whose environment a repository chose.
+    (`config.machine.owner_home`), and stayfixed's machine files are under it for every command.
+    A container or home-manager setup whose `HOME` is another directory is not refused for that;
+    it is told here which directory those files are under. Asked of `config.machine.homes_agree`,
+    the predicate every hook asks, so this row warns exactly where a hook stops reading `HOME`: an
+    unset `HOME` agrees, and a user the database lists no home for never does. What else a hook
+    withholds while the homes differ is an area's to say in its own row, as `memory`'s
+    `harness-link` says it of the harness memory link. The value of `HOME` is not printed:
+    `doctor` may be run by an agent whose environment a repository chose.
     """
-    chosen = env.get("HOME")
-    if not chosen:
+    if homes_agree(env):
         return None
     recorded = passwd_home()
     if recorded is None:
         return (
             "the password database lists no home directory for this user, so off a terminal "
-            "no machine configuration and no trust record is read, whatever HOME says, and a "
-            f"hook makes no harness memory link{_LINK_FROM_A_TERMINAL if overlay else ''}",
+            "none of stayfixed's machine files is read, whatever HOME says",
             "pass --machine <path> to a command that must read a machine configuration file",
         )
-    if Path(chosen).resolve() == recorded.resolve():
-        return None
     owner = recorded / ".config" / "stayfixed"
     return (
         f"HOME is not the home directory the password database records for this user, and is "
-        f"not honoured on the hook path: the machine configuration and trust record are under "
-        f"{owner}, and while the two differ a hook makes no harness memory link"
-        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",
+        f"not honoured on the hook path: stayfixed's machine files are under {owner}",
         _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,
     )
 

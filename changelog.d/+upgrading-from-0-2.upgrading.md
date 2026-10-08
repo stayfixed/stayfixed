@@ -18,9 +18,9 @@ differently. Each has its own entry in these notes, with the detail:
   - `stayfixed memory session-context --bundle preset-rules` and `--bundle index` exit `2`, and
     `memory fit --json` no longer lists either bundle (Changed, "Two session-start bundles are
     gone").
-  - `stayfixed doctor` reports the same sixteen checks in a new order, the installation's own
-    eleven first: match on each check's name, not its position (Changed, "`stayfixed doctor` lists
-    the same sixteen checks in a new order").
+  - `stayfixed doctor` reports its checks in a new order, one more of them, the installation's
+    own eleven first: match on each check's name, not its position (Changed, "`stayfixed doctor`
+    lists its checks in a new order").
   - `stayfixed doctor`'s `hook-entries` row is red, and the report exits `1`, where 0.2.0 exited
     `0`: among other cases, for your own checkout on a new machine before
     `stayfixed setup --overlay` has run, which 0.2.0 reported as a warning, and for the

@@ -22,10 +22,10 @@ records for your user, which no environment variable moves.
   running `stayfixed setup` or `stayfixed memory trust`, or merge them afterwards. Move only
   files you put there yourself.
 - In that case too, a hook makes no harness memory link, since the harness finds its memory
-  through `HOME`, and the session is told so. For an overlay store, `stayfixed attach` from a
-  terminal makes it. For an in-repo or local-only store nothing else does: start sessions with
-  `HOME` set to the database's home. A link an earlier release made under `HOME` is still
-  removed when the store's approval lapses.
+  through `HOME`; the session is told so, and `stayfixed doctor`'s new `harness-link` row says
+  so too. For an overlay store, `stayfixed attach` from a terminal makes it. For an in-repo or
+  local-only store nothing else does: start sessions with `HOME` set to the database's home. A
+  link an earlier release made under `HOME` is still removed when the store's approval lapses.
 - A user the database lists no home for reads no machine file and no trust record off
   `--machine`. `stayfixed setup` and `stayfixed memory trust` fail and ask for `--machine`, and a
   hook makes no harness memory link. A database home that cannot be written fails the same two

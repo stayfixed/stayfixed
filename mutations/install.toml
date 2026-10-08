@@ -3173,14 +3173,24 @@ reddens = [
 
 # A `HOME` that is not the password database's home is named, with the directory stayfixed's
 # machine files are under, rather than ignored in silence; a user the database does not list is
-# told that no machine file is read.
+# told that no machine file is read. The row asks the predicate every hook asks, so it warns
+# exactly where a hook stops reading `HOME`, an unset one included.
 [[mutation]]
 name = "doctor says nothing of a HOME the password database does not record"
 file = "src/stayfixed/doctor/checks.py"
-before = '    if Path(chosen).resolve() == recorded.resolve():'
-after = '    if True:'
+before = "    if homes_agree(env):\n        return None"
+after = "    if True:\n        return None"
 reddens = [
   "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
+]
+
+[[mutation]]
+name = "doctor reads an unset HOME as the database's home"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if homes_agree(env):"
+after = '    if not env.get("HOME") or homes_agree(env):'
+reddens = [
+  "tests/doctor/test_checks.py::test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read",
 ]
 
 [[mutation]]
@@ -3253,12 +3263,16 @@ reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
 ]
 
+# The core's row names the directory the machine files are under and nothing an area withholds
+# meanwhile: the harness memory link is the `memory` area's `harness-link` row, in its own words.
 [[mutation]]
-name = "doctor names attach as making the harness link for every store"
+name = "doctor's core row speaks for the memory area's harness link"
 file = "src/stayfixed/doctor/checks.py"
-before = '        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",'
-after = '        f"{_LINK_FROM_A_TERMINAL}",'
-reddens = ["tests/doctor/test_checks.py::test_the_row_names_what_makes_the_harness_link_only_where_it_does"]
+before = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}",'''
+after = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}; a hook makes no harness memory link",'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
+]
 
 # Each submodule discovery imports has one reader. A core module that asks for `commands` itself,
 # naming the submodule as a literal as every call must, can still pick one area's module out of the

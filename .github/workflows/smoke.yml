@@ -108,10 +108,10 @@ jobs:
               print(f"{row['status']:<5} {row['name']:<16} {row['detail'][:100]}")
           # `assert not red` passes on zero rows, and a doctor that reported none — a JSON
           # shape change, a report truncated by an error this step swallows with `|| true` —
-          # would read as the cleanest run there is. `run_checks` promises sixteen rows,
-          # always sixteen, so the count is the claim; the five named are the ones this job
+          # would read as the cleanest run there is. `run_checks` promises seventeen rows,
+          # always seventeen, so the count is the claim; the five named are the ones this job
           # exists to watch, and a report missing one of them is not a green report.
-          assert len(rows) == 16, len(rows)
+          assert len(rows) == 17, len(rows)
           named = {row["name"] for row in rows}
           wanted = {"files", "wrapper", "hook-entries", "attached", "ignored-env"}
           assert wanted <= named, wanted - named

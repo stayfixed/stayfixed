@@ -179,7 +179,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # sixteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # seventeen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you say
@@ -428,7 +428,7 @@ stayfixed adopt promote                                # enforce every gate that
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
-stayfixed doctor                                       # sixteen checks over this installation, one line
+stayfixed doctor                                       # seventeen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal

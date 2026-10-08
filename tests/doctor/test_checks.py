@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
-One of the sixteen checks cannot be answered by this build and says so rather than guessing:
+One of the seventeen checks cannot be answered by this build and says so rather than guessing:
 `codex-trust`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
@@ -275,7 +275,7 @@ def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_res
     tmp_path: Path,
 ) -> None:
     # A repository with no stayfixed.toml gets one red `not-initialised` row from doctor and a skip
-    # for every other check. Sixteen red checks for a repository that never heard of stayfixed is
+    # for every other check. Seventeen red checks for a repository that never heard of stayfixed is
     # noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
@@ -338,7 +338,7 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     )
 
 
-# The report's sixteen names in the report's order, written out rather than read back from the
+# The report's seventeen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
@@ -356,6 +356,7 @@ REPORT = (
     "attached",
     "bundles",
     "store-debris",
+    "harness-link",
     "pre-commit",
     "overlay-requires",
 )
@@ -363,9 +364,9 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # sixteen are the same sixteen, once each. A literal tuple and not the registry read back, so
-    # a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
-    # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
+    # seventeen are the same seventeen, once each. A literal tuple and not the registry read back,
+    # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
+    # `mutations/`'s "doctor drops the checks an area contributes" -> the six delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
     # no machine file, no gh, no Codex and no network -- so the same run holds that every check
     # survives that, each with a status of the closed four: a check that raised would take the
@@ -378,10 +379,11 @@ def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
 def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Path) -> None:
     # A ledger recording an attach, a project configured for the overlay, and a machine that
     # records no overlay at all — the state of a clone on a machine where `stayfixed setup` has
-    # never run. Every delivery row asks a question only the overlay can answer, so each one
-    # skips rather than guessing, and none of them is red: a skip never reaches the exit code.
-    # Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area contributes"
-    # -> the five rows are missing and the comparison reddens.
+    # never run. Every delivery row but `harness-link` asks a question only the overlay can
+    # answer, so each one skips rather than guessing, and none of them is red: a skip never
+    # reaches the exit code. `harness-link` asks only whether `HOME` is the database's home, which
+    # it is here. Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area
+    # contributes" -> the six rows are missing and the comparison reddens.
     #
     # The one red row is the core's `hook-entries`, and it is red on purpose: the ledger is a file
     # a clone can commit, and on a machine with no overlay nothing vouches for the entry it
@@ -390,9 +392,10 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
-    assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
-        delivery, SKIP
-    )
+    assert {row.name: row.status for row in rows if row.name in delivery} == {
+        **dict.fromkeys(delivery, SKIP),
+        "harness-link": OK,
+    }
     red = [(row.name, row.detail) for row in rows if row.status == RED]
     assert [name for name, _ in red] == ["hook-entries"], red
     assert "nothing on this machine vouches for them" in red[0][1]
@@ -994,10 +997,13 @@ def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_d
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A container or home-manager setup whose `HOME` is not its database entry is not refused:
-    # off a terminal stayfixed reads the entry's home, and this row says which, and that a hook
-    # makes no harness memory link while the two differ. `HOME`'s own value is not printed, since
-    # an agent's environment may be a repository's choice. From a terminal, the remedy is the
-    # upgrader's: move the files of your own, checked first, before the commands that write.
+    # off a terminal stayfixed reads the entry's home, and this row says which. What a hook
+    # withholds meanwhile is an area's to say: the harness memory link is `memory`'s
+    # `harness-link` row, and the core names neither it nor the command that makes it. `HOME`'s
+    # own value is not printed, since an agent's environment may be a repository's choice. From a
+    # terminal, the remedy is the upgrader's: move the files of your own, checked first, before
+    # the commands that write. Mutation (oracle): `mutations/`'s "doctor's core row speaks for the
+    # memory area's harness link" -> the link is named here.
     owner = tmp_path / "owner"
     as_owner_home(monkeypatch, owner)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
@@ -1007,26 +1013,11 @@ def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_d
     )
     assert check.status == "warn"
     assert str(owner / ".config" / "stayfixed") in check.detail
-    assert "no harness memory link" in check.detail
+    assert "harness" not in check.detail + check.remedy
+    assert "attach" not in check.detail + check.remedy
     assert "fakehome" not in check.detail + check.remedy
     assert f"move them to {owner / '.config' / 'stayfixed'} before" in check.remedy
     assert "check that they are yours" in check.remedy
-
-
-@pytest.mark.parametrize("template", ["overlay", "local-only"])
-def test_the_row_names_what_makes_the_harness_link_only_where_it_does(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, template: str
-) -> None:
-    # `attach` attaches overlay stores and refuses every other mode, so the row names it only for
-    # an overlay store; for the others, nothing but the hook makes the link.
-    as_owner_home(monkeypatch, tmp_path / "owner")
-    root = _initialised(tmp_path, template=OVERLAY if template == "overlay" else LOCAL_ONLY)
-    check = _by_name(_checks(tmp_path, root, env=_env(tmp_path, HOME="fakehome")), "ignored-env")
-    if template == "overlay":
-        assert "`stayfixed attach` from a terminal makes it" in check.detail
-    else:
-        assert "attach" not in check.detail
-        assert "no stayfixed command makes it" in check.detail
 
 
 def test_off_a_terminal_doctor_never_advises_moving_files_from_home(
@@ -1065,6 +1056,23 @@ def test_a_user_the_password_database_does_not_list_is_told_no_file_is_read(
     assert check.status == "warn"
     assert "lists no home directory" in check.detail
     assert "--machine" in check.remedy
+
+
+def test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With `HOME` unset and no home in the password database, off a terminal no machine file is
+    # read and a hook makes no harness memory link (`config.machine.homes_agree` answers that the
+    # two disagree), while this row, which asked `HOME` before the database, read ok. Called
+    # directly on an empty environment, because `run_checks` hands its environment to the
+    # wrapper's real subprocess, which must keep the suite's `HOME`. Mutation (oracle):
+    # `mutations/`'s "doctor reads an unset HOME as the database's home" -> ok.
+    as_owner_home(monkeypatch, None)
+    context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
+    assert "HOME" not in context.env
+    row = checks._ignored_env(context)
+    assert row.status == WARN
+    assert "lists no home directory" in row.detail
 
 
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:

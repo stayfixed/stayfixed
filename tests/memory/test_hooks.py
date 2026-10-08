@@ -20,6 +20,7 @@ from stayfixed.memory.hooks import (
     NOT_LINKED,
     PARTIAL,
     REVOKED,
+    Withheld,
     register,
 )
 from stayfixed.memory.worktree import Links, PartialLink
@@ -292,7 +293,7 @@ def test_the_harness_link_goes_under_the_owners_home_where_home_agrees(
     ids=["another home", "no entry"],
 )
 def test_no_harness_link_is_made_where_home_is_not_the_databases(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str, line: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str, line: Withheld
 ) -> None:
     # The harness finds its memory directory through `HOME`, and a hook trusts only the database's
     # home. Where the two differ, a link made under the second is one the harness never reads, so
@@ -307,7 +308,7 @@ def test_no_harness_link_is_made_where_home_is_not_the_databases(
     config = load(root, machine=tmp_path / "absent.toml")
     contexts = [handler.run(an_event(root), config).context for handler in register()]
     assert seen == [(None, False, None)]
-    assert contexts == [line]
+    assert contexts == [line.line]
 
 
 def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
@@ -370,13 +371,13 @@ def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
     as_owner_home(monkeypatch, tmp_path / "owner")
     config = load(a_project(tmp_path), machine=tmp_path / "absent.toml")
     config = dataclasses.replace(config, memory=dataclasses.replace(config.memory, mode=mode))
-    line = memory_hooks._no_harness_link(config)
+    line = memory_hooks.no_harness_link(config)
     if mode == "overlay":
         assert line == NO_HARNESS_LINK_OVERLAY
-        assert "stayfixed attach --store" in line
+        assert "stayfixed attach --store" in line.remedy
     else:
         assert line == NO_HARNESS_LINK
-        assert "attach" not in line
+        assert "attach" not in line.line
 
 
 def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withheld(
