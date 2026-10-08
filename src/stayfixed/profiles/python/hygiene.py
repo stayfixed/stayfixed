@@ -72,11 +72,11 @@ _PYC_HASH_BASED = 0b1
 _PYC_MTIME_MASK = 0xFFFFFFFF
 # The two bounds on the walk for `.pyc` files, past either of which it stops and reports that it
 # could not tell: `fsops.WALK_ENTRIES` on the listing, the one cap every walk over a repository's
-# tree reads, and `BYTECODE_READ_FILES` on the reads. Named caps (CONTRIBUTING.md#named-caps), and
-# the shipped file that changes with them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook
-# that runs this walk after a red test run has a 10 s timeout there, which the two together must
-# stay well under. A hook that times out delivers nothing and never banks its once-key, so an
-# unbounded walk over a large tree was paid again after every red run.
+# tree that may stop there reads, and `BYTECODE_READ_FILES` on the reads. Named caps
+# (CONTRIBUTING.md#named-caps), and the shipped file that changes with them is `hooks/hooks.json`:
+# the `PostToolUse` `Bash` hook that runs this walk after a red test run has a 10 s timeout there,
+# which the two together must stay well under. A hook that times out delivers nothing and never
+# banks its once-key, so an unbounded walk over a large tree was paid again after every red run.
 #
 # The walk has two halves of very different cost, so each has its own count. Listing charges
 # every directory entry under the code roots, not only the bytecode. Reading charges every `.pyc`

@@ -64,8 +64,8 @@ class _Spent(Exception):
 @dataclass
 class _Budget:
     """What is left of `fsops.WALK_ENTRIES` for one walk: the cap every walk over a repository's
-    tree reads, below the root's own directories and through the whole tree for the nested
-    ones."""
+    tree that may stop and say it could not tell reads, below the root's own directories and
+    through the whole tree for the nested ones."""
 
     left: int = field(default_factory=lambda: fsops.WALK_ENTRIES)
 
