@@ -45,6 +45,8 @@ class Seen(Enum):
     DECLARES = "declares"
     # A file or directory that could not be read, so nothing can be said of what it holds.
     UNREAD = "unread"
+    # A file whose frontmatter holds a key the reader cannot read whole, which may be `hooks`.
+    UNPARSED = "unparsed"
     # A link that leads out of the checkout, which is not followed.
     LINKED_OUT = "linked-out"
     # The walk stopped at `fsops.WALK_ENTRIES`; it names no path.
@@ -95,9 +97,10 @@ def _inside(real_root: Path, path: Path) -> bool:
 
 def _frontmatter(root: Path, real_root: Path, relative: str) -> list[Found]:
     """The report for one file whose frontmatter is read: it declares hooks, or it could not be
-    read, or it leads out of the checkout, or none. A link that leads out is not followed and is
-    named as one that does (`Seen.LINKED_OUT`): what it leads to is not the repository's. Whether
-    a path names a file is asked first, so a dangling link names none wherever it points. Read
+    read, or its frontmatter could not be read whole (`Seen.UNPARSED`), or it leads out of the
+    checkout, or none. A link that leads out is not followed and is named as one that does
+    (`Seen.LINKED_OUT`): what it leads to is not the repository's. Whether a path names a file is
+    asked first, so a dangling link names none wherever it points. Read
     through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the regular-file cap, which
     every reader of a committed file goes through at its own cap: a device or a FIFO is refused
     unread, and a file past the cap is refused, each one this row could not read; a path that
@@ -119,7 +122,10 @@ def _frontmatter(root: Path, real_root: Path, relative: str) -> list[Found]:
         return [(Seen.UNREAD, _label(relative))]
     # Replaced rather than refused, for the reason the settings walk replaces: the key is
     # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
-    if declares_hooks(content.decode("utf-8", errors="replace")):
+    declared = declares_hooks(content.decode("utf-8", errors="replace"))
+    if declared is None:
+        return [(Seen.UNPARSED, _label(relative))]
+    if declared:
         return [(Seen.DECLARES, _label(relative))]
     return []
 

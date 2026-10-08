@@ -1843,12 +1843,15 @@ def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -
 
 
 # Frontmatter spellings of a top-level `hooks` key besides a bare one at the start of a line: each
-# quoting, a quoted key with an escape in it, a flow mapping (on one line, as JSON, and over
-# several), a mapping indented as a whole, and a key behind a tag, an anchor or `? `. Mutations
+# quoting, a quoted key with an escape in it, a flow mapping (on one line, as JSON, over several,
+# and behind a tag or an anchor, on its line or the line above), a mapping indented as a whole, a
+# key behind a tag, an anchor or `? `, and a key beside one the row cannot read whole. Mutations
 # (oracle): `mutations/`'s "a frontmatter's quoted key is read as no key" -> the quoted cases; "a
 # frontmatter in flow style is read as no mapping" -> the flow cases; "a frontmatter's top level is
 # its first column" -> `indented-mapping`; "a frontmatter key's tag or anchor hides it" ->
-# `tagged` and `anchored`.
+# `tagged` and `anchored`; "a flow mapping's tag or anchor hides it" -> `flow-tagged`,
+# `flow-anchored` and `flow-tagged-above`; "a key the reader cannot read outranks a hooks key it
+# can" -> `beside-an-alias`.
 HOOKS_SPELLED = {
     "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
     "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
@@ -1856,10 +1859,14 @@ HOOKS_SPELLED = {
     "flow": "{name: probe, hooks: {UserPromptSubmit: []}}\n",
     "flow-as-json": '{"name": "probe", "hooks": {}}\n',
     "flow-over-lines": "{name: probe,\n  description: a probe,\n  hooks:\n    {Stop: []}}\n",
+    "flow-tagged": "!!map {name: probe, hooks: {}}\n",
+    "flow-anchored": "&top {name: probe, hooks: {}}\n",
+    "flow-tagged-above": "!!map\n{name: probe, hooks: {}}\n",
     "indented-mapping": "  name: probe\n  hooks:\n    UserPromptSubmit: []\n",
     "tagged": "!!str hooks: {}\n",
     "anchored": "&key hooks: {}\n",
     "explicit-key": "? hooks\n: {}\n",
+    "beside-an-alias": "name: &k x\n*k : y\nhooks: {}\n",
 }
 
 
@@ -1898,6 +1905,53 @@ def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_ove
     _skill(root, "plain", f"---\n{NO_HOOKS_SPELLED[spelling]}---\nThe body.\n")
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+# Keys the row cannot read whole, so it cannot say whether the frontmatter declares hooks: an alias
+# (`*k`, which `&k` may have set to `hooks`), an explicit `? ` key whose key is not all on its line,
+# and a quoted key over several lines, which YAML folds into one, in block style and in a flow
+# mapping. Each was passed over as declaring nothing. Mutations (oracle): `mutations/`'s "an
+# alias key is read as no key" -> `alias-key`; "an explicit key past its line is read as no key"
+# -> the explicit cases; "a quoted key over several lines is read as no key" -> the two quoted
+# cases; "a flow mapping reads an alias key as no key", "a flow mapping reads an explicit key as no
+# key" and "a flow mapping reads a quoted key over several lines as no key" -> the flow cases.
+UNTOLD_SPELLED = {
+    "alias-key": "name: &k hooks\n*k : {}\n",
+    "explicit-key-below": "?\n  hooks\n: {}\n",
+    "explicit-key-continued": "? hoo\n  ks\n: {}\n",
+    "explicit-block-scalar": "? |-\n  hooks\n: {}\n",
+    "explicit-tag-alone": "? !!str\n  hooks\n: {}\n",
+    "double-quoted-over-lines": '"hoo\\\n  ks": {}\n',
+    "single-quoted-over-lines": "'hoo\n  ks': {}\n",
+    "flow-alias-key": "{name: &k hooks, *k : {}}\n",
+    "flow-explicit-key": "{? hooks : {}}\n",
+    "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
+}
+SKILL_UNPARSED = (
+    "skill, command or agent file(s) spell a frontmatter key this row cannot read whole, so it "
+    "cannot say whether they declare hooks"
+)
+SKILL_UNPARSED_REMEDY = (
+    "open each file named above and check whether its frontmatter declares hooks: this row reads "
+    "no alias, no explicit key past its line and no quoted key over several lines"
+)
+
+
+@pytest.mark.parametrize("spelling", sorted(UNTOLD_SPELLED))
+def test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold(
+    tmp_path: Path, spelling: str
+) -> None:
+    # Fails toward "could not tell", never toward "declares nothing": a warning naming the file,
+    # in words of its own, since the file was read and it is the key the row could not follow.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", f"---\n{UNTOLD_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNPARSED}: .claude/skills/probe/SKILL.md",
+        SKILL_UNPARSED_REMEDY,
+    )
 
 
 def test_a_link_back_up_a_skills_tree_is_listed_once(tmp_path: Path) -> None:

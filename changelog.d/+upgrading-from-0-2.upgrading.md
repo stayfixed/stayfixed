@@ -188,9 +188,9 @@ differently. Each has its own entry in these notes, with the detail:
     worktree").
   - `stayfixed doctor`'s `hook-entries` row warns, where 0.2.0 could read "all accounted for", for a
     skill, command or agent file whose frontmatter declares hooks, at any depth and in a nested
-    `.claude/skills`, for a file there it cannot read, for a link there that leads out of the
-    checkout, and, outside a git work tree, for a checkout too large to walk; the report's exit
-    code is unchanged. To find nested skills it asks git once more (`git ls-files`, and again
+    `.claude/skills`, for a file there it cannot read or whose frontmatter keys it cannot all read,
+    for a link there that leads out of the checkout, and, outside a git work tree, for a checkout
+    too large to walk; the report's exit code is unchanged. To find nested skills it asks git once more (`git ls-files`, and again
     through the submodules where a `.gitmodules` is present), each query bounded at 30 seconds
     (Fixed, "`stayfixed doctor`'s `hook-entries` row now warns about each skill").
   - `stayfixed assess`'s `foreign-hooks` advice names a committed settings file whose hook entries

@@ -2738,13 +2738,16 @@ reddens = [
 name = "a skill's frontmatter reads an indented hooks key"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-        _block_key(line[indent:]) == _HOOKS
-        for line in content
-        if len(line) - len(line.lstrip(" ")) == indent
+            if len(line) - len(line.lstrip(" ")) != indent:
+                continue
+            below = content[index + 1 : index + 2]
+            continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+            key = _block_key(line[indent:], continued=continued)
 """
 after = """
-        _block_key(line.lstrip(" ")) == _HOOKS
-        for line in content
+            below = content[index + 1 : index + 2]
+            continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+            key = _block_key(line.lstrip(" "), continued=continued)
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[nested-key]",
@@ -2898,7 +2901,7 @@ reddens = [
 [[mutation]]
 name = "a frontmatter in flow style is read as no mapping"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if content[0][indent:].startswith("{"):'
+before = '    if node.startswith("{"):'
 after = "    if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]",
@@ -2941,6 +2944,101 @@ before = 'rf"(?P<quoted>{_QUOTED})|'
 after = 'rf"(?P<quoted>(?!))|'
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-in-a-quoted-value]",
+]
+
+# A flow mapping behind a tag or an anchor, on its line or the line above, is still one; and a
+# top-level key the reader cannot read whole fails toward "cannot tell", never toward "no", while a
+# `hooks` key it can read still declares hooks.
+[[mutation]]
+name = "a flow mapping's tag or anchor hides it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    node = opened[ahead.end() :] if ahead else opened"
+after = "    node = opened"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-anchored]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged-above]",
+]
+
+[[mutation]]
+name = "a key the reader cannot read outranks a hooks key it can"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+    if _HOOKS in keys:
+        return True
+    return None if untold else False
+"""
+after = """
+    if untold:
+        return None
+    return _HOOKS in keys
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[beside-an-alias]",
+]
+
+[[mutation]]
+name = "an alias key is read as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if rest[:1] == "*" or (explicit and continued):'
+after = "    if explicit and continued:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key]",
+]
+
+[[mutation]]
+name = "an explicit key past its line is read as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if rest[:1] == "*" or (explicit and continued):'
+after = '    if rest[:1] == "*":'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-below]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-continued]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-block-scalar]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-tag-alone]",
+]
+
+[[mutation]]
+name = "a quoted key over several lines is read as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+        if quoted is None:
+            return _UNTOLD
+"""
+after = """
+        if quoted is None:
+            return None
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[double-quoted-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[single-quoted-over-lines]",
+]
+
+[[mutation]]
+name = "a flow mapping reads an alias key as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '(kind == "plain" and (value == "?" or value[0] == "*"))'
+after = '(kind == "plain" and value == "?")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-alias-key]",
+]
+
+[[mutation]]
+name = "a flow mapping reads an explicit key as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '(kind == "plain" and (value == "?" or value[0] == "*"))'
+after = '(kind == "plain" and value[0] == "*")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-explicit-key]",
+]
+
+[[mutation]]
+name = "a flow mapping reads a quoted key over several lines as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '                    or (kind == "quoted" and "\n" in value)'
+after = "                    or False"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-quoted-over-lines]",
 ]
 
 # The walk below the root lists a whole checkout, so it is bounded, enters no `.git`, and lists a

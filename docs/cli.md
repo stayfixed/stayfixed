@@ -2764,10 +2764,9 @@ moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line i
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
 rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. Nor
-is it whether some command elsewhere in the report would change the state: `stayfixed setup
---overlay`, which `attached` names when it skips for a machine that records no overlay, changes
-the state `pre-commit` skips on there too, and `pre-commit`'s arm still carries nothing. It is
-whether the skip is itself worth acting on. Those seven report something wrong that no other
+is it whether another row names a command that changes the state: `pre-commit`'s arm carries
+nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
+itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
 other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
@@ -2845,15 +2844,16 @@ Each such file whose frontmatter (the lines between a first `---` line and the n
 top-level `hooks` key is named as one whose hooks the row does not judge, a `warn` that never makes
 the row `red`. The top level is the indentation of the frontmatter's first line that is neither
 blank nor a comment. The key is found bare, quoted either way (its escapes read), behind a tag, an
-anchor or `? `, or among the top-level keys of a frontmatter written as a flow mapping
-(`{name: x, hooks: {...}}`); a `hooks` nested under another key, or inside a quoted value, is not
-one. Nothing else of the YAML is parsed: a merge key (`<<`) is not followed, and a frontmatter with
-no closing `---` is none. Names are compared without case, a directory's as well as a file's, so
-`skill.md` and `.Claude/Skills` count, as a filesystem that folds case finds them. A file or
-directory the row cannot read, such as a FIFO or a directory it cannot list, is named as one it
-cannot say anything about, also a `warn`. Every name
-in a path is the repository's, so a path outside the path grammar is named as a file whose path
-the row does not print.
+anchor or `? `, or among the top-level keys of a flow mapping (`{name: x, hooks: {...}}`), tagged
+or not; a `hooks` nested under another key, or inside a quoted value, is not one. A top-level key
+the row cannot read whole, an alias (`*name`), a `? ` key that goes on past its line or a quoted
+key over several lines, may be `hooks`, so beside no `hooks` it can read the file is named as one
+the row cannot tell about, a `warn`. Nothing else of the YAML is parsed: a merge key (`<<`) is not
+followed, and a frontmatter with no closing `---` is none. Names are compared without case, so
+`skill.md` and `.Claude/Skills` count. A FIFO, a directory the row cannot list and any other path
+it cannot read is named as one it cannot say anything about, also a `warn`. A path outside the path
+grammar, every name in it being the repository's, is named as a file whose path the row does not
+print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and

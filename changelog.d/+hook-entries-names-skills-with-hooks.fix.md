@@ -11,9 +11,11 @@ reads settings files alone, so it used to answer "all accounted for" beside such
 - every `*.md` below `.claude/commands` and `.claude/agents`, at any depth.
 
 A file is named when the frontmatter between its two `---` lines holds a top-level `hooks` key,
-spelled bare, quoted either way, behind a tag or an anchor, or as a key of a frontmatter written as
-a flow mapping such as `{name: x, hooks: {...}}`; nothing else of the YAML is parsed. A file or
-directory the row cannot read, a FIFO among them, is named as one it cannot say anything about.
+spelled bare, quoted either way, behind a tag or an anchor, or as a key of a flow mapping such as
+`{name: x, hooks: {...}}`, tagged or not; nothing else of the YAML is parsed. A file whose
+frontmatter has a top-level key the row cannot read whole, such as an alias (`*name`), and no
+`hooks` key it can, is named as one it cannot tell about. A file or directory the row cannot read,
+a FIFO among them, is named as one it cannot say anything about.
 A link inside those directories is read where it leads inside the checkout, to a directory or to a
 `*.md` or `SKILL.md` file. One that leads out of the checkout, as a dotfiles setup's does, is not
 followed and is named as one that leads out, which marks no fault. Only a link to a file the row

@@ -258,6 +258,13 @@ def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
     )
 
 
+def _skill_unparsed(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} skill, command or agent file(s) spell a frontmatter key this row cannot "
+        f"read whole, so it cannot say whether they declare hooks: {listed(wheres)}"
+    )
+
+
 def _linked_out(areas: Sequence[Claims], wheres: list[str]) -> str:
     return f"{len(wheres)} path(s) lead out of the checkout and were not followed: {listed(wheres)}"
 
@@ -334,6 +341,17 @@ _SKILL_UNREAD = _Kind(
         "can list"
     ),
 )
+# A frontmatter key the reader cannot read whole, which may be `hooks`: the file was read, so its
+# words are its own, and the way out is to look at the key, not at the file's permissions.
+_SKILL_UNPARSED = _Kind(
+    WARN,
+    0,
+    _skill_unparsed,
+    lambda areas: (
+        "open each file named above and check whether its frontmatter declares hooks: this row "
+        "reads no alias, no explicit key past its line and no quoted key over several lines"
+    ),
+)
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,
 # because a dotfiles setup links these directories out on purpose, so its remedy is a way to look
 # and not a repair.
@@ -368,6 +386,7 @@ _KINDS = (
     _BLIND,
     _SKILL_HOOKS,
     _SKILL_UNREAD,
+    _SKILL_UNPARSED,
     _LINKED_OUT,
     _SKILL_UNTOLD,
 )
@@ -376,6 +395,7 @@ _KINDS = (
 _SEEN = {
     Seen.DECLARES: _SKILL_HOOKS,
     Seen.UNREAD: _SKILL_UNREAD,
+    Seen.UNPARSED: _SKILL_UNPARSED,
     Seen.LINKED_OUT: _LINKED_OUT,
     Seen.STOPPED: _SKILL_UNTOLD,
 }
