@@ -2848,8 +2848,8 @@ reddens = [
 [[mutation]]
 name = "the withheld link line names attach for every store"
 file = "src/stayfixed/memory/hooks.py"
-before = "    if config.memory.mode == OVERLAY_MODE:\n        return NO_HARNESS_LINK_OVERLAY"
-after = "    if True:\n        return NO_HARNESS_LINK_OVERLAY"
+before = "    overlay = config.memory.mode == OVERLAY_MODE"
+after = "    overlay = True"
 reddens = [
   "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store",
   "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link[local-only]",
@@ -2858,11 +2858,23 @@ reddens = [
 [[mutation]]
 name = "the withheld link line points a user with no home at a home"
 file = "src/stayfixed/memory/hooks.py"
-before = '    return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME'
-after = '    return NO_HARNESS_LINK'
+before = "    if passwd_home() is None:"
+after = "    if False:"
 reddens = [
   "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
   "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link",
+]
+
+# Where the database lists no home, `HOME` is not the cause for an overlay store either.
+[[mutation]]
+name = "the withheld link line asks the store's mode before the database"
+file = "src/stayfixed/memory/hooks.py"
+before = "        return NO_HARNESS_LINK_OVERLAY_NO_HOME if overlay else NO_HARNESS_LINK_NO_HOME"
+after = "        return NO_HARNESS_LINK_OVERLAY if overlay else NO_HARNESS_LINK_NO_HOME"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-set]",
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-unset]",
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
 ]
 
 # `doctor`'s `harness-link` row warns where a hook withholds the harness link, asked of the
@@ -2883,6 +2895,17 @@ before = "    if homes_agree(context.env):"
 after = "    if homes_agree():"
 reddens = [
   "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook",
+]
+
+# An unset or empty `HOME` agrees, and is no home: the `ok` row does not say it is the database's.
+[[mutation]]
+name = "the harness-link row says an unset HOME is the database's home"
+file = "src/stayfixed/memory/doctor.py"
+before = '        if context.env.get("HOME"):'
+after = "        if True:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[unset]",
+  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[empty]",
 ]
 
 # A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse

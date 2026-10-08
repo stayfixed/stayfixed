@@ -99,6 +99,14 @@ NO_HARNESS_LINK_NO_HOME = Withheld(
     "memory link, and no stayfixed command makes it for this store",
     "start sessions as a user the password database lists a home directory for",
 )
+# A user the database lists no home for: no `HOME` agrees with no home, so the cause is the
+# missing entry and not `HOME`, and an overlay store is still linked by `attach` from a terminal,
+# under the `HOME` it reads there.
+NO_HARNESS_LINK_OVERLAY_NO_HOME = Withheld(
+    "the password database lists no home directory for this user, so a hook makes no harness "
+    "memory link",
+    NO_HARNESS_LINK_OVERLAY.remedy,
+)
 
 
 def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
@@ -172,13 +180,15 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
 
 def no_harness_link(config: Config) -> Withheld:
     """Why a hook withholds the harness link, and what makes it, saying only what is true of this
-    store."""
+    store. The database is asked first: where it lists no home for this user, no `HOME` would let
+    a hook make the link, so `HOME` is not the cause whatever the store."""
     from stayfixed.config.machine import passwd_home
     from stayfixed.config.schema import OVERLAY_MODE
 
-    if config.memory.mode == OVERLAY_MODE:
-        return NO_HARNESS_LINK_OVERLAY
-    return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME
+    overlay = config.memory.mode == OVERLAY_MODE
+    if passwd_home() is None:
+        return NO_HARNESS_LINK_OVERLAY_NO_HOME if overlay else NO_HARNESS_LINK_NO_HOME
+    return NO_HARNESS_LINK_OVERLAY if overlay else NO_HARNESS_LINK
 
 
 def _lapsed_link_home() -> Path | None:

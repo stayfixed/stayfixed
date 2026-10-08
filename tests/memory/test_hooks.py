@@ -17,6 +17,7 @@ from stayfixed.memory.hooks import (
     NO_HARNESS_LINK,
     NO_HARNESS_LINK_NO_HOME,
     NO_HARNESS_LINK_OVERLAY,
+    NO_HARNESS_LINK_OVERLAY_NO_HOME,
     NOT_LINKED,
     PARTIAL,
     REVOKED,
@@ -362,22 +363,30 @@ def test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs(
     assert seen == [(None, False, elsewhere)]
 
 
+@pytest.mark.parametrize("database", ["another home", "no entry"])
 @pytest.mark.parametrize("mode", ["overlay", "in-repo", "local-only"])
 def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, database: str
 ) -> None:
     # `attach` attaches overlay stores only, and refuses the other two modes; for those, the hook
-    # is the only thing that makes the link, so the line names no command that would refuse.
-    as_owner_home(monkeypatch, tmp_path / "owner")
+    # is the only thing that makes the link, so the line names no command that would refuse. A
+    # user the database lists no home for is told so, whatever the store: `HOME` is not the cause
+    # there, since no `HOME` agrees with no home.
+    as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
     config = load(a_project(tmp_path), machine=tmp_path / "absent.toml")
     config = dataclasses.replace(config, memory=dataclasses.replace(config.memory, mode=mode))
     line = memory_hooks.no_harness_link(config)
     if mode == "overlay":
-        assert line == NO_HARNESS_LINK_OVERLAY
+        assert line == (
+            NO_HARNESS_LINK_OVERLAY
+            if database == "another home"
+            else NO_HARNESS_LINK_OVERLAY_NO_HOME
+        )
         assert "stayfixed attach --store" in line.remedy
     else:
-        assert line == NO_HARNESS_LINK
+        assert line == (NO_HARNESS_LINK if database == "another home" else NO_HARNESS_LINK_NO_HOME)
         assert "attach" not in line.line
+    assert line.cause.startswith("HOME is not" if database == "another home" else "the password")
 
 
 def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withheld(
