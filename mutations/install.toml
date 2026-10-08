@@ -3122,10 +3122,11 @@ reddens = [
 [[mutation]]
 name = "the nested-skill query reads the root's own places again"
 file = "src/stayfixed/doctor/hooked.py"
-before = '        if place is not None and not f"{name}/".casefold().startswith(own):'
-after = "        if place is not None:"
+before = '        if not f"{entry}/".casefold().startswith(own):'
+after = "        if True:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[.claude/skills/top/SKILL.md]",
+  "tests/doctor/test_checks.py::test_the_projects_own_claude_directory_as_a_link_is_read_once[queried]",
 ]
 
 [[mutation]]
@@ -3156,8 +3157,8 @@ reddens = [
 [[mutation]]
 name = "the nested-skill query reads no link it lists"
 file = "src/stayfixed/doctor/hooked.py"
-before = "                elif os.path.islink(root / relative):"
-after = "                elif False:"
+before = "            if not (_reads(place, PurePosixPath(name).name) or os.path.islink(root / name)):"
+after = "            if not _reads(place, PurePosixPath(name).name):"
 reddens = [
   "tests/doctor/test_checks.py::test_a_link_inside_a_nested_skills_directory_is_followed_in_a_work_tree",
 ]
@@ -3234,6 +3235,58 @@ after = "            if not is_directory or name == _GIT_DIR:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[inside-walked]",
   "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[outside-walked]",
+]
+
+# A nested `.claude` that is a link stands above a `.claude/skills`: its `skills` is read as such a
+# directory that is a link is, followed while it stays in the checkout and named where it leads
+# out, asked of git and walked alike, and the project's own `.claude` is not read twice.
+[[mutation]]
+name = "the nested-skill query lists no link standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        elif (above := _above(name, places)) is not None and os.path.islink(root / name):"
+after = "        elif False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested-skill query asks git for no entry standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    pathspecs += ["
+after = "    pathspecs += [] and ["
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested walk passes over a link standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                if above is not None and above[0].casefold() != above[1].directory.casefold():"
+after = "                if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-walked]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-walked]",
+]
+
+[[mutation]]
+name = "a link standing above a skills directory is compared by case"
+file = "src/stayfixed/doctor/hooked.py"
+before = '    standing = f"/{relative}".casefold()'
+after = '    standing = f"/{relative}"'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-in-another-case-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-in-another-case-walked]",
+]
+
+[[mutation]]
+name = "the nested walk reads the root's own places again"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                if above is not None and above[0].casefold() != above[1].directory.casefold():"
+after = "                if above is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_projects_own_claude_directory_as_a_link_is_read_once[walked]",
 ]
 
 # The row parses no merge key, as `docs/cli.md` states; the boundary is pinned so that moving it is

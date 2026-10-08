@@ -2174,6 +2174,67 @@ def test_a_nested_skills_directory_that_is_a_link_is_read_or_named(
     assert row == expected
 
 
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("leads", ["inside", "inside-in-another-case", "outside"])
+def test_a_nested_claude_directory_that_is_a_link_is_read_or_named(
+    tmp_path: Path, where: str, leads: str
+) -> None:
+    # A nested `.claude` that is itself a link hid the skills below it: git lists the link as one
+    # entry, which no pattern for `.claude/skills` matches, and the walk follows no link. Its
+    # `skills` is read as a nested `.claude/skills` that is a link is: followed while it stays in
+    # the checkout, and named as a path that leads out where it does not; and its name is compared
+    # without case, as a filesystem that folds case finds it. Mutations (oracle): `mutations/`'s
+    # "the nested-skill query lists no link standing above a skills directory" and "the
+    # nested-skill query asks git for no entry standing above a skills directory" -> the `queried`
+    # cases; "the nested walk passes over a link standing above a skills directory" -> the
+    # `walked` cases; "a link standing above a skills directory is compared by case" -> the
+    # `inside-in-another-case` cases.
+    target = tmp_path / "outside" if leads == "outside" else tmp_path / "project" / "kept"
+    _file(target, "skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / "pkg").mkdir()
+    link = "pkg/.Claude" if leads == "inside-in-another-case" else "pkg/.claude"
+    (root / link).symlink_to(target)
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    if leads != "outside":
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {link}/skills/s/SKILL.md",
+            SKILL_HOOKS_REMEDY,
+        )
+    else:
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: pkg/.claude/skills",
+            LINKED_OUT_REMEDY,
+        )
+    assert row == expected
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+def test_the_projects_own_claude_directory_as_a_link_is_read_once(
+    tmp_path: Path, where: str
+) -> None:
+    # The vacuity guard for the case above, at the root: the project's own `.claude` is read off
+    # the disk with its places, so a link standing for it is not read a second time as a nested
+    # one. Mutations (oracle): `mutations/`'s "the nested-skill query reads the root's own places
+    # again" and "the nested walk reads the root's own places again" -> named twice.
+    _file(tmp_path / "project" / "kept", "skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / ".claude").symlink_to(root / "kept")
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
 def test_a_skill_in_a_checked_out_submodule_is_named(tmp_path: Path) -> None:
     # The query's `--cached` lists a submodule as one entry and none of its files, so a skill a
     # submodule commits went unnamed. A second query asks each checked-out submodule's index.

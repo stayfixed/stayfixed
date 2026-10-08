@@ -16,12 +16,13 @@ spelled bare, quoted either way, behind a tag or an anchor, or as a key of a flo
 frontmatter has a top-level key the row cannot read whole, such as an alias (`*name`), and no
 `hooks` key it can, is named as one it cannot tell about. A file or directory the row cannot read,
 a FIFO among them, is named as one it cannot say anything about.
-A link inside those directories is read where it leads inside the checkout, to a directory or to a
-`*.md` or `SKILL.md` file. One that leads out of the checkout, as a dotfiles setup's does, is not
-followed and is named as one that leads out, which marks no fault. Only a link to a file the row
-would not read, such as a skill's `LICENSE`, wherever it points, a dangling link and a link that
-loops are passed over. Names are compared without case.
+A link inside those directories, or a nested `.claude` that is one, is read where it leads inside
+the checkout, to a directory or to a `*.md` or `SKILL.md` file. One that leads out of the
+checkout, as a dotfiles setup's does, is not followed and is named as one that leads out, which
+marks no fault. Only a link to a file the row would not read, such as a skill's `LICENSE`,
+wherever it points, a dangling link and a link that loops are passed over. Names are compared
+without case.
 Outside a git work tree, looking for nested `.claude/skills` walks the tree instead, skipping
-`.git`, up to 500,000 directory entries; the walk follows no link but one that is itself a nested
-`.claude/skills`, and a walk that stops at the bound says so. Each of these is a warning: none
+`.git`, up to 500,000 directory entries; the walk follows no link but a nested `.claude/skills` or
+`.claude` that is one, and a walk that stops at the bound says so. Each of these is a warning: none
 makes the row red or changes the report's exit code.

@@ -2867,23 +2867,23 @@ link and a link that loops.
 
 A `.claude/skills` below the root is found by asking git (`git ls-files --cached --others
 --exclude-standard`): the files a clone commits and the untracked ones git does not ignore, each
-name compared without case. git lists a link as an entry of its own, so each link inside such a
-directory, and such a directory that is itself a link, is read as the project's own are. A
-submodule is one entry to that query, so where a `.gitmodules` sits at or above the root, git is
-asked again through each checked-out submodule's index (`git ls-files --cached
---recurse-submodules`): what that index holds, its staged files as well as its committed ones, and
-not the files untracked inside a submodule, which git cannot list that way.
+name compared without case. git lists a link as an entry of its own, so a link inside such a
+directory, such a directory that is a link, and a nested `.claude` that is one are read as the
+project's own are. A submodule is one entry to that query, so where a `.gitmodules` sits at or
+above the root, git is asked again through each checked-out submodule's index (`git ls-files
+--cached --recurse-submodules`): what that index holds, its staged files as well as its committed
+ones, and not the files untracked inside a submodule, which git cannot list that way.
 
-**A skill inside a directory git ignores is not named**, such as one an installed dependency ships
-under `node_modules`: no clone carries an ignored file, so it is not the repository's to declare,
-whether Claude Code loads such a skill was not measured, and listing those trees is what would make
-the row stop short in a large checkout. Outside a git work tree, or where `git` fails, the row
-walks the tree instead, following no link but one that is itself a nested `.claude/skills`, never
-entering `.git`, whose contents git never checks out, and passing over a directory it cannot list.
-The reads and that walk list at most 500,000 directory entries between them; past that, the row
-says the walk stopped and that it cannot say whether the files past it declare hooks, a `warn`. In
-a work tree only the project's own three directories, and the directories links in a nested
-`.claude/skills` lead to, count toward that number.
+**A skill inside a directory git ignores is not named**, such as one under `node_modules`: no clone
+carries an ignored file, so it is not the repository's to declare, whether Claude Code loads one was
+not measured, and listing those trees would make the row stop short in a large checkout. Outside
+a git work tree, or where `git` fails, the row walks the tree instead, following no link but a
+nested `.claude/skills` or `.claude` that is one, never entering `.git`, whose contents git never
+checks out, and passing over a directory it cannot list. The reads and that walk list at most
+500,000 directory entries between them; past that, the row says the walk stopped and that it cannot
+say whether the files past it declare hooks, a `warn`. In a work tree only the project's own three
+directories, and those links in or above a nested `.claude/skills` lead to, count toward that
+number.
 
 Whether the model can invoke a skill, and so run its hooks, without a person asking was not
 measured, because no model call ran. The plugin and agent rows held under that same limit, and say

@@ -190,6 +190,19 @@ def _owned(relative: str, places: Sequence[Hooked]) -> Hooked | None:
     return next((p for p in places if folded.endswith(f"/{p.directory}".casefold())), None)
 
 
+def _above(relative: str, places: Sequence[Hooked]) -> tuple[str, Hooked] | None:
+    """Where `relative`, a path below the root, stands for a directory above a place's own, as a
+    nested `.claude` stands above `.claude/skills`: that place's directory below it, and the
+    place; `None` where it stands above none. Compared without case, as `_owned` compares."""
+    standing = f"/{relative}".casefold()
+    for place in places:
+        parts = place.directory.split("/")
+        for cut in range(1, len(parts)):
+            if standing.endswith(f"/{'/'.join(parts[:cut])}".casefold()):
+                return f"{relative}/{'/'.join(parts[cut:])}", place
+    return None
+
+
 # The file whose presence says a work tree has submodules, at its top level.
 _GITMODULES = ".gitmodules"
 
@@ -204,9 +217,9 @@ def _listing(asked: tuple[int, str]) -> set[str] | None:
 
 
 def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
-    """Every entry below the root inside a directory a `nested` place names, as git's index lists
-    it, with that place, in name order; or `None` where git cannot answer: outside a work tree, or
-    a `git` that fails.
+    """What to read below the root for each `nested` place, as git's index lists it, with that
+    place, in name order: each file the place reads, and each directory to walk; or `None` where
+    git cannot answer: outside a work tree, or a `git` that fails.
 
     Tracked files and untracked ones git does not ignore, which is what a clone commits and what
     the owner is writing; never an ignored one, which no clone carries, and whose trees, an
@@ -214,8 +227,11 @@ def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
     cap. Each place is asked with a pathspec git matches without case (`icase`), so a directory or
     file name in any case is listed as a filesystem that folds case finds it. Every entry is
     listed and not only the files a place reads, because git lists a link as an entry of its own
-    and never what it leads to, and a link may lead to a skill (`hooked` reads it as a directory);
-    so is an entry that is the place's directory itself, which is a link where git lists one.
+    and never what it leads to, and a link may lead to a skill, so each link is handed out as a
+    directory to walk (`_read_place`); so is an entry that is the place's directory itself, which
+    is a link where git lists one, and one that stands above it (`_above`), a nested `.claude`
+    that is a link, whose place's directory below it is handed out. A link is followed there as it
+    is in the root's own places: while it stays in the checkout.
 
     `--cached` lists a submodule as one entry and none of its files, and `--recurse-submodules`
     takes no `--others`, so a work tree with a `.gitmodules` at or above the root is asked a second
@@ -229,6 +245,15 @@ def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
         spec
         for place in places
         for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")
+    ]
+    # An entry standing above a place's directory, a nested `.claude`: git lists one only where it
+    # is a link, a file or a submodule, never a directory, whose files these patterns do not match.
+    # Only a link is handed out below: a file holds no place, and a submodule's files are what the
+    # second query lists.
+    pathspecs += [
+        f":(glob,icase)**/{'/'.join(parts[:cut])}"
+        for parts in (place.directory.split("/") for place in places)
+        for cut in range(1, len(parts))
     ]
     listed = _listing(
         git_run(
@@ -266,8 +291,16 @@ def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
     for name in sorted(listed):
         folded = f"/{name}/".casefold()
         place = next((p for p in places if f"/{p.directory}/".casefold() in folded), None)
-        if place is not None and not f"{name}/".casefold().startswith(own):
-            found.append((name, place))
+        if place is not None:
+            if not (_reads(place, PurePosixPath(name).name) or os.path.islink(root / name)):
+                continue
+            entry = name
+        elif (above := _above(name, places)) is not None and os.path.islink(root / name):
+            entry, place = above
+        else:
+            continue
+        if not f"{entry}/".casefold().startswith(own):
+            found.append((entry, place))
     return found
 
 
@@ -278,10 +311,11 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
     No link is followed and `.git` is never entered: what a link leads to outside the tree is
     not the repository's, and inside it the walk meets it where it is. A link that is itself such
     a directory is handed out, as the query hands one out, for `_read_place` to follow while it
-    stays in the checkout. A directory that cannot be
-    listed is passed over, as the bytecode walk passes one over: git records no permission that
-    keeps one from being listed. The root's own copy of a place is not one of these, and nothing
-    below a directory handed out here is walked again."""
+    stays in the checkout, and so is the place's directory below a link that stands above it
+    (`_above`), a nested `.claude` that is a link. A directory that cannot be listed is passed
+    over, as the bytecode walk passes one over: git records no permission that keeps one from
+    being listed. The root's own copy of a place is not one of these, and nothing below a
+    directory handed out here is walked again."""
     places = [place for place in HOOKED if place.nested]
     pending = [""]
     while pending and places:
@@ -301,9 +335,12 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
                 continue
             child = f"{relative}/{name}" if relative else name
             owner = _owned(child, places)
-            if owner is None:
-                if is_directory:
-                    below.append(child)
+            if owner is None and is_directory:
+                below.append(child)
+            elif owner is None:
+                above = _above(child, places)
+                if above is not None and above[0].casefold() != above[1].directory.casefold():
+                    yield above
             elif child.casefold() != owner.directory.casefold():
                 yield child, owner
         pending.extend(reversed(below))
@@ -328,7 +365,7 @@ def hooked(root: Path) -> list[Found]:
             for relative, place in queried:
                 if _reads(place, PurePosixPath(relative).name):
                     found.extend(_frontmatter(root, real_root, relative))
-                elif os.path.islink(root / relative):
+                else:
                     found.extend(_read_place(root, real_root, relative, place, budget))
         else:
             for directory, place in _nested(root, budget):
