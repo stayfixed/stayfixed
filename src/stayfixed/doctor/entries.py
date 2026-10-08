@@ -49,12 +49,6 @@ SETTINGS_FILES = tuple(
 # edit. This row names each such file whose frontmatter declares hooks as one it does not judge
 # (`_hooked`).
 HOOKED = tuple(place for harness in HARNESSES for place in harness.hooked)
-# A named cap (CONTRIBUTING.md#named-caps): how many directory entries the walk for those files
-# lists, below the root's own directories and through the whole tree for the nested ones, before it
-# stops and says it could not tell. No shipped file states it. It is the bytecode walk's cap
-# (`profiles/python/hygiene.py`'s `BYTECODE_WALK_ENTRIES`), whose listing of that many entries
-# was measured at under half a second with a warm cache, and `doctor` runs on no hook's timeout.
-HOOKED_WALK_ENTRIES = 500_000
 # Git's own directory, which the walk below the root never enters: git refuses to check out a path
 # with a `.git` component, so nothing in one is the repository's, and it can hold many entries.
 _GIT_DIR = ".git"
@@ -316,7 +310,7 @@ def _linked_out(areas: Sequence[Claims], wheres: list[str]) -> str:
 
 def _skill_untold(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"the walk for skill, command and agent files stopped after {HOOKED_WALK_ENTRIES:,} "
+        f"the walk for skill, command and agent files stopped after {fsops.WALK_ENTRIES:,} "
         f"directory entries, so this row cannot say whether the files past them declare hooks"
     )
 
@@ -570,14 +564,16 @@ def _holds_hooks(lines: list[str]) -> bool:
 
 
 class _Spent(Exception):
-    """The walk for hooked files listed more than `HOOKED_WALK_ENTRIES` entries."""
+    """The walk for hooked files listed more than `fsops.WALK_ENTRIES` entries."""
 
 
 @dataclass
 class _Budget:
-    """What is left of `HOOKED_WALK_ENTRIES` for one walk."""
+    """What is left of `fsops.WALK_ENTRIES` for one walk: the cap every walk over a repository's
+    tree reads, below the root's own directories and through the whole tree for the nested
+    ones."""
 
-    left: int = field(default_factory=lambda: HOOKED_WALK_ENTRIES)
+    left: int = field(default_factory=lambda: fsops.WALK_ENTRIES)
 
     def spend(self, entries: int) -> None:
         self.left -= entries
@@ -815,7 +811,7 @@ def _hooked(root: Path) -> list[_Found]:
     each such file or directory that could not be read: the root's own places first, in `HOOKED`'s
     order, read off the disk, then each file a nested place names, as git lists it
     (`_queried`), or, where git cannot answer, as the bounded walk finds it (`_nested`). The walks
-    list at most `HOOKED_WALK_ENTRIES` entries between them, past which they stop and say so. Each
+    list at most `fsops.WALK_ENTRIES` entries between them, past which they stop and say so. Each
     file is named by its path, through `printed.printable`, because every name in it is the
     repository's."""
     found: list[_Found] = []

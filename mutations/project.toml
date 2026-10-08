@@ -1890,7 +1890,7 @@ reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_
 [[mutation]]
 name = "the stale-bytecode walk ignores its cap"
 file = "src/stayfixed/profiles/python/hygiene.py"
-before = "                        if visited > BYTECODE_WALK_ENTRIES:"
+before = "                        if visited > fsops.WALK_ENTRIES:"
 after = "                        if False:"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_walk_cut_short_by_its_cap_could_not_tell"]
 

@@ -256,6 +256,14 @@ class TooLarge(OSError):
 # and `attach` refuses a settings file whose write-back would pass it (`permissions`). No shipped
 # file states it.
 REGULAR_READ_LIMIT = 64 * 1024 * 1024
+# A named cap (CONTRIBUTING.md#named-caps): how many directory entries a walk over a repository's
+# tree lists, one total across everything that walk lists, before it stops and says it could not
+# tell. One number for every such walk, each reading it here when it starts: `doctor`'s walk for
+# files whose frontmatter declares hooks, and the Python profile's walk for stale bytecode, which
+# runs on a hook's timeout, so the shipped file that changes with it is `hooks/hooks.json`
+# (`profiles/python/hygiene.py` says what was measured against that timeout: listing this many
+# entries took under half a second with a warm cache). `docs/cli.md` states it for both commands.
+WALK_ENTRIES = 500_000
 
 # The open `open_regular` makes: it follows a link at the last component, because `attach` links
 # each memory group and `MEMORY.md` into the overlay in overlay mode and those are read through

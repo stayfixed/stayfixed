@@ -71,11 +71,12 @@ _PYC_HASH_BASED = 0b1
 # forever.
 _PYC_MTIME_MASK = 0xFFFFFFFF
 # The two bounds on the walk for `.pyc` files, past either of which it stops and reports that it
-# could not tell. Named caps (CONTRIBUTING.md#named-caps), and the shipped file that changes with
-# them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook that runs this walk after a red test
-# run has a 10 s timeout there, which the two together must stay well under. A hook that times
-# out delivers nothing and never banks its once-key, so an unbounded walk over a large tree was
-# paid again after every red run.
+# could not tell: `fsops.WALK_ENTRIES` on the listing, the one cap every walk over a repository's
+# tree reads, and `BYTECODE_READ_FILES` on the reads. Named caps (CONTRIBUTING.md#named-caps), and
+# the shipped file that changes with them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook
+# that runs this walk after a red test run has a 10 s timeout there, which the two together must
+# stay well under. A hook that times out delivers nothing and never banks its once-key, so an
+# unbounded walk over a large tree was paid again after every red run.
 #
 # The walk has two halves of very different cost, so each has its own count. Listing charges
 # every directory entry under the code roots, not only the bytecode. Reading charges every `.pyc`
@@ -89,7 +90,6 @@ _PYC_MTIME_MASK = 0xFFFFFFFF
 # cache and the `git status` the same hook runs; it is more bytecode, and 500k more entries, than
 # a code root holds once virtual environments and dependency trees are outside it.
 # `docs/cli.md`'s `test hygiene` section states both numbers.
-BYTECODE_WALK_ENTRIES = 500_000
 BYTECODE_READ_FILES = 20_000
 
 # The two counts `report` returns, and the names `stayfixed test hygiene --json` prints them under.
@@ -145,7 +145,7 @@ def _recorded_source_mtime(cache: int, name: str) -> int | None:
 
 def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
     """Every `__pycache__` directory under `roots` with the names in it that end in `.pyc`, or
-    `None` when the walk visited more than `BYTECODE_WALK_ENTRIES` entries and stopped. The cap
+    `None` when the walk visited more than `fsops.WALK_ENTRIES` entries and stopped. The cap
     is one total across `roots`, since every root a configuration lists would otherwise multiply
     the hook's time.
 
@@ -168,7 +168,7 @@ def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         visited += 1
-                        if visited > BYTECODE_WALK_ENTRIES:
+                        if visited > fsops.WALK_ENTRIES:
                             return None
                         if entry.is_dir(follow_symlinks=False):
                             pending.append(directory / entry.name)
@@ -183,7 +183,7 @@ def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
 
 def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     """How many `.pyc` files under `roots` record a source mtime their source no longer has, or
-    `None` when the walk stopped at either cap -- `BYTECODE_WALK_ENTRIES` on the listing,
+    `None` when the walk stopped at either cap -- `fsops.WALK_ENTRIES` on the listing,
     `BYTECODE_READ_FILES` on the `.pyc` files it goes on to read: a count of what it reached
     before then would be no answer, in either direction."""
     walked = _bytecode(roots)
@@ -253,7 +253,7 @@ class PythonHint:
 
     def note(self, counts: Mapping[str, int] | None) -> str | None:
         if counts is None:
-            return UNTOLD.format(entries=BYTECODE_WALK_ENTRIES, files=BYTECODE_READ_FILES)
+            return UNTOLD.format(entries=fsops.WALK_ENTRIES, files=BYTECODE_READ_FILES)
         stale = counts.get(STALE_KEY, 0)
         if not stale:
             return None

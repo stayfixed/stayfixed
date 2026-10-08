@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.guards.hygiene import simple_commands
@@ -96,7 +97,7 @@ UNTOLD = (
     "`__pycache__` directories under those roots and re-run before attributing anything."
 )
 READ_FILES = python_hygiene.BYTECODE_READ_FILES
-ENTRIES = python_hygiene.BYTECODE_WALK_ENTRIES
+ENTRIES = fsops.WALK_ENTRIES
 
 
 def a_stale_tree_of_eight_entries(tmp_path: Path) -> Path:
@@ -123,9 +124,9 @@ def test_a_walk_cut_short_by_its_cap_could_not_tell(
     # among eight entries is over a cap of seven. Oracle: `mutations/`'s "the stale-bytecode walk
     # ignores its cap".
     root = a_stale_tree_of_eight_entries(tmp_path)
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 8)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 8)
     assert reported(root) == {"stale": 1, "roots": 1}
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 7)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 7)
     counts = reported(root)
     assert counts is None
     # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
@@ -171,9 +172,9 @@ def test_the_entry_cap_is_one_total_across_the_code_roots(
     (root / "tests").mkdir()
     for name in ("a.py", "b.py", "c.py"):
         (root / "tests" / name).write_text("", encoding="utf-8")
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 6)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 6)
     assert reported(root) == {"stale": 1, "roots": 2}
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 4)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 4)
     assert reported(root) is None
 
 
@@ -600,7 +601,7 @@ def test_a_red_pytest_run_over_a_walk_cut_short_is_told_it_could_not_tell(
     # finished, so a stale `.pyc` the walk did not reach is not reported as absent. Reddened by
     # disabling the cap check, which puts the stale line here; measured.
     root = faulty_python_tree(tmp_path)
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 2)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 2)
     result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
     assert (
         result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(entries=2, files=READ_FILES)}"

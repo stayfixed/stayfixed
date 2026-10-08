@@ -1921,12 +1921,12 @@ def test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The walk below the root lists the whole tree, which in a large checkout is many entries, so
-    # it is bounded (`HOOKED_WALK_ENTRIES`), and a walk that stopped is no "all accounted for".
+    # it is bounded (`fsops.WALK_ENTRIES`), and a walk that stopped is no "all accounted for".
     # Mutation (oracle): `mutations/`'s "the hooked-file walk lists past its cap" -> the nested
     # skill is found and named instead.
     root = _initialised(tmp_path)
     _file(root, "pkg/.claude/skills/nested/SKILL.md", SKILL_WITH_HOOKS)
-    monkeypatch.setattr(entries, "HOOKED_WALK_ENTRIES", 3)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 3)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check(
         "hook-entries",
@@ -1968,7 +1968,7 @@ def test_a_large_ignored_tree_is_neither_walked_nor_named(
     for n in range(30):
         _file(root, f"vendor/pkg{n}/index.md", "x\n")
     _file(root, "vendor/pkg0/.claude/skills/dep/SKILL.md", SKILL_WITH_HOOKS)
-    monkeypatch.setattr(entries, "HOOKED_WALK_ENTRIES", 20)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 20)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
 

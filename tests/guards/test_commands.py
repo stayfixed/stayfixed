@@ -542,7 +542,7 @@ def test_test_hygiene_refuses_a_tree_its_bytecode_walk_could_not_finish(
     git(root, "commit", "-q", "-m", "chore: code")
     compile_module(module)
     make_stale(module)
-    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 1)
+    monkeypatch.setattr("stayfixed.fsops.WALK_ENTRIES", 1)
     json_flag = ["--json"] if as_json else []
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke([*argv, *json_flag]) == 2
@@ -578,7 +578,7 @@ def test_test_hygiene_refuses_a_cut_walk_over_a_tree_with_no_python(
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
     capsys.readouterr()
-    monkeypatch.setattr("stayfixed.profiles.python.hygiene.BYTECODE_WALK_ENTRIES", 2)
+    monkeypatch.setattr("stayfixed.fsops.WALK_ENTRIES", 2)
     assert invoke(argv) == 2
     assert capsys.readouterr().err.strip() == "stayfixed: refused: " + CUT_WALK
 
