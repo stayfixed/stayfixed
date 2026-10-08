@@ -16,11 +16,11 @@ uv run python scripts/release.py check            # version discipline
 ```
 
 All five run in CI. Four of them, every one but the mutation oracle (the suite with its coverage
-floor, ruff, mypy and `scripts/release.py check`), run on Linux for Python 3.11, 3.12, 3.13 and
-3.14 and on macOS for 3.13, which is why `pytest -q` alone will give you a green tree and a red
-pull request. The mutation oracle, which is this project's headline obligation and not an optional
-extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs three more
-steps you can reproduce only from a build (`uv build`, then
+floor, ruff, mypy and `scripts/release.py check`), run on Linux for Python 3.11, 3.11.4, 3.12,
+3.13 and 3.14 and on macOS for 3.13, which is why `pytest -q` alone will give you a green tree
+and a red pull request. The mutation oracle, which is this project's headline obligation and not
+an optional extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs
+three more steps you can reproduce only from a build (`uv build`, then
 `scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
 reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
 in either is ours to diagnose, not yours.
@@ -396,7 +396,7 @@ first thing a run does is drop every `stayfixed-oracle-*` checkout but its own, 
 what it dropped.
 
 CI runs the whole set in a job of its own, called `oracle`, on one configuration —
-`ubuntu-latest` with Python 3.13 — while the tests go on running on all five. The oracle proves
+`ubuntu-latest` with Python 3.13 — while the tests go on running on all six. The oracle proves
 that a mutation reddens a test, which is a property of the code and of the tests rather than of
 the platform, and at 657 to 751 s a run it was 76% of the `checks` job and had pushed it past
 its fifteen-minute bound. Its own job has its own budget, and `ci.yml` says what that budget

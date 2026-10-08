@@ -35,16 +35,24 @@ jobs:
         # absolute-path containment case is the one that completes on Linux specifically,
         # because `/etc` and `/var` are real directories there and symlinks on macOS. The users
         # of a Claude Code / Codex plugin are overwhelmingly on macOS, and macOS runners are
-        # free on public repositories. One Python version there holds the job count at five.
+        # free on public repositories. One Python version there holds the job count at six.
         #
         # Nor is the interpreter axis. `pathlib`'s `is_file()`, `is_dir()`, `exists()` and
         # `is_symlink()` raise on a name longer than the system takes up to 3.13 and answer
         # `False` from 3.14, and a suite verified on 3.14 alone went red on every leg here. A
         # leg is added beside the others and none is renamed: branch protection requires each
         # existing check by its name.
+        #
+        # One leg pins a patch release, 3.11.4, because `3.11` resolves to the newest 3.11 and
+        # the floor `requires-python` admits is 3.11.0. Python 3.11.0 to 3.11.4 misread a
+        # possessive repeat of a group (fixed in 3.11.5), and Debian 12's own Python is 3.11.2:
+        # there a path grammar, a symbol path, a frontmatter's flow mapping and a commit footer
+        # each gave a verdict no later interpreter gives, and every leg here was green.
         include:
           - os: ubuntu-latest
             python: "3.11"
+          - os: ubuntu-latest
+            python: "3.11.4"
           - os: ubuntu-latest
             python: "3.12"
           - os: ubuntu-latest
