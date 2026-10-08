@@ -19,6 +19,7 @@ import json
 import os
 import pty
 import shutil
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
@@ -1952,6 +1953,47 @@ def test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold(
         f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNPARSED}: .claude/skills/probe/SKILL.md",
         SKILL_UNPARSED_REMEDY,
     )
+
+
+# Lines the frontmatter reader took in time quadratic in their length, each followed by a `hooks`
+# key so that the answer says the line was read past: a key's first character and then blanks with
+# no colon after them, which a lazy key pattern scanned again from every character, and tags ahead
+# of a key, which a loop copied the rest of the line again for each one to strip. A file is read
+# up to the 64 MiB read cap, so either stalled `doctor` for hours. Each is sized so that the
+# quadratic reading takes minutes and a linear one a fraction of a second.
+LONG_LINES = {
+    "blanks": ("a", " ", 1 << 20, "x\nhooks: {}\n"),
+    "tags": ("", "! ", 6 << 20, "hooks: {}\n"),
+}
+# The child's bound: a twentieth of what the quadratic reading took of either line above on a
+# laptop (ten and thirteen minutes), and fifty times what the linear one takes there, start-up
+# included, so neither load nor a fast machine moves a case across it.
+_LONG_LINE_SECONDS = 30
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_LINES))
+def test_a_frontmatter_line_is_read_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a frontmatter key is found by a lazy match" -> `blanks`;
+    # "a frontmatter key's tags are stripped one copy at a time" -> `tags`.
+    head, unit, count, tail = LONG_LINES[shape]
+    probe = (
+        "import sys\n"
+        "from stayfixed.doctor.frontmatter import declares_hooks\n"
+        "head, unit, count, tail = sys.argv[1:]\n"
+        "print(declares_hooks(f'---\\n{head}{unit * int(count)}{tail}---\\n'))\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long line")
+    assert done.stdout == "True\n", done.stderr
 
 
 def test_a_link_back_up_a_skills_tree_is_listed_once(tmp_path: Path) -> None:

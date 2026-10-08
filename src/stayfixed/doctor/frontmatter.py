@@ -47,6 +47,13 @@ _HOOKS = "hooks"
 # properties, each a tag (`!x`, `!!map`) or an anchor (`&x`) ended by a blank or a line break, then
 # any comment lines. A flow mapping behind them is still a flow mapping.
 _AHEAD = re.compile(r"(?:[!&]\S*(?:\s+|\Z))+(?:#[^\n]*(?:\n\s*|\Z))*")
+# A key's properties on its own line, each a tag or an anchor ended by blanks or the line's end; and
+# the colon that ends a plain key, the first one a blank or the line's end follows. Each is one
+# match over the line, never one per property or per character: a frontmatter is read up to
+# `fsops.REGULAR_READ_LIMIT`, and a pattern that rescans the rest of its line at every step takes
+# hours over one long line of blanks or tags.
+_PROPERTIES = re.compile(r"(?:[!&][^ \t]*(?:[ \t]+|\Z))*")
+_KEY_END = re.compile(r":(?=[ \t]|\Z)")
 
 
 class _Untold:
@@ -88,9 +95,8 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
     (`*name`) and a quote that does not close on its line are not read either."""
     explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
     rest = line[1:].lstrip(" \t") if explicit else line
-    while rest[:1] in ("!", "&"):
-        parts = re.split(r"[ \t]+", rest, maxsplit=1)
-        rest = parts[1] if len(parts) == 2 else ""
+    properties = _PROPERTIES.match(rest)
+    rest = rest[properties.end() :] if properties else rest
     if rest[:1] == "*" or (explicit and continued):
         return _UNTOLD
     if rest[:1] in ('"', "'"):
@@ -99,9 +105,9 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
             return _UNTOLD
         after = rest[quoted.end() :].lstrip(" \t")
         return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
-    plain = re.match(r"([^\n]*?)[ \t]*:(?:[ \t]|$)", rest)
-    if plain is not None:
-        return plain.group(1)
+    colon = _KEY_END.search(rest)
+    if colon is not None:
+        return rest[: colon.start()].rstrip(" \t")
     return rest.rstrip(" \t") if explicit else None
 
 

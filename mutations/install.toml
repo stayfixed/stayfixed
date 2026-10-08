@@ -2756,8 +2756,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter reads any key opening with hooks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        return plain.group(1)"
-after = "        return plain.group(1)[: len(_HOOKS)]"
+before = '        return rest[: colon.start()].rstrip(" \t")'
+after = '        return rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)]'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
 ]
@@ -2921,11 +2921,38 @@ reddens = [
 [[mutation]]
 name = "a frontmatter key's tag or anchor hides it"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    while rest[:1] in ("!", "&"):'
-after = "    while False:"
+before = "    rest = rest[properties.end() :] if properties else rest"
+after = "    rest = rest"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored]",
+]
+
+# A frontmatter is read to the read cap, so a key line is read in time linear in its length: a
+# pattern that rescans the rest of the line at every step held `doctor` for hours on one line.
+[[mutation]]
+name = "a frontmatter key's tags are stripped one copy at a time"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+    properties = _PROPERTIES.match(rest)
+    rest = rest[properties.end() :] if properties else rest
+"""
+after = '''
+    while rest[:1] in ("!", "&"):
+        parts = re.split(r"[ \t]+", rest, maxsplit=1)
+        rest = parts[1] if len(parts) == 2 else ""
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_line_is_read_in_time_linear_in_its_length[tags]",
+]
+
+[[mutation]]
+name = "a frontmatter key is found by a lazy match"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_KEY_END = re.compile(r":(?=[ \t]|\Z)")'
+after = '_KEY_END = re.compile(r"[ \t]*:(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_line_is_read_in_time_linear_in_its_length[blanks]",
 ]
 
 [[mutation]]
@@ -3309,8 +3336,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter's merge key reads as a hooks key"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        return plain.group(1)"
-after = '        return _HOOKS if plain.group(1) == "<<" else plain.group(1)'
+before = '        return rest[: colon.start()].rstrip(" \t")'
+after = '        return _HOOKS if rest[: colon.start()] == "<<" else rest[: colon.start()].rstrip(" \t")'
 reddens = [
   "tests/doctor/test_checks.py::test_a_hooks_key_reached_only_through_a_merge_key_is_not_named",
 ]
