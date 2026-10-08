@@ -95,6 +95,7 @@ from stayfixed.memory.api import (
     STORE_DIR,
     Links,
     PartialLink,
+    Store,
     approval_recorded,
     attach_main,
     detach_main,
@@ -655,8 +656,21 @@ def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, .
     )
 
 
+def _fallback_store(owner: Path, config: Config, *, machine: Path | None) -> Store | None:
+    """The store the harness link and its settings-file fallback point at: the owning
+    checkout's, `owner`, which `_link_everywhere` points every checkout's harness link at.
+
+    One function, because three places ask it and must ask it alike: `_fallback_possible` above
+    the first write, which makes the settings file a candidate for the exclude block,
+    `_fallback_wanted` after the links, which writes the file, and `_harness_waits`, which says
+    why the link is missing. Each used to resolve a store of its own, and from a linked worktree
+    the plan asked the worktree's while the write asked the owner's: with only the owner's
+    approved, the run wrote a settings file the plan had not hidden."""
+    return resolve(owner, config, machine=machine)
+
+
 def _fallback_possible(
-    root: Path, config: Config, *, machine: Path | None, home: Path | None
+    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
 ) -> bool:
     """Whether this run may take the settings-file fallback, answered before its first write.
 
@@ -664,22 +678,23 @@ def _fallback_possible(
     link is not there to point at the store. `_link` leaves only one thing standing where the link
     goes — a real entry, which is what the harness makes of the path on its own — so a path that
     is absent or already a symlink is a link this run makes, and no fallback. Where a real entry
-    sits, the gate is asked of the store as it resolves now, and of a store that does not resolve
-    yet as the next paragraph says. The two agree with `_harness_fallback` by construction, so its
-    write is never one this run did not hold to the project and hide above its first write.
+    sits, the gate is asked of the store as it resolves now (`_fallback_store`, the one
+    `_harness_fallback` asks), and of a store that does not resolve yet as the next paragraph
+    says. The two agree with `_harness_fallback` by construction, so its write is never one this
+    run did not hold to the project and hide above its first write.
 
     **A first attach is answered too, without the link tree.** `resolve` needs the tree this run
     is about to build, so before it exists the gate is asked the one question it can be: does
-    this machine record any approval for a store at `paths.memory`? None is a gate that cannot
-    open, which is the ordinary first attach; a record, current or stale, is one that might, and
-    is answered "possible", because this answer decides a refusal.
+    this machine record any approval for a store at the owning checkout's `paths.memory`? None is
+    a gate that cannot open, which is the ordinary first attach; a record, current or stale, is
+    one that might, and is answered "possible", because this answer decides a refusal.
     """
     harness = harness_memory_path(root, home)
     if fsops.is_symlink(harness) or not fsops.exists(harness):
         return False
-    store = resolve(root, config, machine=machine)
+    store = _fallback_store(owner, config, machine=machine)
     if store is None:
-        return approval_recorded(root / config.paths.memory, machine)
+        return approval_recorded(owner / config.paths.memory, machine)
     return harness_link_needed(store, config)
 
 
@@ -974,7 +989,7 @@ def _fallback_wanted(
     checkout's harness link at. Resolved against `root` instead, a linked worktree answered with
     its own link tree, a different directory: the link just made never matched it, and the run
     said the link could not be created and recorded the fallback beside it."""
-    store = resolve(owner, config, machine=machine)
+    store = _fallback_store(owner, config, machine=machine)
     if store is None or not harness_link_needed(store, config):
         return None
     harness = harness_memory_path(root, home)
@@ -1058,8 +1073,8 @@ HARNESS_WAITS = (
 def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> bool:
     """Whether the gate kept the harness link from being made: `harness_link_needed`, asked
     exactly as `_apply_harness_link` asks it, of the store the run just linked, which is the
-    owning checkout's (`_fallback_wanted`)."""
-    store = resolve(owner, config, machine=machine)
+    owning checkout's (`_fallback_store`)."""
+    store = _fallback_store(owner, config, machine=machine)
     return store is not None and not harness_link_needed(store, config)
 
 
@@ -1277,9 +1292,9 @@ def plan_writes(
     home: Path | None,
 ) -> AttachPlan:
     """The rest of `_plan`: every read and refusal `attach` makes once the groups have all moved,
-    and nothing written. The anchor for the harness memory link, the ledger, what git already
-    hides and the ignore files' blocks, the settings merge and its fallback, the overlay's rule
-    sources, the checkouts and the machine's trust record, in that order.
+    and nothing written. The anchor for the harness memory link, the ledger, the settings merge,
+    the checkouts and the fallback, what git already hides and the ignore files' blocks, the
+    overlay's rule sources and the machine's trust record, in that order.
 
     `attach --check` calls it too and drops the plan, which is how the preview meets every one of
     these refusals with the run's code and line: each read here was once left out of the preview,
@@ -1315,10 +1330,14 @@ def plan_writes(
     document = local_document(root)
     merged = _merged_settings(document, diff, binding)
     written = merged != document
+    # The checkouts the link tree goes into, read here because the fallback below is asked of the
+    # owning checkout's store, the first of them, as the write after the links asks it. Their
+    # refusal is a `git` that cannot list them, knowable before anything is written.
+    checkouts = tuple(_checkouts(root))
     # The fallback's write is decided here too, for the same reason: it is the one write to the
     # settings file that happens after the links, and a refusal it earned there would come after
     # every write above it.
-    possible = _fallback_possible(root, config, machine=machine, home=home)
+    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)
     # A `.claude` linked in from elsewhere takes the fallback off the table rather than refusing
     # the run: the link is a layout the owner chose, and the note below says what the harness
     # link is missing and how to get it.
@@ -1326,13 +1345,11 @@ def plan_writes(
     settings = written or fallback or _settings_placed(previous, document)
     ignore = _planned_ignore_region(root) if exclude.unignored(root, LOCAL_STATE_PATHS) else None
     hidden = exclude.planned_block(root, _placed(binding, config, settings=settings))
-    # The three reads the writes below would otherwise make for themselves, each of which can
-    # refuse after the first write: the overlay's rule sources (a file that is not UTF-8), the
-    # checkouts the link tree goes into (a `git` that cannot list them) and the machine's trust
-    # record, which the index render and the harness link both read (a `trust.json` that does not
-    # parse).
+    # The two reads the writes below would otherwise make for themselves, each of which can
+    # refuse after the first write: the overlay's rule sources (a file that is not UTF-8) and the
+    # machine's trust record, which the index render and the harness link both read (a
+    # `trust.json` that does not parse).
     rules = _codex_rule_texts(binding)
-    checkouts = tuple(_checkouts(root))
     require_readable_record(machine)
     return AttachPlan(
         config=config,

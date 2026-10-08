@@ -882,7 +882,7 @@ reddens = [
 [[mutation]]
 name = "attach decides the settings fallback only once it has written"
 file = "src/stayfixed/attach/write.py"
-before = "    possible = _fallback_possible(root, config, machine=machine, home=home)"
+before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
 after = "    possible = False"
 reddens = [
   "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
@@ -917,7 +917,7 @@ reddens = [
 [[mutation]]
 name = "a first attach treats the unapproved gate as possibly open"
 file = "src/stayfixed/attach/write.py"
-before = "        return approval_recorded(root / config.paths.memory, machine)"
+before = "        return approval_recorded(owner / config.paths.memory, machine)"
 after = "        return True"
 reddens = [
   "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
@@ -2419,8 +2419,8 @@ reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_i
 [[mutation]]
 name = "the settings fallback compares a worktree's link with that worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    store = resolve(owner, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
-after = "    store = resolve(root, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+before = "    store = _fallback_store(owner, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+after = "    store = _fallback_store(root, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made"]
 
 [[mutation]]
@@ -2436,6 +2436,27 @@ file = "src/stayfixed/attach/write.py"
 before = "        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)"
 after = "        wanted = _fallback_wanted(root, config, owner=root, machine=machine, home=home)"
 reddens = ["tests/attach/test_links.py::test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted"]
+
+# The fallback is decided twice in a run, above the first write and after the links, and both
+# must ask the owning checkout's store: planned by a worktree's own, a store only the owner had
+# approved got a settings file written that the exclude block did not hide, and `--check`, which
+# plans the same way, answered clean.
+[[mutation]]
+name = "the settings fallback is planned by a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    possible = _fallback_possible(root, config, owner=checkouts[0], machine=machine, home=home)"
+after = "    possible = _fallback_possible(root, config, owner=root, machine=machine, home=home)"
+reddens = [
+  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes",
+  "tests/attach/test_links.py::test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_needs_a_line",
+]
+
+[[mutation]]
+name = "a first attach asks the approval of a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "        return approval_recorded(owner / config.paths.memory, machine)"
+after = "        return approval_recorded(root / config.paths.memory, machine)"
+reddens = ["tests/attach/test_links.py::test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record_takes"]
 
 
 # The ledger is what `stayfixed uninstall` reads as "this repository is attached", so a detach that
