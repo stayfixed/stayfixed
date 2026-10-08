@@ -1919,6 +1919,12 @@ HOOKS_SPELLED = {
     # the tabs to spaces, as Claude Code may, reads `hooks` among its keys. Mutation (oracle):
     # `mutations/`'s "a tab-indented frontmatter is read only as it stands".
     "a-tab-indented-mapping": "\tname: probe\n\thooks: {}\n",
+    # A tag or an anchor alone on its line, the mapping starting on the line below at an
+    # indentation of its own, which YAML reads as the tagged or anchored node. Mutation (oracle):
+    # `mutations/`'s "a mapping below a tag or an anchor alone on its line is read at the tag's
+    # indentation" -> both.
+    "tagged-above-an-indented-mapping": "!!map\n  name: probe\n  hooks: {}\n",
+    "anchored-above-an-indented-mapping": "&top\n  name: probe\n  hooks: {}\n",
     # A tag alone on a line a tab leads, which opens no key: repaired, it stands at the mapping's
     # indentation, and the keys below it are the top level. Mutation (oracle): `mutations/`'s "a
     # frontmatter is repaired of its tabs only where a tab leads a key".
@@ -1996,6 +2002,9 @@ UNTOLD_SPELLED = {
     "flow-explicit-key": "{? hooks : {}}\n",
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
     "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
+    # An alias key in a mapping below a tag alone on its line. Mutation (oracle): `mutations/`'s
+    # "a mapping below a tag alone on its line hides a key it cannot read whole".
+    "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
     # Where Claude Code's reading may differ from the row's: a `---` inside a line, where Claude
     # Code may end the frontmatter, and a key indented by a tab, which it may read once the tab is
     # two spaces. Mutations (oracle): `mutations/`'s "a frontmatter read two ways answers no where

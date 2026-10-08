@@ -2842,7 +2842,8 @@ not judge them, and says so, of every file whose frontmatter Claude Code reads f
 
 Each such file whose frontmatter (the lines between a first `---` line and the next one) holds a
 top-level `hooks` key is named as one whose hooks the row does not judge, a `warn`, never `red`. The
-top level is the indentation of the frontmatter's first line that is neither blank nor a comment.
+top level is the indentation of the frontmatter's first line that is not blank, a comment or a lone
+tag or anchor.
 The key is found bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or
 among a flow mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested
 under another key, or inside a quoted or flow value on its line, is not one, though a top-level line
@@ -2867,7 +2868,7 @@ a link that loops.
 
 A `.claude/skills` below the root is found by asking git
 (`git ls-files --cached --others --exclude-standard`): the files a clone commits and the untracked
-ones git does not ignore, each name compared without case. git lists a link as an entry of its own,
+ones git does not ignore. git lists a link as an entry of its own,
 so a link inside such a directory, such a directory that is a link, and a nested `.claude` that is
 one are read like the project's own. A submodule is one entry to that query, so where a
 `.gitmodules` sits at or above the root, git is asked again through each checked-out submodule's

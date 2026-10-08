@@ -208,8 +208,10 @@ def declares_hooks(text: str) -> bool | None:
     a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
     first line that is neither blank nor a comment: a mapping in block style has its keys there,
     and one in flow style opens there with `{` (`_flow_keys`), behind any tag or anchor, unless a
-    colon follows where it closes, which makes it a block mapping's first key. A key is `hooks`
-    bare or quoted either way, its escapes read; nothing else of YAML is parsed.
+    colon follows where it closes, which makes it a block mapping's first key. Behind a tag or an
+    anchor alone on its line, a block mapping may start on a line below at an indentation of its
+    own, and its keys are read there too. A key is `hooks` bare or quoted either way, its escapes
+    read; nothing else of YAML is parsed.
 
     Claude Code may read the file otherwise, by what its program text shows rather than by a
     measured run: it may end the frontmatter at the first `---` after the opening line, wherever in
@@ -289,13 +291,20 @@ def _holds_hooks(lines: list[str]) -> bool | None:
     if not content:
         return False
     indent = len(content[0]) - len(content[0].lstrip(" "))
-    opened = "\n".join(lines[lines.index(content[0]) :])[indent:]
+    first = lines.index(content[0])
+    opened = "\n".join(lines[first:])[indent:]
     ahead = _AHEAD.match(opened)
     node = opened[ahead.end() :] if ahead else opened
     if node.startswith("{") and not _keyed(node):
         keys, untold = _flow_keys(node)
     else:
         keys, untold = _block_keys(content, indent)
+        # Past a tag or an anchor alone on its line (`!!map`), the mapping starts on a line below.
+        below = opened.count("\n", 0, ahead.end()) if ahead else 0
+        if below:
+            line = lines[first + below]
+            deeper, unread = _block_keys(content, len(line) - len(line.lstrip(" ")))
+            keys, untold = keys | deeper, untold or unread
     if _HOOKS in keys:
         return True
     return None if untold else False

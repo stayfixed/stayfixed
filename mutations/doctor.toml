@@ -1622,6 +1622,25 @@ reddens = [
 ]
 
 [[mutation]]
+name = "a mapping below a tag or an anchor alone on its line is read at the tag's indentation"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "        if below:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-above-an-indented-mapping]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored-above-an-indented-mapping]",
+]
+
+[[mutation]]
+name = "a mapping below a tag alone on its line hides a key it cannot read whole"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "            keys, untold = keys | deeper, untold or unread"
+after = "            keys, untold = keys | deeper, untold"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key-below-a-tag-alone]",
+]
+
+[[mutation]]
 name = "a key the reader cannot read outranks a hooks key it can"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
