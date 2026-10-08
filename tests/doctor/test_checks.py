@@ -1897,10 +1897,16 @@ HOOKS_SPELLED = {
     "below-a-flow-mapping-key-tagged": "!!map {a: 1}: x\nhooks: {}\n",
     # A line at the top indentation inside a quoted or flow value over lines is read as a key. A
     # reader that skips such lines has to know where every value above them ends, a nested one's
-    # included, and the one that guessed hid a real `hooks` key below it: a nested value's last
-    # line at the top indentation opening a quote or a bracket a key below closes, and a value a
-    # reader repairing broken YAML re-quotes on its own line. The reader has no skip left to
-    # break, so no mutation is declared for these: they hold that none comes back.
+    # included, and the one that guessed hid a real `hooks` key below it: a nested value's last line
+    # at the top indentation opening a quote or a bracket a key below closes, and a value a reader
+    # repairing broken YAML re-quotes on its own line. The reader has no skip left to break, so each
+    # mutation brings one back. Mutations (oracle): `mutations/`'s "the frontmatter reader skips a
+    # line it guesses is inside a double-quoted value" -> the double-quote and flow-value nested
+    # tails, `inside-a-quoted-value-over-lines` and `inside-a-value-a-repair-re-quotes`; "the
+    # frontmatter reader skips a line it guesses is inside a single-quoted or flow value" -> the
+    # single-quote nested tail, `below-a-value-that-never-closes` and
+    # `inside-a-flow-value-over-lines`; "the frontmatter reader skips every line below a quote left
+    # open on its line" -> `below-a-value-over-lines`.
     "below-a-value-over-lines": 'description: "a\nb"\nhooks: {}\n',
     "below-a-value-that-never-closes": "tags: [a,\nhooks: {}\n",
     "below-a-nested-tail-opening-a-double-quote": 'a:\n  b: "x\nc: "\nhooks: y\nd: "z"\n',

@@ -1714,6 +1714,48 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-quoted-over-lines]",
 ]
 
+# A line at the top indentation inside a quoted or flow value over lines is read as a key. A reader
+# that skips such a line by the quotes or brackets it counts on the top-level lines above it hides
+# a real `hooks` key: below a nested value whose last line, at the top indentation, opens a quote
+# or a bracket, and inside a value a reader repairing broken YAML re-quotes; and one that takes a
+# quote left open on its line for one never closed hides the key below a value that closed.
+[[mutation]]
+name = "the frontmatter reader skips a line it guesses is inside a double-quoted value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        if len(line) - len(line.lstrip(" ")) != indent or sum(above.count('"') for above in top) % 2:'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-double-quote]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-flow-value]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-quoted-value-over-lines]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-value-a-repair-re-quotes]",
+]
+
+[[mutation]]
+name = "the frontmatter reader skips a line it guesses is inside a single-quoted or flow value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        quotes = sum(above.count("'") for above in top)
+        depth = sum(above.count("[") + above.count("{") - above.count("]") - above.count("}") for above in top)
+        if len(line) - len(line.lstrip(" ")) != indent or quotes % 2 or depth > 0:'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-single-quote]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-that-never-closes]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-flow-value-over-lines]",
+]
+
+[[mutation]]
+name = "the frontmatter reader skips every line below a quote left open on its line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if len(line) - len(line.lstrip(" ")) != indent:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        if len(line) - len(line.lstrip(" ")) != indent or any(above.count('"') % 2 for above in top):'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-over-lines]",
+]
+
 # The walk below the root lists a whole checkout, so it is bounded, enters no `.git`, and lists a
 # directory a link leads back to once; a walk that stopped is a warning that says so.
 [[mutation]]
