@@ -133,17 +133,21 @@ jobs:
   # than inside them.
   #
   # **Why one configuration is enough**, which is the half that had to be checked rather than
-  # assumed. The oracle proves "this mutation reddens this test" — a property of the code and of
-  # the tests, not of the platform. The matrix comment above argues the OS axis is load-bearing
-  # and it is right, but that argument is about the *tests*: `fsops.open_within` branches on
-  # `ELOOP` (Linux) against `ENOTDIR` (macOS). Every one of the 401 `reddens` targets, across 68
-  # test modules, was resolved to its function and read for skip gates before this was written.
-  # The only gates that exist are `shutil.which("git")`, `shutil.which("bash")`, a workflow
-  # file's presence, and `os.geteuid() == 0` — none platform-dependent, all satisfied here — and
-  # since then a zsh, which `ubuntu-latest` does not carry and this job installs for that reason;
-  # `sys.platform` and `platform.system()` appear nowhere under `tests/`, `src/` or `scripts/`.
-  # The errno divergence is absorbed inside one branch rather than by skipping a test, and no
-  # entry targets that line.
+  # assumed. The oracle proves "this mutation reddens this test" — a property of the code and of the
+  # tests, not of the platform. The matrix comment above argues the OS axis is load-bearing and it
+  # is right, but that argument is about the *tests*: `fsops.open_within` branches on `ELOOP`
+  # (Linux) against `ENOTDIR` (macOS). Every `reddens` target was resolved to its function and read
+  # for skip gates when this was written, and again when the wrapper's zsh case joined them. The
+  # gates ask for a program or a file the machine may lack — `git`, on `PATH` and at an absolute
+  # path; a `bash` to run as `sh`; `/usr/bin/id`, by which the wrapper's home cases name the user
+  # they ask the password database about; a zsh; this repository's `.git` and workflow files — for a
+  # user other than root, for an interpreter that has `os.waitid` or is 3.14, and for a filesystem
+  # that can hold a name that is not UTF-8. Some of those are platform-dependent, so it is this
+  # job's to satisfy them: every one is satisfied here but zsh, which `ubuntu-latest` does not carry
+  # and the step below installs, and the 3.14 gate, which skips two parametrized cases that no entry
+  # names. No test under `tests/`, and nothing in `src/` or `scripts/`, branches on `sys.platform`
+  # or `platform.system()`. The errno divergence is absorbed inside one branch rather than by
+  # skipping a test, and no entry targets that line.
   #
   # And if a platform gate is ever added to a `reddens` target, this goes red rather than quiet:
   # `_check` runs the clean tree first and demands `Outcome.passed`, which is
@@ -183,7 +187,10 @@ jobs:
       - name: zsh, for the wrapper's case that runs under it as sh
         # The runner image carries bash and dash and no zsh, and the case that proves the wrapper's
         # home lookup unsets a variable named for the user skips without one: a `reddens` target
-        # skipped here is a finding on the clean run, not a proof.
+        # skipped here is a finding on the clean run, not a proof. This step reaches the Ubuntu
+        # archive, so the `oracle` check that branch protection requires now needs that mirror as
+        # well as PyPI and the actions: an outage fails this step, and with it the check. It fails
+        # closed: no mirror outage can let an untested set pass.
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: The mutation oracle
         run: uv run python scripts/mutation_oracle.py
