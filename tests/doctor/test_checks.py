@@ -3246,6 +3246,64 @@ def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
     assert _by_name(_checks(tmp_path, root, runner=stub), "ci-ref").status == OK
 
 
+# What a `uses:` word pins, each as the pattern `uses:\s*\S+/\.github/workflows/check\.yml@(\S+)`
+# read it: what follows the last call that has a character before it and one after, and a word
+# ending in `uses:` hands on to the word after it. Mutations (oracle): `mutations/`'s "a uses:
+# word pins what follows its first call" -> `the last call`; "a word ending in uses: is passed
+# over whole" -> `a word ending in uses:`. Mutations (advisory; the group file of `doctor/` is at
+# its cap): the call that ends a word no longer falls back to the one before it -> `a call ending
+# the word`; a call with nothing before it pins -> `nothing before the call`.
+USES_WORDS = {
+    "the last call": (
+        "uses: a/.github/workflows/check.yml@x/.github/workflows/check.yml@v2",
+        {"v2"},
+    ),
+    "a call ending the word": (
+        "uses: a/.github/workflows/check.yml@v1/.github/workflows/check.yml@",
+        {"v1/.github/workflows/check.yml@"},
+    ),
+    "a word ending in uses:": ("uses: xuses: o/r/.github/workflows/check.yml@v3", {"v3"}),
+    "nothing before the call": ("uses: /.github/workflows/check.yml@v4", set()),
+}
+
+
+@pytest.mark.parametrize("case", sorted(USES_WORDS))
+def test_a_uses_word_pins_what_the_pattern_read_it_to_pin(case: str) -> None:
+    text, pinned = USES_WORDS[case]
+    assert checks._pinned_refs(text) == pinned
+
+
+# A file of `uses:` alone, which the pattern read again from every `uses:` in it to the end, ten
+# seconds at the read cap and four times as long at each doubling. The cap bounds what `doctor`
+# reads, so the reader is held on a text past it, where the old reading takes four minutes and
+# this one milliseconds; the pin after the run says the text was read to its end.
+_LONG_USES = 1 << 18
+_LONG_USES_SECONDS = 10
+
+
+def test_a_long_workflow_is_read_for_its_pins_in_time_linear_in_its_length() -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutation (oracle): `mutations/`'s "a uses: word is read again from every uses: inside it"
+    # -> this reddens.
+    probe = (
+        "import sys\n"
+        "from stayfixed.doctor.checks import _pinned_refs\n"
+        "text = 'uses:' * int(sys.argv[1]) + ' uses: o/r/.github/workflows/check.yml@abc'\n"
+        "print(_pinned_refs(text))\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(_LONG_USES)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_USES_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one workflow's pins ran past {_LONG_USES_SECONDS} s")
+    assert done.stdout == "{'abc'}\n", done.stderr
+
+
 def test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green(tmp_path: Path) -> None:
     """A missing file is no more evidence of agreement than an unrecognised one.
 

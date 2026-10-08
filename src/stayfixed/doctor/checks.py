@@ -605,7 +605,12 @@ WORKFLOW = ".github/workflows/stayfixed.yml"
 # diagnostic.
 WORKFLOW_MAX_BYTES = 256 * 1024
 # Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
-_USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")
+# The word after `uses:` is read once, and its ref found in it by `_pinned_refs`: a pattern that
+# ran on past the word's first character to the last call in it read the word again from every
+# `uses:` inside it, ten seconds over a file at the cap holding nothing else.
+_USES_KEY = "uses:"
+_USES = re.compile(rf"{_USES_KEY}\s*+(\S++)")
+_CALL = "/.github/workflows/check.yml@"
 # Said of a path that is there and is not a regular file: a directory, a device, a FIFO, or a
 # symlink to any of those. Fixed text, and the file's own bytes are never reached.
 WORKFLOW_NOT_A_FILE = (
@@ -758,7 +763,7 @@ def _ci_ref(context: Context) -> Row:
     # `finditer` and not `search`: the first `uses:` in the file may belong to another job, and
     # a recognisable pin after it is still the pin GitHub acts on. Every recognisable one is
     # compared, so a second job pinning something else is a finding too.
-    pinned = {match.group(1) for match in _USES.finditer(rendered)}
+    pinned = _pinned_refs(rendered)
     if not pinned:
         # Read and not recognised. Returning the ref's own verdict here would read as "the
         # workflow agrees", which is the false green the `OSError` arm beside it already refuses
@@ -777,6 +782,26 @@ def _ci_ref(context: Context) -> Row:
             CI_REF_REMEDY,
         )
     return row
+
+
+def _pinned_refs(text: str) -> set[str]:
+    r"""Every ref a `uses:` word in `text` pins: what follows the last call in the word that has a
+    character before it and one after, as `uses:\s*\S+/\.github/workflows/check\.yml@(\S+)`
+    read it. A word that pins nothing is passed over whole, since a `uses:` inside it reaches no
+    call the word does not, except one that ends the word, which reads the word after it."""
+    pinned = set()
+    at = 0
+    while (match := _USES.search(text, at)) is not None:
+        word = match.group(1)
+        call = word.rfind(_CALL)
+        if call >= 0 and call + len(_CALL) == len(word):
+            call = word.rfind(_CALL, 0, call)
+        at = match.end()
+        if call > 0:
+            pinned.add(word[call + len(_CALL) :])
+        elif word.endswith(_USES_KEY):
+            at -= len(_USES_KEY)
+    return pinned
 
 
 def _is_record(line: bytes) -> bool:

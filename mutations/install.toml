@@ -3799,3 +3799,28 @@ after = """
 reddens = [
   "tests/setup/test_setup.py::test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link",
 ]
+
+# A `uses:` word is read once: read again from every `uses:` inside it, a file of them at the cap
+# took ten seconds. Its ref is what follows the word's last call, and a word ending in `uses:`
+# hands on to the next.
+[[mutation]]
+name = "a uses: word is read again from every uses: inside it"
+file = "src/stayfixed/doctor/checks.py"
+before = "    while (match := _USES.search(text, at)) is not None:"
+after = '''    return {m.group(1) for m in re.finditer(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)", text)}
+    while (match := _USES.search(text, at)) is not None:'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_workflow_is_read_for_its_pins_in_time_linear_in_its_length"]
+
+[[mutation]]
+name = "a uses: word pins what follows its first call"
+file = "src/stayfixed/doctor/checks.py"
+before = "        call = word.rfind(_CALL)"
+after = "        call = word.find(_CALL)"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[the last call]"]
+
+[[mutation]]
+name = "a word ending in uses: is passed over whole"
+file = "src/stayfixed/doctor/checks.py"
+before = "            at -= len(_USES_KEY)"
+after = "            pass"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[a word ending in uses:]"]
