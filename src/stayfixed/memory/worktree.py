@@ -62,7 +62,7 @@ from stayfixed import fsops
 from stayfixed.config.machine import anchor_home
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
 from stayfixed.memory import trust
@@ -81,8 +81,6 @@ from stayfixed.memory.store import (
     permitted_roots,
     resolve,
 )
-
-OVERLAY_MODE = "overlay"
 
 
 class PartialLink(OSError):

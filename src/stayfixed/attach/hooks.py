@@ -70,7 +70,6 @@ from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-OVERLAY_MODE = "overlay"
 # `SessionStart.source` values that are one context asking again, and the only thing this module
 # reads the payload for.
 #
@@ -169,6 +168,8 @@ def _asked_before(event: HookEvent) -> bool:
 
 
 def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
+    from stayfixed.config.schema import OVERLAY_MODE
+
     if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:
         return HookResult()
     try:

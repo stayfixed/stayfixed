@@ -70,7 +70,7 @@ import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
 from stayfixed.config.machine import machine_config_path, override_is_honoured, passwd_home
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     OK,
@@ -869,7 +869,7 @@ IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    home = _ignored_home(context.env, overlay=context.config.memory.mode == "overlay")
+    home = _ignored_home(context.env, overlay=context.config.memory.mode == OVERLAY_MODE)
     if not set_here and home is None:
         return Row(OK, "no environment variable is being ignored")
     if not set_here and home is not None:

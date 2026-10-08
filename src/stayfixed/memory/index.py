@@ -20,7 +20,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import TooLarge, read_regular_text, write_atomically
 from stayfixed.memory.notes import (
@@ -134,7 +134,7 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
     `memory index` must be able to create, and answering the permission question without
     existence is what lets it.
     """
-    if store.mode != "overlay":
+    if store.mode != OVERLAY_MODE:
         return None
     overlay = overlay_root(store.machine)
     if overlay is None:

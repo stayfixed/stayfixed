@@ -2184,7 +2184,7 @@ reddens = [
 [[mutation]]
 name = "an override naming the share is dropped in every mode"
 file = "src/stayfixed/memory/store.py"
-before = '    if override is None or overlay is None or config.memory.mode != "overlay":'
+before = '    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:'
 after = "    if override is None or overlay is None:"
 reddens = [
   "tests/memory/test_commands.py::test_the_share_named_outside_overlay_mode_is_the_store_it_names",
@@ -2848,7 +2848,7 @@ reddens = [
 [[mutation]]
 name = "the withheld link line names attach for every store"
 file = "src/stayfixed/memory/hooks.py"
-before = "    if config.memory.mode == \"overlay\":\n        return NO_HARNESS_LINK_OVERLAY"
+before = "    if config.memory.mode == OVERLAY_MODE:\n        return NO_HARNESS_LINK_OVERLAY"
 after = "    if True:\n        return NO_HARNESS_LINK_OVERLAY"
 reddens = ["tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store"]
 

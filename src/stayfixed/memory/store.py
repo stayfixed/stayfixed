@@ -58,7 +58,7 @@ from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import GitUnavailable, git_answer, origin_remote
@@ -399,7 +399,7 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
     index rendered from it has no developer notes, and `--check` would call that index current. A
     store is one store however it is named, so this name resolves as the plain run does.
     """
-    if override is None or overlay is None or config.memory.mode != "overlay":
+    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:
         return False
     own = permitted_roots(overlay, config.project.name)[1]
     return Path(override).expanduser().resolve() == own.resolve()
@@ -455,7 +455,7 @@ def _resolve_at(
                 f"paths.memory is a symlink, and {mode} memory must be a real directory",
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
             )
-    if mode == "overlay":
+    if mode == OVERLAY_MODE:
         if overlay is None:
             return None, Unresolved(
                 "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
@@ -468,9 +468,9 @@ def _resolve_at(
     if not fsops.is_dir(base):
         # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
         # it refuses, so it is named as the way out only there.
-        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == "overlay" else "")
+        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == OVERLAY_MODE else "")
         return None, Unresolved(said, str(base))
-    groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
+    groups, unavailable = _group_targets(base, config, overlay if mode == OVERLAY_MODE else None)
     if not groups:
         # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
         # bounded in number by nothing, and this reason reaches a refusal with no `--json`. In
@@ -580,7 +580,7 @@ def inside_project(store: Store) -> bool:
     """
     if any(_inside(target, store.root) for target in store.groups.values()):
         return True
-    return store.mode != "overlay"
+    return store.mode != OVERLAY_MODE
 
 
 def in_repository(store: Store, path: Path) -> bool:

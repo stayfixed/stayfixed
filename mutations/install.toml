@@ -1851,7 +1851,7 @@ reddens = [
 [[mutation]]
 name = "an unrelated overlay's declared floor reddens a project that never reads it"
 file = "src/stayfixed/overlay/doctor.py"
-before = '        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN'
+before = '        unmet: Status = RED if context.config.memory.mode == OVERLAY_MODE else WARN'
 after = "        unmet: Status = RED"
 reddens = [
   "tests/overlay/test_doctor.py::test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor",

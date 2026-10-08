@@ -154,8 +154,9 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
 def _no_harness_link(config: Config) -> str:
     """The line for a harness link withheld, saying only what is true of this store."""
     from stayfixed.config.machine import passwd_home
+    from stayfixed.config.schema import OVERLAY_MODE
 
-    if config.memory.mode == "overlay":
+    if config.memory.mode == OVERLAY_MODE:
         return NO_HARNESS_LINK_OVERLAY
     return NO_HARNESS_LINK if passwd_home() is not None else NO_HARNESS_LINK_NO_HOME
 

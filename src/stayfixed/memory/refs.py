@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
 from stayfixed.fsops import read_regular_text, said
@@ -155,7 +155,7 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
     because that link dangles for every other project. Empty for a store with no cross-project
     group — every non-overlay store."""
     overlay = overlay_root(store.machine)
-    if overlay is None or store.mode != "overlay":
+    if overlay is None or store.mode != OVERLAY_MODE:
         return []
     common, _project = permitted_roots(overlay, config.project.name)
     common_groups = {

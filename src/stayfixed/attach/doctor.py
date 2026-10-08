@@ -134,6 +134,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
+    from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
@@ -147,7 +148,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     )
 
     config = context.config
-    if config.memory.mode != "overlay":
+    if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # stayfixed's own labels rather than a string a clone chose.

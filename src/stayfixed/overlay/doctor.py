@@ -129,6 +129,7 @@ def _overlay_requires(context: Context) -> Row:
     """
     import stayfixed
     from stayfixed import REPOSITORY_URL, fsops
+    from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
     from stayfixed.overlay.layout import PLUGIN_MANIFEST
     from stayfixed.overlay.requires import requires_of, satisfies
@@ -155,9 +156,8 @@ def _overlay_requires(context: Context) -> Row:
         # notes in the overlay, and red is a statement that *this installation* is wrong -- it
         # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
         # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
-        # exactly as the `attached` row compares it; the literal is that comparison's second
-        # site and not a new vocabulary.
-        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
+        # exactly as the `attached` row compares it.
+        unmet: Status = RED if context.config.memory.mode == OVERLAY_MODE else WARN
         return Row(
             unmet,
             f"the overlay requires stayfixed {spec} and {running} does not satisfy it",

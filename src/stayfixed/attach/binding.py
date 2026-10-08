@@ -34,7 +34,7 @@ from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said
 from stayfixed.gitenv import origin_remote
@@ -88,7 +88,6 @@ MEMORY_GROUP_UNASKED = (
 )
 
 
-OVERLAY_MODE = "overlay"
 # The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
 # question as the floor under this one, but it runs after every write `attach` makes: refused
 # there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,

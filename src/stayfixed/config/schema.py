@@ -57,7 +57,10 @@ STATES = ("initialised", "adopting", "installed")
 BUILTIN_GATES = ("docs", "bugs", "plan", "commit", "trail")
 # The configuration check: a gate runner's other verdict, and never a gate's name.
 CONFIG_CHECK = "config"
-MEMORY_MODES = ("overlay", "in-repo", "local-only")
+# The memory mode whose notes live in the private overlay: the one mode `attach` binds, and the one
+# the areas that read the store branch on, so it is spelled here and nowhere else.
+OVERLAY_MODE = "overlay"
+MEMORY_MODES = (OVERLAY_MODE, "in-repo", "local-only")
 CI_MODES = ("reusable", "uvx", "none")
 
 
