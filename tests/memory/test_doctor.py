@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed.memory.answers as answers_module
+from stayfixed import fsops
 from stayfixed.config.loader import load
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.errors import Refusal
@@ -171,6 +172,32 @@ def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path:
     assert check.status == "warn"
     assert "1" in check.detail
     assert "scratch.txt" not in check.detail
+
+
+@pytest.mark.parametrize("entries", [3, 4])
+def test_a_note_store_past_the_walk_cap_is_one_the_row_cannot_tell_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entries: int
+) -> None:
+    # An `in-repo` store is a tree the repository commits, and the walk listed every entry in it,
+    # so a clone committing millions of files there stalled `doctor`. It stops at the walk cap,
+    # lowered here to three, and says it could not tell; a store of exactly three entries is read
+    # whole. Mutation (oracle): `mutations/`'s "the note store's walk lists every entry" -> `4`.
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 3)
+    root = _initialised(tmp_path)
+    store = root / ".stayfixed" / "local" / "memory" / "developer"
+    store.mkdir(parents=True)
+    for index in range(entries):
+        (store / f"n{index}.md").write_text("---\nname: n\ndescription: d\n---\n\nbody\n")
+    check = _by_name(_checks(tmp_path, root), "store-debris")
+    if entries == 3:
+        assert (check.status, check.detail) == (OK, "the note store holds notes and nothing else")
+    else:
+        assert (check.status, check.detail, check.remedy) == (
+            WARN,
+            "the walk of the note store stopped after 3 entries, so it cannot say whether the "
+            "store holds files that are not notes",
+            "run `stayfixed memory inventory` to see what the store holds",
+        )
 
 
 @pytest.mark.parametrize(

@@ -2237,6 +2237,17 @@ reddens = [
   "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
 
+# The note store's walk stops at the one walk cap and says it could not tell, since an `in-repo`
+# store is a tree a clone commits.
+[[mutation]]
+name = "the note store's walk lists every entry"
+file = "src/stayfixed/memory/doctor.py"
+before = "            if listed > fsops.WALK_ENTRIES:"
+after = "            if False:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_note_store_past_the_walk_cap_is_one_the_row_cannot_tell_about[4]",
+]
+
 # A note's backticked path is resolved to ask whether it lies inside the store, and Python 3.11 and
 # 3.12 raise `RuntimeError` resolving a path through a symlink loop; the note and the loop are both
 # bytes a clone can commit, so the answer is a finding and never an internal error.

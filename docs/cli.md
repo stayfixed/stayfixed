@@ -2725,7 +2725,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
-| `store-debris` | files in the note store that are not notes | the note store |
+| `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
 | `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
@@ -2852,15 +2852,15 @@ ways too, naming the file if any holds `hooks`. Where they may differ, or a top-
 read whole (an alias `*name`, a merge key `<<`, a `? ` key past its line, a quoted key over several
 lines), the file is otherwise named as one the row cannot tell about, a `warn`. Names are compared
 without case (`skill.md`, `.Claude/Skills`). Any path the row cannot read, a FIFO or a directory it
-cannot list among them, is named as one it can say nothing about, also a `warn`, and a path outside
-the path grammar, every name in it the repository's, as a file whose path the row does not print.
+cannot list among them, is named as one it can say nothing of, also a `warn`, and a path outside the
+path grammar, every name in it the repository's, as a file whose path the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and
 lists a directory a link leads back to, and names a file two paths reach, once. A link whose name
 the row reads as a file, a `*.md` or a `SKILL.md`, is read when it leads to a file inside the
 checkout. A link of either kind that leads out, as a dotfiles setup links `.claude/agents`, is named
-as a path that leads out of the checkout and was not followed, a `warn` that marks no fault: what it
+as one that leads out of the checkout and was not followed, a `warn` that marks no fault: what it
 leads to is not the repository's, so the row leaves it to you. Only a link to a file the row would
 not read, a skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and
 a link that loops.
@@ -2872,17 +2872,17 @@ so a link inside such a directory, such a directory that is a link, and a nested
 one are read like the project's own. A submodule is one entry to that query, so where a
 `.gitmodules` sits at or above the root, git is asked again through each checked-out submodule's
 index (`git ls-files --cached --recurse-submodules`): what that index holds, staged or committed,
-not a file untracked inside a submodule, which git cannot list so.
+not a file untracked in a submodule, which git cannot list so.
 
 **A skill inside a directory git ignores is not named**, such as one under `node_modules`: no clone
-carries an ignored file, so it is not the repository's to declare (whether Claude Code loads one was
-not measured), and listing those trees would stop the row short in a large checkout. Outside a git
+carries an ignored file, so it is not the repository's to declare (whether Claude Code loads one is
+unmeasured), and listing those trees would stop the row short in a large checkout. Outside a git
 work tree, or where `git` fails, the row walks the tree instead, following no link but a nested
 `.claude/skills` or `.claude` that is one, never entering `.git`, and passing over a directory it
 cannot list. The reads and that walk list at most 500,000 directory entries in all; past that, the
-row says the walk stopped and it cannot tell about the files past it, a `warn`. In a work tree only
-the project's own three directories, and those links in or above a nested `.claude/skills` lead to,
-count toward that number.
+row says the walk stopped and it cannot tell of the files past it, a `warn`. In a work tree only the
+project's own three directories, and those links in or above a nested `.claude/skills` lead to,
+count toward it.
 
 Whether the model can invoke a skill, and so run its hooks, without a person asking was not
 measured: no model call ran. The plugin and agent rows share that limit, and say nothing of a

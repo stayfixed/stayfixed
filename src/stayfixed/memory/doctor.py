@@ -80,7 +80,9 @@ def _store_debris(context: Context, answers: Answers) -> Row:
 
     Counted and not named. A filename in the store is repository-authored in `in-repo` and
     `local-only` mode — the two the preset ships — so the count is this check's own answer and
-    the remedy names the command that lists them under the trust gate.
+    the remedy names the command that lists them under the trust gate. In `in-repo` mode the tree
+    is the repository's too, so the walk lists at most `fsops.WALK_ENTRIES` entries, the cap every
+    walk with a "could not tell" answer reads, and past it says it could not tell.
     """
     from stayfixed import fsops
     from stayfixed.doctor.api import OK, SKIP, WARN, Row
@@ -88,9 +90,17 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     store = answers.store(context)
     if store is None:
         return Row(SKIP, "the note store does not resolve", "")
-    found = 0
+    found = listed = 0
     for target in store.groups.values():
         for path in target.rglob("*"):
+            listed += 1
+            if listed > fsops.WALK_ENTRIES:
+                return Row(
+                    WARN,
+                    f"the walk of the note store stopped after {fsops.WALK_ENTRIES:,} entries, so "
+                    "it cannot say whether the store holds files that are not notes",
+                    "run `stayfixed memory inventory` to see what the store holds",
+                )
             if fsops.is_file(path) and path.suffix != ".md" and not path.name.startswith("."):
                 found += 1
     if found:
