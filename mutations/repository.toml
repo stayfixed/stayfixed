@@ -556,6 +556,30 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh",
 ]
 
+# `id` comes from absolute paths, as git does: with `/usr/bin/id` alone, NixOS's wrapper git got
+# no home, and a checkout another user owns lost git's anchor for the containment.
+[[mutation]]
+name = "the wrapper runs its first id candidate whether or not it is there"
+file = "hooks/run-hook.sh"
+before = '  if test -x "$i"; then'
+after = '  if :; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds[an id further down]",
+]
+
+[[mutation]]
+name = "the wrapper names the user by the environment's USER where it has no id"
+file = "hooks/run-hook.sh"
+before = '''git_home=
+git_user=
+'''
+after = '''git_home=
+git_user=${USER-}
+'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds[no id at all]",
+]
+
 # No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
 # `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
 # Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.

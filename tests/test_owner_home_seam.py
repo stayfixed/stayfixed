@@ -104,6 +104,11 @@ EXEMPT: dict[tuple[str, str, str], str] = {
     ): _FAKE,
     (
         "tests/hooks/test_wrapper.py",
+        "test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds",
+        "[str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
+    ): _FAKE,
+    (
+        "tests/hooks/test_wrapper.py",
         "test_a_project_root_that_cannot_be_entered_says_so",
         "[str(root / 'hooks' / WRAPPER.name), policy, 'hook', 'PreToolUse']",
     ): _FAKE,

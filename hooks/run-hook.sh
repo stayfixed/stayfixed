@@ -146,16 +146,21 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # global configuration, which names programs git runs, and direnv, mise or a devcontainer can set
 # it to a directory the clone commits, so it is the home `stayfixed.gitenv.hook_home` hands every
 # `git` stayfixed runs below: the database's entry for this user, asked through the shell's own
-# `~name` for the name `/usr/bin/id` gives. A name that is not a plain one, a user the database
-# lists no absolute home for, or a system without `/usr/bin/id` gets no `HOME`, never the
-# inherited one. zsh, which `/bin/sh` may be on macOS, expands `~name` from a variable called
-# `name` holding an absolute path before it asks the database, as `sh` too, so a variable in the
-# hook's environment named for the user chose this home. The lookup therefore runs in a subshell
-# that first unsets the variable of that name, spliced into the `eval` so the name is expanded
-# before the unset, and the subshell keeps a name equal to one of this file's own variables from
-# touching it. A name no variable can have, one with a `.` or a `-` or a leading digit, is not
-# unset: dash and zsh end the subshell on `unset` of a name that is not an identifier, which
-# measured as no `HOME` for every such user.
+# `~name` for the name `id -un` gives. `id` is taken as `git` is, from absolute paths and never
+# through `PATH`: the system's own, then NixOS's, which has no `/usr/bin/id`. With `/usr/bin/id`
+# alone, NixOS got no home, and with it lost a global `safe.directory` and so git's anchor for a
+# checkout another user owns. A name that is not a plain one, a user the database lists no
+# absolute home for, or a system with `id` at none of these paths gets no `HOME`, never the
+# inherited one.
+#
+# zsh, which `/bin/sh` may be on macOS, expands `~name` from a variable called `name` holding an
+# absolute path before it asks the database, as `sh` too, so a variable in the hook's environment
+# named for the user chose this home. The lookup therefore runs in a subshell that first unsets
+# the variable of that name, spliced into the `eval` so the name is expanded before the unset, and
+# the subshell keeps a name equal to one of this file's own variables from touching it. A name no
+# variable can have, one with a `.` or a `-` or a leading digit, is not unset: dash and zsh end
+# the subshell on `unset` of a name that is not an identifier, which measured as no `HOME` for
+# every such user.
 #
 # `gitenv._git_toplevel` scrubs the identical `env -i` call one layer down and names the failure
 # verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for a different repository,
@@ -183,7 +188,13 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
 done
 test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
 git_home=
-git_user=$(/usr/bin/id -un 2>/dev/null) || git_user=
+git_user=
+for i in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do
+  if test -x "$i"; then
+    git_user=$("$i" -un 2>/dev/null) || git_user=
+    break
+  fi
+done
 case $git_user in
   '' | -* | *[!A-Za-z0-9._-]*) ;;
   [0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;

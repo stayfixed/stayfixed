@@ -30,6 +30,7 @@ def _plugin_root(
     echo_cwd: bool = False,
     with_launcher: bool = True,
     git_candidates: str | None = None,
+    id_candidates: str | None = None,
     prints: str | None = None,
 ) -> Path:
     """A plugin root: a copy of the shipped wrapper, and a launcher beside it.
@@ -68,6 +69,18 @@ def _plugin_root(
             last += 1
         lines[first : last + 1] = [f"for g in {git_candidates}; do\n"]
         copied.write_text("".join(lines), encoding="utf-8")
+    if id_candidates is not None:
+        # The `id` list has the git list's reason: it is not environment-settable either, and no
+        # test can put a program at `/usr/bin/id` or take one away.
+        copied = root / "hooks" / WRAPPER.name
+        text = copied.read_text(encoding="utf-8")
+        shipped = "for i in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do\n"
+        assert text.count(shipped) == 1, (
+            "the wrapper's id list is no longer spelled as this expects"
+        )
+        copied.write_text(
+            text.replace(shipped, f"for i in {id_candidates}; do\n"), encoding="utf-8"
+        )
     (root / "hooks" / WRAPPER.name).chmod(0o755)
     if not with_launcher:
         return root
@@ -478,7 +491,9 @@ def _user_and_database_home() -> tuple[str, str]:
     return name, database
 
 
-def _plugin_root_recording_git_homes(tmp_path: Path, project: Path) -> tuple[Path, Path]:
+def _plugin_root_recording_git_homes(
+    tmp_path: Path, project: Path, *, id_candidates: str | None = None
+) -> tuple[Path, Path]:
     """A plugin root whose only git is a stand-in that answers `project` for the root and the
     checkouts and records the `HOME` each call meets, one `<argv>|<HOME>` line per call. The
     root, and the record."""
@@ -491,7 +506,10 @@ def _plugin_root_recording_git_homes(tmp_path: Path, project: Path) -> tuple[Pat
         encoding="utf-8",
     )
     stand_in.chmod(0o755)
-    return _plugin_root(tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in)), log
+    root = _plugin_root(
+        tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in), id_candidates=id_candidates
+    )
+    return root, log
 
 
 ZSH = "/bin/zsh" if os.access("/bin/zsh", os.X_OK) else shutil.which("zsh")
@@ -532,6 +550,48 @@ def test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_unde
     assert log.read_text(encoding="utf-8").splitlines() == [
         f"rev-parse --show-toplevel|{database}",
         f"-C {project} worktree list --porcelain|{database}",
+    ]
+
+
+@pytest.mark.skipif(not os.access("/usr/bin/id", os.X_OK), reason="no /usr/bin/id on this system")
+@pytest.mark.parametrize("found", [True, False], ids=["an id further down", "no id at all"])
+def test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds(
+    tmp_path: Path, found: bool
+) -> None:
+    # The wrapper named the user by `/usr/bin/id` alone, and NixOS has none: its git got no
+    # `HOME`, so a global `safe.directory` stopped answering, and a checkout another user owns
+    # lost git's anchor for the containment. `id` now comes from a list of absolute paths, as git
+    # does. A list with an absent path first stands for that system; one with no `id` at all is
+    # the arm that hands git no `HOME` and must not reach for the name the environment carries.
+    # Mutations (declared): the wrapper runs its first id candidate whether or not it is there ->
+    # the first case reddens; the wrapper names the user by the environment's USER where it has
+    # no id -> the second.
+    user, database = _user_and_database_home()
+    project = tmp_path / "project"
+    project.mkdir()
+    stand_in = tmp_path / "id"
+    stand_in.write_text('#!/bin/sh\nexec /usr/bin/id "$@"\n', encoding="utf-8")
+    stand_in.chmod(0o755)
+    absent = tmp_path / "absent" / "id"
+    candidates = f"{absent} {stand_in}" if found else f"{absent} {absent}-too"
+    root, log = _plugin_root_recording_git_homes(tmp_path, project, id_candidates=candidates)
+    env = _env(root, None, None)
+    env.update(HOME="fakehome", USER=user, LOGNAME=user)
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), "open", "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(project),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{project.resolve()}\n"
+    home = database if found else "no HOME"
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        f"rev-parse --show-toplevel|{home}",
+        f"-C {project} worktree list --porcelain|{home}",
     ]
 
 
