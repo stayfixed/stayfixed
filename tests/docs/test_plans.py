@@ -5,7 +5,6 @@ sample data.
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import re
@@ -94,39 +93,39 @@ def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) 
 
 
 def test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     # A 5,000-character backticked path made `exists()` raise `ENAMETOOLONG` on Python 3.11 to
-    # 3.13, which crashed the lint on the author's own plan instead of reporting the claim.
-    # Forced here, portably, by making `exists` raise for that path. Oracle: `mutations/`, "a
-    # path the filesystem cannot name crashes the reference checks".
+    # 3.13, which crashed the lint on the author's own plan instead of reporting the claim, and
+    # answered `False` on 3.14. `fsops.exists` answers it on every interpreter, unforced. No entry
+    # of its own: `mutations/`'s "the path predicates read a name longer than the system takes as
+    # a fault" moves the answer to the arm below it, which answers the same.
     root, config = project(tmp_path)
     long = "src/" + "a" * 5000 + ".py"
-    real = Path.exists
-
-    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
-        if len(str(self)) > 4096:
-            raise OSError(errno.ENAMETOOLONG, "File name too long")
-        return real(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "exists", exists)
     path = plan(root, SCOPE + f"- Modify: `{long}`\n")
     found = lint(root, config, plans=[path]).findings
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, long)]
 
 
-def test_a_reference_too_long_for_this_filesystem_is_not_found(tmp_path: Path) -> None:
-    # The same case unforced, where the platform still raises; 3.14's `exists` answers False.
-    try:
-        (tmp_path / ("a" * 5000)).exists()
-    except OSError:
-        pass
-    else:
-        pytest.skip("this Python's exists() answers a name too long instead of raising")
+def test_a_reference_below_a_directory_that_cannot_be_searched_is_not_found_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # What the existence query still raises -- a fault that leaves the question open -- is the
+    # reference checks' to answer, and they answer it as a claim not found rather than a crash.
+    # Oracle: `mutations/`, "a path the filesystem cannot answer for crashes the reference checks".
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory")
     root, config = project(tmp_path)
-    long = "src/" + "a" * 5000 + ".py"
-    path = plan(root, SCOPE + f"- Modify: `{long}`\n")
-    assert rules(root, config, path) == ["dead-reference"]
+    (root / "src" / "locked" / "child").mkdir(parents=True)
+    path = plan(root, SCOPE + "- Modify: `src/locked/child/x.py`\n")
+    (root / "src" / "locked").chmod(0o600)
+    try:
+        found = lint(root, config, plans=[path]).findings
+    finally:
+        (root / "src" / "locked").chmod(0o700)
+    assert [(f.rule, f.line, f.detail) for f in found] == [
+        ("dead-reference", 3, "src/locked/child/x.py")
+    ]
 
 
 def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(

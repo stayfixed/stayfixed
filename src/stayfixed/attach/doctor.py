@@ -131,6 +131,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
+    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
     from stayfixed.doctor.api import OK, RED, WARN, Row
@@ -163,7 +164,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             "memory path to check and no hook makes one",
             "pass --home <path> to check the harness memory path under that directory",
         )
-    if harness.is_dir() and not harness.is_symlink():
+    if fsops.is_dir(harness) and not fsops.is_symlink(harness):
         return Row(
             RED,
             "the harness memory path is a real directory rather than a link to the store, so "
@@ -307,6 +308,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     at all, which is a warning naming what could not be asked rather than a green sentence
     asserting what was not checked.
     """
+    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.memory.api import harness_link_needed
@@ -315,7 +317,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     # `attach` puts it, whatever the wrong shape was.
     relink = f"run `{ATTACH_STORE}`"
     store = answers.store(context)
-    if harness.is_symlink():
+    if fsops.is_symlink(harness):
         if store is None:
             return (
                 WARN,
@@ -325,7 +327,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
             )
         if harness.resolve() == store.path.resolve():
             return OK, "a link to the store", ""
-        if not harness.exists():
+        if not fsops.exists(harness):
             return RED, "a dangling link, so the harness reads nothing through it", relink
         return (
             RED,

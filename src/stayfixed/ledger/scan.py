@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.fsops import read_regular_bytes, said
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
@@ -105,7 +106,7 @@ def document_roots(root: Path, config: Config) -> tuple[str, ...]:
             candidate = contained(root, parts[0], resolved_root=resolved_root)
         except PathEscape:
             continue
-        if candidate.is_dir():
+        if fsops.is_dir(candidate):
             found.append(parts[0])
     return tuple(found)
 
@@ -170,16 +171,16 @@ def _walked_files(root: Path, names: tuple[str, ...]) -> list[Path]:
     candidates: list[Path] = []
     for name in names:
         if name == TOP_LEVEL:
-            candidates.extend(child for child in root.iterdir() if not child.is_dir())
+            candidates.extend(child for child in root.iterdir() if not fsops.is_dir(child))
             continue
         base = root / name
-        if not base.is_dir():
+        if not fsops.is_dir(base):
             continue
         for parent, dirnames, filenames in os.walk(base):
             here = Path(parent)
             # In place, because that list is what `os.walk` descends into next.
             dirnames[:] = [
-                d for d in dirnames if d not in EXCLUDED_DIRNAMES and not (here / d).is_symlink()
+                d for d in dirnames if d not in EXCLUDED_DIRNAMES and not fsops.is_symlink(here / d)
             ]
             candidates.extend(here / filename for filename in filenames)
     return candidates

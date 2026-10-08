@@ -353,7 +353,7 @@ reddens = [
 [[mutation]]
 name = "init runs again over a repository whose manifest says it is already initialised"
 file = "src/stayfixed/project/init.py"
-before = "    if (root / MANIFEST_PATH).is_file():"
+before = "    if fsops.is_file(root / MANIFEST_PATH):"
 after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
@@ -849,7 +849,7 @@ reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if (root / ATTACH_LEDGER).is_file():"
+before = "    if fsops.is_file(root / ATTACH_LEDGER):"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
 
@@ -1304,7 +1304,7 @@ reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anc
 [[mutation]]
 name = "the questions are asked over a stayfixed.toml that already answers them"
 file = "src/stayfixed/project/init.py"
-before = "    if answering and contained(root, CONFIG_FILE).is_file():"
+before = "    if answering and fsops.is_file(contained(root, CONFIG_FILE)):"
 after = "    if False:"
 reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
 
@@ -1578,8 +1578,8 @@ reddens = [
 [[mutation]]
 name = "init's answer-sheet check takes a symlinked stayfixed.toml by what it points at"
 file = "src/stayfixed/project/init.py"
-before = "    if answering and contained(root, CONFIG_FILE).is_file():"
-after = "    if answering and (root / CONFIG_FILE).is_file():"
+before = "    if answering and fsops.is_file(contained(root, CONFIG_FILE)):"
+after = "    if answering and fsops.is_file(root / CONFIG_FILE):"
 reddens = [
   "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_stayfixed_toml_whatever_it_points_at[init-questions-regular-file]",
   "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_stayfixed_toml_whatever_it_points_at[init-questions-/dev/zero]",
@@ -1881,8 +1881,8 @@ reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read
 [[mutation]]
 name = "a source that is a symlink is not compared"
 file = "src/stayfixed/profiles/python/hygiene.py"
-before = "                if not source.is_file():"
-after = "                if not source.is_file() or source.is_symlink():"
+before = "                if not fsops.is_file(source):"
+after = "                if not fsops.is_file(source) or fsops.is_symlink(source):"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
 
 # The walk for `.pyc` files stops at its named cap and then says it could not tell: unbounded, a

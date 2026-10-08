@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from stat import S_ISDIR
 
+from stayfixed import fsops
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
@@ -684,7 +685,7 @@ def _read_place(
             child = f"{relative}/{name}"
             if _reads(place, name):
                 found.extend(_frontmatter(root, real_root, child))
-            elif (root / child).is_dir():
+            elif fsops.is_dir(root / child):
                 below.append(child)
         pending.extend(reversed(below))
     return found

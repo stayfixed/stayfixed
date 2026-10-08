@@ -144,7 +144,7 @@ def next_identifier(root: Path, register: Register, *, fetch: bool = True) -> Al
     ids = register.ids
     directory = entry_dir(root, register)
     numbers: set[int] = set()
-    if directory.is_dir():
+    if fsops.is_dir(directory):
         numbers.update(entry.number for entry in load_entries(root, register))
         numbers.update(
             ids.number(path.stem)
@@ -259,7 +259,7 @@ def file_entry(
     # says so when it fails), and `--root` need not be a git checkout at all. What it would
     # overwrite is the only copy of a bug report, so the file's existence decides — the same
     # refusal `renumber` makes about its target.
-    if path.exists():
+    if fsops.exists(path):
         raise LedgerError(
             f"{identifier} was allocated but {relative} already exists; nothing was written. "
             f"Run `stayfixed {register.name} check`: an entry file the allocator cannot account "
@@ -338,10 +338,10 @@ def _endpoints_written(
     was edited after the kill. A symlink there is refused before it is read, as anything but a
     regular file is: the move writes its target, it never adopts one.
     """
-    if not target.exists():
+    if not fsops.exists(target):
         return 0
     occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=""))
-    if target.is_symlink() or not target.is_file():
+    if fsops.is_symlink(target) or not fsops.is_file(target):
         raise occupied
     held = read_ledger_text(target, where=Path(register.directory) / f"{new}.md")
     if held == moved:
@@ -418,7 +418,7 @@ def renumber(
     directory = register.directory
     source = root / directory / f"{old}.md"
     target = root / directory / f"{new}.md"
-    if not source.is_file():
+    if not fsops.is_file(source):
         raise LedgerError(f"{directory}/{old}.md does not exist")
     # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
     # names the file in every message either of them raises.

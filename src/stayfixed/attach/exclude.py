@@ -259,7 +259,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     if not lines:
         return None
     path = git_path(root, EXCLUDE, "exclude file")
-    if path.is_symlink():
+    if fsops.is_symlink(path):
         raise Refusal(LINKED.format(path=quoted(str(path))))
     read = _read(path)
     current = read or ""
@@ -267,7 +267,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     if earlier is None:
         records = [
             *((EXCLUDE_CREATED,) if read is None else ()),
-            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),
+            *((EXCLUDE_DIRECTORY_CREATED,) if not fsops.is_dir(path.parent) else ()),
             # git's line end, `\n` alone: a last line ending in a lone `\r` is not ended.
             *((EXCLUDE_ENDED,) if current and not current.endswith(("\n", "\r")) else ()),
             *((EXCLUDE_ENDED_AFTER_CR,) if current.endswith("\r") else ()),
@@ -304,7 +304,7 @@ def _writable(path: Path) -> bool:
     so the directory it lives in (or, while that is not there yet, the nearest one above it that
     is, where it would be created) must be writable and searchable."""
     directory = path.parent
-    while not directory.exists() and directory != directory.parent:
+    while not fsops.exists(directory) and directory != directory.parent:
         directory = directory.parent
     return os.access(directory, os.W_OK | os.X_OK)
 
@@ -324,7 +324,7 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     block, taking it back would join two lines, so it stays.
     """
     path = git_path(root, EXCLUDE, "exclude file")
-    if path.is_symlink() or not path.is_file():
+    if fsops.is_symlink(path) or not fsops.is_file(path):
         return None
     current = _read(path) or ""
     body = _named(path, extract, current)

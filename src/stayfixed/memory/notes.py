@@ -27,6 +27,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure
 from stayfixed.fsops import read_regular_text, said, utf_8_name, write_atomically
 
@@ -432,7 +433,7 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
     unreadable: list[tuple[Path, str]] = []
     for group in groups:
         directory = store / group
-        if not directory.is_dir():
+        if not fsops.is_dir(directory):
             continue
         for path in sorted(directory.glob("*.md")):
             if path.name.startswith((".", "_")):

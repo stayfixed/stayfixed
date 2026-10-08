@@ -252,7 +252,8 @@ def _files(store: Store) -> list[tuple[str, Path]]:
         for path in sorted(store.groups[group].glob("*.md"))
     ]
     index = store.path / INDEX_NAME
-    if index.exists() or index.is_symlink():  # `is_symlink` so a dangling index still counts
+    # `is_symlink` so a dangling index still counts.
+    if fsops.exists(index) or fsops.is_symlink(index):
         found.append((INDEX_NAME, index))
     return found
 
@@ -322,7 +323,7 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     costs that project a re-approval instead of costing every project its record.
     """
     path = _trust_file(machine)
-    if path is None or not path.is_file():
+    if path is None or not fsops.is_file(path):
         return {}
     try:
         text = path.read_text(encoding="utf-8")

@@ -95,6 +95,7 @@ from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
+from stayfixed import fsops
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.paths import STAYFIXED_DIRECTORY, contained
@@ -198,7 +199,7 @@ def _kept_locally(root: Path, removing: Set[str]) -> int:
     would take the ignore block out from over it. Counting too many only refuses the run.
     """
     base = contained(root, LOCAL_ROOT)
-    kept = (p for p in base.rglob("*") if p.is_symlink() or not p.is_dir())
+    kept = (p for p in base.rglob("*") if fsops.is_symlink(p) or not fsops.is_dir(p))
     return sum(1 for p in kept if f"{LOCAL_ROOT}/{p.relative_to(base).as_posix()}" not in removing)
 
 
@@ -274,7 +275,7 @@ def _remove_local_artifacts(root: Path) -> None:
     A directory where the ledger belongs is not a file stayfixed wrote: it goes only if empty.
     """
     path = root / LOCAL_DIGESTS
-    if path.is_dir() and not path.is_symlink():
+    if fsops.is_dir(path) and not fsops.is_symlink(path):
         with contextlib.suppress(OSError):
             rmdir_within(root, LOCAL_DIGESTS)
     else:
@@ -285,8 +286,8 @@ def _remove_local_artifacts(root: Path) -> None:
         except OSError as exc:
             raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({said(exc)})") from exc
     base = contained(root, LOCAL_ARTIFACTS)
-    if base.is_dir() and not base.is_symlink():
-        below = (p for p in base.rglob("*") if p.is_dir() and not p.is_symlink())
+    if fsops.is_dir(base) and not fsops.is_symlink(base):
+        below = (p for p in base.rglob("*") if fsops.is_dir(p) and not fsops.is_symlink(p))
         found = {f"{LOCAL_ARTIFACTS}/{p.relative_to(base).as_posix()}" for p in below}
         _rmdirs(root, {*found, LOCAL_ARTIFACTS})
 
@@ -300,7 +301,7 @@ def _remove_ledger(root: Path) -> None:
     """
     for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):
         path = root / target
-        if path.is_dir() and not path.is_symlink():
+        if fsops.is_dir(path) and not fsops.is_symlink(path):
             continue
         try:
             remove_within(root, target)
@@ -312,9 +313,9 @@ def _remove_ledger(root: Path) -> None:
 def uninstall(
     root: Path, *, machine: Path | None, dry_run: bool, force: Sequence[str]
 ) -> UninstallReport:
-    if not (root / MANIFEST_PATH).is_file():
+    if not fsops.is_file(root / MANIFEST_PATH):
         raise Refusal(NOTHING)
-    if (root / ATTACH_LEDGER).is_file():
+    if fsops.is_file(root / ATTACH_LEDGER):
         raise Refusal(ATTACHED)
     manifest = Manifest.read(root)
     document = read_document(root)

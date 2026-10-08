@@ -434,9 +434,9 @@ reddens = [
 [[mutation]]
 name = "setup asks git about --root from a directory that does not exist"
 file = "src/stayfixed/setup/run.py"
-before = """    while not path.is_dir() and path != path.parent:
+before = """    while not fsops.is_dir(path) and path != path.parent:
         path = path.parent"""
-after = """    if not path.is_dir():
+after = """    if not fsops.is_dir(path):
         path = path.parent"""
 reddens = [
   "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
@@ -502,9 +502,9 @@ reddens = [
 name = "doctor renders an unreadable harness data root as a red row"
 file = "src/stayfixed/doctor/checks.py"
 before = '''    try:
-        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+        sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
     except OSError as exc:'''
-after = '''    sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+after = '''    sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
     if False:
         exc = OSError()'''
 reddens = [
@@ -1809,7 +1809,7 @@ reddens = [
 [[mutation]]
 name = "setup --settings accepts a directory where the file goes"
 file = "src/stayfixed/setup/run.py"
-before = "    if settings.is_dir():"
+before = "    if fsops.is_dir(settings):"
 after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written",
@@ -2029,10 +2029,10 @@ reddens = [
 [[mutation]]
 name = "doctor reads the rendered workflow without asking what it is"
 file = "src/stayfixed/doctor/checks.py"
-before = """    if not workflow.is_file():
-        if workflow.exists() or workflow.is_symlink():"""
+before = """    if not fsops.is_file(workflow):
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):"""
 after = """    if False:
-        if workflow.exists() or workflow.is_symlink():"""
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):"""
 reddens = [
   "tests/doctor/test_checks.py::test_a_workflow_that_is_not_a_file_does_not_hang_the_row",
 ]
@@ -2151,8 +2151,8 @@ reddens = [
 [[mutation]]
 name = "doctor reads a stayfixed.toml linked to /dev/zero as no stayfixed.toml"
 file = "src/stayfixed/doctor/checks.py"
-before = "    if not (document.is_symlink() or document.is_file()):"
-after = "    if not document.is_file():"
+before = "    if not (fsops.is_symlink(document) or fsops.is_file(document)):"
+after = "    if not fsops.is_file(document):"
 reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]"]
 
 # A symlinked `stayfixed.toml` is refused by every command, and `doctor` says it is a link. Without
@@ -2161,7 +2161,7 @@ reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_t
 [[mutation]]
 name = "doctor gives a symlinked stayfixed.toml the row for a file that does not load"
 file = "src/stayfixed/doctor/checks.py"
-before = "        if document.is_symlink():"
+before = "        if fsops.is_symlink(document):"
 after = "        if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
@@ -2185,7 +2185,7 @@ reddens = [
 [[mutation]]
 name = "overlay create --local reads an existing repository as one it made"
 file = "src/stayfixed/overlay/create.py"
-before = "    if git_dir.exists() or git_dir.is_symlink():"
+before = "    if fsops.exists(git_dir) or fsops.is_symlink(git_dir):"
 after = "    if False:"
 reddens = [
   "tests/overlay/test_create.py::test_a_local_render_over_an_existing_repository_says_what_it_found",
@@ -2895,8 +2895,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads a place one level deep"
 file = "src/stayfixed/doctor/entries.py"
-before = "            elif (root / child).is_dir():"
-after = "            elif (root / child).is_dir() and relative == top:"
+before = "            elif fsops.is_dir(root / child):"
+after = "            elif fsops.is_dir(root / child) and relative == top:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[skill-inside-a-skill]",
 ]
@@ -2904,8 +2904,8 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads only a command directory's own files"
 file = "src/stayfixed/doctor/entries.py"
-before = "            elif (root / child).is_dir():"
-after = "            elif (root / child).is_dir() and place.name is not None:"
+before = "            elif fsops.is_dir(root / child):"
+after = "            elif fsops.is_dir(root / child) and place.name is not None:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command-in-a-namespace]",
 ]

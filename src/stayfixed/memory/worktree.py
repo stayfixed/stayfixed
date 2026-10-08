@@ -220,7 +220,7 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
     rule below the root is the one `setup` applies to `~/.claude/settings.json`.
     """
     root, relative = harness_link_parts(where, home)
-    if not root.is_dir():
+    if not fsops.is_dir(root):
         raise Refusal(
             f"{root} is not a directory, so there is nowhere to put the harness memory link; "
             f"stayfixed writes inside the home directory and never creates the home directory "
@@ -756,7 +756,7 @@ def detach_main(
         fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
-        if not target.is_symlink():
+        if not fsops.is_symlink(target):
             continue
         source = _detach_source(config, machine, name)
         if source is None:

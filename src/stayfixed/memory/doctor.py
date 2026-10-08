@@ -81,6 +81,7 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     `local-only` mode — the two the preset ships — so the count is this check's own answer and
     the remedy names the command that lists them under the trust gate.
     """
+    from stayfixed import fsops
     from stayfixed.doctor.api import OK, SKIP, WARN, Row
 
     store = answers.store(context)
@@ -89,7 +90,7 @@ def _store_debris(context: Context, answers: Answers) -> Row:
     found = 0
     for target in store.groups.values():
         for path in target.rglob("*"):
-            if path.is_file() and path.suffix != ".md" and not path.name.startswith("."):
+            if fsops.is_file(path) and path.suffix != ".md" and not path.name.startswith("."):
                 found += 1
     if found:
         return Row(

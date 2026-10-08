@@ -12,7 +12,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
-from stayfixed import __version__
+from stayfixed import __version__, fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.paths import contained, validate_paths
 from stayfixed.config.schema import (
@@ -186,7 +186,7 @@ def read_machine_toml(path: Path) -> dict[str, Any] | None:
     message, which quotes the file's own text. An absent file is the ordinary state before
     `stayfixed setup` has run, and each caller says what it means.
     """
-    if not path.is_file():
+    if not fsops.is_file(path):
         return None
     try:
         text = path.read_text(encoding="utf-8")

@@ -37,6 +37,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from stayfixed import fsops
 from stayfixed.errors import Refusal
 from stayfixed.overlay.naming import NAMED, SEGMENT, NotAnObject, claims, manifest
 
@@ -58,13 +59,13 @@ def overlay_fault(root: Path) -> str | None:
     Every string this returns is this function's own or a path the caller typed. A manifest's
     own bytes never reach it. The manifests asked are `naming.NAMED`'s probed rows.
     """
-    if not root.is_dir():
+    if not fsops.is_dir(root):
         return f"{root} is not a directory"
     for row in NAMED:
         if not row.probed:
             continue
         path = root / row.path
-        if not path.is_file():
+        if not fsops.is_file(path):
             return f"{root} does not carry the overlay layout ({row.path} is missing)"
         # Through `naming.manifest`, the one reader of an overlay's manifests, whose parser-limit
         # arms are the point: a manifest nested past the parser or holding an integer longer than

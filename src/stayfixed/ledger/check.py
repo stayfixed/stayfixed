@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.committed import committed_document, repository_prefix
 from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.errors import Failure, Refusal
@@ -133,7 +134,7 @@ def uninitialised(root: Path, register: Register) -> bool:
     were deleted under a generated index that still links every one of them. Only citations
     are checked here, so the gate can be registered before the first entry."""
     directory = entry_dir(root, register)
-    return not directory.is_dir() and not is_generated_index(index_text(root, register))
+    return not fsops.is_dir(directory) and not is_generated_index(index_text(root, register))
 
 
 def _base_ledger(
@@ -399,7 +400,7 @@ def register_gate(
     index_name = register.index
     # First: a deleted entry is the most structural finding a ledger can have.
     found = _removed_entries(root, register, carried)
-    if not directory.is_dir():
+    if not fsops.is_dir(directory):
         missing = ENTRIES_MISSING.format(directory=register.directory, index=index_name)
         return [Finding("entries-missing", index_name, None, missing), *found]
 

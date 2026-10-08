@@ -354,7 +354,7 @@ def _settings_symlink(home: Path) -> Path | None:
     for ancestor in [target, *target.parents]:
         if ancestor == home:
             return None
-        if ancestor.is_symlink():
+        if fsops.is_symlink(ancestor):
             return ancestor
     return None
 
@@ -463,7 +463,7 @@ def _check_settings_parent(settings: Path) -> None:
     `home.mkdir(parents=True)` and after the machine configuration had been written.
     """
     parent = settings.parent
-    if not (parent.is_dir() and not parent.is_symlink()):
+    if not (fsops.is_dir(parent) and not fsops.is_symlink(parent)):
         raise Refusal(
             f"{settings} cannot be written: its directory has to exist and be a real directory, "
             f"because {_SYMLINKED_SETTINGS}"
@@ -477,7 +477,7 @@ def _check_settings_parent(settings: Path) -> None:
             f"which writes the file this link leads to, or replace the link with a real file"
         ) from exc
     # After the symlink refusal, so no link can be behind this answer.
-    if settings.is_dir():
+    if fsops.is_dir(settings):
         raise Refusal(
             f"{settings} is a directory; --settings names the settings file to write, not the "
             f"directory to write it in"
@@ -521,7 +521,7 @@ class _Repository:
 def _nearest_directory(path: Path) -> Path:
     """`path`, or its nearest ancestor that is a directory: `--root` and a `create:`
     destination may name one that does not exist."""
-    while not path.is_dir() and path != path.parent:
+    while not fsops.is_dir(path) and path != path.parent:
         path = path.parent
     return path
 

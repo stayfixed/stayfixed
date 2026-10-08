@@ -409,7 +409,7 @@ def existing_ledger(root: Path) -> AttachLedger | None:
     refused here by name rather than by the walk that writes the ledger, after every write before
     it."""
     contained(root, ATTACH_LEDGER)
-    if not (root / ATTACH_LEDGER).is_file():
+    if not fsops.is_file(root / ATTACH_LEDGER):
         return None
     return ledger(root)
 
@@ -561,7 +561,7 @@ def _record_binding(binding: Binding) -> bool:
 
 
 def _first_attach(record: Path) -> str | None:
-    if not record.is_file():
+    if not fsops.is_file(record):
         return None
     try:
         return read_binding_record(record).get("first_attach")
@@ -578,10 +578,10 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     unarmed on exactly the machine that thinks it is set up. A missing `pre-commit` is a note,
     never a traceback.
     """
-    if not (binding.overlay / PRE_COMMIT_CONFIG).is_file():
+    if not fsops.is_file(binding.overlay / PRE_COMMIT_CONFIG):
         return None
     try:
-        installed = (hooks_dir(binding.overlay) / PRE_COMMIT_HOOK).exists()
+        installed = fsops.exists(hooks_dir(binding.overlay) / PRE_COMMIT_HOOK)
     except Refusal:
         # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this area's own
         # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
@@ -613,7 +613,7 @@ def _absent_directories(root: Path) -> tuple[str, ...]:
     not a directory this run created and `rmdir` would refuse it anyway — recording it would
     only put a name in the ledger that nothing can act on.
     """
-    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())
+    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))
 
 
 def _memory_parents(config: Config) -> tuple[str, ...]:
@@ -629,13 +629,13 @@ def _memory_parents(config: Config) -> tuple[str, ...]:
 def _absent_memory_parents(root: Path, config: Config) -> tuple[str, ...]:
     """Which directories above `paths.memory` this repository does not have, asked before the
     first write for the reason `_absent_directories` is."""
-    return tuple(name for name in _memory_parents(config) if not (root / name).is_dir())
+    return tuple(name for name in _memory_parents(config) if not fsops.is_dir(root / name))
 
 
 def _memory_absent(root: Path, config: Config) -> bool:
     """Whether this checkout has no `paths.memory` directory, asked before the first write for the
     reason `_absent_directories` is: an empty one the owner made is theirs, and survives."""
-    return not (root / config.paths.memory).is_dir()
+    return not fsops.is_dir(root / config.paths.memory)
 
 
 def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, ...]:
@@ -978,7 +978,7 @@ def _fallback_wanted(
     if store is None or not harness_link_needed(store, config):
         return None
     harness = harness_memory_path(root, home)
-    if harness.is_symlink() and harness.readlink() == store.path.resolve():
+    if fsops.is_symlink(harness) and harness.readlink() == store.path.resolve():
         return None
     return str(store.path.resolve())
 
@@ -1518,7 +1518,7 @@ def _ignore_region_remainder(root: Path) -> str | None:
     to its end; and named as the project names it, never by the path it was opened by.
     """
     path = root / GITIGNORE
-    if not path.is_file():
+    if not fsops.is_file(path):
         return None
     try:
         text = fsops.read_regular_text(path)
@@ -1624,7 +1624,7 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
         # `is_dir()` before the call and not only the ledger's say-so: `rmdir_within` tolerates
         # an absent target, so without this a directory the run never created — `.claude/`, when
         # the overlay grants nothing to merge — would be reported as one this detach removed.
-        if name not in recorded.directories or not (root / name).is_dir():
+        if name not in recorded.directories or not fsops.is_dir(root / name):
             continue
         try:
             fsops.rmdir_within(root, name)
@@ -1641,7 +1641,7 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
     `_withdraw_directories` gives, and so is a component the walk refuses.
     """
     target = base / name
-    if target.is_symlink() or not target.is_dir():
+    if fsops.is_symlink(target) or not fsops.is_dir(target):
         return False
     try:
         fsops.rmdir_within(base, name)
@@ -1744,7 +1744,7 @@ def _refuse_unwithdrawable(
                 target = contained(base, name, allow_final_symlink=True)
             except PathEscape as exc:
                 raise Refusal(GROUP_LEAVES_TREE) from exc
-            if target.is_symlink():
+            if fsops.is_symlink(target):
                 _walked(
                     tree,
                     f"{config.paths.memory}/{name}",
@@ -1770,7 +1770,7 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
     """
     own = root.resolve()
     for tree in checkouts:
-        if tree == own or not (tree / ATTACH_LEDGER).is_file():
+        if tree == own or not fsops.is_file(tree / ATTACH_LEDGER):
             continue
         code, tracked = git_run(tree, "ls-files", "-z", "--", ATTACH_LEDGER)
         if code == 0 and tracked:
@@ -1849,7 +1849,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
-        if (root / rule).is_file():
+        if fsops.is_file(root / rule):
             fsops.remove_within(root, rule)
             rules_removed.append(rule)
     # The mirror of `_link_everywhere`, and it had the mirror defect: `detach_main` was applied

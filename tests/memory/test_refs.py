@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import errno
 import json
+import os
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -215,21 +214,32 @@ def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_files
 
 
 def test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    # Oracle: `mutations/`, "a path the filesystem cannot name crashes the reference checks".
+    # A name `exists()` raised on up to Python 3.13 and answered on 3.14; `fsops.exists` answers
+    # it on every interpreter, unforced. No entry of its own, for the reason
+    # `tests/docs/test_plans.py`'s case of it gives.
     root, config = project(tmp_path)
     long = "src/" + "a" * 5000 + ".py"
     note(root, "developer", "a", f"`{long}`\n")
-    real = Path.exists
-
-    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
-        if len(str(self)) > 4096:
-            raise OSError(errno.ENAMETOOLONG, "File name too long")
-        return real(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "exists", exists)
     assert findings(root, config) == [("developer/a.md", 8, long, "dead-reference")]
+
+
+def test_a_reference_below_a_directory_that_cannot_be_searched_is_a_finding_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # Oracle: `mutations/`, "a path the filesystem cannot answer for crashes the reference checks".
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory")
+    root, config = project(tmp_path)
+    (root / "src" / "locked" / "child").mkdir(parents=True)
+    note(root, "developer", "a", "`src/locked/child/x.py`\n")
+    (root / "src" / "locked").chmod(0o600)
+    try:
+        found = findings(root, config)
+    finally:
+        (root / "src" / "locked").chmod(0o700)
+    assert found == [("developer/a.md", 8, "src/locked/child/x.py", "dead-reference")]
 
 
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:

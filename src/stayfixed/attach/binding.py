@@ -30,6 +30,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
@@ -462,6 +463,6 @@ def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
             # `group` and `config.paths.memory` are repository-authored, so the combined path
             # `contained` refuses is refused again, fixed text and never quoted back.
             raise PathEscape(MEMORY_GROUP_ESCAPES) from exc
-        if target.is_dir() and not target.is_symlink():
+        if fsops.is_dir(target) and not fsops.is_symlink(target):
             found.append(group)
     return tuple(found)

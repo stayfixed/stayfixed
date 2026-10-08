@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import errno
 import os
 import stat
@@ -669,6 +670,64 @@ def test_the_path_predicates_answer_each_fault_alike_on_every_interpreter(
             assert tuple(ask(path) for ask in asks) == expected
     finally:
         unlock(tmp_path)
+
+
+# The calls of `is_file`, `is_dir`, `exists` and `is_symlink` under `src/` that are not `fsops`'
+# own, by file and function, and why each may stay. None asks `pathlib` about a path a repository
+# can shape.
+OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
+    ("areas.py", "_has_submodule", "is_file"): (2, "the package's own directory"),
+    ("overlay/template.py", "templates", "is_dir"): (1, "the wheel's own template tree"),
+    ("project/templates.py", "read", "is_dir"): (1, "the wheel's own template tree"),
+    ("profiles/__init__.py", "shipped", "is_dir"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "shipped", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "load_profile", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/hints.py", "hint_modules", "is_file"): (1, "a resource of the package's own"),
+    # `os.DirEntry`'s, which answers alike on every interpreter.
+    ("doctor/entries.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
+    ("doctor/entries.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
+    ("profiles/python/hygiene.py", "_bytecode", "is_dir"): (1, "an os.DirEntry"),
+    # The hook's working directory and its parents, each a directory that is there, so none
+    # meets a fault the two interpreters answer apart; and `gitenv` imports `errors` alone.
+    ("gitenv.py", "_walk_to_git_root", "exists"): (1, "the working directory's parents"),
+}
+
+
+def test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape() -> None:
+    # `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()` raise on a name longer than the
+    # system takes, and on a directory that cannot be searched, up to Python 3.13, and answer
+    # `False` from 3.14, so the suite passing on one interpreter said nothing about the other:
+    # `attach` over a deep checkout was an internal error on 3.11 to 3.13 and attached on 3.14.
+    # `fsops` answers one way on all of them, so the walk refuses any other call of the four but
+    # the ones `OTHER_PREDICATES` names, each on a path no repository writes. Mutation (oracle):
+    # `mutations/`'s "the harness link's check asks pathlib what is there".
+    source = Path(fsops.__file__).parent
+    found: dict[tuple[str, str, str], int] = {}
+    for path in sorted(source.rglob("*.py")):
+        relative = path.relative_to(source).as_posix()
+        if relative == "fsops.py":
+            continue
+        # Each call by the definitions around it, `Class.method` for a method, so a call in a
+        # class body or at module level is a row too.
+        scopes: list[tuple[ast.AST, str]] = [(ast.parse(path.read_text(encoding="utf-8")), "")]
+        while scopes:
+            scope, name = scopes.pop()
+            for node in ast.iter_child_nodes(scope):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    scopes.append((node, f"{name}.{node.name}" if name else node.name))
+                    continue
+                scopes.append((node, name))
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("is_file", "is_dir", "exists", "is_symlink")
+                    and not (
+                        isinstance(node.func.value, ast.Name) and node.func.value.id == "fsops"
+                    )
+                ):
+                    key = (relative, name or "<module>", node.func.attr)
+                    found[key] = found.get(key, 0) + 1
+    assert found == {key: count for key, (count, _) in OTHER_PREDICATES.items()}
 
 
 def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(

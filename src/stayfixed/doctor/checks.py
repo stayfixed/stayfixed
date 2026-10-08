@@ -177,7 +177,7 @@ def _own_root() -> Path | None:
     cannot: `hooks/` is outside the module root by design, and `None` is the honest answer.
     """
     own = Path(stayfixed.__file__).resolve().parents[2]
-    return own if (own / WRAPPER).is_file() else None
+    return own if fsops.is_file(own / WRAPPER) else None
 
 
 # Every registered harness's name for the plugin root, `CANONICAL`'s first, read off the registry.
@@ -200,7 +200,7 @@ def _named_root(env: Mapping[str, str]) -> Path | None:
     """The plugin root either of `NAMED_ROOTS` names, when it carries a wrapper."""
     for name in NAMED_ROOTS:
         named = env.get(name)
-        if named and (Path(named) / WRAPPER).is_file():
+        if named and fsops.is_file(Path(named) / WRAPPER):
             return Path(named)
     return None
 
@@ -709,8 +709,8 @@ def _ci_ref(context: Context) -> Row:
     # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
     # rather than the `OSError` one below, which would name `IsADirectoryError`; the arm's own
     # sentence says what a reader needs and carries no platform's spelling of the fault.
-    if not workflow.is_file():
-        if workflow.exists() or workflow.is_symlink():
+    if not fsops.is_file(workflow):
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):
             return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
         # No file at all, which is not agreement either. `return row` here alone would report
         # `ok` — "[ci] ref is a released stayfixed commit" — for a repository with no gate in it,
@@ -825,7 +825,7 @@ def _diagnostics(context: Context) -> Row:
         )
     base = Path(data) / DIRECTORY
     try:
-        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+        sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
     except OSError as exc:
         # The harness data root is somebody else's directory on somebody else's filesystem, and
         # an unreadable one is a fact about this machine rather than a fault in the
@@ -839,7 +839,7 @@ def _diagnostics(context: Context) -> Row:
             DIAGNOSTICS_REMEDY,
         )
     log = base / DIAGNOSTICS
-    if not log.is_file():
+    if not fsops.is_file(log):
         return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
     try:
         raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)
@@ -1067,7 +1067,7 @@ def run_checks(
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
     document = root / CONFIG_FILE
-    if not (document.is_symlink() or document.is_file()):
+    if not (fsops.is_symlink(document) or fsops.is_file(document)):
         return [
             Check(
                 first,
@@ -1114,7 +1114,7 @@ def run_checks(
         # The message is not quoted: the loader builds it out of the file's own keys and values.
         # Nor is the class it raised, which is stayfixed's vocabulary and not a reason: the row
         # says the rule in words, and names a command that prints the loader's own message.
-        if document.is_symlink():
+        if fsops.is_symlink(document):
             detail = (
                 f"{CONFIG_FILE} is a symbolic link, which no command follows, so nothing else "
                 f"can be checked against it"

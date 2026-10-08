@@ -14,6 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure
 from stayfixed.fsops import said
 from stayfixed.jsonobject import json_object
@@ -38,7 +39,7 @@ def digests(root: Path) -> dict[str, str]:
     found: dict[str, str] = {}
     for relative in HASHED_FILES:
         path = root / relative
-        if path.is_file():
+        if fsops.is_file(path):
             found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     return found
 
@@ -61,7 +62,7 @@ def read_record(root: Path) -> dict[str, str] | None:
     counts the rest.
     """
     path = root / RECORD
-    if not path.is_file():
+    if not fsops.is_file(path):
         return None
     # **Three ways a present record is not readable, and all three are this class.** The guard
     # used to catch `json.JSONDecodeError` alone, so a record carrying non-UTF-8 bytes — a

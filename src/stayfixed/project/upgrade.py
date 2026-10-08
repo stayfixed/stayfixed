@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import stayfixed
+from stayfixed import fsops
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owned import Value, rewrite
 from stayfixed.config.schema import Config
@@ -174,7 +175,7 @@ def upgrade(
     dry_run: bool,
     force: Sequence[str],
 ) -> UpgradeReport:
-    if not (root / MANIFEST_PATH).is_file():
+    if not fsops.is_file(root / MANIFEST_PATH):
         raise Refusal(NOT_INITIALISED)
     text = read_document(root)
     if text is None:

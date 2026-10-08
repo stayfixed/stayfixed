@@ -404,7 +404,7 @@ reddens = [
 [[mutation]]
 name = "detach leaves behind the directories the attach created"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+before = '    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))'
 after = '    return ()'
 reddens = [
   "tests/attach/test_detach.py::test_detach_removes_the_directories_the_attach_created",
@@ -416,7 +416,7 @@ reddens = [
 [[mutation]]
 name = "attach records a directory that was already there"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+before = '    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))'
 after = '    return CREATED_DIRS'
 reddens = [
   "tests/attach/test_detach.py::test_detach_leaves_a_directory_that_was_there_before_the_attach",
@@ -547,8 +547,8 @@ reddens = [
 [[mutation]]
 name = "unlinked_groups stops excluding a linked group"
 file = "src/stayfixed/attach/binding.py"
-before = "        if target.is_dir() and not target.is_symlink():"
-after = "        if target.is_dir():"
+before = "        if fsops.is_dir(target) and not fsops.is_symlink(target):"
+after = "        if fsops.is_dir(target):"
 reddens = [
   "tests/attach/test_binding.py::test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not",
 ]
@@ -1292,8 +1292,8 @@ reddens = [
 [[mutation]]
 name = "detach reads the block through a symlinked exclude file"
 file = "src/stayfixed/attach/exclude.py"
-before = "    if path.is_symlink() or not path.is_file():"
-after = "    if not path.is_file():"
+before = "    if fsops.is_symlink(path) or not fsops.is_file(path):"
+after = "    if not fsops.is_file(path):"
 reddens = [
   "tests/attach/test_detach.py::test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink",
 ]
@@ -1365,7 +1365,7 @@ reddens = [
 [[mutation]]
 name = "the exclude block forgets that it created the info directory"
 file = "src/stayfixed/attach/exclude.py"
-before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),"
+before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not fsops.is_dir(path.parent) else ()),"
 after = ""
 reddens = [
   "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
@@ -1411,7 +1411,7 @@ reddens = [
 [[mutation]]
 name = "detach walks to a link-tree name only when it removes it"
 file = "src/stayfixed/attach/write.py"
-before = "            if target.is_symlink():"
+before = "            if fsops.is_symlink(target):"
 after = "            if False:"
 reddens = [
   "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[paths-memory]",
@@ -1484,8 +1484,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if harness.is_dir() and not harness.is_symlink():"
-after = "    if harness.is_dir() and not harness.exists():"
+before = "    if fsops.is_dir(harness) and not fsops.is_symlink(harness):"
+after = "    if fsops.is_dir(harness) and not fsops.exists(harness):"
 reddens = [
   "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
@@ -2552,4 +2552,19 @@ reddens = [
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[group-leaves-the-share]",
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-not-text]",
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-permissions-null]",
+]
+
+# The harness's memory path for a checkout near the longest path is a name longer than a file name
+# may be, and `Path.is_symlink()` raised on it up to Python 3.13 where 3.14 answered `False`: the
+# same `attach --check` was an internal error on one and passed on the other. Asked of `pathlib`
+# again, the walk that holds `src/` to `fsops`' predicates reddens on every interpreter, and
+# `test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source` does on
+# 3.11 to 3.13.
+[[mutation]]
+name = "the harness link's check asks pathlib what is there"
+file = "src/stayfixed/attach/write.py"
+before = "    if fsops.is_symlink(harness) or not fsops.exists(harness):"
+after = "    if harness.is_symlink() or not harness.exists():"
+reddens = [
+  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
 ]

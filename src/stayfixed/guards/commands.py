@@ -175,7 +175,7 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     if raw.startswith("-"):
         raise Refusal(f"{raw!r} looks like an option, not a file")
     path = Path(raw)
-    if path.is_symlink():
+    if fsops.is_symlink(path):
         raise Refusal(f"{path} is a symlink; refusing to write through it")
     # `--root` elsewhere is never `-`-checked and is safe only because `Path(...).resolve()`
     # makes it absolute before any `git -C` sees it; this argument is not resolved, so it is.

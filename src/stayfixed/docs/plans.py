@@ -85,6 +85,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.layout import local_base
 from stayfixed.config.paths import contained
 from stayfixed.docs.hygiene import read_document
@@ -431,7 +432,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     unlinted: list[Path] = []
     diff_scoped = False
     if plans:
-        missing = [p for p in plans if not p.is_file()]
+        missing = [p for p in plans if not fsops.is_file(p)]
         if missing:
             raise Failure("not a plan file: " + ", ".join(str(p) for p in missing))
         # Every finding carries a repo-relative path, so a named plan outside the root is
@@ -454,10 +455,10 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
                 f"git status could not be read under {root}, so uncommitted plans could not "
                 "be found"
             )
-        selected = [p for p in touched if p.is_file()]
+        selected = [p for p in touched if fsops.is_file(p)]
         unlinted = [p for p in pending if p not in set(touched)]
     else:
-        selected = sorted(plans_dir.glob("*.md")) if plans_dir.is_dir() else []
+        selected = sorted(plans_dir.glob("*.md")) if fsops.is_dir(plans_dir) else []
     findings: list[Finding] = []
     fixes = bug_register(config).ids.fixes
     for path in sorted(selected):

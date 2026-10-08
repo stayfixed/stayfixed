@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, toml_position
 from stayfixed.config.paths import contained
 from stayfixed.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
@@ -133,7 +134,7 @@ def read_trail(path: Path) -> Trail:
     Every value is repository-authored: a pattern outside `docs.themes`' language is a `Failure`,
     and none is ever handed to `re`, whose backtracking a repository's pattern can make
     exponential."""
-    if not path.is_file():
+    if not fsops.is_file(path):
         return Trail((), {})
     try:
         raw: dict[str, Any] = tomllib.loads(read_document(path, path))
@@ -267,7 +268,7 @@ def _documents(root: Path, config: Config) -> list[tuple[str, str, Path]]:
     found: list[tuple[str, str, Path]] = []
     for configured in (config.paths.specs, config.paths.plans):
         directory = contained(root, configured)
-        if not directory.is_dir():
+        if not fsops.is_dir(directory):
             continue
         for path in sorted(directory.glob("*.md")):
             row = f"{PurePosixPath(configured).name}/{path.name}"
@@ -384,7 +385,7 @@ def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     three arguments, so `stayfixed.assess.gates` holds each one as a value.
     """
     roadmap = contained(root, config.paths.roadmap)
-    if not roadmap.is_file():
+    if not fsops.is_file(roadmap):
         return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
     current = read_document(roadmap, config.paths.roadmap)
     if current == rebuild(current, root, config, read_trail(trail_path(root, config))):

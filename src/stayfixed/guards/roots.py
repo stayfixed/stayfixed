@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.paths import PathEscape, contained
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
             )
         except PathEscape:
             continue
-        if not candidate.is_dir():
+        if not fsops.is_dir(candidate):
             continue
         if any(_covers(kept, candidate) for kept in found):
             continue

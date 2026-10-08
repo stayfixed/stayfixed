@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.findings import Severity
@@ -183,7 +184,7 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
             path = contained(context.root, relative)
             # To the read cap, as `doctor` reads the same file: a committed one past it is a file
             # this probe could not look at, never one read to its end.
-            text = read_regular_text(path) if path.is_file() else ""
+            text = read_regular_text(path) if fsops.is_file(path) else ""
             # Raises `EntriesError` for a shape `doctor` names as one it could not read.
             walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
@@ -421,7 +422,7 @@ def _owns(text: str, path: str) -> bool:
 def _exact_file(path: Path) -> bool:
     """A file under exactly this name: a case-folding filesystem answers `is_file()` for
     `codeowners` when asked for `CODEOWNERS`, and GitHub reads only the exact name."""
-    return path.is_file() and path.name in os.listdir(path.parent)
+    return fsops.is_file(path) and path.name in os.listdir(path.parent)
 
 
 def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:

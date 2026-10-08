@@ -366,7 +366,7 @@ reddens = [
 [[mutation]]
 name = "commit strip writes through a symlink"
 file = "src/stayfixed/guards/commands.py"
-before = '    if path.is_symlink():'
+before = '    if fsops.is_symlink(path):'
 after = '    if False:'
 reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
 
@@ -896,8 +896,8 @@ reddens = [
 [[mutation]]
 name = "attribute asks is_file, so a submodule gitlink reads as a missing file"
 file = "src/stayfixed/guards/attribute.py"
-before = "not (into / name).exists()"
-after = "not (into / name).is_file()"
+before = "not fsops.exists(into / name)"
+after = "not fsops.is_file(into / name)"
 reddens = [
   "tests/guards/test_attribute.py::test_a_submodule_gitlink_is_present_and_not_a_missing_file",
 ]
@@ -905,7 +905,7 @@ reddens = [
 [[mutation]]
 name = "attribute stops asking is_symlink, so a dangling symlink reads as a missing file"
 file = "src/stayfixed/guards/attribute.py"
-before = " and not (into / name).is_symlink()"
+before = " and not fsops.is_symlink(into / name)"
 after = ""
 reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",

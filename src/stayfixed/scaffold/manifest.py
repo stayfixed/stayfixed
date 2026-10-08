@@ -30,6 +30,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.fsops import UnsafePath, read_regular_text, said, write_within
@@ -127,7 +128,7 @@ class Manifest:
     @classmethod
     def read(cls, root: Path) -> Manifest:
         path = _contained_path(root)
-        if not path.is_file():
+        if not fsops.is_file(path):
             return cls({})
         # The file is tracked, so a clone chooses every way it can fail to read: its size too, so
         # it is read to the read cap (`fsops.read_regular_text`), and a fault is said without the

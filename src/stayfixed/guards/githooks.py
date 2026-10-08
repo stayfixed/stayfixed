@@ -182,21 +182,21 @@ def install(root: Path) -> Installed:
     directory = hooks_dir(root)
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
-    if target.is_symlink():
+    if fsops.is_symlink(target):
         raise Refusal(f"{target} is a symlink; refusing to write through it")
-    if target.is_dir():
+    if fsops.is_dir(target):
         raise Refusal(f"{target} is a directory; refusing to install a hook over it")
-    replaced = target.exists() and _ours(target, "nothing was installed")
+    replaced = fsops.exists(target) and _ours(target, "nothing was installed")
     # A `.local` found where our hook is *not* installed was put there by somebody else, and
     # the shipped hook `exec`s whatever sits at that name, so installing over it would run a
     # stranger's file under stayfixed's name. Note the bound, which is the whole of the
     # contract: this fires only while our hook is absent. Once ours is installed, the `.local`
     # beside it is presumed to be the one we preserved, and a file that appears there
     # afterwards is vouched for by nothing here — see `uninstall`.
-    if local.exists() and not replaced:
+    if fsops.exists(local) and not replaced:
         raise Refusal(f"{local} already exists and was not preserved by stayfixed; move it aside")
     preserved: Path | None = None
-    if target.exists() and not replaced:
+    if fsops.exists(target) and not replaced:
         target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
@@ -212,7 +212,7 @@ def uninstall(root: Path) -> Removed:
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
     if not os.path.lexists(target):
         return Removed(target, None, Found.ABSENT)
-    if target.is_symlink() or not _ours(target, "nothing was removed"):
+    if fsops.is_symlink(target) or not _ours(target, "nothing was removed"):
         return Removed(target, None, Found.FOREIGN)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it
@@ -222,7 +222,7 @@ def uninstall(root: Path) -> Removed:
     # the honest end of that state rather than a new exposure, and it is deliberate: the
     # `.local` name is the contract `setup` relies on, and a provenance marker or an
     # unconditional refusal here would be this module inventing a different one.
-    if local.exists():
+    if fsops.exists(local):
         local.rename(target)
         return Removed(target, target, Found.REMOVED)
     return Removed(target, None, Found.REMOVED)

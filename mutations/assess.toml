@@ -1335,7 +1335,7 @@ reddens = [
 [[mutation]]
 name = "a symlinked link target is judged by the link alone"
 file = "src/stayfixed/assess/tracked.py"
-before = "        if not link.is_symlink():"
+before = "        if not fsops.is_symlink(link):"
 after = "        if True:"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
@@ -1347,8 +1347,8 @@ reddens = [
 [[mutation]]
 name = "only the last component of a path is asked whether it is a symlink"
 file = "src/stayfixed/assess/tracked.py"
-before = "        if not link.is_symlink():"
-after = "        if not link.is_symlink() or todo:"
+before = "        if not fsops.is_symlink(link):"
+after = "        if not fsops.is_symlink(link) or todo:"
 reddens = [
   "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
   "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-an-ignored-directory]",
@@ -1675,8 +1675,8 @@ reddens = [
 [[mutation]]
 name = "the foreign-hook probe reads a settings file with no bound"
 file = "src/stayfixed/assess/probes.py"
-before = '            text = read_regular_text(path) if path.is_file() else ""'
-after = '            text = path.read_text(encoding="utf-8") if path.is_file() else ""'
+before = '            text = read_regular_text(path) if fsops.is_file(path) else ""'
+after = '            text = path.read_text(encoding="utf-8") if fsops.is_file(path) else ""'
 reddens = [
   "tests/assess/test_probes.py::test_a_settings_file_past_the_read_cap_is_one_the_probe_could_not_look_at",
 ]

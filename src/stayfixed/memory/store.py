@@ -54,6 +54,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
@@ -299,7 +300,7 @@ def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """
     record = overlay / PROJECTS / project / PROJECT_RECORD
     recorded = None
-    if record.is_file():
+    if fsops.is_file(record):
         try:
             recorded = read_binding_record(record).get("remote")
         except (OSError, UnicodeDecodeError, *UNPARSEABLE):
@@ -363,10 +364,10 @@ def _group_targets(
         except PathEscape as exc:
             unavailable[group] = str(exc)
             continue
-        if not target.exists():
+        if not fsops.exists(target):
             unavailable[group] = f"{clipped(group)} is not in the store"
             continue
-        if target.is_symlink():
+        if fsops.is_symlink(target):
             if overlay is None:
                 unavailable[group] = f"{clipped(group)} is a link and no overlay is recorded"
                 continue
@@ -438,7 +439,7 @@ def _resolve_at(
         # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
         # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
         # `paths.memory` was pointed at — including another project's share.
-        if declared.is_symlink():
+        if fsops.is_symlink(declared):
             return None, Unresolved(
                 f"paths.memory is a symlink, and {mode} memory must be a real directory",
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
@@ -448,12 +449,12 @@ def _resolve_at(
             return None, Unresolved(
                 "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
             )
-        if not overlay.is_dir():
+        if not fsops.is_dir(overlay):
             return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
         unbound = _bound(overlay, config.project.name, root)
         if unbound is not None:
             return None, unbound
-    if not base.is_dir():
+    if not fsops.is_dir(base):
         # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
         # it refuses, so it is named as the way out only there.
         said = STORE_MISSING + (BUILT_BY_ATTACH if mode == "overlay" else "")

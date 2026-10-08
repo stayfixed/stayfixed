@@ -26,6 +26,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
 from stayfixed.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
@@ -147,7 +148,9 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     # produced in three separate shapes.
     expected = {name for name in listing.split("\0") if name}
     missing = [
-        name for name in expected if not (into / name).exists() and not (into / name).is_symlink()
+        name
+        for name in expected
+        if not fsops.exists(into / name) and not fsops.is_symlink(into / name)
     ]
     if code == 0 and missing:
         raise Failure(

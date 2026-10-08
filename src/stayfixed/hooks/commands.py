@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
 from stayfixed.config.paths import PathEscape
@@ -94,9 +95,9 @@ def run_hook(args: argparse.Namespace) -> int:
         config = None
         root = event.project_root
         document = None if root is None else root / CONFIG_FILE
-        if document is not None and document.is_symlink():
+        if document is not None and fsops.is_symlink(document):
             return _linked(event_name)
-        if root is not None and document is not None and document.is_file():
+        if root is not None and document is not None and fsops.is_file(document):
             # `interactive=False`, said rather than sniffed. A hook's stdin is a pipe, so
             # the terminal check happens to answer the same thing — but the gate on
             # `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` is the one that decides which

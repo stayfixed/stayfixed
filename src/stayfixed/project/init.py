@@ -47,6 +47,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import stayfixed
+from stayfixed import fsops
 from stayfixed.config.loader import (
     CONFIG_FILE,
     UNPARSEABLE,
@@ -327,12 +328,12 @@ def precheck(root: Path, *, answering: bool) -> None:
     `stayfixed.toml` already answers every question, so asking them over it would collect
     answers that nothing writes.
     """
-    if (root / MANIFEST_PATH).is_file():
+    if fsops.is_file(root / MANIFEST_PATH):
         raise Refusal(ALREADY)
     # `contained` and not a bare `is_file`, which follows a link: a symlinked `stayfixed.toml` is
     # refused as every command refuses it, whatever it points at, and not taken for an answer
     # sheet (a link to a file) or for no file at all (a link to `/dev/zero`).
-    if answering and contained(root, CONFIG_FILE).is_file():
+    if answering and fsops.is_file(contained(root, CONFIG_FILE)):
         raise Refusal(ANSWER_SHEET)
 
 
@@ -400,7 +401,7 @@ def init(
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
     ref = "" if CI_ARTIFACT in passes.skipped else config.ci.ref
-    note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
+    note = VERB_NOTE if not fsops.exists(root / config.paths.agents_md) else ""
     once, footprint = passes.predict((passes.once, ()), (passes.footprint, ()))
     report = InitReport(
         once,

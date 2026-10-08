@@ -40,6 +40,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.fsops import read_bounded
@@ -70,7 +71,7 @@ def _files(root: Path, at: str) -> list[str]:
             path = contained(root, relative)
         except PathEscape:
             continue
-        if path.is_file():
+        if fsops.is_file(path):
             found.append(relative)
     return found
 

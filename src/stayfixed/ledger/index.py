@@ -8,6 +8,7 @@ import posixpath
 import re
 from pathlib import Path, PurePosixPath
 
+from stayfixed import fsops
 from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.identifiers import Identifiers
@@ -102,7 +103,7 @@ def index_text(root: Path, register: Register) -> str:
     reaches the operator as findings (exit 1) rather than as an internal error (exit 2).
     """
     path = index_path(root, register)
-    return read_ledger_text(path, where=Path(register.index)) if path.is_file() else ""
+    return read_ledger_text(path, where=Path(register.index)) if fsops.is_file(path) else ""
 
 
 def _cell(text: str) -> str:
@@ -276,7 +277,7 @@ def refuse_index_overwrite(root: Path, register: Register, current: str) -> None
     the repair.
     """
     index = register.index
-    if not entry_dir(root, register).is_dir() and is_generated_index(current):
+    if not fsops.is_dir(entry_dir(root, register)) and is_generated_index(current):
         raise Refusal(ENTRIES_MISSING.format(directory=register.directory, index=index))
     foreign = foreign_index_lines(root, current, register)
     if foreign:

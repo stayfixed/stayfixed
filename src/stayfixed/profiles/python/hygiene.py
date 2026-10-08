@@ -26,6 +26,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.fsops import open_directory, read_bounded
 
 if TYPE_CHECKING:
@@ -206,7 +207,7 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
                     continue
                 source = cache.parent / (name.split(".")[0] + ".py")
                 try:
-                    if not source.is_file():
+                    if not fsops.is_file(source):
                         continue
                     recorded = _recorded_source_mtime(directory, name)
                     if recorded is None:

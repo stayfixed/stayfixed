@@ -37,6 +37,8 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+from stayfixed import fsops
+
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
 # in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
 # a backticked `owner/lib.js` repository name or a dotted branch (`release/v1.x`) reads as one.
@@ -123,14 +125,15 @@ def present_within(root: Path, landed: Path) -> bool | None:
     a present file passing and an absent one reported. So the answer is taken from the claim's
     real path and only inside the root's, as a claim whose spelling leaves the root is not asked
     either; a symlink that stays inside the tree is followed. A name the filesystem cannot take
-    (`ENAMETOOLONG` for a 5,000-character path on Python 3.11 to 3.13) names nothing, and is
-    `False` rather than an exception. The plan lint, the always-loaded document's link check and
-    `memory refs` each ask it.
+    (`ENAMETOOLONG` for a 5,000-character path) names nothing, which `fsops.exists` answers on
+    every interpreter; and a claim the filesystem leaves open, under a directory that cannot be
+    searched, is `False` here rather than an exception. The plan lint, the always-loaded
+    document's link check and `memory refs` each ask it.
     """
     try:
         real = Path(os.path.realpath(landed))
         if not real.is_relative_to(os.path.realpath(root)):
             return None
-        return real.exists()
+        return fsops.exists(real)
     except OSError:
         return False

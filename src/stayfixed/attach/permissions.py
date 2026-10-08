@@ -233,10 +233,10 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
         binding.overlay / COMMON_CODEX,
         binding.overlay / PROJECTS / binding.project / PROJECT_CODEX,
     ):
-        if not source.is_dir():
+        if not fsops.is_dir(source):
             continue
         for rule in sorted(source.iterdir()):
-            if rule.is_file() and not rule.name.startswith("."):
+            if fsops.is_file(rule) and not rule.name.startswith("."):
                 found[f"{CODEX_RULES}/{rule.name}"] = rule
     return tuple(found.items())
 
