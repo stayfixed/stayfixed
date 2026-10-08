@@ -3206,6 +3206,24 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link",
 ]
 
+# At a terminal with `HOME` unset, for a user the database lists no home for, there is no home, and
+# `attach` says so rather than ending in `Path.home`'s error.
+[[mutation]]
+name = "a terminal with no home at all raises"
+file = "src/stayfixed/config/machine.py"
+before = """
+        try:
+            return Path.home()
+        except RuntimeError:
+            return None
+"""
+after = """
+        return Path.home()
+"""
+reddens = [
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words",
+]
+
 # Whether a version orders before its release by its suffix, as PEP 440 orders one: the local label
 # after `+` is no segment of the version's, and a `dev` after a post-release is a development release
 # of that post-release, which comes after the release.

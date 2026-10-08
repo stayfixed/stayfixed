@@ -161,13 +161,13 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     the database's answer is resolved once before the walk while a `HOME` or `--home` that is
     itself a link fails at it; an anchor stayfixed made up would be an anchor the walk cannot
     vouch for — and a user the password database lists no home for has no anchor off a
-    terminal, which is a refusal here.
+    terminal, nor at one where `HOME` is unset, which is a refusal here.
     """
     base = anchor_home() if home is None else home
     if base is None:
         raise Refusal(
             "the password database lists no home directory for this user, so there is nowhere "
-            "to put the harness memory link"
+            "to put the harness memory link; at a terminal, set HOME to name one"
         )
     return base, _memory_dir(str(worktree.resolve()))
 

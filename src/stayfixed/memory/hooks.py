@@ -101,11 +101,13 @@ NO_HARNESS_LINK_NO_HOME = Withheld(
 )
 # A user the database lists no home for: no `HOME` agrees with no home, so the cause is the
 # missing entry and not `HOME`, and an overlay store is still linked by `attach` from a terminal,
-# under the `HOME` it reads there.
+# under the `HOME` it reads there, which has to be set: with neither, there is no home to link
+# under, and `attach` refuses.
 NO_HARNESS_LINK_OVERLAY_NO_HOME = Withheld(
     "the password database lists no home directory for this user, so a hook makes no harness "
     "memory link",
-    NO_HARNESS_LINK_OVERLAY.remedy,
+    "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal with HOME "
+    "set to make it",
 )
 
 

@@ -77,11 +77,14 @@ def owner_home(interactive: bool | None = None) -> Path | None:
     """The machine owner's home directory: `HOME` from a terminal, the database's everywhere else.
 
     The gate `override_is_honoured` keeps for the two variables that name the machine file, and
-    for the same reason (the module docstring). `None` only off a terminal, for a user
-    `passwd_home` finds no directory for.
+    for the same reason (the module docstring). `None` for a user `passwd_home` finds no directory
+    for, off a terminal, and at one where `HOME` is unset too, where `Path.home` raises.
     """
     if override_is_honoured(interactive):
-        return Path.home()
+        try:
+            return Path.home()
+        except RuntimeError:
+            return None
     return passwd_home()
 
 

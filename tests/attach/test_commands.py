@@ -47,6 +47,10 @@ def _a_terminal_and_never_the_developers_own_home(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
 
+# `Path.home` as the library defines it, before the fixture below replaces it for every case.
+_REAL_HOME = Path.home
+
+
 def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
 
@@ -1070,6 +1074,40 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     assert code == 0
     assert "--in-repo-memory" not in out
     assert harness_memory_path(root, tmp_path / "home").is_symlink()
+
+
+def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The way out `doctor` gives a user the password database lists no home for is `attach` from a
+    # terminal, which takes `HOME` there. With `HOME` unset too, there is no home anywhere, and
+    # `Path.home()` raised in `attach` and `detach` alike: an internal error, where a refusal
+    # saying what names a home belongs. The real `Path.home` is put back, safe here: with no
+    # `HOME` and no database entry it reads no home, the developer's included. Mutation (oracle):
+    # `mutations/`'s "a terminal with no home at all raises" -> an internal error, naming no
+    # `HOME`; the refusal's words are the assertions' own.
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert cli(root, tmp_path, "attach", "--store", str(store), machine=machine)[0] == 0
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    record(resolved, config)
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.delenv("HOME", raising=False)
+    as_owner_home(monkeypatch, None)
+    for argv in (["attach", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert code == 2, argv
+        assert "internal error" not in out + err
+        assert "lists no home directory for this user" in out + err
+        assert "at a terminal, set HOME to name one" in out + err
 
 
 def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
