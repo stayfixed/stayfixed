@@ -339,6 +339,33 @@ def test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_inde
     assert invoke(["bugs", "check", *common]) == 0
 
 
+@needs_git
+def test_a_filing_whose_index_write_fails_keeps_the_allocators_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The allocator warns when it could not ask what other branches hold, since the number it
+    # chose may then be taken there, and a filing that stops at the index is the one whose number
+    # the operator acts on next. The failure named the entry and the index and dropped the
+    # warning. The checkout here has no `origin`, so the fetch fails. Mutation: `mutations/`, "a
+    # filing whose index write fails drops the allocator's warning".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    git(root, "init", "-q")
+    docs = root / "docs"
+    docs.chmod(0o555)
+    try:
+        assert invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", *common]) == 1
+    finally:
+        docs.chmod(0o755)
+    err = capsys.readouterr().err
+    assert err.startswith("stayfixed: failed: filed docs/bugs/BR-001.md, but ")
+    assert err.endswith(
+        "which would file it a second time; git fetch origin failed; identifiers may collide "
+        "with branches this checkout has not fetched\n"
+    )
+
+
 def test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

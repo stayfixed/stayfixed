@@ -644,8 +644,8 @@ reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails
 [[mutation]]
 name = "a filing whose index write fails escapes as an internal error"
 file = "src/stayfixed/ledger/write.py"
-before = "        _write_index(root, register)\n    except OSError as error:\n        raise LedgerError(\n            FILED_UNINDEXED.format("
-after = "        _write_index(root, register)\n    except OSError as error:\n        raise\n        raise LedgerError(\n            FILED_UNINDEXED.format("
+before = "        _write_index(root, register)\n    except OSError as error:\n        unindexed = FILED_UNINDEXED.format("
+after = "        _write_index(root, register)\n    except OSError as error:\n        raise\n        unindexed = FILED_UNINDEXED.format("
 reddens = ["tests/ledger/test_commands.py::test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_index"]
 
 [[mutation]]
@@ -654,6 +654,15 @@ file = "src/stayfixed/ledger/commands.py"
 before = "        reason = fsops.said(error)\n        raise Failure("
 after = "        raise\n        raise Failure("
 reddens = ["tests/ledger/test_commands.py::test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun"]
+
+# The allocator's warning says the number may be taken on a branch this checkout has not fetched,
+# and a filing that stops at the index is the one whose number the operator acts on next.
+[[mutation]]
+name = "a filing whose index write fails drops the allocator's warning"
+file = "src/stayfixed/ledger/write.py"
+before = '        warned = f"{unindexed}; {allocation.warning}" if allocation.warning else unindexed'
+after = "        warned = unindexed"
+reddens = ["tests/ledger/test_commands.py::test_a_filing_whose_index_write_fails_keeps_the_allocators_warning"]
 
 # Two entries that differ only in `id:`, which a `bugs new` run twice files, make a move of either
 # explain the same stale index, and naming the first voided the entry nobody moved.

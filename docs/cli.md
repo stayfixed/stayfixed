@@ -619,8 +619,8 @@ hold is quoted for you; a `--related` value that is not an identifier, an index 
 this tool did not generate (`2`), and an allocated identifier whose file already exists (`1`,
 naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
 result line, not hidden. An index that cannot be written once the entry is filed exits `1`,
-naming the filed entry and the reason, and saying to run `bugs index` once it can be written
-rather than `bugs new` again, which would file the report a second time.
+naming the filed entry, the reason and any skipped fetch, and saying to run `bugs index` once it
+can be written, not `bugs new` again, which would file it twice.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs

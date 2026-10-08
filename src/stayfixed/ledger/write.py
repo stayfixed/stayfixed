@@ -281,14 +281,16 @@ def file_entry(
     try:
         _write_index(root, register)
     except OSError as error:
-        raise LedgerError(
-            FILED_UNINDEXED.format(
-                path=quoted(relative),
-                index=quoted(register.index),
-                reason=fsops.said(error),
-                name=register.name,
-            )
-        ) from error
+        unindexed = FILED_UNINDEXED.format(
+            path=quoted(relative),
+            index=quoted(register.index),
+            reason=fsops.said(error),
+            name=register.name,
+        )
+        # The allocator's warning too, as a filing that succeeds says it: a number that may be
+        # taken on a branch this checkout has not fetched is what the operator acts on next.
+        warned = f"{unindexed}; {allocation.warning}" if allocation.warning else unindexed
+        raise LedgerError(warned) from error
     return Filed(path, identifier, allocation.warning)
 
 
