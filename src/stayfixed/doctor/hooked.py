@@ -134,7 +134,8 @@ def _read_place(
     root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget
 ) -> list[Found]:
     """A report for each file below `top`, a directory `place` names, whose frontmatter declares
-    hooks or could not be read, in name order, depth first.
+    hooks or holds a key the reader cannot read whole, or that could not be read, in name order,
+    depth first.
 
     Links are followed, as the harness follows them, while they lead to a directory still inside
     the checkout; one that leads out is named as one that does (`Seen.LINKED_OUT`), and one that
@@ -347,13 +348,14 @@ def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
 
 
 def hooked(root: Path) -> list[Found]:
-    """A report for each skill, command or agent file whose frontmatter declares hooks, and for
-    each such file or directory that could not be read or leads out of the checkout: the root's own
-    places first, in `HOOKED`'s order, read off the disk, then each file a nested place names, as
-    git lists it (`_queried`), or, where git cannot answer, as the bounded walk finds it
-    (`_nested`). The walks list at most `fsops.WALK_ENTRIES` entries between them, past which they
-    stop and say so (`Seen.STOPPED`). Each file is named by its path, through `printed.printable`,
-    because every name in it is the repository's."""
+    """A report for each skill, command or agent file whose frontmatter declares hooks or holds a
+    key the reader cannot read whole (`Seen.UNPARSED`), and for each such file or directory that
+    could not be read or leads out of the checkout: the root's own places first, in `HOOKED`'s
+    order, read off the disk, then each file a nested place names, as git lists it (`_queried`), or,
+    where git cannot answer, as the bounded walk finds it (`_nested`). The walks list at most
+    `fsops.WALK_ENTRIES` entries between them, past which they stop and say so (`Seen.STOPPED`).
+    Each file is named by its path, through `printed.printable`, because every name in it is the
+    repository's."""
     found: list[Found] = []
     budget = _Budget()
     real_root = Path(os.path.realpath(root))

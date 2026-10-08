@@ -674,9 +674,10 @@ def hook_entries(context: Context) -> Row:
     `hooked` says what was measured), and this row judges settings files, so "all accounted for"
     beside such a file would claim more than the row looked at. The walk (`doctor.hooked`) covers
     every place a registered harness reads such frontmatter, at the root and below it, and reports
-    each file whose frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each path it
-    could not read, each link that leads out of the checkout, which it does not follow, and a walk
-    that stopped at its cap. Each is a warning naming what it saw (`_SEEN`), never red, because
+    each file whose frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each whose
+    frontmatter holds a top-level key the reader cannot read whole, which may be `hooks`, each path
+    it could not read, each link that leads out of the checkout, which it does not follow, and a
+    walk that stopped at its cap. Each is a warning naming what it saw (`_SEEN`), never red, because
     what such a file's hooks are and whether stayfixed put them there is nothing this row reads.
     """
     return _told(*_classify(context))
