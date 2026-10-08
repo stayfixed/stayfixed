@@ -149,9 +149,9 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # `~name` for the name `id -un` gives. `id` is taken as `git` is, from absolute paths and never
 # through `PATH`: the system's own, then NixOS's, which has no `/usr/bin/id`. With `/usr/bin/id`
 # alone, NixOS got no home, and with it lost a global `safe.directory` and so git's anchor for a
-# checkout another user owns. A name that is not a plain one, a user the database lists no
-# absolute home for, or a system with `id` at none of these paths gets no `HOME`, never the
-# inherited one.
+# checkout another user owns. A name that is not a plain one, a name of digits alone, a user the
+# database lists no absolute home for, or a system with `id` at none of these paths gets no
+# `HOME`, never the inherited one.
 #
 # zsh, which `/bin/sh` may be on macOS, expands `~name` from a variable called `name` holding an
 # absolute path before it asks the database, as `sh` too, so a variable in the hook's environment
@@ -160,7 +160,8 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # the subshell keeps a name equal to one of this file's own variables from touching it. A name no
 # variable can have, one with a `.` or a `-` or a leading digit, is not unset: dash and zsh end
 # the subshell on `unset` of a name that is not an identifier, which measured as no `HOME` for
-# every such user.
+# every such user. A name of digits alone is not looked up at all: to bash and zsh `~0` is the
+# top of the directory stack, the directory the harness launched the hook in, not a user.
 #
 # `gitenv._git_toplevel` scrubs the identical `env -i` call one layer down and names the failure
 # verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for a different repository,
@@ -197,7 +198,8 @@ for i in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do
 done
 case $git_user in
   '' | -* | *[!A-Za-z0-9._-]*) ;;
-  [0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
+  [0-9]*[!0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
+  [0-9]*) ;;
   *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
 esac
 case $git_home in /*) ;; *) git_home= ;; esac

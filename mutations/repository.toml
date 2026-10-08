@@ -580,6 +580,17 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds[no id at all]",
 ]
 
+# To bash and zsh `~0` is the top of the directory stack, the directory the hook was launched in,
+# so a user whose name is digits alone handed the wrapper's git that directory as its home.
+[[mutation]]
+name = "the wrapper looks a name of digits alone up again"
+file = "hooks/run-hook.sh"
+before = '''  [0-9]*[!0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+after = '''  [0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_of_digits_alone_names_no_directory_as_the_wrappers_git_home",
+]
+
 # No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
 # `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
 # Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.

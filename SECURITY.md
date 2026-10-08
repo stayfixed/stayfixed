@@ -71,8 +71,8 @@ In scope, and treated as security rather than as an ordinary bug:
   that direnv, mise or a devcontainer points into the clone chooses no global git configuration,
   whose `core.fsmonitor` names a program git runs on `status`. The wrapper's own two `git` calls
   also get no `HOME` where it finds `id` at none of its absolute paths, or where the name `id`
-  gives is not a plain one: empty, led by `-`, or holding anything but letters, digits, `.`, `_`
-  and `-`. A variable in the hook's environment named for the user chooses no home either, where
+  gives is not a plain one: empty, led by `-`, digits alone, or holding anything but letters,
+  digits, `.`, `_` and `-`. A variable in the hook's environment named for the user chooses no home either, where
   `/bin/sh` is zsh. Where `/bin/sh` is bash, which imports a function from any
   `BASH_FUNC_<name>%%` variable, the wrapper first removes any function named for a command it
   runs, so none stands in for one of its builtins. A committed `PATH`, an exported function or a

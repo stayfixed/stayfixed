@@ -1338,6 +1338,29 @@ def _run_under_bash(
                 os.close(descriptor)
 
 
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, whose ~0 is the directory stack's top")
+def test_a_name_of_digits_alone_names_no_directory_as_the_wrappers_git_home(tmp_path: Path) -> None:
+    # `~0` is not a user to bash or zsh but the top of the directory stack, the current
+    # directory, which is wherever the harness launched the hook and may be the clone. So a user
+    # whose name is digits alone handed the wrapper's git that directory as `HOME`, and with it
+    # the global configuration the clone commits there. dash asks the database, which lists no
+    # such home, so the case runs under bash as `sh`. Mutation (declared): the wrapper looks a
+    # name of digits alone up again -> this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    named = tmp_path / "id"
+    named.write_text("#!/bin/sh\necho 0\n", encoding="utf-8")
+    named.chmod(0o755)
+    root, log = _plugin_root_recording_git_homes(tmp_path, project, id_candidates=str(named))
+    result = _run_under_bash(root, _env(root, None, None), project)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{project.resolve()}\n"
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "rev-parse --show-toplevel|no HOME",
+        f"-C {project} worktree list --porcelain|no HOME",
+    ]
+
+
 def _exported_functions(tmp_path: Path, names: tuple[str, ...]) -> tuple[dict[str, str], Path]:
     """`BASH_FUNC_<name>%%` for each of `names`: a function that runs a marker program, which
     records the name, and then hands over to what the name meant, so a wrapper that ran one
