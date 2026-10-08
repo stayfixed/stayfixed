@@ -1598,9 +1598,18 @@ reddens = [
 [[mutation]]
 name = "a flow mapping's plain scalar is given back"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*+)'''
+before = '''[^\s{}\[\],]*?(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
 after = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)'''
 reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[plain-scalar-in-a-flow-mapping]"]
+
+# A plain scalar in a flow mapping ends before a colon that a blank, an indicator or the end follows:
+# read on past it, `{hooks: x}` holds a plain `hooks:` and no key.
+[[mutation]]
+name = "a flow mapping's plain scalar runs on past a colon and a blank"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
+after = '''(?=[\s{}\[\],]|\Z))'''
+reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]"]
 
 [[mutation]]
 name = "a flow mapping's keys are read at every depth"

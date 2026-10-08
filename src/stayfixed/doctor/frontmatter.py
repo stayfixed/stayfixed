@@ -19,11 +19,12 @@ _FENCE = "---"
 _OPENING = re.compile(r"---[\s\ufeff]*+")
 # A key quoted either way: double, with backslash escapes, or single, with `''` for a quote.
 #
-# Every repetition in this module's patterns that a long value can reach is possessive (`*+`, `++`):
-# Python's `re` keeps a record for each pass of a repeated group in case it has to give the pass
-# back, hundreds of bytes per character of one long value, so a file at `fsops.REGULAR_READ_LIMIT`
-# asked gigabytes of one `doctor` run. A possessive repetition gives nothing back and keeps no
-# record. None of them changes what is matched, since nothing after one could take back what it
+# Every repetition in this module's patterns that a long value can reach is possessive (`*+`, `++`)
+# or repeats one character: Python's `re` keeps a record for each pass of a repeated group in case
+# it has to give the pass back, hundreds of bytes per character of one long value, so a file at
+# `fsops.REGULAR_READ_LIMIT` asked gigabytes of one `doctor` run. A possessive repetition gives
+# nothing back and keeps no record, and one of a single character keeps none either way. None of
+# the possessive ones changes what is matched, since nothing after one could take back what it
 # read, with one exception: a single-quoted scalar whose quotes never pair up as YAML reads them,
 # which giving back ended at its last `''`. The second single-quoted alternative ends it there, in
 # one scan.
@@ -33,9 +34,17 @@ _QUOTED = f"{_DOUBLE_QUOTED}|{_SINGLE_QUOTED}"
 # One token of a flow mapping (`{name: x, hooks: {...}}`): a quoted scalar, a flow indicator, a
 # comment, blanks, a plain scalar -- which holds a `:` not followed by a blank or an indicator, and
 # a `#` not after a blank -- or a colon. Whatever else a line holds is one character at a time.
+#
+# A plain scalar is read a character at a time up to the first place it cannot go on, a blank, an
+# indicator, or a colon that one of those or the end follows: a lazy repeat of one character with
+# that place looked for ahead, so no group is repeated. As a possessive repeat of "a character or a
+# colon not followed by a blank", it took the colon and the blank after it too on Python 3.11.0 to
+# 3.11.4, which end a failed pass of it where the pass stopped (CONTRIBUTING.md, "Tests"): `{hooks:
+# x}` held no key there.
 _FLOW = re.compile(
     rf"(?P<quoted>{_QUOTED})|(?P<indicator>[{{}}\[\],])|(?P<comment>#[^\n]*)|(?P<blank>\s+)"
-    r"|(?P<plain>[^\s{}\[\],:#\"'](?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*+)|(?P<colon>:)|(?P<other>.)",
+    r"|(?P<plain>[^\s{}\[\],:#\"'][^\s{}\[\],]*?(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))"
+    r"|(?P<colon>:)|(?P<other>.)",
     re.DOTALL,
 )
 # A double-quoted scalar's escapes, as YAML spells them.
