@@ -353,7 +353,7 @@ reddens = [
 [[mutation]]
 name = "init runs again over a repository whose manifest says it is already initialised"
 file = "src/stayfixed/project/init.py"
-before = "    if fsops.is_file(root / MANIFEST_PATH):"
+before = "    if Manifest.present(root):"
 after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
@@ -849,7 +849,7 @@ reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if fsops.is_file(root / ATTACH_LEDGER):"
+before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
 
@@ -1259,8 +1259,8 @@ reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_s
 [[mutation]]
 name = "a footprint command imports the planner past the seam"
 file = "src/stayfixed/project/init.py"
-before = "from stayfixed.scaffold import MANIFEST_PATH, Plan, apply"
-after = "from stayfixed.scaffold import MANIFEST_PATH, Plan, apply, plan"
+before = "from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply"
+after = "from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply, plan"
 reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]
 
 # `replan` asks no guard, so it plans only on a `Passes` whose `predict` already asked the ignore
@@ -2092,3 +2092,33 @@ before = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({said(exc
 after = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({exc})")'
 reddens = ["tests/project/test_rewrite.py::test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure"]
 
+# A committed link into a directory nobody may search makes every path through it a fault to ask
+# about. Each question about stayfixed's own ledger goes through `contained`, which names the link,
+# or asks whether the place is a link before it follows it; a bare existence check through the link
+# met the fault, an internal error that printed the absolute path.
+[[mutation]]
+name = "uninstall asks for attach's ledger past contained"
+file = "src/stayfixed/project/uninstall.py"
+before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
+after = "    if fsops.is_file(root / ATTACH_LEDGER):"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_refuses_a_local_directory_linked_where_nobody_may_search_by_name",
+]
+
+[[mutation]]
+name = "uninstall follows a link where its ledger belongs to ask whether it is a directory"
+file = "src/stayfixed/project/uninstall.py"
+before = "        if not fsops.is_symlink(path) and fsops.is_dir(path):\n            continue"
+after = "        if fsops.is_dir(path) and not fsops.is_symlink(path):\n            continue"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link[.stayfixed/assessment.json]",
+]
+
+[[mutation]]
+name = "uninstall follows a link where its digest record belongs to ask whether it is a directory"
+file = "src/stayfixed/project/uninstall.py"
+before = "    if not fsops.is_symlink(path) and fsops.is_dir(path):\n        with contextlib.suppress(OSError):"
+after = "    if fsops.is_dir(path) and not fsops.is_symlink(path):\n        with contextlib.suppress(OSError):"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link[.stayfixed/local/artifacts.json]",
+]

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import shutil
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ from stayfixed.project.commands import CI_LEFT, CI_PINNED
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from tests import parserlimits
 from tests.gitfixture import git, needs_git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.project.repos import forge_record, initialised, tree
 from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -104,6 +107,81 @@ def test_a_manifest_past_the_parser_is_refused_in_its_own_words(
     code, data = _run(root, tmp_path, command, "--dry-run")
     assert code == 2
     assert data["summary"] == f"refused: {MANIFEST_PATH} {clause}"
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize(
+    "argv", [("init", "--yes"), ("upgrade",), ("uninstall",)], ids=["init", "upgrade", "uninstall"]
+)
+@pytest.mark.parametrize("link", [".stayfixed", MANIFEST_PATH.as_posix()])
+def test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words(
+    tmp_path: Path, link: str, argv: tuple[str, ...]
+) -> None:
+    # A clone commits a link as text and needs no mode: an absolute target under a directory its
+    # user cannot search makes every path through the link a fault to ask about. The manifest was
+    # asked for with a bare existence check, which met that fault, and all three commands ended in
+    # `internal error: PermissionError` with the manifest's absolute path. The manifest is asked
+    # through `contained` now, as reading it always was, so the link is refused by name.
+    # Mutation (oracle): `mutations/`'s "init, upgrade and uninstall ask for the manifest past
+    # contained" -> every case ends in an internal error again.
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    if link == ".stayfixed":
+        shutil.rmtree(root / link)
+    else:
+        (root / link).unlink()
+    (root / link).symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, *argv)
+    assert code == 2
+    assert (
+        data["summary"] == f"refused: {str(MANIFEST_PATH)!r} passes through a symlink at {link!r}"
+    )
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+def test_uninstall_refuses_a_local_directory_linked_where_nobody_may_search_by_name(
+    tmp_path: Path,
+) -> None:
+    # The same fault one directory down: whether `attach`'s ledger is there was asked of the path
+    # whole, through the link. Mutation (oracle): `mutations/`'s "uninstall asks for attach's
+    # ledger past contained".
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    shutil.rmtree(root / ".stayfixed" / "local", ignore_errors=True)
+    (root / ".stayfixed" / "local").symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, "uninstall")
+    assert code == 2
+    assert data["summary"] == (
+        "refused: '.stayfixed/local/attach.json' passes through a symlink at '.stayfixed/local'"
+    )
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("left", [".stayfixed/assessment.json", ".stayfixed/local/artifacts.json"])
+def test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link(
+    tmp_path: Path, left: str
+) -> None:
+    # A file of stayfixed's own ledger that is a link is removed as one. Whether it was a directory
+    # to leave was asked first, through the link, which met the fault past it: an internal error
+    # after every other file had gone. Mutation (oracle): `mutations/`'s "uninstall follows a link
+    # where its ledger belongs to ask whether it is a directory".
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (root / left).parent.mkdir(parents=True, exist_ok=True)
+    (root / left).unlink(missing_ok=True)
+    (root / left).symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, "uninstall")
+    assert code == 0, data["summary"]
+    assert not os.path.lexists(root / left)
 
 
 @needs_git

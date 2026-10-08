@@ -64,7 +64,7 @@ from stayfixed.project.rewrite import rewrite_owned
 from stayfixed.project.templates import CI_ARTIFACT
 from stayfixed.release.api import Resolution, resolve_pin
 from stayfixed.runner import Runner
-from stayfixed.scaffold import MANIFEST_PATH, Plan, apply
+from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply
 from stayfixed.tomlout import dumps
 
 STATE_NEW = "initialised"
@@ -328,7 +328,7 @@ def precheck(root: Path, *, answering: bool) -> None:
     `stayfixed.toml` already answers every question, so asking them over it would collect
     answers that nothing writes.
     """
-    if fsops.is_file(root / MANIFEST_PATH):
+    if Manifest.present(root):
         raise Refusal(ALREADY)
     # `contained` and not a bare `is_file`, which follows a link: a symlinked `stayfixed.toml` is
     # refused as every command refuses it, whatever it points at, and not taken for an answer

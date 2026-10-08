@@ -125,6 +125,17 @@ class Manifest:
     records: dict[str, Record]
     format: int = FORMAT
 
+    @staticmethod
+    def present(root: Path) -> bool:
+        """Whether `root` holds a manifest, refused (`PathEscape`) when anything redirects it.
+
+        The question every command that starts from the manifest asks first, and asked as `read`
+        asks it, so a committed `.stayfixed` link is refused whatever it points at: into a
+        directory nobody may search, a bare `is_file` met a fault, and `init`, `upgrade` and
+        `uninstall` ended in an internal error that printed the path.
+        """
+        return fsops.is_file(_contained_path(root))
+
     @classmethod
     def read(cls, root: Path) -> Manifest:
         path = _contained_path(root)

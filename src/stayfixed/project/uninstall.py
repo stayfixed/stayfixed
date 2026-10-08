@@ -275,7 +275,7 @@ def _remove_local_artifacts(root: Path) -> None:
     A directory where the ledger belongs is not a file stayfixed wrote: it goes only if empty.
     """
     path = root / LOCAL_DIGESTS
-    if fsops.is_dir(path) and not fsops.is_symlink(path):
+    if not fsops.is_symlink(path) and fsops.is_dir(path):
         with contextlib.suppress(OSError):
             rmdir_within(root, LOCAL_DIGESTS)
     else:
@@ -301,7 +301,9 @@ def _remove_ledger(root: Path) -> None:
     """
     for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):
         path = root / target
-        if fsops.is_dir(path) and not fsops.is_symlink(path):
+        # Whether it is a link first, so a link is never followed to answer: one into a directory
+        # nobody may search would meet a fault there, and it is removed as a link either way.
+        if not fsops.is_symlink(path) and fsops.is_dir(path):
             continue
         try:
             remove_within(root, target)
@@ -313,9 +315,9 @@ def _remove_ledger(root: Path) -> None:
 def uninstall(
     root: Path, *, machine: Path | None, dry_run: bool, force: Sequence[str]
 ) -> UninstallReport:
-    if not fsops.is_file(root / MANIFEST_PATH):
+    if not Manifest.present(root):
         raise Refusal(NOTHING)
-    if fsops.is_file(root / ATTACH_LEDGER):
+    if fsops.is_file(contained(root, ATTACH_LEDGER)):
         raise Refusal(ATTACHED)
     manifest = Manifest.read(root)
     document = read_document(root)

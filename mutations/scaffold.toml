@@ -900,3 +900,21 @@ reddens = [
   "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[timeout]",
   "tests/doctor/test_entries.py::test_a_granted_command_in_an_entry_its_area_does_not_grant_is_never_absolved[unknown-field]",
 ]
+
+# A committed link into a directory nobody may search makes every path through it a fault to ask
+# about, so whether the manifest is there is asked through `contained`, which names the link, as
+# reading it always was: a bare existence check met the fault, and `init`, `upgrade` and `uninstall`
+# ended in an internal error that printed the absolute path.
+[[mutation]]
+name = "init, upgrade and uninstall ask for the manifest past contained"
+file = "src/stayfixed/scaffold/manifest.py"
+before = "        return fsops.is_file(_contained_path(root))"
+after = "        return fsops.is_file(root / MANIFEST_PATH)"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed-init]",
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed-uninstall]",
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed/manifest.json-init]",
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed/manifest.json-upgrade]",
+  "tests/project/test_footprint_commands.py::test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words[.stayfixed/manifest.json-uninstall]",
+]
