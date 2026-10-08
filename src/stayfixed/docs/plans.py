@@ -378,19 +378,28 @@ def asserted_outcomes(prose: str) -> list[int]:
     """Lines opening a claim that states a mutation's outcome as fact."""
     found: set[int] = set()
     for text, line_of in logical_blocks(prose):
+        # The marker is read over the claim's own SENTENCE, up to where the claim ends, and never
+        # over the lines the match happens to span. A match starts at its GOVERNOR, so a marker
+        # written before the governor fell outside that span whenever the text wrapped between
+        # the two — the same wrap-dependence the paragraph reading removed from detection,
+        # relocated into the exemption. A sentence is the unit `Expected:` marks: a marker in a
+        # neighbouring sentence still exempts nothing, and one written after the claim is not
+        # read at all.
+        #
+        # Claims come in order, so the sentence ends and the markers are read forward once each
+        # beside them. Read again from the block's start at every claim, a paragraph of 32,000
+        # claims took 52 s, four times as long at each doubling. A marker is a word, so one lies
+        # within a claim's sentence exactly when the first that starts in it ends by the claim's
+        # end.
+        ends = _SENTENCE_END.finditer(text)
+        markers = _MARKED_AS_EXPECTATION.finditer(text)
+        end, marker, opening = next(ends, None), next(markers, None), 0
         for match in _ASSERTED_OUTCOME.finditer(text):
-            # The marker is read over the claim's own SENTENCE, up to where the claim ends, and
-            # never over the lines the match happens to span. A match starts at its GOVERNOR, so
-            # a marker written before the governor fell outside that span whenever the text
-            # wrapped between the two — the same wrap-dependence the paragraph reading removed
-            # from detection, relocated into the exemption. A sentence is the unit `Expected:`
-            # marks: a marker in a neighbouring sentence still exempts nothing, and one written
-            # after the claim is not read at all.
-            opening = max(
-                (end.end() for end in _SENTENCE_END.finditer(text, 0, match.start())),
-                default=0,
-            )
-            if _MARKED_AS_EXPECTATION.search(text[opening : match.end()]):
+            while end is not None and end.end() <= match.start():
+                opening, end = end.end(), next(ends, None)
+            while marker is not None and marker.start() < opening:
+                marker = next(markers, None)
+            if marker is not None and marker.end() <= match.end():
                 continue
             found.add(line_of[match.start()])
     return sorted(found)

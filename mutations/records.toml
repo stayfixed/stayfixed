@@ -370,6 +370,27 @@ before = "    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(pr
 after = '    return re.search(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", prose, re.MULTILINE) is not None'
 reddens = ["tests/docs/test_plans.py::test_a_long_plan_is_linted_in_time_linear_in_its_length[premise markers]"]
 
+# Claims come in order, so a claim's sentence end and the expectation markers are read forward
+# once beside them: from the paragraph's start at every claim, 16,000 claims took 12.7 s, and four
+# times as long at each doubling.
+[[mutation]]
+name = "a claim's sentence is looked for from its paragraph's start"
+file = "src/stayfixed/docs/plans.py"
+before = """            while end is not None and end.end() <= match.start():
+                opening, end = end.end(), next(ends, None)"""
+after = "            opening = max((e.end() for e in _SENTENCE_END.finditer(text, 0, match.start())), default=0)"
+reddens = [
+  "tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[a sentence each]",
+  "tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[one sentence]",
+]
+
+[[mutation]]
+name = "an expectation marker is looked for over the claim's whole sentence again"
+file = "src/stayfixed/docs/plans.py"
+before = "            if marker is not None and marker.end() <= match.end():"
+after = "            if _MARKED_AS_EXPECTATION.search(text[opening : match.end()]):"
+reddens = ["tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[one sentence]"]
+
 # A plan names what its tasks remove, so once they land a finished plan must not read as dead.
 [[mutation]]
 name = "a path a plan declares on a Delete line reads as a dead reference once it is gone"

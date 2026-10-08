@@ -285,6 +285,42 @@ def test_a_long_plan_is_linted_in_time_linear_in_its_length(tmp_path: Path, shap
     assert done.stdout == f"{expected}\n", done.stderr
 
 
+# Paragraphs of claims, one a line, which the asserted-outcome rule read again from the paragraph's
+# start at every claim: for the last sentence end before it, 12.7 s over 16,000 claims each in a
+# sentence of its own, and, where no sentence ends, for an expectation marker, 10.9 s over 16,000.
+# Each is sized so that the old reading takes three minutes and the rule a tenth of a second; the
+# answer is how many lines open a claim and the last of them.
+LONG_CLAIMS = {
+    "a sentence each": "It reddens 8.\n",
+    "one sentence": "it reddens 8\n",
+}
+_LONG_CLAIM_COUNT = 1 << 16
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_CLAIMS))
+def test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under the plan lint's timeout. Mutations (oracle): `mutations/`'s "a claim's
+    # sentence is looked for from its paragraph's start" -> both cases; "an expectation marker is
+    # looked for over the claim's whole sentence again" -> `one sentence`.
+    probe = (
+        "import sys\n"
+        "from stayfixed.docs.plans import asserted_outcomes\n"
+        "found = asserted_outcomes(sys.argv[1] * int(sys.argv[2]))\n"
+        "print([len(found), found[-1]])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, LONG_CLAIMS[shape], str(_LONG_CLAIM_COUNT)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_PLAN_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the asserted-outcome rule ran past {_LONG_PLAN_SECONDS} s on one paragraph")
+    assert done.stdout == f"{[_LONG_CLAIM_COUNT, _LONG_CLAIM_COUNT]}\n", done.stderr
+
+
 @pytest.mark.parametrize(
     ("text", "flagged"),
     [
