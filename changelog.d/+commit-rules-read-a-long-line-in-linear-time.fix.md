@@ -6,5 +6,5 @@ that, so any commit message could stall the hook or a pull request's `commit che
 - a `-by:` trailer line padded with blanks: 160,000 of them took about two minutes, and a million
   would take over an hour;
 - a line that opens like a generated-with footer and goes on into prose: one with 24 words that
-  are both a name and a version, such as `A1`, took seven seconds, each two more words multiplied
-  that by eight, and one with 16,000 slashes took over a second.
+  are both a name and a version, such as `A1`, took four to seven seconds, each further word
+  doubled that, and one with 16,000 slashes took over a second.
