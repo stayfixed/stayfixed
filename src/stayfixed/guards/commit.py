@@ -181,9 +181,11 @@ _DOMAIN_RUN = re.compile(r"@([\w.-]*+)")
 # known gap, like Gemini's above.
 #
 # A model's version words are possessive, so `re` keeps no record per word, and a word given back
-# could only end the name before a blank, which `fullmatch` refuses anyway.
+# could only end the name before a blank, which `fullmatch` refuses anyway. A word's first
+# character is read ahead of its possessive rest, so a pass of the repeat can fail only before it
+# reads a run: the shape every supported Python reads alike (CONTRIBUTING.md, "Tests").
 _PRODUCTS = re.compile(
-    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]++)*+|github copilot|copilot"
+    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"
     r"|cursor agent|openai codex|codex|devin|windsurf|aider|gemini cli|gemini code assist)",
     re.IGNORECASE,
 )

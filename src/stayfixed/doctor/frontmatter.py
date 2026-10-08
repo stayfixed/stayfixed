@@ -68,17 +68,20 @@ _ESCAPED = {
 _HOOKS = "hooks"
 # What may stand ahead of a frontmatter's top-level node and leave it the node it is: its
 # properties, each a tag (`!x`, `!!map`) or an anchor (`&x`) ended by a blank or a line break, then
-# any comment lines. A flow mapping behind them is still a flow mapping.
-_AHEAD = re.compile(r"(?:[!&]\S*+(?:\s++|\Z))++(?:#[^\n]*+(?:\n\s*+|\Z))*+")
+# any comment lines. A flow mapping behind them is still a flow mapping. Each pass is a mark, then
+# runs that cannot fail, the blanks after a property's `\S*+` or a comment's `[^\n]*+` among them,
+# so a pass can fail only on its first character: the shape every supported Python reads alike
+# (CONTRIBUTING.md, "Tests"). The same holds for the two patterns below.
+_AHEAD = re.compile(r"(?:[!&]\S*+\s*+)++(?:#[^\n]*+\s*+)*+")
 # The same properties with comments among them as well as after them, which YAML reads past: the
 # lines a block mapping behind them may start on.
-_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+(?:\s++|\Z)|#[^\n]*+(?:\n\s*+|\Z))++")
+_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+|#[^\n]*+\s*+)++")
 # A key's properties on its own line, each a tag or an anchor ended by blanks or the line's end; and
 # the colon that ends a plain key, the first one a blank or the line's end follows. Each is one
 # match over the line, never one per property or per character: a frontmatter is read up to
 # `fsops.REGULAR_READ_LIMIT`, and a pattern that rescans the rest of its line at every step takes
 # hours over one long line of blanks or tags.
-_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+(?:[ \t]++|\Z))*+")
+_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
 
 

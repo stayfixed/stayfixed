@@ -1471,6 +1471,27 @@ reddens = [
 [[mutation]]
 name = "a model's version words are given back"
 file = "src/stayfixed/guards/commit.py"
-before = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]++)*+|github copilot|copilot"'
+before = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"'
 after = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]+)*|github copilot|copilot"'
 reddens = ["tests/guards/test_commit.py::test_a_long_trailer_is_judged_in_memory_linear_in_its_length[model words]"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a model's words open on their possessive run"
+file = "src/stayfixed/guards/commit.py"
+before = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"'
+after = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]++)*+|github copilot|copilot"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# The same, for the words past a footer's vendor, which `_is_footer` reads one match at a time.
+[[mutation]]
+name = "a footer's words are a possessive repeat"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)'
+after = '_FOOTER_WORD = re.compile(r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))++", re.IGNORECASE)'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]

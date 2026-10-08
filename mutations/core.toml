@@ -592,6 +592,17 @@ before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
 after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]+)+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_long_symbol_path_is_read_in_memory_linear_in_its_length"]
 
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a symbol path's parts are a possessive repeat"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]++)++))?`"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
 # A symbol path's run is judged after it is read: no colon alone, no three in a row, and none at its
 # end, which is an empty part. Python 3.11.0 to 3.11.4 read the last as a claim when the parts were
 # a possessive repeat. One entry per rule.
@@ -1388,6 +1399,20 @@ before = '''    r"^(?![/-])"
     r"[A-Za-z0-9._/-]+\Z"'''
 after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
 reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "the path grammar repeats its segments possessively"
+file = "src/stayfixed/printed.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
 
 # The other half of the two readers, beside `mutations/`'s "the [paths] grammar admits a spelling
 # the write refuses again", and the one the half-write actually turned on: `contained()` is what

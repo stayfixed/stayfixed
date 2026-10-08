@@ -192,9 +192,20 @@ reddens = [
 [[mutation]]
 name = "an owner's domain labels are given back"
 file = "src/stayfixed/assess/probes.py"
-before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]++)++"'
+before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-][A-Za-z0-9-]*+)++"'
 after = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"'
 reddens = ["tests/assess/test_probes.py::test_a_long_owner_is_read_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "an owner's labels open on their possessive run"
+file = "src/stayfixed/assess/probes.py"
+before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-][A-Za-z0-9-]*+)++"'
+after = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]++)++"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
 
 # The base a change is judged against. A base with no `stayfixed.toml` at the project's path is the
 # bootstrap, where the change decides its own configuration, so each way of reaching it by
