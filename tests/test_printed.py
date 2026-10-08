@@ -14,10 +14,12 @@ from tests.crafted import CRAFTED
 # Names the path grammar admits: each prints as itself under both bounds, so ordinary output is
 # unchanged by either.
 INSIDE = ["docs/a.md", "BR-001.md", ".hidden", "..foo", "a_b/c-d.e"]
-# Names outside it, one per way out. `x\udce9` is how Linux hands Python a file name whose bytes
-# are not UTF-8 (a lone surrogate), so it is covered here portably, where the filesystem cases
-# that need such a name skip on APFS. `café.md`, `My Note.md` and `заметки.md` are ordinary names
-# the grammar still refuses: it is ASCII-only on purpose, and those print as the stand-in.
+# Names outside it, one per way out. `a/`, `a/b/..` and `a/.` are the shapes Python 3.11.0 to
+# 3.11.4 read into the grammar when its segments were a possessive repeat. `x\udce9` is how Linux
+# hands Python a file name whose bytes are not UTF-8 (a lone surrogate), so it is covered here
+# portably, where the filesystem cases that need such a name skip on APFS. `café.md`, `My Note.md`
+# and `заметки.md` are ordinary names the grammar still refuses: it is ASCII-only on purpose, and
+# those print as the stand-in.
 OUTSIDE = [
     "",
     ".",
@@ -25,6 +27,8 @@ OUTSIDE = [
     "a/../b",
     "a//b",
     "a/",
+    "a/b/..",
+    "a/.",
     "-rf",
     "a\rb",
     "a\u009bb",

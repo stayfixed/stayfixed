@@ -305,6 +305,7 @@ REFUSED = (
     "./docs",  # a leading './'
     "docs/./x.md",  # a '.' component anywhere
     "docs/../x.md",  # a '..' component the charset spells out of ordinary letters
+    "docs/..",  # a '..' component that ends the value
     ".",
     "..",
     "/etc/stayfixed",

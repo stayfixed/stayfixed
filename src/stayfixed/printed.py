@@ -38,20 +38,27 @@ from typing import Protocol
 # earlier artifacts on disk and whose `finally` had already persisted the manifest. The value
 # was never writable; only the two spellings of "a path" disagreed about saying so.
 #
-# So the grammar is written per segment: exactly one `/` between segments, no segment empty, and
-# the lookahead per segment because the charset alone cannot say it. `.` and `..` are spelled
-# entirely out of the charset the segments already use, so a segment rule without the lookahead
+# So the grammar says it of every segment: exactly one `/` between segments, no segment empty, and
+# no segment that is `.` or `..`, which the charset alone cannot say. `.` and `..` are spelled
+# entirely out of the charset the segments already use, so a segment rule without that lookahead
 # admits `./docs`, `docs/../x` and `..` itself — measured, on the charset-plus-segments form this
 # started from. `.hidden` and `..foo` are ordinary names and stay admitted: the lookahead refuses
 # a segment that is one or two dots *and nothing else*. What is left is exactly the set
 # `fsops.checked_components` accepts, intersected with the charset, and `contained()` asks that
 # function for the component rule rather than keeping a second copy of it.
 #
-# The segments are possessive: `re` keeps a record for every pass of a repeated group it might
-# give back, 62 MiB over a value of half a million segments, and a segment given back could only
-# leave a `/` before the end, which `\Z` refuses anyway.
+# The rules are lookaheads over the whole value, then the charset, and no group is repeated: `re`
+# keeps a record for every pass of a repeated group it might give back, 62 MiB over a value of
+# half a million segments, and a possessive repeat of the segment, which keeps none, admitted
+# `docs/` and `docs/..` on Python 3.11.0 to 3.11.4, which end a failed pass of it where the pass
+# stopped (CONTRIBUTING.md, "Tests"). Each lookahead scans the value once.
 PATH_VALUE = re.compile(
-    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"
+    # A first segment, which opens on neither `/` nor `-`; no empty segment after it; no segment
+    # that is `.` or `..`; and the charset.
+    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"
 )
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.

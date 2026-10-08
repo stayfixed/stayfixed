@@ -1277,22 +1277,73 @@ reddens = [
 # the clone's own spelling of its own `stayfixed.toml`, and neither consults anything the clone can
 # move, so a repository cannot choose which of the two answers it gets.
 # Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
-# and `./docs` all match the grammar again.
+# and `./docs` all match the grammar again. The entries after it take one rule out each.
 [[mutation]]
 name = "the [paths] grammar admits a spelling the write refuses again"
 file = "src/stayfixed/printed.py"
-before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
 after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
 reddens = [
   "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
 ]
 
-# The grammar's segments are possessive, so `re` keeps no record per segment: greedy, a name of a
-# million segments took 124 MiB more to judge.
+[[mutation]]
+name = "the [paths] grammar admits an empty segment"
+file = "src/stayfixed/printed.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*/\Z)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a trailing slash"
+file = "src/stayfixed/printed.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*//)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a segment of one or two dots"
+file = "src/stayfixed/printed.py"
+before = '    r"(?!(?:.*/)?\.\.?(?:/|\Z))"'
+after = '    r"(?!\.\.?(?:/|\Z))"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits an absolute path"
+file = "src/stayfixed/printed.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!-)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a value that opens on a dash"
+file = "src/stayfixed/printed.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!/)"'
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# The grammar repeats no group, so `re` keeps no record per segment: read as a greedy repeat of
+# the segment, a name of a million segments took 124 MiB more to judge.
 [[mutation]]
 name = "a path's segments are given back"
 file = "src/stayfixed/printed.py"
-before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
 after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
 reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_in_its_length"]
 
