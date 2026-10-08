@@ -3250,9 +3250,9 @@ def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
 # read it: what follows the last call that has a character before it and one after, and a word
 # ending in `uses:` hands on to the word after it. Mutations (oracle): `mutations/`'s "a uses:
 # word pins what follows its first call" -> `the last call`; "a word ending in uses: is passed
-# over whole" -> `a word ending in uses:`. Mutations (advisory; the group file of `doctor/` is at
-# its cap): the call that ends a word no longer falls back to the one before it -> `a call ending
-# the word`; a call with nothing before it pins -> `nothing before the call`.
+# over whole" -> `a word ending in uses:`; "the call that ends a word no longer falls back to the
+# one before it" -> `a call ending the word`; "a call with nothing before it pins" -> `nothing
+# before the call`.
 USES_WORDS = {
     "the last call": (
         "uses: a/.github/workflows/check.yml@x/.github/workflows/check.yml@v2",

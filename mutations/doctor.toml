@@ -2244,3 +2244,19 @@ file = "src/stayfixed/doctor/checks.py"
 before = "            at -= len(_USES_KEY)"
 after = "            pass"
 reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[a word ending in uses:]"]
+
+# The call that ends a word has nothing after it, so the word's ref follows the call before it;
+# and a call at the word's start has nothing before it, so it pins nothing.
+[[mutation]]
+name = "the call that ends a word no longer falls back to the one before it"
+file = "src/stayfixed/doctor/checks.py"
+before = "            call = word.rfind(_CALL, 0, call)"
+after = "            call = -1"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[a call ending the word]"]
+
+[[mutation]]
+name = "a call with nothing before it pins"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if call > 0:"
+after = "        if call >= 0:"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[nothing before the call]"]
