@@ -58,7 +58,7 @@ from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
-from stayfixed.config.schema import OVERLAY_MODE, Config
+from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import GitUnavailable, git_answer, origin_remote
@@ -419,7 +419,7 @@ def _resolve_at(
         override = None
     if override is not None:
         base = Path(override).expanduser()
-    elif mode == "local-only":
+    elif mode == LOCAL_ONLY_MODE:
         try:
             # `contained` with no `allow_final_symlink` refuses a symlink at *any* level
             # between the root and the target, which testing `base.is_symlink()` would not:

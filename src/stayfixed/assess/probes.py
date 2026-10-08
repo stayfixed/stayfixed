@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 from stayfixed import fsops
 from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.schema import IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
@@ -149,7 +150,7 @@ def _tracked_env(context: ProbeContext) -> Looked:
 
 
 def _memory_history(context: ProbeContext) -> Looked:
-    if context.config.memory.mode == "in-repo":
+    if context.config.memory.mode == IN_REPO_MODE:
         return Looked()  # the store is meant to be committed
     # Every ref, not `HEAD`'s history: notes committed on one branch are readable from a clone
     # checked out on an orphan one. With no commit anywhere git answers 0 and prints nothing.
