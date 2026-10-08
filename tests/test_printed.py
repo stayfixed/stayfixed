@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 
 import pytest
 
@@ -79,3 +81,42 @@ def test_a_name_past_the_clip_prints_its_first_characters_and_its_length(name: s
     assert shown == f"{quoted(name[:CLIPPED_CHARS])}…({len(name)} chars)"
     assert len(shown) < 4 * CLIPPED_CHARS + 32
     assert shown.isprintable()
+
+
+# A name of a million segments, which the grammar read with 124 MiB more of match state when `re`
+# kept a record for each segment it might give back, and with none when it keeps none: a
+# `stayfixed.toml` value is bounded in length by nothing. The most the child may grow its peak
+# resident size by, a few copies of the two-mebibyte name.
+_LONG_NAME_SEGMENTS = 1 << 20
+_LONG_NAME_BYTES = 32 << 20
+_LONG_NAME_SECONDS = 30
+
+
+def test_a_long_name_is_judged_in_memory_linear_in_its_length() -> None:
+    # In a child that measures its own peak resident size before and after (`ru_maxrss`, bytes on
+    # macOS and KiB on Linux), under a timeout. The name is inside the grammar, so `quoted` gives
+    # it back whole only if the grammar read it to its end. Mutation (oracle): `mutations/`'s "a
+    # path's segments are given back" -> this reddens.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.printed import quoted\n"
+        "name = 'a/' * int(sys.argv[1]) + 'a'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "shown = quoted(name)\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(shown is name, grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(_LONG_NAME_SEGMENTS)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_NAME_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"judging one long name ran past {_LONG_NAME_SECONDS} s")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < _LONG_NAME_BYTES, f"the grammar grew the peak by {int(grown) >> 20} MiB"

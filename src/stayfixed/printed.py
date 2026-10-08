@@ -46,8 +46,12 @@ from typing import Protocol
 # a segment that is one or two dots *and nothing else*. What is left is exactly the set
 # `fsops.checked_components` accepts, intersected with the charset, and `contained()` asks that
 # function for the component rule rather than keeping a second copy of it.
+#
+# The segments are possessive: `re` keeps a record for every pass of a repeated group it might
+# give back, 62 MiB over a value of half a million segments, and a segment given back could only
+# leave a `/` before the end, which `\Z` refuses anyway.
 PATH_VALUE = re.compile(
-    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"
+    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"
 )
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.

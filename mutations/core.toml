@@ -1281,11 +1281,20 @@ reddens = [
 [[mutation]]
 name = "the [paths] grammar admits a spelling the write refuses again"
 file = "src/stayfixed/printed.py"
-before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
 after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
 reddens = [
   "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
 ]
+
+# The grammar's segments are possessive, so `re` keeps no record per segment: greedy, a name of a
+# million segments took 124 MiB more to judge.
+[[mutation]]
+name = "a path's segments are given back"
+file = "src/stayfixed/printed.py"
+before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_in_its_length"]
 
 # The other half of the two readers, beside `mutations/`'s "the [paths] grammar admits a spelling
 # the write refuses again", and the one the half-write actually turned on: `contained()` is what
