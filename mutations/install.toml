@@ -3236,6 +3236,24 @@ reddens = [
 ]
 
 [[mutation]]
+name = "setup tells a run that named its machine file where the file goes without --machine"
+file = "src/stayfixed/setup/machine.py"
+before = "            if path == machine_config_path(interactive=False)"
+after = "            if True"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_running_without_it",
+]
+
+[[mutation]]
+name = "setup's unwritable database home no longer says it is the only place a hook reads"
+file = "src/stayfixed/setup/machine.py"
+before = "            if path == machine_config_path(interactive=False)"
+after = "            if False"
+reddens = [
+  "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
 name = "doctor names attach as making the harness link for every store"
 file = "src/stayfixed/doctor/checks.py"
 before = '        f"{_LINK_FROM_A_TERMINAL if overlay else _LINK_FROM_NOTHING}",'

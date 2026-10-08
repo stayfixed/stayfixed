@@ -300,4 +300,28 @@ def test_setup_where_the_database_home_cannot_be_written_fails_naming_the_direct
         locked.chmod(0o755)
     err = capsys.readouterr().err
     assert f"{locked / '.config' / 'stayfixed'} cannot be written" in err
+    assert "without --machine it is under the home the password database records" in err
     assert "internal error" not in err
+
+
+def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_running_without_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The failure said where the file goes "without --machine" to a run that had named one, as
+    # if the flag had not been given. Named, the file is where the flag says, and the line names
+    # its directory and the reason alone. Mutation: `mutations/`, "setup tells a run that named
+    # its machine file where the file goes without --machine".
+    locked, home = tmp_path / "locked", tmp_path / "home"
+    locked.mkdir()
+    home.mkdir()
+    locked.chmod(0o555)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
+    named = locked / "stayfixed" / "config.toml"
+    try:
+        argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+        assert invoke([*argv, "--machine", str(named)]) == 1
+    finally:
+        locked.chmod(0o755)
+    err = capsys.readouterr().err
+    assert f"{named.parent} cannot be written" in err
+    assert "--machine" not in err

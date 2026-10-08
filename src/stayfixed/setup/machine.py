@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops, tomlout
+from stayfixed.config.machine import machine_config_path
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
 
@@ -175,10 +176,17 @@ def write_machine(
     except OSError as exc:
         # With no `--machine` the directory is under the home the password database records,
         # which a system user's entry often names as a directory that is not there or not
-        # theirs; no other place is one a hook reads, so the failure names the directory.
+        # theirs; no other place is one a hook reads, so the failure names the directory. A file
+        # `--machine` named elsewhere is where the flag says, and that clause would not be true
+        # of it.
+        where = (
+            "; without --machine it is under the home the password database records for this "
+            "user, which is the only place a hook reads it"
+            if path == machine_config_path(interactive=False)
+            else ""
+        )
         raise Failure(
             f"{path.parent} cannot be written ({fsops.said(exc)}), so the machine configuration "
-            f"cannot be kept there; without --machine it is under the home the password database "
-            f"records for this user, which is the only place a hook reads it"
+            f"cannot be kept there{where}"
         ) from None
     return Written(path)
