@@ -2844,15 +2844,15 @@ Each such file whose frontmatter (the lines between a first `---` line and the n
 top-level `hooks` key is named as one whose hooks the row does not judge, a `warn` that never makes
 the row `red`. The top level is the indentation of the frontmatter's first line that is neither
 blank nor a comment. The key is found bare, quoted either way (its escapes read), behind a tag, an
-anchor or `? `, or among the top-level keys of a flow mapping (`{name: x, hooks: {...}}`), tagged
-or not; a `hooks` nested under another key, or inside a quoted value, is not one. A top-level key
-the row cannot read whole, an alias (`*name`), a merge key (`<<`), a `? ` key that goes on past its
-line or a quoted key over several lines, may be `hooks`, so beside no `hooks` it can read the file
-is named as one the row cannot tell about, a `warn`. A frontmatter with no closing `---` is none. Names are compared without case, so
-`skill.md` and `.Claude/Skills` count. A FIFO, a directory the row cannot list and any other path
-it cannot read is named as one it cannot say anything about, also a `warn`. A path outside the path
-grammar, every name in it being the repository's, is named as a file whose path the row does not
-print.
+anchor or `? `, or among the top-level keys of a flow mapping (`{name: x, hooks: {...}}`), tagged or
+not; a `hooks` nested under another key, or inside a quoted or flow value, is not one. A top-level
+key the row cannot read whole, an alias (`*name`), a merge key (`<<`), a `? ` key that goes on past
+its line or a quoted key over several lines, may be `hooks`, so beside no `hooks` it can read the
+file is named as one the row cannot tell about, a `warn`. A frontmatter with no closing `---` is
+none. Names are compared without case, so `skill.md` and `.Claude/Skills` count. A FIFO, a directory
+the row cannot list and any other path it cannot read is named as one it cannot say anything about,
+also a `warn`. A path outside the path grammar, every name in it being the repository's, is named as
+a file whose path the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and

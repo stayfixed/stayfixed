@@ -1854,7 +1854,8 @@ def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -
 # flow mapping's tag or anchor hides it" -> `flow-tagged`, `flow-anchored` and
 # `flow-tagged-above`; "a key the reader cannot read outranks a hooks key it can" ->
 # `beside-an-alias`; "a flow mapping a colon follows is read as the whole frontmatter" -> the two
-# `below-a-flow-mapping-key` cases.
+# `below-a-flow-mapping-key` cases; "a value that never closes hides every line after it" ->
+# `below-a-value-that-never-closes`, read past since no YAML reader parses it.
 HOOKS_SPELLED = {
     "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
     "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
@@ -1872,6 +1873,8 @@ HOOKS_SPELLED = {
     "beside-an-alias": "name: &k x\n*k : y\nhooks: {}\n",
     "below-a-flow-mapping-key": "{a: 1}: x\nhooks: {}\n",
     "below-a-flow-mapping-key-tagged": "!!map {a: 1}: x\nhooks: {}\n",
+    "below-a-value-over-lines": 'description: "a\nb"\nhooks: {}\n',
+    "below-a-value-that-never-closes": "tags: [a,\nhooks: {}\n",
 }
 
 
@@ -1890,10 +1893,15 @@ def test_every_spelling_of_a_top_level_hooks_key_is_read(tmp_path: Path, spellin
 
 # Flow-style and quoted frontmatter that holds no top-level `hooks` key: one nested under another
 # key or inside a sequence, `hooks:` inside a quoted value or after a comment, and a longer quoted
-# key, and a quoted `<<`, which is a key of that name and no merge. The vacuity guards for the
+# key, a quoted `<<`, which is a key of that name and no merge, and `hooks:` on a line inside a
+# value a key above opens and a line below closes, which was named. The vacuity guards for the
 # spellings above. Mutations (oracle): `mutations/`'s "a flow mapping's keys are read at every
 # depth" -> `flow-nested`; "a flow mapping's quoted scalars are read as tokens" ->
-# `flow-in-a-quoted-value`; "a quoted merge key is read as a merge key" -> `a-quoted-merge-key`.
+# `flow-in-a-quoted-value`; "a quoted merge key is read as a merge key" -> `a-quoted-merge-key`;
+# "a value over lines is read for keys" -> the `over-lines` cases; "a quoted value is read to the
+# end of its line" -> the quoted ones; "a flow value is read to the end of its line" -> the flow
+# ones; "a value's tag hides that it runs over lines" -> `tagged-value-over-lines`; "a quoted
+# key's value is read to the end of its line" -> `quoted-keys-value-over-lines`.
 NO_HOOKS_SPELLED = {
     "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
     "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
@@ -1901,6 +1909,12 @@ NO_HOOKS_SPELLED = {
     "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
     "a-longer-quoted-key": '"hooksmith": x\n',
     "a-quoted-merge-key": '"<<": {hooks: x}\n',
+    "double-quoted-value-over-lines": 'description: "first\nhooks: x"\n',
+    "single-quoted-value-over-lines": "description: 'it''s\nhooks: x'\n",
+    "flow-mapping-value-over-lines": "metadata: {a: 1,\nhooks: 2}\n",
+    "flow-sequence-value-over-lines": "tags: [a,\nhooks: b]\n",
+    "tagged-value-over-lines": 'description: !!str "first\nhooks: x"\n',
+    "quoted-keys-value-over-lines": '"description": "first\nhooks: x"\n',
 }
 
 

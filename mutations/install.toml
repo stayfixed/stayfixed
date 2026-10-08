@@ -2738,16 +2738,18 @@ reddens = [
 name = "a skill's frontmatter reads an indented hooks key"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-            if len(line) - len(line.lstrip(" ")) != indent:
-                continue
-            below = content[index + 1 : index + 2]
-            continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
-            key = _block_key(line[indent:], continued=continued)
+        if starts[at] < inside or len(line) - len(line.lstrip(" ")) != indent:
+            continue
+        below = [lines[deeper] for deeper in content[index + 1 : index + 2]]
+        continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+        key, value = _block_key(line[indent:], continued=continued)
 """
 after = """
-            below = content[index + 1 : index + 2]
-            continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
-            key = _block_key(line.lstrip(" "), continued=continued)
+        if starts[at] < inside:
+            continue
+        below = [lines[deeper] for deeper in content[index + 1 : index + 2]]
+        continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+        key, value = _block_key(line.lstrip(" "), continued=continued)
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[nested-key]",
@@ -2756,8 +2758,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter reads any key opening with hooks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        key = rest[: colon.start()].rstrip(" \t")'
-after = '        key = rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)]'
+before = '        key, value = rest[: colon.start()].rstrip(" \t"), rest[colon.end() :]'
+after = '        key, value = rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)], rest[colon.end() :]'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
 ]
@@ -2887,6 +2889,59 @@ reddens = [
 # column: quoted either way, in a flow mapping, in a mapping indented as a whole, or behind a tag or
 # an anchor, the key declared hooks the row never named. Each spelling is read, at the top level
 # and no deeper.
+# A line inside a quoted or flow value a key above opens is that value's, never a key; past one
+# that never closes, every line is read for a key again.
+[[mutation]]
+name = "a value over lines is read for keys"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if starts[at] < inside or len(line) - len(line.lstrip(" ")) != indent:'
+after = '        if len(line) - len(line.lstrip(" ")) != indent:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[double-quoted-value-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-mapping-value-over-lines]",
+]
+
+[[mutation]]
+name = "a quoted value is read to the end of its line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    quoted = _QUOTED_OVER_LINES.match(text, start)"
+after = "    quoted = None"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[double-quoted-value-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[single-quoted-value-over-lines]",
+]
+
+[[mutation]]
+name = "a flow value is read to the end of its line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "        return _closes(text, start)"
+after = "        return None"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-mapping-value-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-sequence-value-over-lines]",
+]
+
+[[mutation]]
+name = "a value's tag hides that it runs over lines"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """_OPENS = re.compile(r"[ \\t]*(?:[!&][^ \\t\\n]*[ \\t]+)*[\\"'{\\[]")"""
+after = """_OPENS = re.compile(r"[ \\t]*[\\"'{\\[]")"""
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[tagged-value-over-lines]"]
+
+[[mutation]]
+name = "a quoted key's value is read to the end of its line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        value = after[1:] if after.startswith(":") else ""'
+after = '        value = ""'
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[quoted-keys-value-over-lines]"]
+
+[[mutation]]
+name = "a value that never closes hides every line after it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "            inside, spanning = (end, True) if end is not None else (0, False)"
+after = "            inside, spanning = (end, True) if end is not None else (len(text), False)"
+reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-that-never-closes]"]
+
 [[mutation]]
 name = "a frontmatter's quoted key is read as no key"
 file = "src/stayfixed/doctor/frontmatter.py"
@@ -2976,8 +3031,10 @@ reddens = [
 [[mutation]]
 name = "a quoted merge key is read as a merge key"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        return _unquoted(quoted.group()) if explicit or after.startswith(\":\") else None"
-after = "        return _UNTOLD if _unquoted(quoted.group()) == _MERGE else None"
+before = '        value = after[1:] if after.startswith(":") else ""'
+after = '''        value = after[1:] if after.startswith(":") else ""
+        if _unquoted(quoted.group()) == _MERGE:
+            return _UNTOLD, value'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-quoted-merge-key]",
 ]
@@ -3035,8 +3092,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter's merge key is read as a plain key"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return _UNTOLD if key == _MERGE else key"
-after = "    return key"
+before = "    return (_UNTOLD if key == _MERGE else key), value"
+after = "    return key, value"
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key]",
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key-inline]",
@@ -3059,11 +3116,11 @@ name = "a quoted key over several lines is read as no key"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
         if quoted is None:
-            return _UNTOLD
+            return _UNTOLD, ""
 """
 after = """
         if quoted is None:
-            return None
+            return None, ""
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[double-quoted-over-lines]",

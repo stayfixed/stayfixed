@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+from itertools import accumulate
 
 # The line that opens a frontmatter and the next one that closes it.
 _FENCE = "---"
@@ -54,6 +55,12 @@ _AHEAD = re.compile(r"(?:[!&]\S*(?:\s+|\Z))+(?:#[^\n]*(?:\n\s*|\Z))*")
 # hours over one long line of blanks or tags.
 _PROPERTIES = re.compile(r"(?:[!&][^ \t]*(?:[ \t]+|\Z))*")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
+# A value that may run over lines, past the blanks and any properties after its key's colon: a
+# quoted scalar or a flow collection, whose opening character this matches last. A plain scalar
+# opens with none of the four.
+_OPENS = re.compile(r"[ \t]*(?:[!&][^ \t\n]*[ \t]+)*[\"'{\[]")
+# A quoted scalar read across line breaks, a backslash before one included.
+_QUOTED_OVER_LINES = re.compile(_QUOTED, re.DOTALL)
 
 
 class _Untold:
@@ -85,9 +92,10 @@ def _unquoted(token: str) -> str:
     return _ESCAPE.sub(escaped, body)
 
 
-def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
+def _block_key(line: str, *, continued: bool) -> tuple[str | _Untold | None, str]:
     """The key a block mapping's line opens with, `None` for a line that opens none, or `_UNTOLD`
-    for a key the line does not hold whole.
+    for a key the line does not hold whole; and the rest of the line past the key's colon, the
+    start of its value, empty where the line holds none.
 
     Past an explicit-key `? ` and any tag (`!...`) or anchor (`&...`) ahead of the key; then a
     quoted key followed by a colon, or a plain one ending at the first colon followed by a blank or
@@ -101,21 +109,22 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
     properties = _PROPERTIES.match(rest)
     rest = rest[properties.end() :] if properties else rest
     if rest[:1] == "*" or (explicit and continued):
-        return _UNTOLD
+        return _UNTOLD, ""
     if rest[:1] in ('"', "'"):
         quoted = re.match(_QUOTED, rest)
         if quoted is None:
-            return _UNTOLD
+            return _UNTOLD, ""
         after = rest[quoted.end() :].lstrip(" \t")
-        return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
+        value = after[1:] if after.startswith(":") else ""
+        return (_unquoted(quoted.group()) if explicit or after.startswith(":") else None), value
     colon = _KEY_END.search(rest)
     if colon is not None:
-        key = rest[: colon.start()].rstrip(" \t")
+        key, value = rest[: colon.start()].rstrip(" \t"), rest[colon.end() :]
     elif explicit:
-        key = rest.rstrip(" \t")
+        key, value = rest.rstrip(" \t"), ""
     else:
-        return None
-    return _UNTOLD if key == _MERGE else key
+        return None, ""
+    return (_UNTOLD if key == _MERGE else key), value
 
 
 def _flow_keys(text: str) -> tuple[set[str], bool]:
@@ -163,12 +172,12 @@ def _flow_keys(text: str) -> tuple[set[str], bool]:
     return keys, untold
 
 
-def _closes(text: str) -> int | None:
-    """Where the flow collection `text` opens with closes, just past its last bracket, or `None`
-    where it does not close. Quoted scalars and comments are read whole, as `_flow_keys` reads
-    them, so a bracket inside one closes nothing."""
+def _closes(text: str, start: int = 0) -> int | None:
+    """Where the flow collection that opens at `start` in `text` closes, just past its last
+    bracket, or `None` where it does not close. Quoted scalars and comments are read whole, as
+    `_flow_keys` reads them, so a bracket inside one closes nothing."""
     depth = 0
-    for token in _FLOW.finditer(text):
+    for token in _FLOW.finditer(text, start):
         if token.lastgroup != "indicator" or token.group() == ",":
             continue
         depth += 1 if token.group() in "{[" else -1
@@ -221,16 +230,49 @@ def _holds_hooks(lines: list[str]) -> bool | None:
     if node.startswith("{") and not _keyed(node):
         keys, untold = _flow_keys(node)
     else:
-        keys, untold = set(), False
-        for index, line in enumerate(content):
-            if len(line) - len(line.lstrip(" ")) != indent:
-                continue
-            below = content[index + 1 : index + 2]
-            continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
-            key = _block_key(line[indent:], continued=continued)
-            if isinstance(key, str):
-                keys.add(key)
-            untold = untold or key is _UNTOLD
+        keys, untold = _block_keys(lines, indent)
     if _HOOKS in keys:
         return True
     return None if untold else False
+
+
+def _block_keys(lines: list[str], indent: int) -> tuple[set[str], bool]:
+    """The keys of a block mapping whose keys stand at `indent` in a frontmatter's `lines`, and
+    whether any is one this reader cannot read whole (`_block_key`).
+
+    A line inside a quoted scalar or a flow collection that a key's value opens on a line above it
+    is that value's, never a key, whatever its indentation: `description: "a` and then
+    `hooks: x"`. Past a value that does not close, which no YAML reader parses, every line is read
+    for a key as before, so the reader fails toward naming a file. Each value is read once from
+    where it opens, so the whole is read in time linear in its length."""
+    text = "\n".join(lines)
+    starts = list(accumulate((len(line) + 1 for line in lines), initial=0))
+    content = [
+        at for at, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#")
+    ]
+    keys: set[str] = set()
+    untold, inside, spanning = False, 0, True
+    for index, at in enumerate(content):
+        line = lines[at]
+        if starts[at] < inside or len(line) - len(line.lstrip(" ")) != indent:
+            continue
+        below = [lines[deeper] for deeper in content[index + 1 : index + 2]]
+        continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+        key, value = _block_key(line[indent:], continued=continued)
+        if isinstance(key, str):
+            keys.add(key)
+        untold = untold or key is _UNTOLD
+        opens = _OPENS.match(text, starts[at] + len(line) - len(value)) if spanning else None
+        if opens is not None:
+            end = _ends(text, opens.end() - 1)
+            inside, spanning = (end, True) if end is not None else (0, False)
+    return keys, untold
+
+
+def _ends(text: str, start: int) -> int | None:
+    """Where the quoted scalar or flow collection that opens at `start` in `text` ends, or `None`
+    where it does not close."""
+    if text[start] in "{[":
+        return _closes(text, start)
+    quoted = _QUOTED_OVER_LINES.match(text, start)
+    return quoted.end() if quoted else None
