@@ -318,12 +318,12 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
-# Measured on the `oracle` job's own run: 173 s for the 566 entries `mutations/` held that
-# day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 751 s for 372 while the
-# oracle ran one entry at a time and compiled from source on every run. Re-measure it from that
-# job's runs; it is here as a number rather than as prose so that the budget below is checked
-# rather than described.
-ORACLE_SECONDS_PER_ENTRY = 173 / 566
+# Measured on the `oracle` job's own run of 2026-10-08: 719 s for the 1,869 entries `mutations/`
+# held that day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 173 s for 566
+# on an earlier run, 0.31 s an entry, and 751 s for 372 while the oracle ran one entry at a time
+# and compiled from source on every run. Re-measure it from that job's runs; it is here as a
+# number rather than as prose so that the budget below is checked rather than described.
+ORACLE_SECONDS_PER_ENTRY = 719 / 1869
 # Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
 # is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
 # runner, which also carries lint, types, the test run, the build and a wheel install.
@@ -382,7 +382,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     **The budget assertion is the one that earns its place.** The oracle grows by construction:
     the rule is that every new assertion ships with the mutation that reddens it, so the entry
-    count only goes up, at about a third of a second each on four CPUs. Projecting the cost from
+    count only goes up, at about four tenths of a second each on four CPUs. Projecting the cost from
     the live entry count means the next branch to outgrow the bound reddens *here*, in a
     contributor's own test run, rather than as a cancelled job minutes into CI. That is the whole
     difference between arithmetic somebody can act on and arithmetic somebody discovers.
