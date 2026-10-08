@@ -8,3 +8,6 @@ that, so any commit message could stall the hook or a pull request's `commit che
 - a line that opens like a generated-with footer and goes on into prose: one with 24 words that
   are both a name and a version, such as `A1`, took four to seven seconds, each further word
   doubled that, and one with 16,000 slashes took over a second.
+
+They now also judge a trailer without keeping a record for each label of its address or each word
+of a model's name: a trailer of a million of either took 120 MiB more memory to judge.

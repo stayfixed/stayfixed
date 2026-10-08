@@ -64,6 +64,8 @@ POSITIVES = [
     "Reviewed-by: GitHub Copilot <copilot@github.com>",
     "Signed-off-by: bot <noreply@mistral.ai>",
     "Tested-by: Cursor Agent <agent@cursor.sh>",
+    # A vendor's subdomain: the domain is tried after each label, not only after the `@`.
+    "Co-Authored-By: A Bot <bot@eu.api.anthropic.com>",
     # A BARE ADDRESS, angle brackets left off. The value then has no display name to split at,
     # so `address` was the empty string and the domain rule could never fire -- while the very
     # same address in brackets was caught. The third way in past the trailer's value rule, and
@@ -529,6 +531,52 @@ def test_a_long_message_line_is_judged_in_time_linear_in_its_length(shape: str) 
         pytest.fail(f"the commit-message rules ran past {_LONG_LINE_SECONDS} s on one long line")
     judged = [Offence(3, _TRAILER_LABEL)] if offends else []
     assert done.stdout == f"{[*judged, Offence(4, _TRAILER_LABEL)]}\n", done.stderr
+
+
+# Trailers whose rules held a record of match state per label of an address, or per word of a
+# model's name, when `re` kept one for each pass it might give back: 124 MiB more over a million of
+# either. Each is an offence, and is followed by a trailer as the message's last line, as above.
+LONG_TRAILERS = {
+    "address labels": ("Co-Authored-By: A Bot <noreply@", "a.", 1 << 20, "anthropic.com>"),
+    "model words": ("Co-Authored-By: Claude Opus", " a", 1 << 20, " <bot@example.org>"),
+}
+# The most the child may grow its peak resident size by while judging one of them: a few copies of
+# the two-mebibyte line, a quarter of that record.
+_LONG_TRAILER_BYTES = 32 << 20
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_TRAILERS))
+def test_a_long_trailer_is_judged_in_memory_linear_in_its_length(shape: str) -> None:
+    # The child measures its own peak resident size before and after (`ru_maxrss`, bytes on macOS
+    # and KiB on Linux), under a timeout. Mutations (oracle): `mutations/`'s "an address's labels
+    # are read by a pattern that gives them back" -> `address labels`; "a model's version words
+    # are given back" -> `model words`.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.guards.commit import offending_lines\n"
+        "head, unit, count, tail = sys.argv[1:]\n"
+        "line = head + unit * int(count) + tail\n"
+        "last = 'Co-Authored-By: Claude <noreply@anthropic.com>'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "judged = offending_lines(f'fix: a thing\\n\\n{line}\\n{last}')\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(grown, judged)\n"
+    )
+    head, unit, count, tail = LONG_TRAILERS[shape]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the commit-message rules ran past {_LONG_LINE_SECONDS} s on one trailer")
+    grown, judged = done.stdout.split(maxsplit=1)
+    assert judged == f"{[Offence(3, _TRAILER_LABEL), Offence(4, _TRAILER_LABEL)]}\n", done.stderr
+    assert int(grown) < _LONG_TRAILER_BYTES, f"the rules grew the peak by {int(grown) >> 20} MiB"
 
 
 CONFIG = """

@@ -160,11 +160,17 @@ _TRAILER = re.compile(r"[ \t]*[\w-]*-by:", re.IGNORECASE)
 # one: Gemini has no vendor domain here and only its two long product phrases in `_PRODUCTS`,
 # so a trailer naming it any other way is not caught on this surface. Widening this table is a
 # decision about false positives, not an oversight to patch.
+#
+# A vendor's domain or any subdomain of it: the pattern `@(?:[\w-]+\.)*<domain>\b`, which
+# `_names_a_vendor_domain` reads a label at a time, because `re` kept a record for every label it
+# might give back, 60 MiB over an address of half a million of them.
 _VENDOR_DOMAINS = re.compile(
-    r"@(?:[\w-]+\.)*(?:anthropic\.com|openai\.com|cursor\.(?:sh|com)|codeium\.com"
+    r"(?:anthropic\.com|openai\.com|cursor\.(?:sh|com)|codeium\.com"
     r"|windsurf\.com|mistral\.ai|devin\.ai|aider\.chat)\b",
     re.IGNORECASE,
 )
+# What follows an `@`: the labels and the dots between them, read once.
+_DOMAIN_RUN = re.compile(r"@([\w.-]*+)")
 # The name rule, and `fullmatch` is the whole of it: the trailer's display name must be a
 # product phrase AND NOTHING ELSE. `Claude Lemaire` is a person, and so are `Devin Clark` and
 # `Gemini Rossi`, which is why this can never be a search. The cost is stated rather than
@@ -173,8 +179,11 @@ _VENDOR_DOMAINS = re.compile(
 # positives this whole table exists to avoid. Those bots are caught, if at all, by their mail
 # domain in `_VENDOR_DOMAINS`; a bot with neither an exact product name nor a vendor domain is a
 # known gap, like Gemini's above.
+#
+# A model's version words are possessive, so `re` keeps no record per word, and a word given back
+# could only end the name before a blank, which `fullmatch` refuses anyway.
 _PRODUCTS = re.compile(
-    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]+)*|github copilot|copilot"
+    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]++)*+|github copilot|copilot"
     r"|cursor agent|openai codex|codex|devin|windsurf|aider|gemini cli|gemini code assist)",
     re.IGNORECASE,
 )
@@ -271,9 +280,28 @@ def _trailer_offence(line: str) -> bool:
     _, bracket, tail = address.rpartition(">")
     if bracket and _WORD.search(tail):
         return False
-    if _VENDOR_DOMAINS.search(address):
+    if _names_a_vendor_domain(address):
         return True
     return _PRODUCTS.fullmatch(name.strip()) is not None
+
+
+def _names_a_vendor_domain(address: str) -> bool:
+    """Whether an `@` in `address` is followed by a vendor's domain, or by labels and then one.
+
+    Each run after an `@` is read once: a vendor is tried at its start and after each dot that
+    closes a label, up to the first label that is empty, which is where the pattern's labels end;
+    and no run of labels after an `@` holds another `@`."""
+    for run in _DOMAIN_RUN.finditer(address):
+        labels = run.group(1)
+        start = 0
+        while True:
+            if _VENDOR_DOMAINS.match(labels, start):
+                return True
+            dot = labels.find(".", start)
+            if dot <= start:
+                break
+            start = dot + 1
+    return False
 
 
 _PATTERNS: tuple[tuple[str, Callable[[str], bool]], ...] = (
