@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.errors import Failure, Refusal
+from stayfixed.jsonobject import DEPTH_CAP, NESTED
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
 from tests.cli import subparsers
@@ -394,23 +395,24 @@ def test_a_malformed_source_is_reported_with_its_filename(
     assert kind in str(raised.value)
 
 
-# Past `json`'s own depth on every supported interpreter: 3.11 stops near 1000, 3.12 and 3.13
-# between 5000 and 10000 (measured on 3.11.15, 3.12.13 and 3.13.0).
-JSON_DEPTH = 100_000
-
-
 @pytest.mark.parametrize("name", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
-def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, name: str) -> None:
+def test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform(
+    tmp_path: Path, name: str
+) -> None:
     # `json` answers nesting past its depth with `RecursionError`, not `JSONDecodeError`, and the
-    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Mutation
-    # (declared): the language chosen without the source's name -> "TOML", and this reddens.
+    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Where that
+    # depth is, is the interpreter's and the platform's: 3.11 to 3.13 stop short of
+    # `jsonobject.DEPTH_CAP`, and 3.14 follows as deep as the C stack allows, past 100,000 levels on
+    # Linux and not on macOS, so a case that asserted `json` raised at a fixed depth passed on one
+    # and not the other. One level past the cap is refused by the product's own reader on all of
+    # them, in the same words. Mutation (oracle): `mutations/`'s "release check reads a JSON source
+    # past the shared reader".
     root = _repo(tmp_path)
-    (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
-    with pytest.raises(RecursionError):
-        json.loads((root / name).read_text())
+    nested = "[" * DEPTH_CAP + "]" * DEPTH_CAP
+    (root / name).write_text('{"version": ' + nested + "}")
     with pytest.raises(release.MalformedSource) as raised:
         release.check(root)
-    assert str(raised.value).startswith(f"{name} is not valid JSON: ")
+    assert str(raised.value) == f"{name} {NESTED}"
 
 
 @pytest.mark.parametrize(
@@ -432,10 +434,10 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
 @pytest.mark.parametrize(
     ("name", "body", "shape"),
     [
-        (".claude-plugin/plugin.json", "[]", "its top level is not an object"),
-        (".codex-plugin/plugin.json", '"0.1.0"', "its top level is not an object"),
+        (".claude-plugin/plugin.json", "[]", "is not a JSON object"),
+        (".codex-plugin/plugin.json", '"0.1.0"', "is not a JSON object"),
         ("pyproject.toml", 'project = "x"\n', "its project is not a table"),
-        (".claude-plugin/marketplace.json", "[]", "its top level is not an object"),
+        (".claude-plugin/marketplace.json", "[]", "is not a JSON object"),
         (".claude-plugin/marketplace.json", '{"plugins": ["version"]}', "not a list of objects"),
         (".claude-plugin/marketplace.json", '{"plugins": "x"}', "not a list of objects"),
         (".claude-plugin/marketplace.json", "{not json", "is not valid JSON"),
@@ -457,8 +459,8 @@ def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
     # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
     # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
     # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
-    # passed in silence. Mutations (oracle): "a manifest whose top level is not an object is read
-    # with .get" and "the marketplace reads a plugins value that is not a list of objects".
+    # passed in silence. Mutations (oracle): "release check reads a JSON source past the shared
+    # reader" and "the marketplace reads a plugins value that is not a list of objects".
     root = _repo(tmp_path)
     (root / name).write_text(body)
     with pytest.raises(release.MalformedSource) as raised:

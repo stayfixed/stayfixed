@@ -1344,8 +1344,9 @@ UNCHECKABLE_REMEDY = (
 def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check(
     tmp_path: Path, label: str
 ) -> None:
-    # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
-    # Python, and a harness may read it (Claude Code's parser does), so the hooks in it may run.
+    # Valid JSON nested past what the shared reader follows (`tests/parserlimits.py` says where
+    # `json.loads` stops), and a harness may read it (Claude Code's parser does), so the hooks in
+    # it may run.
     # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
     # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
     # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
@@ -1414,7 +1415,8 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
     # and an exit of 1. A line the parser cannot read is not a record. Mutation (oracle):
     # `mutations/`'s "doctor's hook sink reader lets a line past the parser's reach raise" -> red.
     # Not `NESTED`: its 400,000 bytes are past `DIAGNOSTICS_MAX_BYTES`, so the read would stop at
-    # the bound before the parser saw a whole line; 100,000 levels fit and still raise.
+    # the bound before the parser saw a whole line. 100,000 levels fit, and raise up to 3.13; on
+    # 3.14, where the parser's reach is the C stack's, a list that parses is no record either.
     text = (
         '{"error": ' + LONG_NUMBER + "}" if line == "long-number" else "[" * 100_000 + "]" * 100_000
     )

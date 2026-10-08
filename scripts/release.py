@@ -43,6 +43,7 @@ from stayfixed.command import CHECK_HELP, ROOT_HELP
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import git_run
+from stayfixed.jsonobject import json_object
 from stayfixed.printed import quoted
 from stayfixed.release.api import (
     FORMAT,
@@ -94,11 +95,16 @@ class MalformedSource(Failure):
 
 
 def _object(name: str, text: str) -> dict[str, Any]:
-    """A JSON source's top level, which is read with `.get` and so must be an object."""
-    document = json.loads(text)
-    if not isinstance(document, dict):
-        raise MalformedSource(f"{name} is valid JSON but its top level is not an object")
-    return document
+    """A JSON source's top level, which is read with `.get` and so must be an object.
+
+    Read through `jsonobject.json_object`, the product's own reader, so every way the parse can
+    fail is refused by the source's name, and a document nested past `jsonobject.DEPTH_CAP` is
+    refused at that depth on every interpreter and platform. `json` itself stops short of it up to
+    Python 3.13 and on 3.14 follows as deep as the C stack allows, which differs by platform: a
+    manifest 100,000 levels deep was a parse error on macOS and parsed on Linux, and what parsed
+    went on to `str()` and the version comparison.
+    """
+    return json_object(text, name, error=MalformedSource)
 
 
 def _parse(name: str, text: str) -> str | None:
@@ -141,13 +147,12 @@ def _read(root: Path, name: str) -> str | None:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{name} is not UTF-8 text") from None
-    # `json` answers nesting past its depth with `RecursionError` too, so the arm that catches it
-    # names the language by the source: a deep `plugin.json` was reported as "not valid TOML".
-    language = "JSON" if name.endswith(".json") else "TOML"
+    # A JSON source refuses in `_object`'s words, so what reaches this arm is TOML's: a deep
+    # `plugin.json` once reached it, and was reported as "not valid TOML".
     try:
         return _parse(name, text)
-    except (json.JSONDecodeError, *UNPARSEABLE) as exc:
-        raise MalformedSource(f"{name} is not valid {language}: {exc}") from None
+    except UNPARSEABLE as exc:
+        raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
 
 
 def collect(root: Path) -> dict[str, str | None]:
@@ -219,10 +224,7 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
         text = marketplace.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{MARKETPLACE} is not UTF-8 text") from None
-    try:
-        entries = _object(MARKETPLACE, text).get("plugins", [])
-    except (json.JSONDecodeError, RecursionError) as exc:
-        raise MalformedSource(f"{MARKETPLACE} is not valid JSON: {exc}") from None
+    entries = _object(MARKETPLACE, text).get("plugins", [])
     # A string entry was read with `in`, a substring test, and a string `plugins` as a list of
     # its characters, so the rule passed over both in silence.
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):

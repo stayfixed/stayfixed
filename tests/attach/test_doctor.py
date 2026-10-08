@@ -460,12 +460,12 @@ def test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable(
     # catch, from both rows that read the ledger: red, "this check could not run", exit 1, and the
     # remedy "report this", on a file a clone chose and an installation with nothing wrong with it.
     # Not JSON, it raised out of `ledger()`; nested past what `json.loads` follows, it raised
-    # `RecursionError` on every supported Python; holding a number longer than the interpreter
-    # converts, a plain `ValueError`; and on Python 3.14, whose parser follows deeper than `str()`
-    # does, a value the reader passed through `str()` overflowed it. Each row now reads the ledger
-    # as one that cannot be read, warns, and says so; `hook-entries` withholds its provenance column
-    # rather than computing it against an empty record, which would report every entry `attach`
-    # installed as one it did not. The vacuity guard is the core's
+    # `RecursionError`; holding a number longer than the interpreter converts, a plain `ValueError`;
+    # and on Python 3.14, whose parser follows deeper than `str()` does, a value the reader passed
+    # through `str()` overflowed it. Each row now reads the ledger as one that cannot be read,
+    # warns, and says so; `hook-entries` withholds its provenance column rather than computing it
+    # against an empty record, which would report every entry `attach` installed as one it did not.
+    # The vacuity guard is the core's
     # `test_an_entry_the_ledger_records_is_not_reported_as_claiming_the_marker`: the same fixture
     # with its ledger readable is green.
     #
