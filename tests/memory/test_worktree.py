@@ -27,6 +27,7 @@ from stayfixed.memory.worktree import (
 from stayfixed.presets import load_preset
 from tests.gitfixture import git
 from tests.ownerhome import as_owner_home
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -1103,6 +1104,22 @@ def _a_linked_claude(home: Path, tmp_path: Path) -> Path:
     elsewhere.mkdir(parents=True)
     (home / ".claude").symlink_to(elsewhere, target_is_directory=True)
     return elsewhere
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_claude_directory_nobody_may_search_is_refused_for_that(tmp_path: Path) -> None:
+    # A real `.claude` nobody may search: no link is on the way, so the remedy the link refusal
+    # gives, making that component a real directory, is already true. The refusal names what
+    # stopped the question instead. Mutation (oracle): `mutations/`'s "the harness anchor words a
+    # place it cannot ask about as a link".
+    root, _store, _config = a_checkout(tmp_path)
+    home = a_home(tmp_path)
+    (home / ".claude").mkdir(exist_ok=True)
+    with unsearchable(home / ".claude"), pytest.raises(Refusal) as refused:
+        worktree.harness_anchor(root, home)
+    assert str(refused.value).startswith("the harness memory link cannot be reached: ")
+    assert "cannot be checked for a symlink" in str(refused.value)
+    assert "real directory" not in str(refused.value)
 
 
 def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: Path) -> None:

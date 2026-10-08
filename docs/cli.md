@@ -228,11 +228,11 @@ Not something to run by hand. Its exit-code policy differs from every other comm
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
 your prompt. A `stayfixed.toml` that does not load takes the same path, and standard error names
-the kind of fault in stayfixed's own words rather than calling it an internal error:
+the kind of fault in stayfixed's own words, not an internal error's:
 `stayfixed: stayfixed.toml does not load (a file or value the loader refuses)` — a file it cannot
-read, one that is not TOML, or a value it refuses — or `(a path that leaves the project or passes
-through a symlink)` — a symlinked `AGENTS.md` is the second, since
-`agents_md` is a `[paths]` key — followed by `; refused` or `; continuing open`, and a pointer
+read, one that is not TOML, or a value it refuses — `(a path that leaves the project or passes
+through a symlink)`, such as a symlinked `AGENTS.md`, or `(a path on which a directory cannot be
+checked for a symlink)` — then `; refused` or `; continuing open`, and a pointer
 to `stayfixed docs check` for the detail. The loader's own message is never printed here:
 it carries the repository's text, and a refused `PreToolUse` shows this stream to the model.
 `stayfixed docs check` loads the same file and prints that message in full.

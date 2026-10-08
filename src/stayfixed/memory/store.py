@@ -57,7 +57,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
@@ -346,11 +346,20 @@ def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
     return common if group == COMMON_GROUP else own / group
 
 
-def _declared(root: Path, config: Config) -> Path | None:
+def _declared(root: Path, config: Config) -> Path | Unresolved:
+    """`paths.memory` under `root`, or why it is refused, in words that name the cause."""
     try:
         return contained(root, config.paths.memory, allow_final_symlink=True)
+    except PathUnasked as exc:
+        return Unresolved(
+            "a directory on the way to paths.memory cannot be checked for a symlink",
+            f"paths.memory ({config.paths.memory!r}) cannot be checked for a symlink ({exc.fault})",
+        )
     except PathEscape:
-        return None
+        return Unresolved(
+            "paths.memory does not stay inside the project",
+            f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
+        )
 
 
 def _group_targets(
@@ -420,6 +429,11 @@ def _resolve_at(
             # `paths.memory`, left open one directory higher — and in the mode the preset
             # ships by default, where the whole store is otherwise ungoverned by `contained`.
             base = contained(root, str(LOCAL_STORE))
+        except PathUnasked as exc:
+            return None, Unresolved(
+                "a directory on the way to the local-only store cannot be checked for a symlink",
+                str(exc),
+            )
         except PathEscape as exc:
             return None, Unresolved(
                 "the local-only store is not a real directory inside the project",
@@ -427,11 +441,8 @@ def _resolve_at(
             )
     else:
         declared = _declared(root, config)
-        if declared is None:
-            return None, Unresolved(
-                "paths.memory does not stay inside the project",
-                f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
-            )
+        if isinstance(declared, Unresolved):
+            return None, declared
         base = declared
         # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
         # `paths.memory` itself must be a real directory — one link per group, not one link for the

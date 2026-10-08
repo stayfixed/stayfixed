@@ -3437,3 +3437,30 @@ after = '        raise Failure(f"{path} cannot be read: {exc}") from exc'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
 ]
+
+# A settings file in a directory that cannot be searched is not a link, and the link refusal's
+# remedy would not help; and a link into such a directory is named, never an internal error.
+[[mutation]]
+name = "setup --settings words a file it cannot ask about as a link"
+file = "src/stayfixed/setup/run.py"
+before = "    except PathUnasked as exc:\n        raise Refusal(f\"{settings} cannot be checked"
+after = "    except OSError as exc:\n        raise Refusal(f\"{settings} cannot be checked"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that",
+]
+
+[[mutation]]
+name = "setup's search for the settings link stops at a path it cannot ask about"
+file = "src/stayfixed/setup/run.py"
+before = """
+        try:
+            if fsops.is_symlink(ancestor):
+                return ancestor
+        except OSError:
+            continue"""
+after = """
+        if fsops.is_symlink(ancestor):
+            return ancestor"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link",
+]

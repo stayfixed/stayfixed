@@ -2589,3 +2589,38 @@ after = "    if harness.is_symlink() or not harness.exists():"
 reddens = [
   "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
 ]
+
+# A `memory.groups` entry whose place cannot be asked whether it is a link is refused, in words that
+# name that: the escape sentences name a cause it does not have, and a remedy that is already true.
+[[mutation]]
+name = "unlinked_groups words a group it cannot ask about as an escape"
+file = "src/stayfixed/attach/binding.py"
+before = """
+        except PathUnasked as exc:
+            raise PathUnasked(
+                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
+            ) from exc"""
+after = """
+        except PathUnasked as exc:
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc"""
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape",
+]
+
+[[mutation]]
+name = "attach words a group it cannot ask about as an escape"
+file = "src/stayfixed/attach/write.py"
+before = "            raise Refusal(GROUP_UNASKED.format(fault=exc.fault)) from exc"
+after = "            raise Refusal(GROUP_ESCAPES) from exc"
+reddens = [
+  "tests/attach/test_write.py::test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "detach words a group it cannot ask about as one that leaves the tree"
+file = "src/stayfixed/attach/write.py"
+before = "                raise Refusal(GROUP_UNASKED_IN_TREE.format(fault=exc.fault)) from exc"
+after = "                raise Refusal(GROUP_LEAVES_TREE) from exc"
+reddens = [
+  "tests/attach/test_detach.py::test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn",
+]

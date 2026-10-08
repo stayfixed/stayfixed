@@ -108,7 +108,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
@@ -349,13 +349,21 @@ def _write_user_settings(
 
 
 def _settings_symlink(home: Path) -> Path | None:
-    """The first symlink between `home` and the settings file, or `None`."""
+    """The first symlink between `home` and the settings file, or `None`.
+
+    Asked once `contained` has refused, only to name the link. A path below a link into a
+    directory nobody may search cannot be asked, and is passed over so the link above it is the
+    one named, as `contained` names it; with no link found, `contained`'s own refusal stands.
+    """
     target = home / USER_SETTINGS
     for ancestor in [target, *target.parents]:
         if ancestor == home:
             return None
-        if fsops.is_symlink(ancestor):
-            return ancestor
+        try:
+            if fsops.is_symlink(ancestor):
+                return ancestor
+        except OSError:
+            continue
     return None
 
 
@@ -470,6 +478,8 @@ def _check_settings_parent(settings: Path) -> None:
         )
     try:
         contained(parent, settings.name)
+    except PathUnasked as exc:
+        raise Refusal(f"{settings} cannot be checked for a symlink ({exc.fault})") from exc
     except PathEscape as exc:
         raise Refusal(
             f"{settings} is a symlink to {settings.resolve()}; {_SYMLINKED_SETTINGS}. A dotfiles "

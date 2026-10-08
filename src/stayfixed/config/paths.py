@@ -44,7 +44,22 @@ from stayfixed.printed import PATH_VALUE
 
 
 class PathEscape(Refusal):
-    """A configured path that leaves the project root or passes through a symlink."""
+    """A configured path that leaves the project root or passes through a symlink, or one
+    `contained()` cannot say either of (`PathUnasked`)."""
+
+
+class PathUnasked(PathEscape):
+    """A configured path with an ancestor no `lstat` could ask about, and no symlink above it.
+
+    A `PathEscape`, so a caller that refuses an escape refuses this too: no path is contained
+    until every ancestor has been asked. A caller that words the refusal its own way catches this
+    first, because its words for an escape name a cause this path does not have. `fault` is the
+    system's own words for what stopped the question, never the path.
+    """
+
+    def __init__(self, message: str, *, fault: str) -> None:
+        super().__init__(message)
+        self.fault = fault
 
 
 def contained(
@@ -70,6 +85,7 @@ def contained(
     # the rule itself is `fsops.names_control_directory` in both places, because a guard stated
     # twice is the defect this module was just repaired for.
     target = root.joinpath(*parts)
+    unasked: PathUnasked | None = None
     for ancestor in [target, *target.parents]:
         if ancestor == root:
             break
@@ -87,13 +103,19 @@ def contained(
         except OSError as exc:
             if exc.errno in REACHES_NO_FILE:
                 continue
-            # By its place under the root and through `repr`, as the refusal below names its
-            # ancestor, and in the fault's own words, never `str(exc)`, which carries the
-            # absolute path.
-            unasked = ancestor.relative_to(root).as_posix()
-            raise PathEscape(
-                f"{relative!r} cannot be checked for a symlink at {unasked!r} ({said(exc)})"
-            ) from exc
+            # The deepest such ancestor is the one refused, and only once the walk has asked
+            # every ancestor above it: a committed link into a directory nobody may search makes
+            # every path through it unaskable, and the link is the cause to name. By its place
+            # under the root and through `repr`, as the refusal below names its ancestor, and in
+            # the fault's own words, never `str(exc)`, which carries the absolute path.
+            if unasked is None:
+                place = ancestor.relative_to(root).as_posix()
+                unasked = PathUnasked(
+                    f"{relative!r} cannot be checked for a symlink at {place!r} ({said(exc)})",
+                    fault=said(exc),
+                )
+                unasked.__cause__ = exc
+            continue
         if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):
             # Both through `repr`, which escapes every line break and control character: in a
             # checkout the ancestor's name is the repository's, and a caller may show this refusal
@@ -103,6 +125,8 @@ def contained(
             # `ancestor` is below `root`, since the walk stops there.
             named = ancestor.relative_to(root).as_posix()
             raise PathEscape(f"{relative!r} passes through a symlink at {named!r}")
+    if unasked is not None:
+        raise unasked
     # Defence in depth. The guards above refuse every escape a path string can express — the
     # empty path, an absolute path, any `..` component, and a symlink at any level between the
     # root and the target — so the comparison below is the net under them rather than the

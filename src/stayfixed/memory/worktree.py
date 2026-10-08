@@ -61,7 +61,7 @@ from pathlib import Path, PurePosixPath
 from stayfixed import fsops
 from stayfixed.config.machine import anchor_home
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.harnesses import CLAUDE
@@ -228,6 +228,11 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
         )
     try:
         contained(root, relative, allow_final_symlink=True)
+    except PathUnasked as exc:
+        raise Refusal(
+            f"the harness memory link cannot be reached: {exc}; run again once that directory "
+            f"can be read"
+        ) from exc
     except PathEscape as exc:
         # `allow_final_symlink=True`, because the final component is the link this module
         # makes and removes; `open_within` applies `O_NOFOLLOW` to every component *above* it

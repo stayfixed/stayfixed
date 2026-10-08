@@ -10,7 +10,7 @@ import sys
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.config.schema import Config
 from stayfixed.harnesses import detect
 from stayfixed.hooks.dispatch import dispatch, read_event
@@ -64,6 +64,7 @@ UNLOADABLE = (
 # value it refuses, so the words are true of all three.
 REFUSED_VALUE = "a file or value the loader refuses"
 ESCAPING_PATH = "a path that leaves the project or passes through a symlink"
+UNASKED_PATH = "a path on which a directory cannot be checked for a symlink"
 
 
 def _unloadable(event_name: str, cause: str) -> int:
@@ -109,6 +110,8 @@ def run_hook(args: argparse.Namespace) -> int:
                 # The machine file's fault, not `stayfixed.toml`'s: this line would name the
                 # wrong file, so it keeps the generic verdict below.
                 raise
+            except PathUnasked:
+                return _unloadable(event_name, UNASKED_PATH)
             except PathEscape:
                 return _unloadable(event_name, ESCAPING_PATH)
             except ConfigError:

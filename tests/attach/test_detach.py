@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from stayfixed import fsops, jsonobject
-from stayfixed.attach.write import GITIGNORE, Detached, detach
+from stayfixed.attach.write import GITIGNORE, GROUP_UNASKED_IN_TREE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
@@ -31,6 +31,7 @@ from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import LsRemote, git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
@@ -1216,6 +1217,24 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
     with pytest.raises(Refusal) as refused:
         _detach(root, machine, home)
     assert group not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Every entry is one plain name and no link is on the way: the link tree itself cannot be
+    # searched, so whether a group's place is a link cannot be asked. "is not one directory name"
+    # and its remedy, taking the entry out, named a cause the entry did not have.
+    #
+    # Mutation (oracle): `mutations/`'s "detach words a group it cannot ask about as one that
+    # leaves the tree".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    before = snapshot(root)
+    with unsearchable(root / DEFAULT_MEMORY), pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == GROUP_UNASKED_IN_TREE.format(fault="Permission denied")
     assert_snapshot_unchanged(root, before)
 
 

@@ -27,6 +27,7 @@ from stayfixed.attach.permissions import settings_document
 from stayfixed.attach.write import (
     GITIGNORE,
     GROUP_ESCAPES,
+    GROUP_UNASKED,
     HARNESS_WAITS,
     REAL_DIRECTORIES,
     Attached,
@@ -45,6 +46,7 @@ from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine, _project
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
@@ -599,6 +601,32 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     assert_snapshot_unchanged(root, before)
     # The one write that is not under the root, and the one that made `doctor` say `bound`.
     assert not (store.parent / PROJECT_RECORD).exists()
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refused_for_that(
+    tmp_path: Path,
+) -> None:
+    # A real group directory in the overlay that nobody may search: no link is on the way and the
+    # entry stays inside the share, so `GROUP_ESCAPES` named a cause it did not have. Refused all
+    # the same, before the first write, since no path is contained until every ancestor is asked.
+    # Mutation (oracle): `mutations/`'s "attach words a group it cannot ask about as an escape".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    (store / "project-stable").mkdir()
+    before = snapshot(root)
+    assert before
+    with unsearchable(store / "project-stable"), pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=True,
+            runner=Recorder(),
+            home=tmp_path / "home",
+        )
+    assert str(refusal.value) == GROUP_UNASKED.format(fault="Permission denied")
+    assert_snapshot_unchanged(root, before)
 
 
 def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(

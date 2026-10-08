@@ -31,7 +31,7 @@ from stayfixed.fsops import (
     write_atomically_at,
     write_within,
 )
-from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
 
 
 def _umasked(mode: int = NEW_FILE_MODE) -> int:
@@ -633,6 +633,7 @@ PREDICATE_ANSWERS: dict[str, tuple[bool, bool, bool, bool] | type[OSError]] = {
     "past-the-longest-path": (False, False, False, False),
     "through-a-link-to-a-name-longer-than-a-name": (False, False, False, False),
     "below-a-directory-that-cannot-be-searched": OSError,
+    "through-a-link-into-a-directory-that-cannot-be-searched": OSError,
     "a-nul": (False, False, False, False),
 }
 
@@ -653,7 +654,7 @@ def test_the_path_predicates_answer_each_fault_alike_on_every_interpreter(
     # predicates raise on a NUL" (`a-nul`), "is_file answers for anything that is there",
     # "is_dir answers for anything that is there", "exists answers for a link it did not follow"
     # and "is_symlink follows the link it is asked about".
-    if shape == "below-a-directory-that-cannot-be-searched" and os.geteuid() == 0:
+    if unmet_here(shape):
         pytest.skip("root searches every directory")
     path = tmp_path / shaped(tmp_path, shape)
     try:

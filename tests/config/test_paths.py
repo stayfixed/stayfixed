@@ -18,7 +18,7 @@ from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
 from stayfixed.printed import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
-from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -90,6 +90,10 @@ CONTAINED_ANSWERS: dict[str, str | None] = {
     "below-a-directory-that-cannot-be-searched": (
         "cannot be checked for a symlink at 'locked/child' (Permission denied)"
     ),
+    # The link above the ancestor no `lstat` can ask is the cause, so it is the one named.
+    "through-a-link-into-a-directory-that-cannot-be-searched": (
+        "passes through a symlink at 'into-locked'"
+    ),
 }
 
 
@@ -106,7 +110,7 @@ def test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter(
     # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
     # takes as a fault" (the two over-long shapes refuse) and "contained reads an ancestor it
     # cannot ask about as no link" (the unsearchable directory is contained).
-    if shape == "below-a-directory-that-cannot-be-searched" and os.geteuid() == 0:
+    if unmet_here(shape):
         pytest.skip("root searches every directory")
     relative = shaped(tmp_path, shape)
     try:

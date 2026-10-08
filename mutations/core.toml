@@ -1987,8 +1987,8 @@ reddens = [
 [[mutation]]
 name = "contained names an ancestor it cannot ask about by its absolute path"
 file = "src/stayfixed/config/paths.py"
-before = "            unasked = ancestor.relative_to(root).as_posix()"
-after = "            unasked = str(ancestor)"
+before = "                place = ancestor.relative_to(root).as_posix()"
+after = "                place = str(ancestor)"
 reddens = [
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
 ]
@@ -2004,6 +2004,28 @@ reddens = [
   "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-loop]",
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+]
+
+# A link into a directory nobody may search makes every path through it unaskable, and the link is
+# the cause: the walk asks every ancestor before it refuses the deepest one it could not ask.
+[[mutation]]
+name = "contained refuses at the first ancestor it cannot ask, before it looks for a link above"
+file = "src/stayfixed/config/paths.py"
+before = "                unasked.__cause__ = exc\n            continue"
+after = "                unasked.__cause__ = exc\n            raise unasked"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# A path on which a directory cannot be asked whether it is a link neither leaves the project nor
+# passes through a symlink, so the hook's line says what it is.
+[[mutation]]
+name = "the hook words a path it cannot check as an escape"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except PathUnasked:\n                return _unloadable(event_name, UNASKED_PATH)"
+after = "            except PathUnasked:\n                return _unloadable(event_name, ESCAPING_PATH)"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words",
 ]
 
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
@@ -2618,6 +2640,7 @@ before = "        if exc.errno in REACHES_NO_FILE:"
 after = "        if True:"
 reddens = [
   "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
 ]
 
 # A NUL names no file anywhere, and `pathlib`'s predicates answer it `False` on every interpreter.

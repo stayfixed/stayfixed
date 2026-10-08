@@ -33,7 +33,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said
@@ -78,6 +78,13 @@ NO_OVERLAY = (
 MEMORY_GROUP_ESCAPES = (
     "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
     "paths.memory is itself a symlink, so the entry is refused rather than counted"
+)
+# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
+# one: the sentence above would name a cause the entry does not have. `{fault}` is the system's
+# words for what stopped the question, never a path.
+MEMORY_GROUP_UNASKED = (
+    "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
+    "symlink ({fault}), so the entry is refused rather than counted"
 )
 
 
@@ -459,6 +466,10 @@ def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
                 allow_final_symlink=True,
                 resolved_root=resolved,
             )
+        except PathUnasked as exc:
+            raise PathUnasked(
+                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
+            ) from exc
         except PathEscape as exc:
             # `group` and `config.paths.memory` are repository-authored, so the combined path
             # `contained` refuses is refused again, fixed text and never quoted back.

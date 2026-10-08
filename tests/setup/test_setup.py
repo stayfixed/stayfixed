@@ -27,6 +27,7 @@ from tests import parserlimits
 from tests.gitfixture import git as _git
 from tests.gitfixture import stand_in_git
 from tests.parserlimits import overflowing
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -1659,6 +1660,57 @@ def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path:
     assert str(home / ".claude") in message and str(real) in message
     assert f"--home {real.parent}" in message, "the refusal has to carry a command that works"
     assert not machine.is_file(), "the machine file was written before the refusal"
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link(
+    tmp_path: Path,
+) -> None:
+    # Below the link nothing can be asked, and the walk that looks for the link to name asked the
+    # settings file first: `internal error: PermissionError`, with the absolute path, where the
+    # same link into a readable directory is a refusal naming it. Mutation (oracle):
+    # `mutations/`'s "setup's search for the settings link stops at a path it cannot ask about".
+    home = tmp_path / "home"
+    home.mkdir()
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (home / ".claude").symlink_to(locked / "x")
+    machine = tmp_path / "config.toml"
+    with unsearchable(locked), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert f"{home / '.claude'} is a symlink" in str(refused.value)
+    assert not machine.is_file()
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that(
+    tmp_path: Path,
+) -> None:
+    # A real directory, so no link is on the way: "is a symlink to ..." named a cause the file did
+    # not have. Mutation (oracle): `mutations/`'s "setup --settings words a file it cannot ask
+    # about as a link".
+    settings = tmp_path / "locked" / "settings.json"
+    settings.parent.mkdir()
+    with unsearchable(settings.parent), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "machine.toml",
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
+    assert str(refused.value) == f"{settings} cannot be checked for a symlink (Permission denied)"
 
 
 def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(

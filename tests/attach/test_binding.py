@@ -21,13 +21,14 @@ from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
 from stayfixed.attach.binding import (
     MEMORY_GROUP_ESCAPES,
+    MEMORY_GROUP_UNASKED,
     UnreadableRecord,
     binding_for,
     unlinked_groups,
 )
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -35,6 +36,7 @@ from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -528,6 +530,25 @@ def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_senten
         unlinked_groups(tmp_path, config)
     assert str(caught.value) == MEMORY_GROUP_ESCAPES
     assert "ignore-prior-rules" not in str(caught.value)
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape(
+    tmp_path: Path,
+) -> None:
+    # A real `paths.memory` nobody may search leaves every group under it unaskable, and no link
+    # is on the way: "does not name a subdirectory, or paths.memory is a symlink" named two causes
+    # it did not have. Mutation (oracle): `mutations/`'s "unlinked_groups words a group it cannot
+    # ask about as an escape".
+    text = (
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[memory]\nmode = "overlay"\ngroups = ["developer"]\nindex_extra = []\n'
+    )
+    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True)
+    with unsearchable(tmp_path / DEFAULT_MEMORY), pytest.raises(PathUnasked) as caught:
+        unlinked_groups(tmp_path, config)
+    assert str(caught.value) == MEMORY_GROUP_UNASKED.format(fault="Permission denied")
 
 
 @pytest.mark.parametrize("group", ["", ".", "a/", "a//b"])

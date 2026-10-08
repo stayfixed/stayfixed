@@ -77,7 +77,7 @@ from stayfixed.config.layout import (
     LOCAL_STATE_PATHS,
 )
 from stayfixed.config.loader import UNPARSEABLE, load
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
@@ -149,6 +149,12 @@ ORIGIN_NOT_TEXT = (
 GROUP_ESCAPES = (
     "a memory.groups entry does not stay inside this project's share of the overlay, so it is "
     "refused rather than created"
+)
+# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
+# one, which the sentence above would misname; `{fault}` is the system's words, never a path.
+GROUP_UNASKED = (
+    "a memory.groups entry's place in this project's share of the overlay cannot be checked for "
+    "a symlink ({fault}), so it is refused rather than created"
 )
 # The ninth, and the second of the two whose trigger is repository-authored. Its anchor is
 # `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
@@ -822,6 +828,8 @@ def _check_groups(binding: Binding, config: Config) -> None:
     for relative in _group_directories(binding, config):
         try:
             contained(binding.overlay, relative, resolved_root=resolved)
+        except PathUnasked as exc:
+            raise Refusal(GROUP_UNASKED.format(fault=exc.fault)) from exc
         except PathEscape as exc:
             # The entry itself is repository-authored, so it is refused rather than quoted back.
             raise Refusal(GROUP_ESCAPES) from exc
@@ -1717,6 +1725,13 @@ GROUP_LEAVES_TREE = (
     "withdrawn, and nothing was; take it out of stayfixed.toml, or put back the list the attach "
     "ran with, and run `stayfixed detach` again"
 )
+# Said instead when the entry is one name and a directory on the way cannot be asked whether it
+# is a symlink: taking the entry out would not be the remedy. `{fault}` is the system's words.
+GROUP_UNASKED_IN_TREE = (
+    "a memory.groups entry's place inside paths.memory cannot be checked for a symlink "
+    "({fault}), so its link cannot be withdrawn, and nothing was; run `stayfixed detach` again "
+    "once that directory can be read"
+)
 
 
 def _walked(root: Path, relative: str, *, what: str, where: str) -> None:
@@ -1759,6 +1774,8 @@ def _refuse_unwithdrawable(
         for name in linked_names(config):
             try:
                 target = contained(base, name, allow_final_symlink=True)
+            except PathUnasked as exc:
+                raise Refusal(GROUP_UNASKED_IN_TREE.format(fault=exc.fault)) from exc
             except PathEscape as exc:
                 raise Refusal(GROUP_LEAVES_TREE) from exc
             if fsops.is_symlink(target):

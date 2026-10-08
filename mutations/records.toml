@@ -2917,3 +2917,36 @@ file = "src/stayfixed/docs/hygiene.py"
 before = '        raise Failure(f"{shown}: could not be read ({said(error)})") from None'
 after = '        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None'
 reddens = ["tests/test_fsops.py::test_no_module_but_fsops_says_an_error_by_its_strerror"]
+
+# A store, or a directory on the way to it, that cannot be asked whether it is a link is refused in
+# words that name that, and not as a link or an escape it is not.
+[[mutation]]
+name = "the store words a local-only store it cannot ask about as a link"
+file = "src/stayfixed/memory/store.py"
+before = """
+            return None, Unresolved(
+                "a directory on the way to the local-only store cannot be checked for a symlink","""
+after = """
+            return None, Unresolved(
+                "the local-only store is not a real directory inside the project","""
+reddens = [
+  "tests/memory/test_store.py::test_a_local_only_store_that_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "the store words a paths.memory it cannot ask about as an escape"
+file = "src/stayfixed/memory/store.py"
+before = '            "a directory on the way to paths.memory cannot be checked for a symlink",'
+after = '            "paths.memory does not stay inside the project",'
+reddens = [
+  "tests/memory/test_store.py::test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "the harness anchor words a place it cannot ask about as a link"
+file = "src/stayfixed/memory/worktree.py"
+before = "    except PathUnasked as exc:\n        raise Refusal("
+after = "    except OSError as exc:\n        raise Refusal("
+reddens = [
+  "tests/memory/test_worktree.py::test_a_claude_directory_nobody_may_search_is_refused_for_that",
+]
