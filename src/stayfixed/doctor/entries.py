@@ -6,7 +6,9 @@ recorded and the entries it grants, told in the area's own `Wording`. The walk o
 files, the rules for which area vouches for an entry, and the sentences each kind of finding is
 told in are one unit that no other check reads, so they sit in a module of their own and
 `checks.py` stays the list of checks and the run. It imports nothing of the run's, so `checks.py`
-can import it without a cycle.
+can import it without a cycle. The row also names the skill, command and agent files whose
+frontmatter declares hooks, which it does not judge: `doctor.hooked` walks for them and
+`doctor.frontmatter` reads each one's frontmatter, and this module tells what they report.
 
 What it may print is held to `checks.py`'s module docstring, and this row is where that ruling is
 most tempting to break: an entry is named by its position in its file, never by the marker id it
@@ -15,22 +17,16 @@ claims, and that docstring says why.
 
 from __future__ import annotations
 
-import os
-import re
-import sys
-from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
-from stat import S_ISDIR
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from stayfixed import fsops
+from stayfixed.doctor.hooked import Seen, hooked
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
-from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
-from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
-from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS, Hooked
-from stayfixed.printed import printable
+from stayfixed.fsops import names_regular_file, read_regular_bytes
+from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
@@ -44,48 +40,6 @@ SETTINGS_FILES = tuple(
 # Claude Code's settings file under the home directory, read off the registry as `setup` reads it,
 # and not asked of `setup`, whose import surface loads the command that writes it.
 (USER_SETTINGS,) = CLAUDE.settings
-# Every place a registered harness reads Markdown whose frontmatter can declare hooks
-# (`harnesses.Hooked`), read off the registry, so a harness added there is walked here without an
-# edit. This row names each such file whose frontmatter declares hooks as one it does not judge
-# (`_hooked`).
-HOOKED = tuple(place for harness in HARNESSES for place in harness.hooked)
-# Git's own directory, which the walk below the root never enters: git refuses to check out a path
-# with a `.git` component, so nothing in one is the repository's, and it can hold many entries.
-_GIT_DIR = ".git"
-# The line that opens a frontmatter and the next one that closes it.
-_FENCE = "---"
-# A key quoted either way: double, with backslash escapes, or single, with `''` for a quote.
-_QUOTED = r'"(?:[^"\\]|\\.)*"|\'(?:[^\']|\'\')*\''
-# One token of a flow mapping (`{name: x, hooks: {...}}`): a quoted scalar, a flow indicator, a
-# comment, blanks, a plain scalar -- which holds a `:` not followed by a blank or an indicator, and
-# a `#` not after a blank -- or a colon. Whatever else a line holds is one character at a time.
-_FLOW = re.compile(
-    rf"(?P<quoted>{_QUOTED})|(?P<indicator>[{{}}\[\],])|(?P<comment>#[^\n]*)|(?P<blank>\s+)"
-    r"|(?P<plain>[^\s{}\[\],:#\"'](?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)|(?P<colon>:)|(?P<other>.)",
-    re.DOTALL,
-)
-# A double-quoted scalar's escapes, as YAML spells them.
-_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)", re.DOTALL)
-_ESCAPED = {
-    "0": "\0",
-    "a": "\a",
-    "b": "\b",
-    "t": "\t",
-    "n": "\n",
-    "v": "\v",
-    "f": "\f",
-    "r": "\r",
-    "e": "\x1b",
-    "N": "\x85",
-    "_": "\xa0",
-    "L": "\u2028",
-    "P": "\u2029",
-}
-# The key whose presence at the top level is what this row names.
-_HOOKS = "hooks"
-# What a file whose path is outside the path grammar is named as: the path is the repository's,
-# and this row's detail is what `--json` carries too, so there is nowhere else to point.
-_UNPRINTED = "a skill, command or agent file whose path this row does not print"
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
@@ -417,6 +371,14 @@ _KINDS = (
     _LINKED_OUT,
     _SKILL_UNTOLD,
 )
+# What the walk for skill, command and agent files reports of a path, as the kind the row tells it
+# in (`doctor.hooked`).
+_SEEN = {
+    Seen.DECLARES: _SKILL_HOOKS,
+    Seen.UNREAD: _SKILL_UNREAD,
+    Seen.LINKED_OUT: _LINKED_OUT,
+    Seen.STOPPED: _SKILL_UNTOLD,
+}
 
 
 @dataclass(frozen=True)
@@ -448,391 +410,6 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
                 wheres = [where for where in mine if where is not None]
                 gathered.append(_Finding(kind, areas, wheres))
     return gathered
-
-
-def _unquoted(token: str) -> str:
-    """A quoted scalar's text: single-quoted with `''` for a quote, or double-quoted with YAML's
-    backslash escapes, an escape YAML does not have read as the character after the backslash."""
-    body = token[1:-1]
-    if token[0] == "'":
-        return body.replace("''", "'")
-
-    def escaped(match: re.Match[str]) -> str:
-        code = match.group(1)
-        if len(code) > 1:
-            point = int(code[1:], 16)
-            return chr(point) if point <= sys.maxunicode else ""
-        return _ESCAPED.get(code, code)
-
-    return _ESCAPE.sub(escaped, body)
-
-
-def _block_key(line: str) -> str | None:
-    """The key a block mapping's line opens with, or `None` for a line that opens none.
-
-    Past an explicit-key `? ` and any tag (`!...`) or anchor (`&...`) ahead of the key; then a
-    quoted key followed by a colon, or a plain one ending at the first colon followed by a blank or
-    the end of the line. An explicit key needs no colon on its line."""
-    explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
-    rest = line[1:].lstrip(" \t") if explicit else line
-    while rest[:1] in ("!", "&"):
-        parts = re.split(r"[ \t]+", rest, maxsplit=1)
-        if len(parts) < 2:
-            return None
-        rest = parts[1]
-    if rest[:1] in ('"', "'"):
-        quoted = re.match(_QUOTED, rest)
-        if quoted is None:
-            return None
-        after = rest[quoted.end() :].lstrip(" \t")
-        return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
-    plain = re.match(r"([^\n]*?)[ \t]*:(?:[ \t]|$)", rest)
-    if plain is not None:
-        return plain.group(1)
-    return rest.rstrip(" \t") if explicit else None
-
-
-def _flow_keys(text: str) -> set[str]:
-    """The keys of the flow mapping `text` opens with, at its top level and no deeper.
-
-    Each is a scalar right after the mapping's `{` or a `,` at its own level, past any tag or
-    anchor, and followed by a colon; quoted scalars are read whole, so a brace, a comma or `hooks:`
-    inside one is text. Reading stops where the mapping closes."""
-    keys: set[str] = set()
-    depth: list[str] = []
-    candidate: str | None = None
-    at_key = False
-    for token in _FLOW.finditer(text):
-        kind, value = token.lastgroup, token.group()
-        if kind in ("blank", "comment"):
-            continue
-        if kind == "indicator":
-            if value in "{[":
-                depth.append(value)
-            elif value in "}]":
-                del depth[-1:]
-                if not depth:
-                    break
-            at_key = depth[-1:] == ["{"] and value in "{,"
-            candidate = None
-        elif kind == "colon":
-            if candidate is not None and len(depth) == 1:
-                keys.add(candidate)
-            candidate, at_key = None, False
-        elif at_key and kind == "plain" and value[0] in "!&":
-            continue
-        else:
-            candidate = (_unquoted(value) if kind == "quoted" else value) if at_key else None
-            at_key = False
-    return keys
-
-
-def _declares_hooks(text: str) -> bool:
-    """Whether `text`, a skill, command or agent file, opens with a frontmatter holding a
-    top-level `hooks` key.
-
-    The frontmatter is the lines between a first line of `---` and the next `---` line; without
-    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
-    a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
-    first line that is neither blank nor a comment: a mapping in block style has its keys there,
-    and one in flow style opens there with `{` (`_flow_keys`). A key is `hooks` bare or quoted
-    either way, its escapes read; nothing else of YAML is parsed."""
-    lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    if lines[0].rstrip() != _FENCE:
-        return False
-    for end, line in enumerate(lines[1:], 1):
-        if line.rstrip() == _FENCE:
-            return _holds_hooks(lines[1:end])
-    return False
-
-
-def _holds_hooks(lines: list[str]) -> bool:
-    """Whether a frontmatter's `lines` hold a top-level `hooks` key, as `_declares_hooks` reads
-    one."""
-    content = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
-    if not content:
-        return False
-    indent = len(content[0]) - len(content[0].lstrip(" "))
-    if content[0][indent:].startswith("{"):
-        opened = "\n".join(lines[lines.index(content[0]) :])
-        return _HOOKS in _flow_keys(opened[indent:])
-    return any(
-        _block_key(line[indent:]) == _HOOKS
-        for line in content
-        if len(line) - len(line.lstrip(" ")) == indent
-    )
-
-
-class _Spent(Exception):
-    """The walk for hooked files listed more than `fsops.WALK_ENTRIES` entries."""
-
-
-@dataclass
-class _Budget:
-    """What is left of `fsops.WALK_ENTRIES` for one walk: the cap every walk over a repository's
-    tree reads, below the root's own directories and through the whole tree for the nested
-    ones."""
-
-    left: int = field(default_factory=lambda: fsops.WALK_ENTRIES)
-
-    def spend(self, entries: int) -> None:
-        self.left -= entries
-        if self.left < 0:
-            raise _Spent
-
-
-def _label(relative: str) -> str:
-    """A path under the root as the row names it: the path is the repository's."""
-    return printable(relative, _UNPRINTED)
-
-
-def _reads(place: Hooked, name: str) -> bool:
-    """Whether a file named `name` below `place` is one whose frontmatter is read. Compared
-    without case, because a filesystem that folds case finds `skill.md` at `SKILL.md`."""
-    folded = name.casefold()
-    if place.name is None:
-        return folded.endswith(".md")
-    return folded == place.name.casefold()
-
-
-def _inside(real_root: Path, path: Path) -> bool:
-    """Whether `path`, every link in it followed, is still under `real_root`, the root's own
-    resolved path. Asked through `os.path.realpath`, which answers for a link that loops too."""
-    return Path(os.path.realpath(path)).is_relative_to(real_root)
-
-
-def _frontmatter(root: Path, real_root: Path, relative: str) -> list[_Found]:
-    """The finding for one file whose frontmatter is read: it declares hooks, or it could not be
-    read, or it leads out of the checkout, or none. A link that leads out is not followed and is
-    named as one that does (`_LINKED_OUT`): what it leads to is not the repository's. Whether a
-    path names a file is asked first, so a dangling link names none wherever it points. Read
-    through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the regular-file cap, which
-    every reader of a committed file goes through at its own cap: a device or a FIFO is refused
-    unread, and a file past the cap is refused, each one this row could not read; a path that
-    names no file is passed over."""
-    path = root / relative
-    try:
-        path.stat()
-    except OSError as exc:
-        if exc.errno in NAMES_NO_FILE:
-            return []
-        return [(_SKILL_UNREAD, None, _label(relative))]
-    if not _inside(real_root, path):
-        return [(_LINKED_OUT, None, _label(relative))]
-    try:
-        content = read_regular_bytes(path)
-    except OSError as exc:
-        if exc.errno in NAMES_NO_FILE:
-            return []
-        return [(_SKILL_UNREAD, None, _label(relative))]
-    # Replaced rather than refused, for the reason the settings walk replaces: the key is
-    # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
-    if _declares_hooks(content.decode("utf-8", errors="replace")):
-        return [(_SKILL_HOOKS, None, _label(relative))]
-    return []
-
-
-def _read_place(
-    root: Path, real_root: Path, top: str, place: Hooked, budget: _Budget
-) -> list[_Found]:
-    """A finding for each file below `top`, a directory `place` names, whose frontmatter declares
-    hooks or could not be read, in name order, depth first.
-
-    Links are followed, as the harness follows them, while they lead to a directory still inside
-    the checkout; one that leads out is named as one that does (`_LINKED_OUT`), and one that cannot
-    be listed as a directory this row could not read. A directory reached twice is listed once,
-    so a link back up the tree ends rather than circling until the cap. A name `place` reads goes
-    to `_frontmatter`, which reads a link to a file inside the checkout and names one that leads
-    out; any other link that names no directory is passed over, as `top` itself is when there is
-    none."""
-    found: list[_Found] = []
-    listed_once: set[tuple[int, int]] = set()
-    pending = [top]
-    while pending:
-        relative = pending.pop()
-        directory = root / relative
-        try:
-            status = directory.stat()
-            if not S_ISDIR(status.st_mode):
-                continue
-            if not _inside(real_root, directory):
-                found.append((_LINKED_OUT, None, _label(relative)))
-                continue
-            if (status.st_dev, status.st_ino) in listed_once:
-                continue
-            listed_once.add((status.st_dev, status.st_ino))
-            with os.scandir(directory) as listing:
-                names = sorted(entry.name for entry in listing)
-        except OSError as exc:
-            if exc.errno not in NAMES_NO_FILE:
-                found.append((_SKILL_UNREAD, None, _label(relative)))
-            continue
-        budget.spend(len(names))
-        below: list[str] = []
-        for name in names:
-            child = f"{relative}/{name}"
-            if _reads(place, name):
-                found.extend(_frontmatter(root, real_root, child))
-            elif fsops.is_dir(root / child):
-                below.append(child)
-        pending.extend(reversed(below))
-    return found
-
-
-def _owned(relative: str, places: Sequence[Hooked]) -> Hooked | None:
-    """The place among `places` whose directory `relative`, a directory below the root, is, or
-    ends in, compared without case: a filesystem that folds case finds `.Claude/Skills` where
-    `.claude/skills` is looked for."""
-    folded = f"/{relative}".casefold()
-    return next((p for p in places if folded.endswith(f"/{p.directory}".casefold())), None)
-
-
-# The file whose presence says a work tree has submodules, at its top level.
-_GITMODULES = ".gitmodules"
-
-
-def _listing(asked: tuple[int, str]) -> set[str] | None:
-    """The names a `git ls-files -z` answer lists, or `None` where it gives no answer: a `git` that
-    fails or runs past `QUERY_TIMEOUT_SECONDS`, the bound for a query over a whole tree."""
-    code, answer = asked
-    if code != 0:
-        return None
-    return {name for name in answer.split("\0") if name}
-
-
-def _queried(root: Path) -> list[tuple[str, Hooked]] | None:
-    """Every entry below the root inside a directory a `nested` place names, as git's index lists
-    it, with that place, in name order; or `None` where git cannot answer: outside a work tree, or
-    a `git` that fails.
-
-    Tracked files and untracked ones git does not ignore, which is what a clone commits and what
-    the owner is writing; never an ignored one, which no clone carries, and whose trees, an
-    installed dependency's or a build's, are what made a walk of the whole checkout stop at its
-    cap. Each place is asked with a pathspec git matches without case (`icase`), so a directory or
-    file name in any case is listed as a filesystem that folds case finds it. Every entry is
-    listed and not only the files a place reads, because git lists a link as an entry of its own
-    and never what it leads to, and a link may lead to a skill (`_hooked` reads it as a directory);
-    so is an entry that is the place's directory itself, which is a link where git lists one.
-
-    `--cached` lists a submodule as one entry and none of its files, and `--recurse-submodules`
-    takes no `--others`, so a work tree with a `.gitmodules` at or above the root is asked a second
-    time, through each checked-out submodule's index: what that index holds, its staged files as
-    well as its committed ones. An entry under
-    one of the root's own places is left out: those are read off the disk (`_read_place`)."""
-    places = [place for place in HOOKED if place.nested]
-    if not places or not in_work_tree(root):
-        return None
-    pathspecs = [
-        spec
-        for place in places
-        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")
-    ]
-    listed = _listing(
-        git_run(
-            root,
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "--",
-            *pathspecs,
-            timeout=QUERY_TIMEOUT_SECONDS,
-        )
-    )
-    if listed is None:
-        return None
-    if any(os.path.lexists(directory / _GITMODULES) for directory in (root, *root.parents)):
-        modules = _listing(
-            git_run(
-                root,
-                "ls-files",
-                "-z",
-                "--cached",
-                "--recurse-submodules",
-                "--",
-                *pathspecs,
-                timeout=QUERY_TIMEOUT_SECONDS,
-            )
-        )
-        if modules is None:
-            return None
-        listed |= modules
-    own = tuple(f"{place.directory}/".casefold() for place in HOOKED)
-    found: list[tuple[str, Hooked]] = []
-    for name in sorted(listed):
-        folded = f"/{name}/".casefold()
-        place = next((p for p in places if f"/{p.directory}/".casefold() in folded), None)
-        if place is not None and not f"{name}/".casefold().startswith(own):
-            found.append((name, place))
-    return found
-
-
-def _nested(root: Path, budget: _Budget) -> Iterator[tuple[str, Hooked]]:
-    """Every directory below the root that a `nested` place names, with that place, in name
-    order, depth first: the bounded walk for a root git cannot answer for (`_queried`).
-
-    No link is followed and `.git` is never entered: what a link leads to outside the tree is
-    not the repository's, and inside it the walk meets it where it is. A link that is itself such
-    a directory is handed out, as the query hands one out, for `_read_place` to follow while it
-    stays in the checkout. A directory that cannot be
-    listed is passed over, as the bytecode walk passes one over: git records no permission that
-    keeps one from being listed. The root's own copy of a place is not one of these, and nothing
-    below a directory handed out here is walked again."""
-    places = [place for place in HOOKED if place.nested]
-    pending = [""]
-    while pending and places:
-        relative = pending.pop()
-        try:
-            with os.scandir(root / relative) as listing:
-                entries = sorted(
-                    (entry.name, entry.is_dir(follow_symlinks=False), entry.is_symlink())
-                    for entry in listing
-                )
-        except OSError:
-            continue
-        budget.spend(len(entries))
-        below: list[str] = []
-        for name, is_directory, is_link in entries:
-            if not (is_directory or is_link) or name == _GIT_DIR:
-                continue
-            child = f"{relative}/{name}" if relative else name
-            owner = _owned(child, places)
-            if owner is None:
-                if is_directory:
-                    below.append(child)
-            elif child.casefold() != owner.directory.casefold():
-                yield child, owner
-        pending.extend(reversed(below))
-
-
-def _hooked(root: Path) -> list[_Found]:
-    """A finding for each skill, command or agent file whose frontmatter declares hooks, and for
-    each such file or directory that could not be read: the root's own places first, in `HOOKED`'s
-    order, read off the disk, then each file a nested place names, as git lists it
-    (`_queried`), or, where git cannot answer, as the bounded walk finds it (`_nested`). The walks
-    list at most `fsops.WALK_ENTRIES` entries between them, past which they stop and say so. Each
-    file is named by its path, through `printed.printable`, because every name in it is the
-    repository's."""
-    found: list[_Found] = []
-    budget = _Budget()
-    real_root = Path(os.path.realpath(root))
-    try:
-        for place in HOOKED:
-            found.extend(_read_place(root, real_root, place.directory, place, budget))
-        queried = _queried(root)
-        if queried is not None:
-            for relative, place in queried:
-                if _reads(place, PurePosixPath(relative).name):
-                    found.extend(_frontmatter(root, real_root, relative))
-                elif os.path.islink(root / relative):
-                    found.extend(_read_place(root, real_root, relative, place, budget))
-        else:
-            for directory, place in _nested(root, budget):
-                found.extend(_read_place(root, real_root, directory, place, budget))
-    except _Spent:
-        found.append((_SKILL_UNTOLD, None, None))
-    return found
 
 
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
@@ -941,7 +518,7 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
                     found.append((_UNVOUCHED, holders[0], where))
-    found.extend(_hooked(context.root))
+    found.extend((_SEEN[seen], None, where) for seen, where in hooked(context.root))
     return claimed, foreign, _gathered(answers, found)
 
 
@@ -1071,11 +648,14 @@ def hook_entries(context: Context) -> Row:
     interpreter converts is not refused at all: either walk reads it as its text, and the
     entries beside it are judged as they would be without it.
 
-    **A project skill's hooks are named, never judged.** Claude Code runs a hook a committed
-    skill's frontmatter declares once the skill is invoked (`SKILLS` says what was measured), and
-    this row judges settings files, so "all accounted for" beside such a skill would claim more
-    than the row looked at. Each skill whose frontmatter holds a top-level `hooks:` key, and each
-    whose `SKILL.md` could not be read, is a warning naming it (`_skills`): never red, because
-    what a skill's hooks are and whether stayfixed put them there is nothing this row reads.
+    **A skill, command or agent file's hooks are named, never judged.** Claude Code runs a hook a
+    committed skill's frontmatter declares once the skill is invoked (`harnesses.CLAUDE`'s
+    `hooked` says what was measured), and this row judges settings files, so "all accounted for"
+    beside such a file would claim more than the row looked at. The walk (`doctor.hooked`) covers
+    every place a registered harness reads such frontmatter, at the root and below it, and reports
+    each file whose frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each path it
+    could not read, each link that leads out of the checkout, which it does not follow, and a walk
+    that stopped at its cap. Each is a warning naming what it saw (`_SEEN`), never red, because
+    what such a file's hooks are and whether stayfixed put them there is nothing this row reads.
     """
     return _told(*_classify(context))

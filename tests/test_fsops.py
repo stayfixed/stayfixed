@@ -685,8 +685,8 @@ OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
     ("profiles/__init__.py", "load_profile", "is_file"): (1, "a resource of the package's own"),
     ("profiles/hints.py", "hint_modules", "is_file"): (1, "a resource of the package's own"),
     # `os.DirEntry`'s, which answers alike on every interpreter.
-    ("doctor/entries.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
-    ("doctor/entries.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
+    ("doctor/hooked.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
+    ("doctor/hooked.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
     ("profiles/python/hygiene.py", "_bytecode", "is_dir"): (1, "an os.DirEntry"),
 }
 

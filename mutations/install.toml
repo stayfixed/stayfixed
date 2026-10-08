@@ -2692,7 +2692,7 @@ reddens = [
 [[mutation]]
 name = "hook-entries reads no project skill"
 file = "src/stayfixed/doctor/entries.py"
-before = "    found.extend(_hooked(context.root))\n"
+before = "    found.extend((_SEEN[seen], None, where) for seen, where in hooked(context.root))\n"
 after = "    found.extend([])\n"
 reddens = [
   "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
@@ -2718,7 +2718,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries prints a skill's name whole"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "    return printable(relative, _UNPRINTED)"
 after = "    return relative"
 reddens = [
@@ -2727,7 +2727,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = "            return _holds_hooks(lines[1:end])"
 after = "            return _holds_hooks(lines[1:])"
 reddens = [
@@ -2736,7 +2736,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill's frontmatter reads an indented hooks key"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = """
         _block_key(line[indent:]) == _HOOKS
         for line in content
@@ -2752,7 +2752,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill's frontmatter reads any key opening with hooks"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = "        return plain.group(1)"
 after = "        return plain.group(1)[: len(_HOOKS)]"
 reddens = [
@@ -2761,7 +2761,7 @@ reddens = [
 
 [[mutation]]
 name = "an unterminated frontmatter is read to the end"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = """
             return _holds_hooks(lines[1:end])
     return False
@@ -2776,7 +2776,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill's frontmatter keeps its byte-order mark"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = "    lines = text.removeprefix(chr(0xFEFF))."
 after = "    lines = text."
 reddens = [
@@ -2785,7 +2785,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill's frontmatter splits on LF alone"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = '.replace("\r\n", "\n").replace("\r", "\n").split("\n")'
 after = '.split("\n")'
 reddens = [
@@ -2794,7 +2794,7 @@ reddens = [
 
 [[mutation]]
 name = "a skill file that names no file is unreadable"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "        path.stat()\n    except OSError as exc:\n        if exc.errno in NAMES_NO_FILE:\n            return []\n"
 after = "        path.stat()\n    except OSError as exc:\n        if False:\n            return []\n"
 reddens = [
@@ -2804,13 +2804,13 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries passes over a skill file it cannot read"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = """
         content = read_regular_bytes(path)
     except OSError as exc:
         if exc.errno in NAMES_NO_FILE:
             return []
-        return [(_SKILL_UNREAD, None, _label(relative))]
+        return [(Seen.UNREAD, _label(relative))]
 """
 after = """
         content = read_regular_bytes(path)
@@ -2826,8 +2826,8 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries passes over a skills directory it cannot list"
-file = "src/stayfixed/doctor/entries.py"
-before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((_SKILL_UNREAD, None, _label(relative)))"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((Seen.UNREAD, _label(relative)))"
 after = "            if exc.errno not in NAMES_NO_FILE:\n                pass"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
@@ -2837,7 +2837,7 @@ reddens = [
 # row read only `.claude/skills/<name>/SKILL.md`: each place, and each depth below it, is read.
 [[mutation]]
 name = "hook-entries reads no skill below the project root"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "        for directory, place in _nested(root, budget):"
 after = "        for directory, place in ():"
 reddens = [
@@ -2846,7 +2846,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries reads a place one level deep"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "            elif fsops.is_dir(root / child):"
 after = "            elif fsops.is_dir(root / child) and relative == top:"
 reddens = [
@@ -2855,7 +2855,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries reads only a command directory's own files"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "            elif fsops.is_dir(root / child):"
 after = "            elif fsops.is_dir(root / child) and place.name is not None:"
 reddens = [
@@ -2864,7 +2864,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries reads a skill file's name in its own case"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "    return folded == place.name.casefold()"
 after = "    return name == place.name"
 reddens = [
@@ -2873,7 +2873,7 @@ reddens = [
 
 [[mutation]]
 name = "hook-entries reads every file in a command directory"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = '        return folded.endswith(".md")'
 after = "        return True"
 reddens = [
@@ -2886,7 +2886,7 @@ reddens = [
 # and no deeper.
 [[mutation]]
 name = "a frontmatter's quoted key is read as no key"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = """    if rest[:1] in ('"', "'"):"""
 after = "    if False:"
 reddens = [
@@ -2897,7 +2897,7 @@ reddens = [
 
 [[mutation]]
 name = "a frontmatter in flow style is read as no mapping"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = '    if content[0][indent:].startswith("{"):'
 after = "    if False:"
 reddens = [
@@ -2908,7 +2908,7 @@ reddens = [
 
 [[mutation]]
 name = "a frontmatter's top level is its first column"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = '    indent = len(content[0]) - len(content[0].lstrip(" "))'
 after = "    indent = 0"
 reddens = [
@@ -2917,7 +2917,7 @@ reddens = [
 
 [[mutation]]
 name = "a frontmatter key's tag or anchor hides it"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = '    while rest[:1] in ("!", "&"):'
 after = "    while False:"
 reddens = [
@@ -2927,7 +2927,7 @@ reddens = [
 
 [[mutation]]
 name = "a flow mapping's keys are read at every depth"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = "            if candidate is not None and len(depth) == 1:"
 after = "            if candidate is not None:"
 reddens = [
@@ -2936,7 +2936,7 @@ reddens = [
 
 [[mutation]]
 name = "a flow mapping's quoted scalars are read as tokens"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = 'rf"(?P<quoted>{_QUOTED})|'
 after = 'rf"(?P<quoted>(?!))|'
 reddens = [
@@ -2947,7 +2947,7 @@ reddens = [
 # directory a link leads back to once; a walk that stopped is a warning that says so.
 [[mutation]]
 name = "the hooked-file walk lists past its cap"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "        if self.left < 0:"
 after = "        if False:"
 reddens = [
@@ -2965,7 +2965,7 @@ reddens = [
 
 [[mutation]]
 name = "the hooked-file walk enters .git"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
 after = "            if not (is_directory or is_link):"
 reddens = [
@@ -2977,7 +2977,7 @@ reddens = [
 # name compared without case. The walk is the fallback where git cannot answer.
 [[mutation]]
 name = "the nested-skill query lists ignored files"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = """
             "--others",
             "--exclude-standard",
@@ -2991,7 +2991,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested places are walked in a work tree"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "        if queried is not None:"
 after = "        if False:"
 reddens = [
@@ -3000,7 +3000,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested-skill query lists only untracked files"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = """
             "--cached",
             "--others",
@@ -3014,7 +3014,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested-skill query compares names by case"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
 after = '        for spec in (f":(glob)**/{place.directory}", f":(glob)**/{place.directory}/**")'
 reddens = [
@@ -3023,7 +3023,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested-skill query reads the root's own places again"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = '        if place is not None and not f"{name}/".casefold().startswith(own):'
 after = "        if place is not None:"
 reddens = [
@@ -3032,7 +3032,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested walk compares directory names by case"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = '    folded = f"/{relative}".casefold()'
 after = '    folded = f"/{relative}"'
 reddens = [
@@ -3043,7 +3043,7 @@ reddens = [
 # Markdown file below it, and named a file outside the checkout by the path it was reached through.
 [[mutation]]
 name = "the hooked-file walk follows a link out of the checkout"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "    return Path(os.path.realpath(path)).is_relative_to(real_root)"
 after = "    return True"
 reddens = [
@@ -3057,7 +3057,7 @@ reddens = [
 # asked too. A link that leads out of the checkout is no defect, and is told as one that leads out.
 [[mutation]]
 name = "the nested-skill query reads no link it lists"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "                elif os.path.islink(root / relative):"
 after = "                elif False:"
 reddens = [
@@ -3066,7 +3066,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested-skill query asks no submodule"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "    if any(os.path.lexists(directory / _GITMODULES) for directory in (root, *root.parents)):"
 after = "    if False:"
 reddens = [
@@ -3075,9 +3075,9 @@ reddens = [
 
 [[mutation]]
 name = "a directory link out of the checkout is told as unreadable"
-file = "src/stayfixed/doctor/entries.py"
-before = "                found.append((_LINKED_OUT, None, _label(relative)))"
-after = "                found.append((_SKILL_UNREAD, None, _label(relative)))"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                found.append((Seen.LINKED_OUT, _label(relative)))"
+after = "                found.append((Seen.UNREAD, _label(relative)))"
 reddens = [
   "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
   "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/skills/out]",
@@ -3085,9 +3085,9 @@ reddens = [
 
 [[mutation]]
 name = "a file link out of the checkout is told as unreadable"
-file = "src/stayfixed/doctor/entries.py"
-before = "        return [(_LINKED_OUT, None, _label(relative))]"
-after = "        return [(_SKILL_UNREAD, None, _label(relative))]"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        return [(Seen.LINKED_OUT, _label(relative))]"
+after = "        return [(Seen.UNREAD, _label(relative))]"
 reddens = [
   "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/agents/a.md]",
   "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
@@ -3107,7 +3107,7 @@ reddens = [
 # are, by the query and by the walk.
 [[mutation]]
 name = "a link to a file is read as a directory of its place"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = """
             if not S_ISDIR(status.st_mode):
                 continue
@@ -3120,7 +3120,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested-skill query lists no link standing for a skills directory"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
 after = '        for spec in (f":(glob,icase)**/{place.directory}/**",)'
 reddens = [
@@ -3130,7 +3130,7 @@ reddens = [
 
 [[mutation]]
 name = "the nested walk passes over a link standing for a skills directory"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
 after = "            if not is_directory or name == _GIT_DIR:"
 reddens = [
@@ -3142,7 +3142,7 @@ reddens = [
 # a decision the documents follow.
 [[mutation]]
 name = "a frontmatter's merge key reads as a hooks key"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/frontmatter.py"
 before = "        return plain.group(1)"
 after = '        return _HOOKS if plain.group(1) == "<<" else plain.group(1)'
 reddens = [
@@ -3151,7 +3151,7 @@ reddens = [
 
 [[mutation]]
 name = "the hooked-file walk lists a directory each time it is reached"
-file = "src/stayfixed/doctor/entries.py"
+file = "src/stayfixed/doctor/hooked.py"
 before = """
             if (status.st_dev, status.st_ino) in listed_once:
                 continue
