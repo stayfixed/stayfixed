@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 from dataclasses import fields
 from pathlib import Path
@@ -124,6 +125,40 @@ def test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter(
             assert str(raised.value) == f"{relative!r} {refused}"
     finally:
         unlock(tmp_path)
+
+
+def test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write(
+    tmp_path: Path,
+) -> None:
+    # `contained`'s own comment makes this argument, and nothing held it: an ancestor whose
+    # `lstat` meets `ENAMETOOLONG` is read as no link, so a link inside a real tree past the
+    # longest path is not seen there. The descriptor walk every write goes through reaches it one
+    # component at a time and refuses it of its own accord, and that is the safety. Built by
+    # descriptor, as only such a walk can. Mutations (oracle): `mutations/`'s "the path predicates
+    # read a name longer than the system takes as a fault" (`contained` refuses instead) and "the
+    # containment walk follows a symlinked directory" (the write lands outside).
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parts: list[str] = []
+    descriptor = os.open(tmp_path, os.O_RDONLY)
+    try:
+        while len(str(tmp_path / "/".join(parts))) <= longest:
+            os.mkdir("d" * 200, dir_fd=descriptor)
+            below = os.open("d" * 200, os.O_RDONLY, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = below
+            parts.append("d" * 200)
+        os.symlink(outside, "link", dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    # The premise: the link's own path is one no `lstat` can be handed.
+    assert lstat_fault(tmp_path.joinpath(*parts, "link")) == errno.ENAMETOOLONG
+    relative = "/".join([*parts, "link", "note.md"])
+    assert contained(tmp_path, relative) == tmp_path / relative
+    with pytest.raises(UnsafePath):
+        write_within(tmp_path, relative, "text\n")
+    assert list(outside.iterdir()) == []
 
 
 def test_a_symlink_pointing_inside_the_root_is_still_refused(tmp_path: Path) -> None:
