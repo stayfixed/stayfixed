@@ -42,9 +42,12 @@ from stayfixed import fsops
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
 # in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
 # a backticked `owner/lib.js` repository name or a dotted branch (`release/v1.x`) reads as one.
+# The symbol path's parts are possessive: `re` keeps a record for every pass of a repeated group
+# it might give back, 77 MiB over a line of a mebibyte and a half, and giving one back here can
+# only end the path before a `::`, where no closing backtick stands.
 REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
-    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"
+    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"
 )
 # A fenced block, as the pattern `^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$` (multi-line, `.`
 # matching a line break) reads one: a line opening with three or more backticks or tildes, closed

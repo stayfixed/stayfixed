@@ -543,16 +543,16 @@ reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"
 [[mutation]]
 name = "a column stops being part of a location suffix"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
-after = '    r"(?::\d+|(?:::[\w.]+)+)?`"'
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
+after = '    r"(?::\d+|(?:::[\w.]++)++)?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
 [[mutation]]
 name = "a symbol path stops being read past its first `::`"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
-after = '    r"(?::\d+(?::\d+)?|::[\w.]+)?`"'
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
+after = '    r"(?::\d+(?::\d+)?|::[\w.]++)?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
@@ -582,6 +582,15 @@ file = "src/stayfixed/prose.py"
 before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
 after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
 reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
+
+# A symbol path's parts are possessive, so `re` keeps no record per part: greedy, a line of a
+# million parts took 154 MiB more to read.
+[[mutation]]
+name = "a symbol path's parts are given back"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]++)++)?`"'
+after = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
+reddens = ["tests/docs/test_prose.py::test_a_long_symbol_path_is_read_in_memory_linear_in_its_length"]
 
 # Fences are read a line at a time. The pattern they were read by scanned the rest of the text from
 # every opening line no later line closes, and from a long run at every length down to three: a

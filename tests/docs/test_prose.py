@@ -40,6 +40,43 @@ def test_a_location_suffix_is_not_part_of_the_name() -> None:
     ]
 
 
+# A symbol path of a million parts, read with 154 MiB more of match state when `re` kept a record
+# for each part it might give back, and with none when it keeps none. The most the child may grow
+# its peak resident size by: a few copies of the three-mebibyte line, a fifth of that record.
+_LONG_SYMBOL_PARTS = 1 << 20
+_LONG_SYMBOL_BYTES = 32 << 20
+
+
+def test_a_long_symbol_path_is_read_in_memory_linear_in_its_length() -> None:
+    # In a child that measures its own peak resident size before and after the read (`ru_maxrss`,
+    # bytes on macOS and KiB on Linux), under a timeout. The claim after the long one says the
+    # line was read past it. Mutation (oracle): `mutations/`'s "a symbol path's parts are given
+    # back" -> this reddens.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.prose import path_references\n"
+        "line = '`src/a.py' + '::x' * int(sys.argv[1]) + '` `docs/b.md`'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "found = list(path_references(line))\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(found == ['src/a.py', 'docs/b.md'], grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(_LONG_SYMBOL_PARTS)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_TEXT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one long symbol path ran past {_LONG_TEXT_SECONDS} s")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < _LONG_SYMBOL_BYTES, f"the reader grew its peak by {int(grown) >> 20} MiB"
+
+
 def test_a_file_any_stack_stores_is_a_path_claim() -> None:
     # The drift that built this module was one reader accepting `.ts`/`.tsx` and the other not;
     # a closed list of extensions is the same drift between this grammar and every stack it does
