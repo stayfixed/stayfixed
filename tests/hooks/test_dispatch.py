@@ -590,8 +590,11 @@ def test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git(
     (tmp_path / ".git").mkdir()
     longest = os.pathconf(tmp_path, "PC_PATH_MAX")
     deep = tmp_path
+    # Each step adds a separator and at least one character, so the loop ends whatever length
+    # `tmp_path` starts at. One character short of the mark, a step of none left `deep` where it
+    # was, and a 72-character `tmp_path` under Linux's 4096 met that and hung.
     while len(str(deep)) < longest - 3:
-        deep = deep / ("d" * min(200, longest - 3 - len(str(deep)) - 1))
+        deep = deep / ("d" * max(1, min(200, longest - 4 - len(str(deep)))))
     deep.mkdir(parents=True)
     # The premise: the path to its `.git` is one no `stat` can be handed.
     with pytest.raises(OSError) as past:
