@@ -64,6 +64,26 @@
 # every other command below is a shell builtin, the two programs this file needs are named by
 # absolute path — `git` from the list below, and `/usr/bin/env`, which every supported system has
 # — and `dirname`'s answer is a parameter expansion.
+#
+# **No function the environment exports stands in for a command this file runs.** bash imports a
+# function from every variable named `BASH_FUNC_<name>%%`, in POSIX mode too, so wherever `/bin/sh`
+# is bash — macOS, Fedora, Arch — a committed `env` block that reaches a hook can define one, and
+# Claude Code documents no filter for the name. A function wins over a regular builtin. Measured
+# through this file on bash 3.2.57 as `/bin/sh`: a `BASH_FUNC_pwd%%` naming a program in the clone
+# ran it five times per hook, past the terminal gate and the containment, with no `PATH` entry at
+# all and the hook's answer unchanged; bash 5.2.37 run as `sh` imports the same functions. So the
+# first statement removes the function of every name this file runs that is not a special builtin,
+# `python3` among them because `command -v` answers a function's bare name and the probe would run
+# it, and `command_not_found_handle`, which bash 4 and later call unasked. `unset` itself cannot be
+# replaced: in POSIX mode a special builtin is found before any function, and a `BASH_FUNC_unset%%`,
+# like one for `set`, `export`, `exit` or `shift`, was measured never to run. The functions defined
+# below replace an imported namesake, each before its first use. `[` is spelled `test` throughout,
+# because bash 3.2 in POSIX mode refuses `unset -f [` as not a valid identifier, and an imported `[`
+# then ran on every test. dash, busybox ash, ksh93 and zsh import no functions and the line removes
+# nothing; stderr is discarded because native zsh names each absent one. What the shell acts on
+# before this line, `SHELLOPTS` with `PS4` or a loader variable, no line here can refuse, and it is
+# the harness's to filter (`SECURITY.md`).
+unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null
 set -u
 
 refuse() { echo "stayfixed: $1; refusing" >&2; exit 2; }
@@ -73,12 +93,12 @@ degrade() { echo "stayfixed: $1; continuing open" >&2; exit 0; }
 # with the shell's own "unbound variable" and exit 1 — measured as exit 1 with no token on
 # /bin/sh (bash 3.2.57), and exit 0 under `zsh --emulate sh`, so the mapping is not even
 # portable. A disarmed guard must say so.
-[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"
+test $# -ge 1 || refuse "SF_ARGV no policy argument"
 policy="$1"
 shift
 
 fail() {
-  if [ "$policy" = closed ]; then refuse "$1"; fi
+  if test "$policy" = closed; then refuse "$1"; fi
   degrade "$1"
 }
 
@@ -141,18 +161,18 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 git_bin=
 for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin/git \
   /run/current-system/sw/bin/git /usr/bin/git /bin/git; do
-  if [ -x "$g" ]; then
+  if test -x "$g"; then
     git_bin="$g"
     break
   fi
 done
-[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
+test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
 git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
 # answer; what it no longer does is decide it alone for the containment.
 root="${CLAUDE_PROJECT_DIR:-}"
-[ -n "$root" ] || root="$git_root"
+test -n "$root" || root="$git_root"
 # A root that could not be *resolved* is not fatal: the command finds no configuration and emits
 # nothing, which is the correct open degradation. A root that was resolved and cannot be entered
 # is a different state and used to be silent — the process stayed in the harness's cwd, and if
@@ -170,7 +190,7 @@ root="${CLAUDE_PROJECT_DIR:-}"
 # and the containment is anchored on it. A root beginning with `-` is parsed as an option
 # without the `--`.
 project=
-if [ -n "$root" ]; then
+if test -n "$root"; then
   CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"
   project=$(pwd -P)
 fi
@@ -180,7 +200,7 @@ fi
 # compared on its own: it is the first member of the checkout list below, because a checkout is
 # what it names.
 git_project=
-[ -z "$git_root" ] || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pwd -P)
+test -z "$git_root" || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pwd -P)
 
 # **Every checkout of this repository, and not only the one the hook runs in.** Both anchors
 # above name a single checkout, and a clone's committed bytes reach every checkout of it: inside
@@ -214,7 +234,7 @@ list_checkouts() {
 # list worktrees must not cost the containment its git anchor entirely. The declared mutation is
 # therefore on the list, which a linked worktree can tell apart from this line.
 git_checkouts=
-[ -z "$git_root" ] || git_checkouts=$(
+test -z "$git_root" || git_checkouts=$(
   printf '%s\n' "$git_project"
   list_checkouts
 )
@@ -247,16 +267,16 @@ git_checkouts=
 # every candidate on the strength of a question it could not ask would turn an unresolvable root
 # into no hooks at all.
 under_root() {
-  [ -n "$2" ] || return 1
-  [ "$1" = "$2" ] && return 0
-  [ "${1#"$2"/}" != "$1" ] && return 0
+  test -n "$2" || return 1
+  test "$1" = "$2" && return 0
+  test "${1#"$2"/}" != "$1" && return 0
   return 1
 }
 
 in_project() {
   case $1 in */*) dir=${1%/*} ;; *) dir=. ;; esac
   dir=$(CDPATH= cd -- "${dir:-/}" 2>/dev/null && pwd -P) || return 1
-  [ -n "$dir" ] || return 1
+  test -n "$dir" || return 1
   under_root "$dir" "$project" && return 0
   # One checkout per line, `git_project` among them: `IFS` is a newline for this split and is
   # restored after it. The only caller is the candidate loop below, which runs under `set -f`,
@@ -297,7 +317,7 @@ in_project() {
 # reaches the version check rather than an option error. The contract, and the loader variables
 # `-I` cannot reach: `docs/cli.md`, "The chosen interpreter starts isolated".
 candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3'
-if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
+if test -t 0 && test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
 p=
 skipped_in_project=
 # `set -f` for the split: a candidate is a program name or a path, never a pattern, and without
@@ -307,7 +327,7 @@ skipped_in_project=
 set -f
 for c in $candidates; do
   resolved=$(command -v "$c" 2>/dev/null) || continue
-  [ -n "$resolved" ] || continue
+  test -n "$resolved" || continue
   if in_project "$resolved"; then
     skipped_in_project=1
     continue
@@ -328,8 +348,8 @@ set +f
 # one *was* found, and deliberately not run — and the one remedy that exists was named only in
 # `docs/cli.md` and the changelog, neither of which is where they are standing. So the in-tree
 # arm names it here.
-if [ -z "$p" ]; then
-  if [ -n "$skipped_in_project" ]; then
+if test -z "$p"; then
+  if test -n "$skipped_in_project"; then
     fail "SF_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
   fi
   fail "SF_NO_PY no python3 of 3.11 or newer among the candidates"
@@ -339,7 +359,7 @@ fi
 # printed its own `Permission denied` and exited 2 with no token of ours — the unattributed exit
 # 2 this file's header is about, and a state `doctor`'s wrapper row read as green because it
 # keys on finding a token (measured with `chmod 000`).
-[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
+test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
 # **The launcher is told this file launched it**, and only then does stayfixed take every `git` it
 # runs from the list above, with a fixed `PATH` (`stayfixed.gitenv.git_program`): a `stayfixed`

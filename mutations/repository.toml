@@ -387,7 +387,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops refusing under a closed policy"
 file = "hooks/run-hook.sh"
-before = '  if [ "$policy" = closed ]; then refuse "$1"; fi'
+before = '  if test "$policy" = closed; then refuse "$1"; fi'
 after = '  :'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_interpreter_of_the_floor_version_refuses_under_closed_only",
@@ -399,7 +399,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that it has no policy argument"
 file = "hooks/run-hook.sh"
-before = '[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"'
+before = 'test $# -ge 1 || refuse "SF_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
@@ -433,7 +433,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = 'test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
@@ -449,8 +449,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper lets the environment choose its interpreter off a terminal"
 file = "hooks/run-hook.sh"
-before = 'if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
-after = 'if [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+before = 'if test -t 0 && test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+after = 'if test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
 reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
 ]
@@ -503,8 +503,8 @@ reddens = [
 [[mutation]]
 name = "an unresolvable project root refuses every interpreter instead of none"
 file = "hooks/run-hook.sh"
-before = '  [ -n "$2" ] || return 1'
-after = '  [ -n "$2" ] || return 0'
+before = '  test -n "$2" || return 1'
+after = '  test -n "$2" || return 0'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
 ]
@@ -562,6 +562,46 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
+# No function the environment exports stands in for a command the wrapper runs: bash, `/bin/sh` on
+# macOS, imports one from every `BASH_FUNC_<name>%%` variable, and a function wins over a regular
+# builtin. Measured: `BASH_FUNC_pwd%%` ran a clone's program five times per hook with no `PATH`
+# entry, and `BASH_FUNC_[%%` twenty-six, a name bash 3.2 cannot unset.
+[[mutation]]
+name = "an exported function stands in for the wrapper's pwd again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+]
+
+[[mutation]]
+name = "an exported function stands in for the wrapper's test again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd python3 read true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+]
+
+[[mutation]]
+name = "an exported function stands in for the interpreter the wrapper probes again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_stands_in_for_the_interpreter_the_wrapper_probes",
+]
+
+[[mutation]]
+name = "the wrapper spells a test as [ again, which bash 3.2 cannot unset"
+file = "hooks/run-hook.sh"
+before = 'test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+after = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+]
+
 # stayfixed takes every `git` a hook asks from the fixed list only when the wrapper tells the
 # launcher it launched it, and the wrapper overwrites a value an `env` block or a parent preset:
 # left standing, one that is not the wrapper's hands every hook's `git` back to that block's `PATH`.
@@ -592,8 +632,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher cannot be read"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
-after = '[ -f "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = 'test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = 'test -f "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
 ]
@@ -691,7 +731,7 @@ reddens = [
 [[mutation]]
 name = "no trustworthy git degrades in silence instead of printing a token"
 file = "hooks/run-hook.sh"
-before = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+before = 'test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",

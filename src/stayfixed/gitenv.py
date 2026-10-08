@@ -78,8 +78,8 @@ HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"
 HOOK_WRAPPER_LAUNCHED = "1"
 
 # Where `git` is taken from in a stayfixed the hook wrapper launched: the first of these that is
-# executable, the test `[ -x ]` makes. The list `hooks/run-hook.sh` takes its own `git` from, in
-# its order, and one list spelled twice, since a shell script cannot import it:
+# executable, as the wrapper's `test -x` asks. The list `hooks/run-hook.sh` takes its own `git`
+# from, in its order, and one list spelled twice, since a shell script cannot import it:
 # `tests/test_git_run.py` holds the two equal. The machine owner's own installs come before
 # `/usr/bin/git`, for the reason a `PATH` lookup is kept everywhere else, and nothing under `HOME`
 # is on it, since `HOME` is the environment's too.

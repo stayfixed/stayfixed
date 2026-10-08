@@ -433,7 +433,7 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
 
 
 def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
-    # `[ -f ]` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
+    # `test -f` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
     # CPython's own "Permission denied" and exited 2 with no SF_ token, passed straight through
     # by `case "$rc" in 0|2)` — an unattributed exit 2, which every SF_ token exists to make
     # impossible, and a state `doctor`'s wrapper row reported green for, because it keys on
@@ -1053,3 +1053,129 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     # Non-vacuous: the dirty count is in the notice, so git was asked and answered, by a `git`
     # the clone did not choose.
     assert "uncommitted" in result.stdout, (result.stdout, result.stderr)
+
+
+def _bash_as_sh() -> str | None:
+    """A bash to run the wrapper under as `sh`, or `None` where this machine has none.
+
+    `/bin/sh` itself where it is bash, as on macOS, Fedora and Arch. Elsewhere a `bash` run under
+    the name `sh`, which puts it in the POSIX mode it has as `/bin/sh` on those systems, so the
+    cases below run on a machine whose `/bin/sh` is dash too, CI's among them.
+    """
+    probe = subprocess.run(
+        ["/bin/sh", "-c", 'printf %s "${BASH_VERSION-}"'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return "/bin/sh" if probe.stdout else shutil.which("bash")
+
+
+BASH_AS_SH = _bash_as_sh()
+
+
+def _run_under_bash(
+    plugin_root: Path,
+    environment: dict[str, str],
+    cwd: Path,
+    *,
+    terminal: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """The shipped wrapper copied into `plugin_root`, run by `BASH_AS_SH` as `sh` with `closed hook
+    PreToolUse`: the command line the kernel builds from its `#!/bin/sh` where `/bin/sh` is bash.
+    `terminal` hands it a pty for stdin, the one place it reads `STAYFIXED_PYTHON_CANDIDATES`."""
+    assert BASH_AS_SH is not None
+    master, slave = pty.openpty() if terminal else (-1, -1)
+    try:
+        return subprocess.run(
+            ["sh", str(plugin_root / "hooks" / WRAPPER.name), "closed", "hook", "PreToolUse"],
+            executable=BASH_AS_SH,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+            cwd=cwd,
+            stdin=slave if terminal else subprocess.DEVNULL,
+        )
+    finally:
+        for descriptor in (master, slave):
+            if descriptor >= 0:
+                os.close(descriptor)
+
+
+def _exported_functions(tmp_path: Path, names: tuple[str, ...]) -> tuple[dict[str, str], Path]:
+    """`BASH_FUNC_<name>%%` for each of `names`: a function that runs a marker program, which
+    records the name, and then hands over to what the name meant, so a wrapper that ran one
+    answers exactly as it would have and only the record shows it. The variables, and the record."""
+    ran = tmp_path / "exported-function-ran"
+    marker = tmp_path / "marker"
+    marker.write_text(
+        f"#!{sys.executable} -I\nimport sys\n"
+        f"with open({str(ran)!r}, 'a') as f:\n    f.write(' '.join(sys.argv[1:]) + '\\n')\n",
+        encoding="utf-8",
+    )
+    marker.chmod(0o755)
+    functions = {}
+    for name in names:
+        # `python3` is no builtin, and `command` runs the program `PATH` names past the function.
+        hand_over = "command" if name == "python3" else "builtin"
+        functions[f"BASH_FUNC_{name}%%"] = f'() {{ "{marker}" {name}; {hand_over} {name} "$@"; }}'
+    return functions, ran
+
+
+# The names a hook run in a repository makes the wrapper run that a function could stand in for,
+# `[` among them though the wrapper spells it `test`: bash 3.2 in POSIX mode cannot unset a
+# function named `[`, so a `[` written back into the wrapper would run an imported one.
+BUILTINS_THE_WRAPPER_RUNS = ("cd", "command", "printf", "pwd", "read", "test", "[")
+
+
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, the one shell that imports functions")
+@pytest.mark.skipif(not ABSOLUTE_GIT, reason="no git at any of the absolute candidate paths")
+def test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers(
+    tmp_path: Path,
+) -> None:
+    # bash imports a function from every `BASH_FUNC_<name>%%` variable, as `/bin/sh` too, and a
+    # function wins over a regular builtin, so a committed `env` block naming the clone's program
+    # in one ran it inside the wrapper, past every guard, with no `PATH` entry at all. Measured on
+    # macOS's `/bin/sh` before the wrapper unset them: `BASH_FUNC_pwd%%` ran the program five times
+    # per hook, `BASH_FUNC_[%%` twenty-six, and the hook's answer was unchanged. Run inside a git
+    # repository so the checkout listing reads lines, which is where `read` and `printf` run.
+    # Mutations (declared): `pwd` or `test` leaves the wrapper's unset list; a test is spelled `[`
+    # again — each reddens this.
+    project = tmp_path / "project"
+    project.mkdir()
+    git(project, "init", "-q", home=tmp_path)
+    plugin = _plugin_root(tmp_path, 0, echo_cwd=True)
+    environment = _env(plugin, None, None)
+    environment["CLAUDE_PROJECT_DIR"] = str(project)
+    control = _run_under_bash(plugin, environment, project)
+    exported, ran = _exported_functions(tmp_path, BUILTINS_THE_WRAPPER_RUNS)
+    result = _run_under_bash(plugin, {**environment, **exported}, project)
+    assert not ran.exists(), ran.read_text(encoding="utf-8")
+    # Non-vacuous: the launcher ran, from the project root the containment entered, and the
+    # answer is the one the wrapper gives with no function exported.
+    assert control.returncode == 0, control.stderr
+    assert control.stdout == f"{project.resolve()}\n"
+    assert (result.returncode, result.stdout) == (control.returncode, control.stdout)
+
+
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, the one shell that imports functions")
+def test_no_function_the_environment_exports_stands_in_for_the_interpreter_the_wrapper_probes(
+    tmp_path: Path,
+) -> None:
+    # `command -v python3` answers a function's bare name, and the wrapper then runs that name as
+    # the probe and the launcher's interpreter. The containment cannot see it: a bare name is in
+    # the current directory, so it is refused only where the wrapper entered a project root, and
+    # here there is none. The list `python3` heads is one only a terminal can name, which is why
+    # stdin is a pty; the built-in list reaches bare `python3` last, on a machine with no
+    # interpreter at an absolute path. Mutation (declared): `python3` leaves the wrapper's unset
+    # list — this reddens.
+    plugin = _plugin_root(tmp_path, 0, echo_cwd=True)
+    environment = _env(plugin, None, "python3")
+    control = _run_under_bash(plugin, environment, plugin, terminal=True)
+    exported, ran = _exported_functions(tmp_path, ("python3",))
+    result = _run_under_bash(plugin, {**environment, **exported}, plugin, terminal=True)
+    assert not ran.exists(), ran.read_text(encoding="utf-8")
+    assert control.returncode == 0, control.stderr
+    assert control.stdout == f"{plugin.resolve()}\n"
+    assert (result.returncode, result.stdout) == (control.returncode, control.stdout)
