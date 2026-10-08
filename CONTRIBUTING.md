@@ -365,7 +365,7 @@ winning and the empty prefix's group taking anything no other prefix matches. Th
 on purpose. The plugin directory holds the version for a reviewer when a file reaches 256 KiB and
 when the plugin passes 512 files, and the plugin folder is this repository's root, so every tracked
 file counts: one file per area would need no table, and would spend about twenty of those 512 where
-ten do. That trade is why `GROUP_OF` is a table kept by hand, the exception to "no shared registry"
+eleven do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry"
 under "Areas". The size is checked on every pull request (`tests/test_payload.py`) and the count
 only at a release, where `scripts/release.py check --tag` refuses a plugin folder holding more than
 512 files: this repository is more than the plugin, so a pull request may carry it past the count,

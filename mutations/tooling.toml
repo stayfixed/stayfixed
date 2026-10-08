@@ -1245,7 +1245,7 @@ reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_g
 [[mutation]]
 name = "the group table loses a row and its entries route to the catch-all"
 file = "scripts/mutation_oracle.py"
-before = '    ("src/stayfixed/doctor/", "install"),'
+before = '    ("src/stayfixed/doctor/", "doctor"),'
 after = ''
 reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
 
