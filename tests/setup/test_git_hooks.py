@@ -199,6 +199,22 @@ def test_uninstall_says_whether_it_removed_stayfixeds_hook(
         assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
 
 
+def test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so(tmp_path: Path) -> None:
+    # The command's half of `tests/guards/test_githooks.py`'s case: what is not a regular file at
+    # the hook path is not stayfixed's, so the line says it was left, and the run exits 0, where
+    # it refused with exit 2. Mutation: `mutations/`, "uninstall reads a hook that is not a
+    # regular file".
+    root = _repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.mkdir(parents=True)
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert (
+        result.summary == f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
+    )
+    assert (result.exit_code, result.data["found"]) == (0, "foreign")
+    assert hook.is_dir()
+
+
 def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:
     # `installed.replaced` is true when the hook already there is ours, not a stranger's —
     # `run_git_hooks` reports that case with its own summary rather than the "kept and chained

@@ -173,9 +173,9 @@ differently. Each has its own entry in these notes, with the detail:
     and "`stayfixed bugs new` and `stayfixed bugs index` no longer end in `internal error`").
   - `stayfixed setup --git-hooks --uninstall` prints what it found, `there is no stayfixed hook
     at <hook>; nothing was removed` or `left <hook> as it was: …`, where 0.2.0 printed `removed …`
-    for every case, and `--json` gains `found`. Over a hook it cannot read as a regular file (one
-    at mode 000, stayfixed's own or anyone's, a FIFO, a directory) `--uninstall` refuses (exit `2`)
-    where 0.2.0 exited `0` or hung, and `setup --git-hooks` refuses (exit `2`) a hook at mode 000,
+    for every case, and `--json` gains `found`. Over a hook at mode 000, stayfixed's own or
+    anyone's, `--uninstall` refuses (exit `2`) where 0.2.0 exited `0`, and it leaves a FIFO, on
+    which 0.2.0 hung, as a foreign hook. `setup --git-hooks` refuses (exit `2`) a hook at mode 000,
     stayfixed's own or anyone's, which 0.2.0 renamed to `prepare-commit-msg.local`, chained and
     later restored, and a FIFO, on which 0.2.0 hung: make such a hook readable, or move it aside,
     first. A foreign hook past the 64 MiB read cap is still chained and left alone, as in 0.2.0

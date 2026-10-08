@@ -20,6 +20,7 @@ enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) asks of every path a 
 from __future__ import annotations
 
 import os
+import stat
 from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
@@ -212,7 +213,9 @@ def uninstall(root: Path) -> Removed:
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
     if not os.path.lexists(target):
         return Removed(target, None, Found.ABSENT)
-    if fsops.is_symlink(target) or not _ours(target, "nothing was removed"):
+    # stayfixed writes only a regular file here, so a link, a directory or a FIFO is foreign as
+    # surely as a regular file past the read cap is, and is left in place unopened.
+    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):
         return Removed(target, None, Found.FOREIGN)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it

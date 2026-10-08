@@ -6,16 +6,17 @@ was removed` when there is none, and `left <hook> as it was: it is not stayfixed
 was removed` when the hook there is not stayfixed's. `--json` gains `found`: `removed`, `absent`
 or `foreign`. The exit code is `0` in each of these cases, as before.
 
-A hook at that path that cannot be read is no longer read as stayfixed's or as a foreign one,
-and a FIFO there is no longer waited on. Both commands now refuse (exit `2`), with `<hook> could
-not be read (<reason>)`, and leave what is there where it is:
+A hook at that path that cannot be read, one at mode 000, stayfixed's own or anyone's, is no
+longer read as stayfixed's or as a foreign one. `setup --git-hooks` used to rename it to
+`prepare-commit-msg.local` and chain it, and `--uninstall` reported it as removed while leaving it
+in place, or restored it when it had been chained. Both commands now refuse it (exit `2`) with
+`<hook> could not be read (<reason>)`, and leave it where it is.
 
-- a FIFO, on which `setup --git-hooks` and `--uninstall` used to hang;
-- a hook at mode 000, stayfixed's own or anyone's, which `setup --git-hooks` used to rename to
-  `prepare-commit-msg.local` and chain, and which `--uninstall` reported as removed while leaving
-  it in place, or restored when it had been chained;
-- a directory, which `--uninstall` used to report as removed (exit `0`); `setup --git-hooks`
-  already refused one, saying it is a directory.
+A FIFO or a directory at that path is not a hook stayfixed wrote, which is always a regular file.
+`--uninstall` now leaves it in place and says it is not stayfixed's hook (exit `0`), where it hung
+on a FIFO and reported a directory as removed. `setup --git-hooks` refuses a FIFO (exit `2`) with
+`<hook> could not be read (not a regular file)`, where it hung, and refuses a directory, saying it
+is a directory, as before.
 
 A regular file there longer than the 64 MiB read cap is not stayfixed's hook, which is a couple of
 kilobytes, so it is still treated as a foreign one: `setup --git-hooks` keeps it as

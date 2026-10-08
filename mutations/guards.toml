@@ -1354,8 +1354,7 @@ file = "src/stayfixed/guards/githooks.py"
 before = "        content = fsops.read_regular_bytes(path)"
 after = "        content = path.read_bytes()"
 reddens = [
-  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_and_never_waited_on[install]",
-  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_and_never_waited_on[uninstall]",
+  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on",
 ]
 
 [[mutation]]
@@ -1366,6 +1365,19 @@ after = "    except OSError as exc:\n        return False\n        raise Refusal
 reddens = [
   "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[install]",
   "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[uninstall]",
+]
+
+# stayfixed writes only a regular file at the hook path, so `--uninstall` leaves anything else there
+# as foreign, unopened: it refused a directory or a FIFO with exit 2, as a hook it could not read.
+[[mutation]]
+name = "uninstall reads a hook that is not a regular file"
+file = "src/stayfixed/guards/githooks.py"
+before = '    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):'
+after = '    if fsops.is_symlink(target) or not _ours(target, "nothing was removed"):'
+reddens = [
+  "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[fifo]",
+  "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[directory]",
+  "tests/setup/test_git_hooks.py::test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so",
 ]
 
 # A regular file past the read cap is foreign, not unreadable: stayfixed's own hook is a couple of
