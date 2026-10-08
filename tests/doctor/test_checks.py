@@ -1964,6 +1964,16 @@ NO_HOOKS_SPELLED = {
     # A tab inside a value, on a line that opens no key, leaves the reading as it was. Mutation
     # (oracle): `mutations/`'s "any tab-indented line leaves the reader unsure".
     "a-tab-inside-a-value": 'description: "a\n\tb"\n',
+    # A tab after spaces, which the repair of leading tabs leaves as it stands, so no reading
+    # differs. Mutation (oracle): `mutations/`'s "a tab after spaces leaves the reader unsure".
+    "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
+    # A `---` inside a line, where Claude Code may end the frontmatter: each bound is read, and
+    # each says "no". Mutation (oracle): `mutations/`'s "a frontmatter whose two bounds differ
+    # answers could not tell where both say no".
+    "a-fence-within-a-value": "description: Reviews code --- use before merging\n",
+    "a-fence-within-a-link": "description: See https://example.com/a---b\n",
+    "a-fence-within-a-quoted-value": 'description: "--- "\n',
+    "a-fence-inside-a-literal-block": "description: |\n  Line one\n  ---\n  Line three\n",
 }
 
 
@@ -2008,12 +2018,15 @@ UNTOLD_SPELLED = {
     # An alias key in a mapping below a tag alone on its line. Mutation (oracle): `mutations/`'s
     # "an alias key is read as no key".
     "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
-    # Where Claude Code's reading may differ from the row's: a `---` inside a line, where Claude
-    # Code may end the frontmatter, and a key indented by a tab, which it may read once the tab is
-    # two spaces. Mutations (oracle): `mutations/`'s "a frontmatter read two ways answers no where
-    # neither holds hooks" -> both; "a tab-indented key leaves the reader sure" -> the tab case.
-    "a-fence-within-a-line": "name: a---b\n",
+    # Where Claude Code's reading may differ from the row's: a key indented by a tab, which it may
+    # read once the tab is spaces, however many; and a `---` inside a line, where it may end the
+    # frontmatter, with a key one of the two bounds cannot read whole, the alias below it or the
+    # quoted key it cuts. Mutations (oracle): `mutations/`'s "a tab-indented key leaves the reader
+    # sure" -> the tab case; "a reading that cannot tell is heard only where it is the only one"
+    # -> the two fence cases.
     "a-tab-indented-key": "name: probe\n\thooks: {}\n",
+    "a-fence-within-a-line-above-an-alias": "name: a---b\n*k : {}\n",
+    "a-fence-within-a-quoted-key": '"a---b": x\n',
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "

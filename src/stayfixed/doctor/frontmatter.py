@@ -219,17 +219,20 @@ def declares_hooks(text: str) -> bool | None:
     Claude Code may read the file otherwise, by what its program text shows rather than by a
     measured run: it may end the frontmatter at the first `---` after the opening line, wherever in
     a line that stands (`_harness_fenced`), and read a line indented by tabs as one indented by
-    spaces (`_untabbed`). Where either reading may differ from this one, each is read, and the
-    answer is "yes" if any of them holds `hooks` and "cannot tell" otherwise.
+    spaces (`_untabbed`). Where either reading may differ from this one, each is read: the answer is
+    "yes" if any of them holds `hooks`, "cannot tell" if any of them cannot tell or a tab leads a
+    key's line, which a repair to some other width than the one modelled may read as another key,
+    and "no" otherwise. Each reading is asked the same question, so where only the bounds differ
+    and every reading says "no", no bound Claude Code may take answers otherwise.
 
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
     (`_UNTOLD`) may be `hooks`, so where no key it reads is, the answer is `None`."""
     text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
     fenced, harness = _fenced(text.split("\n")), _harness_fenced(text)
     readings = [fenced[0]] if fenced else []
-    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])
-    if harness is not None and unsure:
+    if harness is not None and (fenced is None or harness[1] != fenced[1]):
         readings.append(harness[0].split("\n"))
+    unsure = False
     for lines in list(readings):
         if _tab_indents_a_key(lines):
             unsure = True
@@ -240,9 +243,7 @@ def declares_hooks(text: str) -> bool | None:
     answers = [_holds_hooks(lines) for lines in readings]
     if True in answers:
         return True
-    if unsure:
-        return None
-    return answers[0] if answers else False
+    return None if unsure or None in answers else False
 
 
 def _fenced(lines: list[str]) -> tuple[list[str], int] | None:
@@ -272,11 +273,12 @@ def _harness_fenced(text: str) -> tuple[str, int] | None:
 
 
 def _tab_indents_a_key(lines: list[str]) -> bool:
-    """Whether a line's indentation holds a tab, which YAML does not take as indentation, and the
-    line past it opens a key, which a reader taking the tab as indentation reads."""
+    """Whether a line's indentation starts with a tab, which YAML does not take as indentation, and
+    the line past it opens a key, which a reader taking the tab as indentation reads. A tab after
+    spaces is one the repair leaves as it stands (`_untabbed`), so no reading differs there."""
     for line in lines:
         rest = line.lstrip(" \t")
-        if "\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:
+        if line.startswith("\t") and _block_key(rest, continued=False) is not None:
             return True
     return False
 

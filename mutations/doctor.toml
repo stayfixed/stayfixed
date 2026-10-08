@@ -1316,22 +1316,31 @@ reddens = [
 [[mutation]]
 name = "a frontmatter Claude Code may end within a line is read only to a line of its own"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])"
-after = "    unsure = False"
+before = "    if harness is not None and (fenced is None or harness[1] != fenced[1]):"
+after = "    if False:"
 reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line_are_named"]
 
 [[mutation]]
-name = "a frontmatter read two ways answers no where neither holds hooks"
+name = "a frontmatter whose two bounds differ answers could not tell where both say no"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-    if unsure:
-        return None
+    if harness is not None and (fenced is None or harness[1] != fenced[1]):
+        readings.append(harness[0].split("\\n"))
+    unsure = False
 """
 after = """
-    if False:
-        return None
+    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])
+    if unsure:
+        readings.append(harness[0].split("\\n"))
 """
-reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line]", "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-indented-key]"]
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-quoted-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-inside-a-literal-block]"]
+
+[[mutation]]
+name = "a reading that cannot tell is heard only where it is the only one"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    return None if unsure or None in answers else False"
+after = "    return None if unsure or answers == [None] else False"
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line-above-an-alias]", "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-quoted-key]"]
 
 [[mutation]]
 name = "a tab-indented frontmatter is read only as it stands"
@@ -1357,11 +1366,18 @@ reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_r
 [[mutation]]
 name = "any tab-indented line leaves the reader unsure"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '"\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:'
-after = '"\t" in line[: len(line) - len(rest)]:'
+before = 'line.startswith("\t") and _block_key(rest, continued=False) is not None:'
+after = 'line.startswith("\t"):'
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-inside-a-value]",
 ]
+
+[[mutation]]
+name = "a tab after spaces leaves the reader unsure"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if line.startswith("\t") and _block_key(rest, continued=False) is not None:'
+after = '        if "\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:'
+reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-after-spaces]"]
 
 [[mutation]]
 name = "a skill file that names no file is unreadable"
