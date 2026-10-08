@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import io
 import json
+import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -572,6 +574,31 @@ def test_the_walk_finds_the_root_through_a_git_file(
     (tmp_path / "a").mkdir()
     monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
     ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, {})
+    assert ev.project_root == tmp_path
+
+
+def test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Within a few characters of the longest path, `<cwd>/.git` is past it. `Path.exists()` raised
+    # on that up to Python 3.13 and answered `False` from 3.14, so under Codex, where `cwd` is the
+    # payload's, every hook in such a directory was an internal error on one interpreter and
+    # `PreToolUse` refused every tool call. The walk reads it as no `.git` there on every
+    # interpreter and goes on to the parents. Mutations (oracle): `mutations/`'s "the path
+    # predicates read a name longer than the system takes as a fault" reddens this on every
+    # interpreter; "the hook's walk for .git asks pathlib what is there" reddens it up to 3.13.
+    (tmp_path / ".git").mkdir()
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    while len(str(deep)) < longest - 3:
+        deep = deep / ("d" * min(200, longest - 3 - len(str(deep)) - 1))
+    deep.mkdir(parents=True)
+    # The premise: the path to its `.git` is one no `stat` can be handed.
+    with pytest.raises(OSError) as past:
+        os.stat(deep / ".git")
+    assert past.value.errno == errno.ENAMETOOLONG
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(deep)}, {})
     assert ev.project_root == tmp_path
 
 

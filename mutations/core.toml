@@ -2629,6 +2629,19 @@ reddens = [
   "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[past-the-longest-path]",
   "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
   "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
+  "tests/hooks/test_dispatch.py::test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git",
+]
+
+# The hook's walk for `.git` asks `fsops` too: `Path.exists()` raised on a `<cwd>/.git` past the
+# longest path up to 3.13, so every hook in such a directory was an internal error there. The guard
+# walk reddens on every interpreter, and the walk's own case on 3.11 to 3.13.
+[[mutation]]
+name = "the hook's walk for .git asks pathlib what is there"
+file = "src/stayfixed/gitenv.py"
+before = '        if fsops.exists(directory / ".git"):'
+after = '        if (directory / ".git").exists():'
+reddens = [
+  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
 ]
 
 # Any other fault leaves the question open, and "cannot tell" is not "no": a directory that cannot

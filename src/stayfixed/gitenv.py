@@ -9,10 +9,11 @@ the session's `GIT_DIR` or `GIT_WORK_TREE` would make every handler in the proce
 different repository than the one the user is sitting in; the memory store's queries decide
 whose notes a session reads, and the same variable would choose another project's.
 
-A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed` when it loads, so
-the hook path pays no area import to reach it, and no caller has to import another's area to share
-the constants. In a hook, `scrubbed_env` also asks `stayfixed.config.machine`, which imports the
-standard library alone, for the password database's home, inside `hook_home`.
+A leaf module: it imports `stayfixed.errors` and `stayfixed.fsops`, two leaves, and nothing else
+from `stayfixed` when it loads, so the hook path pays no area import to reach it, and no caller has
+to import another's area to share the constants. In a hook, `scrubbed_env` also asks
+`stayfixed.config.machine`, which imports the standard library alone, for the password database's
+home, inside `hook_home`.
 
 **In a stayfixed the hook wrapper launched, `git` is never found through `PATH`.** A committed
 `.claude/settings.json` `env` block can set `PATH` for every hook — Claude Code applies it, and
@@ -72,6 +73,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. In a stayfixed the hook
@@ -380,11 +382,18 @@ def _walk_to_git_root(cwd: Path) -> Path | None:
     `git rev-parse --show-toplevel` resolves symlinks in `cwd` before it reports the toplevel,
     so the walk must too: otherwise the same repository reached through its real path and
     through a symlink to it would report two different roots where git collapses them into one.
+
+    Asked through `fsops.exists`, never `Path.exists()`: within a few characters of the longest
+    path, `<cwd>/.git` is past it, which `Path.exists()` raised on up to Python 3.13 and answered
+    `False` from 3.14. Under Codex, where `cwd` is the payload's, every hook in such a directory
+    was an internal error on one interpreter, and `PreToolUse` refused every tool call. `fsops`
+    reads it as nothing there, as 3.14 did, so the walk goes on to the parents, as git itself,
+    which cannot open the path either, would have to.
     """
     if not cwd.is_absolute():
         return None
     for directory in [cwd, *cwd.parents]:
-        if (directory / ".git").exists():
+        if fsops.exists(directory / ".git"):
             return directory.resolve()
     return None
 

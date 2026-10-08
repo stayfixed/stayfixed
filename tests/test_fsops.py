@@ -688,9 +688,6 @@ OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
     ("doctor/entries.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
     ("doctor/entries.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
     ("profiles/python/hygiene.py", "_bytecode", "is_dir"): (1, "an os.DirEntry"),
-    # The hook's working directory and its parents, each a directory that is there, so none
-    # meets a fault the two interpreters answer apart; and `gitenv` imports `errors` alone.
-    ("gitenv.py", "_walk_to_git_root", "exists"): (1, "the working directory's parents"),
 }
 
 
