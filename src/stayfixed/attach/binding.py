@@ -96,7 +96,8 @@ MEMORY_GROUP_UNASKED = (
 # prints.
 NOT_OVERLAY = (
     "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
-    "in an overlay to bind it to; only a repository whose memory.mode is 'overlay' is attached"
+    f"in an overlay to bind it to; only a repository whose memory.mode is {OVERLAY_MODE!r} is "
+    "attached"
 )
 
 

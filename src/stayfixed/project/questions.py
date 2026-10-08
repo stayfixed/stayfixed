@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from stayfixed.config.schema import BRANCH_NAME, MEMORY_MODES, PROJECT_NAME
+from stayfixed.config.schema import BRANCH_NAME, MEMORY_MODES, OVERLAY_MODE, PROJECT_NAME
 from stayfixed.project.templates import LOCAL_ELIGIBLE
 
 # Each question's `stayfixed.toml` key, and the flag on `stayfixed init --yes` that answers it.
@@ -90,7 +90,7 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     preset = preset_defaults(found.name or "project")
     titles = {
         **MEMORY_TITLES,
-        "overlay": OVERLAY_RECORDED if _overlay_recorded(machine) else OVERLAY_NEXT,
+        OVERLAY_MODE: OVERLAY_RECORDED if _overlay_recorded(machine) else OVERLAY_NEXT,
     }
     name: dict[str, Any] = {"type": "string", "title": "Project name", "pattern": NAME_PATTERN}
     if found.name:
