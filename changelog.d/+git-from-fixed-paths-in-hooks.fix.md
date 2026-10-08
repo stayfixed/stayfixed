@@ -14,8 +14,10 @@ these paths: the wrapper sets `STAYFIXED_HOOK_WRAPPER=1` for it, over any value 
   `~/.local/bin`, is not the one that answers in a hook: the first of the paths above does. Where
   none of them holds one, git gives stayfixed no answer there, as when git is missing.
 - A program git runs by name, such as `git-lfs` for a filter or a `core.fsmonitor` hook, is found
-  in a hook only on that fixed `PATH`. Where it lives elsewhere, the git query that runs it can
-  fail and then gives no answer: after a red test run, for example, the note counting uncommitted
-  files is gone.
+  in a hook only on that fixed `PATH`. Where it lives elsewhere and the filter is marked
+  required, as `git lfs install` marks git-lfs's, the git query that runs it gives no answer:
+  after a red test run, for example, the note counting uncommitted files is gone. A
+  `core.fsmonitor` program, or a filter not marked required, is skipped there, and git answers
+  as it would without it.
 - `stayfixed gate` in CI, a command you run at your terminal and one an agent runs through its
   shell tool keep the `git` on `PATH`, and the programs it runs by name, as before.

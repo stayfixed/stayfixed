@@ -1000,8 +1000,10 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     # `fakebin/git` and `fakebin/git-lfs` and a `PATH` of `fakebin:…`, and the owner's global
     # configuration names a `git-lfs` clean filter for `* filter=lfs`, which the clone's
     # `.gitattributes` sets: `git status` runs it on the modified file. A `clean` command and not
-    # `process`, because a process filter that cannot start is fatal to `status` and git would
-    # then give no answer to count; a clean filter that fails is not, so the count below is held.
+    # `process`: a process filter that starts and exits in its handshake, as the planted `git-lfs`
+    # does, is fatal to `status`, and git then gives no answer to count, while a clean filter that
+    # fails is not, so the count below is held whichever program ran. A filter that cannot start
+    # at all is fatal only when marked required (measured with `git status --porcelain`).
     # Measured before the fix: every query ran the clone's `git`, the absolute `git` it handed
     # over to ran the clone's `git-lfs`, and the wrapper ran the clone's `dirname` and `env`. The
     # same block also presets the variable that tells stayfixed the wrapper launched it, to a
