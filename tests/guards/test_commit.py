@@ -242,6 +242,27 @@ def test_a_real_footer_survives_the_bounded_tail(line: str) -> None:
     assert offending_lines(line) == [Offence(1, "generated-with footer")]
 
 
+# Lines whose words past the vendor end on a blank and then a bracketed tail no word of a product's
+# name, version or link opens: prose, since the footer's markdown target follows the last word with
+# no blank. Python 3.11.0 to 3.11.4 read each as a footer while the words were a possessive repeat,
+# which they end where a failed word stopped, past its blank.
+PARTED_TAILS = [
+    "Generated with Claude Code ](notes)",
+    "Generated with Claude ](notes)!",
+    "Generated with Claude 4 ](notes)",
+]
+
+
+@pytest.mark.parametrize("line", PARTED_TAILS)
+def test_a_footer_tail_a_blank_parts_from_its_words_is_prose(line: str) -> None:
+    # Both rules that read a footer: the line is no offence, and strip gives the message back
+    # whole. Mutation (oracle): `mutations/`'s "a footer's words end past the blank before a word
+    # that is none" -> every case reddens.
+    message = f"docs: note the export\n\n{line}\n"
+    assert offending_lines(message) == []
+    assert strip_message(message) == message
+
+
 def test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words() -> None:
     """The footer-anchoring defect, end to end: `commit strip` deleting prose before the commit
     exists.

@@ -90,7 +90,7 @@ line may carry more of the product's name (a proper noun, so a capital or a digi
 version or a link (lowercase, but carrying a digit or a ``/``, which no English word does), the
 markdown link target the canonical footer ends with, and punctuation — and then it must end. A
 word beginning with a lowercase letter is prose and ends the match. The cost is stated beside
-``_FOOTER_TAIL``: a lowercase-typed footer is missed here, and that is the cheap direction,
+``_FOOTER_WORD``: a lowercase-typed footer is missed here, and that is the cheap direction,
 because the harness appends a ``Co-Authored-By:`` trailer alongside it that the trailer rule
 catches, while nothing puts a deleted sentence back.
 
@@ -209,17 +209,22 @@ _PRODUCTS = re.compile(
 # trailer rule catches, and `commit check` still fails it in CI.
 #
 # Each word is read once, and whole where it can be: a word carrying a digit or a `/` first, then
-# one of the product's name, and the run of words is possessive (`*+`), never given back. Read as a
-# choice between the two to backtrack over, a word such as `A1` that is both doubled the work at
-# each one, and a line that went on into prose after forty took longer than any hook can wait; and
-# each word given back rescanned the rest of the line. The verdicts are the same: a word read whole
-# leaves the end of the line no less to match than any shorter reading of it.
-_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"
+# one of the product's name, and a word read is never given back. Read as a choice between the two
+# to backtrack over, a word such as `A1` that is both doubled the work at each one, and a line that
+# went on into prose after forty took longer than any hook can wait; and each word given back
+# rescanned the rest of the line. The verdicts are the same: a word read whole leaves the end of
+# the line no less to match than any shorter reading of it.
+#
+# So `_is_footer` reads the words one match at a time and then the end, rather than as a repeat of
+# a group: a possessive repeat of the words took the blank before a word that is neither on Python
+# 3.11.0 to 3.11.4, which end a failed pass of it where the pass stopped (CONTRIBUTING.md,
+# "Tests"), and `Generated with Claude Code ](notes)` was a footer there that is prose elsewhere.
+_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)
+_FOOTER_END = re.compile(r"(?:\]\([^)\s]*\))?\]?[^\w]*$")
 # A footer names the vendor as a word, never as a prefix of a package (`openai-python`) or a
 # possessive (`openai's`).
 _FOOTER = re.compile(
-    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])"
-    rf"{_FOOTER_TAIL}",
+    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])",
     re.IGNORECASE,
 )
 # The marker is the whole line, optionally `by <tool>`; a sentence that starts with the words
@@ -285,6 +290,19 @@ def _trailer_offence(line: str) -> bool:
     return _PRODUCTS.fullmatch(name.strip()) is not None
 
 
+def _is_footer(line: str) -> bool:
+    """Whether `line` is a generated-with footer: its words up to the vendor's (`_FOOTER`), then
+    each word past it that is more of the product's name, a version or a link (`_FOOTER_WORD`),
+    and then nothing but the line's end (`_FOOTER_END`)."""
+    footer = _FOOTER.match(line)
+    if footer is None:
+        return False
+    end = footer.end()
+    while (word := _FOOTER_WORD.match(line, end)) is not None:
+        end = word.end()
+    return _FOOTER_END.match(line, end) is not None
+
+
 def _names_a_vendor_domain(address: str) -> bool:
     """Whether an `@` in `address` is followed by a vendor's domain, or by labels and then one.
 
@@ -306,7 +324,7 @@ def _names_a_vendor_domain(address: str) -> bool:
 
 _PATTERNS: tuple[tuple[str, Callable[[str], bool]], ...] = (
     ("attribution trailer naming an AI tool", _trailer_offence),
-    ("generated-with footer", lambda line: _FOOTER.search(line) is not None),
+    ("generated-with footer", _is_footer),
     ("AI-generated marker line", lambda line: _MARKER.search(line) is not None),
 )
 

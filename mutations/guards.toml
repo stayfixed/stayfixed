@@ -586,12 +586,12 @@ reddens = [
 # deleted that sentence from the message before the commit existed, reporting only a count. The
 # worse of the two failure directions by the module's own docstring — the range check still
 # catches a trailer the hook left behind, and nothing puts a deleted sentence back. The
-# replacement is the pre-fix pattern exactly: an empty tail is "the line may go on forever".
+# replacement is the pre-fix reading exactly: the line may go on forever past the vendor's word.
 [[mutation]]
 name = "a generated-with footer may run on into a sentence again"
 file = "src/stayfixed/guards/commit.py"
-before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
-after = '_FOOTER_TAIL = r""'
+before = "    return _FOOTER_END.match(line, end) is not None"
+after = "    return True"
 reddens = [
   "tests/guards/test_commit.py::test_negative_samples_are_untouched",
   "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
@@ -603,8 +603,11 @@ reddens = [
 [[mutation]]
 name = "a footer's words are given back to be read again"
 file = "src/stayfixed/guards/commit.py"
-before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
-after = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+before = '''    while (word := _FOOTER_WORD.match(line, end)) is not None:
+        end = word.end()
+    return _FOOTER_END.match(line, end) is not None'''
+after = '''    words = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*"
+    return re.match(words + _FOOTER_END.pattern, line[end:], re.IGNORECASE) is not None'''
 reddens = [
   "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer words]",
   "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer slashes]",
@@ -616,10 +619,25 @@ reddens = [
 [[mutation]]
 name = "a footer's word is read as a name before a version"
 file = "src/stayfixed/guards/commit.py"
-before = '_FOOTER_TAIL = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
-after = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*+(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)'
+after = '_FOOTER_WORD = re.compile(r"[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*)", re.IGNORECASE)'
 reddens = [
   "tests/guards/test_commit.py::test_a_real_footer_survives_the_bounded_tail",
+]
+
+# A word that is no more of the product's name, no version and no link ends the words before its
+# blank, so the line's end is judged from there. Python 3.11.0 to 3.11.4 judged it past the blank
+# while the words were a possessive repeat, and `Generated with Claude Code ](notes)` was a footer.
+[[mutation]]
+name = "a footer's words end past the blank before a word that is none"
+file = "src/stayfixed/guards/commit.py"
+before = '''        end = word.end()
+    return _FOOTER_END.match(line, end) is not None'''
+after = '''        end = word.end()
+    end = len(line) - len(line[end:].lstrip(" \t"))
+    return _FOOTER_END.match(line, end) is not None'''
+reddens = [
+  "tests/guards/test_commit.py::test_a_footer_tail_a_blank_parts_from_its_words_is_prose",
 ]
 
 # The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL
