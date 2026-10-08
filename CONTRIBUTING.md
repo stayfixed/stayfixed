@@ -45,6 +45,18 @@ fine; a runtime one is not.
 Do not add a `Path.write_text`, a `mkdir(parents=True)` or an `os.replace` on a string path to
 code that puts files into a repository.
 
+**So do questions about what is at a path.** Ask them through `fsops.is_file`, `is_dir`, `exists`
+and `is_symlink`, never through `pathlib`'s methods of those names, because `pathlib`'s answer to a
+fault depends on the interpreter: up to Python 3.13 it raises on a name or a path longer than the
+system takes and on a directory that cannot be searched, and from 3.14 it answers `False` for both.
+A clone reaches either with a committed symlink, so one command was an internal error on one
+interpreter and went quietly on on the other, and a suite run on one proved nothing about the
+other. The `fsops` predicates answer one way on all of them: nothing there for a path that reaches
+no file, a name too long included, and a raise for a fault that leaves the question open.
+`tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape`
+refuses any other call, except the few it pins with a reason (the package's own files, an
+`os.DirEntry`).
+
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
 `trust.wrap`'s delimited region, and only after `stayfixed memory trust`. If you find yourself
