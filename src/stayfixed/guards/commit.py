@@ -148,8 +148,10 @@ _VENDORS = (
 # A `-by:` trailer: any `<Something>-by:` key, because Reviewed-by, Signed-off-by and
 # Tested-by are all used by agent harnesses; the value is what decides, and `_trailer_offence`
 # requires it to end at its address. A value folded onto a continuation line is read to the end
-# of the first line only (see the docstring).
-_TRAILER = re.compile(r"^[ \t]*[\w-]*-by:[ \t]*(?P<value>.+?)[ \t]*$", re.IGNORECASE)
+# of the first line only (see the docstring). Only the key is a pattern: the value is the rest of
+# the line with its blanks trimmed, by `_trailer_value`, because a lazy value ended by blanks
+# rescanned the blanks at every character and took seconds over a line of tens of thousands.
+_TRAILER = re.compile(r"[ \t]*[\w-]*-by:", re.IGNORECASE)
 # The address rule: the bot's own domain. A person employed there is the documented cost.
 # Two domains are deliberately absent, for one reason: `github.com` is what GitHub puts on
 # ordinary human web-UI commits, and `google.com` is the address of every Google employee.
@@ -216,11 +218,21 @@ _MARKER = re.compile(
 _WORD = re.compile(r"\w")
 
 
+def _trailer_value(line: str) -> str | None:
+    """The value of the `-by:` trailer `line` is, or `None` where it is not one: the rest of the
+    line past the key, without the blanks around it. `line` holds no line break, since both
+    readers cut the message with `str.splitlines()`. A value of blanks alone names nobody."""
+    key = _TRAILER.match(line)
+    if key is None:
+        return None
+    return line[key.end() :].strip(" \t") or None
+
+
 def _trailer_offence(line: str) -> bool:
-    match = _TRAILER.match(line)
-    if match is None:
+    value = _trailer_value(line)
+    if value is None:
         return False
-    name, bracket, address = match.group("value").partition("<")
+    name, bracket, address = value.partition("<")
     # A trailer whose value is a BARE ADDRESS -- `Co-Authored-By: noreply@anthropic.com`, angle
     # brackets left off -- has no display name, so `address` was empty and `_VENDOR_DOMAINS`
     # could never fire on it while the bracketed form was caught. The same hole as the

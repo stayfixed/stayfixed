@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -475,6 +476,51 @@ def test_a_message_that_is_only_attribution_strips_to_nothing() -> None:
     instead of `""` reddens this test alone.
     """
     assert strip_message("Generated with Codex\n") == ""
+
+
+# Lines the rules took in time more than linear in their length, each followed by a trailer as
+# the message's last line, so the answer says the long line was judged and read past. A message
+# reaches these rules in the `prepare-commit-msg` hook and in CI's `commit check`, whatever its
+# author wrote. Each line is sized so that the old reading takes over an hour and a linear one a
+# fraction of a second; the last field says whether the line is itself an offence.
+LONG_LINES = {
+    # A trailer's value read by a lazy pattern ended by blanks, which scanned the blanks again
+    # from every character of the value: 116 s over 160,000 blanks.
+    "trailer blanks": ("Co-Authored-By: Claude", " ", 1 << 20, " <noreply@anthropic.com>", True),
+}
+_TRAILER_LABEL = ATTRIBUTION_LABELS[0]
+_LONG_LINE_PROBE = (
+    "import sys\n"
+    "from stayfixed.guards.commit import offending_lines\n"
+    "head, unit, count, tail = sys.argv[1:]\n"
+    "line = head + unit * int(count) + tail\n"
+    "last = 'Co-Authored-By: Claude <noreply@anthropic.com>'\n"
+    "print(offending_lines(f'fix: a thing\\n\\n{line}\\n{last}'))\n"
+)
+# The child's bound: far below what the old reading took of each line above on a laptop, and a
+# hundred times what the linear one takes there, start-up included, so neither load nor a fast
+# machine moves a case across it.
+_LONG_LINE_SECONDS = 30
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_LINES))
+def test_a_long_message_line_is_judged_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a trailer's value is found by a lazy match" ->
+    # `trailer blanks`.
+    head, unit, count, tail, offends = LONG_LINES[shape]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", _LONG_LINE_PROBE, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the commit-message rules ran past {_LONG_LINE_SECONDS} s on one long line")
+    judged = [Offence(3, _TRAILER_LABEL)] if offends else []
+    assert done.stdout == f"{[*judged, Offence(4, _TRAILER_LABEL)]}\n", done.stderr
 
 
 CONFIG = """

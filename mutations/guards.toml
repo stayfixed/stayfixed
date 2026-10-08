@@ -475,6 +475,21 @@ before = '    if not _paragraph_is_all_attribution(lines, start, len(lines)):'
 after = '    if False:'
 reddens = ["tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged"]
 
+# A trailer's value is the rest of its line, trimmed. Found by a lazy pattern ended by blanks, it
+# gives the same verdicts and rescans the blanks from every character of the value: 116 s over
+# 160,000 blanks, a line any commit message can carry into the hook or CI.
+[[mutation]]
+name = "a trailer's value is found by a lazy match"
+file = "src/stayfixed/guards/commit.py"
+before = '''    return line[key.end() :].strip(" \t") or None
+'''
+after = '''    lazy = re.match(r"[ \t]*(.+?)[ \t]*$", line[key.end() :])
+    return lazy.group(1) if lazy else None
+'''
+reddens = [
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[trailer blanks]",
+]
+
 # A trailer's value ends at its address; a value that continues INTO A WORD past it is a sentence.
 # Without that test everything past the `>` is discarded as part of the address, so `Reviewed-by:
 # Copilot <x@y.z> said nothing useful.` reads as a bare `Copilot` trailer -- and under the
