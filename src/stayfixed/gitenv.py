@@ -9,9 +9,10 @@ the session's `GIT_DIR` or `GIT_WORK_TREE` would make every handler in the proce
 different repository than the one the user is sitting in; the memory store's queries decide
 whose notes a session reads, and the same variable would choose another project's.
 
-A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed`, so the hook path
-pays no area import to reach it, and no caller has to import another's area to share the
-constants.
+A leaf module: it imports `stayfixed.errors` and nothing else from `stayfixed` when it loads, so
+the hook path pays no area import to reach it, and no caller has to import another's area to share
+the constants. In a hook, `scrubbed_env` also asks `stayfixed.config.machine`, which imports the
+standard library alone, for the password database's home, inside `hook_home`.
 
 **In a stayfixed the hook wrapper launched, `git` is never found through `PATH`.** A committed
 `.claude/settings.json` `env` block can set `PATH` for every hook — Claude Code applies it, and
@@ -36,13 +37,18 @@ in CI runs in the repository's own job, and in a command an agent runs through i
 `PATH` has already chosen the `stayfixed` binary itself, so a fixed list would buy nothing there
 and would cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer.
 
-**`HOME` is kept, and it chooses git's global configuration**: `$HOME/.gitconfig` and
+**`HOME` chooses git's global configuration**: `$HOME/.gitconfig` and
 `$HOME/.config/git/config`, whose `core.fsmonitor` names a program git runs on `status`,
-`ls-files` and `diff`. It is kept so that the owner's `safe.directory` and excludes answer.
-Claude Code does not apply `HOME` from a project's `env` block (`SECURITY.md`); what can set it
-for a checkout — direnv, mise, a devcontainer — can set `PATH` too, and is the person's own
-environment, the class `PATH` at a terminal is in. Every `GIT_CONFIG_*` variable and
-`XDG_CONFIG_HOME` are dropped, which closes git's other doors to that configuration.
+`ls-files` and `diff`. git is handed one so that the owner's `safe.directory` and excludes
+answer. In a stayfixed the hook wrapper launched it is the password database's home for this
+user (`config.machine.passwd_home`, the home the machine file is read under), and no `HOME` at
+all when the database lists none, never the inherited one: Claude Code does not apply `HOME` from
+a project's `env` block (`SECURITY.md`), but direnv, mise or a devcontainer can set it from a
+file a clone commits, and the wrapper enters the project before Python starts, so `HOME=fakehome`
+named a `.gitconfig` the clone ships, and git ran the program it named on the `status` a hook
+asks. Anywhere else `HOME` is the environment's, as `PATH` is. Every
+`GIT_CONFIG_*` variable and `XDG_CONFIG_HOME` are dropped, which closes git's other doors to that
+configuration.
 
 `git_run` is the one runner for every question this project asks git about a repository it works on
 — the hook path's toplevel, the three-valued answer (`git_answer`) the memory store and
@@ -69,7 +75,8 @@ from pathlib import Path
 from stayfixed.errors import Failure
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all. In a stayfixed the hook
-# wrapper launched, `git_program` replaces `PATH` (the module docstring).
+# wrapper launched, `git_program` replaces `PATH` and `scrubbed_env` replaces `HOME` (the module
+# docstring).
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
 # The variable `hooks/run-hook.sh` exports, with this value, immediately before it runs the
@@ -179,10 +186,30 @@ def in_work_tree(root: Path) -> bool:
 
 def scrubbed_env(path: str | None = None) -> dict[str, str]:
     """The variables `GIT_ENV_KEEP` names, as this process has them, with `PATH` set to `path`
-    when one is given: what `git_run` hands git, and `test attribute` the `tar` it runs."""
-    if path is None:
-        return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
-    return {**scrubbed_env(), "PATH": path}
+    when one is given: what `git_run` hands git, and `test attribute` the `tar` it runs.
+
+    `HOME` but in a stayfixed the hook wrapper launched, where it is `hook_home`'s: no
+    environment chooses it there (the module docstring).
+    """
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)
+        home = hook_home()
+        if home is not None:
+            env["HOME"] = home
+    if path is not None:
+        env["PATH"] = path
+    return env
+
+
+def hook_home() -> str | None:
+    """`HOME` for a program a stayfixed the hook wrapper launched runs: the password database's
+    home for this user (`config.machine.passwd_home`, the home the machine file is read under), or
+    `None` when the database lists none, which hands the program no `HOME` at all."""
+    from stayfixed.config.machine import passwd_home
+
+    home = passwd_home()
+    return None if home is None else str(home)
 
 
 def launched_by_the_hook_wrapper() -> bool:
@@ -275,11 +302,13 @@ def git_run(
     The one place this project runs `git` to ask it something: every argument list is built
     from constants by the caller, every pathspec follows `--` or `--end-of-options`, and no
     configuration value reaches this list without `contained()` having refused the `-`-shaped
-    ones. The `git` and the `PATH` it is handed are `git_program`'s: in a stayfixed the hook
-    wrapper launched, an absolute candidate and a `PATH` of fixed directories, so a `PATH` a
-    repository commits chooses neither git nor a helper git runs by name; anywhere else, the
-    environment's own. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
-    "nothing matched", and that is an answer.
+    ones. The `git` and the `PATH` it is handed are `git_program`'s, and its `HOME` is
+    `scrubbed_env`'s: in a stayfixed the hook wrapper launched, an absolute candidate, a `PATH` of
+    fixed directories and the password database's home, so neither a `PATH` nor a `HOME` an
+    environment sets for a checkout chooses git, a helper git runs by name or a program git's
+    global configuration names; anywhere else, the environment's own. A non-zero exit is
+    returned, not collapsed — `check-ignore` answers 1 for "nothing matched", and that is an
+    answer.
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
     common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot

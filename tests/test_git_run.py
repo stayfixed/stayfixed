@@ -17,7 +17,7 @@ from stayfixed import gitenv
 from stayfixed.gitenv import NO_ANSWER, git_run
 from tests.floor import developer_free_environ
 from tests.gitfixture import at_a_terminal, launched_by_the_hook_wrapper, plant_path, stand_in_git
-from tests.ownerhome import stayfixed_argv
+from tests.ownerhome import as_owner_home, stayfixed_argv
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -117,6 +117,40 @@ def test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_ent
         "/usr/sbin",
         "/sbin",
     ]
+
+
+@pytest.mark.parametrize("listed", [True, False], ids=["listed", "not listed"])
+def test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, listed: bool
+) -> None:
+    # `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs
+    # on `status`, and direnv, mise or a devcontainer can set it to a directory a clone commits:
+    # `HOME=fakehome`, relative to the project the wrapper has entered, ran the clone's own
+    # program. So git is handed the password database's home for this user, the one the machine
+    # file is read under, and no `HOME` at all for a user the database does not list, never the
+    # inherited value. Mutations (declared): the inherited `HOME` is handed on again -> both
+    # cases redden; the database's answer is dropped -> the first reddens.
+    launched_by_the_hook_wrapper(monkeypatch, True)
+    monkeypatch.setenv("HOME", "fakehome")
+    as_owner_home(monkeypatch, tmp_path / "owner" if listed else None)
+    candidate = _stub(tmp_path / "a", 'printf %s "${HOME-no HOME}"')
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(candidate),))
+    assert git_run(tmp_path, "rev-parse") == (0, str(tmp_path / "owner") if listed else "no HOME")
+
+
+def test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Outside a hook `HOME` is the environment's, as `PATH` is: a person's shell, a CI step, a
+    # command an agent runs. Mutation (declared): the database's home is taken everywhere ->
+    # this reddens.
+    launched_by_the_hook_wrapper(monkeypatch, False)
+    monkeypatch.setenv("HOME", "theirs")
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    theirs = tmp_path / "theirs"
+    _stub(theirs, 'printf %s "$HOME"')
+    monkeypatch.setenv("PATH", f"{theirs}{os.pathsep}{os.environ.get('PATH', '')}")
+    assert git_run(tmp_path, "rev-parse") == (0, "theirs")
 
 
 @pytest.mark.parametrize(

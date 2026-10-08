@@ -323,26 +323,25 @@ owner debugging the probe by hand still can. The `git` that resolves the project
 with an allowlisted environment for the same reason: an inherited `GIT_DIR` or `GIT_WORK_TREE`
 otherwise made it answer for a different repository.
 
-**`git` is chosen by the wrapper, not by `PATH`.** It answers the question the containment below
-is measured against, and on the Codex path — where `CLAUDE_PROJECT_DIR` is unset — it is the only
-anchor there is, so a bare `git` would let a clone that ships one have that binary executed on
-every hook invocation, before any guard. The wrapper therefore tries a fixed list of absolute
-paths and takes the first that exists, asking the machine owner's own installs before
-`/usr/bin/git`; nothing under `$HOME` is on the list, because `HOME` is environment-chosen too.
-A machine with `git` at none of them gets `SF_NO_GIT`. A `stayfixed` this wrapper launched
-takes its own `git` from the same list, with a fixed `PATH` for the programs git runs by name;
-anywhere else it resolves `git` through `PATH`, so the machine owner's `git` answers.
+**`git` is chosen by the wrapper, not by `PATH`.** It answers the question the containment below is
+measured against, and on the Codex path, where `CLAUDE_PROJECT_DIR` is unset, it is the only anchor,
+so a bare `git` would let a clone that ships one have that binary run on every hook, before any
+guard. The wrapper therefore tries a fixed list of absolute paths and takes the first that exists,
+asking the machine owner's own installs before `/usr/bin/git`; nothing under `$HOME` is on the list,
+because `HOME` is environment-chosen too. A machine with `git` at none of them gets `SF_NO_GIT`. A
+`stayfixed` this wrapper launched takes its own `git` from the same list, with a fixed `PATH` for
+the programs git runs by name; anywhere else it resolves `git` through `PATH`, so the machine
+owner's `git` answers. Both give a hook's `git` the password database's home as `HOME`.
 
 **`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
 `python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
 `STAYFIXED_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
 another. The entry cannot simply go: it is the fall-through the built-in list exists for, and a
 machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
-paths. So the rule is narrower and matches what a hostile clone can actually stage — **no
-candidate whose resolved path lies inside the project root is used**, whatever spelling reached
-it. Both sides are resolved before they are compared, so a relative entry, a `.` in `PATH`, a
-`..` spelling and a symlink on either side all answer the same question. Where there is no
-project root to compare against, the candidate stands.
+paths. So the rule matches what a hostile clone can stage — **no candidate whose resolved path lies
+inside the project root is used**, whatever spelling reached it. Both sides are resolved before they
+are compared, so a relative entry, a `.` in `PATH`, a `..` spelling and a symlink on either side all
+answer alike. Where there is no project root to compare against, the candidate stands.
 
 **"The project root" here means either anchor.** `CLAUDE_PROJECT_DIR` and `git`'s answer are both
 taken, and a candidate inside *either* is refused. Measured against `CLAUDE_PROJECT_DIR` alone

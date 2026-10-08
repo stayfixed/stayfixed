@@ -517,10 +517,31 @@ reddens = [
 [[mutation]]
 name = "the wrapper's git inherits the session's GIT_DIR again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# The wrapper's git gets the password database's home, as every `git` stayfixed runs in a hook
+# does: `HOME` chooses git's global configuration, and direnv, mise or a devcontainer can point
+# it into the clone.
+[[mutation]]
+name = "the wrapper hands the git that names the root the inherited HOME again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
+]
+
+[[mutation]]
+name = "the wrapper hands the git that lists the checkouts the inherited HOME again"
+file = "hooks/run-hook.sh"
+before = '  /usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  /usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
 ]
 
 # No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
@@ -529,8 +550,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper runs env through PATH again to ask git for the root"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
-after = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
@@ -538,8 +559,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper runs env through PATH again to list the checkouts"
 file = "hooks/run-hook.sh"
-before = '  /usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
-after = '  env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+before = '  /usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
@@ -719,8 +740,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper resolves git through PATH again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
-after = 'git_root=$(/usr/bin/env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(/usr/bin/env -i PATH="${PATH:-}" ${git_home:+"HOME=$git_home"} git rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
 ]

@@ -212,3 +212,7 @@ differently. Each has its own entry in these notes, with the detail:
     commands run at a terminal take the `git` on `PATH`, as 0.2.0 did (Fixed, "When the hook
     wrapper launches it, as it does for every hook, stayfixed now runs `git` only from fixed
     absolute paths").
+  - Where `HOME` is not the home the password database records for your user, a hook's `git`
+    reads its global configuration, your `safe.directory` and excludes among it, under the
+    database's home, where 0.2.0 read it under `HOME` (Fixed, "When the hook wrapper launches it,
+    as it does for every hook, stayfixed now runs `git` only from fixed absolute paths").

@@ -432,6 +432,53 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
     assert result.stdout.strip() == str(here.resolve())
 
 
+@pytest.mark.skipif(not os.access("/usr/bin/id", os.X_OK), reason="no /usr/bin/id on this system")
+def test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one(
+    tmp_path: Path,
+) -> None:
+    # The wrapper asks git for the project root and the checkouts before stayfixed starts, and
+    # hands it a `HOME` so that the owner's `safe.directory` answers. `HOME` chooses git's global
+    # configuration, which names programs git runs, and direnv, mise or a devcontainer can point
+    # it into the clone, so it is the password database's home for this user, the one every
+    # `git` stayfixed runs in a hook gets, and never the inherited value. A stand-in `git`
+    # records the `HOME` each call meets; the database is asked here by name, as the wrapper
+    # asks it, since this process's own lookup by uid follows the suite's `HOME`. Mutation
+    # (declared): the wrapper hands git the inherited `HOME` again -> this reddens.
+    import pwd
+
+    user = subprocess.run(["/usr/bin/id", "-un"], capture_output=True, text=True, check=True)
+    database = pwd.getpwnam(user.stdout.strip()).pw_dir
+    assert os.path.isabs(database), database
+    project = tmp_path / "project"
+    project.mkdir()
+    log = tmp_path / "git-homes"
+    stand_in = tmp_path / "bin" / "git"
+    stand_in.parent.mkdir()
+    stand_in.write_text(
+        f"#!/bin/sh\nprintf '%s|%s\\n' \"$*\" \"${{HOME-no HOME}}\" >> '{log}'\n"
+        f"case $1 in rev-parse) echo '{project}' ;; -C) echo 'worktree {project}' ;; esac\n",
+        encoding="utf-8",
+    )
+    stand_in.chmod(0o755)
+    root = _plugin_root(tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in))
+    env = _env(root, None, None)
+    env["HOME"] = "fakehome"
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), "open", "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(project),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0, result.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        f"rev-parse --show-toplevel|{database}",
+        f"-C {project} worktree list --porcelain|{database}",
+    ]
+
+
 def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
     # `test -f` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
     # CPython's own "Permission denied" and exited 2 with no SF_ token, passed straight through
@@ -998,7 +1045,8 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     # End to end, through the shipped wrapper and launcher: PostToolUse after a red `pytest` over
     # a dirty tree, whose notice counts the dirty files with `git status`. The clone ships
     # `fakebin/git` and `fakebin/git-lfs` and a `PATH` of `fakebin:…`, and the owner's global
-    # configuration names a `git-lfs` clean filter for `* filter=lfs`, which the clone's
+    # configuration, under the home the password database records, which is the one a hook's
+    # `git` reads, names a `git-lfs` clean filter for `* filter=lfs`, which the clone's
     # `.gitattributes` sets: `git status` runs it on the modified file. A `clean` command and not
     # `process`: a process filter that starts and exits in its handshake, as the planted `git-lfs`
     # does, is fatal to `status`, and git then gives no answer to count, while a clean filter that
@@ -1025,8 +1073,9 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
         git(project, *args, home=tmp_path)
     (project / "m.py").write_text("x = 2\n", encoding="utf-8")
     (project / ".gitattributes").write_text("* filter=lfs\n", encoding="utf-8")
-    with (Path.home() / ".gitconfig").open("a", encoding="utf-8") as config:
-        config.write('[filter "lfs"]\n\tclean = git-lfs clean -- %f\n')
+    (owner / ".gitconfig").write_text(
+        '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n', encoding="utf-8"
+    )
     ran = tmp_path / "planted-ran"
     _plant(project, ran)
     plugin = plugin_root_with_owner_home(tmp_path, owner)
@@ -1054,6 +1103,74 @@ def test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git(tmp_pat
     assert result.returncode == 0, result.stderr
     # Non-vacuous: the dirty count is in the notice, so git was asked and answered, by a `git`
     # the clone did not choose.
+    assert "uncommitted" in result.stdout, (result.stdout, result.stderr)
+
+
+@pytest.mark.skipif(not ABSOLUTE_GIT, reason="no git at any of the absolute candidate paths")
+@pytest.mark.parametrize("spelling", ["relative", "absolute"])
+def test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs(
+    tmp_path: Path, spelling: str
+) -> None:
+    # Claude Code applies no `HOME` from a project's `env` block, but direnv, mise or a
+    # devcontainer can set it from a file the clone commits, and the wrapper enters the project
+    # before stayfixed starts, so `HOME=fakehome` names a directory the clone ships. Its
+    # `.gitconfig` sets `core.fsmonitor` to a program beside it, and git runs that program on
+    # the `git status` the red-run notice counts with. The same setting in the owner's own
+    # global configuration, under the home the password database records, is the positive
+    # control: it runs, so the hook's `git` did read a home, and the clone's did not run because
+    # that home was the owner's. Measured before the fix: the clone's program ran twice per hook,
+    # with either spelling. Mutation (declared): `git_run` hands git the inherited `HOME` again
+    # -> this reddens.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    owners_ran = tmp_path / "owners-monitor-ran"
+    owners_monitor = owner / "monitor.sh"
+    owners_monitor.write_text(f"#!/bin/sh\necho \"$*\" >> '{owners_ran}'\nexit 1\n", "utf-8")
+    owners_monitor.chmod(0o755)
+    (owner / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {owners_monitor}\n", "utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+    )
+    clones_ran = tmp_path / "clones-monitor-ran"
+    (project / "fakehome").mkdir()
+    (project / "fakehome" / ".gitconfig").write_text(
+        "[core]\n\tfsmonitor = fakehome/monitor.sh\n", encoding="utf-8"
+    )
+    clones_monitor = project / "fakehome" / "monitor.sh"
+    clones_monitor.write_text(f"#!/bin/sh\necho \"$*\" >> '{clones_ran}'\nexit 1\n", "utf-8")
+    clones_monitor.chmod(0o755)
+    (project / "m.py").write_text("x = 1\n", encoding="utf-8")
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "chore: seed"]):
+        git(project, *args, home=tmp_path)
+    (project / "m.py").write_text("x = 2\n", encoding="utf-8")
+    plugin = plugin_root_with_owner_home(tmp_path, owner)
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "session_id": "s",
+        "cwd": str(project),
+        "tool_name": "Bash",
+        "tool_input": {"command": "pytest -q"},
+        "tool_response": {"exit_code": 1},
+    }
+    env = _env(plugin, None, None)
+    env.update(
+        CLAUDE_PROJECT_DIR=str(project),
+        HOME="fakehome" if spelling == "relative" else str(project / "fakehome"),
+    )
+    result = subprocess.run(
+        [str(plugin / "hooks" / WRAPPER.name), "open", "hook", "PostToolUse"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=project,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not clones_ran.exists(), clones_ran.read_text(encoding="utf-8")
+    assert owners_ran.exists(), (result.stdout, result.stderr)
     assert "uncommitted" in result.stdout, (result.stdout, result.stderr)
 
 

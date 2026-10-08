@@ -159,6 +159,45 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
+# `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs on
+# `status`, and direnv, mise or a devcontainer can point it into the clone: measured, a clone's
+# `fakehome/.gitconfig` ran the clone's own program on a hook's `git status`. So in a hook git is
+# handed the password database's home, or none, and outside one the environment's.
+[[mutation]]
+name = "the git runner hands git the inherited HOME in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if False:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[not listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[relative]",
+]
+
+[[mutation]]
+name = "a hook's git is handed no HOME where the password database lists one"
+file = "src/stayfixed/gitenv.py"
+before = """        if home is not None:
+            env["HOME"] = home"""
+after = """        if False:
+            env["HOME"] = home"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[absolute]",
+]
+
+[[mutation]]
+name = "git is handed the password database's home outside a hook too"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if True:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home",
+]
+
 # The trusted `PATH` names each candidate's directory once.
 [[mutation]]
 name = "the trusted PATH repeats a directory"
@@ -2417,10 +2456,10 @@ reddens = [
 [[mutation]]
 name = "gitenv reads the profiles inside a function"
 file = "src/stayfixed/gitenv.py"
-before = "    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+before = "    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
 after = """    from stayfixed.profiles.model import Check  # noqa: F401
 
-    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
 reddens = [
   "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]

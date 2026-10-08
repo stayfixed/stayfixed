@@ -140,9 +140,15 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 # takes the answer the code already gives for a root it cannot trust: a token, `open` degrading
 # and `closed` refusing.
 #
-# `/usr/bin/env -i` with a *fixed* PATH and HOME — `gitenv.GIT_ENV_KEEP` minus the locale names
-# this query has no use for, and minus the inherited `PATH`, which no longer chooses the binary and
-# has no further business here. `gitenv._git_toplevel` scrubs the identical call one layer down
+# `/usr/bin/env -i` with a *fixed* PATH, and the password database's home as HOME —
+# `gitenv.GIT_ENV_KEEP` minus the locale names this query has no use for, and minus the inherited
+# `PATH`, which no longer chooses the binary and has no further business here. `HOME` chooses git's
+# global configuration, which names programs git runs, and direnv, mise or a devcontainer can set
+# it to a directory the clone commits, so it is the home `stayfixed.gitenv.hook_home` hands every
+# `git` stayfixed runs below: the database's entry for this user, asked through the shell's own
+# `~name` for the name `/usr/bin/id` gives. A name that is not a plain one, a user the database
+# lists no absolute home for, or a system without `/usr/bin/id` gets no `HOME`, never the
+# inherited one. `gitenv._git_toplevel` scrubs the identical call one layer down
 # and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
 # a different repository, and every `--root`-defaulting entry then reads that repository's
 # `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
@@ -167,7 +173,14 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
   fi
 done
 test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
-git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
+git_home=
+git_user=$(/usr/bin/id -un 2>/dev/null) || git_user=
+case $git_user in
+  '' | -* | *[!A-Za-z0-9._-]*) ;;
+  *) eval "git_home=~$git_user" 2>/dev/null || git_home= ;;
+esac
+case $git_home in /*) ;; *) git_home= ;; esac
+git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
 # answer; what it no longer does is decide it alone for the containment.
@@ -215,7 +228,7 @@ test -z "$git_root" || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pw
 # A function and not a bare substitution: a `case` inside `$( )` is a parse error on the
 # `/bin/sh` macOS ships (bash 3.2), which this file has to run under.
 list_checkouts() {
-  /usr/bin/env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
+  /usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
     while IFS= read -r line; do
       case "$line" in
         "worktree "*)

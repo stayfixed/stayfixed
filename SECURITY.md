@@ -61,16 +61,19 @@ In scope, and treated as security rather than as an ordinary bug:
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
 - **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
-  resolves a relative entry against the project (measured on Claude Code 2.1.293). So the hook
-  path looks up no program through the inherited `PATH` but the wrapper's last-resort `python3`,
-  which it refuses inside the project or any checkout of it (`docs/cli.md`): in a process the
-  hook wrapper launched, stayfixed runs `git` from fixed absolute paths and hands it a fixed
-  `PATH` for the programs git runs by name, such as `git-lfs`, and the wrapper names every other
-  program by absolute path. Where `/bin/sh` is bash, which imports a function from any
-  `BASH_FUNC_<name>%%` variable, the wrapper first removes any function named for a command it
-  runs, so none stands in for one of its builtins. A committed `PATH` or exported function that makes
-  the wrapper or stayfixed run a program the repository chose is in scope. What the shell acts
-  on before the wrapper's first line is not; see below.
+  resolves a relative entry against the project (measured on Claude Code 2.1.293). So the hook path
+  looks up no program through the inherited `PATH` but the wrapper's last-resort `python3`, which it
+  refuses inside the project or any checkout of it (`docs/cli.md`): in a process the hook wrapper
+  launched, stayfixed runs `git` from fixed absolute paths and hands it a fixed `PATH` for the
+  programs git runs by name, such as `git-lfs`, and the wrapper names every other program by
+  absolute path. Every `git` on the hook path, the wrapper's own included, is handed the password
+  database's home for this user as `HOME`, or no `HOME` where the database lists none, so a `HOME`
+  that direnv, mise or a devcontainer points into the clone chooses no global git configuration,
+  whose `core.fsmonitor` names a program git runs on `status`. Where `/bin/sh` is bash, which
+  imports a function from any `BASH_FUNC_<name>%%` variable, the wrapper first removes any function
+  named for a command it runs, so none stands in for one of its builtins. A committed `PATH`, an
+  exported function or a `HOME` that makes the wrapper or stayfixed run a program the repository
+  chose is in scope. What the shell acts on before the wrapper's first line is not; see below.
 
 Out of scope:
 
@@ -79,16 +82,15 @@ Out of scope:
   `stayfixed gate` step in CI, stayfixed runs the `git` on your `PATH` by design. In the commands
   an agent runs through its own shell tool, `PATH` is the harness's to choose, and that includes
   which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can decide.
-- `HOME` choosing git's global configuration: `$HOME/.gitconfig` and `$HOME/.config/git/config`,
-  whose `core.fsmonitor` names a program git runs on `status`, `ls-files` and `diff`. stayfixed
-  hands its `git` your `HOME` on purpose, so that your `safe.directory` and excludes answer.
-  Claude Code never applies `HOME`, or any `XDG_*` variable, from a project's or a local `env`
-  block: its settings reference says so under "Variables Claude Code ignores in `env`", and
-  Claude Code 2.1.293 was measured keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in
-  project and plugin hooks. `XDG_CONFIG_HOME`, git's other door to that configuration, is
-  dropped before any `git` runs all the same. A direnv, mise or devcontainer environment can set
-  `HOME` for a checkout; that is the person's own environment, the same class as `PATH` at a
-  terminal.
+- `HOME` choosing git's global configuration outside a hook: `$HOME/.gitconfig` and
+  `$HOME/.config/git/config`. At a terminal and in a `stayfixed gate` step in CI, stayfixed
+  hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that your
+  `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that sets
+  it there is the person's own, the same class as `PATH` at a terminal. Claude Code never applies
+  `HOME`, or any `XDG_*` variable, from a project's or a local `env` block: its settings reference
+  says so under "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured
+  keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
+  `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
