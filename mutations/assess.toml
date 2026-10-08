@@ -187,6 +187,15 @@ reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-empty-team]",
 ]
 
+# An owner's domain labels are possessive, so `re` keeps no record per label: greedy, an owner of a
+# million labels took 124 MiB more to read.
+[[mutation]]
+name = "an owner's domain labels are given back"
+file = "src/stayfixed/assess/probes.py"
+before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]++)++"'
+after = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"'
+reddens = ["tests/assess/test_probes.py::test_a_long_owner_is_read_in_memory_linear_in_its_length"]
+
 # The base a change is judged against. A base with no `stayfixed.toml` at the project's path is the
 # bootstrap, where the change decides its own configuration, so each way of reaching it by
 # accident — a tag answering for the base, git failing and read as "no copy", a root the base

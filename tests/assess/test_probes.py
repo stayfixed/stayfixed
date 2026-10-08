@@ -665,6 +665,44 @@ def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
     assert (done.returncode, done.stdout.split()) == (0, ["False"] * 5), done.stderr
 
 
+# An owner whose address has a million labels, which the owner's shape read with 124 MiB more of
+# match state when `re` kept a record for each label it might give back, and with none when it
+# keeps none. The most the child may grow its peak resident size by: a few copies of the
+# two-mebibyte line, a quarter of that record.
+LONG_OWNER_LABELS = 1 << 20
+LONG_OWNER_BYTES = 32 << 20
+
+
+def test_a_long_owner_is_read_in_memory_linear_in_its_length() -> None:
+    # The child measures its own peak resident size before and after (`ru_maxrss`, bytes on macOS
+    # and KiB on Linux), under the deadline. The line owns what it names only if the owner was
+    # read to its end. Mutation (oracle): `mutations/`'s "an owner's domain labels are given back"
+    # -> this reddens.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.assess.probes import _rules\n"
+        "text = '/.github/ x@a' + '.a' * int(sys.argv[1]) + '\\n'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "owned = [owned for _, owned in _rules(text)]\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(owned == [True], grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(LONG_OWNER_LABELS)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEADLINE_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one long owner ran past {DEADLINE_SECONDS} s")
+    answer, grown = done.stdout.split()
+    assert answer == "True", done.stderr
+    assert int(grown) < LONG_OWNER_BYTES, f"the reader grew its peak by {int(grown) >> 20} MiB"
+
+
 def test_a_run_of_stars_inside_a_component_is_read_once_as_one_star() -> None:
     # A run of `*` inside a component matches what one `*` does, and every workflow asked walks
     # every component, so the run is collapsed when the file is read, never at each match: a

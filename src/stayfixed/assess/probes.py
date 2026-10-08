@@ -223,10 +223,13 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
 # accept. Anything outside these shapes is read as a line GitHub skips, even where GitHub might
 # accept it, and that errs on the side that warns: a skipped line can only leave an earlier
 # line deciding, and a real owner on it would have owned the file anyway. No class overlaps the
-# character after it, so a word of any length is matched in linear time.
+# character after it, so a word of any length is matched in linear time; and the domain's labels
+# are possessive, so it is matched in linear memory too: `re` keeps a record for every pass of a
+# repeated group it might give back, 62 MiB over a word of half a million labels, and a label
+# given back could only end the word before a dot, which `fullmatch` refuses anyway.
 _OWNER = re.compile(
     r"@[A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?"
-    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
+    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]++)++"
 )
 
 # How a code-owners line is read: words separated by spaces and tabs; a comment, from a `#` at
