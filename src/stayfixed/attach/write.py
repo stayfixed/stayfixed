@@ -619,8 +619,21 @@ def _absent_directories(root: Path) -> tuple[str, ...]:
     `is_dir()` and not `exists()`: a path of this name that is a file, or a symlink to one, is
     not a directory this run created and `rmdir` would refuse it anyway — recording it would
     only put a name in the ledger that nothing can act on.
+
+    A path the question cannot reach, below a committed `.codex` that links into a directory
+    nobody may search, is not one either: every write of this run goes through the `O_NOFOLLOW`
+    walk, which never reaches it, so this run cannot create it. Raised, the fault ended `attach`
+    and `--check` in an internal error before the containment refusal that names the link.
     """
-    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))
+    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))
+
+
+def _reached_directory(path: Path) -> bool:
+    """`fsops.is_dir`, and `True` for a path no write of this run can reach; see above."""
+    try:
+        return fsops.is_dir(path)
+    except OSError:
+        return True
 
 
 def _memory_parents(config: Config) -> tuple[str, ...]:

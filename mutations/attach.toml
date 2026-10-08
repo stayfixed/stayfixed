@@ -404,7 +404,7 @@ reddens = [
 [[mutation]]
 name = "detach leaves behind the directories the attach created"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))'
+before = '    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))'
 after = '    return ()'
 reddens = [
   "tests/attach/test_detach.py::test_detach_removes_the_directories_the_attach_created",
@@ -416,7 +416,7 @@ reddens = [
 [[mutation]]
 name = "attach records a directory that was already there"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not fsops.is_dir(root / name))'
+before = '    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))'
 after = '    return CREATED_DIRS'
 reddens = [
   "tests/attach/test_detach.py::test_detach_leaves_a_directory_that_was_there_before_the_attach",
@@ -2623,4 +2623,21 @@ before = "                raise Refusal(GROUP_UNASKED_IN_TREE.format(fault=exc.f
 after = "                raise Refusal(GROUP_LEAVES_TREE) from exc"
 reddens = [
   "tests/attach/test_detach.py::test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn",
+]
+
+# A directory `attach` would create, asked below a committed link into a directory nobody may
+# search, is one no write of the run reaches, so it is answered as there and never raised: the
+# containment refusal that names the link comes after it, and an internal error came first.
+[[mutation]]
+name = "attach asks whether a directory it would create is there through a link it cannot follow"
+file = "src/stayfixed/attach/write.py"
+before = """
+    try:
+        return fsops.is_dir(path)
+    except OSError:
+        return True"""
+after = """
+    return fsops.is_dir(path)"""
+reddens = [
+  "tests/attach/test_write.py::test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_check_and_run",
 ]

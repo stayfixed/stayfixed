@@ -629,6 +629,39 @@ def test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refuse
     assert_snapshot_unchanged(root, before)
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_check_and_run(
+    tmp_path: Path,
+) -> None:
+    # A clone commits `.codex` as a link under a directory its user cannot search. Whether
+    # `.codex/rules` was there to be recorded as made by this run was asked through the link,
+    # which met the fault: `--check` and the run ended in an internal error that printed the path,
+    # above the containment refusal that names the link. Mutation (oracle): `mutations/`'s "attach
+    # asks whether a directory it would create is there through a link it cannot follow".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    shutil.rmtree(root / ".codex", ignore_errors=True)
+    (root / ".codex").symlink_to(locked / "x")
+    before = snapshot(root)
+    refused = "'.codex/rules/common.rules' passes through a symlink at '.codex'"
+    with unsearchable(locked):
+        with pytest.raises(Refusal) as checked:
+            check(root, store=store, machine=machine, home=tmp_path / "home")
+        with pytest.raises(Refusal) as run:
+            attach(
+                root,
+                store=store,
+                machine=machine,
+                confirmed=True,
+                trust_remote=True,
+                runner=Recorder(),
+                home=tmp_path / "home",
+            )
+    assert str(checked.value) == str(run.value) == refused
+    assert_snapshot_unchanged(root, before)
+
+
 def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
     tmp_path: Path,
 ) -> None:
