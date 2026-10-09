@@ -405,22 +405,24 @@ def read_bounded(
     return content[:limit], len(content) > limit
 
 
-def read_regular_bytes(path: Path) -> bytes:
+def read_regular_bytes(path: Path, *, limit: int | None = None) -> bytes:
     """The bytes of a regular file, reached as `read_bounded` reaches it without a root, and
-    `TooLarge` for one longer than `REGULAR_READ_LIMIT`."""
-    content, over = read_bounded(path, REGULAR_READ_LIMIT)
+    `TooLarge` for one longer than `limit`, or than `REGULAR_READ_LIMIT` where a reader holds its
+    files to no cap of its own."""
+    content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)
     if over:
         raise TooLarge(errno.EFBIG, "larger than this reader reads", str(path))
     return content
 
 
-def read_regular_text(path: Path, *, newline: str | None = None) -> str:
-    """`read_regular_bytes(path)` decoded as UTF-8, a `UnicodeDecodeError` where it is not.
+def read_regular_text(path: Path, *, newline: str | None = None, limit: int | None = None) -> str:
+    """`read_regular_bytes(path, limit=limit)` decoded as UTF-8, a `UnicodeDecodeError` where it
+    is not.
 
     `newline` as `open` takes it, for the two spellings readers use: `None` translates every CRLF
     and lone CR to LF, as `Path.read_text` does, and `""` keeps the file's own line endings.
     """
-    text = read_regular_bytes(path).decode("utf-8")
+    text = read_regular_bytes(path, limit=limit).decode("utf-8")
     if newline is None:
         return text.replace("\r\n", "\n").replace("\r", "\n")
     return text

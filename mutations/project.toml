@@ -1861,19 +1861,15 @@ reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machiner
 [[mutation]]
 name = "a profile reads a configuration file past its cap"
 file = "src/stayfixed/profiles/evaluate.py"
-before = """        if over:
-            return None
-        return content.decode"""
-after = """        if False:
-            return None
-        return content.decode"""
+before = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP)"
+after = "        return read_regular_text(contained(root, relative))"
 reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
 
 [[mutation]]
 name = "a profile refuses a configuration file at its cap"
 file = "src/stayfixed/profiles/evaluate.py"
-before = "        content, over = read_bounded(contained(root, relative), _TEXT_CAP)"
-after = "        content, over = read_bounded(contained(root, relative), _TEXT_CAP - 1)"
+before = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP)"
+after = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP - 1)"
 reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
 
 # The source is not held to the rule a `.pyc` is (`mutations/`'s "a symlinked .pyc is followed",

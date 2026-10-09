@@ -3214,6 +3214,15 @@ reddens = [
   "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
 ]
 
+# A reader may hold its files to a cap of its own below the read cap, a profile's configuration
+# files among them; the reader honours it rather than reading to the read cap.
+[[mutation]]
+name = "the regular-file reader ignores the cap a reader hands it"
+file = "src/stayfixed/fsops.py"
+before = "    content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)"
+after = "    content, over = read_bounded(path, REGULAR_READ_LIMIT)"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
+
 # A reader that refuses a file it could not read says why in `fsops.said`'s words, through
 # `fsops.reading`: never by the error's class name, which names stayfixed's internals and no
 # condition, and never in the error's own text, which carries the path the file was opened by.
