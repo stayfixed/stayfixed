@@ -42,9 +42,10 @@ overlay root is a root, so there is no carve-out to take anywhere here.
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,8 +54,8 @@ from stayfixed import fsops, tomlout
 from stayfixed.attach import exclude
 from stayfixed.attach.binding import (
     Binding,
+    not_overlay,
     read_binding,
-    refuse_unless_overlay,
     refuse_unless_share_can_exist,
     unlinked_groups,
 )
@@ -1203,6 +1204,103 @@ def attach(
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
 
+# The flags that take the run past a stop: `--yes` past a widening, `--trust-remote` past a
+# mismatch.
+CONFIRMED = "--yes"
+TRUST_REMOTE = "--trust-remote"
+
+
+@dataclass(frozen=True)
+class Stop:
+    """A gate past the binding that stops `attach`: the refusal it makes, and the flag that takes
+    the run past it, where one does."""
+
+    refusal: str
+    flag: str | None = None
+
+
+class Gates:
+    """The gates `attach` meets past the binding, in the order it meets them.
+
+    Iterated, it yields each stop and makes the reads that lie between them, so `_plan` and
+    `attach --check` take one order and cannot come to disagree about it. `_plan` refuses at the
+    first stop no flag it was given answers, and reads nothing past it. `--check` takes every stop
+    and reports it: it reads past a flag's stop as the run does with the flag, and past the mode's
+    and a checkout's with no `origin` only for the rest of its report, so a read the run makes only
+    once every stop before it is passed is made only where none was the mode's. `diff` and `real`
+    are what the reads found, for the plan and the report.
+    """
+
+    def __init__(self, root: Path, config: Config, binding: Binding) -> None:
+        self.root = root
+        self.config = config
+        self.binding = binding
+        self.real = 0
+
+    @functools.cached_property
+    def diff(self) -> PermissionDiff:
+        """What the overlay grants and the local settings lack, read past the mode and the share."""
+        return diff_permissions(self.root, self.binding)
+
+    def __iter__(self) -> Iterator[Stop]:
+        binding, config = self.binding, self.config
+        # Beside the binding's own refusals and above every write: nothing below applies to a
+        # repository whose notes do not live in the overlay, and every write below would be one
+        # `attach_main` then refuses after the fact. After `read_binding`, so a `--store` outside
+        # the recorded overlay is still refused for that reason first.
+        refused = not_overlay(config)
+        if refused is not None:
+            yield Stop(refused)
+        # Beside the binding too: a `project.name` no directory under the overlay can carry leaves
+        # the binding record and the group directories nowhere to go, and the overlay's sources
+        # read under it answer "none" rather than refusing, so nothing below would ask before
+        # writing.
+        refuse_unless_share_can_exist(binding, config)
+        if self.diff.widens:
+            yield Stop(
+                f"attaching would add {len(self.diff.added_allow)} allow rule(s) and "
+                f"{len(self.diff.added_hooks)} hook entr(ies) to {LOCAL_SETTINGS}, which grants "
+                f"capability. Read the diff with `stayfixed attach --check` and pass --yes to "
+                f"confirm it",
+                CONFIRMED,
+            )
+        # The fifth refusal, a checkout with no `origin`, is its own state
+        # (`memory.store.binding_state` asks it first) and is refused with the sentence every
+        # other surface says. Read as a mismatch, its answer would be `--trust-remote`, which then
+        # refuses for the missing `origin`. Kept above every write rather than in
+        # `_record_binding`, which runs after the ignore region, the Codex rules, the settings
+        # merge and the ledger: refused there, it would leave four artifacts behind and
+        # `doctor._attached` would report the repository attached. Nothing past it is read, not
+        # for `--check` either: the count below refuses a group outside `paths.memory`, which
+        # would end `--check` in that refusal where the run ends with the missing `origin`.
+        if binding.state == NO_ORIGIN:
+            yield Stop(NO_REMOTE)
+            return
+        if binding.state == MISMATCH:
+            # The name is not quoted back, for the reason `attach.check` states at length:
+            # `project.name` is repository-authored and looser than the marker-id grammar
+            # `doctor` already refuses to print, and a refusal built out of one is still one.
+            yield Stop(
+                f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound "
+                f"to it",
+                TRUST_REMOTE,
+            )
+        if refused is None:
+            refuse_unless_share_holds(binding, config)
+        # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
+        # so a group that is still a real directory under `paths.memory` has its notes in the
+        # repository and its share of the overlay empty, and linking over it would leave every
+        # session reading the repository's copy with the binding record, the settings merge and
+        # the ledger already written. Above every write for that reason, and beside the
+        # `memory.groups` containment because it reads the same repository-authored list -- the
+        # anchor it is contained against is `root`, the checkout this command was pointed at,
+        # which is why a repository cannot move the directory the count is taken under. A
+        # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
+        self.real = len(unlinked_groups(self.root, config))
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=self.real))
+
+
 def _plan(
     root: Path,
     *,
@@ -1215,10 +1313,11 @@ def _plan(
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on.
 
-    The gates a flag answers -- `memory.mode`, the widening `--yes` confirms, a checkout with no
-    `origin`, the mismatch `--trust-remote` accepts -- and the groups that never moved are asked
-    here. What lies between and after them is `refuse_unless_share_holds` and `plan_writes`,
-    which `attach --check` asks too, so the preview stops on every refusal the run makes past
+    The gates -- `memory.mode`, the widening `--yes` confirms, a checkout with no `origin`, the
+    mismatch `--trust-remote` accepts and the groups that never moved -- are `Gates`', which
+    `attach --check` iterates too, and the run refuses at the first one its flags do not answer.
+    What lies between and after them is `refuse_unless_share_holds` and `plan_writes`, which
+    `--check` asks where the run would, so the preview stops on every refusal the run makes past
     those gates, with the same code and line, by calling what the run calls."""
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
     # second of. `attach.check` took this ruling for `--check` -- "two loads could
@@ -1231,60 +1330,21 @@ def _plan(
     # same document the binding was read under.
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
-    # Beside the binding's own refusals and above every write: nothing below applies to a
-    # repository whose notes do not live in the overlay, and every write below would be one
-    # `attach_main` then refuses after the fact. After `read_binding`, so a `--store` outside
-    # the recorded overlay is still refused for that reason first.
-    refuse_unless_overlay(config)
-    # Beside the binding too: a `project.name` no directory under the overlay can carry leaves the
-    # binding record and the group directories nowhere to go, and the overlay's sources read under
-    # it answer "none" rather than refusing, so nothing below would ask before writing.
-    refuse_unless_share_can_exist(binding, config)
-    diff = diff_permissions(root, binding)
-    if diff.widens and not confirmed:
-        raise Refusal(
-            f"attaching would add {len(diff.added_allow)} allow rule(s) and "
-            f"{len(diff.added_hooks)} hook entr(ies) to {LOCAL_SETTINGS}, which grants "
-            f"capability. Read the diff with `stayfixed attach --check` and pass --yes to "
-            f"confirm it"
-        )
-    # The fifth refusal, a checkout with no `origin`, is its own state (`memory.store.binding_state`
-    # asks it first) and is refused with the sentence every other surface says. Read as a
-    # mismatch, its answer would be `--trust-remote`, which then refuses for the missing `origin`.
-    # Kept above every write rather than in `_record_binding`, which runs after the ignore region,
-    # the Codex rules, the settings merge and the ledger: refused there, it would leave four
-    # artifacts behind and `doctor._attached` would report the repository attached.
-    if binding.state == NO_ORIGIN:
-        raise Refusal(NO_REMOTE)
-    if binding.state == MISMATCH and not trust_remote:
-        # The name is not quoted back, for the reason `attach.check` states at length:
-        # `project.name` is repository-authored and looser than the marker-id grammar `doctor`
-        # already refuses to print, and a refusal built out of one is still one.
-        raise Refusal(
-            f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound to it"
-        )
-    refuse_unless_share_holds(binding, config)
-    # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
-    # so a group that is still a real directory under `paths.memory` has its notes in the
-    # repository and its share of the overlay empty, and linking over it would leave every
-    # session reading the repository's copy with the binding record, the settings merge and
-    # the ledger already written. Above every write for that reason, and beside the
-    # `memory.groups` containment because it reads the same repository-authored list -- the
-    # anchor it is contained against is `root`, the checkout this command was pointed at,
-    # which is why a repository cannot move the directory the count is taken under. A
-    # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
-    real = unlinked_groups(root, config)
-    if real:
-        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))
-    return plan_writes(root, config, binding, diff, machine=machine, home=home)
+    gates = Gates(root, config, binding)
+    for stop in gates:
+        if not (
+            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)
+        ):
+            raise Refusal(stop.refusal)
+    return plan_writes(root, config, binding, gates.diff, machine=machine, home=home)
 
 
 def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
     """Refuse a binding this project's share of the overlay cannot hold: an `origin` URL its
     record cannot be written with, and a `memory.groups` entry that leaves the share.
 
-    Asked by `attach` past its gates and above every write, and by `attach --check` where the run
-    would reach it, so the two end alike on either.
+    Asked between the run's gates (`Gates`), above every write, by `attach` and by
+    `attach --check` alike where the run would reach it, so the two end alike on either.
     """
     if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)

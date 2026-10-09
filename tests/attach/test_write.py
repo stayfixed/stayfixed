@@ -2193,10 +2193,9 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
     # previews would. The name is never quoted back: it is the repository's.
     #
     # Mutations (oracle): `mutations/`'s "attach writes for a project name the overlay has no
-    # directory for" and "attach --check previews a project name the overlay has no directory
-    # for"; "a name longer than the filesystem allows is an overlay that cannot be asked" and "a
-    # binding record the project's name rules out cannot be read" -> the long name fails rather
-    # than refusing.
+    # directory for", the run's gate `--check` takes too; "a name longer than the filesystem
+    # allows is an overlay that cannot be asked" and "a binding record the project's name rules
+    # out cannot be read" -> the long name fails rather than refusing.
     name = UNSHARED[case]
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     overlay = store.parents[2]

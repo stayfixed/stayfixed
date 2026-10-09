@@ -13,15 +13,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stayfixed.attach.binding import (
-    Binding,
-    not_overlay,
-    read_binding,
-    refuse_unless_share_can_exist,
-    unlinked_groups,
-)
-from stayfixed.attach.permissions import codex_rules, diff_permissions
-from stayfixed.attach.write import plan_writes, refuse_unless_share_holds
+from stayfixed.attach.binding import Binding, not_overlay, read_binding
+from stayfixed.attach.permissions import codex_rules
+from stayfixed.attach.write import Gates, plan_writes
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal, StayfixedError
@@ -82,25 +76,19 @@ def check(root: Path, *, store: Path, machine: Path | None, home: Path | None) -
 def _report(
     root: Path, config: Config, binding: Binding, *, machine: Path | None, home: Path | None
 ) -> Result:
-    """`check` past the binding: the diff, what the run asks before its first write where it would
-    reach it, the groups and the rule files, and the report made of them."""
-    refuse_unless_share_can_exist(binding, config)
-    diff = diff_permissions(root, binding)
-    # What the run asks past its gates and before its first write, asked by the run's own
-    # functions in the run's order, so a refusal or failure there ends this command with the run's
-    # code and line: each of them was once left out here, and `--check` answered clean over a
-    # checkout the run then stopped on. Only where the run reaches them: it refuses a repository
-    # outside overlay mode and a checkout with no `origin` before any of them, and a group that
-    # never moved before `plan_writes`, so `--check` reports those as it always has and reads no
-    # further. A mismatch is not one: `--trust-remote` takes the run past it.
-    reads = not_overlay(config) is None and binding.state != NO_ORIGIN
-    if reads:
-        refuse_unless_share_holds(binding, config)
-    # Nor are the groups counted at a checkout with no `origin`, which the run refuses before it
-    # counts them: the count refuses a group outside `paths.memory`, and asked here it ended
-    # `--check` with that refusal where the run ends with the missing `origin`.
-    real = 0 if binding.state == NO_ORIGIN else len(unlinked_groups(root, config))
-    if reads and not real:
+    """`check` past the binding: the run's gates, what the run asks before its first write where it
+    would reach it, the groups and the rule files, and the report made of them."""
+    # The run's gates, taken in the run's order by the run's own `Gates`, which makes what the run
+    # asks between them where the run would, so a refusal or failure there ends this command with
+    # the run's code and line: each of them was once left out here, and `--check` answered clean
+    # over a checkout the run then stopped on. Every stop is taken and reported, the ones a flag
+    # answers as the run with that flag takes them: a mismatch is a finding, `--trust-remote`
+    # takes the run past it, and the diff is the report. The writes are planned only where no
+    # stop is one a flag cannot answer, as the run plans them only past every stop.
+    gates = Gates(root, config, binding)
+    stops = list(gates)
+    diff, real = gates.diff, gates.real
+    if all(stop.flag is not None for stop in stops):
         plan_writes(root, config, binding, diff, machine=machine, home=home)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
     # diff's three fields say what `attach` would add and what is already there, `widens` is

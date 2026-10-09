@@ -843,8 +843,8 @@ def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_l
     # `--check` never did, so the preview answered clean, or with another refusal's words, over a
     # checkout the run then refused. `--check` asks them through the run's own planning now, so
     # each ends both commands with one code and one line. Mutations (oracle): `mutations/`'s
-    # "check does not ask what the share holds" for the first two, and "check skips the reads
-    # the run makes before its first write" for the rest.
+    # "the gates do not ask what the share holds" for the first, and "check skips the reads the
+    # run makes before its first write" for the rest.
     root, store, machine = _granting(tmp_path)
     PAST_THE_GATES[case](root, tmp_path)
     before = snapshot(tmp_path)
@@ -928,6 +928,30 @@ def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_i
     # ledger.
     assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
     assert "attach.json" not in checked.out + checked.err + attached.err
+
+
+def test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` before it asks what the share holds, so
+    # an `origin` the overlay's record cannot hold never decides its code. `--check` asks the share
+    # only where the run would, so it reports the mode's refusal with the rest of its report, exit
+    # 2, rather than ending on the share's refusal turned into the mode's on stderr. Mutation
+    # (oracle): `mutations/`'s "check asks what the share holds whatever the memory mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    _origin_not_text(root, tmp_path)
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == ""
+    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
 
 
 def _settings_permissions_null(root: Path, _: Path) -> None:

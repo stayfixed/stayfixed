@@ -288,13 +288,6 @@ def not_overlay(config: Config) -> str | None:
     return NOT_OVERLAY.format(mode=config.memory.mode)
 
 
-def refuse_unless_overlay(config: Config) -> None:
-    """Raise `not_overlay`'s refusal, when there is one."""
-    refused = not_overlay(config)
-    if refused is not None:
-        raise Refusal(refused)
-
-
 @dataclass(frozen=True)
 class Binding:
     """What the overlay records about this repository, and what this repository says it is.

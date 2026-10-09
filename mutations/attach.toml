@@ -205,10 +205,11 @@ reddens = [
 [[mutation]]
 name = "the no-origin refusal moves back below attach's first write"
 file = "src/stayfixed/attach/write.py"
-before = '''    if binding.state == NO_ORIGIN:
-        raise Refusal(NO_REMOTE)
-    if binding.state == MISMATCH and not trust_remote:'''
-after = '''    if binding.state == MISMATCH and not trust_remote:'''
+before = '''        if binding.state == NO_ORIGIN:
+            yield Stop(NO_REMOTE)
+            return
+        if binding.state == MISMATCH:'''
+after = '''        if binding.state == MISMATCH:'''
 reddens = [
   "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
 ]
@@ -587,8 +588,8 @@ reddens = [
 [[mutation]]
 name = "attach links over notes that never moved again"
 file = "src/stayfixed/attach/write.py"
-before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
-after = "        pass"
+before = "            yield Stop(REAL_DIRECTORIES.format(count=self.real))"
+after = "            pass"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -606,8 +607,13 @@ reddens = [
 [[mutation]]
 name = "the never-moved refusal names the memory groups instead of counting them"
 file = "src/stayfixed/attach/write.py"
-before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
-after = '        raise Refusal(REAL_DIRECTORIES.format(count=", ".join(real)))'
+before = """        self.real = len(unlinked_groups(self.root, config))
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=self.real))"""
+after = """        real = unlinked_groups(self.root, config)
+        self.real = len(real)
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=", ".join(real)))"""
 reddens = [
   "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
 ]
@@ -620,8 +626,8 @@ reddens = [
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
-before = "    real = unlinked_groups(root, config)\n    if real:"
-after = "    _record_binding(binding)\n    real = unlinked_groups(root, config)\n    if real:"
+before = "        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
+after = "        _record_binding(binding)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -632,8 +638,8 @@ reddens = [
 [[mutation]]
 name = "the never-moved check is asked one write too late"
 file = "src/stayfixed/attach/write.py"
-before = "    real = unlinked_groups(root, config)"
-after = "    _write_ignore_region(root)\n    real = unlinked_groups(root, config)"
+before = "        self.real = len(unlinked_groups(self.root, config))"
+after = "        _write_ignore_region(self.root, \"\")\n        self.real = len(unlinked_groups(self.root, config))"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -843,11 +849,28 @@ reddens = [
 # `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
 # in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
 # guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
+# Each stop past the binding is passed only by the flag that answers it, never by the other one:
+# `--trust-remote` is no confirmation of what an attach grants, nor `--yes` an acceptance of a
+# remote the overlay does not record.
+[[mutation]]
+name = "attach passes a widening it was not told --yes for"
+file = "src/stayfixed/attach/write.py"
+before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
+after = "            (stop.flag == CONFIRMED) or (stop.flag == TRUST_REMOTE and trust_remote)"
+reddens = ["tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses"]
+
+[[mutation]]
+name = "attach passes a mismatch it was not told --trust-remote for"
+file = "src/stayfixed/attach/write.py"
+before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
+after = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and confirmed)"
+reddens = ["tests/attach/test_write.py::test_a_mismatched_remote_refuses_and_writes_nothing"]
+
 [[mutation]]
 name = "attach asks memory.mode only after it has written"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_overlay(config)"
-after = "    pass"
+before = "        if refused is not None:\n            yield Stop(refused)"
+after = "        if False:\n            yield Stop(refused)"
 reddens = [
   "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
 ]
@@ -2005,19 +2028,11 @@ reddens = [
 [[mutation]]
 name = "attach writes for a project name the overlay has no directory for"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_share_can_exist(binding, config)\n"
+before = "        refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
-]
-
-[[mutation]]
-name = "attach --check previews a project name the overlay has no directory for"
-file = "src/stayfixed/attach/check.py"
-before = "    refuse_unless_share_can_exist(binding, config)\n"
-after = ""
-reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
 ]
@@ -2489,13 +2504,23 @@ reddens = [
 # overlay's record cannot hold, and a group that leaves the share, which `--check` met only as the
 # never-moved count's own refusal, in other words.
 [[mutation]]
-name = "check does not ask what the share holds"
-file = "src/stayfixed/attach/check.py"
-before = "        refuse_unless_share_holds(binding, config)"
-after = "        pass"
+name = "the gates do not ask what the share holds"
+file = "src/stayfixed/attach/write.py"
+before = "            refuse_unless_share_holds(binding, config)"
+after = "            pass"
 reddens = [
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[origin-not-text]",
-  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[group-leaves-the-share]",
+]
+
+# `--check` asks the share only where the run would, so outside overlay mode it reports the mode's
+# refusal with the rest of its report rather than ending on the share's.
+[[mutation]]
+name = "check asks what the share holds whatever the memory mode"
+file = "src/stayfixed/attach/write.py"
+before = "        if refused is None:\n            refuse_unless_share_holds(binding, config)"
+after = "        if True:\n            refuse_unless_share_holds(binding, config)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin",
 ]
 
 # And only where the run reads them: the run refuses a `memory.mode` other than `overlay` before the
@@ -2504,8 +2529,8 @@ reddens = [
 [[mutation]]
 name = "check reads the attach ledger whatever the memory mode"
 file = "src/stayfixed/attach/check.py"
-before = "    reads = not_overlay(config) is None and binding.state != NO_ORIGIN"
-after = "    reads = binding.state != NO_ORIGIN"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or stop.refusal == not_overlay(config) for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
 ]
@@ -2515,8 +2540,8 @@ reddens = [
 [[mutation]]
 name = "check reads past a checkout with no origin"
 file = "src/stayfixed/attach/check.py"
-before = "    reads = not_overlay(config) is None and binding.state != NO_ORIGIN"
-after = "    reads = not_overlay(config) is None"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or stop.refusal == NO_REMOTE for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[no-origin]",
 ]
@@ -2524,8 +2549,8 @@ reddens = [
 [[mutation]]
 name = "check reads past a group that never moved"
 file = "src/stayfixed/attach/check.py"
-before = "    if reads and not real:"
-after = "    if reads:"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or \"real directories\" in stop.refusal for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
 ]
@@ -2535,9 +2560,9 @@ reddens = [
 # outside `paths.memory` instead.
 [[mutation]]
 name = "check counts the groups at a checkout with no origin"
-file = "src/stayfixed/attach/check.py"
-before = "    real = 0 if binding.state == NO_ORIGIN else len(unlinked_groups(root, config))"
-after = "    real = len(unlinked_groups(root, config))"
+file = "src/stayfixed/attach/write.py"
+before = "            yield Stop(NO_REMOTE)\n            return\n"
+after = "            yield Stop(NO_REMOTE)\n"
 reddens = [
   "tests/attach/test_commands.py::test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none",
 ]
