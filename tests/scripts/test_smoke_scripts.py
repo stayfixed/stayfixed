@@ -7,6 +7,7 @@ mismatch is reported and a match is not — so a green CI row means the plugin, 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from types import ModuleType
@@ -16,6 +17,7 @@ import pytest
 from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 from tests.gitfixture import needs_git
+from tests.ownerhome import pin_git_home
 from tests.scriptload import SCRIPTS, load
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,15 +28,21 @@ def _load(name: str) -> ModuleType:
 
 
 def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None = None) -> Path:
-    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one."""
+    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one. The
+    wrapper's own `git` reads this test's `HOME` (`tests/ownerhome.py`, `pin_git_home`)."""
     planted = tmp_path / "plugin"
-    shutil.copytree(hooks or ROOT / "hooks", planted / "hooks")
+    _copy_hooks(hooks or ROOT / "hooks", planted)
     if launcher is None:
         shutil.copytree(ROOT / "scripts", planted / "scripts")
     else:
         (planted / "scripts").mkdir()
         (planted / "scripts" / "stayfixed").write_text(launcher, encoding="utf-8")
     return planted
+
+
+def _copy_hooks(hooks: Path, planted: Path) -> None:
+    shutil.copytree(hooks, planted / "hooks")
+    pin_git_home(planted / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
 
 
 # A launcher that performs the owner's trust act for real and answers everything else the way
@@ -126,7 +134,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     # comparison in `smoke_hooks.check_entry` -> this passes with code 0 and reddens.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
-    shutil.copytree(ROOT / "hooks", planted / "hooks")
+    _copy_hooks(ROOT / "hooks", planted)
     (planted / "scripts").mkdir()
     (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
     code = smoke.main(
@@ -162,7 +170,7 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
     # `main` returns 0, and both assertions below redden.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
-    shutil.copytree(ROOT / "hooks", planted / "hooks")
+    _copy_hooks(ROOT / "hooks", planted)
     shutil.copytree(ROOT / "scripts", planted / "scripts")
     entries = planted / "hooks" / "hooks.json"
     document = json.loads(entries.read_text(encoding="utf-8"))

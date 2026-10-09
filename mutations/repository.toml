@@ -2611,6 +2611,18 @@ before = '    return any(a == "-m" and b == "stayfixed" for a, b in itertools.pa
 after = '    return False'
 reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
 
+# The wrapper's own `git` calls take the home the shell's `~name` finds, which no variable
+# redirects, so a copy the suite runs reads the developer's git configuration unless the copy is
+# pinned to the test's home.
+[[mutation]]
+name = "the suite's copies of the wrapper look their git's home up as shipped"
+file = "tests/ownerhome.py"
+before = '    wrapper.write_text(text.replace(GIT_HOME_LOOKED_UP, pinned), encoding="utf-8")'
+after = "    pass"
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_suites_copies_of_the_wrapper_hand_their_git_this_tests_home",
+]
+
 # `EXEMPT` excuses every `_run` in the wrapper tests; the hold on what each passes is what keeps a
 # real launch through it with this checkout's root from being excused.
 [[mutation]]

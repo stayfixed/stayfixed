@@ -16,6 +16,12 @@ command line. `checkout_with_owner_home` puts it where a `PYTHONPATH` entry runs
 for a command whose argv a test does not write. `plugin_root_with_owner_home` puts it in front of
 the launcher of a plugin root, for the wrapper, whose interpreter starts under `-I` and reads no
 `PYTHONPATH`.
+
+**In the wrapper itself,** its own two `git` calls start from `env -i` and take the home the
+shell's `~name` gives for `id -un`'s name, which no variable redirects either: under test they read
+the developer's own git configuration, where a `safe.bareRepository` or a `trace2` setting acts on
+every run. `pin_git_home` rewrites a copy of the wrapper to hand them a home the test chooses,
+after the lookup it ships; a test of that lookup keeps it.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 import functools
 import os
 import pwd
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -109,11 +116,29 @@ def checkout_with_owner_home(into: Path, home: Path) -> Path:
     return into
 
 
+# The line that ends the wrapper's lookup of its own `git` calls' home (`hooks/run-hook.sh`): what
+# the lookup found stands only where it is an absolute path.
+GIT_HOME_LOOKED_UP = "case $git_home in /*) ;; *) git_home= ;; esac\n"
+
+
+def pin_git_home(wrapper: Path, home: Path) -> None:
+    """Have the copy of the wrapper at `wrapper` hand its own two `git` calls `home` as `HOME`,
+    whatever its lookup found. The lookup still runs; only its answer is replaced, so every other
+    line is the shipped one. A wrapper whose lookup no longer ends on that line fails here, rather
+    than going on unpinned."""
+    text = wrapper.read_text(encoding="utf-8")
+    assert text.count(GIT_HOME_LOOKED_UP) == 1, "the wrapper's git home lookup is spelled anew"
+    pinned = f"{GIT_HOME_LOOKED_UP}git_home={shlex.quote(str(home))}\n"
+    wrapper.write_text(text.replace(GIT_HOME_LOOKED_UP, pinned), encoding="utf-8")
+
+
 def plugin_root_with_owner_home(base: Path, home: Path, source: Path = ROOT) -> Path:
-    """`source` as a plugin root under `base`, with the database's home pinned to `home`; built
-    once, and the same root on every later call for the same `base`."""
+    """`source` as a plugin root under `base`, with the database's home pinned to `home`, for the
+    launcher and for the wrapper's own `git`; built once, and the same root on every later call for
+    the same `base`."""
     into = base / "owner-home-plugin"
     if into.exists():
         return into
     root: Path = _smoke_hooks().with_owner_home(source, into, home)
+    pin_git_home(root / "hooks" / "run-hook.sh", home)
     return root

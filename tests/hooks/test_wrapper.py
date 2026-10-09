@@ -16,7 +16,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.gitenv import GIT_CANDIDATES, HOOK_WRAPPER_LAUNCHED, HOOK_WRAPPER_VARIABLE
 from tests.gitfixture import git
-from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
+from tests.ownerhome import pin_git_home, plugin_root_with_owner_home, stayfixed_argv
 from tests.test_launcher import _old_python
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +32,7 @@ def _plugin_root(
     git_candidates: str | None = None,
     id_candidates: str | None = None,
     prints: str | None = None,
+    looks_up_git_home: bool = False,
 ) -> Path:
     """A plugin root: a copy of the shipped wrapper, and a launcher beside it.
 
@@ -49,11 +50,16 @@ def _plugin_root(
     reason the probe exists: a launcher run by its own `#!/usr/bin/env python3` would be given
     whatever `python3` the session's PATH resolves to, which on macOS is 3.9. A shell script
     here therefore reaches Python as a `SyntaxError` and every exit code below arrives as 1.
+
+    The wrapper's own `git` reads this test's `HOME` (`tests/ownerhome.py`, `pin_git_home`) unless
+    `looks_up_git_home` keeps the lookup it ships, for a test of that lookup.
     """
     root = base / "plugin"
     (root / "scripts").mkdir(parents=True)
     (root / "hooks").mkdir(parents=True)
     shutil.copy(WRAPPER, root / "hooks" / WRAPPER.name)
+    if not looks_up_git_home:
+        pin_git_home(root / "hooks" / WRAPPER.name, Path(os.environ["HOME"]))
     if git_candidates is not None:
         # The one thing a test may rewrite, and only because it cannot be reached any other way:
         # the git candidate list is deliberately not environment-settable — that is the whole of
@@ -492,11 +498,16 @@ def _user_and_database_home() -> tuple[str, str]:
 
 
 def _plugin_root_recording_git_homes(
-    tmp_path: Path, project: Path, *, id_candidates: str | None = None
+    tmp_path: Path,
+    project: Path,
+    *,
+    id_candidates: str | None = None,
+    looks_up_git_home: bool = True,
 ) -> tuple[Path, Path]:
     """A plugin root whose only git is a stand-in that answers `project` for the root and the
     checkouts and records the `HOME` each call meets, one `<argv>|<HOME>` line per call. The
-    root, and the record."""
+    root, and the record. The wrapper keeps the home lookup it ships, which is what the cases
+    that build one are about, unless `looks_up_git_home` says otherwise."""
     log = tmp_path / "git-homes"
     stand_in = tmp_path / "bin" / "git"
     stand_in.parent.mkdir()
@@ -507,9 +518,42 @@ def _plugin_root_recording_git_homes(
     )
     stand_in.chmod(0o755)
     root = _plugin_root(
-        tmp_path, 0, echo_cwd=True, git_candidates=str(stand_in), id_candidates=id_candidates
+        tmp_path,
+        0,
+        echo_cwd=True,
+        git_candidates=str(stand_in),
+        id_candidates=id_candidates,
+        looks_up_git_home=looks_up_git_home,
     )
     return root, log
+
+
+def test_the_suites_copies_of_the_wrapper_hand_their_git_this_tests_home(tmp_path: Path) -> None:
+    # The wrapper's two `git` calls start from `env -i` and take the home the shell's `~name` finds
+    # for `id -un`'s name, which no variable redirects, so every copy the suite ran read the
+    # developer's own git configuration: a `safe.bareRepository` or a `trace2` setting there acted
+    # on each run, and a verdict could depend on whose machine ran it. A copy the suite builds
+    # hands them this test's `HOME` instead, after the lookup it ships; the lookup's own cases keep
+    # it. Mutation (declared): `mutations/`'s "the suite's copies of the wrapper look their git's
+    # home up as shipped" -> the record names the database's home.
+    project = tmp_path / "project"
+    project.mkdir()
+    root, log = _plugin_root_recording_git_homes(tmp_path, project, looks_up_git_home=False)
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), "open", "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env(root, None, None),
+        cwd=str(project),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0, result.stderr
+    home = os.environ["HOME"]
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        f"rev-parse --show-toplevel|{home}",
+        f"-C {project} worktree list --porcelain|{home}",
+    ]
 
 
 ZSH = "/bin/zsh" if os.access("/bin/zsh", os.X_OK) else shutil.which("zsh")

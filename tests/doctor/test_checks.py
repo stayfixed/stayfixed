@@ -57,7 +57,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
-from tests.ownerhome import as_owner_home
+from tests.ownerhome import as_owner_home, pin_git_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
@@ -520,13 +520,15 @@ def _shipped_wrapper_root(base: Path, *, with_launcher: bool) -> Path:
     """A plugin root carrying the **real** wrapper, and a launcher beside it or not.
 
     A copy and not the checkout, because the case below needs a root whose launcher is missing,
-    which is a thing one may not do to the checkout.
+    which is a thing one may not do to the checkout. The wrapper's own `git` reads this test's
+    `HOME`, and never the developer's configuration (`tests/ownerhome.py`, `pin_git_home`).
     """
     root = base / "plugin-root"
     (root / "hooks").mkdir(parents=True, exist_ok=True)
     shutil.copy(
         Path(stayfixed.__file__).resolve().parents[2] / "hooks" / "run-hook.sh", root / "hooks"
     )
+    pin_git_home(root / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
     (root / "hooks" / "run-hook.sh").chmod(0o755)
     if with_launcher:
         (root / "scripts").mkdir(parents=True, exist_ok=True)
