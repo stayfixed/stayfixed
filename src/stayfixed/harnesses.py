@@ -165,20 +165,28 @@ class Harness:
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
     reach: Mapping[Surface, Reach] = field(hash=False)
+    # The variable this harness names the plugin's own root in: where `doctor` looks for the
+    # installed plugin when this process cannot name it, and the one it sets when it runs the
+    # wrapper. Every harness served names one.
+    plugin_root_env: str
     # Positive detection, for every harness but the canonical one, which is the fallback.
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
     render_profile: Callable[[Profile, str], Rendition] | None = None
-    # The variable this harness names the plugin's own root in, if any: where `doctor` looks for
-    # the installed plugin when this process cannot name it, and the one it sets when it runs the
-    # wrapper.
-    plugin_root_env: str | None = None
     # Where this harness reads Markdown whose frontmatter can declare hooks, which `doctor`'s
     # `hook-entries` row names and does not judge.
     hooked: tuple[Hooked, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class MemoryHarness(Harness):
+    """A harness that keeps a project's own memory, which `memory` links a store into: Claude Code
+    alone, so the fact is this type's and not every value's, and `memory` reads it off `CLAUDE`
+    with no question whether there is one."""
+
     # Where this harness keeps a project's own memory, relative to the home directory, given the
-    # project's resolved path, if it keeps one: the directory `memory` links a store into.
-    memory_dir: Callable[[str], str] | None = None
+    # project's resolved path.
+    memory_dir: Callable[[str], str]
 
 
 def hook_specific_output(event_name: str, context: str) -> str:
@@ -251,7 +259,7 @@ _NO_CODEX_HOOK = Reach(
     measured_on="Codex 0.160.0",
 )
 
-CLAUDE = Harness(
+CLAUDE = MemoryHarness(
     name="claude",
     marker_dir=CLAUDE_DIR,
     settings=(f"{CLAUDE_DIR}/settings.json",),

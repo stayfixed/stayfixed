@@ -169,17 +169,9 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
             "the password database lists no home directory for this user, so there is nowhere "
             "to put the harness memory link; at a terminal, set HOME to name one"
         )
-    return base, _memory_dir(str(worktree.resolve()))
-
-
-def _memory_dir(project: str) -> str:
-    """Where Claude Code keeps `project`'s memory under the home directory, read off the harness
-    registry (`harnesses.CLAUDE.memory_dir`): the one harness whose memory the store is linked
-    into, whichever harnesses a project lists."""
-    memory_dir = CLAUDE.memory_dir
-    if memory_dir is None:
-        raise RuntimeError("the harness registry states no memory directory to link into")
-    return memory_dir(project)
+    # Read off the harness registry (`harnesses.CLAUDE.memory_dir`): the one harness whose memory
+    # the store is linked into, whichever harnesses a project lists.
+    return base, CLAUDE.memory_dir(str(worktree.resolve()))
 
 
 def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:

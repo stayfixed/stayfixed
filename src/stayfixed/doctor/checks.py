@@ -192,13 +192,7 @@ def _own_root() -> Path | None:
 # `config/machine.py`'s own finding again — "gating one of a pair of equivalent inputs is not a
 # partial defence, it is a redirect with a longer name". Neither is ever executed; see
 # `plugin_root`.
-NAMED_ROOTS = tuple(
-    dict.fromkeys(
-        harness.plugin_root_env
-        for harness in (CANONICAL, *HARNESSES)
-        if harness.plugin_root_env is not None
-    )
-)
+NAMED_ROOTS = tuple(dict.fromkeys(harness.plugin_root_env for harness in (CANONICAL, *HARNESSES)))
 
 
 def _named_root(env: Mapping[str, str]) -> Path | None:

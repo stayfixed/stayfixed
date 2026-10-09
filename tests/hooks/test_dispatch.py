@@ -695,6 +695,7 @@ def _harness(
         project_dir_env=project_dir_env,
         render=render,
         reach=CLAUDE.reach,
+        plugin_root_env="FAKE_PLUGIN_ROOT",
         detects=detects,
     )
 

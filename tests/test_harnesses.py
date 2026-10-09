@@ -18,6 +18,7 @@ from stayfixed.harnesses import (
     CODEX,
     HARNESSES,
     Harness,
+    MemoryHarness,
     Surface,
     detect,
     select,
@@ -95,6 +96,7 @@ OTHER = Harness(
     project_dir_env=None,
     render=CANONICAL.render,
     reach=CLAUDE.reach,
+    plugin_root_env="OTHER_PLUGIN_ROOT",
     detects=lambda env, payload: "OTHER_HARNESS" in env,
 )
 OTHER_INPUTS: tuple[tuple[dict[str, str], dict[str, object] | None], ...] = (
@@ -162,6 +164,7 @@ TEXT = Harness(
     project_dir_env=None,
     render=lambda event, context: f"[{event}] {context}",
     reach=CLAUDE.reach,
+    plugin_root_env="TEXT_PLUGIN_ROOT",
 )
 
 
@@ -255,9 +258,8 @@ def test_claude_codes_memory_directory_is_keyed_by_the_projects_path() -> None:
     # the project's resolved path with `/` and `.` as `-`; `memory` links a store there and
     # `doctor` reads it there, both through this value. Mutation (oracle): `mutations/`'s "Claude
     # Code's memory slug keeps a dot" -> reddens; no test path holds a dot otherwise.
-    assert CLAUDE.memory_dir is not None
     assert CLAUDE.memory_dir("/home/a.b/repo") == ".claude/projects/-home-a-b-repo/memory"
-    assert CODEX.memory_dir is None
+    assert not isinstance(CODEX, MemoryHarness)
 
 
 # Every harness name in a string a module of the package spells outside this registry, as the
