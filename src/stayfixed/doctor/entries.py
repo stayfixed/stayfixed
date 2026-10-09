@@ -355,8 +355,8 @@ _SKILL_UNPARSED = _Kind(
         "block scalars, flow lists of plain or quoted scalars, their lines below the key indented "
         "deeper than it, nested lines indented by spaces, `- ` entries at any indentation, "
         f"comments and blank lines, in a frontmatter of at most {LINES_READ:,} lines that ends "
-        f"within {CHARACTERS_READ:,} characters; a description carried on to the lines below its "
-        "key is outside it, so write one as a `>` block"
+        f"within its file's first {CHARACTERS_READ:,} characters; a description carried on to the "
+        "lines below its key is outside it, so write one as a `>` block"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,

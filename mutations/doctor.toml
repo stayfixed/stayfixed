@@ -1243,8 +1243,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        body = text[fenced[0] : max(fenced[0], fenced[1] - 1)]'
-after = '        body = text[fenced[0] :]'
+before = '        body = _lines(text, fenced[0], max(fenced[0], end))'
+after = '        body = _lines(text, fenced[0], len(text))'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
 ]
@@ -1286,7 +1286,7 @@ before = '''
 '''
 after = '''
     if closing is None:
-        return start, len(text)
+        return opening.end(), len(text)
 '''
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
@@ -1344,9 +1344,9 @@ reddens = [
 [[mutation]]
 name = "a skill file is split into lines whole"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    fenced, harness = _fenced(text), _harness_fenced(text)"
+before = "    fenced, harness = _fenced(text, start), _harness_fenced(text, start)"
 after = '''    lines = text.split("\n")
-    fenced, harness = _fenced(text), _harness_fenced(text)'''
+    fenced, harness = _fenced(text, start), _harness_fenced(text, start)'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-long-body]",
 ]
@@ -1354,24 +1354,59 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter keeps its byte-order mark"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    text = text.removeprefix(chr(0xFEFF))."
-after = "    text = text."
+before = "    start = 1 if text.startswith(chr(0xFEFF)) else 0"
+after = "    start = 0"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
 ]
 
 [[mutation]]
-name = "a skill's frontmatter splits on LF alone"
+name = "a file's byte-order mark is cut off a copy of it"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = '''
-    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n")
-    lone_return = text.find("\r")
-    text = text.replace("\r", "\n")
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
 '''
 after = '''
     text = text.removeprefix(chr(0xFEFF))
-    lone_return = -1
+    start = 0
 '''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a file's lone CRs are turned into LFs before the characters read are counted"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+after = '''
+    text = _LONE_RETURN.sub("\n", text)
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a file's line breaks are turned into LFs before the characters read are counted"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+after = '''
+    text = text.replace("\r\n", "\n")
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter splits on LF alone"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return text[start:end].replace("\r\n", "\n").replace("\r", "\n")'
+after = '    return text[start:end]'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
 ]
@@ -1780,7 +1815,7 @@ reddens = [
 [[mutation]]
 name = "the plain subset admits a lone carriage return"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = 'not 0 <= lone_return < fenced[1] and '
+before = 'not lone_return and '
 after = ''
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-lone-carriage-return]",
@@ -1830,8 +1865,8 @@ reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line
 [[mutation]]
 name = "a frontmatter whose two bounds differ answers could not tell where both say no"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if not 0 <= lone_return < fenced[1] and body.count'
-after = '        if harness is not None and harness[1] == fenced[1] and not 0 <= lone_return < fenced[1] and body.count'
+before = '        if not lone_return and body.count'
+after = '        if harness is not None and harness[1] == fenced[1] and not lone_return and body.count'
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]",
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]",

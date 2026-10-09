@@ -17,10 +17,14 @@ from collections.abc import Iterator
 from typing import Literal
 
 # The line that opens a frontmatter and the next one that closes it, `---` and any blanks after it,
-# found in the text without splitting it into lines, so a body below the frontmatter costs no
-# memory however long it is.
+# each ended by a line break, LF, CRLF or a lone CR (and the closing one by the end of the text
+# too); and a lone CR. Each is found in the text as it stands, without splitting it into lines or
+# turning its line breaks into LFs, so the text past the frontmatter costs no memory however long
+# it is or however its lines end.
 _FENCE = "---"
-_FENCE_LINE = re.compile(r"^---[^\S\n]*+$", re.MULTILINE)
+_OPENING_LINE = re.compile(r"---[^\S\r\n]*+(?:\r\n?|\n)")
+_CLOSING_LINE = re.compile(r"(?<=[\r\n])---[^\S\r\n]*+(?=[\r\n]|\Z)")
+_LONE_RETURN = re.compile(r"\r(?!\n)")
 # The most lines of a reading and characters of a frontmatter this reader reads, named caps
 # (CONTRIBUTING.md): past either, it does not read and answers "cannot tell", which names the file.
 # Python keeps an object for each line of each reading, so a file of short lines at
@@ -28,9 +32,10 @@ _FENCE_LINE = re.compile(r"^---[^\S\n]*+$", re.MULTILINE)
 # the text, at four bytes a character once one character in it is past the Basic Multilingual Plane,
 # so a file of wide lines asked three gigabytes. Ten thousand short lines ask a megabyte or two, and
 # eight mebicharacters of the widest about a hundred megabytes; a frontmatter written by hand is a
-# few lines. The characters are counted from the start of the file to where the frontmatter ends,
-# and the long-line tests in `tests/doctor/test_checks.py` stay below them. No shipped file states
-# either; `doctor.entries` names both in the remedy.
+# few lines. The characters are counted from the start of the file to where the frontmatter ends, as
+# the file holds them, a byte-order mark and each CR among them, and the long-line tests in
+# `tests/doctor/test_checks.py` stay below them. No shipped file states either; `doctor.entries`
+# names both in the remedy.
 LINES_READ = 10_000
 CHARACTERS_READ = 1 << 23
 # The fence that opens a frontmatter as Claude Code is read to find one, and the blanks and line
@@ -296,10 +301,8 @@ def declares_hooks(text: str) -> bool | None:
     key. Behind a tag or an anchor alone on its line, a block mapping may start on a line below at
     an indentation of its own, and its keys are read there too. A key is `hooks` bare or quoted
     either way, its escapes read; nothing else of YAML is parsed."""
-    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n")
-    lone_return = text.find("\r")
-    text = text.replace("\r", "\n")
-    fenced, harness = _fenced(text), _harness_fenced(text)
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+    fenced, harness = _fenced(text, start), _harness_fenced(text, start)
     ends = [bound[1] for bound in (fenced, harness) if bound is not None]
     if not ends:
         return False
@@ -307,12 +310,14 @@ def declares_hooks(text: str) -> bool | None:
         return None
     bounds = []
     if fenced is not None:
-        body = text[fenced[0] : max(fenced[0], fenced[1] - 1)]
-        if not 0 <= lone_return < fenced[1] and body.count("\n") < LINES_READ and _plain(body):
+        end = fenced[1] - (2 if text.startswith("\r\n", fenced[1] - 2) else 1)
+        body = _lines(text, fenced[0], max(fenced[0], end))
+        lone_return = _LONE_RETURN.search(text, 0, fenced[1])
+        if not lone_return and body.count("\n") < LINES_READ and _plain(body):
             return _holds_hooks(body)
         bounds.append(body)
     if harness is not None and (fenced is None or harness[1] != fenced[1]):
-        bounds.append(text[harness[0] : harness[1]])
+        bounds.append(_lines(text, *harness))
     return True if any(_holds_hooks(reading) for reading in _readings(bounds)) else None
 
 
@@ -477,31 +482,36 @@ def _repaired(body: str) -> Iterator[str]:
         yield _untabbed(body)
 
 
-def _fenced(text: str) -> tuple[int, int] | None:
-    """Where the frontmatter between a first line of `---` and the next `---` line starts in the
-    text, and where that next line starts; `None` without it. The frontmatter is the text between,
-    the line break ahead of the closing line left out."""
-    opening = _FENCE_LINE.match(text)
-    if opening is None or opening.end() == len(text):
+def _fenced(text: str, first: int) -> tuple[int, int] | None:
+    """Where the frontmatter between a line of `---` at `first` in the text and the next `---` line
+    starts, and where that next line starts; `None` without it. The frontmatter is the text
+    between, the line break ahead of the closing line left out."""
+    opening = _OPENING_LINE.match(text, first)
+    if opening is None:
         return None
-    start = opening.end() + 1
-    closing = _FENCE_LINE.search(text, start)
+    closing = _CLOSING_LINE.search(text, opening.end())
     if closing is None:
         return None
-    return start, closing.start()
+    return opening.end(), closing.start()
 
 
-def _harness_fenced(text: str) -> tuple[int, int] | None:
+def _harness_fenced(text: str, first: int) -> tuple[int, int] | None:
     """Where the frontmatter as Claude Code is read to bound it starts and ends in the text, where
-    its closing `---` starts: past a `---` that opens the text and the blanks and line breaks after
-    it, to the first `---` after them, wherever in a line that stands; `None` without one. It and
+    its closing `---` starts: past a `---` at `first` and the blanks and line breaks after it, to
+    the first `---` after them, wherever in a line that stands; `None` without one. It and
     `_fenced` differ only where a `---` stands anywhere but alone on its line."""
-    opening = _OPENING.match(text)
-    if opening is None or "\n" not in opening.group():
+    opening = _OPENING.match(text, first)
+    if opening is None:
         return None
-    start = opening.start() + opening.group().rindex("\n") + 1
-    end = text.find(_FENCE, start)
-    return None if end < 0 else (start, end)
+    last = max(text.rfind("\n", first, opening.end()), text.rfind("\r", first, opening.end()))
+    end = text.find(_FENCE, last + 1) if last >= 0 else -1
+    return None if end < 0 else (last + 1, end)
+
+
+def _lines(text: str, start: int, end: int) -> str:
+    """The text from `start` to `end`, each CRLF and each lone CR in it read as an LF: only what a
+    reading reads is copied, never the whole file, whose CRLFs would cost a copy of it."""
+    return text[start:end].replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _untabbed(body: str) -> str:

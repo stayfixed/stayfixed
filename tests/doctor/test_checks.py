@@ -2214,8 +2214,9 @@ SKILL_UNPARSED_REMEDY = (
     "exactly only `key: value` lines with a plain key and the value on the key's line, block "
     "scalars, flow lists of plain or quoted scalars, their lines below the key indented deeper "
     "than it, nested lines indented by spaces, `- ` entries at any indentation, comments and blank "
-    "lines, in a frontmatter of at most 10,000 lines that ends within 8,388,608 characters; a "
-    "description carried on to the lines below its key is outside it, so write one as a `>` block"
+    "lines, in a frontmatter of at most 10,000 lines that ends within its file's first 8,388,608 "
+    "characters; a description carried on to the lines below its key is outside it, so write one "
+    "as a `>` block"
 )
 
 
@@ -2325,7 +2326,9 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
 # is "cannot tell", in the row's words; a body is no part of the answer. And wide lines inside the
 # lines read, which a character past the Basic Multilingual Plane makes four bytes a character in
 # every copy of the text a reading takes: nine mebicharacters of them asked 105 to 115 MiB more,
-# and 64 MiB three gigabytes, before the characters read were bounded too.
+# and 64 MiB three gigabytes, before the characters read were bounded too; and the same lines ended
+# by a lone CR and a CRLF behind a byte-order mark, a file the reader copied whole to cut the mark
+# off and again for each kind of line break it turned into LFs before the bound.
 MANY_LINES = {
     "short-lines-past-the-lines-read": ("", "k: v\n", 1 << 20, "", "None"),
     "line-separators-past-the-lines-read": ("a: ", "xy\u2028", 1 << 20, "\n", "None"),
@@ -2337,7 +2340,16 @@ MANY_LINES = {
         "",
         "None",
     ),
+    "a-byte-order-mark-and-wide-cr-lines-past-the-characters-read": (
+        "",
+        "\t!t " + "a" * 1_000 + "\U0001f600\u3000\r\r\n",
+        16_000,
+        "",
+        "None",
+    ),
 }
+# What leads a case's text ahead of its opening `---`, where anything does.
+_LEADS = {"a-byte-order-mark-and-wide-cr-lines-past-the-characters-read": chr(0xFEFF)}
 
 
 @pytest.mark.parametrize("shape", sorted(MANY_LINES))
@@ -2346,21 +2358,28 @@ def test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read(shape:
     # `short-lines-past-the-lines-read`; "a frontmatter's line separators are read past the lines
     # read" -> `line-separators-past-the-lines-read`; "a skill file is split into lines whole" ->
     # `a-long-body`; "a frontmatter is read past the characters read" ->
-    # `wide-lines-past-the-characters-read`.
+    # `wide-lines-past-the-characters-read`; "a file's line breaks are turned into LFs before the
+    # characters read are counted", "a file's lone CRs are turned into LFs before the characters
+    # read are counted" and "a file's byte-order mark is cut off a copy of it" ->
+    # `a-byte-order-mark-and-wide-cr-lines-past-the-characters-read`.
     head, unit, count, tail, expected = MANY_LINES[shape]
-    answer, grown = _read_in_a_child(head, unit, count, tail)
+    answer, grown = _read_in_a_child(head, unit, count, tail, lead=_LEADS.get(shape, ""))
     assert answer == expected
     assert grown < _LONG_VALUE_BYTES, f"the reader grew its peak by {grown >> 20} MiB"
 
 
-def _read_in_a_child(head: str, unit: str, count: int, tail: str) -> tuple[str, int]:
-    """`declares_hooks`' answer on `---`, `head`, `count` times `unit`, `tail` and `---`, read in
-    a child under a timeout, and how much the child grew its peak resident size by reading it."""
+def _read_in_a_child(
+    head: str, unit: str, count: int, tail: str, *, lead: str = ""
+) -> tuple[str, int]:
+    """`declares_hooks`' answer on `lead`, `---`, `head`, `count` times `unit`, `tail` and `---`,
+    read in a child under a timeout, and how much the child grew its peak resident size by reading
+    it. The text is joined in one step, so that building it peaks at its own size and a copy of it
+    the reader takes shows."""
     probe = (
         "import resource, sys\n"
         "from stayfixed.doctor.frontmatter import declares_hooks\n"
-        "head, unit, count, tail = sys.argv[1:]\n"
-        "text = f'---\\n{head}{unit * int(count)}{tail}---\\n'\n"
+        "lead, head, unit, count, tail = sys.argv[1:]\n"
+        "text = ''.join([lead, '---\\n', head, *[unit] * int(count), tail, '---\\n'])\n"
         "scale = 1 if sys.platform == 'darwin' else 1024\n"
         "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
         "answer = declares_hooks(text)\n"
@@ -2369,7 +2388,7 @@ def _read_in_a_child(head: str, unit: str, count: int, tail: str) -> tuple[str, 
     )
     try:
         done = subprocess.run(
-            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            [sys.executable, "-c", probe, lead, head, unit, str(count), tail],
             capture_output=True,
             text=True,
             timeout=_LONG_LINE_SECONDS,
