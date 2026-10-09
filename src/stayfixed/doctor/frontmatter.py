@@ -262,13 +262,16 @@ def declares_hooks(text: str) -> bool | None:
     spaces (`_untabbed`). Where either reading may differ from this one, each is read: the answer is
     "yes" if any of them holds `hooks`, "cannot tell" if any of them cannot tell or a tab leads a
     key's line, which a repair to some other width than the one modelled may read as another key,
-    and "no" otherwise. Each reading is asked the same question, so where only the bounds differ
-    and every reading says "no", no bound Claude Code may take answers otherwise.
+    and "no" otherwise. Where only the bounds differ and every reading says "no", the answer is
+    "no", each reading being asked the same question; that is as sound as this reader's reading
+    of each bound's text as YAML, which is why it answers "cannot tell" where it knows a YAML
+    parser may read the text otherwise.
 
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
-    (`_UNTOLD`) may be `hooks`, and so may a key in the document a marker line opens (`_MARKER`),
-    so where no key it reads is, the answer is `None`; and so it is where a reading runs past
-    `LINES_READ` lines, which is not read at all."""
+    (`_UNTOLD`) may be `hooks`, and so may a key in the document a marker line opens (`_MARKER`)
+    or one a YAML 1.2 parser reads at the top level below a nested block scalar
+    (`_tab_below_a_block_scalar`), so where no key it reads is, the answer is `None`; and so it
+    is where a reading runs past `LINES_READ` lines, which is not read at all."""
     text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
     fenced, harness = _fenced(text), _harness_fenced(text)
     bounds = [fenced] if fenced else []
