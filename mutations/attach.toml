@@ -2391,8 +2391,8 @@ reddens = [
 [[mutation]]
 name = "the attached row dies on a home the password database does not list"
 file = "src/stayfixed/attach/doctor.py"
-before = "    except Refusal:\n        # Refused only for a home it cannot name"
-after = "    except LookupError:\n        # Refused only for a home it cannot name"
+before = "        except Refusal:\n            # Refused only for a home it cannot name"
+after = "        except LookupError:\n            # Refused only for a home it cannot name"
 reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check"]
 
 # A linked worktree's harness link points at the store the owning checkout holds, so the fallback
@@ -2732,6 +2732,7 @@ before = "    if override_is_honoured() or homes_agree() or passwd_home() is Non
 after = "    if override_is_honoured() or passwd_home() is None:"
 reddens = [
   "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[unset]",
 ]
 
 [[mutation]]
@@ -2741,6 +2742,7 @@ before = "    if override_is_honoured() or homes_agree() or passwd_home() is Non
 after = "    if homes_agree() or passwd_home() is None:"
 reddens = [
   "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[terminal]",
 ]
 
 [[mutation]]
@@ -2750,4 +2752,38 @@ before = "    if override_is_honoured() or homes_agree() or passwd_home() is Non
 after = "    if override_is_honoured() or homes_agree():"
 reddens = [
   "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check",
+]
+
+# Off a terminal, where `HOME` is not the database's home, the `attached` row judged the link under
+# the database's home, which a harness started with this `HOME` does not read, and was wrong both
+# ways. It judges neither home and says what `attach` says, with the way to have the link under
+# `HOME` checked; with `--home` it judges the link under the home that names.
+[[mutation]]
+name = "the attached row judges the harness link off a terminal whatever HOME says"
+file = "src/stayfixed/attach/doctor.py"
+before = "    unread = unread_home() if context.home is None else None"
+after = "    unread = None"
+reddens = [
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-database]",
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[empty-database]",
+]
+
+[[mutation]]
+name = "the attached row names no way to check the link under a HOME that differs"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if harness == HOME_DIFFERS:"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
+]
+
+[[mutation]]
+name = "the attached row asks where HOME points when --home names the home"
+file = "src/stayfixed/attach/doctor.py"
+before = "    unread = unread_home() if context.home is None else None"
+after = "    unread = unread_home()"
+reddens = [
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[--home]",
 ]

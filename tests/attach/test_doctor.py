@@ -150,6 +150,109 @@ def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
     )
 
 
+# The `attached` row off a terminal where `HOME` is not the database's home: `attach`'s words, and
+# where `HOME` differs, the way to have the link under it checked. Written out, not imported.
+_UNREAD_ROWS = {
+    "elsewhere": (
+        "attached; HOME is not this user's home in the password database, and off a terminal the "
+        "harness memory link goes only under that home, where a harness started with this HOME "
+        "does not look, so attach run here makes none; the binding is bound",
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal, where "
+        "HOME decides where the link goes, or start sessions with HOME set to that home and run it "
+        "in one; `stayfixed doctor` run from a terminal checks the link under HOME",
+    ),
+    "empty": (
+        "attached; HOME is empty, so it names no home directory, and off a terminal the harness "
+        "memory link goes only under the home the password database records, where a harness "
+        "started with this HOME does not look, so attach run here makes none; the binding is bound",
+        "start sessions with HOME set to that home and run `stayfixed attach --store "
+        "<overlay>/projects/<project>/memory` in one",
+    ),
+}
+
+
+def _approved_with_a_link_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, under: str
+) -> tuple[Path, Path]:
+    """An attached checkout whose store is approved, the database's home pinned to `home/`, and
+    the harness memory link under `home/` (`database`) or under `elsewhere/` (`HOME`), where
+    `attach` from a terminal with that `HOME` puts it. Returns `(root, elsewhere)`."""
+    root = _attached(tmp_path)
+    owner, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
+    as_owner_home(monkeypatch, owner)
+    machine = _machine(tmp_path)
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+    slug = str(root.resolve()).replace("/", "-").replace(".", "-")
+    link = (owner if under == "database" else elsewhere) / ".claude" / "projects" / slug / "memory"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(store.path.resolve())
+    elsewhere.mkdir(exist_ok=True)
+    return root, elsewhere
+
+
+def _attached_row(tmp_path: Path, root: Path, *, home: Path | None) -> Check:
+    """The `attached` row with `home` as `--home`, `None` asking where the harness memory path is
+    as `doctor` itself does (`_checks` defaults it to a home of the test's). The row reads `HOME`
+    from the process; the other rows get the test's own home, whatever the case did to it."""
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home")}
+    rows = doctor_checks.run_checks(
+        root, home=home, machine=_machine(tmp_path), runner=Recorder(), env=env
+    )
+    return _by_name(rows, "attached")
+
+
+@pytest.mark.parametrize(
+    ("home", "under"), [("elsewhere", "database"), ("elsewhere", "HOME"), ("empty", "database")]
+)
+def test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str, under: str
+) -> None:
+    # Off a terminal, with `HOME` not the database's home, the row judged the link under the
+    # database's home: `ok` for a link only there, which a harness started with this `HOME` does
+    # not read, and "the harness sees no memory here" for a link only under `HOME`, which it does,
+    # with a remedy `attach` then declined. It now judges neither, since a `HOME` the clone chose
+    # could hold a link that reads green, and says what `attach` says, with the way to have the
+    # link under `HOME` checked. Mutations (oracle): `mutations/`'s "the attached row judges the
+    # harness link off a terminal whatever HOME says" -> each case is judged instead; "the
+    # attached row names no way to check the link under a HOME that differs" -> the remedy ends
+    # early.
+    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
+    monkeypatch.setenv("HOME", "" if home == "empty" else str(elsewhere))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    row = _attached_row(tmp_path, root, home=None)
+    assert (row.status, row.detail, row.remedy) == (WARN, *_UNREAD_ROWS[home])
+
+
+@pytest.mark.parametrize("case", ["unset", "agrees", "terminal", "--home"])
+def test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    # The vacuity guard for the case above: an unset `HOME` and one that agrees take the database's
+    # home off a terminal, a terminal takes `HOME`, and `--home` is the home it names, so each
+    # judges the link where it stands and finds it. Mutations (oracle): `mutations/`'s "attach
+    # off a terminal withholds the harness link under a HOME that agrees" -> the first two warn;
+    # "attach at a terminal withholds the harness link under a HOME that differs" -> the third
+    # does; "the attached row asks where HOME points when --home names the home" -> the fourth.
+    under = "HOME" if case == "terminal" else "database"
+    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: case == "terminal")
+    if case == "unset":
+        monkeypatch.delenv("HOME", raising=False)
+    elif case == "agrees":
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    else:
+        monkeypatch.setenv("HOME", str(elsewhere))
+    row = _attached_row(tmp_path, root, home=tmp_path / "home" if case == "--home" else None)
+    assert (row.status, row.detail, row.remedy) == (
+        OK,
+        "attached; the harness memory path is a link to the store; the binding is bound",
+        "",
+    )
+
+
 def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
     # The shape an existing checkout can already have, and the one this row exists for, because
     # it looks attached and behaves like nothing. `~/.claude/projects/<slug>/memory` is where
