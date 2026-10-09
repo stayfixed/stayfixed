@@ -715,6 +715,64 @@ before = 'test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate
 after = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# `echo` speaks only when the wrapper refuses or degrades, and `true` runs only when its `git` names
+# no root, so a hook that reaches its launcher runs neither, and each was on the unset line with no
+# case that would notice it leave. The trace of the wrapper names both, and a fault reaches both.
+[[mutation]]
+name = "an exported function stands in for the wrapper's echo again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle printf pwd python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_what_the_wrapper_runs_on_a_fault",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+[[mutation]]
+name = "an exported function stands in for the wrapper's true again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_what_the_wrapper_runs_on_a_fault",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# The unset line is held to a trace of the wrapper, so the trace's reading is held too: an
+# assignment is no command, and `command -v` answers a function's bare name, which the wrapper then
+# runs.
+[[mutation]]
+name = "the trace reader takes an assignment for a name the wrapper runs"
+file = "tests/hooks/test_wrapper.py"
+before = """        if "=" in first.split("/", 1)[0] or first.startswith("/"):"""
+after = """        if first.startswith("/"):"""
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_trace_is_read_for_the_names_a_function_could_stand_in_for",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+[[mutation]]
+name = "the trace reader drops the name command -v is asked about"
+file = "tests/hooks/test_wrapper.py"
+before = """        if words[:2] == ["command", "-v"] and len(words) > 2 and "/" not in words[2]:"""
+after = "        if False:"
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_trace_is_read_for_the_names_a_function_could_stand_in_for",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# bash 4 and later call `command_not_found_handle` unasked; no run of the wrapper looks a missing
+# command up, so the line is what holds it.
+[[mutation]]
+name = "bash's command_not_found_handle is left in place again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command echo printf pwd python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
 ]
 
 # stayfixed takes every `git` a hook asks from the fixed list only when the wrapper tells the

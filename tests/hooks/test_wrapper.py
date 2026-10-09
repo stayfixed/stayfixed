@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import shutil
 import stat
 import subprocess
@@ -1359,15 +1360,29 @@ def _run_under_bash(
     cwd: Path,
     *,
     terminal: bool = False,
+    traced: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """The shipped wrapper copied into `plugin_root`, run by `BASH_AS_SH` as `sh` with `closed hook
     PreToolUse`: the command line the kernel builds from its `#!/bin/sh` where `/bin/sh` is bash.
-    `terminal` hands it a pty for stdin, the one place it reads `STAYFIXED_PYTHON_CANDIDATES`."""
+    `terminal` hands it a pty for stdin, the one place it reads `STAYFIXED_PYTHON_CANDIDATES`.
+    `traced` runs it under `-x`, with the trace's prefix chosen here and no variable that would
+    have bash trace or run anything more, so stderr holds every command it ran. Under a timeout
+    whatever it runs, so a run that waits fails the case rather than the worker."""
     assert BASH_AS_SH is not None
+    if traced:
+        environment = {
+            name: value
+            for name, value in environment.items()
+            if name not in {"SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV"}
+        }
+        environment["PS4"] = "+ "
+    argv = ["sh", str(plugin_root / "hooks" / WRAPPER.name), "closed", "hook", "PreToolUse"]
+    if traced:
+        argv.insert(1, "-x")
     master, slave = pty.openpty() if terminal else (-1, -1)
     try:
         return subprocess.run(
-            ["sh", str(plugin_root / "hooks" / WRAPPER.name), "closed", "hook", "PreToolUse"],
+            argv,
             executable=BASH_AS_SH,
             capture_output=True,
             text=True,
@@ -1375,7 +1390,10 @@ def _run_under_bash(
             env=environment,
             cwd=cwd,
             stdin=slave if terminal else subprocess.DEVNULL,
+            timeout=60,
         )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the wrapper run under bash did not end")
     finally:
         for descriptor in (master, slave):
             if descriptor >= 0:
@@ -1468,10 +1486,133 @@ def _exported_functions(tmp_path: Path, names: tuple[str, ...]) -> tuple[dict[st
     return functions, ran
 
 
+# What a trace shows the wrapper running that no function can stand in for: the special builtins,
+# which bash finds before any function in POSIX mode (a `BASH_FUNC_unset%%`, like one for `set`,
+# `export`, `exit` or `shift`, was measured never to run), and the reserved words `-x` writes for
+# a `case` or a `for`. A program named by its path is no function's name either.
+SPECIAL_BUILTINS = frozenset(
+    {".", ":", "break", "continue", "eval", "exec", "exit", "export", "readonly", "return", "set"}
+    | {"shift", "times", "trap", "unset"}
+)
+RESERVED_WORDS = frozenset({"case", "for", "if", "select", "until", "while"})
+# bash 4 and later call this function unasked, for a command they cannot find. No run of the
+# wrapper looks a missing command up, so no trace shows it, and it is named here.
+CALLED_UNASKED = frozenset({"command_not_found_handle"})
+
+
+def _unset_line() -> list[str]:
+    """The names the wrapper's first statement removes the functions of, as written."""
+    (line,) = [
+        line
+        for line in WRAPPER.read_text(encoding="utf-8").splitlines()
+        if line.startswith("unset -f ")
+    ]
+    return line.removeprefix("unset -f ").removesuffix(" 2>/dev/null").split()
+
+
+def _names_a_trace_runs(trace: str, functions: frozenset[str]) -> set[str]:
+    """Every name `trace`, an `sh -x` trace of the wrapper, shows it running that a function the
+    environment exports could stand in for: the first word of each traced command, less an
+    assignment, a path, a special builtin, a reserved word and a function the wrapper defines
+    itself (`functions`); and each bare name `command -v` is asked about, since it answers a
+    function's name and the wrapper then runs that name."""
+    names: set[str] = set()
+    for line in trace.splitlines():
+        words = line.lstrip("+").split() if line.startswith("+ ") or line.startswith("++") else []
+        if not words:
+            continue
+        first = words[0].strip("'")
+        if words[:2] == ["command", "-v"] and len(words) > 2 and "/" not in words[2]:
+            names.add(words[2].strip("'"))
+        if "=" in first.split("/", 1)[0] or first.startswith("/"):
+            continue
+        if first in SPECIAL_BUILTINS | RESERVED_WORDS | functions:
+            continue
+        names.add(first)
+    return names
+
+
+def _names_the_wrapper_runs(base: Path) -> set[str]:
+    """The names an `sh -x` trace shows the shipped wrapper running, over three runs that between
+    them reach every line it runs: a hook in a git repository that reaches the launcher; one
+    outside any repository with no launcher, under `closed`, where `git` fails and the wrapper
+    refuses; and one at a terminal whose interpreter list is bare `python3`."""
+    functions = frozenset(
+        re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)\(\) \{", WRAPPER.read_text("utf-8"), re.M)
+    )
+    project = base / "project"
+    project.mkdir(parents=True)
+    git(project, "init", "-q", home=base)
+    reached = _plugin_root(base / "reached", 0, echo_cwd=True)
+    environment = _env(reached, None, None)
+    found = _run_under_bash(
+        reached, {**environment, "CLAUDE_PROJECT_DIR": str(project)}, project, traced=True
+    )
+    assert found.stdout == f"{project.resolve()}\n", found.stderr
+    nowhere = base / "nowhere"
+    nowhere.mkdir()
+    refused = _plugin_root(base / "refused", 0, with_launcher=False)
+    faulted = _run_under_bash(refused, _env(refused, None, None), nowhere, traced=True)
+    assert faulted.returncode == 2 and "SF_NO_LAUNCHER" in faulted.stderr, faulted.stderr
+    named = _run_under_bash(
+        reached, _env(reached, None, "python3"), nowhere, terminal=True, traced=True
+    )
+    assert "command -v python3" in named.stderr, named.stderr
+    return set().union(
+        *(_names_a_trace_runs(run.stderr, functions) for run in (found, faulted, named))
+    )
+
+
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, the one shell that imports functions")
+@pytest.mark.skipif(not ABSOLUTE_GIT, reason="no git at any of the absolute candidate paths")
+def test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running(
+    tmp_path: Path,
+) -> None:
+    # The wrapper's first statement removes the function of every name it runs that is not a
+    # special builtin, and its list was kept by hand: `echo`, `true` and
+    # `command_not_found_handle` were on it with no case that would notice one leaving, and a
+    # name the wrapper began to run could be missed the same way. So the list is read off a trace
+    # of the wrapper itself, and the line must remove exactly those names and the one bash calls
+    # unasked. Mutations (declared): `mutations/`'s "an exported function stands in for the
+    # wrapper's echo again" and "an exported function stands in for the wrapper's true again" ->
+    # the name is traced and not removed; "bash's command_not_found_handle is left in place
+    # again" -> the line lacks it; "the wrapper spells a test as [ again, which bash 3.2 cannot
+    # unset" -> `[` is traced.
+    traced = _names_the_wrapper_runs(tmp_path)
+    # A trace that read nothing would leave only the name named here, so the walk says what it
+    # found first: the commands of the happy run, and the two only a fault reaches.
+    assert {"cd", "echo", "printf", "pwd", "read", "test", "true"} <= traced, traced
+    assert sorted(_unset_line()) == sorted(traced | CALLED_UNASKED)
+
+
+def test_a_trace_is_read_for_the_names_a_function_could_stand_in_for() -> None:
+    # The reading the case above rests on, on lines it may not meet. Measured by hand: reading a
+    # path, a special builtin, a reserved word or a function of the wrapper's own as a name each
+    # reddens this. Mutations (declared): `mutations/`'s "the trace reader takes an assignment
+    # for a name the wrapper runs" and "the trace reader drops the name command -v is asked
+    # about" -> this reddens.
+    trace = (
+        "+ unset -f cd\n+ set -u\n+ case $0 in\n+ here=/x\n++ CDPATH=\n++ cd -- /x\n"
+        "+ for g in /a /b\n+ test -x /a\n++ /usr/bin/id -un\n+ refuse 'x'\n+ echo 'x'\n"
+        "++ command -v python3\n++ command -v /bin/python3\n+ '[' -n x ']'\n"
+        "+ IFS='\n'\nnot a traced line\n"
+    )
+    assert _names_a_trace_runs(trace, frozenset({"refuse"})) == {
+        "cd",
+        "command",
+        "echo",
+        "python3",
+        "test",
+        "[",
+    }
+
+
 # The names a hook run in a repository makes the wrapper run that a function could stand in for,
 # `[` among them though the wrapper spells it `test`: bash 3.2 in POSIX mode cannot unset a
-# function named `[`, so a `[` written back into the wrapper would run an imported one.
-BUILTINS_THE_WRAPPER_RUNS = ("cd", "command", "printf", "pwd", "read", "test", "[")
+# function named `[`, so a `[` written back into the wrapper would run an imported one. Read off a
+# trace (`_names_the_wrapper_runs`), less the names a case below holds on its own: `python3`, which
+# only a terminal can name, and `echo` and `true`, which only a fault reaches.
+HELD_ON_THEIR_OWN = frozenset({"echo", "python3", "true"})
 
 
 @pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, the one shell that imports functions")
@@ -1484,9 +1625,11 @@ def test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_w
     # ran it inside the wrapper, past every guard, with no `PATH` entry at all. Measured on
     # macOS's `/bin/sh` before the wrapper unset them: `BASH_FUNC_pwd%%` ran the program five times
     # per hook, `BASH_FUNC_[%%` twenty-six, and the hook's answer was unchanged. Run inside a git
-    # repository so the checkout listing reads lines, which is where `read` and `printf` run.
+    # repository so the checkout listing reads lines, which is where `read` and `printf` run. The
+    # names are the ones a trace of the wrapper shows it running.
     # Mutations (declared): `pwd` or `test` leaves the wrapper's unset list; a test is spelled `[`
     # again — each reddens this.
+    builtins = (*sorted(_names_the_wrapper_runs(tmp_path / "traced") - HELD_ON_THEIR_OWN), "[")
     project = tmp_path / "project"
     project.mkdir()
     git(project, "init", "-q", home=tmp_path)
@@ -1494,7 +1637,9 @@ def test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_w
     environment = _env(plugin, None, None)
     environment["CLAUDE_PROJECT_DIR"] = str(project)
     control = _run_under_bash(plugin, environment, project)
-    exported, ran = _exported_functions(tmp_path, BUILTINS_THE_WRAPPER_RUNS)
+    # The walk first: a trace that stopped reading would export nothing but `[`.
+    assert {"cd", "command", "printf", "pwd", "read", "test"} <= set(builtins), builtins
+    exported, ran = _exported_functions(tmp_path, builtins)
     result = _run_under_bash(plugin, {**environment, **exported}, project)
     assert not ran.exists(), ran.read_text(encoding="utf-8")
     # Non-vacuous: the launcher ran, from the project root the containment entered, and the
@@ -1524,3 +1669,28 @@ def test_no_function_the_environment_exports_stands_in_for_the_interpreter_the_w
     assert control.returncode == 0, control.stderr
     assert control.stdout == f"{plugin.resolve()}\n"
     assert (result.returncode, result.stdout) == (control.returncode, control.stdout)
+
+
+@pytest.mark.skipif(BASH_AS_SH is None, reason="no bash, the one shell that imports functions")
+def test_no_function_the_environment_exports_runs_in_place_of_what_the_wrapper_runs_on_a_fault(
+    tmp_path: Path,
+) -> None:
+    # `echo` speaks only when the wrapper refuses or degrades, and `true` runs only when its
+    # `git` names no root, so a hook that reaches its launcher never runs either and the case
+    # above cannot see an imported one. Here `git` is asked outside any repository and the
+    # launcher is missing, under `closed`: both run, and neither may be a function the
+    # environment exported. Mutations (declared): `mutations/`'s "an exported function stands in
+    # for the wrapper's echo again" and "an exported function stands in for the wrapper's true
+    # again" -> the marker records the name.
+    nowhere = tmp_path / "nowhere"
+    nowhere.mkdir()
+    plugin = _plugin_root(tmp_path, 0, with_launcher=False)
+    environment = _env(plugin, None, None)
+    control = _run_under_bash(plugin, environment, nowhere)
+    exported, ran = _exported_functions(tmp_path, ("echo", "true"))
+    result = _run_under_bash(plugin, {**environment, **exported}, nowhere)
+    assert not ran.exists(), ran.read_text(encoding="utf-8")
+    # Non-vacuous: the run refused, naming the fault, which is the `echo` this is about.
+    assert control.returncode == 2, control.stderr
+    assert "SF_NO_LAUNCHER" in control.stderr, control.stderr
+    assert (result.returncode, result.stderr) == (control.returncode, control.stderr)
