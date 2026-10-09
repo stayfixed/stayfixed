@@ -109,14 +109,19 @@ def homes_agree(env: Mapping[str, str] | None = None) -> bool:
     Where they agree, the home stayfixed trusts off a terminal is also the one every other program
     finds through `HOME` — the harness locating its memory directory among them. An unset `HOME`
     agrees, because a program with no `HOME` asks the database too; a user the database lists
-    no home for never agrees, since there is nothing to agree with.
+    no home for never agrees, since there is nothing to agree with. **An empty `HOME` is a value,
+    not an unset one, and names no home:** the shells' `~`, Python's `expanduser`, git and Node's
+    `os.homedir` (libuv) all read it as `""` and never ask the database, so it never agrees, even
+    in a directory that is the database's home.
     """
     env = os.environ if env is None else env
     recorded = passwd_home()
     if recorded is None:
         return False
     chosen = env.get("HOME")
-    return not chosen or Path(chosen).resolve() == recorded.resolve()
+    if chosen is None:
+        return True
+    return chosen != "" and Path(chosen).resolve() == recorded.resolve()
 
 
 def in_owner_home(value: str) -> Path | None:

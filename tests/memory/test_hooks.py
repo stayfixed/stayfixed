@@ -312,6 +312,28 @@ def test_no_harness_link_is_made_where_home_is_not_the_databases(
     assert contexts == [line.line]
 
 
+def test_an_empty_home_gets_no_harness_link_even_in_the_databases_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` is a value and names no home: the harness reads it as `""`, so a link made
+    # under the database's home is one it never reads. The hook made it, and said nothing. Run from
+    # the database's home, where `Path("").resolve()` is that home. Mutations (oracle):
+    # `mutations/`'s "an empty HOME agrees with the password database's home" and "an empty HOME
+    # is read as the directory a command runs in".
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    monkeypatch.setenv("HOME", "")
+    seen: list[tuple[object, ...]] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [(None, False, None)]
+    assert contexts == [NO_HARNESS_LINK.line]
+
+
 def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

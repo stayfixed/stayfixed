@@ -13,6 +13,7 @@ The same `pytestmark` `tests/attach` carries, for the same reason.
 
 from __future__ import annotations
 
+import dataclasses
 import errno
 import inspect
 import json
@@ -1075,6 +1076,30 @@ def test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read(
     row = checks._ignored_env(context)
     assert row.status == WARN
     assert "lists no home directory" in row.detail
+
+
+def test_an_empty_home_is_named_as_a_home_the_database_does_not_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` is a value and names no home (`config.machine.homes_agree`), so off a
+    # terminal the machine files are under the database's home and not where `HOME` points, and
+    # the row says which directory, in the words it uses for any other `HOME`; it read ok. Run
+    # from the database's home, where `Path("").resolve()` is that home. Called directly, as the
+    # unset case is. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password
+    # database's home" and "an empty HOME is read as the directory a command runs in" -> ok.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
+    row = checks._ignored_env(dataclasses.replace(context, env={"HOME": ""}))
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is not the home directory the password database records for this user, and is not "
+        f"honoured on the hook path: stayfixed's machine files are under {owner}/.config/stayfixed",
+        "run `stayfixed doctor` from your own terminal to see what to do about it",
+    )
 
 
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:

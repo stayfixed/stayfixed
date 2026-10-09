@@ -935,10 +935,10 @@ def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
     A container or home-manager setup whose `HOME` is another directory is not refused for that;
     it is told here which directory those files are under. Asked of `config.machine.homes_agree`,
     the predicate every hook asks, so this row warns exactly where a hook stops reading `HOME`: an
-    unset `HOME` agrees, and a user the database lists no home for never does. What else a hook
-    withholds while the homes differ is an area's to say in its own row, as `memory`'s
-    `harness-link` says it of the harness memory link. The value of `HOME` is not printed:
-    `doctor` may be run by an agent whose environment a repository chose.
+    unset `HOME` agrees, and an empty one and a user the database lists no home for never do. What
+    else a hook withholds while the homes differ is an area's to say in its own row, as
+    `memory`'s `harness-link` says it of the harness memory link. The value of `HOME` is not
+    printed: `doctor` may be run by an agent whose environment a repository chose.
     """
     if homes_agree(env):
         return None

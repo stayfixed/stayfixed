@@ -6,6 +6,7 @@ import pytest
 
 from stayfixed.config.machine import (
     anchor_home,
+    homes_agree,
     machine_config_path,
     override_is_honoured,
     owner_home,
@@ -130,3 +131,30 @@ def test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_termin
     monkeypatch.setenv("HOME", str(linked))
     assert anchor_home(interactive=False) == real.resolve()
     assert anchor_home(interactive=True) == linked
+
+
+@pytest.mark.parametrize(
+    ("home", "agrees"),
+    [("the-databases", True), ("unset", True), ("empty", False), ("another", False)],
+)
+def test_an_empty_home_is_a_value_that_names_no_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str, agrees: bool
+) -> None:
+    # An unset `HOME` sends every program to the password database, so it agrees; an empty one is
+    # read as `""` by the shells' `~`, Python, git and Node's `os.homedir`, never as the database's
+    # home, so it does not, even run from the database's home, where `Path("").resolve()` is that
+    # home. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password database's
+    # home" -> `empty`; "an empty HOME is read as the directory a command runs in" -> `empty` too,
+    # because the process runs in the database's home here; "any HOME agrees with the password
+    # database's home" -> `another`.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    env = {
+        "the-databases": {"HOME": str(owner)},
+        "unset": {},
+        "empty": {"HOME": ""},
+        "another": {"HOME": str(tmp_path)},
+    }[home]
+    assert homes_agree(env) is agrees

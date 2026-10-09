@@ -254,18 +254,18 @@ def test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link(
     assert _harness_row(tmp_path, root, env) == (WARN, withheld.cause, withheld.remedy)
 
 
-# What the row says where a hook can make the link: `HOME` is the database's home, or it is unset
-# or empty, where the hook takes the database's and `HOME` is no home at all.
+# What the row says where a hook can make the link: `HOME` is the database's home, or it is unset,
+# where the hook takes the database's and `HOME` is no home at all.
 AGREEING_HOME = (
     "HOME is this user's home in the password database, so a hook can make the harness memory link"
 )
 NO_HOME_SET = (
-    "HOME is unset or empty, so a hook can make the harness memory link under this user's home "
-    "in the password database"
+    "HOME is unset, so a hook can make the harness memory link under this user's home in the "
+    "password database"
 )
 
 
-@pytest.mark.parametrize("home", ["the-databases", "unset", "empty"])
+@pytest.mark.parametrize("home", ["the-databases", "unset"])
 def test_a_home_the_database_records_leaves_the_harness_link_to_the_hook(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str
 ) -> None:
@@ -273,7 +273,7 @@ def test_a_home_the_database_records_leaves_the_harness_link_to_the_hook(
     # this process's, whose `HOME` is the suite's and not the owner's. With `HOME` unset the row
     # said `HOME` was the database's home. Mutations (oracle): `mutations/`'s "the harness-link
     # row asks this process's HOME rather than the report's" -> a warning; "the harness-link row
-    # says an unset HOME is the database's home" -> `unset` and `empty`.
+    # says an unset HOME is the database's home" -> `unset`.
     owner = tmp_path / "owner"
     owner.mkdir()
     as_owner_home(monkeypatch, owner)
@@ -285,9 +285,29 @@ def test_a_home_the_database_records_leaves_the_harness_link_to_the_hook(
             AGREEING_HOME,
             "",
         )
-    elif home == "empty":
-        context = _context(tmp_path, load(root, machine=_machine(tmp_path)))
-        row = _harness_link(dataclasses.replace(context, env={"HOME": ""}))
-        assert (row.status, row.detail, row.remedy) == (OK, NO_HOME_SET, "")
     else:
         assert _harness_row(tmp_path, root, None) == (OK, NO_HOME_SET, "")
+
+
+@pytest.mark.parametrize(
+    ("mode", "withheld"),
+    [("overlay", NO_HARNESS_LINK_OVERLAY), ("local-only", NO_HARNESS_LINK)],
+    ids=["overlay", "local-only"],
+)
+def test_an_empty_home_is_told_the_hook_makes_no_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, withheld: Withheld
+) -> None:
+    # An empty `HOME` is a value and names no home: the harness reads it as `""` and looks for its
+    # memory directory under a relative `.claude`, so a hook makes no link, and the row says so in
+    # the hook's words, even run from the database's home. It said a hook could make the link.
+    # Asked directly, as the unset case is. Mutations (oracle): `mutations/`'s "an empty HOME
+    # agrees with the password database's home" and "an empty HOME is read as the directory a
+    # command runs in" -> both modes.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    root = _initialised(tmp_path, template=OVERLAY if mode == "overlay" else LOCAL_ONLY)
+    context = _context(tmp_path, load(root, machine=_machine(tmp_path)))
+    row = _harness_link(dataclasses.replace(context, env={"HOME": ""}))
+    assert (row.status, row.detail, row.remedy) == (WARN, withheld.cause, withheld.remedy)

@@ -128,9 +128,9 @@ def _harness_link(context: Context) -> Row:
     from stayfixed.memory.hooks import no_harness_link
 
     if homes_agree(context.env):
-        # Agreeing is also `HOME` unset or empty, and then it is not that home: the hook takes
-        # the database's.
-        if context.env.get("HOME"):
+        # Agreeing is also `HOME` unset, and then it is not that home: the hook takes the
+        # database's. An empty `HOME` never agrees (`homes_agree` says why).
+        if "HOME" in context.env:
             return Row(
                 OK,
                 "HOME is this user's home in the password database, so a hook can make the "
@@ -138,8 +138,8 @@ def _harness_link(context: Context) -> Row:
             )
         return Row(
             OK,
-            "HOME is unset or empty, so a hook can make the harness memory link under this "
-            "user's home in the password database",
+            "HOME is unset, so a hook can make the harness memory link under this user's home "
+            "in the password database",
         )
     withheld = no_harness_link(context.config)
     return Row(WARN, withheld.cause, withheld.remedy)

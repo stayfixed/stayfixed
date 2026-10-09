@@ -3035,15 +3035,14 @@ reddens = [
   "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook",
 ]
 
-# An unset or empty `HOME` agrees, and is no home: the `ok` row does not say it is the database's.
+# An unset `HOME` agrees, and is no home: the `ok` row does not say it is the database's.
 [[mutation]]
 name = "the harness-link row says an unset HOME is the database's home"
 file = "src/stayfixed/memory/doctor.py"
-before = '        if context.env.get("HOME"):'
+before = '        if "HOME" in context.env:'
 after = "        if True:"
 reddens = [
   "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[unset]",
-  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[empty]",
 ]
 
 # A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse
