@@ -12,16 +12,19 @@ reading the source rather than by running it, the way `tests/test_outbound.py` h
   interpreter (`sys.executable`, or a name holding one) with the launcher (a path ending
   `scripts/stayfixed`, or `LAUNCHER`) among its next three elements, or with `-m stayfixed` at any
   position (`-I -m stayfixed` included); a head that names the hook wrapper (`run-hook.sh`, a name
-  containing `wrapper`); a head built from the word `stayfixed` itself (the launcher run
-  directly, `shutil.which("stayfixed")`); or `*stayfixed_argv(...)`, which is the seam itself;
+  containing `wrapper`); a shell, as a literal or a name, whose next element names the wrapper
+  (`["sh", wrapper, …]`, `[BASH_AS_SH, wrapper, …]`); a head built from the word `stayfixed`
+  itself (the launcher run directly, `shutil.which("stayfixed")`); or `*stayfixed_argv(...)`,
+  which is the seam itself;
 - the first argument of a `subprocess` call, `os.system` or `os.popen`: a display with a literal
   head that is `stayfixed` or ends `/stayfixed` (the console script), `uv run stayfixed` or `uvx
   stayfixed`, `-m stayfixed`, or a wrapper path; and a string, as `shell=True` and those two take,
   that runs `stayfixed`, `-m stayfixed` or `run-hook.sh` as a word.
 
 A display with a literal head anywhere else is data (a TOML key, a list of file names), and is
-not read; nor is one whose head is a tuple, a dict or a list. A `*NAME` spread of a module-level
-list or tuple is written out in its place (`[sys.executable, *M]`).
+not read, but for a shell handed the wrapper; nor is one whose head is a tuple, a dict or a list.
+A `*NAME` spread of a module-level list or tuple is written out in its place
+(`[sys.executable, *M]`).
 
 **What cannot be held from the source**, and why: an argv held in a local variable or a parameter,
 which the walk would have to follow across calls (an argv a helper is handed, one `shlex.split`
@@ -31,8 +34,9 @@ are, each held to exist and to sit under a seam; a new one has to be added there
 **What counts as going through the seam**, launch by launch:
 
 - the argv starts `*stayfixed_argv(...)`;
-- or a name in its head is bound, in the function holding the launch, from a call to a seam
-  (`SEAMS`) or to a function of the same file whose body calls one — `plugin = _plugin_root(walk)`;
+- or a name in its program — the head, or the wrapper a shell is handed — is bound, in the
+  function holding the launch, from a call to a seam (`SEAMS`) or to a function of the same file
+  whose body calls one — `plugin = _plugin_root(walk)`;
 - or the launch is in a function of a script `DERIVED` names, whose `main` derives the plugin root
   every such function is handed through `with_owner_home` (checked).
 
@@ -66,6 +70,8 @@ LAUNCHING_CALLS = frozenset(
         "os.popen",
     }
 )
+# The shells a test hands the wrapper to by name, as `sh` runs it from its `#!/bin/sh`.
+SHELLS = frozenset({"ash", "bash", "dash", "ksh", "sh", "zsh"})
 # `stayfixed` as a word of a shell command: the console script, a path ending in it, `-m stayfixed`.
 _SHELL_WORD = re.compile(r"(?:^|[\s/'\"])stayfixed(?=$|[\s'\"])|run-hook\.sh")
 
@@ -87,6 +93,16 @@ EXEMPT: dict[tuple[str, str, str], str] = {
         "[str(plugin_root / 'hooks' / WRAPPER.name), *argv]",
     ): "runs the wrapper of the plugin root its case passes: `_plugin_root`'s fake launcher, "
     "`plugin_root_with_owner_home`'s, or this checkout's for `--version`, which reads no home",
+    (
+        "tests/hooks/test_wrapper.py",
+        "_run_under_bash",
+        "['sh', str(plugin_root / 'hooks' / WRAPPER.name), 'closed', 'hook', 'PreToolUse']",
+    ): "runs the wrapper of the plugin root its case passes, held as `_run`'s are",
+    (
+        "tests/hooks/test_wrapper.py",
+        "test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh",
+        "['sh', str(root / 'hooks' / WRAPPER.name), 'open', 'hook', 'PreToolUse']",
+    ): _FAKE,
     (
         "tests/hooks/test_wrapper.py",
         "test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
@@ -196,6 +212,22 @@ def _words(elements: list[ast.expr]) -> list[str | None]:
     return words
 
 
+def _names_the_wrapper(node: ast.expr) -> bool:
+    text = ast.unparse(node)
+    return "run-hook.sh" in text or "WRAPPER" in text or "wrapper" in text.lower()
+
+
+def _shell_handed_the_wrapper(elements: list[ast.expr]) -> bool:
+    """Whether `elements` hands the wrapper to a shell: a literal shell, by its name or its path,
+    or a program held in a name, followed by an element that names the wrapper."""
+    if len(elements) < 2 or not _names_the_wrapper(elements[1]):
+        return False
+    head = elements[0]
+    if isinstance(head, ast.Constant) and isinstance(head.value, str):
+        return head.value.rsplit("/", 1)[-1] in SHELLS
+    return isinstance(head, ast.Name | ast.Attribute)
+
+
 def _runs_module(elements: list[ast.expr]) -> bool:
     return any(a == "-m" and b == "stayfixed" for a, b in itertools.pairwise(_words(elements)))
 
@@ -223,6 +255,8 @@ def is_launch(
     elements = _spread(display.elts, constants or {})
     if not elements:
         return False
+    if _shell_handed_the_wrapper(elements):
+        return True
     head = elements[0]
     if isinstance(head, ast.Constant | ast.JoinedStr):
         if not (launched and isinstance(head, ast.Constant) and isinstance(head.value, str)):
@@ -243,9 +277,9 @@ def is_launch(
     # is data (a TOML key, a marketplace entry) whatever it spells.
     if not isinstance(head, ast.Name | ast.Attribute | ast.Call | ast.BinOp | ast.Subscript):
         return False
-    text = ast.unparse(head)
-    if "run-hook.sh" in text or "WRAPPER" in text or "wrapper" in text.lower():
+    if _names_the_wrapper(head):
         return True
+    text = ast.unparse(head)
     if text.rstrip(")").endswith("'stayfixed'"):
         return True
     if not (text == "sys.executable" or isinstance(head, ast.Name)):
@@ -309,9 +343,11 @@ def walk(relative: str, tree: ast.Module) -> list[Launch]:
 
     def record(display: ast.List | ast.Tuple, function: ast.AST | None, name: str) -> None:
         head = display.elts[0]
+        # The program a shell is handed is the wrapper, and that is where a root is named.
+        program = display.elts[1] if _shell_handed_the_wrapper(display.elts) else head
         seamed = (
             isinstance(head, ast.Starred)
-            or _bound_from_a_seam(function, head, seamed_here)
+            or _bound_from_a_seam(function, program, seamed_here)
             or (relative, name) in DERIVED
         )
         found.append(Launch(relative, name, ast.unparse(display), display.lineno, seamed))
@@ -401,6 +437,20 @@ def test_the_walk_reads_each_shape_it_claims_to() -> None:
     ]
     for argv in unseamed:
         assert _probe(f"def f():\n    x = {argv}\n") == [(argv, False)], argv
+    # A shell handed the wrapper, by a literal or a name, which the walk once read as data.
+    # Mutation (declared): `mutations/`'s "the seam walk reads no launch headed by a shell" ->
+    # neither is read.
+    for argv in (
+        "['sh', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "[BASH_AS_SH, str(root / 'hooks' / WRAPPER.name), 'open']",
+    ):
+        assert _probe(f"def f():\n    subprocess.run({argv})\n") == [(argv, False)], argv
+    seamed_shell = (
+        "def f(base, home):\n"
+        "    plugin = plugin_root_with_owner_home(base, home)\n"
+        "    subprocess.run(['/bin/sh', str(plugin / 'hooks' / WRAPPER.name), 'open'])\n"
+    )
+    assert [seamed for _, seamed in _probe(seamed_shell)] == [True]
     for argv in (
         "['stayfixed', 'hook']",
         "['uv', 'run', 'stayfixed', 'hook']",
@@ -438,38 +488,55 @@ def test_a_seam_counts_for_the_launch_it_reaches_and_no_other() -> None:
     assert [seamed for _, seamed in _probe(bound)] == [True, False]
 
 
-# The roots a `_run` in the wrapper tests may run under: a fake launcher that runs no stayfixed,
-# or a root whose launcher pins the database's home.
+# The roots a `_run` or a `_run_under_bash` in the wrapper tests may run under: a fake launcher
+# that runs no stayfixed, or a root whose launcher pins the database's home.
 _WRAPPER_TESTS = "tests/hooks/test_wrapper.py"
 _FAKE_OR_SEAMED = frozenset({"_plugin_root", "plugin_root_with_owner_home"})
+# The helpers that run the wrapper of the root a case hands them: `_run` takes it as
+# `plugin_root=`, `_run_under_bash` as its first argument.
+_RUNNERS = frozenset({"_run", "_run_under_bash"})
 
 
-def _wrapper_runs() -> list[tuple[int, str, bool]]:
-    """Every `_run(...)` call in the wrapper tests: its line, its `plugin_root=`, and whether that
-    root reads no home — a fake or seamed root, or this checkout's for `--version` alone. A name
-    counts as such a root where the function holding the call, or one enclosing it, binds it so."""
-    tree = ast.parse((ROOT / _WRAPPER_TESTS).read_text(encoding="utf-8"))
+def _wrapper_runs(source: str | None = None) -> list[tuple[int, str, bool]]:
+    """Every `_run(...)` and `_run_under_bash(...)` call in the wrapper tests, or in `source`: its
+    line, the plugin root it is handed, and whether that root reads no home — a fake or seamed
+    root, or this checkout's for `--version` alone. A name counts as such a root where the function
+    holding the call, or one enclosing it, binds it so, alone or in a tuple, from a call to one of
+    `_FAKE_OR_SEAMED` or to a function of the file whose body calls one."""
+    if source is None:
+        source = (ROOT / _WRAPPER_TESTS).read_text(encoding="utf-8")
+    tree = ast.parse(source)
     found: list[tuple[int, str, bool]] = []
+    builders = _FAKE_OR_SEAMED | {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and _called(node) & _FAKE_OR_SEAMED
+    }
 
     def binds(function: ast.AST) -> set[str]:
         return {
-            target.id
+            name.id
             for node in ast.walk(function)
-            if isinstance(node, ast.Assign) and _called(node.value) & _FAKE_OR_SEAMED
+            if isinstance(node, ast.Assign) and _called(node.value) & builders
             for target in node.targets
-            if isinstance(target, ast.Name)
+            for name in ([target] if isinstance(target, ast.Name) else getattr(target, "elts", []))
+            if isinstance(name, ast.Name)
         }
 
     def judge(call: ast.Call, bound: set[str]) -> None:
-        root = next((k.value for k in call.keywords if k.arg == "plugin_root"), None)
+        if getattr(call.func, "id", None) == "_run_under_bash":
+            root = call.args[0] if call.args else None
+        else:
+            root = next((k.value for k in call.keywords if k.arg == "plugin_root"), None)
         if root is None:
             found.append((call.lineno, "<none>", False))
             return
         words = {a.value for a in call.args if isinstance(a, ast.Constant)}
-        only_version = all(isinstance(a, ast.Constant) for a in call.args) and words - {
-            "open",
-            "closed",
-        } == {"--version"}
+        only_version = (
+            getattr(call.func, "id", None) == "_run"
+            and all(isinstance(a, ast.Constant) for a in call.args)
+            and words - {"open", "closed"} == {"--version"}
+        )
         safe = (
             bool(_called(root) & _FAKE_OR_SEAMED)
             or (isinstance(root, ast.Name) and root.id in bound)
@@ -482,7 +549,7 @@ def _wrapper_runs() -> list[tuple[int, str, bool]]:
             if isinstance(child, ast.FunctionDef):
                 visit(child, bound | binds(child))
                 continue
-            if isinstance(child, ast.Call) and getattr(child.func, "id", None) == "_run":
+            if isinstance(child, ast.Call) and getattr(child.func, "id", None) in _RUNNERS:
                 judge(child, bound)
             visit(child, bound)
 
@@ -491,9 +558,32 @@ def _wrapper_runs() -> list[tuple[int, str, bool]]:
 
 
 def test_every_wrapper_run_uses_a_root_that_reads_no_home() -> None:
-    # `EXEMPT` excuses `_run` for every caller, so what it excuses is held here instead: each
-    # call's plugin root is `_plugin_root`'s fake, a seamed root, or this checkout's with
-    # `--version` and nothing else. A new real launch through `_run` is a finding, not an excuse.
+    # `EXEMPT` excuses `_run` and `_run_under_bash` for every caller, so what it excuses is held
+    # here instead: each call's plugin root is `_plugin_root`'s fake, a seamed root, or this
+    # checkout's with `--version` and nothing else. A new real launch through either is a finding,
+    # not an excuse.
     runs = _wrapper_runs()
     assert len(runs) > 20, runs
     assert [(line, root) for line, root, safe in runs if not safe] == []
+
+
+def test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives() -> None:
+    # The walk above saw only `_run`, so a case handing `_run_under_bash` a root that runs the
+    # real stayfixed would have passed it unread. Mutation (declared): `mutations/`'s "the
+    # wrapper-run walk judges _run alone" -> the two bash runs are not read at all.
+    source = (
+        "def _builder(base):\n"
+        "    return _plugin_root(base, 0)\n"
+        "def test_a(tmp_path):\n"
+        "    root, log = _builder(tmp_path)\n"
+        "    _run_under_bash(root, {}, tmp_path)\n"
+        "    _run_under_bash(tmp_path, {}, tmp_path)\n"
+        "    _run('open', '--version', plugin_root=ROOT)\n"
+        "    _run('open', 'hook', plugin_root=ROOT)\n"
+    )
+    assert _wrapper_runs(source) == [
+        (5, "root", True),
+        (6, "tmp_path", False),
+        (7, "ROOT", True),
+        (8, "ROOT", False),
+    ]

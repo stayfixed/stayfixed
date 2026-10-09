@@ -2611,6 +2611,61 @@ before = '    return any(a == "-m" and b == "stayfixed" for a, b in itertools.pa
 after = '    return False'
 reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
 
+# A shell handed the wrapper, `["sh", wrapper, …]`, is a launch the seam walk read as data, so a
+# case that ran the real stayfixed that way was never asked for its seam.
+[[mutation]]
+name = "the seam walk reads no launch headed by a shell"
+file = "tests/test_owner_home_seam.py"
+before = """    if _shell_handed_the_wrapper(elements):
+        return True
+"""
+after = ""
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to",
+  "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
+]
+
+# A shell handed the wrapper names its root in the wrapper's path, not in its own name.
+[[mutation]]
+name = "the seam walk looks for a shell's root in the shell's own name"
+file = "tests/test_owner_home_seam.py"
+before = "        program = display.elts[1] if _shell_handed_the_wrapper(display.elts) else head"
+after = "        program = head"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+# What `EXEMPT` excuses for the runners of the wrapper tests is held run by run, and a runner the
+# walk does not read is excused whole.
+[[mutation]]
+name = "the wrapper-run walk judges _run alone"
+file = "tests/test_owner_home_seam.py"
+before = '            if isinstance(child, ast.Call) and getattr(child.func, "id", None) in _RUNNERS:'
+after = '            if isinstance(child, ast.Call) and getattr(child.func, "id", None) == "_run":'
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+]
+
+# The bash runs take their root from a helper of the file that builds a fake one, as one name of
+# a tuple: `root, log = _plugin_root_recording_git_homes(...)`.
+[[mutation]]
+name = "the wrapper-run walk reads a root bound in a tuple as no root"
+file = "tests/test_owner_home_seam.py"
+before = '            for name in ([target] if isinstance(target, ast.Name) else getattr(target, "elts", []))'
+after = "            for name in [target]"
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+  "tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home",
+]
+
+[[mutation]]
+name = "the wrapper-run walk takes no helper that builds a fake root"
+file = "tests/test_owner_home_seam.py"
+before = "    builders = _FAKE_OR_SEAMED | {"
+after = "    builders = _FAKE_OR_SEAMED or {"
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+  "tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home",
+]
+
 # The wrapper's own `git` calls take the home the shell's `~name` finds, which no variable
 # redirects, so a copy the suite runs reads the developer's git configuration unless the copy is
 # pinned to the test's home.
