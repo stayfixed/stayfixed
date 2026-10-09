@@ -2158,16 +2158,14 @@ instead, the same code and the same line.
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
-content from the overlay is named here first. It asks what the real run asks before its first
-write, through the run's own code, so where the run fails or refuses there — an overlay rule file
-that is not UTF-8, a `~/.claude` that is a symlink, a `trust.json` that does not parse, a doubled
-`stayfixed:ignore` region or `stayfixed:attach` block, a `.git/info` you cannot write, or any other
-case the two lists below give before the first write — `--check` ends with the same code and the
-same line. The exceptions, besides overlay mode above, are where a flag or a finding decides: a
-widening without `--yes` and a mismatch without `--trust-remote` it reports and goes past, asking
-what follows as a run given the flag would; at a checkout with no `origin` and at a memory group
-that never moved it reports the finding, exits `1`, and of what the run asks next reads only the
-Codex rule files' names, so with no `origin` it counts no group (`real_directories` is `0`).
+content from the overlay is named here first. It asks what the real run asks before its first write,
+through the run's own code, so where the run fails or refuses there, in any case the two lists below
+give before the first write, `--check` ends with the same code and the same line. The exceptions,
+besides overlay mode above, are where a flag or a finding decides: a widening without `--yes` and a
+mismatch without `--trust-remote` it reports and goes past, asking what follows as a run given the
+flag would; at a checkout with no `origin` and at a memory group that never moved it reports the
+finding, exits `1`, and of what the run asks next reads only the Codex rule files' names, so with no
+`origin` it counts no group (`real_directories` is `0`).
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
 `origin` and for the same reason — all three are findings you act on before the real run, and
@@ -2276,8 +2274,12 @@ looked like before `attach` created it.
 **When the harness memory link waits for approval, `attach` says so.** The link exposes the
 link tree, which sits inside the repository, so it is made only once the store is approved; until
 then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
-`stayfixed attach` again. Off a terminal where `HOME` is not the database's home, empty included,
-`attach` makes no harness link or fallback, and says what makes one, as `--check` does.
+`stayfixed attach` again.
+
+**At a terminal the harness memory link goes under `HOME`**, and an empty one, which names no home,
+is refused (`2`). Elsewhere it goes under the home the password database records, and only while
+`HOME` is that home or unset; otherwise `attach` makes no harness link or fallback, does the rest
+and exits `0`, saying what makes the link, as `--check` does.
 
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component
@@ -2294,10 +2296,9 @@ failing one printed is quoted as `overlay create` quotes it (escaped, and cut to
 characters and its length).
 
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
-**or** on a non-zero count of memory groups that are still real directories, which are the findings
-the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other
-than `overlay`; a failure or refusal below that the run meets before its first write ends `--check`
-with the run's code and line instead, a mismatch's finding included.
+**or** on a non-zero count of memory groups that are still real directories, and `2` for a
+`memory.mode` other than `overlay`; a failure or refusal below that the run meets before its first
+write ends `--check` with the run's code and line instead, a mismatch's finding included.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:
@@ -2843,16 +2844,17 @@ Each such file whose frontmatter (between a first `---` line and the next) holds
 key is named as one whose hooks the row does not judge, a `warn`. The key is found bare, quoted
 either way (escapes read), behind a tag, an anchor or `? `, or among a flow mapping's top-level keys
 (`{hooks: {...}}`); a `hooks` nested under another key is not one. Claude Code 2.1.293 ends a
-frontmatter at a `---` within a line and reads a key a tab indents (measured); the row reads each
-way. It says a file declares none only for plain YAML it reads exactly: `key: value` lines with
-plain keys, values on the key's line, block scalars, flow lists of scalars (below the key, indented
-deeper), nested lines indented by spaces, `- ` entries, comments, blank lines, in at most 10,000
-lines ending within the file's first 8,388,608 characters. Any other frontmatter where it finds no
-`hooks`, one with a tag, a merge key, a tab in an indentation, another value over lines, a `---`
-line, NEL, LS or a Unicode blank among others, is named as one it cannot tell about, a `warn`. Names
-are compared without case. Any path the row cannot read, a FIFO or a directory it cannot list among
-them, is named as one it can say nothing of, also a `warn`, and a path outside the path grammar,
-every name in it the repository's, as a file whose path the row does not print.
+frontmatter at a `---` within a line and reads one indented by tabs throughout (measured); the row
+reads each way. It says a file declares none only for plain YAML it reads exactly: `key: value`
+lines with plain keys, values on the key's line, block scalars, flow lists of scalars (below the
+key, indented deeper), nested lines indented by spaces, `- ` entries, comments, blank lines, in at
+most 10,000 lines ending within the file's first 8,388,608 characters. Any other frontmatter where
+it finds no `hooks`, one with a tag, a merge key, a tab in an indentation, another value over lines,
+a `---` line outside a list or block, NEL, LS or a Unicode blank among others, is named as one it
+cannot tell about, a `warn`. Names are compared without case. Any path the row cannot read, a FIFO
+or a directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and
+a path outside the path grammar, every name in it the repository's, as a file whose path the row
+does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and
@@ -3402,7 +3404,7 @@ would name a directory the clone ships, with a `trust.json` in it. Every command
 this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
 still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
-empty, it names none and both stop there.
+empty, it names none, so `setup`, `attach` and `detach` stop there and `doctor` says so.
 
 A container or home-manager setup whose `HOME` is not its database entry is not refused:
 
@@ -3416,10 +3418,9 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
   memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
-  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`, and
-  elsewhere makes none and says so. For any other store nothing else makes the link, so start
-  sessions with `HOME` set to the database's home. A link an earlier release made under `HOME` is
-  still withdrawn when the store's approval lapses.
+  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`. For any
+  other store nothing else makes the link, so start sessions with `HOME` set to the database's home.
+  A link an earlier release made under `HOME` is still withdrawn when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
 `memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
