@@ -2656,3 +2656,17 @@ file = "tests/test_areas.py"
 before = '            return [alias for alias in node.names if alias.name == "__builtins__"]'
 after = "            return []"
 reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+
+# The shape check's bound on a pass that is one repeat of one character alone. Python 3.11.4 counts
+# a class matched ignoring case one character at a time, moving the pass's position as it goes, so
+# such a repeat that needs two and finds one fails one past the pass's start, and a possessive
+# group goes on from there: `(?i)(?:[a-z]{2,}|-)*+(.*)` leaves `1` of `-a1` to the tail, where 3.14
+# leaves `a1`. Without the bound the check admits that shape again.
+[[mutation]]
+name = "a lone repeat of one character may need two again"
+file = "tests/test_patterns.py"
+before = "        return bool(alternative[0][1][0] <= 1)"
+after = "        return True"
+reddens = [
+  "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:[a-z]{2,}|-)*+]",
+]

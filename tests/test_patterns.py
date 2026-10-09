@@ -43,10 +43,16 @@ def _repeat_of_one(item: tuple[Any, Any]) -> bool:
 
 def _reads_alike(alternative: list[tuple[Any, Any]]) -> bool:
     """Whether a pass can fail only before anything in it but single characters and anchors: a
-    repeat of one character alone, or characters and anchors followed by repeats of one
-    character that may match nothing, which cannot fail."""
+    repeat of one character alone that needs at most one, or characters and anchors followed by
+    repeats of one character that may match nothing, which cannot fail.
+
+    The lone repeat's bound is the ignore-case count: 3.11.4 counts a class matched ignoring case
+    one character at a time, moving the pass's position as it goes, so a repeat that needs two
+    and finds one fails one past where the pass began. One that needs at most one fails only on
+    finding none, before anything moved.
+    """
     if len(alternative) == 1 and _repeat_of_one(alternative[0]):
-        return True
+        return bool(alternative[0][1][0] <= 1)
     rest = alternative
     while rest and (_one_character(rest[0]) or rest[0][0] is _OP.AT):
         rest = rest[1:]
@@ -113,6 +119,10 @@ SHAPES = {
     r"(?:\.[a-z]++)++": False,
     r"(?>a+)": False,
     r"(?:x(?>a))*": False,
+    # A lone class that needs two, read without case: 3.11.4 counts it one character at a time,
+    # and a pass that read one and failed leaves the next pass one past its start, so `-a1`
+    # leaves `1` to the tail where 3.14 leaves `a1`.
+    r"(?i)(?:[a-z]{2,}|-)*+": False,
     r"[ab]*+": True,
     r"\s++": True,
     r"(?:''[^']*+)*+": True,
@@ -128,7 +138,8 @@ SHAPES = {
 def test_the_shape_check_tells_what_python_3_11_4_misreads(shape: str) -> None:
     # The check below is only as good as this table: each row that should be refused fails it if
     # the check stops looking at that part of a pass, and each that should pass fails it if the
-    # check refuses more than it must. No mutation is declared for it: the rows are its oracle.
+    # check refuses more than it must. The rows are its oracle. Mutation (oracle): `mutations/`'s
+    # "a lone repeat of one character may need two again" -> reddens the ignore-case row.
     assert (not _offences_of(re.compile(shape))) is SHAPES[shape]
 
 

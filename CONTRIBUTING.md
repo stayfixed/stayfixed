@@ -410,11 +410,12 @@ pull request.
 
 A possessive repeat (`*+`, `++`) of one character or class may stand in any pattern; of a group,
 only where every pass is single characters and anchors followed by repeats of one character that
-may match nothing, or one repeat of one character alone (`(?:\.[a-z][a-z]*+)++`, never
-`(?:\.[a-z]++)++`). Python 3.11.0 to 3.11.4, Debian 12's among them, go on from where a failed
-pass of any other shape stopped (fixed in 3.11.5), and no atomic group stands anywhere, since it
-keeps the record a possessive repeat drops. `tests/test_patterns.py` holds the shape, and CI's
-`checks (ubuntu-latest, 3.11.4)` leg runs every reader's tests on an interpreter with the bug.
+may match nothing, or one repeat of one character that needs at most one, alone
+(`(?:\.[a-z][a-z]*+)++`, never `(?:\.[a-z]++)++` or `(?i)(?:[a-z]{2,}|-)*+`). Python 3.11.0 to
+3.11.4, Debian 12's among them, go on from where a failed pass of any other shape stopped (fixed
+in 3.11.5), and no atomic group stands anywhere, since it keeps the record a possessive repeat
+drops. `tests/test_patterns.py` holds the shape, and CI's `checks (ubuntu-latest, 3.11.4)` leg
+runs every reader's tests on an interpreter with the bug.
 
 Run the oracle on Python 3.12 or later. Two entries, a function's and a class's type parameters
 going unread, are caught by a case written in 3.12's syntax for them, which is skipped below
