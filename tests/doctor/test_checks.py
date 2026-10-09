@@ -303,8 +303,9 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
     row = _by_name(_checks(tmp_path, root), "not-initialised")
     assert row.status == "red"
     # Said in words, never as the class the loader raised: "(PathEscape)" named stayfixed's own
-    # exception and not the rule. Mutation (oracle): "doctor gives a symlinked stayfixed.toml the
-    # row for a file that does not load" -> the generic line comes back and this reddens.
+    # exception and not the rule. Mutation (oracle): `mutations/`'s "doctor gives a symlinked
+    # stayfixed.toml the row for a file that does not load" -> the generic line comes back and this
+    # reddens.
     assert row.detail.startswith("stayfixed.toml is a symbolic link, which no command follows")
     assert "PathEscape" not in row.detail + row.remedy
     assert "real file" in row.remedy
@@ -1387,7 +1388,7 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_ch
     # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
     # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
     # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
-    # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
+    # raise" -> the row reads `this check could not run`; "hook-entries reads a settings file past
     # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
     _walked(tmp_path, root, label).write_text('{"hooks": ' + NESTED + "}", "utf-8")
@@ -1722,11 +1723,11 @@ NO_DECLARED_HOOKS: dict[str, str | bytes] = {
 def test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was(tmp_path: Path, shape: str) -> None:
     # The vacuity guard for the warning: only a top-level `hooks:` key line inside a frontmatter
     # closed by its second `---` line is one. Mutations (oracle): `mutations/`'s "a skill's
-    # frontmatter runs past its closing fence" -> "in-the-body"; "a skill's frontmatter reads an
-    # indented hooks key" -> "nested-key"; "a skill's frontmatter reads any key opening with
-    # hooks" -> "a-longer-key"; "an unterminated frontmatter is read to the end" ->
-    # "unterminated"; "a skill file that names no file is unreadable" -> "dangling-link" and
-    # "dangling-link-out": a dangling link names no file wherever it points, so whether it names
+    # frontmatter runs past its closing fence" -> `in-the-body`; "a skill's frontmatter reads an
+    # indented hooks key" -> `nested-key`; "a skill's frontmatter reads any key opening with
+    # hooks" -> `a-longer-key`; "an unterminated frontmatter is read to the end" ->
+    # `unterminated`; "a skill file that names no file is unreadable" -> `dangling-link` and
+    # `dangling-link-out`: a dangling link names no file wherever it points, so whether it names
     # one is asked before whether it leads out of the checkout.
     root = _initialised(tmp_path)
     if shape == "no-skill-file":
@@ -3001,10 +3002,10 @@ def test_a_record_naming_a_file_this_build_does_not_ship_is_red(
     # The record is edited after it is written, because a release records exactly
     # `HASHED_FILES` and the case is a record that does not.
     #
-    # Mutation (declared, "doctor files walks only the files this build knows about"): the walk
-    # goes back to `HASHED_FILES` -> the extra name is never looked at, the row is `ok`, and
-    # both assertions below redden. The detail assertion is the one that names the arm: a red
-    # status alone is produced by several other arms of this row.
+    # Mutation (declared, `mutations/`'s "doctor files walks only the files this build knows
+    # about"): the walk goes back to `HASHED_FILES` -> the extra name is never looked at, the row is
+    # `ok`, and both assertions below redden. The detail assertion is the one that names the arm: a
+    # red status alone is produced by several other arms of this row.
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
     recorded(planted)
@@ -3034,8 +3035,8 @@ def test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted(
     # the detail, and `skills/doctor/SKILL.md` tells the model to relay it verbatim. `_versions`
     # declines to quote the project's version string for exactly this reason.
     #
-    # Mutation (declared, "doctor files quotes the record's own file names back"): `mine`
-    # becomes every changed name -> the prose lands in the detail, the count disappears, and
+    # Mutation (declared, `mutations/`'s "doctor files quotes the record's own file names back"):
+    # `mine` becomes every changed name -> the prose lands in the detail, the count disappears, and
     # both assertions below redden. The assertions name the arm rather than the status: a red
     # row is produced by five other arms of this row, and by `_guarded` for any exception.
     monkeypatch.setattr(checks, "_own_root", lambda: None)
@@ -3438,7 +3439,7 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
     safety net for a hang nothing here foresees, and the row still runs in a daemon thread
     because a test that hangs is not a test that fails.
 
-    Mutation (oracle entry "doctor reads the rendered workflow without asking what it is"): the
+    Mutation (`mutations/`'s "doctor reads the rendered workflow without asking what it is"): the
     `is_file()` guard is removed -> the row reads the fed workflow, answers `ok`, and the status
     assertion reddens.
     """
@@ -3492,7 +3493,7 @@ def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> 
     Measured, not assumed — the oracle entry's first spelling replaced the bounded read with an
     unbounded one and survived. The entry is on the arm instead, and says so.
 
-    Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
+    Mutation (`mutations/`'s "doctor reads the rendered workflow with no bound of its own"): the cap
     arm is skipped -> this case fails on the status.
     """
     stub = LsRemote(stdout=LISTING)

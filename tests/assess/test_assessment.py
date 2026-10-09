@@ -130,8 +130,8 @@ def test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at
 def test_the_custom_gates_builtin_left_out_are_named_at_most_to_the_listed_limit() -> None:
     # Custom gates are the repository's to add, so `--builtin` can leave out any number of them:
     # the summary names the first `LISTED_LIMIT` and counts the rest, and the inventory file's
-    # `skipped` carries every one. Mutation (oracle): "assess names every custom gate --builtin
-    # left out" -> this reddens.
+    # `skipped` carries every one. Mutation (oracle): `mutations/`'s "assess names every custom gate
+    # --builtin left out" -> this reddens.
     names = tuple(f"g{n:02}" for n in range(LISTED_LIMIT + 3))
     text = render(Assessment("HEAD", "main", "adopting", (), (), (), skipped=names))
     shown = ", ".join(names[:LISTED_LIMIT]) + ", and 3 more"

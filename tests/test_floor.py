@@ -17,8 +17,8 @@ def test_a_spawner_strips_the_developers_variables_and_keeps_the_floor(
 ) -> None:
     # One predicate for both halves, so a spawner cannot take the strip without the floor: the
     # floor is a `STAYFIXED_*` name, and the strip used to take it with the developer's own
-    # configuration. Mutation (oracle): "the suite's developer strip drops the floor" -> this
-    # reddens, and so does the launcher case below.
+    # configuration. Mutation (oracle): `mutations/`'s "the suite's developer strip drops the floor"
+    # -> this reddens, and so does the launcher case below.
     monkeypatch.setenv("STAYFIXED_CONFIG", "/developer/stayfixed.toml")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/developer/project")
     env = developer_free_environ()
@@ -38,8 +38,8 @@ def test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor(tmp_path: Pat
     # The stand-in `git` answers only after that bound, and marks that it did: under the floor
     # the launcher waits for it; without it the stand-in is killed at the bound and the mark is
     # never written. No second run without the floor is needed to make that non-vacuous, and none
-    # is made, because it would cost the same wait again. Mutation (oracle): "the git runner
-    # ignores the floor a test runner sets" -> this reddens.
+    # is made, because it would cost the same wait again. Mutation (oracle): `mutations/`'s "the git
+    # runner ignores the floor a test runner sets" -> this reddens.
     nowhere = tmp_path / "nowhere"
     nowhere.mkdir()
     assert not gitenv.in_work_tree(nowhere), "the hook would find a repository by walking up"

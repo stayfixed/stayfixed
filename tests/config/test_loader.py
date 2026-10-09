@@ -266,8 +266,8 @@ def test_load_is_read_then_loads(tmp_path: Path) -> None:
 def test_every_name_refusal_words_the_rule_and_never_prints_the_pattern(tmp_path: Path) -> None:
     # A project name, a custom gate's name and a detected name are one grammar, and each refusal
     # printed `PROJECT_NAME.pattern`, whose `\Z` a JSON Schema client or a person reads as a
-    # literal `Z`. Mutation (oracle): "a custom gate's name refusal prints the pattern" -> this
-    # reddens.
+    # literal `Z`. Mutation (oracle): `mutations/`'s "a custom gate's name refusal prints the
+    # pattern" -> this reddens.
     from stayfixed.project.detect import NOT_A_NAME
 
     text = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n[gates.custom.Bad]\n'
@@ -696,8 +696,8 @@ def test_the_branch_grammar_is_spelled_once() -> None:
 def test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> None:
     # Custom gates are the repository's to add, so the refusal's list of the gates the project
     # runs is bounded in number by nothing: it names the first `LISTED_LIMIT` and counts the
-    # rest. Mutation (oracle): "the enforced-gate refusal names every gate the project runs" ->
-    # this reddens.
+    # rest. Mutation (oracle): `mutations/`'s "the enforced-gate refusal names every gate the
+    # project runs" -> this reddens.
     custom = [f"g{n:02}" for n in range(LISTED_LIMIT)]
     tables = "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in custom)
     with pytest.raises(ConfigError) as caught:
@@ -714,7 +714,7 @@ def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> N
     # A `stayfixed.toml` may carry any number of unknown keys, so the plain-named ones are capped
     # like every list of names on a line: the first `LISTED_LIMIT` and a count of the plain rest,
     # then the count of the ones outside the grammar as before, one count per kind. Mutation
-    # (oracle): "an unknown-key refusal names every plain key" -> this reddens.
+    # (oracle): `mutations/`'s "an unknown-key refusal names every plain key" -> this reddens.
     keys = [f"key_{chr(ord('a') + n)}" for n in range(LISTED_LIMIT + 3)]
     body = "".join(f"{key} = 1\n" for key in keys)
     write(tmp_path, MINIMAL + f'\n[paths]\n{body}"not plain" = 1\n')
@@ -743,9 +743,10 @@ def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
 ) -> None:
     # A power-of-two literal of any length converts, and so does a decimal under 4,300 digits, so
     # the loader's own bound is what keeps a number no reader can print or hold out of `Config`.
-    # The refusal names the bound and never the value. Mutations (declared): "a configuration
-    # integer is bounded only below" -> every case loads; "the schema's integer keys are taken
-    # unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" -> `budget`.
+    # The refusal names the bound and never the value. Mutations (declared): `mutations/`'s "a
+    # configuration integer is bounded only below" -> every case loads; "the schema's integer keys
+    # are taken unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" ->
+    # `budget`.
     with pytest.raises(ConfigError) as refused:
         _gated(tmp_path, rest=rest)
     assert str(refused.value).endswith(f"must be a positive integer below {INTEGER_LIMIT:,}")
@@ -753,7 +754,7 @@ def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
 
 def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
     # The legitimate side, and the bound's exact edge: one under it is a value like any other.
-    # Mutation (declared): "a configuration integer one under the bound is refused".
+    # Mutation (declared): `mutations/`'s "a configuration integer one under the bound is refused".
     config = _gated(tmp_path, rest=f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT - 1}\n")
     assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
 

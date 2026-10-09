@@ -552,8 +552,8 @@ def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Pa
     # `attach`'s own docstring is the standard this holds it to: "All six refusals are above
     # every write… A refusal that leaves a repository looking attached is not a refusal."
     #
-    # Mutation (declared, "attach discovers the harness anchor from inside the link step"):
-    # the hoisted call goes -> the refusal still arrives, from `_apply_harness_link`, and
+    # Mutation (declared, `mutations/`'s "attach discovers the harness anchor from inside the link
+    # step"): the hoisted call goes -> the refusal still arrives, from `_apply_harness_link`, and
     # `assert_snapshot_unchanged` reddens with the ledger and the region already written.
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"

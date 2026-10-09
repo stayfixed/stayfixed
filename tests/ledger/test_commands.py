@@ -108,7 +108,8 @@ def test_check_with_a_base_answers_for_a_ledger_the_base_carries(
 ) -> None:
     # The gate's command is `bugs check --base <base>`, so the command its remedy names reports
     # the deleted ledger as the gate does; without `--base` the tree alone is judged and is
-    # inert. Mutation (oracle): "bugs check drops its --base" -> exit 0, nothing to check.
+    # inert. Mutation (oracle): `mutations/`'s "bugs check drops its --base" -> exit 0, nothing to
+    # check.
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     git(root, "init", "-q", "-b", "main")

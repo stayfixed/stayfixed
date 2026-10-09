@@ -192,8 +192,8 @@ def test_the_delivery_rule_judges_the_importer_and_the_imported() -> None:
     # delivery module reaching another delivery area is not, because only the core is held.
     #
     # Mutations (declared): `mutations/`'s "the delivery rule stops recognising a delivery
-    # module", which reddens the first arm, and "the delivery rule holds a delivery module to the
-    # core's rule", which reddens the second.
+    # module" -> the first arm reddens; "the delivery rule holds a delivery module to the core's
+    # rule" -> the second does.
     delivery = frozenset({"attach", "memory", "overlay"})
     assert _delivery_offences(
         "docs/commands.py", "def check():\n    from ..memory import api\n", delivery

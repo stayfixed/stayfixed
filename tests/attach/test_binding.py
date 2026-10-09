@@ -593,7 +593,7 @@ def test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count(
     # 200 x "é" is 400 bytes: too long for Linux's 255-byte names, a name on APFS, which counts
     # 255 characters. The share check asks the kernel, so it answers as the filesystem does on
     # either; the lookup is stubbed so both answers are tested on any OS. Mutation (declared):
-    # "the share check counts a name's bytes" -> `no-such-file` reads as too long.
+    # `mutations/`'s "the share check counts a name's bytes" -> `no-such-file` reads as too long.
     name = "é" * 200
     real = Path.lstat
 

@@ -63,8 +63,8 @@ CITATIONS = (
     # module or the command they mean instead: "the foundation lane" told a reader nothing that
     # `stayfixed.hooks.dispatch` does not tell them better. A letter and not a word character is the
     # boundary, because `\b` counts `_` as a word character and a snake_case test name walked past
-    # it. The pattern spells the word `l[a]nes` so that the two entries in `mutations/` that quote
-    # this line, "the public-anchor gate stops seeing the plans' unit of work" and "the
+    # it. The pattern spells the word `l[a]nes` so that the two entries that quote this line,
+    # `mutations/`'s "the public-anchor gate stops seeing the plans' unit of work" and "the
     # public-anchor gate lets a snake_case name carry the plans' unit of work", are not refused for
     # quoting it; the bookkeeping arm below spells its word the same way.
     ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),

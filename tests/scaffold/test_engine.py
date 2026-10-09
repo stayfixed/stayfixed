@@ -141,7 +141,7 @@ def test_force_takes_a_whole_file_stayfixed_did_not_write_and_records_it(tmp_pat
     # its owner says it may be overwritten. The branch for a file with no record ignored
     # `force`, so a caller workflow a person wrote held `upgrade`'s version and pin back for
     # ever. Forced, it is written and recorded like any file stayfixed writes. Mutation (oracle):
-    # "--force stops reaching a whole file stayfixed did not write".
+    # `mutations/`'s "--force stops reaching a whole file stayfixed did not write".
     (tmp_path / "AGENTS.md").write_text("someone wrote this\n", encoding="utf-8")
     config = a_config(tmp_path)
     unforced = plan(tmp_path, config, [a_template()], force=("CLAUDE.md",))
@@ -1243,8 +1243,8 @@ def test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_reloc
     # it. Where case folds they are one file, and a relocation "from" `agents.md` removed the
     # artifact's own file (`relocated`) beside an `unchanged` verdict for it, then dropped its
     # record. Asserted on the plan, which is the same string rule on every filesystem.
-    # Mutation (oracle): "a record at a case variant of the target triggers a relocation" ->
-    # the plan holds that `REMOVE` and this reddens.
+    # Mutation (oracle): `mutations/`'s "a record at a case variant of the target triggers a
+    # relocation" -> the plan holds that `REMOVE` and this reddens.
     config = a_config(tmp_path)
     (tmp_path / "AGENTS.md").write_text("BODY\n", encoding="utf-8")
     Manifest({}).with_record(a_record(target="agents.md")).write(tmp_path)

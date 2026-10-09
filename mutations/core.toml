@@ -55,7 +55,7 @@ reddens = [
 # Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
 # devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
 # inside the clone a hook runs in, where a harness link would be made. The machine file and the
-# trust record beside it are held by "the machine file follows HOME again".
+# trust record beside it are held by `mutations/`'s "the machine file follows HOME again".
 [[mutation]]
 name = "the hook path takes the home directory from HOME again"
 file = "src/stayfixed/config/machine.py"
@@ -3074,10 +3074,10 @@ reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": the open never waits,
-# so a FIFO swapped in after the check cannot block it, and it follows a link at the last
-# component, because `attach` links each memory group and `MEMORY.md` into the overlay and those
-# are read and hashed through the link.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the open
+# never waits, so a FIFO swapped in after the check cannot block it, and it follows a link at the
+# last component, because `attach` links each memory group and `MEMORY.md` into the overlay and
+# those are read and hashed through the link.
 [[mutation]]
 name = "the regular-file reader waits on a FIFO swapped in after its check"
 file = "src/stayfixed/fsops.py"
@@ -3193,9 +3193,9 @@ reddens = [
   "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": the read stops one
-# byte past its limit, `REGULAR_READ_LIMIT` for this reader, because a regular file can be endless
-# (`/proc/self/pagemap`), and a file at the limit is read.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the read
+# stops one byte past its limit, `REGULAR_READ_LIMIT` for this reader, because a regular file can be
+# endless (`/proc/self/pagemap`), and a file at the limit is read.
 [[mutation]]
 name = "the regular-file reader reads past its limit"
 file = "src/stayfixed/fsops.py"

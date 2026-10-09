@@ -742,6 +742,6 @@ def test_a_template_probe_past_the_depth_bound_is_no_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The probe's answer goes through the one JSON object reader and its depth bound. Mutation
-    # (declared): "the template probe parses with a bare json.loads".
+    # (declared): `mutations/`'s "the template probe parses with a bare json.loads".
     monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
     assert _is_template('{"isTemplate": true, "a": [[[[]]]]}') is None

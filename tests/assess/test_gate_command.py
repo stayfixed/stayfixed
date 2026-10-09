@@ -602,9 +602,9 @@ def test_a_failing_run_ends_by_saying_where_the_findings_are(tmp_path: Path) -> 
     # The printed lines are counts, and a first-time user had no pointer to the findings behind
     # them. One fixed line, and only on a run with a failing gate; under `--builtin` it names
     # `assess --builtin --json`, so the command it hands on runs no custom gate either. Mutation
-    # (by hand): the line dropped -> the last line is the gate's. Mutation (oracle): "gate
-    # --builtin hands on a command that runs the custom gates" -> the `--builtin` run ends with
-    # the plain line and this reddens.
+    # (by hand): the line dropped -> the last line is the gate's. Mutation (oracle): `mutations/`'s
+    # "gate --builtin hands on a command that runs the custom gates" -> the `--builtin` run ends
+    # with the plain line and this reddens.
     project = clone(tmp_path, BASE)
     _change(project, BASE, agents=OVER_BUDGET)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "docs")
@@ -787,8 +787,8 @@ def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
     # A change that deletes the ledger: a bare `BR-001` in code and the whole ledger deleted —
     # directory and index — answered "nothing to check" and passed. So did deleting the
     # mentions with it. The base's ledger is one finding, and a mention left behind is another.
-    # Mutations (oracle): "the uninitialised arm ignores the base's ledger" reddens both cases;
-    # "with no ledger a bare mention is not a finding" reddens `mentioned`.
+    # Mutations (oracle): `mutations/`'s "the uninitialised arm ignores the base's ledger" -> both
+    # cases redden; "with no ledger a bare mention is not a finding" -> `mentioned` reddens.
     project = _ledgered(tmp_path, mention)
     code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
     assert (code, out.splitlines()[1]) == (0, "bugs: enforcing, 0 finding(s)"), out

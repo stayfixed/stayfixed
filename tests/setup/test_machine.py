@@ -225,7 +225,8 @@ def test_a_hand_written_hex_integer_of_any_length_survives_the_rewrite(tmp_path:
     # The owner's machine file is theirs to write, and `tomllib` reads a hex literal of any
     # length; the rewrite spelled it with `str`, which raises past 4,300 digits, so every
     # `stayfixed setup` on that machine ended in an internal error. It is kept, written back in
-    # hexadecimal. Mutation (declared): "the TOML writer spells every integer in decimal".
+    # hexadecimal. Mutation (declared): `mutations/`'s "the TOML writer spells every integer in
+    # decimal".
     path = tmp_path / "config.toml"
     large = LONG_HEX
     path.write_text(f"[notes]\nkept = {large}\n", encoding="utf-8")

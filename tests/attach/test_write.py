@@ -1949,9 +1949,9 @@ def test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes(tmp_path
     # the exclude block so `git status` no longer showed it, and no ledger for `detach` to
     # remove it by. Every source is read while the run is planned now.
     #
-    # Mutations: `mutations/`'s "attach copies past an overlay rule that is not UTF-8", which
-    # drops the refusal, and "attach reads the overlay's rule sources after its first write",
-    # which keeps it and moves it below a write, so the snapshot is what reddens.
+    # Mutations: `mutations/`'s "attach copies past an overlay rule that is not UTF-8" -> the
+    # refusal is dropped; and "attach reads the overlay's rule sources after its first write" ->
+    # it is kept but moved below a write, so the snapshot is what reddens.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     (store.parents[2] / COMMON_CODEX / "z.rules").write_bytes(b"\xff\xfe not text\n")
     before = _everything(tmp_path)
@@ -2193,9 +2193,9 @@ def test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_f
     # previews would. The name is never quoted back: it is the repository's.
     #
     # Mutations (oracle): `mutations/`'s "attach writes for a project name the overlay has no
-    # directory for", the run's gate `--check` takes too; "a name longer than the filesystem
-    # allows is an overlay that cannot be asked" and "a binding record the project's name rules
-    # out cannot be read" -> the long name fails rather than refusing.
+    # directory for" -> the run's gate, which `--check` takes too, is dropped; "a name longer than
+    # the filesystem allows is an overlay that cannot be asked" and "a binding record the
+    # project's name rules out cannot be read" -> the long name fails rather than refusing.
     name = UNSHARED[case]
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     overlay = store.parents[2]
@@ -2390,8 +2390,9 @@ def test_an_overlay_that_is_not_a_directory_where_projects_go_is_refused_as_dama
     # choose another, for a bound project whose overlay is what broke. It names the path that is
     # not a directory, says the overlay is damaged, and never asks for another name; and it is
     # still made before the first write. The name is the repository's and is never printed.
-    # Mutations (declared): the damaged-overlay check skipped -> the name is blamed again; "the
-    # damaged-overlay probe follows a link that names nothing" -> the dangling cases pass `--check`.
+    # Mutations (declared): the damaged-overlay check skipped -> the name is blamed again;
+    # `mutations/`'s "the damaged-overlay probe follows a link that names nothing" -> the dangling
+    # cases pass `--check`.
     name = "a-distinctive-project-name"
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     overlay = store.parents[2]
@@ -2465,8 +2466,8 @@ def test_a_gitignore_linked_to_a_device_is_refused_and_never_read(
         else:
             _planned_ignore_region(root)
     # The machine's own absolute path is not the reader's business: the refusal says why, and
-    # names the file as the project names it. Mutation (declared): "the .gitignore refusal prints
-    # the path it opened".
+    # names the file as the project names it. Mutation (declared): `mutations/`'s "the .gitignore
+    # refusal prints the path it opened".
     assert str(tmp_path) not in str(raised.value)
     assert _everything(tmp_path) == before
 
@@ -2505,8 +2506,8 @@ def test_a_local_settings_file_linked_to_a_device_is_refused_and_never_read(
     # link: a committed link to `/dev/zero` read until memory ran out, and one to a FIFO waited for
     # a writer. It is read only when it is a regular file, and anything else is a settings file
     # that cannot be read, before the first write. `/dev/null` tells the guard apart without
-    # hanging: read, it is an empty settings file. Mutation (declared): "the settings reader reads
-    # a file through any link".
+    # hanging: read, it is an empty settings file. Mutation (declared): `mutations/`'s "the settings
+    # reader reads a file through any link".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     settings = root / SETTINGS
     settings.parent.mkdir(exist_ok=True)

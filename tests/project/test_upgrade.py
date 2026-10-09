@@ -87,8 +87,8 @@ def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
     # `footprint.refuse_local_profile` at the second entry point that writes a footprint: a
     # `stayfixed.toml` edited by hand after `init` meets it here. `uninstall` does not apply it, so
     # the same file can still be taken back (`test_uninstall.py` holds that half). Mutation
-    # (oracle): "a profile artifact kept out of git is written, and every pointer to it dangles"
-    # drops the condition both share.
+    # (oracle): `mutations/`'s "a profile artifact kept out of git is written, and every pointer to
+    # it dangles" drops the condition both share.
     root = initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\nprofile = "python"\n'
@@ -127,7 +127,7 @@ def test_a_committed_path_into_stayfixeds_own_directory_refuses_upgrade_before_a
     # `[paths] agents_md` names, so a pulled commit naming `.stayfixed/local/attach.json` had this
     # command report `region_update .stayfixed/local/attach.json (refreshed)` and rewrite the
     # ledger, in a directory git cannot give back. The loader refuses the value now, naming the
-    # key. Mutation (oracle): "a [paths] value may name stayfixed's own directory".
+    # key. Mutation (oracle): `mutations/`'s "a [paths] value may name stayfixed's own directory".
     root = initialised(tmp_path)
     ledger = root / ".stayfixed" / "local" / "attach.json"
     ledger.parent.mkdir(parents=True)
@@ -251,8 +251,8 @@ def test_a_version_in_a_shape_the_editor_cannot_rewrite_is_refused_even_when_it_
     it silently and write the footprint around a key no later run can move either. The
     roadmap is deleted first, so a run that went on would visibly write.
 
-    Mutation (oracle): "upgrade holds a version it cannot rewrite and writes the footprint
-    anyway" (the comparison in place of the editor) -> no refusal, and the roadmap is
+    Mutation (oracle): `mutations/`'s "upgrade holds a version it cannot rewrite and writes the
+    footprint anyway" (the comparison in place of the editor) -> no refusal, and the roadmap is
     recreated.
     """
     root = _pinned(tmp_path)
@@ -332,8 +332,8 @@ def test_a_workflow_stayfixed_did_not_write_holds_both_keys_until_it_is_forced(
     # it. Unforced, it stays byte for byte and so do version and ref, since the three are one
     # value. `--force` naming it is the remedy `WORKFLOW_HELD` gives, and it used to do nothing:
     # the engine's branch for a file with no record ignored `force`, so the run held for ever.
-    # Mutation (oracle): "--force stops reaching a whole file stayfixed did not write" -> the
-    # forced run holds again, and the assertions after it redden.
+    # Mutation (oracle): `mutations/`'s "--force stops reaching a whole file stayfixed did not
+    # write" -> the forced run holds again, and the assertions after it redden.
     root, text = _adopted(tmp_path, OLD)
     running = stayfixed.__version__
     newer()
@@ -368,7 +368,8 @@ def test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves(
     # `v1` is the documented opt-in to a moving stayfixed, written by hand. It pins nothing this
     # command owns: `upgrade` replaced it with a sha and rendered a workflow over the choice, with
     # no note. Now only `[stayfixed] version` moves, and the ref and any workflow written around it
-    # stay byte for byte. Mutation (oracle): "upgrade repins a [ci] ref that is not a commit".
+    # stay byte for byte. Mutation (oracle): `mutations/`'s "upgrade repins a [ci] ref that is not a
+    # commit".
     root, text = _adopted(tmp_path, "v1", workflow=workflow)
     running = stayfixed.__version__
     newer()
@@ -462,8 +463,8 @@ def test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to
 ) -> None:
     # Read by the leading `X.Y.Z` alone, `1.0.0` and `1.0.0rc1` were one version, so this build
     # rewrote a released `1.0.0` down to `1.0.0rc1` and re-pinned the workflow to it. Mutation
-    # (oracle): "a release reads as older than its own pre-release" -> the run moves the version
-    # and the refusal is never raised.
+    # (oracle): `mutations/`'s "a release reads as older than its own pre-release" -> the run moves
+    # the version and the refusal is never raised.
     root = initialised(tmp_path)
     _recording(root, "1.0.0")
     monkeypatch.setattr(stayfixed, "__version__", "1.0.0rc1")
@@ -494,7 +495,8 @@ def test_two_pre_releases_of_one_version_are_refused_as_unordered_and_never_quot
 ) -> None:
     # `later` does not order two pre-releases, so which way a move would go is unknown. The
     # refusal names the running version, stayfixed's own, and never the recorded string.
-    # Mutation (oracle): "upgrade moves a version it cannot order" -> the run moves it.
+    # Mutation (oracle): `mutations/`'s "upgrade moves a version it cannot order" -> the run moves
+    # it.
     root = initialised(tmp_path)
     _recording(root, "1.0.0rc1-PROJECT")
     monkeypatch.setattr(stayfixed, "__version__", "1.0.0rc2")
@@ -511,8 +513,8 @@ def test_a_recorded_version_with_no_leading_triple_is_refused_and_never_quoted(
     tmp_path: Path,
 ) -> None:
     # `v99.0.0` has no leading `X.Y.Z`, so which way a move would go is unknown; moving it to the
-    # running version could be moving it backward. Mutation (oracle): "upgrade moves a recorded
-    # version it cannot read".
+    # running version could be moving it backward. Mutation (oracle): `mutations/`'s "upgrade moves
+    # a recorded version it cannot read".
     root = _pinned(tmp_path)
     path = root / CONFIG_FILE
     path.write_text(
@@ -692,8 +694,9 @@ def test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_
     claimed the file, and it removed it as `roadmap`'s relocated copy: nothing in the diff, and
     no later run wrote it again. Another artifact's place kept out of git is never a left copy.
 
-    Mutation (oracle): "a ledger entry under one id reaches another artifact's copy kept out of
-    git" -> the dry run's plan already holds the removal of `CLAUDE.md`'s copy, and this reddens.
+    Mutation (oracle): `mutations/`'s "a ledger entry under one id reaches another artifact's copy
+    kept out of git" -> the dry run's plan already holds the removal of `CLAUDE.md`'s copy, and this
+    reddens.
     """
     root = initialised(
         tmp_path,
@@ -739,11 +742,11 @@ def test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_not
     written with the copy's own bytes first: where case folds that rewrites the copy unchanged,
     and where it does not it is a second file, so the same assertions hold on Linux.
 
-    Mutation (oracle): "places are compared case-sensitively for ownership" -> the dry run
-    already plans a removal at the variant, and the `claude-md` case reddens. The
+    Mutation (oracle): `mutations/`'s "places are compared case-sensitively for ownership" -> the
+    dry run already plans a removal at the variant, and the `claude-md` case reddens. The
     `documentation-policy` case is held twice: that artifact is in `upgrade`'s own plan, so the
-    same-plan skip, compared case-folded too, withholds its variant as well ("a left copy at a
-    case variant of a file the plan targets is judged twice" is that guard's entry).
+    same-plan skip, compared case-folded too, withholds its variant as well: that guard's entry
+    is `mutations/`'s "a left copy at a case variant of a file the plan targets is judged twice".
     """
     root = initialised(
         tmp_path,

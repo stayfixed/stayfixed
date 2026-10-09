@@ -2214,11 +2214,12 @@ reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[readable]",
 ]
 
-# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `attach` writes the settings file it merges into back through `settings_text`, so a document
-# read and then too deep for the encoder is refused before anything is written. (`detach`'s encode
-# sits inside the guard of "detach copies and compares the settings document unguarded", which
-# answers a bare encode's overflow the same way, so it carries no entry of its own.)
+# In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
+# recursion escape": `attach` writes the settings file it merges into back through `settings_text`,
+# so a document read and then too deep for the encoder is refused before anything is written.
+# (`detach`'s encode sits inside the guard of `mutations/`'s "detach copies and compares the
+# settings document unguarded", which answers a bare encode's overflow the same way, so it carries
+# no entry of its own.)
 [[mutation]]
 name = "attach encodes the settings merge with a bare json.dumps"
 file = "src/stayfixed/attach/write.py"
@@ -2228,9 +2229,9 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": `attach` reads the
-# committed `.gitignore` it adds its region to through that reader, so a link there to a device or
-# a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": `attach`
+# reads the committed `.gitignore` it adds its region to through that reader, so a link there to a
+# device or a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
 [[mutation]]
 name = "attach reads a .gitignore through any link"
 file = "src/stayfixed/attach/write.py"
@@ -2271,9 +2272,10 @@ reddens = [
   "tests/attach/test_binding.py::test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count[no-such-file]",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": `attach`, `--check`
-# and `detach` read the committed `.claude/settings.local.json` and the ledger through that reader,
-# and a refusal names the file as the project does, never by the machine's absolute path.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names":
+# `attach`, `--check` and `detach` read the committed `.claude/settings.local.json` and the ledger
+# through that reader, and a refusal names the file as the project does, never by the machine's
+# absolute path.
 [[mutation]]
 name = "the settings reader reads a file through any link"
 file = "src/stayfixed/attach/permissions.py"
@@ -2325,9 +2327,10 @@ reddens = [
   "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
 ]
 
-# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `detach` copies the parsed settings document and compares what is left with it, and both recurse
-# as the encoder does, so either overflowing is the reader's refusal of a document nested too deep.
+# In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
+# recursion escape": `detach` copies the parsed settings document and compares what is left with it,
+# and both recurse as the encoder does, so either overflowing is the reader's refusal of a document
+# nested too deep.
 [[mutation]]
 name = "detach copies and compares the settings document unguarded"
 file = "src/stayfixed/attach/write.py"
@@ -2344,9 +2347,9 @@ reddens = [
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[compare]",
 ]
 
-# In the block led by "attach blames the project's name for an overlay whose projects/ or root is a
-# file": a link at the overlay root or `projects/` that names nothing is damage too, and asked with
-# `stat` alone it read as an overlay with no `projects/` yet.
+# In the block led by `mutations/`'s "attach blames the project's name for an overlay whose
+# projects/ or root is a file": a link at the overlay root or `projects/` that names nothing is
+# damage too, and asked with `stat` alone it read as an overlay with no `projects/` yet.
 [[mutation]]
 name = "the damaged-overlay probe follows a link that names nothing"
 file = "src/stayfixed/attach/binding.py"
@@ -2363,8 +2366,8 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-dangling-link]",
 ]
 
-# In the block led by "the settings refusal prints the path it opened": a refusal of a file the
-# project names names it as the project does, never by the machine's absolute path.
+# In the block led by `mutations/`'s "the settings refusal prints the path it opened": a refusal of
+# a file the project names names it as the project does, never by the machine's absolute path.
 [[mutation]]
 name = "the settings refusal prints the path it opened"
 file = "src/stayfixed/attach/permissions.py"

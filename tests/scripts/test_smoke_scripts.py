@@ -101,8 +101,8 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     # Measured against a `scripts/stayfixed` that writes to stderr and exits 1: thirteen of the
     # fourteen rows green, including that one.
     #
-    # Mutation (declared, "the hook smoke stops reading the refusal it was handed"): the
-    # `stderr_says` loop is emptied -> the first assertion below reddens.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops reading the refusal it was handed"):
+    # the `stderr_says` loop is emptied -> the first assertion below reddens.
     smoke = _load("smoke_hooks")
     code = smoke.main(
         [
@@ -120,8 +120,8 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     # And the entries that carry repository bytes: they emitted nothing, which is what every
     # one of them did against the checkout before the fixture had a store at all.
     #
-    # Mutation (declared, "the hook smoke stops reading what an injection entry injected"):
-    # the registry lookup answers `None` -> this reddens and the row above does not.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops reading what an injection entry
+    # injected"): the registry lookup answers `None` -> this reddens and the row above does not.
     assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
 
 
@@ -165,9 +165,9 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
     # `PostToolUse` is the event removed because it is the one with exactly one sample, so its
     # rows are the whole of what goes missing.
     #
-    # Mutation (declared, "the hook smoke stops noticing an event that lost its entry"): the
-    # `unentered` set is emptied -> the run proceeds on the remaining entries, every row passes,
-    # `main` returns 0, and both assertions below redden.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops noticing an event that lost its
+    # entry"): the `unentered` set is emptied -> the run proceeds on the remaining entries, every
+    # row passes, `main` returns 0, and both assertions below redden.
     smoke = _load("smoke_hooks")
     planted = tmp_path / "plugin"
     _copy_hooks(ROOT / "hooks", planted)
@@ -200,9 +200,9 @@ def test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer(
     # sampled, runs one row fewer and prints a green summary — the bundle stopped being
     # smoke-tested and nothing said so.
     #
-    # Mutation (declared, "the hook smoke stops noticing a bundle that lost its entry"): the
-    # `ungathered` set is emptied -> the run proceeds on eight entries and both assertions below
-    # redden.
+    # Mutation (declared, `mutations/`'s "the hook smoke stops noticing a bundle that lost its
+    # entry"): the `ungathered` set is emptied -> the run proceeds on eight entries and both
+    # assertions below redden.
     smoke = _load("smoke_hooks")
     planted = _plugin(tmp_path)
     entries = planted / "hooks" / "hooks.json"
@@ -236,8 +236,8 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
     # changes no event and no bundle, runs an eleventh row and prints a summary that reads
     # green. The floor is the only thing that answers.
     #
-    # Mutation (declared, "the hook smoke stops counting its own entries and rows"): the
-    # comparison against `EXPECTED_ENTRIES`/`EXPECTED_ROWS` is disabled -> `main` returns 0
+    # Mutation (declared, `mutations/`'s "the hook smoke stops counting its own entries and rows"):
+    # the comparison against `EXPECTED_ENTRIES`/`EXPECTED_ROWS` is disabled -> `main` returns 0
     # and both assertions below redden.
     smoke = _load("smoke_hooks")
     planted = _plugin(tmp_path)
@@ -276,8 +276,9 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     # The count as well as the exit code, because seven of the nine rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
     # `report.rows = report.rows[:1]` before the summary, this file was still five green.
-    # Mutation (declared, "the exfiltration scenario stops recording the rows that passed"):
-    # `Report.row` banks only the failures, the report empties, and the floor is what notices.
+    # Mutation (declared, `mutations/`'s "the exfiltration scenario stops recording the rows that
+    # passed"): `Report.row` banks only the failures, the report empties, and the floor is what
+    # notices.
     exfil = _load("smoke_exfiltration")
     code = exfil.main(
         [
@@ -326,8 +327,8 @@ def test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable(
     # Both smoke scripts strip every `STAYFIXED_*` variable so an entry never reads this
     # developer's own stayfixed, and without an exception that strip would take the suite's floor
     # under the product's `git` bounds too. The floor alone is kept, spelled as the product
-    # spells it, in the one base environment both scripts build on. Mutation (oracle): "the hook
-    # smoke strips the suite's floor" -> this reddens.
+    # spells it, in the one base environment both scripts build on. Mutation (oracle):
+    # `mutations/`'s "the hook smoke strips the suite's floor" -> this reddens.
     smoke = _load("smoke_hooks")
     assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
     monkeypatch.setenv("STAYFIXED_CONFIG", str(tmp_path / "developer.toml"))

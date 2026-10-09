@@ -559,8 +559,8 @@ def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
     # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
     # `attach`'s — the home directory was fine when the repository was attached.
     #
-    # Mutation (declared, "detach discovers the harness anchor from inside the withdrawal"):
-    # the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+    # Mutation (declared, `mutations/`'s "detach discovers the harness anchor from inside the
+    # withdrawal"): the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -1462,8 +1462,8 @@ def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_re
     # as it does on Python 3.12 near 994 levels. No single mutation reddens it, and that is the
     # point: two layers answer the overflow, `json_text` and the guard around `detach`'s copy and
     # comparison, and each is proven alone -- `mutations/`'s "the JSON writer lets an encode past
-    # the interpreter's recursion escape" by the engine's forced case, and "detach copies and
-    # compares the settings document unguarded" by
+    # the interpreter's recursion escape" -> by the engine's forced case; "detach copies and
+    # compares the settings document unguarded" -> by
     # `test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -1486,7 +1486,7 @@ def test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes
     # `detach` reads `.claude/settings.local.json` to take back what `attach` merged into it, and
     # read a link to a device through: `/dev/null` read as an empty file and the run went on.
     # Only a regular file is read, so it stops before it removes anything. Mutation (declared):
-    # "the settings reader reads a file through any link".
+    # `mutations/`'s "the settings reader reads a file through any link".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -1508,7 +1508,7 @@ def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Pa
     # there to `/dev/zero` read until memory ran out. Only a regular file is read, and the refusal
     # names the ledger as the project names it, never the machine's path. `/dev/null` tells the
     # guard apart without hanging: read, it is an empty ledger, "not valid JSON". Mutation
-    # (declared): "the attach ledger is read through any link".
+    # (declared): `mutations/`'s "the attach ledger is read through any link".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -1556,7 +1556,7 @@ def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_
     # left with it, and neither step was guarded: on Python 3.14 under a reduced stack a document
     # the parser read raised `RecursionError` at either, an internal error. Forced at each step
     # here; both are the reader's refusal of a document nested too deep. Mutation (declared):
-    # "detach copies and compares the settings document unguarded".
+    # `mutations/`'s "detach copies and compares the settings document unguarded".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"

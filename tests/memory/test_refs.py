@@ -535,7 +535,8 @@ def test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order(
 ) -> None:
     # "The first eight" means one thing whichever order `memory.groups` declares them in: the
     # sorted order, which the data region for the same failure and the trail's stale keys use.
-    # Mutation (oracle): "the unresolved groups are named in declared order" -> this reddens.
+    # Mutation (oracle): `mutations/`'s "the unresolved groups are named in declared order" -> this
+    # reddens.
     root, _config = project(tmp_path)
     names = [f"g{number:02d}" for number in range(LISTED_LIMIT + 3)]
     (root / "stayfixed.toml").write_text(
@@ -555,8 +556,8 @@ def test_a_long_group_is_named_clipped_on_the_unresolved_groups_line(
 ) -> None:
     # A group is the repository's and bounded in length by nothing, the same class as a trail
     # key, so the refusal names it by `printed.clipped`: its start and its length, in the line's
-    # own naming and in the resolver's reason alike. Mutation (oracle): "an unresolved group is
-    # named unclipped" -> this reddens.
+    # own naming and in the resolver's reason alike. Mutation (oracle): `mutations/`'s "an
+    # unresolved group is named unclipped" -> this reddens.
     root, _config = project(tmp_path)
     group = "g" * (CLIPPED_CHARS + 30)
     (root / "stayfixed.toml").write_text(

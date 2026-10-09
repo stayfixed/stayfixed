@@ -99,8 +99,8 @@ def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_read() -> None:
     # Spelled as JSON on purpose: with no space after a colon, nothing but the brace refuses it,
     # where `{run: "…"}` is refused a second time as a plain scalar that reads as a mapping, and
     # a case written that way reddens under the mutation only on the refusal's wording. Mutation
-    # (oracle): "the workflow reader reads a flow mapping as a plain scalar" -> the step is read
-    # as the string it spells, `runs` finds no script in it, and this reddens.
+    # (oracle): `mutations/`'s "the workflow reader reads a flow mapping as a plain scalar" -> the
+    # step is read as the string it spells, `runs` finds no script in it, and this reddens.
     text = 'jobs:\n  one:\n    steps:\n      - {"run":"echo ${{ github.actor }}"}\n'
     with pytest.raises(WorkflowYamlError, match=r"line 4: a value this reader does not read"):
         load(text)

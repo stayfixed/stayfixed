@@ -692,10 +692,10 @@ def test_the_record_of_a_memory_readme_already_gone_is_dropped(
 
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
     # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
-    # and its note carries the way out. Mutation: `mutations/`'s "overlay init leaves the
-    # memory README a release shipped", which drops the note with the removal; the engine's
-    # verdict itself is "a retired overlay file with no ledger is removed whatever it holds",
-    # proven through `upgrade`.
+    # and its note carries the way out. Mutations: `mutations/`'s "overlay init leaves the
+    # memory README a release shipped" -> the note is dropped with the removal; "a retired overlay
+    # file with no ledger is removed whatever it holds" -> the engine's verdict itself, proven
+    # through `upgrade`.
     root = _an_overlay(tmp_path)
     edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
     path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
@@ -1152,8 +1152,8 @@ def test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Each manifest goes through the one JSON object reader and its depth bound; one past it is
-    # one the owner is not read from, and the next is asked. Mutation (declared): "an overlay
-    # manifest is read with a bare json.loads".
+    # one the owner is not read from, and the next is asked. Mutation (declared): `mutations/`'s "an
+    # overlay manifest is read with a bare json.loads".
     root = _an_overlay(tmp_path)
     init_instance(root, "acme", runner=Recorder())
     path = root / ".claude-plugin" / "plugin.json"

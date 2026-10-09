@@ -108,7 +108,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
     `Runner` protocol has no timeout and every stub in this suite is bounded at nothing. The
     factory is imported inside `run_doctor`, so patching the module attribute is the seam.
 
-    Mutation (oracle entry "doctor asks the public repository with no bound of its own"):
+    Mutation (`mutations/`'s "doctor asks the public repository with no bound of its own"):
     `subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS)` -> `subprocess_runner()` -> this reddens
     on the recorded keyword.
     """

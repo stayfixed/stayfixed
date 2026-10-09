@@ -108,7 +108,7 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     rests on `subprocess.run(timeout=)`, which kills `sh` before it reaches `: > finished`; the
     `sleep` it started outlives the test by about four seconds, writing nothing.
 
-    Mutation (oracle entry "the runner ignores the bound its caller asked for"): `timeout=bound`
+    Mutation (`mutations/`'s "the runner ignores the bound its caller asked for"): `timeout=bound`
     back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: the command runs to completion and the
     runner answers `Completed(code=0)`, so the code assertion is what reddens and the marker is
     the floor under it — a bound of five minutes cannot cut a five-second sleep.

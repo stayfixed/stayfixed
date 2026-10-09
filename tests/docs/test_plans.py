@@ -507,8 +507,8 @@ def test_a_base_that_will_not_resolve_is_raised_never_an_ok(tmp_path: Path) -> N
     # This gate ran green for its whole life on a shallow checkout that had no base ref. The
     # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
     # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
-    # finding, exit 1. Mutation (oracle): "an unresolvable base reads as a clean run" -> nothing
-    # is raised and this reddens.
+    # finding, exit 1. Mutation (oracle): `mutations/`'s "an unresolvable base reads as a clean run"
+    # -> nothing is raised and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")

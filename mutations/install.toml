@@ -1461,9 +1461,10 @@ reddens = [
   "tests/overlay/test_publish.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
 ]
 
-# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `setup` writes the owner's settings back, and `overlay init` a renamed manifest, through
-# `json_text`, so a document read and then too deep for the encoder is the reader's failure.
+# In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
+# recursion escape": `setup` writes the owner's settings back, and `overlay init` a renamed
+# manifest, through `json_text`, so a document read and then too deep for the encoder is the
+# reader's failure.
 [[mutation]]
 name = "setup encodes the owner's merged settings with a bare json.dumps"
 file = "src/stayfixed/setup/run.py"

@@ -385,7 +385,8 @@ def test_a_repository_view_past_the_depth_bound_is_a_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # `gh`'s answer goes through the one JSON object reader, so its depth bound holds here too.
-    # Mutation (declared): "publish-template parses the repository view with a bare json.loads".
+    # Mutation (declared): `mutations/`'s "publish-template parses the repository view with a bare
+    # json.loads".
     monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
 
     class _Deep(_GitHub):

@@ -192,8 +192,9 @@ def test_a_real_settings_document_sits_far_inside_the_depth_bound() -> None:
     # the cap: on 3.14 (the one interpreter whose parser follows past it) nested objects stopped
     # encoding at about 21,700 levels of `==` and 28,900 of `json.dumps(indent=2)` (measured on
     # 3.14.7), so a cap raised past 20,000 would let 3.14 read what it cannot write back.
-    # Mutations (declared): "the JSON object reader's depth bound is raised past what 3.14
-    # encodes" and "the JSON object reader's depth bound is lowered under what a harness writes".
+    # Mutations (declared): `mutations/`'s "the JSON object reader's depth bound is raised past what
+    # 3.14 encodes" and "the JSON object reader's depth bound is lowered under what a harness
+    # writes".
     marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
     assert 1_000 <= jsonobject.DEPTH_CAP < 20_000
     assert json.loads(apply_entries(marked, {})) == {}

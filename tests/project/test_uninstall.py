@@ -185,9 +185,9 @@ def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) ->
     # The ledger lives under `.stayfixed/local/`, so without this refusal the count of files kept
     # out of git would still stop the real run, with a remedy that is not the one. The dry run
     # tells them apart: it reports that count, and it refuses an attached repository. Exactly
-    # this sentence, and nothing written, for both. Mutation (oracle): "an attached repository is
-    # counted as files kept out of git instead of being told to detach" -> the dry run returns a
-    # report, and the real run refuses with `KEPT_LOCALLY` instead.
+    # this sentence, and nothing written, for both. Mutation (oracle): `mutations/`'s "an attached
+    # repository is counted as files kept out of git instead of being told to detach" -> the dry run
+    # returns a report, and the real run refuses with `KEPT_LOCALLY` instead.
     before = snapshot(root)
     for dry_run in (True, False):
         with pytest.raises(Refusal) as refused:
@@ -311,8 +311,8 @@ def test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_chang
     # The prediction before any write asks the engine's rule of what the region's removal leaves,
     # and that rule reads the ledger: the skeleton `init` wrote is stayfixed's though this build
     # renders another. Judged by the render alone, the run refused before any write over a file
-    # nobody touched. Mutation (oracle): "the ledger never vouches for bytes stayfixed wrote kept
-    # out of git" -> the refusal is raised.
+    # nobody touched. Mutation (oracle): `mutations/`'s "the ledger never vouches for bytes
+    # stayfixed wrote kept out of git" -> the refusal is raised.
     from stayfixed.project import templates
 
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
@@ -369,9 +369,9 @@ def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_pred
 
     The run has written by then, so what must be unchanged is what `KEPT_AFTER` says it left:
     the ignore block, `stayfixed.toml`, and the manifest's record of the block, which the next run
-    finishes from. Mutation (oracle): "the ignore block goes while files are still under
-    .stayfixed/local/" -> the ignore block goes over the remainder, no refusal is raised, and the
-    file stops being ignored.
+    finishes from. Mutation (oracle): `mutations/`'s "the ignore block goes while files are still
+    under .stayfixed/local/" -> the ignore block goes over the remainder, no refusal is raised, and
+    the file stops being ignored.
     """
     import stayfixed.project.uninstall as module
 
@@ -437,8 +437,8 @@ def test_a_stayfixed_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_pa
     # something else took it: here, a person deleted it. Going on dropped the manifest and left
     # every recorded file untracked for good; now the run refuses before any write, dry run
     # included, and restoring the file is a remedy that reaches the end. Mutation (oracle):
-    # "uninstall drops the manifest when a person deleted stayfixed.toml" -> the run removes the
-    # ledger instead of refusing, and the first assertion reddens.
+    # `mutations/`'s "uninstall drops the manifest when a person deleted stayfixed.toml" -> the run
+    # removes the ledger instead of refusing, and the first assertion reddens.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
     text = config.read_text(encoding="utf-8")
@@ -552,8 +552,8 @@ def test_a_case_variant_of_a_harness_directory_is_never_pruned(tmp_path: Path) -
     directories are compared case-folded, so `.Claude/` stays on every filesystem (on Linux it
     is an empty directory of its own, left like any directory a harness might read).
 
-    Mutation (oracle): "a case variant of a harness's own directory is pruned" -> the directory
-    is removed and the assertion reddens.
+    Mutation (oracle): `mutations/`'s "a case variant of a harness's own directory is pruned" -> the
+    directory is removed and the assertion reddens.
     """
     document = (
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -594,8 +594,8 @@ def test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_remove
     # place this configuration puts an artifact: `roadmap = "some/dir/x.md"` had it remove an
     # empty `some/dir/` a person made, though nothing of stayfixed's was ever in it. Only a
     # directory above a file this run removed goes now. The roadmap's own directory still goes,
-    # because its file did. Mutation (oracle): "uninstall prunes above every place the
-    # configuration names" -> `some/dir` is removed and the first assertion reddens.
+    # because its file did. Mutation (oracle): `mutations/`'s "uninstall prunes above every place
+    # the configuration names" -> `some/dir` is removed and the first assertion reddens.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
     config.write_text(
@@ -613,8 +613,8 @@ def test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made(tmp_pat
     # A forged record at `some/dir/x.md`, the committed `[paths]` value naming it, and the
     # artifact kept out of git: the engine plans a relocation's `REMOVE` of the absent old file,
     # which unlinks nothing, and `_apply` counted it removed because the path was absent, so the
-    # empty `some/dir/` and `some/` a person made went. Mutation (oracle): "a removal that
-    # unlinked nothing prunes above its path" -> both directories are removed.
+    # empty `some/dir/` and `some/` a person made went. Mutation (oracle): `mutations/`'s "a removal
+    # that unlinked nothing prunes above its path" -> both directories are removed.
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
     config = root / CONFIG_FILE
     config.write_text(
@@ -644,8 +644,8 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
     # `upgrade` keeps a workflow `uvx` merely does not render; `uninstall` asks where this build
     # could have written it, and nothing else. Measured before: the workflow was left, unlisted,
     # beside a deleted manifest, and counted as an artifact this stayfixed does not produce.
-    # Mutation (oracle): "uninstall keeps a workflow the mode merely does not render, and leaves
-    # it unlisted" -> `.github/` stays and the assertion reddens.
+    # Mutation (oracle): `mutations/`'s "uninstall keeps a workflow the mode merely does not render,
+    # and leaves it unlisted" -> `.github/` stays and the assertion reddens.
     listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{stayfixed.__version__}\n")
     root = initialised(tmp_path, runner=listing, ci=True)
     config = root / CONFIG_FILE
@@ -721,10 +721,10 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     `claude.md` is the same file on the default macOS and Windows filesystems, so it is refused
     on every filesystem too.
 
-    Mutation (oracle): "an artifact may target a file another artifact is built to write" -> no
-    refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap. Mutation (oracle):
-    "places are compared case-sensitively for ownership" -> the `case-variant` cases raise
-    nothing.
+    Mutation (oracle): `mutations/`'s "an artifact may target a file another artifact is built to
+    write" -> no refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap. Mutation
+    (oracle): `mutations/`'s "places are compared case-sensitively for ownership" -> the
+    `case-variant` cases raise nothing.
     """
     root = initialised(
         tmp_path,
@@ -771,7 +771,7 @@ def test_a_profile_artifact_listed_local_after_init_is_still_taken_back(tmp_path
     `stayfixed.toml`, the README from before, and `.claude/`, a harness's own directory that
     `uninstall` never removes.
 
-    Mutation (oracle): "uninstall refuses a profile artifact kept out of git, so a
+    Mutation (oracle): `mutations/`'s "uninstall refuses a profile artifact kept out of git, so a
     configuration written before that rule can never be taken back" -> the run raises the
     profile refusal and this reddens at the call.
     """
@@ -854,8 +854,8 @@ def test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest(
     refused over it for good and suggested a `--force` no action could reach. The ledger records
     it, so it goes whether or not an `upgrade` ran in between.
 
-    Mutation (oracle): "uninstall never judges an artifact only the ledger records" -> the direct
-    case refuses with `KEPT_LOCALLY`.
+    Mutation (oracle): `mutations/`'s "uninstall never judges an artifact only the ledger records"
+    -> the direct case refuses with `KEPT_LOCALLY`.
     """
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
     config = root / CONFIG_FILE
@@ -932,9 +932,9 @@ def test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton
     wrote into it. The file keeps that line, so the run refuses before any write, and says so
     in the dry run's count.
 
-    Mutation (oracle): "a force meant for a region's left copy reaches the skeleton kept out of
-    git" -> the dry run plans the skeleton `remove (retired, forced)`, and the first assertion
-    reddens.
+    Mutation (oracle): `mutations/`'s "a force meant for a region's left copy reaches the skeleton
+    kept out of git" -> the dry run plans the skeleton `remove (retired, forced)`, and the first
+    assertion reddens.
     """
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     local = root / LOCAL_AGENTS
@@ -971,8 +971,8 @@ def test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it(
     ledger records: unedited it goes on `upgrade`, and edited it is named, keeps its entry, and
     `--force` with its path takes it.
 
-    Mutation (oracle): "a left copy is judged only where [artifacts] local no longer lists its id"
-    -> the unedited case keeps the old copy, and the uninstall refuses.
+    Mutation (oracle): `mutations/`'s "a left copy is judged only where [artifacts] local no longer
+    lists its id" -> the unedited case keeps the old copy, and the uninstall refuses.
     """
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
     if edited:
@@ -1015,8 +1015,8 @@ def test_a_ledger_value_the_register_refuses_stops_init_and_upgrade_and_never_un
     # the bug ledger's register refuses — an `id_prefix` outside the grammar, a boundary level that
     # names no severity — is refused where the bug index is rendered, so `init` and `upgrade` stop
     # on it; taking the footprint out renders nothing and must not ask for the register. Mutation
-    # (oracle): "the footprint builds the bug ledger's register before anything renders" ->
-    # `uninstall` refuses too, and each case reddens on its own.
+    # (oracle): `mutations/`'s "the footprint builds the bug ledger's register before anything
+    # renders" -> `uninstall` refuses too, and each case reddens on its own.
     fresh = repository(tmp_path, directory="fresh")
     (fresh / CONFIG_FILE).write_text(DOCUMENT + malformed, encoding="utf-8")
     code, out, err = cli(fresh, tmp_path, "init", "--yes", "--no-ci")

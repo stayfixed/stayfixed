@@ -109,8 +109,8 @@ def test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter(
     # refusal in words, by the ancestor's place under the root and never its absolute path.
     #
     # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
-    # takes as a fault" (the two over-long shapes refuse) and "contained reads an ancestor it
-    # cannot ask about as no link" (the unsearchable directory is contained).
+    # takes as a fault" -> the two over-long shapes refuse; "contained reads an ancestor it cannot
+    # ask about as no link" -> the unsearchable directory is contained.
     if unmet_here(shape):
         pytest.skip("root searches every directory")
     relative = shaped(tmp_path, shape)
@@ -135,8 +135,8 @@ def test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_r
     # longest path is not seen there. The descriptor walk every write goes through reaches it one
     # component at a time and refuses it of its own accord, and that is the safety. Built by
     # descriptor, as only such a walk can. Mutations (oracle): `mutations/`'s "the path predicates
-    # read a name longer than the system takes as a fault" (`contained` refuses instead) and "the
-    # containment walk follows a symlinked directory" (the write lands outside).
+    # read a name longer than the system takes as a fault" -> `contained` refuses instead; "the
+    # containment walk follows a symlinked directory" -> the write lands outside.
     longest = os.pathconf(tmp_path, "PC_PATH_MAX")
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -415,7 +415,7 @@ def test_a_paths_value_inside_stayfixeds_own_directory_is_refused_and_never_quot
     # committed `agents_md = ".stayfixed/local/attach.json"` had `upgrade` rewrite the ledger.
     # Case and depth for the reasons `.git` has them: a case-folding filesystem, and a nested
     # package initialised on its own. The refusal names the key, never the value.
-    # Mutation (oracle): "a [paths] value may name stayfixed's own directory".
+    # Mutation (oracle): `mutations/`'s "a [paths] value may name stayfixed's own directory".
     text = (
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[paths]\nagents_md = "{value}"\n'

@@ -789,8 +789,8 @@ def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
     # by hand as a duplicate of a genuine `new`, or a live one that merely relates to it, is not
     # this move half-done, and resuming would sweep every mention of `old` over to `new`. Each is
     # titled as the move titles its pointer, so its other bytes are what refuse it. Mutations:
-    # `mutations/`'s "a renumber resumes from any void entry toward its target" (the `void` case)
-    # and "a renumber resumes from any entry that relates to its target" (both).
+    # `mutations/`'s "a renumber resumes from any void entry toward its target" -> the `void`
+    # case reddens; "a renumber resumes from any entry that relates to its target" -> both do.
     root, config = project(tmp_path)
     seed(root, config, 3)
     bugs = root / "docs" / "bugs"

@@ -1002,8 +1002,9 @@ reddens = [
 # entry's `after` was an unbounded read on its first run and the oracle reported it survived, which
 # is the finding that produced this paragraph. The sibling `_diagnostics` entry does redden, because
 # that row counts records *inside* what it read and an unbounded read counts more of them; this row
-# returns above its count. The bound on the read itself is `fsops.read_bounded`'s, held by the core
-# entries "the regular-file reader reads past its limit" and "... refuses a file at its limit".
+# returns above its count. The bound on the read itself is `fsops.read_bounded`'s, held by
+# `mutations/`'s "the regular-file reader reads past its limit" and "the regular-file reader refuses
+# a file at its limit".
 [[mutation]]
 name = "doctor reads the rendered workflow with no bound of its own"
 file = "src/stayfixed/doctor/checks.py"
@@ -1163,10 +1164,10 @@ reddens = [
   "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
 ]
 
-# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": the row
-# reads Claude Code's settings files by that walk and every other strictly, since only Claude
-# Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and names a file
-# the walk could only partly read.
+# In the block led by `mutations/`'s "the live-entry walk refuses a scalar where a list or an object
+# belongs": the row reads Claude Code's settings files by that walk and every other strictly, since
+# only Claude Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and
+# names a file the walk could only partly read.
 [[mutation]]
 name = "hook-entries reads every settings file leniently, Codex's included"
 file = "src/stayfixed/doctor/entries.py"
@@ -1207,9 +1208,10 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
 ]
 
-# In the block led by "hook-entries reads no project skill": a skill, command or agent file whose
-# frontmatter declares hooks is named as one the row does not judge, a warning and never a red, and
-# its frontmatter is read for a top-level `hooks` key between its two fences and nothing more.
+# In the block led by `mutations/`'s "hook-entries reads no project skill": a skill, command or
+# agent file whose frontmatter declares hooks is named as one the row does not judge, a warning and
+# never a red, and its frontmatter is read for a top-level `hooks` key between its two fences and
+# nothing more.
 [[mutation]]
 name = "hook-entries reads no project skill"
 file = "src/stayfixed/doctor/entries.py"

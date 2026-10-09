@@ -666,9 +666,10 @@ def test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is
     #
     # Mutations (oracle): `mutations/`'s "hook-entries vouches for a granted command under any
     # event" -> the `another-event` cases are absolved; "hook-entries vouches for a granted
-    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and the walk
-    # dropping either from what it reads ("the hook entry walk reads every entry under one event",
-    # "the hook entry walk reads every entry without its matcher") absolves them on both sides.
+    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and "the
+    # hook entry walk reads every entry under one event" or "the hook entry walk reads every entry
+    # without its matcher" -> the walk drops either from what it reads and absolves them on both
+    # sides.
     root = _attached(tmp_path)
     if binding == "unbound":
         (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).unlink()
@@ -1022,7 +1023,7 @@ def test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_ove
     # "an unreadable record withholds judgement of every entry" -> both `forged-` cases with an
     # overlay that can be asked, and `owner-no-overlay`, are warnings again; "attach does not ask
     # the overlay about a ledger it cannot read" -> `owner-overlay` is red; "an unreadable record
-    # reads as one recording nothing" -> every red case and `owner-overlay` say "not recorded";
+    # reads as one recording nothing" -> every red case and `owner-overlay` say `not recorded`;
     # "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside
     # an unreadable record" -> both `-no-overlay` cases read the recorded overlay's sentence; "the
     # rebuild remedy is offered where the overlay cannot be asked" and "an unreadable ledger is
@@ -2109,10 +2110,10 @@ def test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unr
     # neither of which was measured. A command claiming the stayfixed marker inside one is red
     # rather than the warning a file the walk cannot read gets: a conservative reading, since
     # whether a harness runs it is not known, and a clone could otherwise hide a forged entry
-    # there and keep the exit code at 0. Mutations (declared): "the live-entry walk skips a
-    # container without saying so" and "the live-entry walk reads an entry where a group goes as
-    # no entry" -> the row warns or reads "all accounted for"; "the live-entry walk overlooks a
-    # marked command it skipped" -> it warns.
+    # there and keep the exit code at 0. Mutations (declared): `mutations/`'s "the live-entry walk
+    # skips a container without saying so" and "the live-entry walk reads an entry where a group
+    # goes as no entry" -> the row warns or reads `all accounted for`; "the live-entry walk
+    # overlooks a marked command it skipped" -> it warns.
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -2127,7 +2128,8 @@ def test_an_entry_is_named_by_its_place_among_every_element_beside_it(tmp_path: 
     # The row named an entry by its place among the entries it judged, so with scalars beside it
     # -- skipped, as Claude Code skips them -- a forged entry fifth in its list was named "entry 2
     # of 2", a place a reader opening the file would not find. Every element of an entry list
-    # holds a place. Mutation (declared): "the live-entry walk numbers only the entries it reads".
+    # holds a place. Mutation (declared): `mutations/`'s "the live-entry walk numbers only the
+    # entries it reads".
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     document = json.loads(path.read_text(encoding="utf-8"))

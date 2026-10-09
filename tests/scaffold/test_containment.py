@@ -307,11 +307,11 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
 
     **No single-edit mutation reddens this, and that is measured rather than assumed.** Two
     guards stand in front of the write — the `[paths]` grammar and `contained()`'s component
-    rule — and each refuses the value alone, which is the point of having both. With both
-    mutations applied together ("the [paths] grammar admits a spelling the write refuses
-    again" and "contained normalises the value away, so plan stops agreeing with apply"), this
-    run reaches `apply` and the manifest assertion reddens. The
-    oracle proves each guard separately through the siblings those entries name.
+    rule — and each refuses the value alone, which is the point of having both. With both of
+    `mutations/`'s "the [paths] grammar admits a spelling the write refuses again" and "contained
+    normalises the value away, so plan stops agreeing with apply" applied together, this run
+    reaches `apply` and the manifest assertion reddens. The oracle proves each guard separately
+    through the siblings those entries name.
     """
     root = tmp_path / "widget"
     root.mkdir()
@@ -342,9 +342,9 @@ def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
     hook's bytes and mode are something the run could actually have changed.
 
     Two guards again, the `[paths]` loop and the walk's own copy of the rule, and either alone
-    refuses. With both "a [paths] value may name git's control directory again" and "the walk
-    writes inside git's control directory again" applied, the hook is rewritten and this
-    reddens; each alone is proven by the siblings those entries name.
+    refuses. With both of `mutations/`'s "a [paths] value may name git's control directory
+    again" and "the walk writes inside git's control directory again" applied, the hook is rewritten
+    and this reddens; each alone is proven by the siblings those entries name.
     """
     root = tmp_path / "widget"
     root.mkdir()

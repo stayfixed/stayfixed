@@ -866,8 +866,8 @@ def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_l
     # `--check` never did, so the preview answered clean, or with another refusal's words, over a
     # checkout the run then refused. `--check` asks them through the run's own planning now, so
     # each ends both commands with one code and one line. Mutations (oracle): `mutations/`'s
-    # "the gates do not ask what the share holds" for the first, and "check skips the reads the
-    # run makes before its first write" for the rest.
+    # "the gates do not ask what the share holds" -> the first case reddens; "check skips the
+    # reads the run makes before its first write" -> the rest do.
     root, store, machine = _granting(tmp_path)
     PAST_THE_GATES[case](root, tmp_path)
     before = snapshot(tmp_path)
@@ -1366,8 +1366,8 @@ def test_a_group_name_is_judged_by_what_the_filesystem_takes_and_not_by_its_byte
     # bytes against `PC_NAME_MAX` refused it on macOS, where the attach it previews works. So the
     # verdict is asked of the filesystem the test runs on, and the commands must agree with it.
     # Counting bytes again reddens this on macOS; the oracle runs on Linux, where bytes are what
-    # the filesystem counts, so the declared mutation, "the share check counts a name's bytes",
-    # is proven by `tests/attach/test_binding.py`'s stubbed lookup instead.
+    # the filesystem counts, so `mutations/`'s "the share check counts a name's bytes" is proven
+    # by `tests/attach/test_binding.py`'s stubbed lookup instead.
     from stayfixed.attach.binding import PATH_CANNOT_EXIST
     from stayfixed.config.loader import CONFIG_FILE
     from tests.attach.test_binding import CONFIG

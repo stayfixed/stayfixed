@@ -103,8 +103,8 @@ def test_with_no_ledger_a_bare_mention_dangles_too(tmp_path: Path) -> None:
     # A bare identifier is the ordinary way code refers to a bug, so with the ledger deleted a
     # `# workaround for BR-001` is as dangling as a citation of its file: reported only for
     # citations, deleting the ledger and its index switched an enforced gate off for every
-    # mention. Mutation (oracle): "with no ledger a bare mention is not a finding" -> nothing is
-    # reported.
+    # mention. Mutation (oracle): `mutations/`'s "with no ledger a bare mention is not a finding" ->
+    # nothing is reported.
     root, config = project(tmp_path)
     (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
     assert [
@@ -141,8 +141,8 @@ def test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding(
 ) -> None:
     # "No ledger" is read off the tree, which the change wrote, so the base is asked whether it
     # had one: deleting the ledger, the index and every mention together passed, with nothing
-    # left in the tree to dangle. Mutation (oracle): "the uninitialised arm ignores the base's
-    # ledger" -> nothing is reported.
+    # left in the tree to dangle. Mutation (oracle): `mutations/`'s "the uninitialised arm ignores
+    # the base's ledger" -> nothing is reported.
     root, config, base = _based(tmp_path, on_base)
     assert uninitialised(root, bug_register(config))
     assert [(p.rule, p.path) for p in register_gate(root, config, bug_register(config), base)] == [
@@ -710,8 +710,8 @@ def test_a_base_that_shares_no_history_with_the_tree_is_a_failure(tmp_path: Path
 def test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger(tmp_path: Path) -> None:
     # A base this clone does not have is a question with no answer, and "the base had no
     # ledger" would pass exactly the change the question exists to catch: a `Failure`, which a
-    # gate run reports as could not run. Mutation (oracle): "a base git cannot list reads as a
-    # base with no ledger" -> `register_gate` returns `[]`.
+    # gate run reports as could not run. Mutation (oracle): `mutations/`'s "a fork point that is
+    # not known reads as a base with no ledger" -> `register_gate` returns `[]`.
     root, config, _base = _based(tmp_path, "both")
     with pytest.raises(Failure) as caught:
         register_gate(root, config, bug_register(config), "refs/remotes/origin/main")
@@ -1084,8 +1084,8 @@ def test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files(
     # The files claiming one identifier are bounded in number by nothing but the ledger, so the
     # detail names the first `LISTED_LIMIT` and counts the rest. Nothing is lost from `--json`:
     # only one file's name can be its identifier, so every other holder is named by an
-    # `id-mismatch` finding of its own. Mutation (oracle): "a duplicate identifier names every
-    # file that claims it" -> the detail equality reddens.
+    # `id-mismatch` finding of its own. Mutation (oracle): `mutations/`'s "a duplicate identifier
+    # names every file that claims it" -> the detail equality reddens.
     root, config = project(tmp_path)
     names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
     ledger(root, config, dict.fromkeys(names, entry(1)))
@@ -1104,8 +1104,8 @@ def test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort(
 ) -> None:
     # The one holder with no `id-mismatch` finding is the file named after the identifier, so
     # the capped detail names it first: otherwise, sorted last past the cap, it was named nowhere
-    # in `--json`. Every other holder is named by a finding of its own. Mutation (oracle): "a
-    # duplicate identifier names its holders in path order" -> this reddens.
+    # in `--json`. Every other holder is named by a finding of its own. Mutation (oracle):
+    # `mutations/`'s "a duplicate identifier names its holders in path order" -> this reddens.
     root, config = project(tmp_path)
     names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
     ledger(root, config, dict.fromkeys(names, entry(len(names))))

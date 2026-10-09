@@ -471,7 +471,8 @@ def test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_link
     # The legitimate user the regular-file rule must not refuse: in overlay mode `attach` makes
     # `MEMORY.md` and each memory group a symlink into the overlay, and the digest is of what
     # they name. A reader that refused a link outright would hash every such store as unreadable.
-    # Mutation (declared): "the regular-file reader refuses a link to a regular file".
+    # Mutation (declared): `mutations/`'s "the regular-file reader refuses a link to a regular
+    # file".
     overlay = tmp_path / "overlay"
     (overlay / "developer").mkdir(parents=True)
     note = overlay / "developer" / "a.md"

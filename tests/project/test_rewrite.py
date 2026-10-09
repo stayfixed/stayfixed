@@ -77,8 +77,8 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
     # The record is re-stamped first, so a write that fails left it naming bytes the file never
     # held. The next run computing different bytes (a later version) then found the record
     # describing neither, never re-stamped it, and `uninstall` kept an untouched `stayfixed.toml`
-    # as edited for good. Mutation (oracle): "a failed write of stayfixed.toml leaves its record
-    # naming bytes the file never held" -> the first assertion after the failure reddens.
+    # as edited for good. Mutation (oracle): `mutations/`'s "a failed write of stayfixed.toml leaves
+    # its record naming bytes the file never held" -> the first assertion after the failure reddens.
     root = initialised(tmp_path)
     before = _record_digest(root)
 

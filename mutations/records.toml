@@ -2698,9 +2698,9 @@ reddens = [
   "tests/memory/test_commands.py::test_a_committed_index_is_reported_untrusted",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": each reader of a
-# committed file a glob found reads it through that reader, so a link to a device or a FIFO is
-# one more file it cannot read, in that reader's own words.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": each
+# reader of a committed file a glob found reads it through that reader, so a link to a device or a
+# FIFO is one more file it cannot read, in that reader's own words.
 [[mutation]]
 name = "the ledger's entry reader follows a link to a device"
 file = "src/stayfixed/ledger/entries.py"

@@ -585,8 +585,8 @@ def test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git(
     # payload's, every hook in such a directory was an internal error on one interpreter and
     # `PreToolUse` refused every tool call. The walk reads it as no `.git` there on every
     # interpreter and goes on to the parents. Mutations (oracle): `mutations/`'s "the path
-    # predicates read a name longer than the system takes as a fault" reddens this on every
-    # interpreter; "the hook's walk for .git asks pathlib what is there" reddens it up to 3.13.
+    # predicates read a name longer than the system takes as a fault" -> this reddens on every
+    # interpreter; "the hook's walk for .git asks pathlib what is there" -> it reddens up to 3.13.
     (tmp_path / ".git").mkdir()
     longest = os.pathconf(tmp_path, "PC_PATH_MAX")
     deep = tmp_path

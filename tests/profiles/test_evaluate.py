@@ -113,8 +113,8 @@ def test_a_file_that_does_not_parse_resolves_to_nothing(tmp_path: Path, text: st
     # literal of any length parses, and `str()` of it past 4,300 digits raises `ValueError` when
     # the locator reads its text: `stayfixed assess` ended in an internal error. Mutations: drop
     # `RecursionError` from `_toml_document`'s catch (declared) or from `_toml_value`'s (by hand;
-    # advisory output) -> `nested-past-the-stack` reddens; "a profile locator stringifies a
-    # number past the conversion limit" (declared) -> `hex-past-str` reddens.
+    # advisory output) -> `nested-past-the-stack` reddens; `mutations/`'s "a profile locator
+    # stringifies a number past the conversion limit" -> `hex-past-str` reddens.
     check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
     (tmp_path / "a.toml").write_text(text, encoding="utf-8")
     assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]

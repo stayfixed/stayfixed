@@ -449,8 +449,8 @@ def test_the_suite_floor_outlasts_a_bound_its_caller_asked_for(
     # `tests/conftest.py` lifts every `git_run` bound to its floor, so a loaded machine cannot
     # run a caller's two- or five-second bound out and turn a test red for the load. A `git` that
     # answers after half a second, under a bound a fifth of that, still answers here. Mutation
-    # (oracle): "the git runner ignores the floor a test runner sets" — the variable is never
-    # read, the call runs out, and this reddens.
+    # (oracle): `mutations/`'s "the git runner ignores the floor a test runner sets" — the variable
+    # is never read, the call runs out, and this reddens.
     _a_git_that_sleeps(tmp_path, monkeypatch, 0.5)
     assert git_run(tmp_path, "rev-parse", timeout=0.1) == (0, "")
 
@@ -459,8 +459,8 @@ def test_the_product_ships_with_no_floor_under_its_bounds() -> None:
     # Read in a fresh interpreter with the suite's variable gone, as an import of the product
     # leaves it, because the suite has raised the floor this process sees. A floor above zero in
     # the product would widen every bound a caller chose, the session-start sync's two seconds
-    # among them, whose handler shares a ten-second entry. Mutation (oracle): "the product ships
-    # a floor under every git bound" -> this reddens.
+    # among them, whose handler shares a ten-second entry. Mutation (oracle): `mutations/`'s "the
+    # product ships a floor under every git bound" -> this reddens.
     env = {key: value for key, value in os.environ.items() if key != gitenv.FLOOR_VARIABLE}
     shipped = subprocess.run(
         [sys.executable, "-P", "-c", "from stayfixed import gitenv; print(gitenv.bound_floor())"],
@@ -479,7 +479,8 @@ def test_the_floor_variable_never_shortens_a_bound(
     # The variable can only raise: a value below the caller's bound leaves that bound as it
     # was. A `git` that answers after 0.3 s, under a caller's minute and a floor of 0.05,
     # answers; the minute is there so no load on the machine can decide the case. Mutation
-    # (oracle): "the floor replaces the caller's bound instead of raising it" -> this reddens.
+    # (oracle): `mutations/`'s "the floor replaces the caller's bound instead of raising it" -> this
+    # reddens.
     monkeypatch.setenv(gitenv.FLOOR_VARIABLE, "0.05")
     _a_git_that_sleeps(tmp_path, monkeypatch, 0.3)
     assert git_run(tmp_path, "rev-parse", timeout=60) == (0, "")
@@ -491,8 +492,8 @@ def test_a_floor_variable_that_is_no_positive_number_raises_nothing(
 ) -> None:
     # Not a number, or not above zero: no floor at all, as if the variable were unset. `nan`
     # compares false with everything, so a check spelled `asked <= 0` would let it through as
-    # the floor, and `max` would then answer by argument order. Mutation (oracle): "a floor
-    # variable that is not a number is honoured" -> the `nan` row reddens.
+    # the floor, and `max` would then answer by argument order. Mutation (oracle): `mutations/`'s "a
+    # floor variable that is not a number is honoured" -> the `nan` row reddens.
     monkeypatch.setenv(gitenv.FLOOR_VARIABLE, value)
     assert gitenv.bound_floor() == 0
 
@@ -504,7 +505,8 @@ def test_the_floor_variable_is_capped(
     # Uncapped, a floor of `1e300` or `inf` would reach `subprocess.run` as a timeout it cannot
     # represent, which raises `OverflowError` — not one of the three things `git_run` reads as no
     # answer — out of every caller. Capped, the call is simply given ten minutes. Mutation
-    # (oracle): "the floor variable is honoured without its ceiling" -> both rows redden.
+    # (oracle): `mutations/`'s "the floor variable is honoured without its ceiling" -> both rows
+    # redden.
     monkeypatch.setenv(gitenv.FLOOR_VARIABLE, value)
     assert gitenv.bound_floor() == gitenv.FLOOR_CEILING_SECONDS
     _a_git_that_sleeps(tmp_path, monkeypatch, 0)
@@ -531,8 +533,8 @@ GIT_BOUNDS = (*GIT_RUN_BOUNDS, "stayfixed.doctor.checks.CI_REF_TIMEOUT_SECONDS")
 def test_a_named_git_bound_leaves_git_a_second_to_answer(bound: str) -> None:
     # A second is far above what a local `rev-parse` takes and far below every bound shipped,
     # so the row fails on a bound shrunk by accident and on nothing a person would tune.
-    # Mutations (oracle): "the bound on a query that grows is shrunk below git's latency" and
-    # "the overlay sync's bound is shrunk below git's latency" -> their rows redden.
+    # Mutations (oracle): `mutations/`'s "the bound on a query that grows is shrunk below git's
+    # latency" and "the overlay sync's bound is shrunk below git's latency" -> their rows redden.
     module, name = bound.rsplit(".", 1)
     assert getattr(importlib.import_module(module), name) >= 1
 
@@ -540,8 +542,8 @@ def test_a_named_git_bound_leaves_git_a_second_to_answer(bound: str) -> None:
 def test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound() -> None:
     # `QUERY_TIMEOUT_SECONDS` is the wider bound for a `log --all` or a listing of every tracked
     # file; narrower than the default for a five-second `rev-parse`, it is not wider at all.
-    # Mutation (oracle): "the default git bound outgrows the one for a query that grows" -> this
-    # reddens.
+    # Mutation (oracle): `mutations/`'s "the default git bound outgrows the one for a query that
+    # grows" -> this reddens.
     assert gitenv.QUERY_TIMEOUT_SECONDS >= gitenv.GIT_TIMEOUT_SECONDS
 
 
@@ -572,7 +574,8 @@ def test_every_bound_a_git_run_call_passes_is_one_the_table_pins() -> None:
     # did past the suite. So every `git_run(..., timeout=...)` under `src/` is read: a literal
     # must be at least a second, a name must be a row, and a parameter passed through must
     # default to one. And every row must be reached, so none outlives its constant. Mutation
-    # (oracle): "the status query's bound is a literal below git's latency" -> this reddens.
+    # (oracle): `mutations/`'s "the status query's bound is a literal below git's latency" -> this
+    # reddens.
     pinned = {bound.rsplit(".", 1)[1] for bound in GIT_RUN_BOUNDS}
     reached = {"GIT_TIMEOUT_SECONDS"}  # `git_run`'s own default, for a call that passes none
     unpinned = []

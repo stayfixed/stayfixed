@@ -525,7 +525,8 @@ def test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit(
 ) -> None:
     # The merge bases are the history's, bounded in number by nothing: the refusal counts every
     # one and names the first `LISTED_LIMIT`. Git is not asked, since only the message is under
-    # test. Mutation (oracle): "the attribution names every merge base" -> this reddens.
+    # test. Mutation (oracle): `mutations/`'s "the attribution names every merge base" -> this
+    # reddens.
     forks = [f"{n:040x}" for n in range(LISTED_LIMIT + 3)]
     monkeypatch.setattr("stayfixed.guards.attribute.fork_points", lambda *_: forks)
     runner = _Coded({})

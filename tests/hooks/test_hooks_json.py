@@ -85,9 +85,9 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
     # volatile notes. The set above cannot see an order, so two entries that swap their parts
     # still pass it.
     #
-    # Mutation (oracle): `mutations/`'s "a session-start part is filed twice and another not at
-    # all" reddens the set; "two session-start parts swap places in the hooks file" keeps the set
-    # and reddens the order.
+    # Mutations (oracle): `mutations/`'s "a session-start part is filed twice and another not at
+    # all" -> the set reddens; "two session-start parts swap places in the hooks file" -> the set
+    # holds and the order reddens.
     session_start = [
         entry["command"].split()[2:]
         for event, _matcher, entry in _entries()

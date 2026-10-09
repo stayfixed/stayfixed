@@ -459,8 +459,8 @@ def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
     # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
     # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
     # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
-    # passed in silence. Mutations (oracle): "release check reads a JSON source past the shared
-    # reader" and "the marketplace reads a plugins value that is not a list of objects".
+    # passed in silence. Mutations (oracle): `mutations/`'s "release check reads a JSON source past
+    # the shared reader" and "the marketplace reads a plugins value that is not a list of objects".
     root = _repo(tmp_path)
     (root / name).write_text(body)
     with pytest.raises(release.MalformedSource) as raised:

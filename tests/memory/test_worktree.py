@@ -1146,8 +1146,8 @@ def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: 
     # `OSError` and `Refusal` is not, so `pytest.raises(Refusal)` is also what says the
     # creating direction no longer half-builds the tree.
     #
-    # Mutation (declared, "the harness anchor stops asking whether the walk can reach it"):
-    # the `contained` call goes -> `link` raises `PartialLink` again and the first
+    # Mutation (declared, `mutations/`'s "the harness anchor stops asking whether the walk can reach
+    # it"): the `contained` call goes -> `link` raises `PartialLink` again and the first
     # `pytest.raises(Refusal)` reddens.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
@@ -1180,8 +1180,8 @@ def test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing(tmp_path
     # `_unlink` is called directly, because reaching it through `detach_main` now means getting
     # past the anchor check that is the point of the case above.
     #
-    # Mutation (declared, "a withdrawal whose walk refuses a component fails the command"):
-    # `return False` -> `raise` -> `UnsafePath` leaves `_unlink` and this case reddens.
+    # Mutation (declared, `mutations/`'s "a withdrawal whose walk refuses a component fails the
+    # command"): `return False` -> `raise` -> `UnsafePath` leaves `_unlink` and this case reddens.
     home = a_home(tmp_path)
     elsewhere = _a_linked_claude(home, tmp_path)
     (elsewhere / "projects").mkdir()
@@ -1226,8 +1226,8 @@ def test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all(
     # what the defective code already satisfied. The assertion that carries this one is that
     # the worktree is byte-for-byte as it was.
     #
-    # Mutation (declared, "the session link step discovers the harness anchor after it has
-    # written"): the hoisted call goes -> the refusal still arrives, from
+    # Mutation (declared, `mutations/`'s "the session link step discovers the harness anchor after
+    # it has written"): the hoisted call goes -> the refusal still arrives, from
     # `_apply_harness_link`, and the base-directory assertion reddens with the group links and
     # the index link already made.
     root, store, config = a_checkout(tmp_path)

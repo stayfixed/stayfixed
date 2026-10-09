@@ -453,8 +453,8 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
-    # `env:` instead. Mutation (oracle): "a workflow splices an expression into a shell" puts one
-    # into `check.yml`'s checkout assertion.
+    # `env:` instead. Mutation (oracle): `mutations/`'s "a workflow splices an expression into a
+    # shell" puts one into `check.yml`'s checkout assertion.
     #
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
     # would never be read while the `>=` assertion below went on passing.
@@ -469,7 +469,8 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
 def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:
     # The check above is only as good as what it reads: a script in each spelling the reader
     # takes, each carrying an expression, is found, and one kept in `env:` is not. Mutation
-    # (oracle): "the expression check reads no script" -> nothing is found and this reddens.
+    # (oracle): `mutations/`'s "the expression check reads no script" -> nothing is found and this
+    # reddens.
     text = (
         "jobs:\n"
         "  one:\n"

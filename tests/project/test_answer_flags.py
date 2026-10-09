@@ -63,8 +63,8 @@ def test_every_file_offered_as_local_leaves_every_gate_green(
 ) -> None:
     # `--local` offers a file only if a project may keep it out of git with every gate still
     # passing. Two commits, as `tests/project/test_gates.py` makes them, so the commit gate reads
-    # one message rather than an empty range. Mutation (oracle): "a file a gate reads at its
-    # committed path is offered as local" adds `bug-index`, whose case is then red here: the
+    # one message rather than an empty range. Mutation (oracle): `mutations/`'s "a file a gate reads
+    # at its committed path is offered as local" adds `bug-index`, whose case is then red here: the
     # index is kept out of git and `bugs check` reads it at its committed path.
     root = repository(tmp_path)
     _init(root, tmp_path, Given(local=(artifact_id,)))
@@ -163,8 +163,8 @@ def test_an_adopted_document_s_workflow_gates_the_branch_its_file_names(
     # gate_branch` is that base branch: a fixed `main` rendered a caller that never ran for a
     # pull request into `develop`, while `assess` and `adopt promote` judged against `develop`,
     # and nothing said so. Written out, it is the person's choice and is kept. The file comes
-    # back byte for byte either way. Mutation (oracle): "a document that leaves [ci] gate_branch
-    # out gates main, not its base branch" -> the `left-out` case reddens.
+    # back byte for byte either way. Mutation (oracle): `mutations/`'s "a document that leaves [ci]
+    # gate_branch out gates main, not its base branch" -> the `left-out` case reddens.
     root = repository(tmp_path)
     hand_written = (
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n'

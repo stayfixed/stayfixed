@@ -770,8 +770,8 @@ reddens = [
   "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[owned]",
 ]
 
-# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": a file a harness
-# was measured running is read past a leading byte-order mark too.
+# In the block led by `mutations/`'s "the live-entry walk refuses a scalar where a list or an object
+# belongs": a file a harness was measured running is read past a leading byte-order mark too.
 [[mutation]]
 name = "hook-entries is blind to a settings file opening with a byte-order mark"
 file = "src/stayfixed/scaffold/entries.py"

@@ -834,8 +834,8 @@ def test_commit_check_names_at_most_the_listed_limit_of_offences(
 ) -> None:
     # A range holds any number of commits, so the offences on the line are bounded in number by
     # nothing: it counts every commit, names the first `LISTED_LIMIT` offences, and says how many
-    # more, and `--json`'s `violations` carries every one. Mutation (oracle): "commit check names
-    # every offence" -> this reddens.
+    # more, and `--json`'s `violations` carries every one. Mutation (oracle): `mutations/`'s "commit
+    # check names every offence" -> this reddens.
     dirty = "fix: dirty\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
     root = repo(tmp_path, *[dirty] * (LISTED_LIMIT + 2))
     argv = ["commit", "check", "--range", "base..HEAD", "--root", str(root)]
@@ -873,8 +873,8 @@ def test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Stdin goes through the one JSON object reader, so its depth bound holds here as it does for
-    # every other JSON document. Mutation (declared): "guard bg-cleanup parses stdin with a bare
-    # json.loads".
+    # every other JSON document. Mutation (declared): `mutations/`'s "guard bg-cleanup parses stdin
+    # with a bare json.loads".
     monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
     feed(monkeypatch, DEEPER_THAN_FOUR)
     assert invoke(["guard", "bg-cleanup"]) == 2
