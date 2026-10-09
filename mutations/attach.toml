@@ -2475,7 +2475,7 @@ after = """    from stayfixed.attach.write import existing_ledger  # noqa: F401
 
     return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))"""
 reddens = [
-  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]
 
 # `attach --check` asks what the run asks past its gates and before its first write through the

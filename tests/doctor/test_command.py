@@ -20,10 +20,10 @@ from stayfixed.doctor import checks, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
+from tests.boundaries.test_discovery import UNIMPORTABLE, plant_area
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
 from tests.snapshot import assert_snapshot_unchanged, snapshot
-from tests.test_areas import UNIMPORTABLE, plant_area
 
 
 @pytest.fixture(autouse=True)

@@ -1,11 +1,11 @@
 """Handlers this area contributes; the `hook <event>` entries in `hooks/hooks.json` invoke them.
 
 Every import of `stayfixed.config`, `stayfixed.memory.store` and their neighbours happens **inside**
-a handler body. `tests/test_areas.py` asserts that `discover()` in a clean interpreter imports
-neither the configuration layer nor the presets, and discovery imports every area's `hooks` module —
-so a module-level `from stayfixed.config.schema import Config` here reddens a test that belongs to
-no area at all. The annotation is a string under `TYPE_CHECKING`, exactly as `stayfixed.hooks.api`
-already writes it.
+a handler body. `tests/boundaries/test_discovery.py` asserts that `discover()` in a clean
+interpreter imports neither the configuration layer nor the presets, and discovery imports every
+area's `hooks` module — so a module-level `from stayfixed.config.schema import Config` here reddens
+a test that belongs to no area at all. The annotation is a string under `TYPE_CHECKING`, exactly
+as `stayfixed.hooks.api` already writes it.
 
 There is no `SessionStart` context handler here, and that absence is the design: the two
 injection bundles are invoked as their own `hooks.json` entries so each gets its own platform

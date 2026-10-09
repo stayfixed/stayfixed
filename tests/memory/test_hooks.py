@@ -141,9 +141,9 @@ def test_no_handler_in_this_area_ever_denies(tmp_path: Path) -> None:
 
 
 def test_discovery_does_not_import_the_configuration_layer() -> None:
-    # `tests/test_areas.py` asserts this for the whole package; asserted here too, because it
-    # is this area's own discipline that keeps it true — every config import lives inside a
-    # handler body, and a module-level one would redden a test belonging to no area at all.
+    # `tests/boundaries/test_discovery.py` asserts this for the whole package; asserted here too,
+    # because it is this area's own discipline that keeps it true — every config import lives inside
+    # a handler body, and a module-level one would redden a test belonging to no area at all.
     done = subprocess.run(
         [sys.executable, "-c", LIST_IMPORTS],
         capture_output=True,

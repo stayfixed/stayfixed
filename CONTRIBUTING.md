@@ -34,8 +34,8 @@ sent back however good it looks otherwise.
 
 **The runtime imports only the standard library.** Hooks run under whatever `python3` the
 wrapper finds, before any environment exists, so a third-party import works on your machine and
-fails inside a hook on somebody else's. `tests/test_import_boundary.py` enforces this on every
-supported interpreter. Development dependencies (`pytest`, `ruff`, `mypy`, `towncrier`) are
+fails inside a hook on somebody else's. `tests/boundaries/test_layering.py` enforces this on
+every supported interpreter. Development dependencies (`pytest`, `ruff`, `mypy`, `towncrier`) are
 fine; a runtime one is not.
 
 **Writes go through `fsops`.** `config.paths.contained()` decides whether a configured path
@@ -155,34 +155,37 @@ delivery's code or call its behaviour except through discovery, which is how any
 core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
 `hooks.py` and `doctor.py` by name and call the `register()` each publishes, without knowing which
 area it is, and the bullets below are that contract. One crossing still exists, and it is pinned in
-`CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to stay rather than be cut:
-`stayfixed setup --overlay` creates or records the overlay as the last step of machine setup, so
-`setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and those
-rows stay until the step leaves `setup`. A row is one import statement and the names it takes, held
-as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing, a
-second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
+`CORE_TO_DELIVERY` in `tests/boundaries/test_delivery.py` because it is meant to stay rather than be
+cut: `stayfixed setup --overlay` creates or records the overlay as the last step of machine setup,
+so `setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and
+those rows stay until the step leaves `setup`. A row is one import statement and the names it takes,
+held as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing,
+a second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
 whose import has gone alike. `scripts/` is repository tooling and stays under the `api.py` rule
-alone.
+alone. The rules this section names live under `tests/boundaries/`, a file for each (discovery, the
+`api.py` surface, delivery and the import layers), and share one reading of the syntax tree,
+`astscan.py`, which has cases of its own.
 
 That rule reads import statements, so a module named to `importlib.import_module` is invisible to
-it, and two rules of their own in `tests/test_areas.py` hold that door. The first reads names: no
-core module names `import_module` or `__import__`, a module's own `__spec__` or `__loader__`, the
-finders on `sys` (`meta_path`, `path_hooks`, `path_importer_cache`), `sys.breakpointhook`, or a
-builtin that runs text (`exec`, `eval`, `compile`, `breakpoint`, `__builtins__`) wherever it is the
-builtin in that scope, under any alias, except `areas.py`'s two imports by name and the profile
-discovery `DYNAMIC_IMPORTERS` pins with its reason. `__builtins__`, which every module carries, is
-also read off any module (`json.__builtins__`) and in a `from` of any module. Only a function's own
-binding, a comprehension's variable or an import from a module other than `builtins` hides such a
-builtin, in its scope and the scopes it encloses. Python looks a module's or a class body's names up
-at run time, where a binding may not have run, may have been deleted, or may be the builtin itself
-(`exec = exec`), so a binding of one of these names there hides nothing and is a row of its own, to
-pin or rename; a walrus in a comprehension binds in the scope around it. A docstring is prose and is
-not read. The second reads imports: the core imports the standard library from the modules
-`STANDARD_IMPORTS` lists, none of which imports a module named by a string but through a name the
-first rule reads, and any other import (`importlib` and `pkgutil` among them) is a row of
-`MACHINERY_IMPORTERS`, with what each file reaches in it. `importlib.resources` is held too: `files`
-imports the anchor it is handed when that names a module, so the core calls it only on its own
-package, `__package__` or `"stayfixed"`, and every other read of it is a row.
+it, and two rules of their own in `tests/boundaries/test_delivery.py` hold that door. The first
+reads names: no core module names `import_module` or `__import__`, a module's own `__spec__` or
+`__loader__`, the finders on `sys` (`meta_path`, `path_hooks`, `path_importer_cache`),
+`sys.breakpointhook`, or a builtin that runs text (`exec`, `eval`, `compile`, `breakpoint`,
+`__builtins__`) wherever it is the builtin in that scope, under any alias, except `areas.py`'s two
+imports by name and the profile discovery `DYNAMIC_IMPORTERS` pins with its reason. `__builtins__`,
+which every module carries, is also read off any module (`json.__builtins__`) and in a `from` of any
+module. Only a function's own binding, a comprehension's variable or an import from a module other
+than `builtins` hides such a builtin, in its scope and the scopes it encloses. Python looks a
+module's or a class body's names up at run time, where a binding may not have run, may have been
+deleted, or may be the builtin itself (`exec = exec`), so a binding of one of these names there
+hides nothing and is a row of its own, to pin or rename; a walrus in a comprehension binds in the
+scope around it. A docstring is prose and is not read. The second reads imports: the core imports
+the standard library from the modules `STANDARD_IMPORTS` lists, none of which imports a module named
+by a string but through a name the first rule reads, and any other import (`importlib` and `pkgutil`
+among them) is a row of `MACHINERY_IMPORTERS`, with what each file reaches in it.
+`importlib.resources` is held too: `files` imports the anchor it is handed when that names a module,
+so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
+of it is a row.
 
 Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
 and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
@@ -216,8 +219,8 @@ too, since Python runs each package's `__init__.py` first.
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
-  handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
-  interpreter imports neither the configuration layer nor the presets.
+  handler body, never at module level: `tests/boundaries/test_discovery.py` asserts that discovery
+  in a clean interpreter imports neither the configuration layer nor the presets.
 - `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report: its
   `(name, check)` pairs are asked after the core's own checks, in area-name order, each with the
   report's `Context` and through the same guard, so a check that raises costs its own row and not
@@ -245,17 +248,17 @@ too, since Python runs each package's `__init__.py` first.
   the `Context` for it. That is the one answer it caches: code an area reaches through its own
   modules, such as the binding and the note store, resolves the root again.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
-  every import sits inside a function body; `tests/test_areas.py` holds that one.
-- `api.py` is the area's import surface. Other areas import from it and from nothing else, and
-  its `__all__` must equal exactly what it imports — a test parses the file and checks, and
-  `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
-  import that reaches past one. The rule holds every package that publishes an `api.py`, an area
-  or not (`release` is held to its surface like any area), and every area without one
-  (`assess`), none of whose modules anything outside it may import. The list is what consumers
-  actually reach for, not what the area finds tidy: a consumer that needs something absent from
-  it grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI
-  frame rather than an area, and its one direct import of `hooks.policy` is named in that test
-  rather than skipped silently.
+  every import sits inside a function body; `tests/boundaries/test_discovery.py` holds that one.
+- `api.py` is the area's import surface. Other areas import from it and from nothing else, and its
+  `__all__` must equal exactly what it imports — a test parses the file and checks, and
+  `tests/boundaries/test_api_surface.py` walks every module under `src/stayfixed/` and `scripts/`
+  and fails on an import that reaches past one. The rule holds every package that publishes an
+  `api.py`, an area or not (`release` is held to its surface like any area), and every area without
+  one (`assess`), none of whose modules anything outside it may import. The list is what consumers
+  actually reach for, not what the area finds tidy: a consumer that needs something absent from it
+  grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI frame
+  rather than an area, and its one direct import of `hooks.policy` is named in that test rather than
+  skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —

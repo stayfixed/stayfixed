@@ -1,9 +1,10 @@
 """Handlers this area contributes; the `hook <event>` entries in `hooks/hooks.json` invoke them.
 
 Every import of `stayfixed.guards.*` and of the configuration layer happens **inside** a
-handler body. `tests/test_areas.py` asserts that `discover()` in a clean interpreter imports
-neither the configuration layer nor the presets, and discovery imports every area's `hooks`
-module — so a module-level import here reddens a test that belongs to no area at all.
+handler body. `tests/boundaries/test_discovery.py` asserts that `discover()` in a clean
+interpreter imports neither the configuration layer nor the presets, and discovery imports every
+area's `hooks` module — so a module-level import here reddens a test that belongs to no area at
+all.
 
 `bg-cleanup` is the one `Policy.CLOSED` handler in the plugin. It does not catch its own exceptions:
 a guard for an action with a high cost of error fails closed (principle 6), and the dispatcher is

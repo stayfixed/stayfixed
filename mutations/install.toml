@@ -1372,7 +1372,7 @@ file = "src/stayfixed/setup/run.py"
 before = "from stayfixed.presets import load_preset\n"
 after = "from stayfixed.overlay.api import require_overlay, target_root\nfrom stayfixed.presets import load_preset\n"
 reddens = [
-  "tests/test_areas.py::test_in_isolation_no_core_module_loads_a_delivery_area",
+  "tests/boundaries/test_delivery.py::test_in_isolation_no_core_module_loads_a_delivery_area",
 ]
 
 # Inside the function is not enough: the import has to sit below the return for a run with no
@@ -1404,7 +1404,7 @@ file = "src/stayfixed/setup/run.py"
 before = "    from stayfixed.overlay.api import require_overlay, target_root\n"
 after = "    from stayfixed.overlay.api import require_overlay, target_root\n    from stayfixed.overlay.api import overlay_fault\n"
 reddens = [
-  "tests/test_areas.py::test_core_never_imports_delivery",
+  "tests/boundaries/test_delivery.py::test_core_never_imports_delivery",
 ]
 
 # A memory README already gone leaves the same hole as one `init` removed, and `_README.md` was

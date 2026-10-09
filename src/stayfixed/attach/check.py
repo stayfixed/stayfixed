@@ -5,8 +5,8 @@ A module of its own, above everything it reads through: the binding and the perm
 (`binding`, `permissions`), and what the real run asks before its first write, which it asks
 through the writer's own planning (`write`). `write` imports `permissions` for the diff it
 merges, so the preview cannot live in `permissions` without the two importing each other; here
-each import runs one way, and `tests/test_areas.py` holds the modules under `src/stayfixed/` to a
-graph without a cycle, imports inside a function included.
+each import runs one way, and `tests/boundaries/test_layering.py` holds the modules under
+`src/stayfixed/` to a graph without a cycle, imports inside a function included.
 """
 
 from __future__ import annotations

@@ -1374,7 +1374,7 @@ after = """def _memory_registrar() -> object:
 
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"""
-reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
 [[mutation]]
 name = "the core names the Python interpreter by its shell name"

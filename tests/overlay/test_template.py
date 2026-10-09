@@ -22,8 +22,8 @@ def _json_files() -> list[Path]:
 def test_the_template_tree_is_reachable_at_all() -> None:
     # The non-vacuity guard, and it is not hypothetical: `rglob` over a directory that is not
     # in the wheel or the sdist returns nothing, and every assertion below then passes by
-    # finding no files to fail on. `tests/test_import_boundary.py` carries the same idiom for
-    # the same reason.
+    # finding no files to fail on. The standard-library walk in
+    # `tests/boundaries/test_layering.py` carries the same idiom for the same reason.
     assert template_root().is_dir()
     assert _json_files(), "no JSON in templates/overlay — the invariants below are vacuous"
 

@@ -1854,7 +1854,7 @@ file = "src/stayfixed/profiles/hints.py"
 before = '        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
 after = '''        importlib.util.find_spec("stayfixed.memory.store")
         hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 # A profile reads configuration files a repository commits, each to `_TEXT_CAP`: one at the cap is
 # read, and one past it reads as no file.
@@ -2061,7 +2061,7 @@ before = "from stayfixed.fsops import open_directory, read_bounded"
 after = """from stayfixed.fsops import open_directory, read_bounded
 from stayfixed.guards.api import contained_roots"""
 reddens = [
-  "tests/test_areas.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+  "tests/boundaries/test_layering.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
 ]
 
 # A file stayfixed's own command cannot remove or write is named by its root-relative path and the

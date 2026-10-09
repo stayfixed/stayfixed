@@ -3,8 +3,8 @@
 A module and not the package's `__init__`, for one reason: `stayfixed.hooks.registry`
 imports `stayfixed.memory.hooks`, which imports the package first, so a re-export list in
 `__init__.py` pulls the whole area — configuration included — into every `discover()` call and
-reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
-characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
+reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a consumer
+six characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
 consumer its types.
 
 **The list is what consumers outside this area import, plus what those names oblige** — not
@@ -39,7 +39,7 @@ wiki-link grammar, the note walk and `resolved` have no reader outside it and ar
 overlay root the machine file records and the checkout's `origin` are the core's to answer
 (`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
 `init` asks them too and the core may not import this area; the crossings still pinned are
-listed in `tests/test_areas.py`.
+listed in `tests/boundaries/test_delivery.py`.
 
 **Ten more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:

@@ -1081,16 +1081,12 @@ reddens = [
 # function-level import, and the edge the pinned crossing makes inside `setup/run.py` with it.
 [[mutation]]
 name = "the module graph stops reading imports inside a function"
-file = "tests/test_areas.py"
-before = """            found += _imports_that_can_run(node.orelse)
-        else:"""
-after = """            found += _imports_that_can_run(node.orelse)
-        elif isinstance(node, _FUNCTIONS):
-            pass
-        else:"""
+file = "tests/boundaries/test_layering.py"
+before = '    for node in astscan.imports([ast.parse(text)], inside_functions=True):'
+after = '    for node in astscan.imports([ast.parse(text)], inside_functions=False):'
 reddens = [
-  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
-  "tests/test_areas.py::test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported",
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/boundaries/test_layering.py::test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported",
 ]
 
 # And every import is an edge to each package above the module it names, since Python runs that
@@ -1099,12 +1095,39 @@ reddens = [
 # `gitenv.py`.
 [[mutation]]
 name = "the module graph stops running the packages above the module imported"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_layering.py"
 before = "            for name in {module} | (_packages_above(module) - started):"
 after = "            for name in {module}:"
 reddens = [
-  "tests/test_areas.py::test_the_module_graph_runs_every_package_above_the_module_imported",
-  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/boundaries/test_layering.py::test_the_module_graph_runs_every_package_above_the_module_imported",
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
+# The doctor rule and the package graph count the imports that run when their module is imported,
+# and a function body runs only when called: read as running on import, every deferred import in
+# an area's `doctor.py` is an offence.
+[[mutation]]
+name = "the import reading takes a function body for one that runs on import"
+file = "tests/boundaries/astscan.py"
+before = "        if not inside_functions and isinstance(node, FUNCTIONS):"
+after = "        if False:"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_the_imports_that_run_exclude_type_checking_and_on_request_function_bodies",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
+# The core imports the standard library from `STANDARD_IMPORTS` alone, and every module is held to
+# the standard library, so the list may name nothing outside it.
+[[mutation]]
+name = "the core's import list admits a module outside the standard library"
+file = "tests/boundaries/test_delivery.py"
+before = """        "typing",
+        "urllib.parse","""
+after = """        "typing",
+        "urllib.parse",
+        "yaml","""
+reddens = [
+  "tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
 ]
 
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
@@ -1115,11 +1138,11 @@ reddens = [
 # about the crossings.
 [[mutation]]
 name = "the cross-area import guard walks ten files instead of the package"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = '    files = sorted(source.rglob("*.py"))'
 after = '    files = sorted(source.rglob("commands.py"))'
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The cross-area import guard (`mutations/`'s "the cross-area import guard walks ten files instead
@@ -1132,11 +1155,12 @@ reddens = [
 # used to. What reddens is the offence list, not a missing name.
 [[mutation]]
 name = "the boundary rule ignores a relative import again"
-file = "tests/test_areas.py"
+file = "tests/boundaries/astscan.py"
 before = '            if node.level:'
 after = '            if False:'
 reddens = [
-  "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+  "tests/boundaries/test_api_surface.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+  "tests/boundaries/test_astscan.py::test_an_import_names_its_module_in_every_spelling_and_a_relative_one_resolved",
 ]
 
 # The rule is about `api.py`, and it was keyed on discovery: `release` publishes a surface and
@@ -1146,12 +1170,12 @@ reddens = [
 # are held without being discovered comes back empty.
 [[mutation]]
 name = "the boundary rule holds only discovered areas to their api.py again"
-file = "tests/test_areas.py"
-before = '    return sorted(set(_area_names(source)) | surfaces)'
-after = '    return _area_names(source)'
+file = "tests/boundaries/test_api_surface.py"
+before = '    return sorted(set(area_names(source)) | surfaces)'
+after = '    return area_names(source)'
 reddens = [
-  "tests/test_areas.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The delivery rule holds the core to never importing `attach`, `memory` or `overlay`. The tree
@@ -1160,42 +1184,42 @@ reddens = [
 # and every importer starts counting as core.
 [[mutation]]
 name = "the delivery rule stops recognising a delivery module"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            delivery = bits[0] == "stayfixed" and len(bits) > 1 and bits[1] in areas'
 after = "            delivery = False"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 [[mutation]]
 name = "the delivery rule holds a delivery module to the core's rule"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = "    core = parts[0] not in areas"
 after = "    core = True"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # A pardon is for one statement and the names it takes, so the rule records the names: without
 # them two statements naming one module, or one that takes one more name, read as the row pinned.
 [[mutation]]
 name = "the delivery rule forgets which names a statement takes"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = "            taken = [(module, frozenset(alias.name for alias in node.names))]"
 after = "            taken = [(module, frozenset[str]())]"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # `from stayfixed import memory` names the area in an alias and the package as its module, so a
 # rule keyed on the module alone would read it as importing nothing from an area.
 [[mutation]]
 name = "the delivery rule reads `from stayfixed import memory` as importing nothing"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            if module == "stayfixed":'
 after = "            if False:"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # The `## Shared flags` tables are the constants, held row by row. The mutation is in the document
@@ -1359,10 +1383,10 @@ reddens = [
 # crossing is still counted, so the `>= 60` floor does not move; only the offence is silenced.
 [[mutation]]
 name = "a second live crossing joins the area-boundary exemption"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})'
 after = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy"), ("memory/commands.py", "stayfixed.hooks.dispatch")})'
-reddens = ["tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module"]
+reddens = ["tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module"]
 
 # The README's `--json` paragraph named four commands where five emit the key, so a reader scripting
 # against it would have read a `memory refs` findings list as "this command does not report
@@ -1465,11 +1489,11 @@ reddens = [
 # that hid that violation.
 [[mutation]]
 name = "the boundary walk stops looking at scripts/"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = 'scripts = sorted((ROOT / "scripts").glob("*.py"))'
 after = "scripts = []"
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check names that
@@ -2749,98 +2773,119 @@ reddens = ["tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_th
 # beyond: a parameter named `exec` in one function left every `exec(...)` in the file unread.
 [[mutation]]
 name = "the name rule hides a builtin across the whole file again"
-file = "tests/test_areas.py"
-before = "                and not _shadowed(child.id, chain)"
+file = "tests/boundaries/test_delivery.py"
+before = '                and not astscan.shadowed(child.id, chain)'
 after = """                and not any(
-                    child.id in _scope_bindings(scope)[0]
-                    for scope in [tree, *(n for n in ast.walk(tree) if isinstance(n, _SCOPES))]
+                    child.id in astscan.scope_bindings(scope)[0]
+                    for scope in [tree, *(n for n in ast.walk(tree) if isinstance(n, astscan.SCOPES))]
                 )"""
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
 
 # A module or a class body is looked up at run time, so a binding there can be unrun, deleted or
 # the builtin itself (`exec = exec`); only an import hides the builtin there.
 [[mutation]]
 name = "a module or a class body hides a builtin by any binding again"
-file = "tests/test_areas.py"
-before = "    hiding = imported if isinstance(node, _RUN_TIME_SCOPES) else bound | imported"
-after = "    hiding = bound | imported"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+file = "tests/boundaries/astscan.py"
+before = '    hiding = imported if isinstance(node, RUN_TIME_SCOPES) else bound | imported'
+after = '    hiding = bound | imported'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
 
 # A binding of a builtin that runs text, made in a module or a class body, is a row to pin or
 # rename; unread, `exec = exec` at module level reaches the builtin with no row.
 [[mutation]]
 name = "a binding of a text runner in a module or a class body is no row"
-file = "tests/test_areas.py"
-before = "            and _binds_at_run_time(binding, chain, walrus=id(child) in walrus)"
-after = "            and False"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+file = "tests/boundaries/test_delivery.py"
+before = '            and astscan.binds_at_run_time(binding, chain, walrus=id(child) in walrus)'
+after = '            and False'
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
 
 # A function's store under `global` binds the module's name, which is looked up at run time.
 [[mutation]]
 name = "a function's store of a text runner under global is no row"
-file = "tests/test_areas.py"
-before = "    return isinstance(node, _RUN_TIME_SCOPES) or name in declared_global"
-after = "    return isinstance(node, _RUN_TIME_SCOPES)"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+file = "tests/boundaries/astscan.py"
+before = '    return isinstance(node, RUN_TIME_SCOPES) or name in declared_global'
+after = '    return isinstance(node, RUN_TIME_SCOPES)'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_binding_lands_where_python_looks_it_up_at_run_time_or_in_its_function",
+]
 
 # A walrus target in a comprehension binds in the scope around it, not in the comprehension.
 [[mutation]]
 name = "a walrus in a comprehension binds in the comprehension"
-file = "tests/test_areas.py"
-before = "            if not isinstance(node, _COMPREHENSIONS):"
-after = "            if isinstance(node, _COMPREHENSIONS):"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+file = "tests/boundaries/astscan.py"
+before = '            if not isinstance(node, COMPREHENSIONS):'
+after = '            if isinstance(node, COMPREHENSIONS):'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
 
 # A walrus in a module-level comprehension binds the module's name, which is a row.
 [[mutation]]
 name = "a walrus target is taken to land in its comprehension"
-file = "tests/test_areas.py"
-before = "    while walrus and isinstance(chain[depth][0], _COMPREHENSIONS):"
-after = "    while False:"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+file = "tests/boundaries/astscan.py"
+before = '    while walrus and isinstance(chain[depth][0], COMPREHENSIONS):'
+after = '    while False:'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_binding_lands_where_python_looks_it_up_at_run_time_or_in_its_function",
+]
 
 # `import builtins as exec` binds the module of builtins under the name, not something of the
 # file's own.
 [[mutation]]
 name = "import builtins under a text runner's name hides the builtin"
-file = "tests/test_areas.py"
+file = "tests/boundaries/astscan.py"
 before = '                if alias.name != "builtins"'
 after = "                if alias.name"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
 
 # Type parameters are evaluated around their `def` or `class`; unread, `def f[T: exec(...)]()` is
 # no row. The case is parsed on 3.12 and later, which the oracle runs on.
 [[mutation]]
 name = "a function's type parameters are not read"
-file = "tests/test_areas.py"
+file = "tests/boundaries/astscan.py"
 before = '        outer += [*node.decorator_list, *getattr(node, "type_params", [])]'
 after = "        outer += [*node.decorator_list]"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_type_parameters_are_read_around_their_def_or_class",
+]
 
 [[mutation]]
 name = "a class's type parameters are not read"
-file = "tests/test_areas.py"
+file = "tests/boundaries/astscan.py"
 before = '        outer = [*node.decorator_list, *getattr(node, "type_params", [])]'
 after = "        outer = [*node.decorator_list]"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_type_parameters_are_read_around_their_def_or_class",
+]
 
 # Every module carries `__builtins__`, so `json.__builtins__` hands over `__import__` by a computed
 # name as the bare name does.
 [[mutation]]
 name = "__builtins__ read off another module is no row"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            child.attr in DYNAMIC_IMPORTS or child.attr == "__builtins__"'
 after = "            child.attr in DYNAMIC_IMPORTS"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
 
 # `from json import __builtins__ as b` binds the builtins under any name; the `from` and the name
 # are rows whatever module it is taken out of.
 [[mutation]]
 name = "a from of __builtins__ out of another module is no row"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            return [alias for alias in node.names if alias.name == "__builtins__"]'
 after = "            return []"
-reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
 
 # The shape check's bound on a pass that is one repeat of one character alone. Python 3.11.4 counts
 # an item it matches ignoring case through a class one character at a time, moving the pass's

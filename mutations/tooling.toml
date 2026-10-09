@@ -443,7 +443,7 @@ file = "scripts/check_artifacts.py"
 before = "from stayfixed.overlay.api import OVERLAY_FILES"
 after = "from stayfixed.overlay.layout import OVERLAY_FILES"
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The step whose exit status is the verdict. `stayfixed gate` already exits 0 for an advisory

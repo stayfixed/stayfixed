@@ -37,8 +37,8 @@ from stayfixed.runner import subprocess_runner
 # left the patch depending on an import this module does not own the shape of. The runner was
 # the `overlay` area's when that was written; it has since become the leaf module `runner.py`,
 # and this sentence follows it. `commands.py` is never imported by the hook registry (only
-# `hooks.py` files are, per `tests/test_areas.py`), so a module-scope import here does not
-# reach the clean-interpreter `discover()` that `tests/test_areas.py` holds `hooks.py` to.
+# `hooks.py` files are), so a module-scope import here does not reach the clean-interpreter
+# `discover()` that `tests/boundaries/test_discovery.py` holds `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "

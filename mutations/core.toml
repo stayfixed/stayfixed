@@ -1116,7 +1116,7 @@ after = """from typing import TYPE_CHECKING, Any, Protocol
 from stayfixed.harnesses import project_root_variables
 """
 reddens = [
-  "tests/test_areas.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
+  "tests/boundaries/test_discovery.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
 ]
 
 # One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
@@ -2527,7 +2527,7 @@ file = "src/stayfixed/areas.py"
 before = "        except Exception as exc:  # an area's broken import is handed over, never raised here"
 after = "        except OSError as exc:  # an area's broken import is handed over, never raised here"
 reddens = [
-  "tests/test_areas.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
+  "tests/boundaries/test_discovery.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
   "tests/doctor/test_command.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report",
 ]
 
@@ -2538,7 +2538,7 @@ name = "memory stops being a delivery area"
 file = "src/stayfixed/areas.py"
 before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
-reddens = ["tests/test_areas.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
+reddens = ["tests/boundaries/test_delivery.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
 
 # The delivery rule reads import statements, so the core reaching the private layer by a string —
 # inside a function, where no import-time probe sees it run — crossed with every boundary test
@@ -2551,7 +2551,7 @@ after = '''    import importlib
 
     importlib.import_module("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function imports the note store through __import__"
@@ -2559,7 +2559,7 @@ file = "src/stayfixed/cli.py"
 before = '    return [module.register for module in area_modules("commands")]'
 after = '''    __import__("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function imports the note store through an alias of import_module"
@@ -2569,10 +2569,10 @@ after = '''    from importlib import import_module as load
 
     load("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # The standard library imports by a string without either name that rule reads:
-# `pkgutil.resolve_name` crossed with all of `test_areas.py` and `test_import_boundary.py` green.
+# `pkgutil.resolve_name` crossed with every import-boundary test green.
 # So the core's imports of the import machinery are pinned, each with what it reaches.
 [[mutation]]
 name = "a core function imports the note store through pkgutil.resolve_name"
@@ -2582,7 +2582,7 @@ after = '''    import pkgutil
 
     pkgutil.resolve_name("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 # `importlib.resources.files` imports the anchor it is handed when that names a module, so it reads
 # only the package's own data when handed `__package__` or `"stayfixed"`, and is the import
@@ -2595,7 +2595,7 @@ after = '''    from importlib import resources
 
     resources.files("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function opens the note store's resources through files imported by name"
@@ -2605,7 +2605,7 @@ after = '''    from importlib.resources import files
 
     files("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 # The standard library's other doors that import a module named by a string, each of which crossed
 # with every boundary test green: `pydoc.locate`, an unpickler, `marshal`'s code objects and
@@ -2619,7 +2619,7 @@ after = '''    import pydoc
 
     pydoc.locate("stayfixed.memory.store.resolve")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function unpickles a reference to the note store"
@@ -2629,7 +2629,7 @@ after = '''    import pickle
 
     pickle.loads(b"cstayfixed.memory.store\nresolve\n.")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function loads code through marshal"
@@ -2639,7 +2639,7 @@ after = '''    import marshal
 
     marshal.loads(marshal.dumps(None))
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function resolves the note store through logging.config"
@@ -2650,7 +2650,7 @@ after = '''    import logging.config
     logging.config.BaseConfigurator({}).resolve("stayfixed.memory.store.resolve")
     return [module.register for module in area_modules("commands")]'''
 reddens = [
-  "tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
+  "tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
   "tests/test_outbound.py::test_no_module_imports_a_network_or_native_module",
 ]
 
@@ -2664,7 +2664,7 @@ after = """    def _load() -> None:
         exec("import stayfixed.memory.store")
 
     return [importlib.import_module(name) for name in _qualified(submodule)]"""
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
 # it is for walks every area through it, the private layer's included.
@@ -2674,7 +2674,7 @@ file = "src/stayfixed/hooks/registry.py"
 before = "                raise UnknownHookEvent("
 after = '''                area_modules("api")
                 raise UnknownHookEvent('''
-reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
 # The path grammar is a leaf that imports nothing from the package, because the configuration
 # reads it and prints through `findings`, which prints through `printed`, which reads it too: with
@@ -2687,7 +2687,7 @@ after = """import re
 
 from stayfixed.config.schema import Config"""
 reddens = [
-  "tests/test_areas.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+  "tests/boundaries/test_layering.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
 ]
 
 # `profiles/__init__.py` imports `evaluate`, which imports `gitenv`, so `gitenv` reading any
@@ -2702,7 +2702,7 @@ after = """    from stayfixed.profiles.model import Check  # noqa: F401
 
     env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
 reddens = [
-  "tests/test_areas.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]
 
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores

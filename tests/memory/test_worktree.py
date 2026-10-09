@@ -984,7 +984,7 @@ def test_a_withdrawal_still_removes_a_link_of_ours_whose_target_has_gone(tmp_pat
 
 def test_the_worktree_module_writes_links_only_through_fsops() -> None:
     # The primitive is only a guard if the caller uses it. This pins the caller the way
-    # tests/test_areas.py pins imports: by reading the source. The race itself cannot be made
+    # tests/boundaries/ pins imports: by reading the source. The race itself cannot be made
     # to happen on demand, so the mutation is on the fsops primitive (test_fsops.py) and this
     # is the pin that says worktree.py reaches it.
     #

@@ -32,9 +32,9 @@ from stayfixed.attach.hooks import (
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.hooks.api import EVENTS, HookEvent, HookResult, Policy
 from stayfixed.hooks.registry import discover
+from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
-from tests.test_areas import LIST_IMPORTS, ROOT
 
 ORIGIN = "git@github.com:owner/widget.git"
 CONFIG = (

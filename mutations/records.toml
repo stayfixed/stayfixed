@@ -2297,7 +2297,7 @@ file = "src/stayfixed/memory/doctor.py"
 before = "from typing import TYPE_CHECKING\n"
 after = "from typing import TYPE_CHECKING\n\nfrom stayfixed.errors import Failure\n"
 reddens = [
-  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
 
 # The same import nested in a `try`, which runs on import all the same: a walk of the module's
@@ -2308,7 +2308,7 @@ file = "src/stayfixed/memory/doctor.py"
 before = "from typing import TYPE_CHECKING\n"
 after = "from typing import TYPE_CHECKING\n\ntry:\n    from stayfixed.memory.bundles import SLOTS\nexcept ImportError:\n    pass\n"
 reddens = [
-  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
 
 # The note store's walk stops at the one walk cap and says it could not tell, since an `in-repo`
@@ -2876,7 +2876,7 @@ file = "src/stayfixed/docs/plans.py"
 before = 'from stayfixed.ledger.api import bug_register'
 after = 'from stayfixed.ledger.register import bug_register'
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # No home in the password database is no trust record: none is read, and none is written beside

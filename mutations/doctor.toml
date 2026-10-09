@@ -2704,7 +2704,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
     (memory,) = [m for m in area_modules("commands") if m.__name__ == "stayfixed.memory.commands"]
     memory.register'''
-reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
 # A module is loaded with no import statement through its own module's loader, a finder on `sys`, a
 # builtin that runs text, `__builtins__` and a string annotation `typing.get_type_hints` evaluates:
@@ -2719,7 +2719,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
     def _load() -> object:
         return type(__spec__.loader)("stayfixed.memory.store", "store.py")'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function loads the note store through a finder on sys.meta_path"
@@ -2733,7 +2733,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
         import sys
 
         return sys.meta_path[-1].find_spec("stayfixed.memory.store", ["memory"])'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function imports the note store by running text"
@@ -2745,7 +2745,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
     def _load() -> object:
         return exec("import stayfixed.memory.store")'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function reaches __import__ through __builtins__"
@@ -2757,7 +2757,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
 
     def _load() -> object:
         return getattr(__builtins__, "__imp" + "ort__")("stayfixed.memory.store")'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function's string annotation imports the note store"
@@ -2772,7 +2772,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
             pass
 
         return hinted'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # The core imports the standard library from an allowlist, so a module nobody has measured as a
 # door is a row all the same: `timeit` runs an import written as text, `xml.dom.pulldom` binds
@@ -2790,7 +2790,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
         import timeit
 
         return timeit.timeit("import stayfixed.memory.store", number=1)'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function reaches xml.sax through a sibling submodule's import"
@@ -2804,7 +2804,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
         import xml.dom.pulldom
 
         return xml.sax.make_parser(["stayfixed.memory.store"])'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 [[mutation]]
 name = "a core function takes __import__ from builtins by a computed name"
@@ -2818,7 +2818,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
         import builtins
 
         return getattr(builtins, "__imp" + "ort__")("stayfixed.memory.store")'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
 # `sys.breakpointhook` imports whatever `PYTHONBREAKPOINT` names, and `sys` is on the core's list, so
 # the name rule reads the hook by its name.
@@ -2834,7 +2834,7 @@ after = '''def _joined(words: Sequence[str]) -> str:
         import sys
 
         return sys.breakpointhook()'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # The diagnostics row says why the session markers could not be listed in words, as its log arm
 # does: it named the error's class, which the fragment that says the row speaks in words denied.

@@ -27,7 +27,8 @@ carries every template file and can only answer that against this list. It is th
 outside `src/`, and the reason this docstring names it is that an earlier trim removed the
 export on the strength of "nothing outside this area imports it" while that script, added in the
 same branch, imported it out of `layout` — a sentence and a violation merged green together,
-because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
+because the surface rule walked `src/` alone. It walks `scripts/` too now
+(`tests/boundaries/test_api_surface.py`).
 
 **Trimmed, when the area boundaries were drawn tight.** `COMMON` had no importer anywhere.
 `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had none outside
