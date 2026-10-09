@@ -12,14 +12,14 @@ read settings files alone, so it answered "all accounted for" beside such a file
 
 A file is named when the frontmatter between its two `---` lines holds a top-level `hooks` key,
 bare, quoted, behind a tag or an anchor, or as a flow mapping's key, `{hooks: {...}}`. Claude Code
-2.1.293 ends a frontmatter at a `---` within a line and reads a key a tab indents, so the row reads
-it those ways too. It says a file declares none only for plain YAML it reads exactly: `key: value`
-lines with plain keys, values on the key's line, block scalars, flow lists of scalars, nested lines
-indented by spaces, `- ` entries, comments and blank lines. Any other frontmatter in which it finds
-no `hooks` key is named as one it cannot tell about, a description carried on below its key among
-them, and so is one of more than 10,000 lines or ending more than 8,388,608 characters into the
-file, which the row does not read. A file or directory the row cannot read, a FIFO among them, is
-named as one it can say nothing of.
+2.1.293 ends a frontmatter at a `---` within a line and reads one indented by tabs throughout, so
+the row reads it those ways too. It says a file declares none only for plain YAML it reads exactly:
+`key: value` lines with plain keys, values on the key's line, block scalars, flow lists of scalars,
+nested lines indented by spaces, `- ` entries, comments and blank lines. Any other frontmatter in
+which it finds no `hooks` key is named as one it cannot tell about, a description carried on below
+its key among them, and so is one of more than 10,000 lines or ending more than 8,388,608
+characters into the file, which the row does not read. A file or directory the row cannot read, a
+FIFO among them, is named as one it can say nothing of.
 A link inside those directories, or a nested `.claude` that is one, is read where it leads inside
 the checkout, to a directory or to a `*.md` or `SKILL.md` file. One that leads out of the checkout,
 as a dotfiles setup's does, is not followed and is named as one that leads out, which marks no

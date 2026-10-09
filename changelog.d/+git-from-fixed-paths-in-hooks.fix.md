@@ -20,11 +20,12 @@ these paths: the wrapper sets `STAYFIXED_HOOK_WRAPPER=1` for it, over any value 
   `core.fsmonitor` program, or a filter not marked required, is skipped there, and git answers
   as it would without it.
 - Every `git` a hook runs, the hook wrapper's own included, is handed the home the password
-  database records for your user as `HOME`, or no `HOME` where the database lists none. A tool
-  that applies a file the repository commits, such as direnv, mise or a devcontainer, can set
-  `HOME` for a hook, and git reads its global configuration there: a repository could ship a
-  `.gitconfig` whose `core.fsmonitor` names a program it also ships, and the `git status` after a
-  red test run ran that program. Where `HOME` is not the database's home, a hook's `git` now
-  reads your `safe.directory` and excludes from the database's home.
+  database records for your user as `HOME`, or no `HOME` where the database lists none or the
+  wrapper cannot ask it (`SECURITY.md` names the cases). A tool that applies a file the repository
+  commits, such as direnv, mise or a devcontainer, can set `HOME` for a hook, and git reads its
+  global configuration there: a repository could ship a `.gitconfig` whose `core.fsmonitor` names a
+  program it also ships, and the `git status` after a red test run ran that program. Where `HOME`
+  is not the database's home, a hook's `git` now reads your `safe.directory` and excludes from the
+  database's home.
 - `stayfixed gate` in CI, a command you run at your terminal and one an agent runs through its
   shell tool keep the `git` on `PATH`, and the programs it runs by name, as before.
