@@ -2670,3 +2670,88 @@ after = "        return True"
 reddens = [
   "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:[a-z]{2,}|-)*+]",
 ]
+
+# The shape check reads more than the patterns a module holds at its top level: a pattern built
+# inside a function from text the source spells, and every shipped profile's `match`. Each entry
+# narrows that reading back the way a walk regresses, and a planted case goes unseen or misread.
+[[mutation]]
+name = "the pattern scan stops at a function's body"
+file = "tests/test_patterns.py"
+before = "        yield from _calls(child, child if isinstance(child, _FUNCTIONS) else function)"
+after = """        if not isinstance(child, _FUNCTIONS):
+            yield from _calls(child, function)"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a literal inside a function]",
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a method's literal]",
+]
+
+[[mutation]]
+name = "the pattern scan stops reading a name its function assigns once"
+file = "tests/test_patterns.py"
+before = """        if len(assigned) == 1 and len(plain) == 1 and not bound:
+            return _spellings(plain[0], scope)
+"""
+after = ""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name the function binds once]",
+]
+
+[[mutation]]
+name = "the pattern scan reads every call's flags as none"
+file = "tests/test_patterns.py"
+before = "    bits = 0 if flags is None else _flags(flags, scope)"
+after = "    bits = 0"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[flags that make it read alike]",
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[flags by keyword]",
+]
+
+[[mutation]]
+name = "the pattern scan reads re.escape as nothing"
+file = "tests/test_patterns.py"
+before = '_ESCAPED = ("", "x", "xy")'
+after = '_ESCAPED = ("",)'
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[an f-string around re.escape]",
+]
+
+[[mutation]]
+name = "the pattern scan passes over text it cannot spell"
+file = "tests/test_patterns.py"
+before = """        except _Unspelled:
+            unspelled.add(where)
+            continue"""
+after = """        except _Unspelled:
+            continue"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[text handed to the function]",
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+[[mutation]]
+name = "the pattern walk leaves the shipped profiles' locators out"
+file = "tests/test_patterns.py"
+before = "    for name in profiles.shipped(source=source):"
+after = "    for name in ():"
+reddens = [
+  "tests/test_patterns.py::test_the_walk_reads_the_match_of_every_shipped_profiles_locators",
+]
+
+[[mutation]]
+name = "the pattern scan misses re under another name"
+file = "tests/test_patterns.py"
+before = """                if alias.name == "re" and alias.asname not in (None, "re"):"""
+after = """                if False:"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[re under another name]",
+]
+
+[[mutation]]
+name = "the pattern scan misses a function taken out of re"
+file = "tests/test_patterns.py"
+before = """        if isinstance(node, ast.ImportFrom) and node.module == "re":"""
+after = """        if False:"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
+]
+
