@@ -2953,6 +2953,17 @@ reddens = [
   "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
 ]
 
+# A `nonlocal` name binds nothing of its own scope: it is the enclosing function's, and where that
+# took the name `from builtins` it is still the builtin. Counted as a binding, it hides it.
+[[mutation]]
+name = "a nonlocal name hides a builtin the enclosing function took from builtins"
+file = "tests/boundaries/astscan.py"
+before = "    return hiding - declared_global - declared_nonlocal, declared_global, declared_nonlocal"
+after = "    return hiding - declared_global, declared_global, declared_nonlocal"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
 # Type parameters are evaluated around their `def` or `class`; unread, `def f[T: exec(...)]()` is
 # no row. The case is parsed on 3.12 and later, which the oracle runs on.
 [[mutation]]

@@ -85,12 +85,14 @@ def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin(
     # variable hides in the comprehension alone, though not in its first iterable, which is read
     # around it, while a walrus in it binds in the function around it; a parameter's annotation
     # and default are read around the function; an `except` clause's name binds, and `import a.b`
-    # binds `a`. Mutations (declared): `mutations/`'s "a module or a class body hides a builtin by
-    # any binding again", "a walrus in a comprehension binds in the comprehension", "import
-    # builtins under a text runner's name hides the builtin", "a nested scope sees an enclosing
-    # class body", "a comprehension's first iterable is read inside it", "an except clause's name
-    # binds nothing" and "import a.b binds the dotted name rather than its first part" -> a row
-    # here changes.
+    # binds `a`; a `nonlocal` name is the enclosing function's, so where that took it `from
+    # builtins` it is still the builtin. Mutations (declared): `mutations/`'s "a module or a class
+    # body hides a builtin by any binding again", "a walrus in a comprehension binds in the
+    # comprehension", "import builtins under a text runner's name hides the builtin", "a nested
+    # scope sees an enclosing class body", "a comprehension's first iterable is read inside it",
+    # "an except clause's name binds nothing", "import a.b binds the dotted name rather than its
+    # first part" and "a nonlocal name hides a builtin the enclosing function took from builtins"
+    # -> a row here changes.
     source = (
         "import json as exec\n"
         "import builtins as eval\n"
@@ -109,6 +111,8 @@ def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin(
         "def e():\n    try:\n        pass\n    except OSError as abs:\n        pass\n"
         "    return abs\n"
         "def i():\n    import open.mode\n    return open\n"
+        "def j():\n    from builtins import open\n    def k():\n        nonlocal open\n"
+        "        open = print\n        return open\n    return k\n"
         "exec, eval, compile\n"
     )
     assert _resolved(source) == [
@@ -130,6 +134,9 @@ def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin(
         ("e", "OSError", False),
         ("e", "abs", True),
         ("i", "open", True),
+        ("k", "print", False),
+        ("k", "open", False),
+        ("j", "k", True),
         ("<module>", "exec", True),
         ("<module>", "eval", False),
         ("<module>", "compile", False),
