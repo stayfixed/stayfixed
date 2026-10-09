@@ -361,13 +361,29 @@ def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
     assert "foreign" in foreign.read_text(encoding="utf-8")
 
 
+def _in_a_child(probe: str, root: Path, verb: str) -> str:
+    """What `probe` prints, run over `root` in a child under a timeout: a hook path that is a FIFO
+    hangs a reader that opens it, and a hang here fails the case rather than the worker."""
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{verb} waited on the hook path")
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
 def test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on(tmp_path: Path) -> None:
     # Whether a hook is stayfixed's is read off its bytes, and the read waited on a FIFO for a
     # writer that never came: `setup --git-hooks` and `--uninstall` both hung. It is read as a
     # regular file only, to the read cap, so a FIFO is a hook `install` cannot read, and it can
-    # neither chain one nor write over it: refused. (`uninstall` leaves it as foreign, below.) In
-    # a child under a timeout, so a regression fails this case rather than hanging. Mutation:
-    # `mutations/`'s "the hook installer reads a hook with no bound".
+    # neither chain one nor write over it: refused. (`uninstall` leaves it as foreign, below.)
+    # Mutation: `mutations/`'s "the hook installer reads a hook with no bound".
     root = repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME
     hook.parent.mkdir(parents=True, exist_ok=True)
@@ -382,17 +398,8 @@ def test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on(tmp_p
         "except Refusal as refused:\n"
         "    print(refused)\n"
     )
-    try:
-        done = subprocess.run(
-            [sys.executable, "-c", probe, str(root)],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        pytest.fail("install waited on a FIFO at the hook path")
-    assert done.stdout.startswith(f"{hook} could not be read (not a regular file); "), done.stderr
+    said = _in_a_child(probe, root, "install")
+    assert said.startswith(f"{hook} could not be read (not a regular file); "), said
     assert hook.is_fifo()
 
 
@@ -403,8 +410,9 @@ def test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_ho
     # stayfixed writes only a regular file at the hook path, so anything else there is as surely
     # not its own as a regular file past the read cap: `--uninstall` leaves it in place and says
     # it is not stayfixed's, where it refused it as a hook it could not read. A FIFO is never
-    # opened, and so never waited on. Mutation: `mutations/`'s "uninstall reads a hook that is not
-    # a regular file".
+    # opened, and so never waited on; a regression to a plain open would wait for a writer, so
+    # this runs in a child under a timeout as its `install` sibling does. Mutation:
+    # `mutations/`'s "uninstall reads a hook that is not a regular file".
     root = repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME
     hook.parent.mkdir(parents=True, exist_ok=True)
@@ -412,7 +420,15 @@ def test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_ho
         os.mkfifo(hook)
     else:
         hook.mkdir()
-    assert uninstall(root) == (hook, None, Found.FOREIGN)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.guards.githooks import uninstall\n"
+        "path, restored, found = uninstall(Path(sys.argv[1]))\n"
+        "print(path, restored, found.name, sep='\\n')\n"
+    )
+    said = _in_a_child(probe, root, "uninstall")
+    assert said.splitlines() == [str(hook), "None", Found.FOREIGN.name]
     assert hook.is_fifo() if shape == "fifo" else hook.is_dir()
 
 
