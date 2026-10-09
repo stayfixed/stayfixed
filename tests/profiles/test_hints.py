@@ -58,7 +58,7 @@ def a_dirty_project(tmp_path: Path) -> Path:
 def test_two_recognising_hints_both_speak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A repository in two stacks runs both suites in one command; each stack whose runner
     # failed gets its own line, in name order, and a third whose runner did not run says
-    # nothing. Oracle: `mutations/`, "only the first recognising hint speaks".
+    # nothing. Oracle: `mutations/`'s "only the first recognising hint speaks".
     ship(
         monkeypatch,
         {
@@ -78,7 +78,7 @@ def test_a_hint_that_raises_costs_its_note_not_the_dispatch(
     # One stack's broken hint must cost that stack's line and nothing else: not the other
     # stacks' lines, and not the handler, whose failure under `Policy.OPEN` the dispatcher would
     # record and swallow whole. Through the real dispatcher, so "nothing else" includes stderr.
-    # Oracle: `mutations/`, "a hint's note is computed outside its guard" and "a hint's
+    # Oracle: `mutations/`'s "a hint's note is computed outside its guard" and "a hint's
     # recognition is asked outside its guard".
     ship(
         monkeypatch,
@@ -107,7 +107,7 @@ def test_a_hint_that_cannot_load_or_gives_no_text_costs_only_its_own_line(
     # not import, one that has no `HINT`, and a note that is not text sit outside them unless
     # they are handled on their own. Each must cost that profile's line and nothing else: the
     # dirty-tree line and every other stack's line stay. Through the real dispatcher, so
-    # "nothing else" includes stderr. Oracle: `mutations/`, "a hint module is imported outside
+    # "nothing else" includes stderr. Oracle: `mutations/`'s "a hint module is imported outside
     # its guard" and "a note that is not text passes as one".
     ship(
         monkeypatch,
@@ -139,7 +139,7 @@ def test_a_note_is_handed_counts_and_nothing_else(
     # key shaped like a path are dropped before the hint renders anything, and the hint never sees
     # the very object it returned. A key is text too, and one a hint built from the tree it walked
     # would carry that tree's names into `note` and into `stayfixed test hygiene --json`. Oracle:
-    # `mutations/`, "a hint's note is handed its report as returned", "a count keeps any string
+    # `mutations/`'s "a hint's note is handed its report as returned", "a count keeps any string
     # for its name", "a count takes an int subclass, a boolean included, for a count", "a count
     # keeps a str subclass for its name" and "a count keeps a negative or unbounded integer".
     loud = LoudHint("x", "loud says")

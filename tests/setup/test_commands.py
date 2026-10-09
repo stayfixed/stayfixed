@@ -77,7 +77,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     # recorded in the machine configuration; run `stayfixed setup`" — the defect
     # `config.loader.load`'s docstring describes, on the write side.
     #
-    # Mutation (`mutations/`, "the machine path honours XDG_CONFIG_HOME again"): the file lands
+    # Mutation (`mutations/`'s "the machine path honours XDG_CONFIG_HOME again"): the file lands
     # under `XDG_CONFIG_HOME` and this reddens on both paths below.
     home = tmp_path / "home"
     xdg = tmp_path / "xdg"
@@ -307,7 +307,7 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
 ) -> None:
     # The failure said where the file goes "without --machine" to a run that had named one, as
     # if the flag had not been given. Named, the file is where the flag says, and the line names
-    # its directory and the reason alone. Mutation: `mutations/`, "setup tells a run that named
+    # its directory and the reason alone. Mutation: `mutations/`'s "setup tells a run that named
     # its machine file where the file goes without --machine".
     locked, home = tmp_path / "locked", tmp_path / "home"
     locked.mkdir()

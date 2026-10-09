@@ -278,7 +278,7 @@ def test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_
     # removed between the two calls), because the probe has its own arm and its own test below;
     # this is the one that reaches the creation arm.
     #
-    # Mutation (`mutations/`, "overlay create --template asks GitHub about a `gh` that
+    # Mutation (`mutations/`'s "overlay create --template asks GitHub about a `gh` that
     # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more
     # subprocesses run and the message names `gh auth status` instead of the launch failure.
     absent = Recorder(
@@ -340,7 +340,7 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
 
 def test_the_owners_own_template_is_used_when_they_have_published_one(tmp_path: Path) -> None:
     # A person who publishes their own template gets their own copy, so an overlay they generate
-    # is exactly the tree their `publish-template` put there. Mutation (`mutations/`,
+    # is exactly the tree their `publish-template` put there. Mutation (`mutations/`'s
     # "overlay create never asks whose template to use"): the probe is dropped and the publisher's
     # template is always named → this reddens on the argv.
     runner = Recorder(answers={THE_OWNERS_PROBE: A_TEMPLATE}, on_call=_populate)
@@ -363,7 +363,7 @@ def test_the_publishers_template_is_used_when_the_owner_has_none(tmp_path: Path)
     # documented contract asked for a repository nobody had told them to publish. The answer to
     # "does <owner>/stayfixed-overlay-template exist" is `gh`'s real not-found shape (see
     # `NO_SUCH_REPOSITORY`), and it falls back to the publisher's own public template.
-    # Mutation (`mutations/`, "overlay create has no template to fall back on"): the
+    # Mutation (`mutations/`'s "overlay create has no template to fall back on"): the
     # fallback is dropped and the owner's template is always named → this reddens.
     #
     # Named with its host. `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner
@@ -371,7 +371,7 @@ def test_the_publishers_template_is_used_when_the_owner_has_none(tmp_path: Path)
     # the owner's private overlay -- whose hooks run in every session -- was generated from it.
     # `github.com/OWNER/REPO` is looked up on github.com whatever `GH_HOST` says (measured against
     # gh 2.101.0 with `GH_HOST` set to another host). The owner's own probe above stays
-    # host-relative: that repository is on the owner's own host. Mutation (`mutations/`, "the
+    # host-relative: that repository is on the owner's own host. Mutation (`mutations/`'s "the
     # publisher's template is named on whatever host gh defaults to") → this reddens on the argv.
     runner = Recorder(answers={THE_OWNERS_PROBE: NO_SUCH_REPOSITORY}, on_call=_populate)
     created = create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
@@ -516,7 +516,7 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
     # `create --local` used to leave a bare directory, so the owner's next step (commit it, push
     # it to a private repository) began with a `git init` nobody had told them about. The init
     # is `create`'s `--local` branch and not `_render_locally`, which `publish-template` also
-    # uses for its scratch render. Mutation (`mutations/`, "overlay create --local leaves no
+    # uses for its scratch render. Mutation (`mutations/`'s "overlay create --local leaves no
     # git repository"): the `git init` call is deleted → this reddens.
     runner = Recorder()
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
@@ -657,7 +657,7 @@ def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> No
     # half of everything else, but `.codex-plugin/plugin.json` was left unsuffixed, so the
     # collision the suffix exists to prevent still happened on Codex.
     #
-    # Mutation (`mutations/`, "overlay init leaves the Codex manifest unsuffixed"):
+    # Mutation (`mutations/`'s "overlay init leaves the Codex manifest unsuffixed"):
     # the Codex row is dropped from `naming.NAMED` → this reddens on the third name.
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
     init_instance(created.root, "OctoCat", runner=Recorder())
@@ -694,7 +694,7 @@ def test_a_local_render_over_an_existing_repository_says_what_it_found(tmp_path:
     # said "made it a git repository on main with no remote" anyway -- about a repository on
     # another branch with an `origin` -- and told the owner to add a remote it already had.
     #
-    # Mutation (`mutations/`, "overlay create --local reads an existing repository as one it
+    # Mutation (`mutations/`'s "overlay create --local reads an existing repository as one it
     # made"): the check for an existing repository is dropped → this reddens.
     import shutil
 

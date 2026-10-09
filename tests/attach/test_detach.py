@@ -78,7 +78,7 @@ def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) 
     # repository, so what a detach leaves behind decides whether it runs at all. An `init`
     # footprint, a real attach that merged a rule and a hook entry, a detach, and the tree is the
     # one `init` left; `uninstall` then runs and takes the footprint back, and a second one finds
-    # nothing to take. Mutation: `mutations/`, "detach leaves its ledger behind".
+    # nothing to take. Mutation: `mutations/`'s "detach leaves its ledger behind".
     root, store, machine = _bound(tmp_path)
     init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
@@ -601,8 +601,8 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
     # broken one refuses above the first withdrawal.
     #
-    # Mutation (`mutations/`, "detach reads the ignore region after it has already
-    # withdrawn"): the remainder computed where the write happens → the snapshot below changes.
+    # Mutation (`mutations/`'s "detach stops reading the ignore region before its first
+    # withdrawal"): the region is met only where it is written → the snapshot below changes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"

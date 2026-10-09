@@ -46,7 +46,7 @@ def test_a_relative_data_root_is_no_sink_at_all(
     # choose, and this is the half taken back. The cwd is `tmp_path` here so the assertion can
     # say what was not written and where.
     #
-    # Mutation (`mutations/`, "the sink accepts a relative data root"): the `is_absolute`
+    # Mutation (`mutations/`'s "the sink accepts a relative data root"): the `is_absolute`
     # guard removed → a `DataSink` comes back and `stayfixed/` appears under the cwd.
     monkeypatch.chdir(tmp_path)
     for spelling in (".", "stayfixed-data", "./sub"):

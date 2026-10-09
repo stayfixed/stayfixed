@@ -25,7 +25,7 @@ def test_a_location_suffix_is_not_part_of_the_name() -> None:
     # A line, a line and a column, and a symbol path of any depth: `::` joins a symbol path in
     # Rust and C++ as it does a test node's, so `::TestA::test_x` and `::parser::parse` are one
     # suffix. Before, a column or a second `::` made the span no reference at all. Oracle:
-    # `mutations/`, "a column stops being part of a location suffix", "a symbol path stops
+    # `mutations/`'s "a column stops being part of a location suffix", "a symbol path stops
     # being read past its first `::`".
     line = (
         "`src/a.py:12` `tests/test_a.py::test_x` `src/b.c:3:14` "
@@ -104,7 +104,7 @@ def test_a_file_any_stack_stores_is_a_path_claim() -> None:
     # a closed list of extensions is the same drift between this grammar and every stack it does
     # not list. Before, a plan citing `src/lib.rs` or `cmd/main.go:12` was never checked. An
     # extension is any word that starts with a letter, a dotfile's included. Oracle:
-    # `mutations/`, "the reference grammar closes its extension list again".
+    # `mutations/`'s "the reference grammar closes its extension list again".
     line = (
         "`web/app.tsx` `cfg/a.toml` `src/lib.rs` `cmd/main.go:12` `app/Foo.java` "
         "`include/a.hpp` `types/a.d.ts` `secrets/.env`"
@@ -126,7 +126,7 @@ def test_a_span_whose_first_component_is_a_host_is_prose() -> None:
     # with no scheme: a first path component ending in a host's label is not a directory of this
     # repository, so the span is prose. A leading dot is a hidden directory, and a `.d` suffix a
     # directory of fragments (this repository's own `changelog.d/`): both stay paths. Oracle:
-    # `mutations/`, "a host-shaped first component is read as a directory", "a `.d` directory
+    # `mutations/`'s "a host-shaped first component is read as a directory", "a `.d` directory
     # reads as a host", "a hidden directory reads as a host".
     hosts = "`gopkg.in/yaml.v3` `github.com/owner/repo.git` `docs.example.org/3/x.html`"
     assert list(path_references(hosts)) == []
@@ -141,7 +141,7 @@ def test_a_span_whose_first_component_is_a_host_is_prose() -> None:
 
 def test_a_version_number_is_not_an_extension() -> None:
     # `releases/0.1.9596` names a version, not a file: an extension starts with a letter, so a
-    # numbered directory is prose. Oracle: `mutations/`, "an extension may start with a digit".
+    # numbered directory is prose. Oracle: `mutations/`'s "an extension may start with a digit".
     assert list(path_references("`releases/0.1.9596` `docs/p0/0.0.1` `man/stayfixed.1`")) == []
 
 

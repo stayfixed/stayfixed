@@ -663,7 +663,7 @@ def test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_word
 ) -> None:
     # The refusal named the file by its root-relative path and then quoted the error's own text,
     # `[Errno 13] Permission denied: 'manifest.json'`; it says the reason in words, as every other
-    # refusal does. Mutations: `mutations/`, "a ledger file that cannot be removed is reported
+    # refusal does. Mutations: `mutations/`'s "a ledger file that cannot be removed is reported
     # with the error's own text", and the same of the local ledger.
     from stayfixed.project import uninstall as module
 

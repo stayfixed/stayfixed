@@ -1864,6 +1864,26 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared",
 ]
 
+# A citation spelled through a comma or a colon is one the citation test never reads: 138 were,
+# and four of them named no entry.
+[[mutation]]
+name = "the citation spelling rule lets a comma or a colon through"
+file = "tests/declarations.py"
+before = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[\\s#(]*"')"""
+after = """_UNREAD = re.compile("`mutations" + r'/`[\\s#(]*"')"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+[[mutation]]
+name = "the citation spelling rule reads no further than the set's own line"
+file = "tests/declarations.py"
+before = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[\\s#(]*"')"""
+after = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[ #(]*"')"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
 # The plugin directory holds the version for a reviewer when a file other than an image or a font
 # is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
 [[mutation]]

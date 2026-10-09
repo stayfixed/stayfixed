@@ -21,7 +21,7 @@ from tests.scriptload import SCRIPTS, load
 SCRIPT = SCRIPTS / "mutation_oracle.py"
 # How a comment cites an entry (CONTRIBUTING.md, "Tests"): the set, then the entry's quoted name.
 # Built in two pieces so that this line is not itself read as a citation of whatever follows it.
-ANCHOR = "`mutations/`" + "'s"
+ANCHOR = "`mutations" + "/`'s"
 # The name runs to the next double quote and may wrap: a line break, the next line's indentation
 # and a comment's `#` read as one space, there and between the anchor and the name. After it,
 # `, "…"`, `and "…"` or `or "…"` cite further names under the same anchor.
@@ -36,6 +36,10 @@ _ARROW = re.compile(
     _GAP + r'->(?P<said>[^;"]*?)[;,](?:' + _GAP + r"(?:and|or))?" + _GAP + r'"(?P<name>[^"]*)"'
 )
 _WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")
+# The set's name followed by a quoted name through a comma or a colon rather than `'s` is a
+# citation `cited_names` never reads, so nothing would notice that name going stale. Built in
+# pieces for the reason `ANCHOR` is.
+_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"')
 
 
 @functools.cache
@@ -79,3 +83,9 @@ def cited_names(text: str) -> list[str]:
             quoted = further
         at = text.find(ANCHOR, at + len(ANCHOR))
     return names
+
+
+def unread_citations(text: str) -> list[int]:
+    """The line of each citation in `text` spelled some other way than `ANCHOR`, which
+    `cited_names` does not read."""
+    return [text.count("\n", 0, found.start()) + 1 for found in _UNREAD.finditer(text)]

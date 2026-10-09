@@ -500,7 +500,7 @@ CONFIGURATIONS = [
 def test_the_bug_entry_template_names_no_one_stacks_location_syntax() -> None:
     # The entry `bugs new` writes said `path/to/file.py::symbol`, a Python file and pytest's
     # node syntax, in every project whatever it is written in. The template shapes only the
-    # entries filed after it, so no recorded byte moves with it. Oracle: `mutations/`, "the bug
+    # entries filed after it, so no recorded byte moves with it. Oracle: `mutations/`'s "the bug
     # entry template names a Python file again".
     (where,) = [line for line in BUG_SCHEMA.template.splitlines() if "**Where:**" in line]
     assert ".py" not in where and "::" not in where
@@ -1014,7 +1014,7 @@ def test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted(
     # no severity — a misspelling, a capital, a level another tool has — loaded and required the
     # evidence line of no entry at all, and every high entry passed without one. It is refused
     # where the register is built, beside `id_prefix`'s refusal, counted and never quoted: the
-    # values are the repository's. Mutations: `mutations/`, "a boundary level outside the
+    # values are the repository's. Mutations: `mutations/`'s "a boundary level outside the
     # severities builds the register" and "the boundary-level refusal quotes the values".
     root = tmp_path / "widget"
     root.mkdir()

@@ -394,7 +394,7 @@ def test_a_corrupt_record_is_never_overwritten(tmp_path: Path) -> None:
 
 def test_a_record_that_cannot_be_read_says_why_in_words(tmp_path: Path) -> None:
     # It named the file and then the error, whose text names the same absolute path again; the
-    # reason is said in words, the file named once. Mutation: `mutations/`, "a trust record that
+    # reason is said in words, the file named once. Mutation: `mutations/`'s "a trust record that
     # cannot be read is reported with the error's own text".
     if os.geteuid() == 0:
         pytest.skip("root reads everything")

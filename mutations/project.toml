@@ -34,8 +34,8 @@ reddens = [
 # Each mutates a file no type checker reads and no import reaches: a YAML workflow, a
 # permissions table, a `.gitignore`. That is exactly why they are here. `hooks/run-hook.sh` has
 # entries on the same argument -- CONTRIBUTING's rule is that a genuinely load-bearing guard goes
-# into `mutations/` "instead of only describing it", and a `# Mutation: ...` comment in a test body
-# is a description.
+# into `mutations/` rather than only being described, and a `# Mutation: ...` comment in a test
+# body is a description.
 
 # The overlay's first secret scan, and the revision decides whose code runs on the owner's
 # machine at every commit. The assertion this entry belongs to used to be `"rev:" in config`,

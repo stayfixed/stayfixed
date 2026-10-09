@@ -201,7 +201,7 @@ def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_files
     # A note's path and a symlink out of the tree are both bytes a clone can commit, and
     # `exists()` follows the symlink: `memory refs` answered, one bit per path, whether a file
     # exists anywhere on the machine. A symlink that stays inside the tree is still followed.
-    # Oracle: `mutations/`, "memory refs follows a symlink out of the tree", "a path claim is
+    # Oracle: `mutations/`'s "memory refs follows a symlink out of the tree", "a path claim is
     # followed through a symlink out of the tree".
     root, config = project(tmp_path)
     outside = tmp_path / "outside"
@@ -228,7 +228,7 @@ def test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash
 def test_a_reference_below_a_directory_that_cannot_be_searched_is_a_finding_rather_than_a_crash(
     tmp_path: Path,
 ) -> None:
-    # Oracle: `mutations/`, "a path the filesystem cannot answer for crashes the reference checks".
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
     if os.geteuid() == 0:
         pytest.skip("root searches every directory")
     root, config = project(tmp_path)

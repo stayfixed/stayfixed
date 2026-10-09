@@ -84,7 +84,7 @@ def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
 
 def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) -> None:
     # Go's import spelling in a plan line failed the gate as a missing file of this repository.
-    # The path beside it on the same line is still checked. Oracle: `mutations/`, "a
+    # The path beside it on the same line is still checked. Oracle: `mutations/`'s "a
     # host-shaped first component is read as a directory".
     root, config = project(tmp_path)
     path = plan(root, SCOPE + "Use `gopkg.in/yaml.v3` to parse `internal/config/load.go`.\n")
@@ -114,7 +114,7 @@ def test_a_reference_below_a_directory_that_cannot_be_searched_is_not_found_rath
 ) -> None:
     # What the existence query still raises -- a fault that leaves the question open -- is the
     # reference checks' to answer, and they answer it as a claim not found rather than a crash.
-    # Oracle: `mutations/`, "a path the filesystem cannot answer for crashes the reference checks".
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
     if os.geteuid() == 0:
         pytest.skip("root searches every directory")
     root, config = project(tmp_path)
@@ -137,7 +137,7 @@ def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_files
     # made the lint a one-bit existence oracle for any path on the machine, a present file
     # passing and an absent one reported. A claim whose real path leaves the root is now not
     # settled at all, as one whose spelling leaves it is not. A symlink that stays inside the
-    # tree is still followed. Oracle: `mutations/`, "the plan lint follows a symlink out of
+    # tree is still followed. Oracle: `mutations/`'s "the plan lint follows a symlink out of
     # the tree", "a path claim is followed through a symlink out of the tree".
     root, config = project(tmp_path)
     outside = tmp_path / "outside"

@@ -349,7 +349,7 @@ def test_reinstalling_over_a_chained_setup_keeps_the_preserved_hook(tmp_path: Pa
 def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
     # And says so, `Found.FOREIGN`, where the answer was the one an uninstall of stayfixed's own
     # hook with nothing chained gave; with no hook at all, `Found.ABSENT`. Mutations:
-    # `mutations/`, "uninstall says it removed a hook when the hook there is not stayfixed's" and
+    # `mutations/`'s "uninstall says it removed a hook when the hook there is not stayfixed's" and
     # "uninstall says it removed a hook when there was none".
     root = repo(tmp_path)
     foreign = hooks_dir(root) / HOOK_NAME
@@ -367,7 +367,7 @@ def test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on(tmp_p
     # regular file only, to the read cap, so a FIFO is a hook `install` cannot read, and it can
     # neither chain one nor write over it: refused. (`uninstall` leaves it as foreign, below.) In
     # a child under a timeout, so a regression fails this case rather than hanging. Mutation:
-    # `mutations/`, "the hook installer reads a hook with no bound".
+    # `mutations/`'s "the hook installer reads a hook with no bound".
     root = repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME
     hook.parent.mkdir(parents=True, exist_ok=True)
@@ -403,7 +403,7 @@ def test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_ho
     # stayfixed writes only a regular file at the hook path, so anything else there is as surely
     # not its own as a regular file past the read cap: `--uninstall` leaves it in place and says
     # it is not stayfixed's, where it refused it as a hook it could not read. A FIFO is never
-    # opened, and so never waited on. Mutation: `mutations/`, "uninstall reads a hook that is not
+    # opened, and so never waited on. Mutation: `mutations/`'s "uninstall reads a hook that is not
     # a regular file".
     root = repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME
@@ -421,7 +421,7 @@ def test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign(tmp_path: Path, 
     # Whether it is stayfixed's cannot be told, so it is neither: read as foreign, `--uninstall`
     # said "it is not stayfixed's hook" of stayfixed's own hook at mode 000, and `install`
     # renamed that hook to `.local` and chained it. Each refuses, naming the reason, and leaves it
-    # where it is. Mutation: `mutations/`, "a hook that cannot be read is read as a foreign one".
+    # where it is. Mutation: `mutations/`'s "a hook that cannot be read is read as a foreign one".
     if os.geteuid() == 0:
         pytest.skip("root reads everything")
     root = repo(tmp_path)
@@ -443,7 +443,7 @@ def test_a_hook_past_the_read_cap_is_a_foreign_one(
     # stayfixed's own hook is a couple of kilobytes, so a regular file longer than the read cap
     # is certainly not it: it is foreign, chained by `install` and left alone by `--uninstall`,
     # as 0.2.0 did, rather than refused as a hook that cannot be read. The cap is lowered to
-    # just past stayfixed's own hook, which is still read whole. Mutation: `mutations/`, "a hook
+    # just past stayfixed's own hook, which is still read whole. Mutation: `mutations/`'s "a hook
     # past the read cap is refused as one that cannot be read".
     from stayfixed import fsops
     from stayfixed.guards.githooks import HOOK_TEXT

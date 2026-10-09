@@ -19,7 +19,7 @@ def test_reading_the_number_out_of_a_non_identifier_is_refused() -> None:
     # is its first caller: it asks `is_identifier` first, so this branch is reached only by a
     # caller that does not — and a caller that guesses a number out of a filename that is not an
     # identifier hands out an occupied one.
-    # Oracle: `mutations/`, "reading the number out of a non-identifier answers zero
+    # Oracle: `mutations/`'s "reading the number out of a non-identifier answers zero
     # instead of refusing".
     with pytest.raises(Refusal):
         Identifiers("BR").number("BR-42")

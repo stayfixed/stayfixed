@@ -327,7 +327,7 @@ def test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused() -> None:
     """`uv run --no-project sleep 30` launches `sleep` as surely as `uv run sleep 30` does,
     and was allowed while only the exact pair `uv run` was unwrapped. A refusal this guard did
     not make before, and the right one: the call returns at once whatever it sleeps for.
-    Oracle: `mutations/`, "uv's options stop being read past `run`"."""
+    Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
     assert judge("uv run --no-project sleep 30", background=True).deny == SLEEP_REASON
     assert judge("uv --quiet run -- sleep 30", background=True).deny == SLEEP_REASON
 
@@ -335,7 +335,7 @@ def test_a_backgrounded_sleep_uv_runs_past_its_options_is_refused() -> None:
 def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
     """The legitimate call beside it: a suite started in the background through uv's options
     is ordinary work, and neither the sleep rule nor a value uv takes may refuse it. Oracle:
-    `mutations/`, "a value-taking uv option stops taking the next word"."""
+    `mutations/`'s "a value-taking uv option stops taking the next word"."""
     assert judge("uv run --no-project pytest -q > out.log 2>&1", background=True) == ALLOW
     assert judge("uv run --with sleep pytest -q > out.log 2>&1", background=True) == ALLOW
 
@@ -354,7 +354,7 @@ def test_a_backgrounded_test_run_through_uvs_options_is_not_a_sleep() -> None:
 def test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep(command: str) -> None:
     """`uv run -m sleep 30` runs `python -m sleep`, and `--script sleep` a script file of that
     name: neither is the `sleep` program, so a refusal here is a closed-policy deny on a command
-    that does not sleep. Measured on uv: `No module named sleep`, exit 1. Oracle: `mutations/`,
+    that does not sleep. Measured on uv: `No module named sleep`, exit 1. Oracle: `mutations/`'s
     "a module or script name reads as the program by default"."""
     assert judge(command, background=True) == ALLOW
 
@@ -362,14 +362,14 @@ def test_a_module_or_script_named_sleep_is_not_a_backgrounded_sleep(command: str
 def test_the_exit_echo_hint_reads_both_commands_through_uvs_options() -> None:
     """The hint asks the same question of the echo and of the command it masks. An echo uv
     launches past its options is an echo, and a command uv launches past them is not one.
-    Oracle: `mutations/`, "uv's options stop being read past `run`"."""
+    Oracle: `mutations/`'s "uv's options stop being read past `run`"."""
     assert judge("pytest -q > out.log; uv run --no-project echo done", background=True).hint
     assert judge("uv run --frozen echo hi; echo done", background=True).hint is None
 
 
 def test_the_exit_echo_hint_never_reads_a_module_named_echo_as_an_echo() -> None:
     """`uv run -m echo` runs a module, whose exit code an echo after it hides and which hides
-    nothing itself. Oracle: `mutations/`, "a module or script name reads as the program by
+    nothing itself. Oracle: `mutations/`'s "a module or script name reads as the program by
     default"."""
     assert judge("pytest -q > out.log; uv run -m echo done", background=True).hint is None
     assert judge("uv run -m echo hi > out.log; echo done", background=True).hint is not None

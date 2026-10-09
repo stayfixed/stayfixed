@@ -71,7 +71,7 @@ def test_a_link_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem
     # The link check is lexical before it asks `exists()`, which follows symlinks: a committed
     # `docs/l` pointing out of the tree made it an existence oracle for the machine, a present
     # file passing and an absent one reported. A symlink that stays inside the tree is still
-    # followed. Oracle: `mutations/`, "the AGENTS.md link check follows a symlink out of the
+    # followed. Oracle: `mutations/`'s "the AGENTS.md link check follows a symlink out of the
     # tree", "a path claim is followed through a symlink out of the tree".
     agents = AGENTS + "- [a](docs/l/secret.md)\n- [b](docs/l/absent.md)\n- [c](docs/in/gone.md)\n"
     root, config = project(tmp_path, agents=agents)
@@ -97,7 +97,7 @@ def test_a_link_the_filesystem_cannot_name_is_missing_rather_than_a_crash(tmp_pa
 def test_a_link_below_a_directory_that_cannot_be_searched_is_missing_rather_than_a_crash(
     tmp_path: Path,
 ) -> None:
-    # Oracle: `mutations/`, "a path the filesystem cannot answer for crashes the reference checks".
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
     if os.geteuid() == 0:
         pytest.skip("root searches every directory")
     root, config = project(tmp_path, agents=AGENTS + "- [x](docs/locked/child/x.md)\n")

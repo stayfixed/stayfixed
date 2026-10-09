@@ -428,7 +428,7 @@ def test_command_words_strips_a_leading_assignment_and_wrapper() -> None:
 
 def test_command_words_strips_uv_run_with_nothing_before_the_program() -> None:
     """CI's own invocation shape, with nothing between `uv run` and the program it launches.
-    Oracle: `mutations/`, "`uv run` stops being stripped off a segment"."""
+    Oracle: `mutations/`'s "`uv run` stops being stripped off a segment"."""
     assert bashscan.command_words(["uv", "run", "pytest"]) == ["pytest"]
 
 
@@ -465,7 +465,7 @@ def test_command_words_strips_uv_run_past_uvs_own_options(command: str, program:
     """`uv run --locked pytest`, the shape the documentation recommends, used to arrive as
     `--locked pytest`, so no hint recognised the run and the red-run notice said nothing at
     all. uv's options are read by its own tables (`uv --help`, `uv run --help`), so the word
-    `uv run` launches is the one resolved. Oracle: `mutations/`, "uv's global options stop
+    `uv run` launches is the one resolved. Oracle: `mutations/`'s "uv's global options stop
     being skipped before `run`", "`--` stops ending uv's options", "a lone `-` is read as a uv
     option", "a fused short value stops being one word"."""
     assert bashscan.command_words(command.split()) == program
@@ -481,7 +481,7 @@ def test_a_module_or_script_uv_runs_is_the_program_only_to_a_caller_that_asks(
     so by default the command stays whole: the conservative reading, which a guard that judges
     the program inherits without having to remember a flag. A caller asking which runner ran
     (`modules_as_programs=True`, the red-run hint) reads `-m pytest` as `pytest`. Oracle:
-    `mutations/`, "a module or script name reads as the program by default", "a module or
+    `mutations/`'s "a module or script name reads as the program by default", "a module or
     script name is never read as what uv runs"."""
     words = command.split()
     assert bashscan.command_words(words) == words
@@ -501,7 +501,7 @@ def test_command_words_never_reads_a_uv_options_value_as_the_program(
 ) -> None:
     """The wrong-note direction: `--with pytest` names a package, and `echo` is what runs. An
     option that takes a value and was read as a flag would make `pytest` the program and hand
-    a pytest note to an `echo`. Oracle: `mutations/`, "a value-taking uv option stops taking
+    a pytest note to an `echo`. Oracle: `mutations/`'s "a value-taking uv option stops taking
     the next word"."""
     assert bashscan.command_words(command.split()) == program
 
@@ -529,7 +529,7 @@ def test_command_words_leaves_a_uv_command_it_cannot_read_whole(command: str) ->
     """The under-report, kept where it is still the safe direction: an option this scanner
     cannot classify might take a value, and guessing it a flag reads that value as the program
     (`--with pytest echo` would become a pytest run). So such a command is left as written and
-    its program is `uv`, which no hint recognises and no guard refuses. Oracle: `mutations/`,
+    its program is `uv`, which no hint recognises and no guard refuses. Oracle: `mutations/`'s
     "an unknown uv option is read as a flag", "an unknown short uv option is read as a flag", "a
     uv flag given a value is read as a flag", "`run`'s options are skipped before `run`", "a uv
     command other than `run` is unwrapped", "a uv command that never reaches `run` is

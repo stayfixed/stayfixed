@@ -248,7 +248,7 @@ def test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_me
     # there so that it resolves — and a re-run from shell history swept it onto the new number,
     # exit 0: "BR-009 was renumbered to BR-009". The index is the move's last write, so a fresh
     # one says the move finished, and the re-run changes nothing and says so. Mutation:
-    # `mutations/`, "a renumber that finished sweeps again when run again".
+    # `mutations/`'s "a renumber that finished sweeps again when run again".
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
@@ -280,7 +280,7 @@ def test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it(
     # it ended in `internal error: PermissionError`, exit 2, which said nothing of the re-run that
     # now finishes the move. Each of the move's own writes fails as the move's failure, exit 1,
     # naming that re-run and the file by its root-relative path. `pointer` is the move killed
-    # after its first write, re-run with the old file unwritable. Mutations: `mutations/`, "a
+    # after its first write, re-run with the old file unwritable. Mutations: `mutations/`'s "a
     # renumber's failed target write escapes as an internal error", and the same of its pointer
     # and its index.
     if os.geteuid() == 0:
@@ -315,7 +315,7 @@ def test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_inde
     # `internal error`, exit 2, that said nothing of it; an operator who ran `bugs new` again
     # filed the same bug twice. It is a failure, exit 1, naming the entry it filed and the
     # command that brings the index up to date, which files nothing: after it, one entry and a
-    # clean check. Mutation: `mutations/`, "a filing whose index write fails escapes as an
+    # clean check. Mutation: `mutations/`'s "a filing whose index write fails escapes as an
     # internal error".
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")
@@ -346,7 +346,7 @@ def test_a_filing_whose_index_write_fails_keeps_the_allocators_warning(
     # The allocator warns when it could not ask what other branches hold, since the number it
     # chose may then be taken there, and a filing that stops at the index is the one whose number
     # the operator acts on next. The failure named the entry and the index and dropped the
-    # warning. The checkout here has no `origin`, so the fetch fails. Mutation: `mutations/`, "a
+    # warning. The checkout here has no `origin`, so the fetch fails. Mutation: `mutations/`'s "a
     # filing whose index write fails drops the allocator's warning".
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")
@@ -370,7 +370,7 @@ def test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The same write, from `bugs index` itself: `internal error`, exit 2, where it is the
-    # command's failure, exit 1, with the reason in words. Mutation: `mutations/`, "an index
+    # command's failure, exit 1, with the reason in words. Mutation: `mutations/`'s "an index
     # write that fails escapes as an internal error".
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")

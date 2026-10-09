@@ -963,7 +963,7 @@ def test_a_committed_index_is_reported_untrusted(
     assert payload["trusted"] is False
     assert "stayfixed memory trust" in payload["summary"]
     # The committed index is repository data the bundles withhold too, so the words are the
-    # whole gate's and not the link's alone. Mutation: `mutations/`, "a committed index is told
+    # whole gate's and not the link's alone. Mutation: `mutations/`'s "a committed index is told
     # only the harness link waits".
     assert "none of it reaches a session" in payload["summary"]
 
@@ -982,7 +982,7 @@ def test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_sti
     # overlay store warns until `memory trust --in-repo-memory` has run — in words that say only
     # the link waits, because the machine owner's own overlay notes still reach a session
     # through the bundles, and must, or the gate would break the mode this project ships.
-    # Mutations: `mutations/`, "memory index and fit ask a narrower question than the harness
+    # Mutations: `mutations/`'s "memory index and fit ask a narrower question than the harness
     # link" and "an overlay store with no record is told none of its notes reach a session".
     rule = overlay_project.parent / "overlay" / "common" / "memory" / "rule.md"
     rule.write_text(

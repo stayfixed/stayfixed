@@ -194,7 +194,7 @@ def _read_the_core(modules: list[Path]) -> None:
 
 
 def test_no_core_module_names_a_stack_it_does_not_pardon() -> None:
-    # Oracle: `mutations/`, "the core names pytest again".
+    # Oracle: `mutations/`'s "the core names pytest again".
     modules = _core_modules()
     _read_the_core(modules)
     assert stack_mentions(modules) == STACK_NAMED
@@ -255,7 +255,7 @@ def test_the_import_reader_resolves_every_spelling_of_a_stack_import(
 
 def test_no_core_module_imports_a_stack_profiles_code() -> None:
     # The core reaches a stack's code only by discovering it (`stayfixed.profiles.hints`), never
-    # by naming it in an import. Oracle: `mutations/`, "the core imports the Python profile's
+    # by naming it in an import. Oracle: `mutations/`'s "the core imports the Python profile's
     # hint".
     modules = _core_modules()
     _read_the_core(modules)

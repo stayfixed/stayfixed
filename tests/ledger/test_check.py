@@ -288,7 +288,7 @@ def test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it(
     # found none there on the base, and deleting an entry in the same change passed `bugs check
     # --base` — and `stayfixed gate`, whenever the base enforces nothing and so refuses no
     # `[paths]` change. The base's ledger is read where the base's own `stayfixed.toml` kept it.
-    # Mutation: `mutations/`, "the base's entries are listed at the tree's paths again".
+    # Mutation: `mutations/`'s "the base's entries are listed at the tree's paths again".
     root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002", "BR-003"))
     config = _moved(root, tmp_path, ("BR-001", "BR-003"))
     assert [(p.rule, p.path) for p in check.bugs_gate(root, config, base)] == [
@@ -323,7 +323,7 @@ def test_a_base_copy_that_will_not_load_fails_the_check_and_never_reads_as_no_le
     # `test_a_ledger_moved_by_paths_is_read_on_the_base_where_the_base_kept_it` makes. A copy
     # that is not UTF-8 is never parsed, as the loader never parses the tree's. A load that met
     # a refusal and a prefix the identifiers refuse are told apart in the words. Mutations:
-    # `mutations/`, "a base copy that does not load is read at the tree's paths", "a base copy
+    # `mutations/`'s "a base copy that does not load is read at the tree's paths", "a base copy
     # that is not UTF-8 is parsed", "a base copy whose load meets a refusal is read at the
     # tree's paths" and "a base copy whose prefix is refused is said to have met a refusal on
     # load".
@@ -343,7 +343,7 @@ def test_a_base_whose_boundary_level_names_no_severity_does_not_stop_the_change_
     # Locating the base's ledger needs its paths and its identifiers, and nothing of how it
     # judges an entry: built whole, the base's register refused the boundary level 0.2.0 loaded,
     # so the change correcting it was refused (exit 2) by the very check it repairs. Mutation:
-    # `mutations/`, "the base's ledger is located by a register that judges entries".
+    # `mutations/`'s "the base's ledger is located by a register that judges entries".
     root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
     typo = CONFIG + '\n[ledger]\nevidence_boundary_required_for = ["critical"]\n'
     (root / "stayfixed.toml").write_text(typo, encoding="utf-8")
@@ -359,7 +359,7 @@ def test_a_ledger_deleted_with_its_paths_moved_is_named_where_the_base_kept_it(
 ) -> None:
     # The finding's remedy is "restore it from the base", so it names the paths the base held:
     # named at the change's new paths, it sent the owner to restore what no commit ever had.
-    # Mutation: `mutations/`, "a removed ledger is named at the tree's paths".
+    # Mutation: `mutations/`'s "a removed ledger is named at the tree's paths".
     root, _, base = _committed_ledger(tmp_path, ("BR-001",))
     (root / "stayfixed.toml").write_text(CONFIG + MOVED, encoding="utf-8")
     config = load(root, machine=tmp_path / "m.toml")
@@ -378,7 +378,7 @@ def test_a_listing_of_the_base_s_configuration_git_refuses_is_a_failure_never_th
     # A listing that failed listed nothing, which is what a fork with no `stayfixed.toml` lists:
     # read that way, the base would be compared at the tree's paths, which is the bootstrap's
     # answer and not this one. The failure names the file it could not read, not the ledger's
-    # paths. Mutations: `mutations/`, "git failing to read the base is read as the base having no
+    # paths. Mutations: `mutations/`'s "git failing to read the base is read as the base having no
     # stayfixed.toml" and "an unread fork configuration is named by the ledger's paths".
     root, _, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
     config = _moved(root, tmp_path, ("BR-001",))
@@ -400,7 +400,7 @@ def test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledg
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # After a `[paths]` move the failing listing asked about the base's paths, not the tree's,
-    # and the message names what it asked about. Mutation: `mutations/`, "an unread fork
+    # and the message names what it asked about. Mutation: `mutations/`'s "an unread fork
     # listing is named by the tree's paths".
     root, _, base = _committed_ledger(tmp_path, ("BR-001",))
     config = _moved(root, tmp_path, ("BR-001",))
@@ -421,7 +421,7 @@ def test_a_listing_git_refuses_at_a_fork_names_the_paths_that_fork_kept_the_ledg
 def test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal(tmp_path: Path) -> None:
     # `--base` is the caller's, and a ref holding an escape sequence reached the terminal raw.
     # It is printed through `printed.quoted`, as every name in a refusal is. Mutation:
-    # `mutations/`, "an unread base is named raw".
+    # `mutations/`'s "an unread base is named raw".
     root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
     with pytest.raises(Failure) as raised:
         check.bugs_gate(root, config, "nowhere\x1b[31m")
@@ -433,7 +433,7 @@ def test_the_base_a_caller_names_is_printed_as_data_in_every_base_refusal(tmp_pa
 def test_a_base_prefix_the_ledger_refuses_is_clipped_where_it_is_named(tmp_path: Path) -> None:
     # The base's prefix is the base's own text, of any length: named in full, five thousand
     # characters of it reached the line. It is clipped as every repository-chosen name in a
-    # refusal is. Mutation: `mutations/`, "a base prefix the ledger refuses is named whole".
+    # refusal is. Mutation: `mutations/`'s "a base prefix the ledger refuses is named whole".
     root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
     long = "B" * 5000
     (root / "stayfixed.toml").write_text(
@@ -472,7 +472,7 @@ def test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given
 ) -> None:
     # A gate is handed `(root, config, base)`, not the machine file's path, so a second load
     # that read the machine file again read the default one: a command given `--machine` read
-    # a file nobody named, and failed on its contents. Mutation: `mutations/`, "the base's copy
+    # a file nobody named, and failed on its contents. Mutation: `mutations/`'s "the base's copy
     # reads the default machine file".
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     default = Path.home() / ".config" / "stayfixed" / "config.toml"
@@ -891,7 +891,7 @@ def test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_i
     # sent the operator to `bugs index` — the remedy that turned the check green over two live
     # entries for one bug, or over mentions of the old number the sweep never reached. When the
     # stale index is exactly the one the move found, the line names the move that finishes it.
-    # Mutation: `mutations/`, "a stale index a killed renumber left is sent to bugs index".
+    # Mutation: `mutations/`'s "a stale index a killed renumber left is sent to bugs index".
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2, related="[BR-001]")})
     (root / "src" / "a.py").write_text("# see BR-001\n", encoding="utf-8")
@@ -914,7 +914,7 @@ def test_a_stale_index_more_than_one_renumber_explains_names_each_and_runs_none(
     # named the first it tried: run as advised, it voided the entry that was never moved and left
     # the other live beside its new number. So where more than one move explains the index, the
     # line names each and says that only the one that was started finishes it. Mutation:
-    # `mutations/`, "a stale index several renumbers explain names the first of them".
+    # `mutations/`'s "a stale index several renumbers explain names the first of them".
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1), "BR-002": entry(2)})
     with killed_at(monkeypatch, 2), pytest.raises(Killed):
@@ -968,8 +968,8 @@ def test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_ro
     # number nothing would ever rewrite, since the re-run then read the move as finished. So each
     # line is matched with the found index's as it was or as the sweep writes it; read back over
     # the whole ledger instead, both kinds of row at once still named `bugs index`. Mutations:
-    # `mutations/`, "a stale index a killed renumber left is matched with the sweep left in
-    # place" and "… only with the sweep applied".
+    # `mutations/`'s "a stale index a killed renumber left is matched with the sweep left in
+    # place" and "a stale index a killed renumber left is matched only with the sweep applied".
     root, config = project(tmp_path)
     register = bug_register(config)
 

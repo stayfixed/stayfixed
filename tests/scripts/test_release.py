@@ -365,7 +365,7 @@ def test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A `--root` that is no repository root is no version disagreeing, and printed under "version
-    # drift:" it read as one. Said alone, exit 1 as before. Mutation: `mutations/`, "a root the
+    # drift:" it read as one. Said alone, exit 1 as before. Mutation: `mutations/`'s "a root the
     # release check cannot read is reported as version drift".
     missing = tmp_path / "nope"
     assert release.main(["check", "--root", str(missing)]) == 1
@@ -855,7 +855,7 @@ def test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean(
     # A corrupt record is never read as no drift. It is drift like any other, naming the record
     # and the command that writes it again: let out as the reader's `UnreadableRecord`, it was
     # `stayfixed: failed:` on stderr, a third spelling of a record problem, and `--json` lost the
-    # object both commands otherwise print. Mutation: `mutations/`, "a record that cannot be read
+    # object both commands otherwise print. Mutation: `mutations/`'s "a record that cannot be read
     # leaves the drift check as a failure".
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_bytes(body)
@@ -896,7 +896,7 @@ def test_both_commands_spell_a_record_problem_one_way(
     # `check` said "version drift" of a record no version disagrees with, `hashes --check` said
     # "release record drift" of the same state, and a record that was not one was `stayfixed:
     # failed:`. One spelling now, on stdout, from both, with the exit code and the remedy as they
-    # were. Mutation: `mutations/`, "the release check reports a record problem as version drift".
+    # were. Mutation: `mutations/`'s "the release check reports a record problem as version drift".
     root = hashed_plugin(_repo(tmp_path))
     release.write_record(root)
     spoil(root)

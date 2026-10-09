@@ -216,7 +216,7 @@ def test_a_second_upgrade_to_the_same_release_writes_nothing(
 ) -> None:
     # The lifecycle's "re-run, nothing changed": the first run to a release refreshes a document
     # and moves the version, and the second finds every artifact as the first left it, so it
-    # plans nothing and the tree is the same byte for byte. Mutation: `mutations/`, "an artifact
+    # plans nothing and the tree is the same byte for byte. Mutation: `mutations/`'s "an artifact
     # whose bytes are already the template's is planned again".
     root = _pinned(tmp_path)
     newer()

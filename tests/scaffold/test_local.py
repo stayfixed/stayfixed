@@ -136,7 +136,7 @@ def test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it(
 
 def test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is(tmp_path: Path) -> None:
     # The reason names the copy it is about, which is not the artifact's committed target the plan
-    # creates beside it. Mutation: `mutations/`, "a left copy that cannot be read is named by the
+    # creates beside it. Mutation: `mutations/`'s "a left copy that cannot be read is named by the
     # artifact's target".
     _written(tmp_path)
     (tmp_path / LOCAL).unlink()

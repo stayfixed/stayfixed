@@ -95,7 +95,7 @@ def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_writte
     # restated here.) Writing a workflow file into a repository the owner may then
     # commit is the concrete harm.
     #
-    # Mutation (`mutations/`, "overlay upgrade stops asking whether --root is an overlay"):
+    # Mutation (`mutations/`'s "overlay upgrade stops asking whether --root is an overlay"):
     # the `require_overlay` call is removed → the overlay's files appear and this reddens on
     # both the refusal and the tree.
     project = tmp_path / "project"
@@ -128,7 +128,7 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     # README advertises, and attributing to the owner an edit stayfixed itself made. `init` now
     # re-stamps each record with the bytes it wrote.
     #
-    # Mutation (`mutations/`, "overlay init writes the manifests behind the scaffold
+    # Mutation (`mutations/`'s "overlay init writes the manifests behind the scaffold
     # ledger"): the `with_record(replace(...))` line stops updating the digest → both manifests
     # read as hand-edited and this reddens.
     #

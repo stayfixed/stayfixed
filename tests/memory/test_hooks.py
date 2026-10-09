@@ -341,7 +341,7 @@ def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the
     # agreeing: the hook hands `link` the entry resolved once, since the walk opens its root with
     # `O_NOFOLLOW`, and the link is made under the real directory, where `HOME` finds it. The
     # worktree tests reach the same rule through `link`'s own default and cannot see this call.
-    # Mutation: `mutations/`, "the worktree-link hook anchors the harness link on the database's
+    # Mutation: `mutations/`'s "the worktree-link hook anchors the harness link on the database's
     # home unresolved".
     from stayfixed.memory.store import resolve
     from stayfixed.memory.trust import record

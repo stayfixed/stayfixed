@@ -871,7 +871,7 @@ def test_a_ledger_moved_by_paths_takes_no_entry_past_the_run_that_enforces_bugs(
     # A base that enforces nothing refuses no `[paths]` change, so a change can move the ledger,
     # delete an entry on the way and enforce `bugs` itself. The base's entries were listed at the
     # change's paths, where the base had none: `bugs: enforcing, 0 finding(s)` and exit 0. They
-    # are read where the base's own `stayfixed.toml` kept them. Mutation: `mutations/`, "the
+    # are read where the base's own `stayfixed.toml` kept them. Mutation: `mutations/`'s "the
     # base's entries are listed at the tree's paths again".
     project = _ledgered(tmp_path, "", base=LOOSENED)
     moved = BASE.replace('["docs"]', '["bugs"]')
@@ -901,7 +901,7 @@ def test_a_project_root_a_change_made_a_symlink_is_refused_by_the_gate_and_by_bu
     # base has none, and `bugs check --base` passed the deletion as the bootstrap. Both readers
     # find the copy the one way now (`committed.committed_document`), and a root reached through
     # a symlink is refused by `stayfixed gate` and `bugs check --base` alike. Mutation:
-    # `mutations/`, "a project root reached through a symlink reads the base at a path it never
+    # `mutations/`'s "a project root reached through a symlink reads the base at a path it never
     # had".
     enforced = BASE.replace('["docs"]', '["bugs"]')
     project = clone(tmp_path, enforced, under="proj")

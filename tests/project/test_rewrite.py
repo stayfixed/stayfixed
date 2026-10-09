@@ -123,7 +123,7 @@ def test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure(
     with pytest.raises(Refusal) as refused:
         rewrite_owned(root, MOVED)
     # The reason in words, `fsops.said`, and not the error's text, which names the temporary file
-    # the write went through. Mutation: `mutations/`, "a stayfixed.toml that cannot be written is
+    # the write went through. Mutation: `mutations/`'s "a stayfixed.toml that cannot be written is
     # reported with the error's own text".
     reason = os.strerror(errno.ENOSPC)
     assert str(refused.value) == f"{CONFIG_FILE} cannot be written ({reason})"

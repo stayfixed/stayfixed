@@ -397,7 +397,7 @@ def test_test_hygiene_is_clean_on_a_committed_tree(
     # `tests/profiles/python/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
     # `exit_code=1 if findings else 0` to `1`; measured. Then a committed `pyproject.toml`, so
     # Python is detected with nothing to report, and the summary says so in the words a person
-    # reads. Oracle: `mutations/`, "test hygiene's clean summary names no stack".
+    # reads. Oracle: `mutations/`'s "test hygiene's clean summary names no stack".
     root = repo(tmp_path)
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
@@ -459,7 +459,7 @@ def test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_marke
     # clean", exit 0, for the same tree: the command contradicted the notice it documents. A
     # profile whose note is not `None` is listed whether or not its markers sit at the root, and
     # the exit code follows. The tree is committed, with the bytecode ignored, so the only
-    # finding is the stale `.pyc`. Oracle: `mutations/`, "test hygiene hides a profile its
+    # finding is the stale `.pyc`. Oracle: `mutations/`'s "test hygiene hides a profile its
     # markers do not detect at the root".
     root = repo(tmp_path)
     (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
@@ -495,7 +495,7 @@ def test_test_hygiene_refuses_a_failing_hint_without_printing_its_message(
     # whoever ran this command, the agent the shipped skills send here included. The refusal
     # names the profile and the exception's type and nothing the exception carried, in either
     # output. Oracle:
-    # `mutations/`, "test hygiene prints a failing hint's own message".
+    # `mutations/`'s "test hygiene prints a failing hint's own message".
     root = repo(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
@@ -608,7 +608,7 @@ def test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries(
     # counts, each under its profile's name, and only counts: the report that carried a path
     # reaches `--json` as its integers alone. `beta` has nothing to say, so it is listed only
     # because detection, replaced here, puts its markers at the root: its entry is the proof that
-    # detection was asked. Oracle: `mutations/`, "test hygiene reports the first stack and
+    # detection was asked. Oracle: `mutations/`'s "test hygiene reports the first stack and
     # stops", "test hygiene prints a report as the hint returned it" and "test hygiene lists
     # only the profiles with something to say".
     loud, quiet = redrun.LoudHint("x", "alpha says"), redrun.FakeHint("y", None)
@@ -647,7 +647,7 @@ def test_test_hygiene_names_every_detected_stack_that_has_nothing_to_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A clean tree in two stacks says so for each of them, in name order, and exits 0: the
-    # summary is what tells a person which stacks were looked at. Oracle: `mutations/`, "test
+    # summary is what tells a person which stacks were looked at. Oracle: `mutations/`'s "test
     # hygiene's clean summary names only the first stack".
     redrun.ship(
         monkeypatch, {"alpha": redrun.FakeHint("x", None), "beta": redrun.FakeHint("y", None)}
@@ -676,7 +676,7 @@ def test_test_hygiene_refuses_when_a_shipped_hint_cannot_load(
     # stack's broken module costs only its own line. This command answers whether a red run can
     # be trusted, and a profile it could not ask is "I do not know", never "tree is clean": it
     # refuses (exit 2) and names the profile, a shipped name. `gamma` loads and has nothing to
-    # say, so without the refusal the answer would be clean. Oracle: `mutations/`, "test hygiene
+    # say, so without the refusal the answer would be clean. Oracle: `mutations/`'s "test hygiene
     # calls a tree clean without a hint it could not load".
     redrun.ship(monkeypatch, {"gamma": redrun.FakeHint("x", None)})
     if broken == "no-hint":
@@ -700,7 +700,7 @@ def test_test_hygiene_refuses_a_note_that_is_not_text(
     # answers whether a red run can be trusted, and a hint that answered outside its protocol is
     # "I do not know", never "tree is clean" and never a finding printed as whatever the object
     # renders to: it refuses (exit 2) and names the profile, as for a hint that did not load.
-    # Oracle: `mutations/`, "a note that is not text passes as one".
+    # Oracle: `mutations/`'s "a note that is not text passes as one".
     redrun.ship(monkeypatch, {"alpha": redrun.WordlessHint("x", "alpha says")})
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)
     monkeypatch.setattr("stayfixed.profiles.detects", lambda profile, root: False)
@@ -718,7 +718,7 @@ def test_test_hygiene_does_not_list_an_undetected_stack_whose_note_is_empty(
 ) -> None:
     # An empty note is text with nothing in it: nothing to report, the same answer the hook
     # gives by leaving the line out. So a stack whose markers are not at the root and whose note
-    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`, "an empty note is
+    # is "" is not listed, and the tree reads clean. Oracle: `mutations/`'s "an empty note is
     # something to report".
     redrun.ship(monkeypatch, {"alpha": redrun.EmptyHint("x", "alpha says")})
     monkeypatch.setattr("stayfixed.profiles.load_profile", lambda name: name)

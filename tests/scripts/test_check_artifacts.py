@@ -86,7 +86,7 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
 def test_a_wheel_without_the_python_profiles_code_is_named(tmp_path: Path, missing: str) -> None:
     # `hint_modules` finds a profile's `hygiene.py` through `importlib.resources`, so a build that
     # dropped it would leave every installed stayfixed with no Python note after a failed pytest
-    # run, silently, while the checkout's own suite stayed green. Oracle: `mutations/`, "the
+    # run, silently, while the checkout's own suite stayed green. Oracle: `mutations/`'s "the
     # wheel need not carry the Python profile's hint" and "the wheel need not carry the Python
     # profile's package marker".
     module = checker()

@@ -820,7 +820,7 @@ def test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused(
     # any checkout of the project for exactly this reason; the wrapper now measures against the
     # same set, taken from `git worktree list` through the pinned `git`.
     #
-    # Mutation (`mutations/`, "the wrapper measures a candidate against one checkout only"):
+    # Mutation (`mutations/`'s "the wrapper measures a candidate against one checkout only"):
     # the checkout-list arm of `in_project` stops answering → the main checkout's interpreter
     # runs from the worktree and `ran` exists.
     clone, _shipped, ran = _clone_shipping_an_interpreter(tmp_path)

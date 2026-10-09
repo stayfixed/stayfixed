@@ -180,8 +180,8 @@ def test_uninstall_says_whether_it_removed_stayfixeds_hook(
     # there it removed nothing, and with a foreign hook there both halves were false, that hook
     # being in place and untouched. The installed hook's own text names this command, so the line
     # says which of the four it met, and `--json` carries it as `found`. Mutations:
-    # `mutations/`, "uninstall says it removed a hook when there was none" and "… when the hook
-    # there is not stayfixed's".
+    # `mutations/`'s "uninstall says it removed a hook when there was none" and "uninstall says
+    # it removed a hook when the hook there is not stayfixed's".
     root = _repo(tmp_path)
     directory = hooks_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -202,7 +202,7 @@ def test_uninstall_says_whether_it_removed_stayfixeds_hook(
 def test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so(tmp_path: Path) -> None:
     # The command's half of `tests/guards/test_githooks.py`'s case: what is not a regular file at
     # the hook path is not stayfixed's, so the line says it was left, and the run exits 0, where
-    # it refused with exit 2. Mutation: `mutations/`, "uninstall reads a hook that is not a
+    # it refused with exit 2. Mutation: `mutations/`'s "uninstall reads a hook that is not a
     # regular file".
     root = _repo(tmp_path)
     hook = hooks_dir(root) / HOOK_NAME

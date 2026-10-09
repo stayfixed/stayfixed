@@ -1309,7 +1309,7 @@ def test_a_harness_data_root_this_process_cannot_read_is_a_warning(tmp_path: Pat
     # is invisible. A reader is told what could not be listed, not that something could not be.
     assert "session markers" in check.detail
     # And why, in words, as the log's arm of the same row says it: the error's class name was
-    # stayfixed's to know, not the reader's. Mutation: `mutations/`, "doctor names the error
+    # stayfixed's to know, not the reader's. Mutation: `mutations/`'s "doctor names the error
     # class of session markers it could not list".
     assert f"could not be listed ({os.strerror(errno.EACCES)})" in check.detail
 

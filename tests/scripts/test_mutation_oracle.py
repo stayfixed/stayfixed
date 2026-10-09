@@ -23,7 +23,7 @@ from types import ModuleType
 import pytest
 
 from tests import gitfixture
-from tests.declarations import ANCHOR, SCRIPT, cited_names, declared
+from tests.declarations import ANCHOR, SCRIPT, cited_names, declared, unread_citations
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git
 from tests.scriptload import load
@@ -1103,6 +1103,44 @@ def test_every_cited_entry_name_is_declared() -> None:
     # A walk-based assertion states its walk is non-empty: a parser that read nothing passes.
     assert len(cited) > 100, len(cited)
     assert [(path, name) for path, name in cited if name not in names] == []
+
+
+def test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads() -> None:
+    # A citation through a comma rather than `'s` read as one to a person and as nothing to
+    # `cited_names`, and four of the tree's 138 named no entry: three shortened with an ellipsis,
+    # one renamed away. Mutations (declared): `mutations/`'s "the citation spelling rule lets a
+    # comma or a colon through" -> no line is told; "the citation spelling rule reads no further
+    # than the set's own line" -> the third is not.
+    set_name = ANCHOR.removesuffix("'s")
+    text = (
+        f'# Mutation: {set_name}, "one".\n'
+        f'# Mutation ({set_name}: "two").\n'
+        f"# Mutations: {set_name},\n"
+        '#   "three".\n'
+        f'# Mutation: {ANCHOR} "four"; {set_name} holds the rest.\n'
+    )
+    assert unread_citations(text) == [1, 2, 3]
+
+
+@needs_git
+@pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
+def test_every_citation_is_spelled_the_way_the_citation_reader_reads() -> None:
+    # The walk `test_every_cited_entry_name_is_declared` makes, asking the other question: a
+    # citation it cannot read is one whose name nothing checks.
+    unread: list[tuple[str, int]] = []
+    walked = 0
+    for path in _git(REPOSITORY, "ls-files", "-z").split("\0"):
+        source = REPOSITORY / path
+        if not path or path.startswith("docs/plans/") or not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        walked += 1
+        unread.extend((path, line) for line in unread_citations(text))
+    assert walked > 300, walked  # a walk-based assertion states its walk is non-empty
+    assert unread == []
 
 
 # --- the declarations directory, one file per group ------------------------------------------

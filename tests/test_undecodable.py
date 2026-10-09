@@ -9,11 +9,11 @@ reader's file and asks for what that reader already answers a broken file with: 
 unreadable file as absent, the same absent answer.
 
 Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
-case reddens on the decode error itself. Three of these readers are declared in `mutations/`:
-the two a command's first read meets, `stayfixed.toml` and the machine file ("a stayfixed.toml
-that is not UTF-8 crashes every command that loads it" and "a machine file that is not UTF-8
-crashes every command that loads the configuration"), and the trust gate's ("a trust record that
-is not UTF-8 crashes instead of refusing loudly").
+case reddens on the decode error itself. Three of these readers are declared: the two a
+command's first read meets, `stayfixed.toml` and the machine file, and the trust gate's, as
+`mutations/`'s "a stayfixed.toml that is not UTF-8 crashes every command that loads it", "a
+machine file that is not UTF-8 crashes every command that loads the configuration" and "a trust
+record that is not UTF-8 crashes instead of refusing loudly".
 """
 
 from __future__ import annotations

@@ -130,7 +130,7 @@ def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) ->
     # "Written by: **you**, or `stayfixed setup`", which makes a hand-written table the ordinary
     # case rather than the exotic one.
     #
-    # Mutation (`mutations/`, "a table the machine writer does not own is dropped on a
+    # Mutation (`mutations/`'s "a table the machine writer does not own is dropped on a
     # rewrite"): the carry-through arm stops copying the table → `[trust]` disappears and this
     # reddens.
     path = tmp_path / "config.toml"
@@ -163,7 +163,7 @@ def test_a_hand_written_key_in_a_table_this_writer_owns_survives_a_rewrite(
     # and `[machine]` were spread over what the file held; `[overlay]` was replaced outright,
     # so `[overlay] note` was gone after every `setup`, silently, on the owner's own file.
     #
-    # Mutation (`mutations/`, "write_machine replaces the overlay table instead of merging
+    # Mutation (`mutations/`'s "write_machine replaces the overlay table instead of merging
     # over it"): the `**_table(existing, "overlay")` spread is dropped → `note` disappears.
     path = tmp_path / "config.toml"
     path.write_text(

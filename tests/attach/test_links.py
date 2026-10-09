@@ -103,7 +103,7 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     # the owning checkout actually holds and requires every one of them to be in `.created`.
     # Nothing has to be restated when the tree grows a group. Mutation: restoring the bare
     # `more = link(tree, store, config, home=home)` in `_link_everywhere` reddens it —
-    # `mutations/`, "attach's PartialLink forgets the links made before the failing call".
+    # `mutations/`'s "attach's PartialLink forgets the links made before the failing call".
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -285,7 +285,7 @@ def test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made
     # store instead, a different directory, so a run that made the link still said "the harness
     # memory link could not be created" and recorded `autoMemoryDirectory`. Asked of the store
     # the link was made to, it takes none. Where a real directory does stand in the way, the
-    # fallback names that same store. Mutation: `mutations/`, "the settings fallback compares a
+    # fallback names that same store. Mutation: `mutations/`'s "the settings fallback compares a
     # worktree's link with that worktree's own store".
     from stayfixed.attach.api import ledger
     from stayfixed.memory.api import resolve
@@ -334,7 +334,7 @@ def test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval
     # the owning checkout's store, the one every checkout's harness link points at; the plan asked
     # the worktree's own. With only the owner's approved, the plan said "no fallback" and left the
     # file out of the block, and the run then wrote this machine's absolute store path into a file
-    # `git status` offered for commit. Mutation: `mutations/`, "the settings fallback is planned
+    # `git status` offered for commit. Mutation: `mutations/`'s "the settings fallback is planned
     # by a worktree's own store".
     from stayfixed.memory.api import resolve
     from tests.attach.test_write import _check_ignore
@@ -356,7 +356,7 @@ def test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record
     # plan can only ask whether the machine records an approval, and must ask it of the owning
     # checkout's `paths.memory`, the store the run goes on to link and write the fallback for.
     # Asked of the worktree's, it found no record and left the file out of the block. Mutation:
-    # `mutations/`, "a first attach asks the approval of a worktree's own store".
+    # `mutations/`'s "a first attach asks the approval of a worktree's own store".
     from stayfixed.attach.write import detach
     from tests.attach.test_write import _check_ignore
 
@@ -378,7 +378,7 @@ def test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_nee
     # store. Every other path the run places is hidden already, so the settings file is the one
     # line the block needs, and a symlinked exclude file is refused by both before anything is
     # written. Asked of the worktree's own store, `--check` answered clean while the run went on
-    # to write the file unhidden. Mutation: `mutations/`, "the settings fallback is planned by a
+    # to write the file unhidden. Mutation: `mutations/`'s "the settings fallback is planned by a
     # worktree's own store".
     root, side, store, machine, home = _approved_only_by_the_owner(tmp_path)
     exclude = root / ".git" / "info" / "exclude"
@@ -401,7 +401,7 @@ def test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_o
 ) -> None:
     # The other branch of the same question: a worktree whose `.claude` is linked in from
     # elsewhere takes no fallback and says so when one is wanted. Asked of the worktree's own store,
-    # it said so beside the link it had just made. Mutation: `mutations/`, "the unavailable
+    # it said so beside the link it had just made. Mutation: `mutations/`'s "the unavailable
     # fallback is asked of a worktree's own store".
     from stayfixed.attach.write import FALLBACK_UNAVAILABLE
 
@@ -428,7 +428,7 @@ def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
 ) -> None:
     # The same store, asked the same way: with the owning checkout's store approved and the
     # worktree's own not, the link is made to the approved one, and the line said it waited for
-    # an approval because it asked the worktree's. Mutation: `mutations/`, "attach says the
+    # an approval because it asked the worktree's. Mutation: `mutations/`'s "attach says the
     # harness link waits by a worktree's own store".
     from stayfixed.attach.write import HARNESS_WAITS
 
@@ -528,7 +528,7 @@ def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git
     # links were written, on a machine whose `git` was fine. `detach` in the same state
     # completed, so the two halves disagreed about it.
     #
-    # Mutation (`mutations/`, "attach links into a worktree git reports as prunable"): the
+    # Mutation (`mutations/`'s "attach links into a worktree git reports as prunable"): the
     # `prunable` skip removed → this raises.
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
