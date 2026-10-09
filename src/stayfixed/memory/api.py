@@ -12,13 +12,14 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-three names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-four names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
 and answers its own way when it cannot (`read_binding_record`), the link tree
-(`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
-`harness_memory_path`, `Links`, `PartialLink`, `linked_names`, which `attach` reads to hide
+(`link`, `MakeUnder`, the home `attach` hands it for the harness link, `attach_main`,
+`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_memory_path`, `Links`,
+`PartialLink`, `linked_names`, which `attach` reads to hide
 every name the tree holds from git, and `link_sources`, every path the tree points at in the
 overlay, which `attach` asks the length of before its first write), whether the machine records
 any approval for a store that
@@ -40,14 +41,15 @@ overlay root the machine file records and the checkout's `origin` are the core's
 `init` asks them too and the core may not import this area; the crossings still pinned are
 listed in `tests/test_areas.py`.
 
-**Nine more have no importer and stay, each for a reason written here**, because a name
+**Ten more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and
-  a return type absent from a surface is a value a consumer can hold and cannot declare, which
-  `tests/test_surfaces.py` derives rather than restates. `BINDING_STATES` completes the closed
-  vocabulary `binding_state` answers in, beside the four states that have a caller, for the reason
-  the trust region's bullet below gives.
+- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and a
+  return type absent from a surface is a value a consumer can hold and cannot declare, which
+  `tests/test_surfaces.py` derives rather than restates. `Withhold` is the other half of what
+  `link`'s `harness` takes, beside the `MakeUnder` `attach` hands it, for the same reason.
+  `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the four
+  states that have a caller, for the reason the trust region's bullet below gives.
 
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
@@ -133,7 +135,9 @@ from stayfixed.memory.trust import (
 )
 from stayfixed.memory.worktree import (
     Links,
+    MakeUnder,
     PartialLink,
+    Withhold,
     attach_main,
     detach_main,
     harness_anchor,
@@ -162,11 +166,13 @@ __all__ = [
     "UNBOUND",
     "Answers",
     "Links",
+    "MakeUnder",
     "PartialLink",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
     "UnsafeNote",
+    "Withhold",
     "approval_recorded",
     "attach_main",
     "binding_state",

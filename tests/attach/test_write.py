@@ -1647,7 +1647,7 @@ def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: 
     # block the attach wrote covers the links `worktree-link` builds in a worktree made later,
     # and that handler never writes the block itself.
     from stayfixed.config.loader import load
-    from stayfixed.memory.api import link, resolve
+    from stayfixed.memory.api import MakeUnder, link, resolve
 
     root, store, machine = _attachable(tmp_path)
     _committed(root)
@@ -1661,7 +1661,7 @@ def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: 
     config = load(root, machine=machine)
     resolved = resolve(root, config, machine=machine)
     assert resolved is not None
-    made = link(side, resolved, config, home=home)
+    made = link(side, resolved, config, harness=MakeUnder(home))
     # Non-vacuous: the handler's call did build a tree in the worktree.
     assert made.created
     assert _exclude(root).read_bytes() == before

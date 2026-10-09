@@ -1367,8 +1367,8 @@ reddens = [
 [[mutation]]
 name = "the session link step discovers the harness anchor after it has written"
 file = "src/stayfixed/memory/worktree.py"
-before = "    harness_anchor(worktree, home)\n    created: list[Path] = []"
-after = "    created: list[Path] = []"
+before = "        harness_anchor(worktree, harness.home)\n    created: list[Path] = []"
+after = "        pass\n    created: list[Path] = []"
 reddens = [
   "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all",
 ]
@@ -2943,7 +2943,7 @@ reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_
 [[mutation]]
 name = "a link without the harness half makes the harness link anyway"
 file = "src/stayfixed/memory/worktree.py"
-before = "        if not harness:\n            approved = harness_link_needed(store, config)"
+before = "        if isinstance(harness, Withhold):\n            approved = harness_link_needed(store, config)"
 after = "        if False:\n            approved = harness_link_needed(store, config)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
@@ -3038,7 +3038,7 @@ reddens = [
 [[mutation]]
 name = "a lapsed link under HOME stays once the harness half is withheld"
 file = "src/stayfixed/memory/worktree.py"
-before = '            if not approved and withdraw_under is not None:'
+before = '            if not approved and harness.under is not None:'
 after = '            if False:'
 reddens = [
   "tests/memory/test_worktree.py::test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld",
@@ -3061,8 +3061,8 @@ reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_
 [[mutation]]
 name = "the worktree-link hook withdraws nothing under HOME"
 file = "src/stayfixed/memory/hooks.py"
-before = '                withdraw_under=None if home is not None else _lapsed_link_home(),'
-after = '                withdraw_under=None,'
+before = '                harness=MakeUnder(home) if home is not None else Withhold(_lapsed_link_home()),'
+after = '                harness=MakeUnder(home) if home is not None else Withhold(),'
 reddens = ["tests/memory/test_hooks.py::test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs"]
 
 # A home the withdrawal walk cannot open — itself a symlink, or not searchable — is passed over,

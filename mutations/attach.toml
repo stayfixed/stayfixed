@@ -388,10 +388,10 @@ reddens = [
 name = "attach's PartialLink forgets the links made before the failing call"
 file = "src/stayfixed/attach/write.py"
 before = '''        try:
-            more = link(tree, store, config, home=home)
+            more = link(tree, store, config, harness=MakeUnder(home))
         except PartialLink as partial:
             raise PartialLink([*created, *partial.created], partial) from partial'''
-after = '''        more = link(tree, store, config, home=home)'''
+after = '''        more = link(tree, store, config, harness=MakeUnder(home))'''
 reddens = [
   "tests/attach/test_links.py::test_a_partial_link_failure_carries_every_link_the_run_already_made",
 ]

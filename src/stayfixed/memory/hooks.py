@@ -118,7 +118,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         from stayfixed.config.machine import anchor_home, homes_agree
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.store import resolve
-        from stayfixed.memory.worktree import PartialLink, link
+        from stayfixed.memory.worktree import MakeUnder, PartialLink, Withhold, link
 
         try:
             store = resolve(event.project_root, config)
@@ -138,9 +138,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
                 event.project_root,
                 store,
                 config,
-                home=home,
-                harness=home is not None,
-                withdraw_under=None if home is not None else _lapsed_link_home(),
+                harness=MakeUnder(home) if home is not None else Withhold(_lapsed_link_home()),
             )
         except PartialLink as partial:
             # A write failed part-way. `link` makes one symlink at a time, so the tree now

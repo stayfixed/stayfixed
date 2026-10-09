@@ -94,6 +94,7 @@ from stayfixed.memory.api import (
     PROJECTS,
     STORE_DIR,
     Links,
+    MakeUnder,
     PartialLink,
     Store,
     approval_recorded,
@@ -972,7 +973,7 @@ def _link_everywhere(
         )
     for tree in checkouts[1:]:
         try:
-            more = link(tree, store, config, home=home)
+            more = link(tree, store, config, harness=MakeUnder(home))
         except PartialLink as partial:
             raise PartialLink([*created, *partial.created], partial) from partial
         created += more.created

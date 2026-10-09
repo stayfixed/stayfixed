@@ -329,8 +329,30 @@ class Links:
     created: list[Path] = field(default_factory=list)
     revoked: list[Path] = field(default_factory=list)
     # The harness link this store is approved for, not made because the caller said not to make
-    # one (`link(harness=False)`): a third thing to say, since the harness cannot see the store.
+    # one (`Withhold`): a third thing to say, since the harness cannot see the store.
     withheld: bool = False
+
+
+@dataclass(frozen=True)
+class MakeUnder:
+    """`link` makes the harness link under `home`, the machine owner's home directory, or
+    `config.machine.anchor_home`'s answer where it is `None` (`harness_link_parts` says why)."""
+
+    home: Path | None = None
+
+
+@dataclass(frozen=True)
+class Withhold:
+    """`link` makes no harness link, for a caller whose only trusted home is not the one the
+    harness reads (`memory.hooks`): a link made there is a link nothing sees. A link under `under`
+    that points at a store whose approval has lapsed is still withdrawn, where the caller names a
+    home (`_withdraw_lapsed`)."""
+
+    under: Path | None = None
+
+
+# `link`'s default: the harness link made under the machine owner's home.
+_OWNER_HOME = MakeUnder()
 
 
 def _tree_base(worktree: Path, store: Store) -> str | None:
@@ -419,9 +441,7 @@ def link(
     store: Store,
     config: Config,
     *,
-    home: Path | None = None,
-    harness: bool = True,
-    withdraw_under: Path | None = None,
+    harness: MakeUnder | Withhold = _OWNER_HOME,
 ) -> Links:
     """Create what is missing, withdraw what is no longer authorised, and report both.
 
@@ -495,11 +515,10 @@ def link(
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
 
-    `harness=False` makes the tree's links and no harness link, and reports in `withheld` whether
-    the store is approved for one. For a caller whose only trusted home is not the one the harness
-    reads (`memory.hooks`): a link made there is a link nothing sees. The withdrawal half still
-    runs, under `withdraw_under` when the caller names one: a store whose approval has lapsed
-    loses a link there that points at it, which `revoked` reports (`_withdraw_lapsed`).
+    `harness` says what becomes of the harness link: made under a home (`MakeUnder`), or not made
+    (`Withhold`), when the tree's links are made and `withheld` reports whether the store is
+    approved for one, and a lapsed link under the home `Withhold` names is withdrawn, which
+    `revoked` reports.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
@@ -516,8 +535,8 @@ def link(
     # the refusal in front of. `_apply_harness_link` asks the same question again as its first
     # statement, above its own gate, which is what keeps it correct when `attach_main` calls
     # it on its own; asked twice, it is the same answer.
-    if harness:
-        harness_anchor(worktree, home)
+    if isinstance(harness, MakeUnder):
+        harness_anchor(worktree, harness.home)
     created: list[Path] = []
     revoked: list[Path] = []
     try:
@@ -536,12 +555,12 @@ def link(
                 target = contained(worktree / base, name, allow_final_symlink=True)
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
-        if not harness:
+        if isinstance(harness, Withhold):
             approved = harness_link_needed(store, config)
-            if not approved and withdraw_under is not None:
-                revoked += _withdraw_lapsed(worktree, store, withdraw_under)
+            if not approved and harness.under is not None:
+                revoked += _withdraw_lapsed(worktree, store, harness.under)
             return Links(created, revoked, withheld=approved)
-        made, withdrawn = _apply_harness_link(worktree, store, config, home)
+        made, withdrawn = _apply_harness_link(worktree, store, config, harness.home)
         created += made
         revoked += withdrawn
     except OSError as exc:
