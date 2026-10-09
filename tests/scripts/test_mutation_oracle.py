@@ -1052,6 +1052,34 @@ def test_a_citation_is_read_across_comment_lines_and_through_a_list() -> None:
     assert cited_names(text) == ["the first wrapped one", "the second", "a third", "a fourth"]
 
 
+def test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines() -> None:
+    # The tree's commonest citation says what each mutation does: `"a" -> x; "b" -> y`. Only the
+    # first name was read, so a later one could be renamed away with every test green, and one
+    # was: a comment went on citing an entry a refactor had removed. What an arrow says ends at
+    # the citation's own lines, so a quote in the code under a comment, or past a blank line in a
+    # document, is never read as a name. Mutations (declared): `mutations/`'s "the citation parser
+    # loses the names an arrow list carries after the first" -> only the first name of each list
+    # is read; "the citation parser reads an arrow past the citation's own lines" -> `"remote"`
+    # and `"x"` are read as names.
+    text = (
+        f'    # Mutations: {ANCHOR} "the first" -> the `a`\n'
+        '    # case; "the second" -> `b`, and "the third" -> `c`, "the fourth"\n'
+        '    # and "the fifth" -> the rest.\n'
+        f'    # And {ANCHOR} "a sixth" -> the case\n'
+        '    run_git(root, "remote", "add")\n'
+        f'{ANCHOR} "a seventh" -> nothing more\n\nsaid, "x" here.\n'
+    )
+    assert cited_names(text) == [
+        "the first",
+        "the second",
+        "the third",
+        "the fourth",
+        "the fifth",
+        "a sixth",
+        "a seventh",
+    ]
+
+
 @needs_git
 @pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
 def test_every_cited_entry_name_is_declared() -> None:

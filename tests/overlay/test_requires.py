@@ -153,8 +153,9 @@ def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
 # its `dev`, which only `later`'s reading of a whole suffix read as a pre-release: the reduced form
 # over the segment reading alone met the floor with them. Mutations (oracle): `mutations/`'s "a
 # pre-release word run into its dev segment reads as no pre-release" -> those two; "the declared
-# floor is met by a pre-release of it", "… stops being met by the version that equals it" and "…
-# is not met by the version equal to it" -> the rows of the floor's own triple.
+# floor is met by a pre-release of it", "the declared floor stops being met by the version that
+# equals it" and "the declared floor is not met by the version equal to it" -> the rows of the
+# floor's own triple.
 FLOOR_ANSWERS = [
     ("1.0.0", True),
     ("1.0.1", True),
@@ -190,7 +191,7 @@ def test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_o
 def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -> None:
     # The legitimate user: `.post1` and `+local` builds, which `later` declines to order against
     # the bare version, keep the answer the triple gives, a floor equal to it met. Mutation:
-    # `mutations/`, "the declared floor stops being met by the version that equals it".
+    # `mutations/`'s "the declared floor stops being met by the version that equals it".
     assert satisfies(">=1.0.0", "1.0.0.post1") is True
     assert satisfies(">=1.0.0", "1.0.0+local") is True
     # A local label is no segment of the version's own, whatever it spells, and a development

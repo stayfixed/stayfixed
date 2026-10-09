@@ -26,8 +26,15 @@ ANCHOR = "`mutations/`" + "'s"
 # and a comment's `#` read as one space, there and between the anchor and the name. After it,
 # `, "…"`, `and "…"` or `or "…"` cite further names under the same anchor.
 _GAP = r"[\s#]*"
-_QUOTED = re.compile(_GAP + r'"([^"]*)"')
-_FURTHER = re.compile(_GAP + r"(?:," + _GAP + r"(?:and|or)?|and|or)" + _GAP + r'"([^"]*)"')
+_QUOTED = re.compile(_GAP + r'"(?P<name>[^"]*)"')
+_FURTHER = re.compile(_GAP + r"(?:," + _GAP + r"(?:and|or)?|and|or)" + _GAP + r'"(?P<name>[^"]*)"')
+# So does an arrow list, which says what each name's mutation does: `"a" -> x; "b" -> y`. What
+# follows the arrow runs to a `;` or a `,`, an `and` or an `or` may come next, and then the next
+# name. It is read only within the citation's own lines (`_one_passage`), so that a quote in the
+# code below a comment is never taken for a name.
+_ARROW = re.compile(
+    _GAP + r'->(?P<said>[^;"]*?)[;,](?:' + _GAP + r"(?:and|or))?" + _GAP + r'"(?P<name>[^"]*)"'
+)
 _WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")
 
 
@@ -46,14 +53,29 @@ def relative(path: Path) -> str:
     return path.relative_to(SCRIPT.parents[1]).as_posix()
 
 
+def _one_passage(said: str, comment: bool) -> bool:
+    """Whether what an arrow says stays within the citation's lines: no blank line, and, for a
+    citation in a comment, no line that is not a comment."""
+    return all(
+        line.strip() and (not comment or line.lstrip().startswith("#"))
+        for line in said.split("\n")[1:]
+    )
+
+
 def cited_names(text: str) -> list[str]:
     """Every entry name `text` cites, each with its line wraps read as single spaces."""
     names: list[str] = []
     at = text.find(ANCHOR)
     while at != -1:
+        comment = text[text.rfind("\n", 0, at) + 1 : at].lstrip().startswith("#")
         quoted = _QUOTED.match(text, at + len(ANCHOR))
         while quoted is not None:
-            names.append(" ".join(_WRAP.sub(" ", quoted.group(1)).split()))
-            quoted = _FURTHER.match(text, quoted.end())
+            names.append(" ".join(_WRAP.sub(" ", quoted.group("name")).split()))
+            further = _FURTHER.match(text, quoted.end())
+            if further is None:
+                further = _ARROW.match(text, quoted.end())
+                if further is not None and not _one_passage(further.group("said"), comment):
+                    further = None
+            quoted = further
         at = text.find(ANCHOR, at + len(ANCHOR))
     return names

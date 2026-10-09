@@ -1835,10 +1835,33 @@ reddens = [
 [[mutation]]
 name = "the citation parser loses the names a list carries after the first"
 file = "tests/declarations.py"
-before = "            quoted = _FURTHER.match(text, quoted.end())"
-after = "            quoted = None"
+before = "            further = _FURTHER.match(text, quoted.end())"
+after = "            further = None"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+]
+
+# An arrow list says what each name's mutation does, `"a" -> x; "b" -> y`, and only its first name
+# was read: a comment went on citing an entry a refactor had removed, with the citation test green.
+[[mutation]]
+name = "the citation parser loses the names an arrow list carries after the first"
+file = "tests/declarations.py"
+before = "                further = _ARROW.match(text, quoted.end())"
+after = "                further = None"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines",
+]
+
+# What an arrow says ends with the citation's lines; read past them, a quote in the code below a
+# comment is taken for an entry's name.
+[[mutation]]
+name = "the citation parser reads an arrow past the citation's own lines"
+file = "tests/declarations.py"
+before = """                if further is not None and not _one_passage(further.group("said"), comment):"""
+after = "                if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines",
+  "tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared",
 ]
 
 # The plugin directory holds the version for a reviewer when a file other than an image or a font

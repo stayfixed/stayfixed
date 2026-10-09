@@ -81,7 +81,7 @@ def test_a_store_that_refuses_skips_the_store_checks(
     # value calls it, in `memory.answers`.
     #
     # Mutation (oracle): `mutations/`'s "the delivery rows let a refusing store escape" -> the
-    # `Refusal` reaches the guard and both rows are red, "this check could not run: Refusal".
+    # `Refusal` reaches the guard and both rows are red with `this check could not run: Refusal`.
     root = _initialised(tmp_path, template=OUTSIDE)
     (root / ".stayfixed" / "local" / "memory").mkdir(parents=True)
     if how == "resolver-raises":

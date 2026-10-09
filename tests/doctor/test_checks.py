@@ -1424,9 +1424,8 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its
     # A number is no part of any entry's provenance, so the walk reads one as its text and judges
     # the entries beside it. It used to refuse the file: first as "this check could not run", then
     # as a file it was blind to, a warning, which let a marked entry beside such a number lose its
-    # red. Mutations (oracle): `mutations/`'s "the settings engine reads a number past the parser's
-    # reach in the document doctor walks" -> the row is red, a file it cannot check; "hook-entries
-    # counts entries with the interpreter's limit on numbers" -> "this check could not run".
+    # red. Mutation (oracle): `mutations/`'s "the settings engine reads a number past the parser's
+    # reach in the document doctor walks" -> the row is red, a file it cannot check.
     root = _initialised(tmp_path)
     foreign = {"hooks": [{"type": "command", "command": "echo hi"}]}
     _walked(tmp_path, root, label).write_text(
