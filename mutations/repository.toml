@@ -2746,7 +2746,7 @@ reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_cla
 [[mutation]]
 name = "the seam walk reads no launch headed by a shell"
 file = "tests/test_owner_home_seam.py"
-before = """    if _shell_handed_the_wrapper(elements):
+before = """    if _wrapper_handed_to_a_shell(elements) is not None:
         return True
 """
 after = ""
@@ -2755,11 +2755,27 @@ reddens = [
   "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
 ]
 
+# A shell may take its own options before the wrapper, and `env` may start the shell: `sh -x
+# wrapper` and `env sh wrapper` run the wrapper as surely as `sh wrapper` does.
+[[mutation]]
+name = "the seam walk takes a shell's option for the program it runs"
+file = "tests/test_owner_home_seam.py"
+before = "    while rest and _option(rest[0]):"
+after = "    while False:"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk reads no shell that env starts"
+file = "tests/test_owner_home_seam.py"
+before = '''    if rest and (_literal(rest[0]) or "").rsplit("/", 1)[-1] == "env":'''
+after = "    if False:"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
 # A shell handed the wrapper names its root in the wrapper's path, not in its own name.
 [[mutation]]
 name = "the seam walk looks for a shell's root in the shell's own name"
 file = "tests/test_owner_home_seam.py"
-before = "        program = display.elts[1] if _shell_handed_the_wrapper(display.elts) else head"
+before = "        program = _wrapper_handed_to_a_shell(display.elts) or head"
 after = "        program = head"
 reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
 

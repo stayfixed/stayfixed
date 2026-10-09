@@ -217,15 +217,36 @@ def _names_the_wrapper(node: ast.expr) -> bool:
     return "run-hook.sh" in text or "WRAPPER" in text or "wrapper" in text.lower()
 
 
-def _shell_handed_the_wrapper(elements: list[ast.expr]) -> bool:
-    """Whether `elements` hands the wrapper to a shell: a literal shell, by its name or its path,
-    or a program held in a name, followed by an element that names the wrapper."""
-    if len(elements) < 2 or not _names_the_wrapper(elements[1]):
-        return False
-    head = elements[0]
-    if isinstance(head, ast.Constant) and isinstance(head.value, str):
-        return head.value.rsplit("/", 1)[-1] in SHELLS
-    return isinstance(head, ast.Name | ast.Attribute)
+def _literal(element: ast.expr) -> str | None:
+    value = element.value if isinstance(element, ast.Constant) else None
+    return value if isinstance(value, str) else None
+
+
+def _option(element: ast.expr) -> bool:
+    return (_literal(element) or "").startswith("-")
+
+
+def _wrapper_handed_to_a_shell(elements: list[ast.expr]) -> ast.expr | None:
+    """The element naming the wrapper where `elements` hands it to a shell, or `None`: a literal
+    shell, by its name or its path, or a program held in a name, then the wrapper. `env` may come
+    first, with its options and assignments, and the shell's own literal options (`-x`) may come
+    between it and the wrapper."""
+    rest = list(elements)
+    if rest and (_literal(rest[0]) or "").rsplit("/", 1)[-1] == "env":
+        rest = rest[1:]
+        while rest and ("=" in (_literal(rest[0]) or "") or _option(rest[0])):
+            rest = rest[1:]
+    if not rest:
+        return None
+    head, rest = rest[0], rest[1:]
+    shell = _literal(head)
+    if shell is None and not isinstance(head, ast.Name | ast.Attribute):
+        return None
+    if shell is not None and shell.rsplit("/", 1)[-1] not in SHELLS:
+        return None
+    while rest and _option(rest[0]):
+        rest = rest[1:]
+    return rest[0] if rest and _names_the_wrapper(rest[0]) else None
 
 
 def _runs_module(elements: list[ast.expr]) -> bool:
@@ -255,7 +276,7 @@ def is_launch(
     elements = _spread(display.elts, constants or {})
     if not elements:
         return False
-    if _shell_handed_the_wrapper(elements):
+    if _wrapper_handed_to_a_shell(elements) is not None:
         return True
     head = elements[0]
     if isinstance(head, ast.Constant | ast.JoinedStr):
@@ -344,7 +365,7 @@ def walk(relative: str, tree: ast.Module) -> list[Launch]:
     def record(display: ast.List | ast.Tuple, function: ast.AST | None, name: str) -> None:
         head = display.elts[0]
         # The program a shell is handed is the wrapper, and that is where a root is named.
-        program = display.elts[1] if _shell_handed_the_wrapper(display.elts) else head
+        program = _wrapper_handed_to_a_shell(display.elts) or head
         seamed = (
             isinstance(head, ast.Starred)
             or _bound_from_a_seam(function, program, seamed_here)
@@ -437,20 +458,25 @@ def test_the_walk_reads_each_shape_it_claims_to() -> None:
     ]
     for argv in unseamed:
         assert _probe(f"def f():\n    x = {argv}\n") == [(argv, False)], argv
-    # A shell handed the wrapper, by a literal or a name, which the walk once read as data.
-    # Mutation (declared): `mutations/`'s "the seam walk reads no launch headed by a shell" ->
-    # neither is read.
+    # A shell handed the wrapper, by a literal or a name, which the walk once read as data, and
+    # then only with the wrapper straight after the shell. Mutations (declared): `mutations/`'s
+    # "the seam walk reads no launch headed by a shell" -> none is read; "the seam walk takes a
+    # shell's option for the program it runs" -> the `-x` one is not; "the seam walk reads no
+    # shell that env starts" -> the `env` one is not.
     for argv in (
         "['sh', str(root / 'hooks' / WRAPPER.name), 'open']",
         "[BASH_AS_SH, str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['sh', '-x', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['/usr/bin/env', 'A=1', 'sh', str(root / 'hooks' / WRAPPER.name), 'open']",
     ):
         assert _probe(f"def f():\n    subprocess.run({argv})\n") == [(argv, False)], argv
     seamed_shell = (
         "def f(base, home):\n"
         "    plugin = plugin_root_with_owner_home(base, home)\n"
         "    subprocess.run(['/bin/sh', str(plugin / 'hooks' / WRAPPER.name), 'open'])\n"
+        "    subprocess.run(['env', 'sh', '-x', str(plugin / 'hooks' / WRAPPER.name), 'open'])\n"
     )
-    assert [seamed for _, seamed in _probe(seamed_shell)] == [True]
+    assert [seamed for _, seamed in _probe(seamed_shell)] == [True, True]
     for argv in (
         "['stayfixed', 'hook']",
         "['uv', 'run', 'stayfixed', 'hook']",
