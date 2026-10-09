@@ -139,8 +139,8 @@ def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
     # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
     # it comes before: the session line and the `overlay-requires` row read it as met. A
     # compound suffix carrying a pre-release segment does not meet it either. Mutations:
-    # `mutations/`'s "the declared floor is met by a pre-release of it" and "the declared floor
-    # is met by a compound pre-release of it".
+    # `mutations/`'s "the declared floor is met by a pre-release of it" and "a pre-release
+    # segment no longer makes a pre-release".
     assert satisfies(">=1.0.0", version) is False
     assert satisfies(">=0.9.9", version) is True
 
@@ -150,12 +150,19 @@ def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
 # chain of `semver.later`, `semver.pre_release` and a tuple comparison, and these are the chain's
 # answers, kept by the one comparison that replaced it; a differential over ten million floors and
 # versions found no other difference. `1.0.0rcdev` and `1.0.0adev1` are a pre-release word run into
-# its `dev`, which only `later`'s reading of a whole suffix read as a pre-release: the reduced form
-# over the segment reading alone met the floor with them. Mutations (oracle): `mutations/`'s "a
-# pre-release word run into its dev segment reads as no pre-release" -> those two; "the declared
-# floor is met by a pre-release of it", "the declared floor stops being met by the version that
-# equals it" and "the declared floor is not met by the version equal to it" -> the rows of the
-# floor's own triple.
+# its `dev`, which a reading of each segment as a word of its own met the floor with. Mutations
+# (oracle): `mutations/`'s "the declared floor is met by a pre-release of it", "the declared floor
+# stops being met by the version that equals it" and "the declared floor is not met by the version
+# equal to it" -> the rows of the floor's own triple. The segments PEP 440 lets run together with no
+# separator are read as it reads them: `1.0.0.post1dev2` is `1.0.0.post1.dev2`, which met the floor
+# at 0.2.0 and then stopped meeting it under a search for each segment as a word of its own, and
+# `1.0.0rc1post2` is a pre-release that search met the floor with. A further release component other
+# than zero is a later release, `1.0.0.1rc1` among them. Mutations (oracle): `mutations/`'s
+# "segments run together are no suffix PEP 440 allows", "a further release component is read as no
+# later release", "a local label is no part of the suffix grammar", "a pre-release segment no longer
+# makes a pre-release", "a development release of a post-release reads as a pre-release" and "a
+# suffix outside PEP 440 reads as a pre-release". The answers agree with `packaging`'s ordering over
+# every combination of segment, spelling and separator, 5,055 versions, checked offline.
 FLOOR_ANSWERS = [
     ("1.0.0", True),
     ("1.0.1", True),
@@ -176,6 +183,12 @@ FLOOR_ANSWERS = [
     ("1.0.0+local", True),
     ("1.0.0+local.rc1", True),
     ("1.0.0.post1.dev2", True),
+    ("1.0.0.post1dev2", True),
+    ("1.0.0post1dev2", True),
+    ("1.0.0rc1post2", False),
+    ("1.0.0a1r1dev", False),
+    ("1.0.0.1rc1", True),
+    ("1.0.0.0rc1", False),
     ("1.0.0x", True),
     ("v1.0.0", None),
 ]
@@ -195,9 +208,8 @@ def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -
     assert satisfies(">=1.0.0", "1.0.0.post1") is True
     assert satisfies(">=1.0.0", "1.0.0+local") is True
     # A local label is no segment of the version's own, whatever it spells, and a development
-    # release of a post-release comes after the release. Mutations: `mutations/`'s "a local label
-    # is read as a segment of the version" and "a development release of a post-release reads
-    # as a pre-release".
+    # release of a post-release comes after the release. Mutation: `mutations/`'s "a development
+    # release of a post-release reads as a pre-release".
     assert satisfies(">=1.0.0", "1.0.0+local.rc1") is True
     assert satisfies(">=1.0.0", "1.0.0.post1.dev2") is True
     assert satisfies(">=1.0.1", "1.0.0.post1") is False

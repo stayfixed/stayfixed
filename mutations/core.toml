@@ -3485,43 +3485,58 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
 ]
 
-# Whether a version orders before its release by its suffix, as PEP 440 orders one: the local label
-# after `+` is no segment of the version's, and a `dev` after a post-release is a development release
-# of that post-release, which comes after the release.
+# Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:
+# segments may run together with no separator, a further release component other than zero names
+# a later release, the local label after `+` is no segment, a pre-release segment makes a
+# pre-release, and a `dev` after a post-release is a development release of that post-release,
+# which comes after the release. A suffix outside the grammar leaves the triple to decide.
 [[mutation]]
-name = "a local label is read as a segment of the version"
+name = "segments run together are no suffix PEP 440 allows"
 file = "src/stayfixed/semver.py"
-before = '    public = suffix.split("+", 1)[0]'
-after = "    public = suffix"
-reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
+before = '    r"(?P<post>-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"'
+after = '    r"(?P<post>-[0-9]+|[-_.](?:post|rev|r)[-_.]?[0-9]*)?"'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1post2-False]"]
+
+[[mutation]]
+name = "a further release component is read as no later release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["release"].replace(".", "").strip("0"):'
+after = "    if False:"
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.1rc1-True]"]
+
+[[mutation]]
+name = "a local label is no part of the suffix grammar"
+file = "src/stayfixed/semver.py"
+before = '    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?\Z",'
+after = '    r"\Z",'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1+local-False]"]
+
+[[mutation]]
+name = "a pre-release segment no longer makes a pre-release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["pre"] is not None:'
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1]",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1.post2-False]",
+]
 
 [[mutation]]
 name = "a development release of a post-release reads as a pre-release"
 file = "src/stayfixed/semver.py"
-before = "    return dev is not None and (post is None or dev.start() < post.start())"
-after = "    return dev is not None"
-reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
-
-# A pre-release segment anywhere in the public part keeps the floor's own triple unmet, where the
-# suffix is more than a pre-release: by the triple alone `1.0.0rc1.post2` met `>=1.0.0`.
-[[mutation]]
-name = "the declared floor is met by a compound pre-release of it"
-file = "src/stayfixed/semver.py"
-before = "    if _PRE_SEGMENT.search(public) is not None:"
-after = "    if False:"
+before = '    return parts["dev"] is not None and parts["post"] is None'
+after = '    return parts["dev"] is not None'
 reddens = [
-  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1.post2]",
+  "tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.post1dev2-True]",
 ]
 
-# A suffix `later` reads as a pre-release is one to every reader: a pre-release word run into its
-# `dev` (`1.0.0rcdev`) is one, which no segment of it reads as on its own.
 [[mutation]]
-name = "a pre-release word run into its dev segment reads as no pre-release"
+name = "a suffix outside PEP 440 reads as a pre-release"
 file = "src/stayfixed/semver.py"
-before = "    if _PRE_RELEASE.match(suffix) is not None:"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rcdev-False]",
-  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0adev1-False]",
-]
+before = """    if parts is None:
+        return False"""
+after = """    if parts is None:
+        return True"""
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0x-True]"]
 

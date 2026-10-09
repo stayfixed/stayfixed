@@ -48,41 +48,48 @@ _PRE_RELEASE = re.compile(
 )
 
 
-# The segments PEP 440 orders a suffix by, each a word of its own in what follows an `X.Y.Z`:
-# at the start, after a separator or after a digit, and ended by a digit run, a separator or the
-# end. A pre-release segment (`a`, `b`, `rc` and their spellings), a post-release one (`post`,
-# `rev`, `r`, or `-N` straight after the release) and a development one (`dev`).
-_SEGMENT = r"(?:\A|(?<=[-_.0-9])){}[-_.]?[0-9]{{0,9}}(?=\Z|[-_.])"
-_PRE_SEGMENT = re.compile(_SEGMENT.format("(?:alpha|beta|preview|pre|rc|a|b|c)"), re.IGNORECASE)
-_POST_SEGMENT = re.compile(rf"\A-[0-9]|{_SEGMENT.format('(?:post|rev|r)')}", re.IGNORECASE)
-_DEV_SEGMENT = re.compile(_SEGMENT.format("dev"), re.IGNORECASE)
+# What PEP 440 lets follow a release's leading `X.Y.Z`: its appendix's pattern less the epoch and
+# those three components. Further release components, then at most one pre-release segment (`a`,
+# `b`, `rc` and their spellings), one post-release (`post`, `rev`, `r`, or `-N`) and one
+# development segment (`dev`), in that order and each with or without a separator before it, then
+# a local label after `+`, which is no segment of the version's. Read as one grammar because a
+# search for each segment as a word of its own kept missing spellings PEP 440 allows: segments run
+# together with no separator (`1.0.0.post1dev2`, `1.0.0rc1post2`) were read as other segments, or
+# as none.
+_SUFFIX = re.compile(
+    r"\A(?P<release>(?:\.[0-9]+)*)"
+    r"(?P<pre>[-_.]?(?:alpha|a|beta|b|preview|pre|c|rc)[-_.]?[0-9]*)?"
+    r"(?P<post>-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"
+    r"(?P<dev>[-_.]?dev[-_.]?[0-9]*)?"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?\Z",
+    re.IGNORECASE,
+)
 
 
 def pre_release(version: str) -> bool:
     """Whether `version` orders before the release its leading `X.Y.Z` names, by its suffix: the
     one reading of a pre-release here.
 
-    A suffix that is a pre-release and nothing else (`_PRE_RELEASE`: `rc1`, `-rc.1`, `.dev0`,
-    `rcdev`) is one, and it is the form `later` orders against the bare release. So, in PEP 440's
-    order, is a suffix with a pre-release segment anywhere in its public part, so `1.0.0rc1.post2`
-    comes before `1.0.0` as `1.0.0rc1` does, and one with a `dev` segment with no post-release
-    before it (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2` is a development release of a
-    post-release, which comes after. The local label after `+` is no segment of the version's
-    (`1.0.0+local.rc1` is not one), nor is a version with no leading `X.Y.Z`, which is no version
-    this module reads.
+    The suffix is read by PEP 440's grammar (`_SUFFIX`), and orders before the release where it
+    has a pre-release segment (`1.0.0rc1`, `1.0.0-rc.1`, and `1.0.0rc1.post2`, which comes before
+    `1.0.0` as `1.0.0rc1` does), or a development segment with no post-release before it
+    (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2`, spelled with or without its separators, is a
+    development release of a post-release, which comes after. A further release component other
+    than zero names a later release (`1.0.0.1rc1`), and the local label after `+` is no segment
+    (`1.0.0+local.rc1` is not one). A suffix outside that grammar, and a version with no leading
+    `X.Y.Z`, are no pre-release this module reads: the triple decides.
     """
     found = VERSION.match(version)
     if found is None:
         return False
-    suffix = version[found.end() :]
-    if _PRE_RELEASE.match(suffix) is not None:
+    parts = _SUFFIX.match(version[found.end() :])
+    if parts is None:
+        return False
+    if parts["release"].replace(".", "").strip("0"):
+        return False
+    if parts["pre"] is not None:
         return True
-    public = suffix.split("+", 1)[0]
-    if _PRE_SEGMENT.search(public) is not None:
-        return True
-    dev = _DEV_SEGMENT.search(public)
-    post = _POST_SEGMENT.search(public)
-    return dev is not None and (post is None or dev.start() < post.start())
+    return parts["dev"] is not None and parts["post"] is None
 
 
 def later(version: str, than: str) -> bool | None:
