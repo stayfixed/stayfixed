@@ -2895,6 +2895,48 @@ reddens = [
   "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
 ]
 
+# A method does not see its class body, so a text runner the body imports under another name is
+# still the builtin when a method calls it; seen, the delivery rule drops that row. A
+# comprehension's first iterable is read around it, where its own variable does not hide; read
+# inside, a runner it calls under that variable's name is no row either.
+[[mutation]]
+name = "a nested scope sees an enclosing class body"
+file = "tests/boundaries/astscan.py"
+before = "        if depth and isinstance(node, ast.ClassDef):"
+after = "        if False:"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+[[mutation]]
+name = "a comprehension's first iterable is read inside it"
+file = "tests/boundaries/astscan.py"
+before = "        return [first.iter], [first.target, *first.ifs, *rest, *results]"
+after = "        return [], [first.iter, first.target, *first.ifs, *rest, *results]"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# An `except ... as` name and the first part of a dotted `import` are bindings of the function
+# they are made in; missed, the name reads as the builtin, and the rule reports a row for it.
+[[mutation]]
+name = "an except clause's name binds nothing"
+file = "tests/boundaries/astscan.py"
+before = "    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):"
+after = "    if isinstance(node, (ast.MatchAs, ast.MatchStar)):"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+[[mutation]]
+name = "import a.b binds the dotted name rather than its first part"
+file = "tests/boundaries/astscan.py"
+before = '''                alias.asname or alias.name.split(".")[0]'''
+after = "                alias.asname or alias.name"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
 # Type parameters are evaluated around their `def` or `class`; unread, `def f[T: exec(...)]()` is
 # no row. The case is parsed on 3.12 and later, which the oracle runs on.
 [[mutation]]

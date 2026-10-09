@@ -80,12 +80,16 @@ def _resolved(source: str) -> list[tuple[str, str, bool]]:
 def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin() -> None:
     # The scoping the string rule reads a builtin by, held here on its own. A function's binding
     # hides a name in that function and the scopes it encloses, never beyond; a class body is not
-    # seen by its methods; `global` reads the module, where only an import hides, as a module or a
-    # class body is looked up at run time; a comprehension's variable hides in the comprehension
-    # alone, while a walrus in it binds in the function around it; a parameter's annotation and
-    # default are read around the function. Mutations (declared): `mutations/`'s "a module or a
-    # class body hides a builtin by any binding again", "a walrus in a comprehension binds in the
-    # comprehension" and "import builtins under a text runner's name hides the builtin" -> a row
+    # seen by its methods, an import there included; `global` reads the module, where only an
+    # import hides, as a module or a class body is looked up at run time; a comprehension's
+    # variable hides in the comprehension alone, though not in its first iterable, which is read
+    # around it, while a walrus in it binds in the function around it; a parameter's annotation
+    # and default are read around the function; an `except` clause's name binds, and `import a.b`
+    # binds `a`. Mutations (declared): `mutations/`'s "a module or a class body hides a builtin by
+    # any binding again", "a walrus in a comprehension binds in the comprehension", "import
+    # builtins under a text runner's name hides the builtin", "a nested scope sees an enclosing
+    # class body", "a comprehension's first iterable is read inside it", "an except clause's name
+    # binds nothing" and "import a.b binds the dotted name rather than its first part" -> a row
     # here changes.
     source = (
         "import json as exec\n"
@@ -100,6 +104,11 @@ def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin(
         "def w():\n    _ = [(id := c) for c in ()]\n    return id\n"
         "_ = [len for len in ()]\n"
         "def a(x: input = vars):\n    return input, vars\n"
+        "class L:\n    import json as hex\n    def m(self):\n        return hex\n"
+        "_ = [hash for hash in hash]\n"
+        "def e():\n    try:\n        pass\n    except OSError as abs:\n        pass\n"
+        "    return abs\n"
+        "def i():\n    import open.mode\n    return open\n"
         "exec, eval, compile\n"
     )
     assert _resolved(source) == [
@@ -115,6 +124,12 @@ def test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin(
         ("<module>", "input", False),
         ("a", "input", False),
         ("a", "vars", False),
+        ("m", "hex", False),
+        ("<module>", "hash", False),
+        ("<module>", "hash", True),
+        ("e", "OSError", False),
+        ("e", "abs", True),
+        ("i", "open", True),
         ("<module>", "exec", True),
         ("<module>", "eval", False),
         ("<module>", "compile", False),
