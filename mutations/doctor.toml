@@ -1324,14 +1324,14 @@ reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line
 name = "a frontmatter whose two bounds differ answers could not tell where both say no"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-    if harness is not None and (fenced is None or harness[1] != fenced[1]):
-        readings.append(harness[0].split("\\n"))
     unsure = False
+    for lines in list(readings):
+        if _tab_indents_a_key(lines):
 """
 after = """
     unsure = harness is not None and (fenced is None or harness[1] != fenced[1])
-    if unsure:
-        readings.append(harness[0].split("\\n"))
+    for lines in list(readings):
+        if _tab_indents_a_key(lines):
 """
 reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-quoted-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-inside-a-literal-block]"]
 
@@ -1797,6 +1797,25 @@ before = "        rest = rest[: comment.start()] if comment else rest"
 after = "        rest = rest"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[explicit-key-before-a-comment]",
+]
+
+# A character Python reads as a blank or a line break and YAML does not is read as YAML reads it.
+[[mutation]]
+name = "a frontmatter is read only with Python's blanks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''            readings.append(_ODD.sub("_", joined).split("\n"))'''
+after = "            readings.append(lines)"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[an-anchor-holding-an-ideographic-space]",
+]
+
+[[mutation]]
+name = "a frontmatter is read only with YAML 1.2's line breaks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_BREAKS.sub("\n", joined)'''
+after = "joined"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-key-past-a-line-separator]",
 ]
 
 [[mutation]]

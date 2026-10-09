@@ -1951,6 +1951,13 @@ HOOKS_SPELLED = {
     # A key the reader finds below a line it cannot read past, a document marker, still declares
     # hooks. Mutation (oracle): `mutations/`'s "a document marker line outranks a hooks key".
     "below-a-document-marker-line": "--- a second document\nhooks: {}\n",
+    # Characters Python reads as blanks or line breaks and YAML does not: an ideographic space,
+    # which YAML 1.2 reads inside an anchor's name like a letter, and a line separator, at which
+    # YAML 1.1 breaks the line. Mutations (oracle): `mutations/`'s "a frontmatter is read only with
+    # Python's blanks" -> `an-anchor-holding-an-ideographic-space`; "a frontmatter is read only
+    # with YAML 1.2's line breaks" -> `a-key-past-a-line-separator`.
+    "an-anchor-holding-an-ideographic-space": "&to\u3000p {name: probe, hooks: {}}\n",
+    "a-key-past-a-line-separator": "name: probe\u2028hooks: {}\n",
 }
 
 

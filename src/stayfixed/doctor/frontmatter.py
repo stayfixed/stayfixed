@@ -85,6 +85,11 @@ _PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
 # Where a comment starts on a line, a `#` after a blank.
 _COMMENT = re.compile(r"[ \t]#")
+# A character Python reads as a blank or a line break and YAML does not: YAML's blanks are a space
+# and a tab and its line breaks LF and CR, though YAML 1.1, which PyYAML reads, also breaks a line
+# at NEL, LS and PS (`_BREAKS`). To YAML 1.2 each is a character like a letter.
+_ODD = re.compile(r"[^\S \t\n]")
+_BREAKS = re.compile(r"[\x85\u2028\u2029]")
 # A line that opens with `---` and then a blank or its end, at the first column: a document marker
 # to YAML, which ends the document above it and starts another, not a key. A reader that reads it
 # as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
@@ -229,12 +234,14 @@ def declares_hooks(text: str) -> bool | None:
     top-level `hooks` key; `None` where it cannot tell.
 
     The frontmatter is the lines between a first line of `---` and the next `---` line; without
-    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
-    a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
-    first line that is neither blank nor a comment: a mapping in block style has its keys there,
-    and one in flow style opens there with `{` (`_flow_keys`), behind any tag, anchor or comment
-    and any tab after the indentation, unless a colon follows where it closes, which makes it a
-    block mapping's first key. Behind a tag or an anchor alone on its line, a block mapping may
+    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR), and a byte-order
+    mark ahead of the first line is read past. A frontmatter holding a character Python reads as a
+    blank or a line break and YAML does not is also read with each as YAML 1.2 reads it, and with
+    NEL, LS and PS as the line breaks YAML 1.1 reads them as. Its top level is the indentation of
+    its first line that is neither blank nor a comment: a mapping in block style has its keys
+    there, and one in flow style opens there with `{` (`_flow_keys`), behind any tag, anchor or
+    comment and any tab after the indentation, unless a colon follows where it closes, which makes
+    it a block mapping's first key. Behind a tag or an anchor alone on its line, a block mapping may
     start on a line below at an indentation of its own, and its keys are read there too. A key is
     `hooks` bare or quoted either way, its escapes read; nothing else of YAML is parsed.
 
@@ -255,6 +262,15 @@ def declares_hooks(text: str) -> bool | None:
     readings = [fenced[0]] if fenced else []
     if harness is not None and (fenced is None or harness[1] != fenced[1]):
         readings.append(harness[0].split("\n"))
+    # Read again where a line holds a character Python takes for a blank or a line break and YAML
+    # does not: as YAML 1.2 reads it, a character like a letter (`&a\u3000b {hooks: x}` is one
+    # anchor ahead of a flow mapping), and as YAML 1.1 reads NEL, LS and PS, a line break.
+    for lines in list(readings):
+        if any(_ODD.search(line) for line in lines):
+            joined = "\n".join(lines)
+            readings.append(_ODD.sub("_", joined).split("\n"))
+            if _BREAKS.search(joined):
+                readings.append(_ODD.sub("_", _BREAKS.sub("\n", joined)).split("\n"))
     unsure = False
     for lines in list(readings):
         if _tab_indents_a_key(lines):
