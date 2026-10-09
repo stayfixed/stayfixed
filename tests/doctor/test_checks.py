@@ -1932,6 +1932,19 @@ HOOKS_SPELLED = {
     # indentation, and the keys below it are the top level. Mutation (oracle): `mutations/`'s "a
     # frontmatter is repaired of its tabs only where a tab leads a key".
     "a-tab-indented-tag-above-the-mapping": "\t!!map\n  name: probe\n  hooks: {}\n",
+    # A flow mapping behind properties a comment splits, on the comment's line or a line of its
+    # own, which YAML reads past to the mapping; and one past a tab after the indentation, which
+    # YAML 1.2 reads as a blank ahead of the node. Each was read as a block mapping holding no key.
+    # Mutations (oracle): `mutations/`'s "the flow reading stops at a comment that properties
+    # follow" -> the two comment cases; "a tab after a frontmatter's indentation hides the flow
+    # mapping behind it" -> `a-flow-mapping-past-a-tab-after-the-indentation`.
+    "a-flow-mapping-below-properties-a-comment-splits": (
+        "&top\n# a comment\n!!map\n  {name: probe, hooks: {}}\n"
+    ),
+    "a-flow-mapping-below-a-comment-on-a-property-line": (
+        "!t # a comment\n  &a {name: probe, hooks: {}}\n"
+    ),
+    "a-flow-mapping-past-a-tab-after-the-indentation": "  \t{name: probe, hooks: {}}\n",
 }
 
 
@@ -1961,6 +1974,14 @@ NO_HOOKS_SPELLED = {
     "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
     "a-longer-quoted-key": '"hooksmith": x\n',
     "a-quoted-merge-key": '"<<": {hooks: x}\n',
+    # A flow mapping is read for its own keys alone: not as a block mapping too, whose reading
+    # takes a nested key's line for a key, and not where it is a key itself. Mutations (oracle):
+    # `mutations/`'s "a flow mapping's lines are read as a block mapping's too" and "a flow
+    # mapping's lines behind its tag are read as a block mapping's too" ->
+    # `flow-tagged-nested-over-lines`; "a flow mapping a colon follows is read for its keys" ->
+    # `a-flow-mapping-as-a-key`.
+    "flow-tagged-nested-over-lines": "!!map {name: plain, metadata: {a: 1,\nhooks: x}}\n",
+    "a-flow-mapping-as-a-key": "{hooks: x}: y\n",
     # A tab inside a value, on a line that opens no key, leaves the reading as it was. Mutation
     # (oracle): `mutations/`'s "any tab-indented line leaves the reader unsure".
     "a-tab-inside-a-value": 'description: "a\n\tb"\n',

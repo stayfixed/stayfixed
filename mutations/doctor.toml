@@ -1485,7 +1485,7 @@ reddens = [
 [[mutation]]
 name = "a frontmatter in flow style is read as no mapping"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if node.startswith("{") and not _keyed(node):'
+before = "    if flow and not _keyed(flow):"
 after = "    if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]",
@@ -1666,8 +1666,8 @@ reddens = [
 [[mutation]]
 name = "a flow mapping's tag or anchor hides it"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    node = opened[ahead.end() :] if ahead else opened"
-after = "    node = opened"
+before = "    end = past.end() if past else 0"
+after = "    end = 0"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-anchored]",
@@ -1677,18 +1677,67 @@ reddens = [
 [[mutation]]
 name = "a flow mapping a colon follows is read as the whole frontmatter"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if node.startswith("{") and not _keyed(node):'
-after = '    if node.startswith("{"):'
+before = '    if not node.startswith("{") or _keyed(node):'
+after = '    if not node.startswith("{"):'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key-tagged]",
 ]
 
 [[mutation]]
+name = "a flow mapping a colon follows is read for its keys"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    if flow and not _keyed(flow):"
+after = "    if flow:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-mapping-as-a-key]",
+]
+
+# A flow mapping is read past a comment among its properties and past a tab after the first line's
+# spaces, beside the block reading, which is passed over only where the node is a flow mapping
+# behind its properties and then its comments; each reading only adds keys.
+[[mutation]]
+name = "the flow reading stops at a comment that properties follow"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    past = _PROPERTY_RUN.match(bare)"
+after = "    past = _AHEAD.match(bare)"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-properties-a-comment-splits]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-a-comment-on-a-property-line]",
+]
+
+[[mutation]]
+name = "a tab after a frontmatter's indentation hides the flow mapping behind it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''    bare = opened.lstrip(" \t")'''
+after = "    bare = opened"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-past-a-tab-after-the-indentation]",
+]
+
+[[mutation]]
+name = "a flow mapping's lines are read as a block mapping's too"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if not node.startswith("{") or _keyed(node):'
+after = "    if True:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-tagged-nested-over-lines]",
+]
+
+[[mutation]]
+name = "a flow mapping's lines behind its tag are read as a block mapping's too"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    node = opened[ahead.end() :] if ahead else opened"
+after = "    node = opened"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-tagged-nested-over-lines]",
+]
+
+[[mutation]]
 name = "a mapping below a tag or an anchor alone on its line is read at the tag's indentation"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        keys, untold = _block_keys(content, {indent} | starts)"
-after = "        keys, untold = _block_keys(content, {indent})"
+before = "        more, unsure = _block_keys(content, {indent} | starts)"
+after = "        more, unsure = _block_keys(content, {indent})"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-above-an-indented-mapping]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored-above-an-indented-mapping]",

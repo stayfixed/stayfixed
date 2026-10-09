@@ -222,11 +222,11 @@ def declares_hooks(text: str) -> bool | None:
     the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
     a byte-order mark ahead of the first line is read past. Its top level is the indentation of its
     first line that is neither blank nor a comment: a mapping in block style has its keys there,
-    and one in flow style opens there with `{` (`_flow_keys`), behind any tag or anchor, unless a
-    colon follows where it closes, which makes it a block mapping's first key. Behind a tag or an
-    anchor alone on its line, a block mapping may start on a line below at an indentation of its
-    own, and its keys are read there too. A key is `hooks` bare or quoted either way, its escapes
-    read; nothing else of YAML is parsed.
+    and one in flow style opens there with `{` (`_flow_keys`), behind any tag, anchor or comment
+    and any tab after the indentation, unless a colon follows where it closes, which makes it a
+    block mapping's first key. Behind a tag or an anchor alone on its line, a block mapping may
+    start on a line below at an indentation of its own, and its keys are read there too. A key is
+    `hooks` bare or quoted either way, its escapes read; nothing else of YAML is parsed.
 
     Claude Code may read the file otherwise, by what its program text shows rather than by a
     measured run: it may end the frontmatter at the first `---` after the opening line, wherever in
@@ -312,9 +312,22 @@ def _holds_hooks(lines: list[str]) -> bool | None:
     opened = "\n".join(lines[first:])[indent:]
     ahead = _AHEAD.match(opened)
     node = opened[ahead.end() :] if ahead else opened
-    if node.startswith("{") and not _keyed(node):
-        keys, untold = _flow_keys(node)
-    else:
+    # A flow mapping is read past every property and comment ahead of it, in any order, and past a
+    # tab after the first line's spaces, which YAML 1.2 reads as a blank ahead of the node and not
+    # as indentation (`  \t{hooks: x}`).
+    bare = opened.lstrip(" \t")
+    past = _PROPERTY_RUN.match(bare)
+    end = past.end() if past else 0
+    flow = bare[end:] if bare.startswith("{", end) else ""
+    keys: set[str] = set()
+    untold = False
+    if flow and not _keyed(flow):
+        keys, untold = _flow_keys(flow)
+    # The block reading is passed over only where the node is a flow mapping behind properties and
+    # then comments (`_AHEAD`). Where only the reading past a comment among the properties, or past
+    # a tab, finds one, which YAML parsers do not all read alike, the block reading is kept beside
+    # it, so that each reading only adds keys.
+    if not node.startswith("{") or _keyed(node):
         # Past a tag or an anchor alone on its line (`!!map`), the mapping starts on a line below,
         # so its keys may stand at the indentation of any line of that run.
         run = _PROPERTY_RUN.match(opened)
@@ -324,7 +337,8 @@ def _holds_hooks(lines: list[str]) -> bool | None:
             for line in spanned
             if line.strip() and not line.lstrip().startswith("#")
         }
-        keys, untold = _block_keys(content, {indent} | starts)
+        more, unsure = _block_keys(content, {indent} | starts)
+        keys, untold = keys | more, untold or unsure
     if _HOOKS in keys:
         return True
     return None if untold else False
