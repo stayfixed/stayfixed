@@ -88,8 +88,8 @@ reddens = [
 ]
 
 # Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
-# gate -- a flag is a third member of the equivalence class `config/machine.py` gates
-# `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the machine file
+# gate -- a flag names the machine file, as `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` did before
+# `config/machine.py` stopped reading either, and this is the command that turns the machine file
 # into capability: the overlay root comes from it, and from the overlay come allow rules, hook
 # entries and Codex standing rules.
 [[mutation]]
@@ -101,6 +101,16 @@ reddens = [
   "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
   "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
   "tests/test_install_path.py::test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal",
+]
+
+# The gate's refusal explains the flag's own rule, and never by the two variables no command reads.
+[[mutation]]
+name = "the --machine refusal leans on two variables no command reads"
+file = "src/stayfixed/attach/commands.py"
+before = '''    "honoured only from an interactive shell: anywhere else the command may be an agent's, and "'''
+after = '''    "honoured only from an interactive shell — the same rule `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` already follow, and "'''
+reddens = [
+  "tests/attach/test_commands.py::test_the_machine_flag_is_refused_for_a_reason_of_its_own",
 ]
 
 # The ledger holds the owner's personal allow rules and lives under `.stayfixed/local/`, a path

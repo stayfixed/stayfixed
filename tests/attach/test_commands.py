@@ -226,6 +226,29 @@ def test_the_flag_is_refused_and_never_quietly_ignored(
     assert "--machine" in capsys.readouterr().err
 
 
+def test_the_machine_flag_is_refused_for_a_reason_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The refusal a person reads explains the flag's own rule. It once said the flag followed the
+    # rule `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` follow, after no command read either of them
+    # any more, so it explained itself by a rule that no longer existed. The words are the
+    # assertion's own, and detach's refusal is the same one. Mutation (oracle): `mutations/`'s
+    # "the --machine refusal leans on two variables no command reads" -> the old sentence.
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    refused = (
+        "stayfixed: refused: --machine names the file that decides which overlay this command "
+        "trusts, so here it is honoured only from an interactive shell: anywhere else the command "
+        "may be an agent's, and a repository can tell an agent which file to name. Run this from "
+        "a terminal, or drop the flag and let it read the machine configuration this machine "
+        "records\n"
+    )
+    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert (code, out, err) == (2, "", refused), argv
+
+
 def test_a_command_with_no_machine_flag_is_unaffected_by_the_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
