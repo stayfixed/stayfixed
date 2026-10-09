@@ -88,8 +88,9 @@ def _report(
     gates = Gates(root, config, binding)
     stops = list(gates)
     diff, real = gates.diff, gates.real
+    unread = None
     if all(stop.flag is not None for stop in stops):
-        plan_writes(root, config, binding, diff, machine=machine, home=home)
+        unread = plan_writes(root, config, binding, diff, machine=machine, home=home).unread
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
     # diff's three fields say what `attach` would add and what is already there, `widens` is
     # computed from them, and a fourth of another kind would blur what it means. These names
@@ -117,6 +118,9 @@ def _report(
         # The cause and the way out every other surface says, ahead of the counts: the state
         # label alone does not say what to do, and the real run refuses for it.
         summary = f"{NO_REMOTE}; {summary}"
+    if unread is not None:
+        # The run's own note, for the harness memory link it would not make: one wording.
+        summary += f"; {unread.note}"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {

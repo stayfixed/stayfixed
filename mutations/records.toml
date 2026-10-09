@@ -2943,8 +2943,8 @@ reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_
 [[mutation]]
 name = "a link without the harness half makes the harness link anyway"
 file = "src/stayfixed/memory/worktree.py"
-before = "        if isinstance(harness, Withhold):\n            approved = harness_link_needed(store, config)"
-after = "        if False:\n            approved = harness_link_needed(store, config)"
+before = "    if isinstance(harness, Withhold):\n        approved = harness_link_needed(store, config)"
+after = "    if False:\n        approved = harness_link_needed(store, config)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
 ]
@@ -3071,8 +3071,8 @@ reddens = [
 [[mutation]]
 name = "a lapsed link under HOME stays once the harness half is withheld"
 file = "src/stayfixed/memory/worktree.py"
-before = '            if not approved and harness.under is not None:'
-after = '            if False:'
+before = '        if not approved and harness.under is not None:'
+after = '        if False:'
 reddens = [
   "tests/memory/test_worktree.py::test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld",
 ]

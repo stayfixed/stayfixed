@@ -1186,24 +1186,74 @@ def test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words(
         assert (code, out, err) == (2, "", refused), argv
 
 
-# What `attach` says, off a terminal, where `HOME` is not the home the password database records.
-_HOME_NO_HARNESS_READS = {
+# What `attach` and `--check` add to their line, off a terminal, where `HOME` is not the home the
+# password database records: written out here rather than imported from the code under test.
+_UNREAD = {
     "elsewhere": (
-        "stayfixed: refused: HOME is not this user's home in the password database, and off a "
-        "terminal the harness memory link goes under that home, where a harness started with this "
-        "HOME does not look; run this from a terminal, where HOME decides where it goes, or with "
-        "HOME set to that home\n"
+        "HOME is not this user's home in the password database, and off a terminal the harness "
+        "memory link goes only under that home, where a harness started with this HOME does not "
+        "look, so attach run here makes none; run `stayfixed attach --store "
+        "<overlay>/projects/<project>/memory` from a terminal, where HOME decides where the link "
+        "goes, or start sessions with HOME set to that home and run it in one"
     ),
     "empty": (
-        "stayfixed: refused: HOME is empty, so it names no home directory, and off a terminal the "
-        "harness memory link goes under the home the password database records, where a harness "
-        "started with this HOME does not look; set HOME to that home and run this again\n"
+        "HOME is empty, so it names no home directory, and off a terminal the harness memory link "
+        "goes only under the home the password database records, where a harness started with this "
+        "HOME does not look, so attach run here makes none; start sessions with HOME set to that "
+        "home and run `stayfixed attach --store <overlay>/projects/<project>/memory` in one"
     ),
 }
+_WAITS = (
+    "the harness memory link was not created, because the link tree it would expose sits inside "
+    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
+    "`stayfixed attach` again"
+)
 
 
-@pytest.mark.parametrize("home", sorted(_HOME_NO_HARNESS_READS))
-def test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read(
+def _owner_with_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, store: Path, *, home: str
+) -> tuple[Path, Path]:
+    """The database's home with the machine file naming the overlay, off a terminal, and `HOME`
+    as the case says: `owner` (that home), `elsewhere`, `empty` or `unset`. `--machine` is refused
+    off a terminal, so the file is where the run reads it. Returns `(owner, elsewhere)`."""
+    from tests.ownerhome import as_owner_home
+
+    owner, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
+    elsewhere.mkdir()
+    as_owner_home(monkeypatch, owner)
+    if home == "unset":
+        monkeypatch.delenv("HOME", raising=False)
+    else:
+        chosen = {"owner": str(owner), "elsewhere": str(elsewhere), "empty": ""}[home]
+        monkeypatch.setenv("HOME", chosen)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    return owner, elsewhere
+
+
+def _approve(root: Path) -> None:
+    """`stayfixed memory trust --in-repo-memory`, recorded under the database's home."""
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
+
+    config = load(root, machine=None)
+    resolved = resolve(root, config, machine=None)
+    assert resolved is not None
+    record(resolved, config)
+
+
+def _harness_link(home: Path, checkout: Path) -> Path:
+    """`<home>/.claude/projects/<slug>/memory` for `checkout`, where a harness started with `home`
+    as `HOME` looks."""
+    slug = str(checkout.resolve()).replace("/", "-").replace(".", "-")
+    return home / ".claude" / "projects" / slug / "memory"
+
+
+@pytest.mark.parametrize("home", sorted(_UNREAD))
+def test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1212,59 +1262,122 @@ def test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read(
     # Off a terminal the harness memory link goes under the password database's home, and a
     # harness finds its memory directory through `HOME`. Where the two differ, an empty `HOME`
     # included, `attach` made the link where that harness never looks and said `attached: 1
-    # link(s)`. A hook withholds the link there; `attach`, which an agent runs too, refuses before
-    # its first write, `--check` with it, and never makes the link under `HOME`, which off a
-    # terminal may be a directory the clone chose. Mutation (oracle): `mutations/`'s "attach off a
-    # terminal links under a home the harness does not read" -> both run, and the real one writes.
-    from tests.ownerhome import as_owner_home
-
+    # link(s)`; it then refused the whole run, a first attach on a store with no approval included,
+    # which makes no harness link at all. It now binds and links the tree in every checkout, makes
+    # no harness link in any, and says so with a way out that leads to a link that harness reads,
+    # `--check` with it; it never makes the link under `HOME`, which off a terminal may be a
+    # directory the clone chose. Mutations (oracle): `mutations/`'s "attach off a terminal makes
+    # the harness link under a home the harness does not read" -> a link under the database's
+    # home, and the line says nothing; "attach tells an empty HOME off a terminal what a HOME that
+    # differs is told" -> the empty case's words; "attach says nothing of the harness link it
+    # withholds" and "attach --check says nothing of the harness link the run would withhold" ->
+    # the line, and "attach makes the harness link in the owning checkout it withholds it from"
+    # and "attach makes the harness link in a worktree it withholds it from" -> a link under the
+    # database's home.
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
-    owner = tmp_path / "home"
-    machine = owner / ".config" / "stayfixed" / "config.toml"
-    machine.parent.mkdir(parents=True)
-    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
-    as_owner_home(monkeypatch, owner)
-    (tmp_path / "elsewhere").mkdir()
-    monkeypatch.setenv("HOME", "" if home == "empty" else str(tmp_path / "elsewhere"))
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    before = snapshot(tmp_path)
-    for argv in (["--check"], ["--yes"]):
-        code = invoke(["attach", "--root", str(root), "--store", str(store), *argv])
-        assert (code, *capsys.readouterr()) == (2, "", _HOME_NO_HARNESS_READS[home]), argv
-    assert_snapshot_unchanged(tmp_path, before)
+    side = tmp_path / "side"
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home=home)
+    argv = ["attach", "--root", str(root), "--store", str(store)]
+    counts = "0 allow rule(s) and 0 hook entr(ies) would be added, 0 already present"
+    note = _UNREAD[home]
+    assert (invoke([*argv, "--check"]), *capsys.readouterr()) == (
+        0,
+        f"unbound; {counts}; 0 Codex standing-rule file(s) would be placed; {note}\n",
+        "",
+    )
+    assert (invoke([*argv, "--yes"]), *capsys.readouterr()) == (
+        0,
+        f"attached: 6 link(s), 0 Codex rule file(s); settings unchanged; binding recorded; "
+        f"{_WAITS}; {note}\n",
+        "",
+    )
+    _approve(root)
+    assert (invoke([*argv, "--check"]), *capsys.readouterr()) == (
+        0,
+        f"bound; {counts}; 0 Codex standing-rule file(s) would be placed; {note}\n",
+        "",
+    )
+    assert (invoke([*argv, "--yes"]), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        f"recorded; {note}\n",
+        "",
+    )
+    assert fsops.is_symlink(root / DEFAULT_MEMORY / "MEMORY.md")
+    assert fsops.is_symlink(side / DEFAULT_MEMORY / "MEMORY.md")
+    assert not os.path.lexists(owner / ".claude")
+    assert not os.path.lexists(elsewhere / ".claude")
 
 
-def test_attach_goes_on_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(
+def test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The vacuity guard for the refusal above: off a terminal with `HOME` the database's home, and
-    # at a terminal whatever `HOME` says, `--check` goes on; and a user the database lists no home
-    # for is told that, not that `HOME` differs from it. Mutations (oracle): `mutations/`'s "attach
-    # off a terminal refuses a HOME that agrees" -> the first is refused; "attach at a terminal
-    # refuses a HOME that differs" -> the second is; "attach off a terminal blames HOME for a user
-    # the database lists no home for" -> the third names HOME.
+    # The settings-file fallback stands in for the harness link where a real directory sits at its
+    # path under the database's home; where the link is withheld that path is not one a harness
+    # started with this `HOME` reads, so the run takes no fallback and plans none: no settings
+    # file, and no line for one in the exclude block. Mutations (oracle): `mutations/`'s "attach
+    # takes the settings fallback for a harness link it withholds" -> the settings file is
+    # written; "attach plans the settings fallback for a harness link it withholds" -> the block
+    # lists it.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, _ = _owner_with_machine_file(tmp_path, monkeypatch, store, home="elsewhere")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    _harness_link(owner, root).mkdir(parents=True)
+    capsys.readouterr()
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        f"recorded; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert not os.path.lexists(root / SETTINGS)
+    assert SETTINGS not in (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+
+
+def test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The vacuity guard for the two above, and the way out they name followed: off a terminal with
+    # `HOME` the database's home (a session started with it), the run makes the harness link under
+    # it; at a terminal with another `HOME`, under that one; neither says a word of `HOME`. A user
+    # the database lists no home for is told that, by the anchor, and never that `HOME` differs.
+    # Mutations (oracle): `mutations/`'s "attach off a terminal withholds the harness link under a
+    # HOME that agrees" -> no link in the first; "attach at a terminal withholds the harness link
+    # under a HOME that differs" -> none in the second; "attach off a terminal blames HOME for a
+    # user the database lists no home for" -> `unread_home` answers with `HOME`'s words.
     from stayfixed.attach.check import check
+    from stayfixed.attach.write import unread_home
     from stayfixed.errors import Refusal
     from tests.ownerhome import as_owner_home
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
-    owner = tmp_path / "home"
-    machine = owner / ".config" / "stayfixed" / "config.toml"
-    machine.parent.mkdir(parents=True)
-    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
-    as_owner_home(monkeypatch, owner)
-    (tmp_path / "elsewhere").mkdir()
-    argv = ["attach", "--check", "--root", str(root), "--store", str(store)]
-    monkeypatch.setenv("HOME", str(owner))
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    assert (invoke(argv), capsys.readouterr().err) == (0, "")
-    monkeypatch.setenv("HOME", str(tmp_path / "elsewhere"))
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    capsys.readouterr()
+    linked = (
+        "attached: 1 link(s), 0 Codex rule file(s); settings unchanged; binding already recorded"
+    )
+    assert (invoke(argv), *capsys.readouterr()) == (0, f"{linked}\n", "")
+    assert _harness_link(owner, root).resolve() == (root / DEFAULT_MEMORY).resolve()
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.setenv("HOME", str(elsewhere))
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    assert (invoke(argv), capsys.readouterr().err) == (0, "")
+    assert (invoke(argv), *capsys.readouterr()) == (0, f"{linked}\n", "")
+    assert _harness_link(elsewhere, root).resolve() == (root / DEFAULT_MEMORY).resolve()
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     as_owner_home(monkeypatch, None)
+    assert unread_home() is None
+    machine = owner / ".config" / "stayfixed" / "config.toml"
     with pytest.raises(Refusal) as refused:
         check(root, store=store, machine=machine, home=None)
     assert str(refused.value) == (

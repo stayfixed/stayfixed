@@ -558,21 +558,35 @@ def link(
                 target = contained(worktree / base, name, allow_final_symlink=True)
                 if _link(worktree, f"{base}/{name}", source.resolve()):
                     created.append(target)
-        if isinstance(harness, Withhold):
-            approved = harness_link_needed(store, config)
-            if not approved and harness.under is not None:
-                revoked += _withdraw_lapsed(worktree, store, harness.under)
-            return Links(created, revoked, withheld=approved)
-        made, withdrawn = _apply_harness_link(worktree, store, config, harness.home)
-        created += made
-        revoked += withdrawn
+        half = _harness_half(worktree, store, config, harness)
+        created += half.created
+        revoked += half.revoked
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return Links(created, revoked)
+    return Links(created, revoked, withheld=half.withheld)
 
 
-def _withdraw_lapsed(where: Path, store: Store, home: Path) -> list[Path]:
-    """Remove the harness link under `home` that points at `store`, for a store not approved.
+def _harness_half(
+    where: Path, store: Store, config: Config, harness: MakeUnder | Withhold
+) -> Links:
+    """The harness link for one checkout, as `harness` says: made or withdrawn under a home by the
+    gate (`MakeUnder`), or not made (`Withhold`), with `withheld` saying whether the store is
+    approved for one and a lapsed link under the home `Withhold` names withdrawn. One answer for
+    `link` and `attach_main` both, so a caller that withholds the link withholds it in every
+    checkout alike."""
+    if isinstance(harness, Withhold):
+        approved = harness_link_needed(store, config)
+        revoked: list[Path] = []
+        if not approved and harness.under is not None:
+            revoked = _withdraw_lapsed(where, store.path.resolve(), harness.under)
+        return Links([], revoked, withheld=approved)
+    made, withdrawn = _apply_harness_link(where, store, config, harness.home)
+    return Links(made, withdrawn)
+
+
+def _withdraw_lapsed(where: Path, source: Path, home: Path) -> list[Path]:
+    """Remove the harness link under `home` that points at `source`, the store's directory, for a
+    store not approved.
 
     `home` is one this module makes nothing under, so the narrowest withdrawal there is: only a
     symlink whose own target is this store goes (`_unlink`), a link to anything else is left
@@ -585,7 +599,7 @@ def _withdraw_lapsed(where: Path, store: Store, home: Path) -> list[Path]:
         return []
     try:
         root, relative = harness_anchor(where, home)
-        removed = _unlink(root, relative, store.path.resolve())
+        removed = _unlink(root, relative, source)
     except (Refusal, OSError):
         return []
     return [root / relative] if removed else []
@@ -598,6 +612,7 @@ def attach_main(
     *,
     machine: Path | None = None,
     home: Path | None = None,
+    withhold: Withhold | None = None,
 ) -> Links:
     """Build the link tree in the checkout that owns the store, in overlay mode.
 
@@ -620,6 +635,10 @@ def attach_main(
     Raises `PathEscape` rather than skipping when a group name leaves the tree, for the reason
     `link` gives: `memory.groups` is repository-controlled and skipping one escaping name leaves
     the next free to try the same thing.
+
+    `withhold`, where given, keeps the harness link from being made, as `link` keeps it for a
+    caller whose only trusted home is not the one the harness reads (`Withhold`); `home` is then
+    asked about nothing.
     """
     if config.memory.mode != OVERLAY_MODE:
         raise Refusal(
@@ -668,12 +687,12 @@ def attach_main(
                 "`stayfixed memory index --check` reports why"
             )
         _render_missing_index(store, config)
-        made, withdrawn = _apply_harness_link(root, store, config, home)
-        created += made
-        revoked += withdrawn
+        half = _harness_half(root, store, config, MakeUnder(home) if withhold is None else withhold)
+        created += half.created
+        revoked += half.revoked
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return Links(created, revoked)
+    return Links(created, revoked, withheld=half.withheld)
 
 
 def _render_missing_index(store: Store, config: Config) -> None:

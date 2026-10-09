@@ -2271,22 +2271,21 @@ It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is
 the harness memory link cannot be made, so when the link becomes possible again — or when the
 store's trust record lapses — that key is withdrawn in the same run. If it was all
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
-looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
-arises when stayfixed's own key was the file's entire contents.
+looked like before `attach` created it.
 
 **When the harness memory link waits for approval, `attach` says so.** The link exposes the
 link tree, which sits inside the repository, so it is made only once the store is approved; until
 then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
-`stayfixed attach` again.
+`stayfixed attach` again. Off a terminal where `HOME` is not the database's home, empty included,
+`attach` makes no harness link or fallback, and says what makes one, as `--check` does.
 
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component
 below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
 name, above `attach`'s first write, above `detach`'s first withdrawal and above the first note
 link a session makes in a worktree, rather than written through. The refusal names the component
-and the way out, which is the same one `--settings`
-exists for on the `setup` side: make the directory real and have your dotfiles manager adopt the
-files inside it.
+and the way out, as `--settings` does for `setup`: make the directory real and have your dotfiles
+manager adopt the files inside it.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -3416,10 +3415,10 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
   memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
-  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME` and
-  refuses anywhere else. For any other store nothing else makes the link, so start sessions with
-  `HOME` set to the database's home. A link an earlier release made under `HOME` is still withdrawn
-  when the store's approval lapses.
+  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`, and
+  elsewhere makes none and says so. For any other store nothing else makes the link, so start
+  sessions with `HOME` set to the database's home. A link an earlier release made under `HOME` is
+  still withdrawn when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
 `memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
@@ -3427,5 +3426,4 @@ database records that cannot be written fails the same two commands naming the d
 other place is one a hook reads.
 
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
-the environment, so one command could read the two halves of this file out of two different
-files: `[personal]` honoured, and the overlay silently unrecorded a few lines below it.
+the environment, so one command could read the two halves of this file from two different files.
