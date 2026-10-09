@@ -2843,10 +2843,11 @@ after = "            return []"
 reddens = ["tests/test_areas.py::test_the_string_import_rules_read_every_spelling"]
 
 # The shape check's bound on a pass that is one repeat of one character alone. Python 3.11.4 counts
-# a class matched ignoring case one character at a time, moving the pass's position as it goes, so
-# such a repeat that needs two and finds one fails one past the pass's start, and a possessive
-# group goes on from there: `(?i)(?:[a-z]{2,}|-)*+(.*)` leaves `1` of `-a1` to the tail, where 3.14
-# leaves `a1`. Without the bound the check admits that shape again.
+# an item it matches ignoring case through a class one character at a time, moving the pass's
+# position as it goes, so such a repeat that needs two and finds one fails one past the pass's
+# start, and a possessive group goes on from there: `(?i)(?:[a-z]{2,}|-)*+(.*)` leaves `1` of `-a1`
+# to the tail, where 3.14 leaves `a1`. A letter with a second case fold is read through such a
+# class, so `(?i)(?:s{2,}|-)*+` is the same shape. Without the bound the check admits both again.
 [[mutation]]
 name = "a lone repeat of one character may need two again"
 file = "tests/test_patterns.py"
@@ -2854,6 +2855,7 @@ before = "        return bool(alternative[0][1][0] <= 1)"
 after = "        return True"
 reddens = [
   "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:[a-z]{2,}|-)*+]",
+  "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:s{2,}|-)*+]",
 ]
 
 # The shape check reads more than the patterns a module holds at its top level: a pattern built
@@ -2862,9 +2864,9 @@ reddens = [
 [[mutation]]
 name = "the pattern scan stops at a function's body"
 file = "tests/test_patterns.py"
-before = "        yield from _calls(child, child if isinstance(child, _FUNCTIONS) else function)"
+before = "        yield from _calls(child, (*chain, child) if isinstance(child, _SCOPES) else chain)"
 after = """        if not isinstance(child, _FUNCTIONS):
-            yield from _calls(child, function)"""
+            yield from _calls(child, (*chain, child) if isinstance(child, _SCOPES) else chain)"""
 reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a literal inside a function]",
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a method's literal]",
@@ -2904,13 +2906,55 @@ reddens = [
 name = "the pattern scan passes over text it cannot spell"
 file = "tests/test_patterns.py"
 before = """        except _Unspelled:
-            unspelled.add(where)
+            unspelled.append(where)
             continue"""
 after = """        except _Unspelled:
             continue"""
 reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[text handed to the function]",
   "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# `re.escape`'s text inside a choice a possessive group repeats can share a prefix with a sibling
+# alternative, which the parser takes out ahead of the choice and no stand-in shows; the place is
+# named rather than judged by the stand-ins.
+[[mutation]]
+name = "the pattern scan judges re.escape in a possessive group's choice by its stand-ins"
+file = "tests/test_patterns.py"
+before = "            _compiles(text, flags) and _in_a_repeated_choice(_PARSER.parse(text, flags))"
+after = "            False"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[re.escape in a choice a possessive group repeats]",
+]
+
+# A closure reads a name its enclosing function binds, and a class body reads its own, before the
+# module's same-named string.
+[[mutation]]
+name = "the pattern scan reads a closure's name from the module"
+file = "tests/test_patterns.py"
+before = "    if any(isinstance(node, _FUNCTIONS) and _binds(node, name) for node in enclosing):"
+after = "    if False:"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name a closure reads from its function]",
+]
+
+[[mutation]]
+name = "the pattern scan reads a class body's name from the module"
+file = "tests/test_patterns.py"
+before = "    if any(_binds(node, name) for node in scope.chain[at + 1 :]):"
+after = "    if False:"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name a class body binds]",
+]
+
+# Handed text is counted per call, so a second call in a place named once is a finding.
+[[mutation]]
+name = "the pattern scan names a function once however many calls it cannot spell"
+file = "tests/test_patterns.py"
+before = "    return spelled, unspelled"
+after = "    return spelled, list(dict.fromkeys(unspelled))"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[two calls of handed text in one function]",
 ]
 
 [[mutation]]

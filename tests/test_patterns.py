@@ -13,10 +13,12 @@ states the shape that reads alike everywhere; this holds every pattern to it, an
 from __future__ import annotations
 
 import ast
+import dataclasses
 import importlib
 import itertools
 import pkgutil
 import re
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,10 +55,12 @@ def _reads_alike(alternative: list[tuple[Any, Any]]) -> bool:
     repeat of one character alone that needs at most one, or characters and anchors followed by
     repeats of one character that may match nothing, which cannot fail.
 
-    The lone repeat's bound is the ignore-case count: 3.11.4 counts a class matched ignoring case
-    one character at a time, moving the pass's position as it goes, so a repeat that needs two
-    and finds one fails one past where the pass began. One that needs at most one fails only on
-    finding none, before anything moved.
+    The lone repeat's bound is the ignore-case count: 3.11.4 counts an item it matches ignoring
+    case through a class one character at a time, moving the pass's position as it goes, so a
+    repeat that needs two and finds one fails one past where the pass began. A class is such an
+    item, and so is a letter with a second case fold, `s` or `i` (U+017F, U+0131), which the
+    compiler turns into one; the bound ignores the item, so it holds both. One that needs at most
+    one fails only on finding none, before anything moved.
     """
     if len(alternative) == 1 and _repeat_of_one(alternative[0]):
         return bool(alternative[0][1][0] <= 1)
@@ -113,8 +117,7 @@ def _offences_of(pattern: re.Pattern[str]) -> list[str]:
 # The checker's own table, each shape with what it must say, from what Python 3.11.4 was measured
 # to misread against 3.14: a pass that fails at or after a repeat, a lookahead or a choice it has
 # entered, and the choice the parser builds out of a shared prefix. The shapes it admits are the
-# ones this package uses, and a random fuzz of 50,000 patterns of those shapes against 3.14 found
-# no difference on 3.11.4 where 10,000 of 50,000 unconstrained ones differed.
+# ones this package uses.
 SHAPES = {
     r"(?:ab++)*+": False,
     r"(?:ab+)*+c": False,
@@ -126,10 +129,12 @@ SHAPES = {
     r"(?:\.[a-z]++)++": False,
     r"(?>a+)": False,
     r"(?:x(?>a))*": False,
-    # A lone class that needs two, read without case: 3.11.4 counts it one character at a time,
-    # and a pass that read one and failed leaves the next pass one past its start, so `-a1`
-    # leaves `1` to the tail where 3.14 leaves `a1`.
+    # A lone class that needs two, matched ignoring case: 3.11.4 counts it one character at a
+    # time, and a pass that read one and failed leaves the next pass one past its start, so `-a1`
+    # leaves `1` to the tail where 3.14 leaves `a1`. A letter with a second case fold is read
+    # through such a class: `-s1` leaves `1` where 3.14 leaves `s1`.
     r"(?i)(?:[a-z]{2,}|-)*+": False,
+    r"(?i)(?:s{2,}|-)*+": False,
     r"[ab]*+": True,
     r"\s++": True,
     r"(?:''[^']*+)*+": True,
@@ -199,9 +204,17 @@ _FLAGS_AT = {
     "subn": 4,
 }
 # What `re.escape` gives back is literal characters, so a pattern built around it is judged with
-# none, one and two in its place: every shape a run of literals takes.
+# none, one and two in its place: every shape a run of literals takes, outside a choice a
+# possessive group repeats. There the parser takes a prefix every alternative shares out ahead of
+# the choice, so an escaped value that begins as a sibling alternative does puts a choice inside
+# the pass that no stand-in shows (`(?:{lead}ab|cd)*+` with `lead` `c`), and the place is named
+# instead: `_MARK` stands in once more, to find where the value lands.
 _ESCAPED = ("", "x", "xy")
+_MARK = "\ue000"
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+# What opens a scope of its own: a function, a lambda, a class body and a comprehension.
+_SCOPES = (*_FUNCTIONS, ast.ClassDef, *_COMPREHENSIONS)
 
 
 class _Unspelled(Exception):
@@ -216,6 +229,10 @@ class _Compiled(Exception):
 class _Scope:
     namespace: Mapping[str, object]
     function: ast.AST | None
+    # Every scope the call sits in, outermost first: the function among them, the functions it is
+    # nested in, and the class bodies and comprehensions on either side.
+    chain: tuple[ast.AST, ...] = ()
+    escaped: tuple[str, ...] = _ESCAPED
 
 
 def _of_re(node: ast.expr, name: str) -> bool:
@@ -227,9 +244,34 @@ def _of_re(node: ast.expr, name: str) -> bool:
     )
 
 
+def _binds(scope: ast.AST, name: str) -> bool:
+    """Whether `name` is bound anywhere in `scope`: stored, a parameter, imported, an `except … as`,
+    a `def` or a `class`. What a scope nested in it binds counts too, which can only make a place
+    one the scan names rather than reads."""
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load) and node.id == name:
+            return True
+        if isinstance(node, ast.arg) and node.arg == name:
+            return True
+        if isinstance(node, ast.alias) and (node.asname or node.name.split(".")[0]) == name:
+            return True
+        if isinstance(node, (ast.ExceptHandler, ast.ClassDef, *_FUNCTIONS[:2])) and (
+            node.name == name
+        ):
+            return True
+    return False
+
+
 def _named(name: str, scope: _Scope) -> list[str]:
     """What `name` spells where a pattern reads it: the value of the one plain assignment the
-    function makes to it, or, when the function binds it nowhere, the module's string."""
+    function makes to it, or, when the function binds it nowhere, the module's string.
+
+    Python reads a class body's or a comprehension's own name before the function's or the
+    module's, and a function's free name from the functions it is nested in before the module, so
+    a name either binds is one the source alone does not spell here."""
+    at = scope.chain.index(scope.function) if scope.function is not None else -1
+    if any(_binds(node, name) for node in scope.chain[at + 1 :]):
+        raise _Unspelled(name)
     if scope.function is not None:
         inside = list(ast.walk(scope.function))
         stores = [n for n in inside if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)]
@@ -253,6 +295,9 @@ def _named(name: str, scope: _Scope) -> list[str]:
             return _spellings(plain[0], scope)
         if assigned or bound:
             raise _Unspelled(name)
+    enclosing = scope.chain[: max(at, 0)]
+    if any(isinstance(node, _FUNCTIONS) and _binds(node, name) for node in enclosing):
+        raise _Unspelled(name)
     value = scope.namespace.get(name)
     if isinstance(value, str):
         return [value]
@@ -280,7 +325,7 @@ def _spellings(node: ast.expr, scope: _Scope) -> list[str]:
     if isinstance(node, ast.Name):
         return _named(node.id, scope)
     if isinstance(node, ast.Call) and _of_re(node.func, "escape"):
-        return list(_ESCAPED)
+        return list(scope.escaped)
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -339,47 +384,83 @@ def _given(call: ast.Call, scope: _Scope) -> list[tuple[str, int]]:
     return [(text, bits) for text in _spellings(pattern, scope)]
 
 
-def _calls(node: ast.AST, function: ast.AST | None) -> Iterator[tuple[ast.Call, ast.AST | None]]:
-    """Every call under `node`, each with the function it is made in (`None` outside one)."""
+def _calls(
+    node: ast.AST, chain: tuple[ast.AST, ...]
+) -> Iterator[tuple[ast.Call, tuple[ast.AST, ...]]]:
+    """Every call under `node`, each with the scopes it is made in, outermost first."""
     for child in ast.iter_child_nodes(node):
         if isinstance(child, ast.Call):
-            yield child, function
-        yield from _calls(child, child if isinstance(child, _FUNCTIONS) else function)
+            yield child, chain
+        yield from _calls(child, (*chain, child) if isinstance(child, _SCOPES) else chain)
+
+
+def _in_a_repeated_choice(items: Any, repeated: bool = False, chosen: bool = False) -> bool:
+    """Whether a parsed pattern holds `_MARK` in an alternative of a choice that a possessive
+    repeat holds, at any depth."""
+    for op, value in items:
+        if op is _OP.LITERAL and value == ord(_MARK) and chosen:
+            return True
+        inner: list[tuple[Any, bool, bool]] = []
+        if op is _OP.BRANCH:
+            inner = [(alternative, repeated, chosen or repeated) for alternative in value[1]]
+        elif op in _REPEATS:
+            inner = [(value[2], repeated or op is _OP.POSSESSIVE_REPEAT, chosen)]
+        elif op is _OP.SUBPATTERN:
+            inner = [(value[3], repeated, chosen)]
+        elif op in (_OP.ASSERT, _OP.ASSERT_NOT):
+            inner = [(value[1], repeated, chosen)]
+        elif op is _OP.ATOMIC_GROUP:
+            inner = [(value, repeated, chosen)]
+        elif op is _OP.GROUPREF_EXISTS:
+            inner = [(body, repeated, chosen) for body in value[1:] if body is not None]
+        if any(_in_a_repeated_choice(*args) for args in inner):
+            return True
+    return False
 
 
 def _built(
     source: str, namespace: Mapping[str, object], module: str
-) -> tuple[dict[str, list[tuple[str, int]]], set[str]]:
+) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
     """The patterns a module's calls of `re` are given, read from its source, by
-    `module.function:line`; and, by `module.function`, where the source does not spell one."""
+    `module.function:line`; and, by `module.function`, once per call, where the source does not
+    spell one."""
     spelled: dict[str, list[tuple[str, int]]] = {}
-    unspelled: set[str] = set()
+    unspelled: list[str] = []
     tree = ast.parse(source)
     # The scan reads `re` by that name only, so `re` bound to another, or its functions taken out
     # of it, is a place it cannot read.
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "re":
-            unspelled.add(f"{module}.<from re import>")
+            unspelled.append(f"{module}.<from re import>")
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "re" and alias.asname not in (None, "re"):
-                    unspelled.add(f"{module}.<import re as {alias.asname}>")
-    for call, function in _calls(tree, None):
+                    unspelled.append(f"{module}.<import re as {alias.asname}>")
+    for call, chain in _calls(tree, ()):
         if not any(_of_re(call.func, name) for name in _FLAGS_AT):
             continue
+        function = next((node for node in reversed(chain) if isinstance(node, _FUNCTIONS)), None)
         where = f"{module}.{getattr(function, 'name', '<lambda>') if function else '<module>'}"
+        scope = _Scope(namespace, function, chain)
         try:
-            given = _given(call, _Scope(namespace, function))
+            given = _given(call, scope)
+            marked = _given(call, dataclasses.replace(scope, escaped=(_MARK,)))
         except _Compiled:
             continue
         except _Unspelled:
-            unspelled.add(where)
+            unspelled.append(where)
+            continue
+        if any(
+            _compiles(text, flags) and _in_a_repeated_choice(_PARSER.parse(text, flags))
+            for text, flags in marked
+        ):
+            unspelled.append(where)
             continue
         valid = [(text, flags) for text, flags in given if _compiles(text, flags)]
         if valid:
             spelled[f"{where}:{call.lineno}"] = valid
         else:
-            unspelled.add(where)
+            unspelled.append(where)
     return spelled, unspelled
 
 
@@ -391,17 +472,17 @@ def _compiles(text: str, flags: int) -> bool:
     return True
 
 
-def _built_by_package() -> tuple[dict[str, list[tuple[str, int]]], set[str]]:
+def _built_by_package() -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
     spelled: dict[str, list[tuple[str, int]]] = {}
-    unspelled: set[str] = set()
+    handed: list[str] = []
     for module in _modules():
         assert module.__file__ is not None
         found, missed = _built(
             Path(module.__file__).read_text(encoding="utf-8"), vars(module), module.__name__
         )
         spelled |= found
-        unspelled |= missed
-    return spelled, unspelled
+        handed += missed
+    return spelled, handed
 
 
 def _offences_in(spelled: Mapping[str, list[tuple[str, int]]]) -> dict[str, list[str]]:
@@ -413,19 +494,21 @@ def _offences_in(spelled: Mapping[str, list[tuple[str, int]]]) -> dict[str, list
     }
 
 
-# Where the package compiles text the source does not spell, each with where that text comes from.
-# The test below fails on any place not named here, and on a place named here that no longer is.
-_HANDED = {
-    "stayfixed.profiles.model._locator": "a profile's `match`, read from every shipped profile",
-}
+# Where the package compiles text the source does not spell, one row per call, each with where
+# that text comes from. The test below fails on any place not named here, on a second call in a
+# place named once, and on a row whose call is gone.
+_HANDED = (
+    ("stayfixed.profiles.model._locator", "a profile's `match`, read from every shipped profile"),
+)
 
 
 def test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads() -> None:
     # Every pattern object a module holds at its top level, every shipped profile's locator, and
     # every pattern a call of `re` is given anywhere in the package's source -- inside a function,
     # from module constants, f-strings and `str.format`, with `re.escape`'s literals judged as
-    # none, one and two characters. Outside it: text a function is handed at run time, which is
-    # `_HANDED`'s places only, and the patterns the standard library builds itself (a glob's).
+    # none, one and two characters outside a choice a possessive group repeats. Outside it: text
+    # a function is handed at run time, and `re.escape` inside such a choice, which are
+    # `_HANDED`'s calls only, and the patterns the standard library builds itself (a glob's).
     # Mutations (oracle):
     # `mutations/`'s "the path grammar repeats its segments possessively", "a symbol path's parts
     # are a possessive repeat", "a flow mapping's plain scalar is a possessive repeat", "a footer's
@@ -439,7 +522,7 @@ def test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads() -> None:
     assert len([where for where in spelled if ".<module>:" not in where]) > 5
     found = {name: said for name, pattern in patterns.items() if (said := _offences_of(pattern))}
     assert found | _offences_in(spelled) == {}
-    assert unspelled == set(_HANDED)
+    assert Counter(unspelled) == Counter(place for place, _ in _HANDED)
 
 
 # Text planted where the walk has to look, each with what the scan must make of it: a shape refused
@@ -493,6 +576,27 @@ PLANTED = {
     "a function taken out of re": (
         'from re import match\n\n\ndef f(text):\n    return match(r"(?:ab+)*+", text)\n',
         "unspelled planted.<from re import>",
+    ),
+    "two calls of handed text in one function": (
+        "def f(pattern, other):\n    re.compile(pattern)\n    return re.compile(other)\n",
+        "unspelled planted.f, planted.f",
+    ),
+    "re.escape in a choice a possessive group repeats": (
+        'def f(lead, text):\n    return re.match(rf"(?:{re.escape(lead)}ab|cd)*+", text)\n',
+        "unspelled planted.f",
+    ),
+    "re.escape in a choice a greedy group repeats": (
+        'def f(lead, text):\n    return re.match(rf"(?:{re.escape(lead)}ab|cd)*", text)\n',
+        "admitted",
+    ),
+    "a name a closure reads from its function": (
+        'lead = "x"\n\n\ndef f(text):\n    lead = "(?:ab+)*+"\n\n'
+        "    def g():\n        return re.match(lead, text)\n\n    return g\n",
+        "unspelled planted.g",
+    ),
+    "a name a class body binds": (
+        'PATTERN = "x"\n\n\nclass C:\n    PATTERN = "(?:ab+)*+"\n    FOUND = re.compile(PATTERN)\n',
+        "unspelled planted.<module>",
     ),
 }
 
