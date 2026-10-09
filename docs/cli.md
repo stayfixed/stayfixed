@@ -2840,21 +2840,21 @@ not judge them, and says so, of every file whose frontmatter Claude Code reads f
 - every `*.md` at any depth below `.claude/agents`, since an agent's frontmatter is documented to
   carry hooks, though none ran in the measurement above.
 
-Each such file whose frontmatter (the lines between a first `---` line and the next one) holds a
-top-level `hooks` key is named as one whose hooks the row does not judge, a `warn`, never `red`. The
-top level is the indentation of the frontmatter's first line that is not blank, a comment or a lone
-tag or anchor.
-The key is found bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or
-among a flow mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested
-under another key, or inside a quoted or flow value on its line, is not one, though a top-level line
-inside one over lines is read as one. Claude Code may end the frontmatter at a `---` within a line
-and read a key indented by a tab (read from its program, not run), so the row reads it those ways
-too, naming the file if any holds `hooks`. Where a tab leads a key, or a top-level key cannot be
-read whole (an alias `*name`, a merge key `<<`, a `? ` key past its line, a quoted key over several
-lines), the file is otherwise named as one the row cannot tell about, a `warn`. Names are compared
-without case (`skill.md`, `.Claude/Skills`). Any path the row cannot read, a FIFO or a directory it
-cannot list among them, is named as one it can say nothing of, also a `warn`, and a path outside the
-path grammar, every name in it the repository's, as a file whose path the row does not print.
+Each such file whose frontmatter (between a first `---` line and the next) holds a top-level `hooks`
+key is named as one whose hooks the row does not judge, a `warn`, never `red`. Its top level is the
+indentation of its first line that is not blank, a comment or a lone tag or anchor. The key is found
+bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or among a flow
+mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested under another
+key, or inside a quoted or flow value on its line, is not one, though a top-level line inside one
+over lines is read as one. Claude Code may end the frontmatter at a `---` within a line and read a
+key indented by a tab (read from its program, not run), so the row reads it those ways too, naming
+the file if any holds `hooks`. Where a tab leads a key, a line opens with `--- `, or a top-level key
+cannot be read whole (an alias `*name`, a merge key `<<`, a `? ` key past its line, a quoted key
+over several lines), the file is otherwise named as one the row cannot tell about, a `warn`. Names
+are compared without case (`skill.md`, `.Claude/Skills`). Any path the row cannot read, a FIFO or a
+directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and a
+path outside the path grammar, every name in it the repository's, as a file whose path the row does
+not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and

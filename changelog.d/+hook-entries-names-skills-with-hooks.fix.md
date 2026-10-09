@@ -15,7 +15,7 @@ spelled bare, quoted either way, behind a tag or an anchor, or as a key of a flo
 `{name: x, hooks: {...}}`, tagged or not; nothing else of the YAML is parsed. Claude Code may end
 a frontmatter at a `---` within a line and read a key indented by a tab, so the row reads it those
 ways too. A file whose frontmatter has a top-level key the row cannot read whole, such as an alias
-(`*name`) or a merge key (`<<`), or a key led by a tab, and holds no `hooks` key in any
+(`*name`) or a merge key (`<<`), or a key led by a tab or a line opening with `--- `, and holds no `hooks` key in any
 reading, is named as one it cannot tell about. A file or directory
 the row cannot read, a FIFO among them, is named as one it cannot say anything about.
 A link inside those directories, or a nested `.claude` that is one, is read where it leads inside

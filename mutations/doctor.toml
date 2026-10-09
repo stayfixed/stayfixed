@@ -1749,7 +1749,7 @@ file = "src/stayfixed/doctor/frontmatter.py"
 before = """
     if _HOOKS in keys:
         return True
-    return None if untold else False
+    return None if untold or any(_MARKER.match(line) for line in content) else False
 """
 after = """
     if untold:
@@ -1758,6 +1758,36 @@ after = """
 """
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[beside-an-alias]",
+]
+
+# A line that opens with `---` and a blank is a document marker, which the reader cannot read past:
+# it says "cannot tell" where no key it reads is `hooks`, and never outranks one that is.
+[[mutation]]
+name = "a document marker line is read as a key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    return None if untold or any(_MARKER.match(line) for line in content) else False"
+after = "    return None if untold else False"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-marker-line]",
+]
+
+[[mutation]]
+name = "a document marker line outranks a hooks key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+    if _HOOKS in keys:
+        return True
+    return None if untold or any(_MARKER.match(line) for line in content) else False
+"""
+after = """
+    if any(_MARKER.match(line) for line in content):
+        return None
+    if _HOOKS in keys:
+        return True
+    return None if untold else False
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-document-marker-line]",
 ]
 
 [[mutation]]

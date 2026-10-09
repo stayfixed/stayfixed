@@ -83,6 +83,11 @@ _PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+|#[^\n]*+\s*+)++")
 # hours over one long line of blanks or tags.
 _PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
+# A line that opens with `---` and then a blank or its end, at the first column: a document marker
+# to YAML, which ends the document above it and starts another, not a key. A reader that reads it
+# as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
+# for, and only to say "cannot tell".
+_MARKER = re.compile(r"---(?:[ \t]|$)")
 
 
 class _Untold:
@@ -238,7 +243,8 @@ def declares_hooks(text: str) -> bool | None:
     and every reading says "no", no bound Claude Code may take answers otherwise.
 
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
-    (`_UNTOLD`) may be `hooks`, so where no key it reads is, the answer is `None`."""
+    (`_UNTOLD`) may be `hooks`, and so may a key in the document a marker line opens (`_MARKER`),
+    so where no key it reads is, the answer is `None`."""
     text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
     fenced, harness = _fenced(text.split("\n")), _harness_fenced(text)
     readings = [fenced[0]] if fenced else []
@@ -341,7 +347,7 @@ def _holds_hooks(lines: list[str]) -> bool | None:
         keys, untold = keys | more, untold or unsure
     if _HOOKS in keys:
         return True
-    return None if untold else False
+    return None if untold or any(_MARKER.match(line) for line in content) else False
 
 
 def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:

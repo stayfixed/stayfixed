@@ -1945,6 +1945,9 @@ HOOKS_SPELLED = {
         "!t # a comment\n  &a {name: probe, hooks: {}}\n"
     ),
     "a-flow-mapping-past-a-tab-after-the-indentation": "  \t{name: probe, hooks: {}}\n",
+    # A key the reader finds below a line it cannot read past, a document marker, still declares
+    # hooks. Mutation (oracle): `mutations/`'s "a document marker line outranks a hooks key".
+    "below-a-document-marker-line": "--- a second document\nhooks: {}\n",
 }
 
 
@@ -2048,6 +2051,10 @@ UNTOLD_SPELLED = {
     "a-tab-indented-key": "name: probe\n\thooks: {}\n",
     "a-fence-within-a-line-above-an-alias": "name: a---b\n*k : {}\n",
     "a-fence-within-a-quoted-key": '"a---b": x\n',
+    # A line opening with `---` and a blank, which YAML reads as a document marker and the row as
+    # the start of a key: what follows it is a document of its own, here a flow mapping holding
+    # `hooks`. Mutation (oracle): `mutations/`'s "a document marker line is read as a key".
+    "a-document-marker-line": "--- {name: probe, hooks: {}}\n",
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "
