@@ -12,10 +12,12 @@ reading the source rather than by running it, the way `tests/test_outbound.py` h
   interpreter (`sys.executable`, or a name holding one) with the launcher (a path ending
   `scripts/stayfixed`, or `LAUNCHER`) among its next three elements, or with `-m stayfixed` at any
   position (`-I -m stayfixed` included); a head that names the hook wrapper (`run-hook.sh`, a name
-  containing `wrapper`); a shell, as a literal or a name, whose next element names the wrapper
-  (`["sh", wrapper, …]`, `[BASH_AS_SH, wrapper, …]`); a head built from the word `stayfixed`
-  itself (the launcher run directly, `shutil.which("stayfixed")`); or `*stayfixed_argv(...)`,
-  which is the seam itself;
+  containing `wrapper`); a shell, as a literal or a name, handed the wrapper after its own options
+  and their arguments (`["sh", wrapper, …]`, `[BASH_AS_SH, "-o", "errexit", wrapper, …]`), or
+  running it under `-c` by name or as `$0`, behind `env` and its options and assignments or not,
+  and `env` running the wrapper itself (`["env", "A=1", wrapper, …]`); a head built from the word
+  `stayfixed` itself (the launcher run directly, `shutil.which("stayfixed")`); or
+  `*stayfixed_argv(...)`, which is the seam itself;
 - the first argument of a `subprocess` call, `os.system` or `os.popen`: a display with a literal
   head that is `stayfixed` or ends `/stayfixed` (the console script), `uv run stayfixed` or `uvx
   stayfixed`, `-m stayfixed`, or a wrapper path; and a string, as `shell=True` and those two take,
@@ -226,16 +228,25 @@ def _option(element: ast.expr) -> bool:
     return (_literal(element) or "").startswith("-")
 
 
+# The options of `env` and of a shell that take the next element as their argument, so that
+# argument is skipped with them rather than read as the program (`env -u HOME`, `sh -o errexit`).
+_ENV_ARGUMENTS = frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"})
+_SHELL_ARGUMENTS = frozenset({"-o", "-O"})
+
+
 def _wrapper_handed_to_a_shell(elements: list[ast.expr]) -> ast.expr | None:
     """The element naming the wrapper where `elements` hands it to a shell, or `None`: a literal
     shell, by its name or its path, or a program held in a name, then the wrapper. `env` may come
-    first, with its options and assignments, and the shell's own literal options (`-x`) may come
-    between it and the wrapper."""
+    first, with its options, their arguments and assignments, and may run the wrapper itself; the
+    shell's own literal options (`-x`, `-o errexit`) may come between it and the wrapper, and
+    under `-c` the wrapper is in the command or is `$0`, the element after it."""
     rest = list(elements)
     if rest and (_literal(rest[0]) or "").rsplit("/", 1)[-1] == "env":
         rest = rest[1:]
         while rest and ("=" in (_literal(rest[0]) or "") or _option(rest[0])):
-            rest = rest[1:]
+            rest = rest[2:] if _literal(rest[0]) in _ENV_ARGUMENTS else rest[1:]
+        if rest and _names_the_wrapper(rest[0]):
+            return rest[0]
     if not rest:
         return None
     head, rest = rest[0], rest[1:]
@@ -245,7 +256,11 @@ def _wrapper_handed_to_a_shell(elements: list[ast.expr]) -> ast.expr | None:
     if shell is not None and shell.rsplit("/", 1)[-1] not in SHELLS:
         return None
     while rest and _option(rest[0]):
-        rest = rest[1:]
+        if _literal(rest[0]) == "-c":
+            # The command runs the wrapper by naming it, or as `$0`, the element after it.
+            rest = [element for element in rest[1:3] if _names_the_wrapper(element)]
+            break
+        rest = rest[2:] if _literal(rest[0]) in _SHELL_ARGUMENTS else rest[1:]
     return rest[0] if rest and _names_the_wrapper(rest[0]) else None
 
 
@@ -459,15 +474,28 @@ def test_the_walk_reads_each_shape_it_claims_to() -> None:
     for argv in unseamed:
         assert _probe(f"def f():\n    x = {argv}\n") == [(argv, False)], argv
     # A shell handed the wrapper, by a literal or a name, which the walk once read as data, and
-    # then only with the wrapper straight after the shell. Mutations (declared): `mutations/`'s
-    # "the seam walk reads no launch headed by a shell" -> none is read; "the seam walk takes a
-    # shell's option for the program it runs" -> the `-x` one is not; "the seam walk reads no
-    # shell that env starts" -> the `env` one is not.
+    # then only with the wrapper straight after the shell; `env` running the wrapper itself, an
+    # option's argument and the wrapper as `$0` under `-c` escaped it too. Mutations (declared):
+    # `mutations/`'s "the seam walk reads no launch headed by a shell" -> none is read; "the seam
+    # walk takes a shell's option for the program it runs" -> the `-x` one is not; "the seam walk
+    # reads no shell that env starts" -> the `env` one is not; "the seam walk takes env's own
+    # option for the program it runs" -> the `-i` one is not; "the seam walk reads no wrapper env
+    # runs itself" -> the two with no shell are not; "the seam walk takes env's option argument for
+    # the program it runs" -> the `-u HOME` one is not; "the seam walk takes a shell's option
+    # argument for the program it runs" -> the `-o errexit` one is not; "the seam walk reads no
+    # wrapper a shell command runs as its $0" -> the `$0` one is not.
     for argv in (
         "['sh', str(root / 'hooks' / WRAPPER.name), 'open']",
         "[BASH_AS_SH, str(root / 'hooks' / WRAPPER.name), 'open']",
         "['sh', '-x', str(root / 'hooks' / WRAPPER.name), 'open']",
         "['/usr/bin/env', 'A=1', 'sh', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['env', '-i', 'sh', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['env', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['/usr/bin/env', 'A=1', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['env', '-u', 'HOME', 'sh', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['sh', '-o', 'errexit', str(root / 'hooks' / WRAPPER.name), 'open']",
+        "['sh', '-c', '. \"$0\"', str(root / 'hooks' / WRAPPER.name)]",
+        "['sh', '-c', f'. {wrapper}']",
     ):
         assert _probe(f"def f():\n    subprocess.run({argv})\n") == [(argv, False)], argv
     seamed_shell = (
