@@ -288,19 +288,19 @@ def declares_hooks(text: str) -> bool | None:
     reader may misread is named either way. So is one past `LINES_READ` or `CHARACTERS_READ`,
     which is not read.
 
-    The readings: the frontmatter as bounded above, and as Claude Code may bound it, by what its
-    program text shows rather than by a measured run, at the first `---` after the opening line
-    wherever in a line that stands (`_harness_fenced`); each with every tab that leads a line read
-    as two spaces too (`_untabbed`), as Claude Code's repair is read to; and, where one holds a
-    character Python reads as a blank or a line break and YAML does not, with each read as YAML 1.2
-    reads it, a character like a letter, and with NEL, LS and PS read as the line breaks YAML 1.1
-    reads them as. In each, the top level is the indentation of the first line that is neither
-    blank nor a comment: a mapping in block style has its keys there, and one in flow style opens
-    there with `{` (`_flow_keys`), behind any tag, anchor or comment and any tab after the
-    indentation, unless a colon follows where it closes, which makes it a block mapping's first
-    key. Behind a tag or an anchor alone on its line, a block mapping may start on a line below at
-    an indentation of its own, and its keys are read there too. A key is `hooks` bare or quoted
-    either way, its escapes read; nothing else of YAML is parsed."""
+    The readings: the frontmatter as bounded above, and as Claude Code bounds it, at the first `---`
+    after the opening line wherever in a line that stands (`_harness_fenced`), as Claude Code
+    2.1.293 was measured doing after a value on its line; each with every tab that leads a line read
+    as two spaces too (`_untabbed`), as Claude Code 2.1.293 was measured reading a frontmatter
+    indented by tabs throughout; and, where one holds a character Python reads as a blank or a line
+    break and YAML does not, with each read as YAML 1.2 reads it, a character like a letter, and
+    with NEL, LS and PS read as the line breaks YAML 1.1 reads them as. In each, the top level is
+    the indentation of the first line that is neither blank nor a comment: a mapping in block style
+    has its keys there, and one in flow style opens there with `{` (`_flow_keys`), behind any tag,
+    anchor or comment and any tab after the indentation, unless a colon follows where it closes,
+    which makes it a block mapping's first key. Behind a tag or an anchor alone on its line, a block
+    mapping may start on a line below at an indentation of its own, and its keys are read there too.
+    A key is `hooks` bare or quoted either way, its escapes read; nothing else of YAML is parsed."""
     start = 1 if text.startswith(chr(0xFEFF)) else 0
     fenced, harness = _fenced(text, start), _harness_fenced(text, start)
     ends = [bound[1] for bound in (fenced, harness) if bound is not None]

@@ -337,9 +337,9 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
     # mtime deliberately unequal to the source's — the exact shape a stale leftover has.
     #
     # DERIVED from the running magic rather than written as some released version's literal,
-    # and that is not laziness: CI runs this suite on 3.11, 3.12 and 3.13, so any literal
-    # naming one of them is the RUNNING interpreter's magic on that leg and the test would
-    # then assert the opposite of what it means. The `!=` below is what the derivation has to
+    # and that is not laziness: CI runs this suite on every interpreter in `ci.yml`'s matrix, so
+    # any literal naming one of them is the RUNNING interpreter's magic on that leg and the test
+    # would then assert the opposite of what it means. The `!=` below is what the derivation has to
     # buy, so it is asserted rather than assumed.
     foreign_magic = bytes([importlib.util.MAGIC_NUMBER[0] ^ 0xFF]) + importlib.util.MAGIC_NUMBER[1:]
     assert len(foreign_magic) == 4

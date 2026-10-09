@@ -394,11 +394,11 @@ def main(argv: list[str]) -> int:
     # Run here rather than below because the row above needs its refusal: `doctor`'s
     # `ignored-env` row is emitted because the variable is SET and never checks that the value
     # was ignored, so the sentence it prints stays true under the mutation it exists to catch.
-    # Measured: deleting the tty gate in `config/machine.py` — the gate that module's own
-    # docstring calls its whole security record — left that row reporting ok while the clone's
-    # configuration was being honoured. `attach` resolves the overlay through
-    # `machine_config_path`, and its refusal names the overlay it resolved, so which of the two
-    # files was read is a fact this scenario can read rather than assert.
+    # Measured while `config/machine.py` still honoured those variables at a terminal: deleting
+    # that tty gate, which the module's docstring then called its whole security record, left
+    # that row reporting ok while the clone's configuration was being honoured. `attach` resolves
+    # the overlay through `machine_config_path`, and its refusal names the overlay it resolved, so
+    # which of the two files was read is a fact this scenario can read rather than assert.
     inside = planted.clone / "evil" / "overlay" / "projects" / "smoke" / "memory"
     attached = stayfixed(
         plugin_root,

@@ -1758,7 +1758,8 @@ def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -
 
 # Frontmatters the row read as having no end, so as none, which Claude Code may end at the first
 # `---` after the opening line wherever that stands: in a longer run of dashes, or after a key's
-# value on its line. Its program text shows that bound; no run measured it, so the row reads both.
+# value on its line. Claude Code 2.1.293 was measured ending one after a value on its line; the row
+# reads both bounds.
 HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE = {
     "a-longer-run-of-dashes": "---\nhooks: {}\n----\nThe body.\n",
     "after-a-value": "---\nhooks: {}\nname: probe---\nThe body.\n",

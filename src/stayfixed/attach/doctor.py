@@ -168,9 +168,10 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
             harness = harness_memory_path(context.root, context.home)
         except Refusal:
             # Refused only for a home it cannot name: a user the password database lists no home
-            # for, off a terminal, or a terminal whose `HOME` is empty, which names none
-            # (`config.machine.owner_home`). That is this machine's state and not a broken check,
-            # so it is a warning that says what it costs; `ignored-env` says why.
+            # for, off a terminal or at one where `HOME` is unset, or a terminal whose `HOME` is
+            # empty, which names none (`config.machine.owner_home`). That is this machine's state
+            # and not a broken check, so it is a warning that says what it costs; `ignored-env`
+            # says why.
             if override_is_honoured() and home_is_empty():
                 return Row(
                     WARN,

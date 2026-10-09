@@ -94,9 +94,9 @@ class Store:
     # The machine file this store was resolved against, carried rather than re-passed.
     #
     # Not an optional keyword on every function that reads the store: a `None` there is not
-    # inert — it re-reads `$XDG_CONFIG_HOME/stayfixed/config.toml` out of the process
-    # environment, silently changing `permitted_roots`, the index destination, and which
-    # `trust.json` is consulted — so a caller that forgot one argument would get a different
+    # inert — it re-reads the machine file under the password database's home rather than the
+    # one `resolve` was given, silently changing `permitted_roots`, the index destination, and
+    # which `trust.json` is consulted — so a caller that forgot one argument would get a different
     # overlay, a different write target and a different trust record, with nothing to say so.
     #
     # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
