@@ -831,7 +831,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
 ]
 
-# Guards that shipped without an entry, and one a review found asserting nothing.
+# A guard that shipped without an entry.
 
 # `doctor files`' own arm for a record that is present and is not a record. `_guarded` reds
 # every non-`OSError` exception, so letting `UnreadableRecord` escape still produces a red row
@@ -845,6 +845,12 @@ after = "    except UnreadableRecord:\n        raise\n        return Row("
 reddens = [
   "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
 ]
+
+# ---------------------------------------------------------------------------------------------
+# Guards from a whole-branch review, each one an assertion that review added or changed, and
+# each entry's `after` chosen so the test reddens on the sentence or the value only the correct
+# behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
+# also produces.
 
 # `drift()` walks the record for the missing-from-tree direction and this row walked
 # `HASHED_FILES` for both, which is the same list only while the installed record and the

@@ -653,6 +653,8 @@ reddens = [
   "tests/setup/test_setup.py::test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command",
 ]
 
+# --- install path: the setup and overlay guards ------------------------------------------
+#
 # The count `doctor/__init__.py` states and `docs/cli.md` repeats. It was "exactly two" and the
 # true answer is four — one launch this area makes and three from inside the areas its rows call,
 # where nobody counting `subprocess.run` under `doctor/` would see them. The number moving
@@ -790,6 +792,8 @@ file = "src/stayfixed/overlay/publish.py"
 before = '            runner, ["repo", "create", slug, "--public", "--description", DESCRIPTION], cwd'
 after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
 reddens = ["tests/overlay/test_publish.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]
+
+# Guards that shipped without an entry, and one a review found asserting nothing.
 
 # An existing repository under the given name that is not public is refused, not flipped. A template
 # is generated from by other accounts only when it is public, and a repository somebody made private
@@ -1489,6 +1493,10 @@ reddens = [
   "tests/setup/test_commands.py::test_setup_with_no_home_in_the_password_database_names_machine_and_writes_nothing",
 ]
 
+# The machine file goes under the home the password database records unless `--machine` names
+# one. `setup` says so where `HOME` names another directory, and a directory there it cannot write
+# is a failure that names it and says no other place is one a hook reads, which it does not say of
+# a file `--machine` named.
 [[mutation]]
 name = "setup keeps quiet about which home it wrote under while the homes differ"
 file = "src/stayfixed/setup/commands.py"
