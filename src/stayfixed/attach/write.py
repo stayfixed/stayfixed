@@ -1226,9 +1226,10 @@ class Gates:
     `attach --check` take one order and cannot come to disagree about it. `_plan` refuses at the
     first stop no flag it was given answers, and reads nothing past it. `--check` takes every stop
     and reports it: it reads past a flag's stop as the run does with the flag, and past the mode's
-    and a checkout's with no `origin` only for the rest of its report, so a read the run makes only
-    once every stop before it is passed is made only where none was the mode's. `diff` and `real`
-    are what the reads found, for the plan and the report.
+    only for the rest of its report, so a read the run makes only once every stop before it is
+    passed is made only where none was the mode's. Past a checkout's with no `origin` it reads
+    nothing, as the run reads nothing: the iteration ends there. `diff` and `real` are what the
+    reads found, for the plan and the report.
     """
 
     def __init__(self, root: Path, config: Config, binding: Binding) -> None:
