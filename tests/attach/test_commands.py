@@ -19,6 +19,7 @@ import pytest
 from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
+from stayfixed.overlay.layout import COMMON_MEMORY
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
@@ -1367,6 +1368,54 @@ def test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_ear
         "",
     )
     assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("channel", ["key", "link"])
+def test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    channel: str,
+) -> None:
+    # A run with `HOME` the database's home and the store approved gives a harness the store: the
+    # link under that home, or the settings fallback where a real directory sits in the link's
+    # place. Once a pull lapses the approval, a later run where `HOME` differs makes no harness
+    # link, and still takes back what the earlier one gave: the link under the database's home,
+    # and the key, which every harness opening this project reads whatever its `HOME`. Mutations
+    # (oracle): `mutations/`'s "attach keeps a lapsed store's settings fallback on a run that
+    # withholds the harness link" -> the key stays, and the line says this run recorded it;
+    # "attach keeps a lapsed store's harness link under the database's home on a run that
+    # withholds it" -> the link stays.
+    from stayfixed.attach.api import ledger
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    link = _harness_link(owner, root)
+    if channel == "key":
+        link.mkdir(parents=True)
+    assert invoke(argv) == 0
+    # Non-vacuous: the run with `HOME` the database's home gave the channel this case takes back.
+    if channel == "key":
+        assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    else:
+        assert link.resolve() == (root / DEFAULT_MEMORY).resolve()
+    (store.parents[2] / COMMON_MEMORY / "pulled.md").write_text("# n\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    settings = "settings merged" if channel == "key" else "settings unchanged"
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); {settings}; binding already recorded; "
+        f"{_WAITS}; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert not os.path.lexists(root / SETTINGS)
+    assert ledger(root).settings_keys == ()
+    assert not fsops.is_symlink(link)
 
 
 def test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(

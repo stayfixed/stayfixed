@@ -2765,6 +2765,26 @@ reddens = [
   "tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check",
 ]
 
+# A run that withholds the harness link still takes back what a store whose approval lapsed was
+# given by an earlier one: the settings fallback, and the link under the database's home.
+[[mutation]]
+name = "attach keeps a lapsed store's settings fallback on a run that withholds the harness link"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.withheld:"
+after = "    if planned.unread is not None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[key]",
+]
+
+[[mutation]]
+name = "attach keeps a lapsed store's harness link under the database's home on a run that withholds it"
+file = "src/stayfixed/attach/write.py"
+before = "    withheld = Withhold(anchor_home()) if withhold else None"
+after = "    withheld = Withhold(None) if withhold else None"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[link]",
+]
+
 # Off a terminal, where `HOME` is not the database's home, the `attached` row judged the link under
 # the database's home, which a harness started with this `HOME` does not read, and was wrong both
 # ways. It judges neither home and says what `attach` says, with the way to have the link under
