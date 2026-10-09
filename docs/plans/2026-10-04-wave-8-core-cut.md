@@ -1446,7 +1446,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 | `hooks/hooks.json` entries (of them `SessionStart`) | 13 (11) | 9 (7) |
 | Mutation entries | 1,225 | 1,648 |
 | Discovered areas | 12 | 11 |
-| Core imports into delivery | 12 | 2 (both in `setup/run.py`, the pinned crossing) |
+| Core imports into delivery | 12 | 2 (both in `src/stayfixed/setup/run.py`, the pinned crossing) |
 | Tracked files | 476 | 555 |
 
 `build_parser` now takes the registrars, so the command count is
@@ -1491,10 +1491,14 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
 
   Each wave had a task review and scoped re-reviews. A final whole-branch review found one more
   Important issue: an import cycle that `attach --check` introduced. `check` moved to
-  `attach/check.py`, and `tests/test_areas.py` now counts imports inside functions too. The same
+  `src/stayfixed/attach/check.py`, and the module graph test, since moved under `tests/boundaries/`,
+  now counts imports inside functions too. The same
   review found check-versus-run gaps that predate the branch. Eleven cases were measured, and ten
   of them already ended differently in 0.2.0. `attach --check` now calls the run's own refusals
-  and planning, so it ends with the run's code and line by construction. Outside overlay mode,
+  and planning, so where the run refuses or fails before its first write it ends with the run's
+  code and line, past the gates it reports instead: a widening without `--yes` and a mismatch
+  without `--trust-remote`, which it reads past, and a checkout with no `origin` and a memory group
+  that never moved, which it reports with exit `1`. Outside overlay mode,
   anything past the binding gives way to the run's refusal of the mode. A last scoped
   re-review found two more gaps: the module graph gave a module no edge to the packages above the
   module it imports, and `--check` counted memory groups at a checkout with no `origin`. Both were
@@ -1526,8 +1530,8 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
     Claude Code cannot set it.
 
   Measured against `v0.2.0` through each shipped wrapper and launcher: every hook entry with a
-  planted program for every name in `/bin` and `/usr/bin` ran `git`, `git-lfs`, `dirname`, `env`
-  and `cat` from the clone under 0.2.0, and none under the branch, also with the block presetting
+  planted program for every name in `/bin` and `/usr/bin` ran `git`, `git-lfs`, `dirname` and `env`
+  from the clone under 0.2.0, and none under the branch, also with the block presetting
   `STAYFIXED_HOOK_WRAPPER=0`. `stayfixed gate` run without the wrapper, stdin not a terminal, ran
   a `git` found only elsewhere on `PATH` under both. One residual cannot be closed inside
   stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed` that
@@ -1540,9 +1544,9 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   acts on both before its first line (measured against `/bin/sh` directly, not through Claude
   Code). `SECURITY.md` puts it out of scope beside the loader variables, as the harness's to
   filter, and it should be reported to the harness.
-- **Every user-visible change since 0.2.0 is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
-  It holds 37 bullets, each measured on `v0.2.0` and on the branch, and each pointing at its full
-  entry.
+- **Every change a 0.2.0 caller must act on is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
+  Other user-visible changes have their own entries and are not repeated there. After the
+  pull request's review it holds 46 bullets, one contract each, each pointing at its full entry.
 
 Recorded, not changed:
 
@@ -1574,18 +1578,85 @@ Left for later, by the owner's decision of 2026-10-07:
    `HOME` differs from the password database's home. The hook path no longer makes that link
    itself.
 
-Near limits:
+Near limits, as the pull request leaves them:
 
-- `mutations/install.toml` holds 181,291 of 196,608 bytes. It is the next group to split, along
-  `doctor/`.
-- `docs/cli.md` is 188 bytes under the 256 KiB a plugin directory allows one file
+- `mutations/install.toml` held 181,291 of 196,608 bytes and was split along `doctor/` during the
+  review fixes; the largest group file is now `mutations/core.toml`, at 183,007.
+- `docs/cli.md` is 498 bytes under the 256 KiB a plugin directory allows one file
   (`tests/test_payload.py`). The next addition needs a split or a cut first.
 - An unreadable overlay `codex/` directory makes `attach` fail with an internal error
   (`PermissionError`), as 0.2.0 did. Since the run refuses a missing `origin` before it reads that
   directory, `--check` and the run end on different lines there. It is a defect of the run, left
   for its own fix.
-- `hook-entries` reads each candidate skill file up to the general 64 MiB cap only to check its
-  frontmatter. A smaller cap is optional.
+- `hook-entries` reads a frontmatter only within a skill file's first 8,388,608 characters and
+  10,000 lines, and names a file past either as one it cannot tell about.
+
+### The pull request's own final review (2026-10-08 to 2026-10-09)
+
+An external review of the pull request at `afbda57`, five seats and a controller pass, found it
+not ready to merge: one blocker and six Important findings, with Minors in every area.
+
+- **The blocker:** CI was red on every interpreter it runs, while the pull request reported a
+  green suite measured on Python 3.14 alone. `contained()` asked each ancestor with
+  `Path.is_symlink()`, which raises on a name past the system's limit up to 3.13 and answers
+  `False` from 3.14. Every question about what is at a path now goes through `fsops` predicates
+  that answer one way on every interpreter, a test refuses `pathlib`'s, and CI gained a 3.14 leg.
+- **Important:**
+  - `attach` run from a linked worktree wrote the settings fallback without hiding it;
+  - a `HOME` inside the clone still chose the global configuration of hook-path git: every `git`
+    on the hook path, the wrapper's own included, now gets the password database's home, so the
+    statement above that `HOME` stays kept for git no longer holds on the hook path;
+  - `hook-entries` compared a grant field by field; it now compares the whole entry;
+  - core `doctor` carried the memory area's harness-link wording; the memory area's own
+    `harness-link` row now says it;
+  - `src/stayfixed/doctor/entries.py` held three responsibilities; it is split into the
+    frontmatter reader, the walk for hooked files and the judgement;
+  - the pull request's text, these Findings and two release-note entries misstated facts the code
+    settles.
+
+The fixes ran on the same branch, one wave at a time. Each wave was reviewed, then fixed in rounds
+until its review found nothing Critical or Important:
+
+- A: one answer to each path fault on every interpreter (one fix round);
+- B: behaviour at the edges, and the home the wrapper's git gets, held under zsh as `/bin/sh`, a
+  NixOS `id` and a user named by digits (two rounds);
+- C: `doctor`'s structure and the frontmatter reader (six rounds, the reader's);
+- R: the remaining patterns that read their input in more than linear time or memory;
+- E1: the split of `mutations/install.toml` along `doctor/`;
+- P: the possessive-repeat bug of Python 3.11.0 to 3.11.4 (one round);
+- D: simplifications, and an empty `HOME` read as a value that names no home (one round);
+- E: the boundary rules under `tests/boundaries/`, and every quoted mutation name read (two
+  rounds);
+- F: the documents, the release notes and this record.
+
+Over the review the mutation set grew from 1,858 to 2,129 entries.
+
+The owner's decisions:
+
+- Python's floor stays 3.11, since Debian 12's system Python is 3.11.2. The patterns that 3.11.0 to
+  3.11.4 read differently were rewritten to shapes those releases read alike, and CI's
+  `checks (ubuntu-latest, 3.11.4)` leg holds them, rather than the floor moving to 3.11.5.
+- The frontmatter reader answers "no" only for a frontmatter inside a plain YAML subset it reads
+  exactly, and "could not tell" for any other in which no reading finds `hooks`. Claude Code
+  2.1.293 was one of the four oracles it was measured against. An oracle of Claude Code's own
+  parse kept in the repository is left as an improvement after the release, one an outside
+  contributor may take.
+- `attach` off a terminal, where `HOME` is not the database's home, withholds only the harness
+  memory link and says so, and `detach` withdraws a link to the store under both homes.
+- The wrapper's list of `git` paths stays spelled twice, the two held equal by a test.
+- From 2026-10-09 only a Critical or Important finding opened another round. Every Minor went to
+  the follow-ups below.
+
+Not settled here: the review's first point on the pull request's text, how `HOME` reaches a hook,
+waits on the owner.
+
+Follow-ups, to file when the pull request closes:
+
+- `setup` writes the machine file before it finds that `--home` cannot be written, and ends in an
+  internal error when `--home` names a directory it cannot create.
+- What Claude Code does with an empty `HOME`, which the tests take to be a relative `.claude`, is
+  unmeasured.
+- An oracle of Claude Code's frontmatter parse for the skill reader.
 
 ### Pre-dispatch review (2026-10-04)
 
