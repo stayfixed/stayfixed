@@ -3020,8 +3020,18 @@ reddens = [
 [[mutation]]
 name = "the withheld link line for a user with no home asks only that HOME be set"
 file = "src/stayfixed/memory/hooks.py"
-before = '    "set to a home directory to make it",'
-after = '    "set to make it",'
+before = '    "set to a home directory, and start sessions with that HOME",'
+after = '    "set, and start sessions with that HOME",'
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
+]
+
+# A session with no `HOME`, or an empty one, reads no link `attach` makes under a terminal's.
+[[mutation]]
+name = "the withheld link line for a user with no home leaves sessions on the HOME they had"
+file = "src/stayfixed/memory/hooks.py"
+before = '    "set to a home directory, and start sessions with that HOME",'
+after = '    "set to a home directory",'
 reddens = [
   "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
 ]

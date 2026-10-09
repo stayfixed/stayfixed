@@ -103,12 +103,13 @@ NO_HARNESS_LINK_NO_HOME = Withheld(
 # A user the database lists no home for: no `HOME` agrees with no home, so the cause is the
 # missing entry and not `HOME`, and an overlay store is still linked by `attach` from a terminal,
 # under the `HOME` it reads there, which has to name a home: unset or empty, it names none, and
-# `attach` refuses.
+# `attach` refuses. Only a harness started with that same `HOME` reads the link, and the session
+# this row speaks for may have none, or an empty one, so the remedy says to start sessions with it.
 NO_HARNESS_LINK_OVERLAY_NO_HOME = Withheld(
     "the password database lists no home directory for this user, so a hook makes no harness "
     "memory link",
     "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal with HOME "
-    "set to a home directory to make it",
+    "set to a home directory, and start sessions with that HOME",
 )
 # An empty `HOME` names no home (`config.machine.homes_agree`): the harness finds no memory
 # directory of this user's through it, so no link anyone makes is one it reads, and `attach` at a

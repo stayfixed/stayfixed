@@ -412,10 +412,14 @@ def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
         assert "stayfixed attach --store" in line.remedy
         if database == "no entry":
             # `attach` at a terminal links under the `HOME` it reads there, which has to name a
-            # home: an empty one is set and names none. Mutation (oracle): `mutations/`'s "the
-            # withheld link line for a user with no home asks only that HOME be set".
-            assert line.remedy.endswith(
-                "from a terminal with HOME set to a home directory to make it"
+            # home: an empty one is set and names none. Only a session started with that `HOME`
+            # reads the link, and this one's may be unset or empty, so the line says so too.
+            # Mutations (oracle): `mutations/`'s "the withheld link line for a user with no home
+            # asks only that HOME be set" and "the withheld link line for a user with no home
+            # leaves sessions on the HOME they had".
+            assert line.remedy == (
+                "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a "
+                "terminal with HOME set to a home directory, and start sessions with that HOME"
             )
     else:
         assert line == (NO_HARNESS_LINK if database == "another home" else NO_HARNESS_LINK_NO_HOME)
