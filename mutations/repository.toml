@@ -1951,8 +1951,8 @@ reddens = [
 [[mutation]]
 name = "the citation spelling rule lets a comma or a colon through"
 file = "tests/declarations.py"
-before = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[\\s#(]*"')"""
-after = """_UNREAD = re.compile("`mutations" + r'/`[\\s#(]*"')"""
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
 ]
@@ -1960,11 +1960,59 @@ reddens = [
 [[mutation]]
 name = "the citation spelling rule reads no further than the set's own line"
 file = "tests/declarations.py"
-before = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[\\s#(]*"')"""
-after = """_UNREAD = re.compile("`mutations" + r'/`[,:]?[ #(]*"')"""
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[ #(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
 ]
+
+[[mutation]]
+name = "the citation spelling rule misses a quote straight after a mutation's lead"
+file = "tests/declarations.py"
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"')'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+# A quote of a declared name is a citation, and one the reader does not read is a name nothing
+# checks: 292 were, in lists the reader stopped in and in comments with no anchor at all. The walk
+# takes an entry's own `name` line for the declaration it is, and an anchor that reads no name
+# vouches for nothing.
+[[mutation]]
+name = "a quoted entry name the citation reader skips is never told"
+file = "tests/declarations.py"
+before = '        if quoted.start("name") in read or text.startswith(_DECLARES, line_start):'
+after = "        if True:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+]
+
+[[mutation]]
+name = "a quoted entry name that wraps is never told"
+file = "tests/declarations.py"
+before = '''    spelled = (r"[\s#]+".join(map(re.escape, name.split())) for name in sorted(names))'''
+after = '''    spelled = (" ".join(map(re.escape, name.split())) for name in sorted(names))'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+]
+
+[[mutation]]
+name = "the citation walk reads an entry's own name line as a citation"
+file = "tests/declarations.py"
+before = '        if quoted.start("name") in read or text.startswith(_DECLARES, line_start):'
+after = '        if quoted.start("name") in read:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+  "tests/scripts/test_mutation_oracle.py::test_every_citation_is_spelled_the_way_the_citation_reader_reads",
+]
+
+[[mutation]]
+name = "an anchor that reads no name is never told"
+file = "tests/declarations.py"
+before = "        if _QUOTED.match(text, at + len(ANCHOR)) is None:"
+after = "        if False:"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_an_anchor_that_reads_no_name_is_told"]
 
 # The plugin directory holds the version for a reviewer when a file other than an image or a font
 # is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.

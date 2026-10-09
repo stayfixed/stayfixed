@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import re
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -37,9 +38,10 @@ _ARROW = re.compile(
 )
 _WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")
 # The set's name followed by a quoted name through a comma or a colon rather than `'s` is a
-# citation `cited_names` never reads, so nothing would notice that name going stale. Built in
-# pieces for the reason `ANCHOR` is.
-_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"')
+# citation `cited_names` never reads, so nothing would notice that name going stale; so is a quote
+# straight after a mutation's lead with no set named, which `unread_names` cannot see once the
+# name it quotes is no entry's. Built in pieces for the reason `ANCHOR` is.
+_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')
 
 
 @functools.cache
@@ -66,15 +68,14 @@ def _one_passage(said: str, comment: bool) -> bool:
     )
 
 
-def cited_names(text: str) -> list[str]:
-    """Every entry name `text` cites, each with its line wraps read as single spaces."""
-    names: list[str] = []
+def _read(text: str) -> Iterator[re.Match[str]]:
+    """The match of each quoted name `text` cites, in order."""
     at = text.find(ANCHOR)
     while at != -1:
         comment = text[text.rfind("\n", 0, at) + 1 : at].lstrip().startswith("#")
         quoted = _QUOTED.match(text, at + len(ANCHOR))
         while quoted is not None:
-            names.append(" ".join(_WRAP.sub(" ", quoted.group("name")).split()))
+            yield quoted
             further = _FURTHER.match(text, quoted.end())
             if further is None:
                 further = _ARROW.match(text, quoted.end())
@@ -82,10 +83,54 @@ def cited_names(text: str) -> list[str]:
                     further = None
             quoted = further
         at = text.find(ANCHOR, at + len(ANCHOR))
-    return names
+
+
+def _name(quoted: re.Match[str]) -> str:
+    return " ".join(_WRAP.sub(" ", quoted.group("name")).split())
+
+
+def cited_names(text: str) -> list[str]:
+    """Every entry name `text` cites, each with its line wraps read as single spaces."""
+    return [_name(quoted) for quoted in _read(text)]
 
 
 def unread_citations(text: str) -> list[int]:
     """The line of each citation in `text` spelled some other way than `ANCHOR`, which
     `cited_names` does not read."""
     return [text.count("\n", 0, found.start()) + 1 for found in _UNREAD.finditer(text)]
+
+
+def empty_anchors(text: str) -> list[int]:
+    """The line of each `ANCHOR` in `text` that `cited_names` reads no name after."""
+    lines = []
+    at = text.find(ANCHOR)
+    while at != -1:
+        if _QUOTED.match(text, at + len(ANCHOR)) is None:
+            lines.append(text.count("\n", 0, at) + 1)
+        at = text.find(ANCHOR, at + len(ANCHOR))
+    return lines
+
+
+@functools.cache
+def _quoting(names: frozenset[str]) -> re.Pattern[str]:
+    # A name may wrap wherever it has a space, as `_WRAP` reads it.
+    spelled = (r"[\s#]+".join(map(re.escape, name.split())) for name in sorted(names))
+    return re.compile('"(?P<name>' + "|".join(spelled) + ')"')
+
+
+# A line that opens with this declares the name it quotes: an entry's own `name` in `mutations/`.
+_DECLARES = "name = "
+
+
+def unread_names(text: str, names: Iterable[str]) -> list[tuple[int, str]]:
+    """Each place `text` quotes one of `names` where `cited_names` does not read it, as its line and
+    the name: a citation the reader cannot see, so nothing would notice that name going stale. A
+    line that opens with `name = ` declares its name rather than citing it."""
+    read = {quoted.start("name") for quoted in _read(text)}
+    unread = []
+    for quoted in _quoting(frozenset(names)).finditer(text):
+        line_start = text.rfind("\n", 0, quoted.start()) + 1
+        if quoted.start("name") in read or text.startswith(_DECLARES, line_start):
+            continue
+        unread.append((text.count("\n", 0, quoted.start()) + 1, _name(quoted)))
+    return unread
