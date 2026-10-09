@@ -81,8 +81,8 @@
 # because bash 3.2 in POSIX mode refuses `unset -f [` as not a valid identifier, and an imported `[`
 # then ran on every test. dash, busybox ash, ksh93 and zsh import no functions and the line removes
 # nothing; stderr is discarded because native zsh names each absent one. What the shell acts on
-# before this line, `SHELLOPTS` with `PS4` or a loader variable, no line here can refuse, and it is
-# the harness's to filter (`SECURITY.md`).
+# before this line, `SHELLOPTS` with `PS4` or a loader variable, no line here can refuse, and
+# Claude Code passes it on from a trusted folder by design (`SECURITY.md`).
 unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null
 set -u
 

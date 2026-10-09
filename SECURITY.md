@@ -112,8 +112,11 @@ Out of scope:
   (bash 3.2.57) directly: the program ran in a `sh -c` handed a hook's command line, before that
   command started, and in a script whose first line was `set +x`. The shell that runs a
   shell-form hook command is the harness's, and the wrapper's own `/bin/sh` acts on both before
-  its first line, so, as with the loader's variables, no wrapper can refuse them: they are the
-  harness's to filter from a hook's environment, and the harness is where to report them.
+  its first line, so, as with the loader's variables, no wrapper can refuse them. Claude Code does
+  not filter them either, by design: its settings reference applies an `env` block to every
+  session and its subprocesses, and once you trust a folder, that folder's `env` block and its
+  hooks run in your shells before stayfixed starts. Trust a folder in Claude Code only as far as
+  you would run its code.
 
 ## Supported versions
 

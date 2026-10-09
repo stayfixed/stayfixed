@@ -1542,8 +1542,9 @@ Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and
   the wrapper's builtins. What does not: `SHELLOPTS=xtrace` with `PS4='$(program)'` runs the
   program in the harness's own `sh -c` before the wrapper starts, and the wrapper's `/bin/sh`
   acts on both before its first line (measured against `/bin/sh` directly, not through Claude
-  Code). `SECURITY.md` puts it out of scope beside the loader variables, as the harness's to
-  filter, and it should be reported to the harness.
+  Code). `SECURITY.md` puts it out of scope beside the loader variables. Claude Code applies a
+  trusted folder's `env` block to every process it starts and treats that as working as
+  designed, so there is nothing to report to it either.
 - **Every change a 0.2.0 caller must act on is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
   Other user-visible changes have their own entries and are not repeated there. After the
   pull request's review it holds 46 bullets, one contract each, each pointing at its full entry.
