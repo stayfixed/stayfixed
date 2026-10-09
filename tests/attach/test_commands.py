@@ -1190,17 +1190,16 @@ def test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words(
 # password database records: written out here rather than imported from the code under test.
 _UNREAD = {
     "elsewhere": (
-        "HOME is not this user's home in the password database, and off a terminal the harness "
-        "memory link goes only under that home, where a harness started with this HOME does not "
-        "look, so attach run here makes none; run `stayfixed attach --store "
-        "<overlay>/projects/<project>/memory` from a terminal, where HOME decides where the link "
-        "goes, or start sessions with HOME set to that home and run it in one"
+        "attach run here makes no harness memory link, since off a terminal it goes only under "
+        "this user's home in the password database and a harness started with this HOME looks "
+        "under HOME; run `stayfixed attach --store <overlay>/projects/<project>/memory` from a "
+        "terminal, or in a session started with HOME set to that home"
     ),
     "empty": (
-        "HOME is empty, so it names no home directory, and off a terminal the harness memory link "
-        "goes only under the home the password database records, where a harness started with this "
-        "HOME does not look, so attach run here makes none; start sessions with HOME set to that "
-        "home and run `stayfixed attach --store <overlay>/projects/<project>/memory` in one"
+        "attach run here makes no harness memory link, since off a terminal it goes only under "
+        "this user's home in the password database and a harness started with an empty HOME does "
+        "not look there; run `stayfixed attach --store <overlay>/projects/<project>/memory` in a "
+        "session started with HOME set to that home"
     ),
 }
 _WAITS = (
@@ -1339,6 +1338,35 @@ def test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_
     )
     assert not os.path.lexists(root / SETTINGS)
     assert SETTINGS not in (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+
+
+def test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_earlier_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A run with `HOME` the database's home, the store approved and a real directory where the
+    # harness link goes, records the settings fallback; a later run where `HOME` differs leaves
+    # that key as it stands and makes no link, so its line must not say the key "was recorded …
+    # instead", which reads as its own act beside a note that it makes none. Mutation (oracle):
+    # `mutations/`'s "attach tells a fallback key it leaves as one it recorded".
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    _harness_link(owner, root).mkdir(parents=True)
+    assert invoke(argv) == 0
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        "attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        "recorded; autoMemoryDirectory stays in .claude/settings.local.json, where an earlier "
+        f"attach recorded it; `stayfixed detach` removes it; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
 
 
 def test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(

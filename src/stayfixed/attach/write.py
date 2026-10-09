@@ -1399,17 +1399,15 @@ class UnreadHome:
 
 
 HOME_DIFFERS = UnreadHome(
-    "HOME is not this user's home in the password database, and off a terminal the harness memory "
-    "link goes only under that home, where a harness started with this HOME does not look, so "
-    "attach run here makes none",
-    f"run `{ATTACH_STORE}` from a terminal, where HOME decides where the link goes, or start "
-    "sessions with HOME set to that home and run it in one",
+    "attach run here makes no harness memory link, since off a terminal it goes only under this "
+    "user's home in the password database and a harness started with this HOME looks under HOME",
+    f"run `{ATTACH_STORE}` from a terminal, or in a session started with HOME set to that home",
 )
 HOME_EMPTY = UnreadHome(
-    "HOME is empty, so it names no home directory, and off a terminal the harness memory link goes "
-    "only under the home the password database records, where a harness started with this HOME "
-    "does not look, so attach run here makes none",
-    f"start sessions with HOME set to that home and run `{ATTACH_STORE}` in one",
+    "attach run here makes no harness memory link, since off a terminal it goes only under this "
+    "user's home in the password database and a harness started with an empty HOME does not look "
+    "there",
+    f"run `{ATTACH_STORE}` in a session started with HOME set to that home",
 )
 
 
@@ -1574,7 +1572,14 @@ def _carry_out(
     if keys != carried:
         _write_ledger(root, planned, keys)
         written = True
-    if keys:
+    if keys and links.withheld:
+        # Left as an earlier run recorded it, and said so: "was recorded" would read as this run's
+        # act, beside a note that this run makes no link at all.
+        notes.append(
+            f"{FALLBACK_KEY} stays in {LOCAL_SETTINGS}, where an earlier attach recorded it; "
+            "`stayfixed detach` removes it"
+        )
+    elif keys:
         notes.append(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `stayfixed detach` removes it"

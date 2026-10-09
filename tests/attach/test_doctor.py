@@ -154,19 +154,19 @@ def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
 # where `HOME` differs, the way to have the link under it checked. Written out, not imported.
 _UNREAD_ROWS = {
     "elsewhere": (
-        "attached; HOME is not this user's home in the password database, and off a terminal the "
-        "harness memory link goes only under that home, where a harness started with this HOME "
-        "does not look, so attach run here makes none; the binding is bound",
-        "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal, where "
-        "HOME decides where the link goes, or start sessions with HOME set to that home and run it "
-        "in one; `stayfixed doctor` run from a terminal checks the link under HOME",
+        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
+        "under this user's home in the password database and a harness started with this HOME "
+        "looks under HOME; the binding is bound",
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal, or in "
+        "a session started with HOME set to that home; `stayfixed doctor` run from a terminal "
+        "checks the link under HOME",
     ),
     "empty": (
-        "attached; HOME is empty, so it names no home directory, and off a terminal the harness "
-        "memory link goes only under the home the password database records, where a harness "
-        "started with this HOME does not look, so attach run here makes none; the binding is bound",
-        "start sessions with HOME set to that home and run `stayfixed attach --store "
-        "<overlay>/projects/<project>/memory` in one",
+        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
+        "under this user's home in the password database and a harness started with an empty HOME "
+        "does not look there; the binding is bound",
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory` in a session started "
+        "with HOME set to that home",
     ),
 }
 

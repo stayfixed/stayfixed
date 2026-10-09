@@ -2680,6 +2680,16 @@ reddens = [
   "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
 ]
 
+# A fallback key a withheld run leaves is told as an earlier run's, not as this run's act.
+[[mutation]]
+name = "attach tells a fallback key it leaves as one it recorded"
+file = "src/stayfixed/attach/write.py"
+before = "    if keys and links.withheld:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_earlier_runs",
+]
+
 [[mutation]]
 name = "attach --check says nothing of the harness link the run would withhold"
 file = "src/stayfixed/attach/check.py"
