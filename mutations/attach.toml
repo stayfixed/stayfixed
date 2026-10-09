@@ -2671,3 +2671,55 @@ after = "        if False:"
 reddens = [
   "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
 ]
+
+# Off a terminal the harness memory link goes under the password database's home and a harness
+# looks under `HOME`: where they differ, an empty `HOME` included, `attach` made a link no harness
+# that `HOME` starts reads and said it had. It refuses before its first write, `--check` with it,
+# in words that say which of the two it is; at a terminal, where `HOME` is the home the link goes
+# under, and where the two agree, it goes on, and a user the database lists no home for is told
+# that.
+[[mutation]]
+name = "attach off a terminal links under a home the harness does not read"
+file = "src/stayfixed/attach/write.py"
+before = "        _refuse_a_home_the_harness_does_not_read()"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read[elsewhere]",
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read[empty]",
+]
+
+[[mutation]]
+name = "attach tells an empty HOME off a terminal what a HOME that differs is told"
+file = "src/stayfixed/attach/write.py"
+before = "    raise Refusal(_HOME_EMPTY_OFF_A_TERMINAL if home_is_empty() else _HOME_NOT_THE_DATABASES)"
+after = "    raise Refusal(_HOME_NOT_THE_DATABASES)"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read[empty]",
+]
+
+[[mutation]]
+name = "attach off a terminal refuses a HOME that agrees"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if override_is_honoured() or passwd_home() is None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_goes_on_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+]
+
+[[mutation]]
+name = "attach at a terminal refuses a HOME that differs"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if homes_agree() or passwd_home() is None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_goes_on_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+]
+
+[[mutation]]
+name = "attach off a terminal blames HOME for a user the database lists no home for"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if override_is_honoured() or homes_agree():"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_goes_on_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+]

@@ -3416,10 +3416,10 @@ A container or home-manager setup whose `HOME` is not its database entry is not 
   `HOME` at a directory it ships.
 - A hook makes no harness memory link while the two homes differ, because the harness finds its
   memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
-  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`. For an
-  in-repo or local-only store no other command makes the link, so start sessions with `HOME` set
-  to the database's home to have it. A link an earlier release made under `HOME` is still
-  withdrawn when the store's approval lapses.
+  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME` and
+  refuses anywhere else. For any other store nothing else makes the link, so start sessions with
+  `HOME` set to the database's home. A link an earlier release made under `HOME` is still withdrawn
+  when the store's approval lapses.
 
 A user the database lists no home for has no such file off `--machine`: nothing is read,
 `memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the

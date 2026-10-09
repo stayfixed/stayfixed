@@ -78,6 +78,7 @@ from stayfixed.config.layout import (
     LOCAL_STATE_PATHS,
 )
 from stayfixed.config.loader import UNPARSEABLE, load
+from stayfixed.config.machine import home_is_empty, homes_agree, override_is_honoured, passwd_home
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -1362,6 +1363,35 @@ def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
     _check_groups(binding, config)
 
 
+# Off a terminal the harness memory link goes under the password database's home
+# (`config.machine.anchor_home`), and a harness finds its memory directory through `HOME`. Where
+# the two differ, a link made there is one the harness this `HOME` starts never reads, so the run
+# refuses rather than report it made; it never makes the link under `HOME` instead, which off a
+# terminal may be a directory the clone chose. A hook withholds the link in the same state
+# (`memory.hooks`).
+_HOME_NOT_THE_DATABASES = (
+    "HOME is not this user's home in the password database, and off a terminal the harness memory "
+    "link goes under that home, where a harness started with this HOME does not look; run this "
+    "from a terminal, where HOME decides where it goes, or with HOME set to that home"
+)
+_HOME_EMPTY_OFF_A_TERMINAL = (
+    "HOME is empty, so it names no home directory, and off a terminal the harness memory link "
+    "goes under the home the password database records, where a harness started with this HOME "
+    "does not look; set HOME to that home and run this again"
+)
+
+
+def _refuse_a_home_the_harness_does_not_read() -> None:
+    """Refuse, off a terminal, where `HOME` is not the home the harness memory link goes under.
+
+    A user the database lists no home for is left to `harness_anchor`, whose refusal names that
+    cause; at a terminal `HOME` is the home the link goes under, and an empty one is refused there.
+    """
+    if override_is_honoured() or homes_agree() or passwd_home() is None:
+        return
+    raise Refusal(_HOME_EMPTY_OFF_A_TERMINAL if home_is_empty() else _HOME_NOT_THE_DATABASES)
+
+
 def plan_writes(
     root: Path,
     config: Config,
@@ -1391,7 +1421,10 @@ def plan_writes(
     # read below: every checkout shares `.claude/projects` under one home, which is the
     # component a dotfiles manager links, so the layout that reaches production is refused
     # here for all of them. A `<slug>` component that is itself a symlink is left to the
-    # per-call floor in `harness_anchor`, which is a `Refusal` either way.
+    # per-call floor in `harness_anchor`, which is a `Refusal` either way. The real command's home
+    # (`None`) is asked first whether it is the one a harness reads.
+    if home is None:
+        _refuse_a_home_the_harness_does_not_read()
     harness_anchor(root, home)
     previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer

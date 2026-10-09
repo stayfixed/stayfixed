@@ -1186,6 +1186,93 @@ def test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words(
         assert (code, out, err) == (2, "", refused), argv
 
 
+# What `attach` says, off a terminal, where `HOME` is not the home the password database records.
+_HOME_NO_HARNESS_READS = {
+    "elsewhere": (
+        "stayfixed: refused: HOME is not this user's home in the password database, and off a "
+        "terminal the harness memory link goes under that home, where a harness started with this "
+        "HOME does not look; run this from a terminal, where HOME decides where it goes, or with "
+        "HOME set to that home\n"
+    ),
+    "empty": (
+        "stayfixed: refused: HOME is empty, so it names no home directory, and off a terminal the "
+        "harness memory link goes under the home the password database records, where a harness "
+        "started with this HOME does not look; set HOME to that home and run this again\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("home", sorted(_HOME_NO_HARNESS_READS))
+def test_attach_off_a_terminal_refuses_a_home_the_harness_does_not_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    home: str,
+) -> None:
+    # Off a terminal the harness memory link goes under the password database's home, and a
+    # harness finds its memory directory through `HOME`. Where the two differ, an empty `HOME`
+    # included, `attach` made the link where that harness never looks and said `attached: 1
+    # link(s)`. A hook withholds the link there; `attach`, which an agent runs too, refuses before
+    # its first write, `--check` with it, and never makes the link under `HOME`, which off a
+    # terminal may be a directory the clone chose. Mutation (oracle): `mutations/`'s "attach off a
+    # terminal links under a home the harness does not read" -> both run, and the real one writes.
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner = tmp_path / "home"
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
+    as_owner_home(monkeypatch, owner)
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.setenv("HOME", "" if home == "empty" else str(tmp_path / "elsewhere"))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    before = snapshot(tmp_path)
+    for argv in (["--check"], ["--yes"]):
+        code = invoke(["attach", "--root", str(root), "--store", str(store), *argv])
+        assert (code, *capsys.readouterr()) == (2, "", _HOME_NO_HARNESS_READS[home]), argv
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_attach_goes_on_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The vacuity guard for the refusal above: off a terminal with `HOME` the database's home, and
+    # at a terminal whatever `HOME` says, `--check` goes on; and a user the database lists no home
+    # for is told that, not that `HOME` differs from it. Mutations (oracle): `mutations/`'s "attach
+    # off a terminal refuses a HOME that agrees" -> the first is refused; "attach at a terminal
+    # refuses a HOME that differs" -> the second is; "attach off a terminal blames HOME for a user
+    # the database lists no home for" -> the third names HOME.
+    from stayfixed.attach.check import check
+    from stayfixed.errors import Refusal
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner = tmp_path / "home"
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
+    as_owner_home(monkeypatch, owner)
+    (tmp_path / "elsewhere").mkdir()
+    argv = ["attach", "--check", "--root", str(root), "--store", str(store)]
+    monkeypatch.setenv("HOME", str(owner))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    assert (invoke(argv), capsys.readouterr().err) == (0, "")
+    monkeypatch.setenv("HOME", str(tmp_path / "elsewhere"))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    assert (invoke(argv), capsys.readouterr().err) == (0, "")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    as_owner_home(monkeypatch, None)
+    with pytest.raises(Refusal) as refused:
+        check(root, store=store, machine=machine, home=None)
+    assert str(refused.value) == (
+        "the password database lists no home directory for this user, so there is nowhere to put "
+        "the harness memory link; at a terminal, set HOME to name one"
+    )
+
+
 def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
