@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from stayfixed.config.schema import Config
@@ -101,13 +102,20 @@ NO_HARNESS_LINK_NO_HOME = Withheld(
 )
 # A user the database lists no home for: no `HOME` agrees with no home, so the cause is the
 # missing entry and not `HOME`, and an overlay store is still linked by `attach` from a terminal,
-# under the `HOME` it reads there, which has to be set: with neither, there is no home to link
-# under, and `attach` refuses.
+# under the `HOME` it reads there, which has to name a home: unset or empty, it names none, and
+# `attach` refuses.
 NO_HARNESS_LINK_OVERLAY_NO_HOME = Withheld(
     "the password database lists no home directory for this user, so a hook makes no harness "
     "memory link",
     "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal with HOME "
-    "set to make it",
+    "set to a home directory to make it",
+)
+# An empty `HOME` names no home (`config.machine.homes_agree`): the harness finds no memory
+# directory of this user's through it, so no link anyone makes is one it reads, and `attach` at a
+# terminal whose `HOME` is empty refuses. The way out is the same whatever the store.
+NO_HARNESS_LINK_EMPTY_HOME = Withheld(
+    "HOME is empty, so it names no home directory and a hook makes no harness memory link",
+    "start sessions with HOME set to this user's home in the password database",
 )
 
 
@@ -115,6 +123,8 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
+        import os
+
         from stayfixed.config.machine import anchor_home, homes_agree
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.store import resolve
@@ -167,7 +177,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             return HookResult(context=REVOKED)
         lines = [LINKED.format(count=len(links.created))] if links.created else []
         if links.withheld:
-            lines.append(no_harness_link(config).line)
+            lines.append(no_harness_link(config, os.environ).line)
         return HookResult(context="\n".join(lines)) if lines else HookResult()
     # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
@@ -178,16 +188,20 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         return HookResult()
 
 
-def no_harness_link(config: Config) -> Withheld:
+def no_harness_link(config: Config, env: Mapping[str, str]) -> Withheld:
     """Why a hook withholds the harness link, and what makes it, saying only what is true of this
-    store. The database is asked first: where it lists no home for this user, no `HOME` would let
-    a hook make the link, so `HOME` is not the cause whatever the store."""
-    from stayfixed.config.machine import passwd_home
+    store and of `HOME` in `env`. The database is asked first: where it lists no home for this
+    user, no `HOME` would let a hook make the link, so `HOME` is not the cause whatever the store.
+    An empty `HOME` is asked next, since no command makes a link that the harness reads through
+    it, `attach` from a terminal included."""
+    from stayfixed.config.machine import home_is_empty, passwd_home
     from stayfixed.config.schema import OVERLAY_MODE
 
     overlay = config.memory.mode == OVERLAY_MODE
     if passwd_home() is None:
         return NO_HARNESS_LINK_OVERLAY_NO_HOME if overlay else NO_HARNESS_LINK_NO_HOME
+    if home_is_empty(env):
+        return NO_HARNESS_LINK_EMPTY_HOME
     return NO_HARNESS_LINK_OVERLAY if overlay else NO_HARNESS_LINK
 
 

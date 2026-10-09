@@ -2657,3 +2657,14 @@ after = """
 reddens = [
   "tests/attach/test_write.py::test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_check_and_run",
 ]
+
+# The `attached` row at a terminal whose `HOME` is empty names `HOME`, not the database, which lists
+# a home there.
+[[mutation]]
+name = "the attached row blames the password database for an empty HOME at a terminal"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if override_is_honoured() and home_is_empty():"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+]

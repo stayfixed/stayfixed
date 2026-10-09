@@ -317,9 +317,11 @@ def test_an_empty_home_gets_no_harness_link_even_in_the_databases_home(
 ) -> None:
     # An empty `HOME` is a value and names no home: the harness reads it as `""`, so a link made
     # under the database's home is one it never reads. The hook made it, and said nothing. Run from
-    # the database's home, where `Path("").resolve()` is that home. Mutations (oracle):
-    # `mutations/`'s "an empty HOME agrees with the password database's home" and "an empty HOME
-    # is read as the directory a command runs in".
+    # the database's home, where `Path("").resolve()` is that home. The line names `HOME` as the
+    # cause, and sends nobody to `attach`, which no `HOME` that is empty lets make a link the
+    # harness reads. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password
+    # database's home", "an empty HOME is read as the directory a command runs in" and "an empty
+    # HOME in a session is told what a HOME that differs is told".
     owner = tmp_path / "owner"
     owner.mkdir()
     as_owner_home(monkeypatch, owner)
@@ -331,7 +333,10 @@ def test_an_empty_home_gets_no_harness_link_even_in_the_databases_home(
     config = load(root, machine=tmp_path / "absent.toml")
     contexts = [handler.run(an_event(root), config).context for handler in register()]
     assert seen == [Withhold()]
-    assert contexts == [NO_HARNESS_LINK.line]
+    assert contexts == [
+        "stayfixed: HOME is empty, so it names no home directory and a hook makes no harness "
+        "memory link; start sessions with HOME set to this user's home in the password database"
+    ]
 
 
 def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
@@ -397,7 +402,7 @@ def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
     as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
     config = load(a_project(tmp_path), machine=tmp_path / "absent.toml")
     config = dataclasses.replace(config, memory=dataclasses.replace(config.memory, mode=mode))
-    line = memory_hooks.no_harness_link(config)
+    line = memory_hooks.no_harness_link(config, {"HOME": "fakehome"})
     if mode == "overlay":
         assert line == (
             NO_HARNESS_LINK_OVERLAY
@@ -405,6 +410,13 @@ def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
             else NO_HARNESS_LINK_OVERLAY_NO_HOME
         )
         assert "stayfixed attach --store" in line.remedy
+        if database == "no entry":
+            # `attach` at a terminal links under the `HOME` it reads there, which has to name a
+            # home: an empty one is set and names none. Mutation (oracle): `mutations/`'s "the
+            # withheld link line for a user with no home asks only that HOME be set".
+            assert line.remedy.endswith(
+                "from a terminal with HOME set to a home directory to make it"
+            )
     else:
         assert line == (NO_HARNESS_LINK if database == "another home" else NO_HARNESS_LINK_NO_HOME)
         assert "attach" not in line.line

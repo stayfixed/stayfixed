@@ -96,6 +96,38 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
 
 
+@pytest.mark.parametrize("terminal", [False, True], ids=["off-a-terminal", "at-a-terminal"])
+def test_an_empty_home_is_no_default_for_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    terminal: bool,
+) -> None:
+    # `--home` defaults to `HOME` wherever this runs, and an empty `HOME` names no home, where
+    # `Path.home` answers `/`: this command wrote the machine file and then refused to write
+    # `/.claude/settings.json`. It now says so before anything is written. `setup.run.setup` is
+    # replaced by a recorder, so a mutated run writes nothing under `/` either. Mutation (oracle):
+    # `mutations/`'s "setup takes the root directory for an empty HOME".
+    seen: list[Path] = []
+
+    def recorded(*_: object, home: Path, **__: object) -> SetupReport:
+        seen.append(home)
+        return SetupReport(False, (), False, False, None, ())
+
+    monkeypatch.setattr("stayfixed.setup.run.setup", recorded)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: terminal)
+    monkeypatch.setenv("HOME", "")
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    machine = tmp_path / "config.toml"
+    assert invoke(["setup", "--preset", "recommended", "--machine", str(machine)]) == 1
+    assert capsys.readouterr().err == (
+        "stayfixed: failed: HOME is empty, so it names no home directory and there is no default "
+        "for --home; set HOME to your home directory, or pass --home PATH\n"
+    )
+    assert seen == []
+    assert not machine.exists()
+
+
 def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

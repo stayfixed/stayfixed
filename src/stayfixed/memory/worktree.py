@@ -59,7 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
-from stayfixed.config.machine import anchor_home
+from stayfixed.config.machine import anchor_home, home_is_empty, override_is_honoured
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.schema import OVERLAY_MODE, Config
@@ -133,6 +133,14 @@ def _link_source(overlay: Path, project: str, name: str) -> Path:
     return overlay_group_target(overlay, project, name)
 
 
+# At a terminal `HOME` is the home the harness link goes under, and an empty one names none
+# (`config.machine.owner_home`), where Python would read it as the root directory.
+_EMPTY_HOME_NO_LINK = (
+    "HOME is empty, so it names no home directory and there is nowhere to put the harness memory "
+    "link; set HOME to your home directory and run this again"
+)
+
+
 def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, str]:
     """The root the harness link is written under, and the link's path inside it.
 
@@ -161,10 +169,13 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     the database's answer is resolved once before the walk while a `HOME` or `--home` that is
     itself a link fails at it; an anchor stayfixed made up would be an anchor the walk cannot
     vouch for — and a user the password database lists no home for has no anchor off a
-    terminal, nor at one where `HOME` is unset, which is a refusal here.
+    terminal, nor at one where `HOME` is unset, which is a refusal here. Nor is there one at a
+    terminal whose `HOME` is empty, which names no home, and the refusal says that it is `HOME`.
     """
     base = anchor_home() if home is None else home
     if base is None:
+        if override_is_honoured() and home_is_empty():
+            raise Refusal(_EMPTY_HOME_NO_LINK)
         raise Refusal(
             "the password database lists no home directory for this user, so there is nowhere "
             "to put the harness memory link; at a terminal, set HOME to name one"

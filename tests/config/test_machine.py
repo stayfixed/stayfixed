@@ -6,6 +6,7 @@ import pytest
 
 from stayfixed.config.machine import (
     anchor_home,
+    home_is_empty,
     homes_agree,
     machine_config_path,
     override_is_honoured,
@@ -128,12 +129,12 @@ def test_an_empty_home_is_a_value_that_names_no_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str, agrees: bool
 ) -> None:
     # An unset `HOME` sends every program to the password database, so it agrees; an empty one is
-    # read as `""` by the shells' `~`, Python, git and Node's `os.homedir`, never as the database's
-    # home, so it does not, even run from the database's home, where `Path("").resolve()` is that
-    # home. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password database's
-    # home" -> `empty`; "an empty HOME is read as the directory a command runs in" -> `empty` too,
-    # because the process runs in the database's home here; "any HOME agrees with the password
-    # database's home" -> `another`.
+    # read as `""` by the shells' `~`, git and Node's `os.homedir` and as `/` by Python's
+    # `Path.home`, never as the database's home, so it does not, even run from the database's home,
+    # where `Path("").resolve()` is that home. Mutations (oracle): `mutations/`'s "an empty HOME
+    # agrees with the password database's home" -> `empty`; "an empty HOME is read as the
+    # directory a command runs in" -> `empty` too, because the process runs in the database's home
+    # here; "any HOME agrees with the password database's home" -> `another`.
     owner = tmp_path / "owner"
     owner.mkdir()
     as_owner_home(monkeypatch, owner)
@@ -145,3 +146,25 @@ def test_an_empty_home_is_a_value_that_names_no_home(
         "another": {"HOME": str(tmp_path)},
     }[home]
     assert homes_agree(env) is agrees
+
+
+def test_an_empty_home_at_a_terminal_names_no_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # At a terminal `HOME` is the home asked, and an empty one names none, as `homes_agree` reads
+    # it. `Path.home` answers `/` for it, so `attach` there aimed the harness memory link at
+    # `/.claude/projects/...` and ended in an internal error where the root was read-only. Off a
+    # terminal the home is the database's, whatever `HOME` holds. Mutation (oracle): `mutations/`'s
+    # "an empty HOME at a terminal is read as the root directory" -> `/` at a terminal.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", "")
+    assert home_is_empty()
+    assert owner_home(interactive=True) is None
+    assert anchor_home(interactive=True) is None
+    assert owner_home(interactive=False) == owner
+    assert anchor_home(interactive=False) == owner.resolve()
+    monkeypatch.delenv("HOME")
+    assert not home_is_empty()
+    assert owner_home(interactive=True) == owner

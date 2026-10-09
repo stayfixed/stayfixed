@@ -289,20 +289,18 @@ def test_a_home_the_database_records_leaves_the_harness_link_to_the_hook(
         assert _harness_row(tmp_path, root, None) == (OK, NO_HOME_SET, "")
 
 
-@pytest.mark.parametrize(
-    ("mode", "withheld"),
-    [("overlay", NO_HARNESS_LINK_OVERLAY), ("local-only", NO_HARNESS_LINK)],
-    ids=["overlay", "local-only"],
-)
+@pytest.mark.parametrize("mode", ["overlay", "local-only"])
 def test_an_empty_home_is_told_the_hook_makes_no_link(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, withheld: Withheld
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     # An empty `HOME` is a value and names no home: the harness reads it as `""` and looks for its
     # memory directory under a relative `.claude`, so a hook makes no link, and the row says so in
-    # the hook's words, even run from the database's home. It said a hook could make the link.
-    # Asked directly, as the unset case is. Mutations (oracle): `mutations/`'s "an empty HOME
-    # agrees with the password database's home" and "an empty HOME is read as the directory a
-    # command runs in" -> both modes.
+    # the hook's words, even run from the database's home. It said a hook could make the link, and
+    # then, for an overlay store, sent the user to `attach` from a terminal, which makes no link
+    # the harness reads through an empty `HOME`. Asked directly, as the unset case is. Mutations
+    # (oracle): `mutations/`'s "an empty HOME agrees with the password database's home" and "an
+    # empty HOME is read as the directory a command runs in" -> both modes; "an empty HOME in a
+    # session is told what a HOME that differs is told" -> both modes.
     owner = tmp_path / "owner"
     owner.mkdir()
     as_owner_home(monkeypatch, owner)
@@ -310,4 +308,8 @@ def test_an_empty_home_is_told_the_hook_makes_no_link(
     root = _initialised(tmp_path, template=OVERLAY if mode == "overlay" else LOCAL_ONLY)
     context = _context(tmp_path, load(root, machine=_machine(tmp_path)))
     row = _harness_link(dataclasses.replace(context, env={"HOME": ""}))
-    assert (row.status, row.detail, row.remedy) == (WARN, withheld.cause, withheld.remedy)
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is empty, so it names no home directory and a hook makes no harness memory link",
+        "start sessions with HOME set to this user's home in the password database",
+    )

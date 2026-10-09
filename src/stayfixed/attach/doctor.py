@@ -134,6 +134,7 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.config.layout import ATTACH_LEDGER
+    from stayfixed.config.machine import home_is_empty, override_is_honoured
     from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, WARN, Row
     from stayfixed.errors import Refusal
@@ -157,8 +158,17 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         harness = harness_memory_path(context.root, context.home)
     except Refusal:
         # Refused only for a home it cannot name: a user the password database lists no home for,
-        # off a terminal. That is this machine's state and not a broken check, so it is a warning
-        # that says what it costs; `ignored-env` says why.
+        # off a terminal, or a terminal whose `HOME` is empty, which names none
+        # (`config.machine.owner_home`). That is this machine's state and not a broken check, so it
+        # is a warning that says what it costs; `ignored-env` says why.
+        if override_is_honoured() and home_is_empty():
+            return Row(
+                WARN,
+                "HOME is empty, so it names no home directory and there is no harness memory path "
+                "to check",
+                "set HOME to your home directory, or pass --home <path> to check the harness "
+                "memory path under that directory",
+            )
         return Row(
             WARN,
             "the password database lists no home directory for this user, so there is no harness "

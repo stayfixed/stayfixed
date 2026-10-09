@@ -1157,6 +1157,35 @@ def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
         assert "at a terminal, set HOME to name one" in out + err
 
 
+def test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` names no home, and at a terminal `HOME` is the home the harness link goes
+    # under. `Path.home` reads it as `/`, so `attach` aimed the link at `/.claude/projects/...`
+    # and ended in an internal error on a read-only root; it now refuses before its first write,
+    # naming `HOME` and not the database, which lists a home here. `--check` and `detach`, which
+    # make nothing under the home, so a mutated run cannot either. The real `Path.home` is put
+    # back, safe here because it reads the empty `HOME` and never the developer's. Mutations
+    # (oracle): `mutations/`'s "an empty HOME at a terminal is read as the root directory" and
+    # "attach blames the password database for an empty HOME at a terminal".
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert cli(root, tmp_path, "attach", "--store", str(store), machine=machine)[0] == 0
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.setenv("HOME", "")
+    as_owner_home(monkeypatch, tmp_path / "home")
+    refused = (
+        "stayfixed: refused: HOME is empty, so it names no home directory and there is nowhere "
+        "to put the harness memory link; set HOME to your home directory and run this again\n"
+    )
+    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert (code, out, err) == (2, "", refused), argv
+
+
 def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

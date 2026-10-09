@@ -75,9 +75,13 @@ def owner_home(interactive: bool | None = None) -> Path | None:
     Off a terminal `HOME` may be a directory the clone ships (the module docstring), so it is
     honoured only where `override_is_honoured` finds a person. `None` for a user `passwd_home`
     finds no directory for, off a terminal, and at one where `HOME` is unset too, where
-    `Path.home` raises.
+    `Path.home` raises. `None` at a terminal where `HOME` is empty as well, a value that names no
+    home (`homes_agree`), where `Path.home` answers `/`: a command that needs a home then says
+    that `HOME` names none, rather than writing under the root directory.
     """
     if override_is_honoured(interactive):
+        if home_is_empty():
+            return None
         try:
             return Path.home()
         except RuntimeError:
@@ -92,7 +96,7 @@ def anchor_home(interactive: bool | None = None) -> Path | None:
     a symlink (`/Users/me` linking to a volume) is refused there, while the release before read
     `HOME`, often the real directory, and made the link. The entry is the anchor this module
     trusts and its symlinks are the machine's, so resolving them changes nothing about whom the
-    root belongs to. `HOME` from a terminal is used as typed, as it always was.
+    root belongs to. `HOME` from a terminal is used as typed, as it always was, unless it is empty.
     """
     home = owner_home(interactive)
     if home is None or override_is_honoured(interactive):
@@ -107,9 +111,9 @@ def homes_agree(env: Mapping[str, str] | None = None) -> bool:
     finds through `HOME` — the harness locating its memory directory among them. An unset `HOME`
     agrees, because a program with no `HOME` asks the database too; a user the database lists
     no home for never agrees, since there is nothing to agree with. **An empty `HOME` is a value,
-    not an unset one, and names no home:** the shells' `~`, Python's `expanduser`, git and Node's
-    `os.homedir` (libuv) all read it as `""` and never ask the database, so it never agrees, even
-    in a directory that is the database's home.
+    not an unset one, and names no home:** the shells' `~`, git and Node's `os.homedir` (libuv)
+    read it as `""` and Python's `Path.home` as `/`, and none of them asks the database, so it never
+    agrees, even in a directory that is the database's home.
     """
     env = os.environ if env is None else env
     recorded = passwd_home()
@@ -119,6 +123,13 @@ def homes_agree(env: Mapping[str, str] | None = None) -> bool:
     if chosen is None:
         return True
     return chosen != "" and Path(chosen).resolve() == recorded.resolve()
+
+
+def home_is_empty(env: Mapping[str, str] | None = None) -> bool:
+    """Whether `HOME` is set and empty, which names no home (`homes_agree` says why), so that a
+    command refusing for want of a home can say it is `HOME` that names none."""
+    env = os.environ if env is None else env
+    return env.get("HOME") == ""
 
 
 def in_owner_home(value: str) -> Path | None:

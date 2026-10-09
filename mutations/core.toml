@@ -3472,6 +3472,19 @@ reddens = [
   "tests/attach/test_commands.py::test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words",
 ]
 
+# At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
+# harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
+[[mutation]]
+name = "an empty HOME at a terminal is read as the root directory"
+file = "src/stayfixed/config/machine.py"
+before = "        if home_is_empty():\n            return None"
+after = "        if False:\n            return None"
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_at_a_terminal_names_no_home",
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
+  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+]
+
 # Whether a version orders before its release by its suffix, as PEP 440 orders one: the local label
 # after `+` is no segment of the version's, and a `dev` after a post-release is a development release
 # of that post-release, which comes after the release.

@@ -1557,3 +1557,14 @@ after = """
 reddens = [
   "tests/setup/test_setup.py::test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link",
 ]
+
+# `--home` defaults to `HOME`, and an empty one names no home, where `Path.home` answers `/`: `setup`
+# wrote the machine file and then refused to write `/.claude/settings.json`.
+[[mutation]]
+name = "setup takes the root directory for an empty HOME"
+file = "src/stayfixed/setup/commands.py"
+before = "    if args.home is None and home_is_empty():"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home",
+]

@@ -122,6 +122,34 @@ def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path
     assert "stayfixed attach" in check.remedy
 
 
+def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # At a terminal the harness memory path is under `HOME`, and an empty one names no home. The
+    # row checked `/.claude/projects/...` instead and sent the user to `attach`, which then failed
+    # there; it now says that `HOME` names none, and not that the database lists none, since it
+    # lists a home here. Asked of the row directly with no `--home`, which is how a person runs
+    # `doctor`. Mutation (oracle): `mutations/`'s "the attached row blames the password database
+    # for an empty HOME at a terminal".
+    from stayfixed.attach.doctor import _attached as attached_row
+    from stayfixed.attach.doctor import _Ledger
+    from stayfixed.memory.api import Answers
+    from tests.doctor.test_checks import _context
+
+    root = _attached(tmp_path)
+    as_owner_home(monkeypatch, tmp_path / "home")
+    monkeypatch.setenv("HOME", "")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    context = _context(root, load(root, machine=_machine(tmp_path)))
+    row = attached_row(context, Answers(), _Ledger())
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is empty, so it names no home directory and there is no harness memory path to check",
+        "set HOME to your home directory, or pass --home <path> to check the harness memory path "
+        "under that directory",
+    )
+
+
 def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
     # The shape an existing checkout can already have, and the one this row exists for, because
     # it looks attached and behaves like nothing. `~/.claude/projects/<slug>/memory` is where

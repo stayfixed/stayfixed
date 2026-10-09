@@ -3003,6 +3003,39 @@ reddens = [
   "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
 ]
 
+# An empty `HOME` in a session is told that it names no home, and is sent to no `attach`, which no
+# empty `HOME` lets make a link the harness reads through it.
+[[mutation]]
+name = "an empty HOME in a session is told what a HOME that differs is told"
+file = "src/stayfixed/memory/hooks.py"
+before = "    if home_is_empty(env):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+]
+
+# `attach` at a terminal links under the `HOME` it reads there, which has to name a home.
+[[mutation]]
+name = "the withheld link line for a user with no home asks only that HOME be set"
+file = "src/stayfixed/memory/hooks.py"
+before = '    "set to a home directory to make it",'
+after = '    "set to make it",'
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
+]
+
+# The harness link's refusal at a terminal whose `HOME` is empty names `HOME`, not the database,
+# which lists a home there.
+[[mutation]]
+name = "attach blames the password database for an empty HOME at a terminal"
+file = "src/stayfixed/memory/worktree.py"
+before = "        if override_is_honoured() and home_is_empty():"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
+]
+
 # `doctor`'s `harness-link` row warns where a hook withholds the harness link, asked of the
 # report's environment through the predicate the hook asks of its own.
 [[mutation]]

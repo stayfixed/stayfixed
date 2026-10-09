@@ -92,6 +92,13 @@ NO_MACHINE_HOME = (
     "the password database lists no home directory for this user, so there is no default "
     "machine configuration file; pass --machine PATH to write one, which no hook reads"
 )
+# `--home`'s default is `HOME`, and an empty one names no home (`config.machine.homes_agree`), where
+# `Path.home` answers `/`: this command once wrote the machine file and then refused to write
+# `/.claude/settings.json`. Said before anything is written.
+EMPTY_HOME = (
+    "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
+    "to your home directory, or pass --home PATH"
+)
 
 
 def run_setup(args: argparse.Namespace) -> Result:
@@ -100,7 +107,7 @@ def run_setup(args: argparse.Namespace) -> Result:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from stayfixed.config.machine import homes_agree, machine_config_path
+    from stayfixed.config.machine import home_is_empty, homes_agree, machine_config_path
     from stayfixed.setup.run import setup
 
     # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
@@ -113,6 +120,8 @@ def run_setup(args: argparse.Namespace) -> Result:
     #
     # Resolved here rather than in `register()`, so that `stayfixed setup --help` prints the
     # sentence and not whichever home directory the parser happened to be built under.
+    if args.home is None and home_is_empty():
+        raise Failure(EMPTY_HOME)
     home = Path.home() if args.home is None else Path(args.home).expanduser()
     machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
     if machine is None:

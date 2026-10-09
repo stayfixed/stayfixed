@@ -141,7 +141,7 @@ def _harness_link(context: Context) -> Row:
             "HOME is unset, so a hook can make the harness memory link under this user's home "
             "in the password database",
         )
-    withheld = no_harness_link(context.config)
+    withheld = no_harness_link(context.config, context.env)
     return Row(WARN, withheld.cause, withheld.remedy)
 
 

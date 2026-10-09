@@ -3401,8 +3401,8 @@ mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `H
 would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
 this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
 file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
-still decides what it decides from your own terminal: `--home`'s default, and where an interactive
-`attach` puts the harness memory link.
+still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
+empty, it names none and both stop there.
 
 A container or home-manager setup whose `HOME` is not its database entry is not refused:
 
