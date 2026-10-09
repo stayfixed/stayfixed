@@ -83,6 +83,8 @@ _PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+|#[^\n]*+\s*+)++")
 # hours over one long line of blanks or tags.
 _PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")
 _KEY_END = re.compile(r":(?=[ \t]|\Z)")
+# Where a comment starts on a line, a `#` after a blank.
+_COMMENT = re.compile(r"[ \t]#")
 # A line that opens with `---` and then a blank or its end, at the first column: a document marker
 # to YAML, which ends the document above it and starts another, not a key. A reader that reads it
 # as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
@@ -125,11 +127,11 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
 
     Past an explicit-key `? ` and any tag (`!...`) or anchor (`&...`) ahead of the key; then a
     quoted key followed by a colon, or a plain one ending at the first colon followed by a blank or
-    the end of the line. An explicit key needs no colon on its line, and is read only where no line
-    below it is indented deeper (`continued`), which YAML reads as more of the key: the key itself
-    after a `?` or a tag alone, a block scalar's text, or a plain key folded over lines. An alias
-    (`*name`), a plain merge key (`<<`) and a quote that does not close on its line are not read
-    either."""
+    the end of the line. An explicit key needs no colon on its line and ends where a comment
+    starts (`? hooks # why`), and is read only where no line below it is indented deeper
+    (`continued`), which YAML reads as more of the key: the key itself after a `?` or a tag alone, a
+    block scalar's text, or a plain key folded over lines. An alias (`*name`), a plain merge key
+    (`<<`) and a quote that does not close on its line are not read either."""
     explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
     rest = line[1:].lstrip(" \t") if explicit else line
     properties = _PROPERTIES.match(rest)
@@ -142,6 +144,9 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
             return _UNTOLD
         after = rest[quoted.end() :].lstrip(" \t")
         return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
+    if explicit:
+        comment = _COMMENT.search(rest)
+        rest = rest[: comment.start()] if comment else rest
     colon = _KEY_END.search(rest)
     if colon is not None:
         key = rest[: colon.start()].rstrip(" \t")

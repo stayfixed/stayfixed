@@ -1791,6 +1791,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "an explicit key's comment is read as part of it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "        rest = rest[: comment.start()] if comment else rest"
+after = "        rest = rest"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[explicit-key-before-a-comment]",
+]
+
+[[mutation]]
 name = "an alias key is read as no key"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = '    if rest[:1] == "*" or (explicit and continued):'

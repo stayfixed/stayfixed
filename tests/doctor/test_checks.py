@@ -1892,6 +1892,9 @@ HOOKS_SPELLED = {
     "tagged": "!!str hooks: {}\n",
     "anchored": "&key hooks: {}\n",
     "explicit-key": "? hooks\n: {}\n",
+    # An explicit key ends where a comment starts, which the row read as part of the key.
+    # Mutation (oracle): `mutations/`'s "an explicit key's comment is read as part of it".
+    "explicit-key-before-a-comment": "? hooks # the session's hooks\n: {}\n",
     "beside-an-alias": "name: &k x\n*k : y\nhooks: {}\n",
     "below-a-flow-mapping-key": "{a: 1}: x\nhooks: {}\n",
     "below-a-flow-mapping-key-tagged": "!!map {a: 1}: x\nhooks: {}\n",
