@@ -1625,7 +1625,7 @@ until its review found nothing Critical or Important:
 - E1: the split of `mutations/install.toml` along `doctor/`;
 - P: the possessive-repeat bug of Python 3.11.0 to 3.11.4 (one round);
 - D: simplifications, and an empty `HOME` read as a value that names no home (one round);
-- E: the boundary rules under `tests/boundaries/`, and every quoted mutation name read (two
+- E: the boundary rules under `tests/boundaries/`, and every quoted mutation name read (three
   rounds);
 - F: the documents, the release notes and this record.
 
@@ -1641,11 +1641,13 @@ The owner's decisions:
   2.1.293 was one of the four oracles it was measured against. An oracle of Claude Code's own
   parse kept in the repository is left as an improvement after the release, one an outside
   contributor may take.
-- `attach` off a terminal, where `HOME` is not the database's home, withholds only the harness
-  memory link and says so, and `detach` withdraws a link to the store under both homes.
 - The wrapper's list of `git` paths stays spelled twice, the two held equal by a test.
 - From 2026-10-09 only a Critical or Important finding opened another round. Every Minor went to
   the follow-ups below.
+
+Decided during the review, as the hook and an unapproved store already behave: `attach` off a
+terminal, where `HOME` is not the database's home, withholds only the harness memory link and says
+so, and `detach` withdraws a link to the store under both homes.
 
 Not settled here: the review's first point on the pull request's text, how `HOME` reaches a hook,
 waits on the owner.

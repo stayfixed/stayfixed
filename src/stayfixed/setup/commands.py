@@ -93,8 +93,9 @@ NO_MACHINE_HOME = (
     "machine configuration file; pass --machine PATH to write one, which no hook reads"
 )
 # `--home`'s default is `HOME`, and an empty one names no home (`config.machine.homes_agree`), where
-# `Path.home` answers `/`: this command once wrote the machine file and then refused to write
-# `/.claude/settings.json`. Said before anything is written.
+# `Path.home` answers `/`: this command once ended in an internal error creating `/.config`, or,
+# given `--machine`, wrote that file and then refused to write `/.claude/settings.json`. Said
+# before anything is written.
 EMPTY_HOME = (
     "HOME is empty, so it names no home directory and there is no default for --home; set HOME "
     "to your home directory, or pass --home PATH"

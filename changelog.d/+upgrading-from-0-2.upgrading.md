@@ -109,11 +109,11 @@ detail:
     read only up to 64 MiB, and a longer one, which 0.2.0 read whole, is one stayfixed cannot
     read (Fixed, "Every file a repository commits that stayfixed reads is now read only up to 64
     MiB").
-  - Refusals and failures over a file that could not be read, written or removed give the reason
-    in words, in parentheses, and name the file relative to the project or the overlay, where they
-    quoted an error class or the error's text beside an absolute path: a script that matched the
-    old text has to match the new (Fixed, "Every file a repository commits that stayfixed reads",
-    in its last list).
+  - Many refusals and failures over a file that could not be read, written or removed give the
+    reason in words, in parentheses, and name the file relative to the project or the overlay, where
+    they quoted an error class or the error's text beside an absolute path: a script that matched
+    the old text has to match the new (Fixed, "Every file a repository commits that stayfixed
+    reads", in its last list).
   - A `.stayfixed/manifest.json` whose `format` is not a positive integer is refused as damaged
     (exit `2`) by `upgrade` and `uninstall`, where 0.2.0 read `true`, `0` or a negative integer as
     its own format (Fixed, "A `.stayfixed/manifest.json` whose `format` is not a positive
