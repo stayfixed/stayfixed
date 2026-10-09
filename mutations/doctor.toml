@@ -2094,7 +2094,7 @@ reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_i
 [[mutation]]
 name = "a single-quoted scalar is given back"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
 after = '''_SINGLE_QUOTED = r"'(?:[^']|'')*'"'''
 reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[single-quoted-key]"]
 
@@ -2879,3 +2879,14 @@ file = "src/stayfixed/doctor/checks.py"
 before = "        if call > 0:"
 after = "        if call >= 0:"
 reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[nothing before the call]"]
+
+# A single-quoted scalar whose quotes never pair up is no scalar to YAML, so it is no key either:
+# read as one ending at its last `''`, `? 'hooks''` was a `hooks` key no reading of YAML holds.
+[[mutation]]
+name = "a single-quoted scalar whose quotes never pair up ends at its last pair"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
+after = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-explicit-key-whose-quotes-never-pair]",
+]

@@ -49,11 +49,11 @@ _OPENING = re.compile(r"---[\s\ufeff]*+")
 # `fsops.REGULAR_READ_LIMIT` asked gigabytes of one `doctor` run. A possessive repetition gives
 # nothing back and keeps no record, and one of a single character keeps none either way. None of
 # the possessive ones changes what is matched, since nothing after one could take back what it
-# read, with one exception: a single-quoted scalar whose quotes never pair up as YAML reads them,
-# which giving back ended at its last `''`. The second single-quoted alternative ends it there, in
-# one scan.
+# read, but one: a single-quoted scalar whose quotes never pair up as YAML reads them
+# (`'hooks''`), which giving back ended at its last `''`, is no quoted scalar here, as it is none
+# to YAML.
 _DOUBLE_QUOTED = r'"(?:[^"\\]++|\\.)*+"'
-_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"
+_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"
 _QUOTED = f"{_DOUBLE_QUOTED}|{_SINGLE_QUOTED}"
 # One token of a flow mapping (`{name: x, hooks: {...}}`): a quoted scalar, a flow indicator, a
 # comment, blanks, a plain scalar -- which holds a `:` not followed by a blank or an indicator, and

@@ -2099,6 +2099,10 @@ UNTOLD_SPELLED = {
     "flow-explicit-key": "{? hooks : {}}\n",
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
     "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
+    # Quotes that never pair up as YAML reads them, which is no scalar to YAML: read as one ending
+    # at its last `''`, it was a `hooks` key, a "yes" no reading of YAML holds. Mutation (oracle):
+    # `mutations/`'s "a single-quoted scalar whose quotes never pair up ends at its last pair".
+    "an-explicit-key-whose-quotes-never-pair": "? 'hooks''\n",
     "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
     "a-merge-tag-on-a-key": "!!merge x:\n  hooks:\n    Stop: []\n",
     "an-explicit-merge-tag": "name: probe\n? !!merge x\n:\n  hooks:\n    Stop: []\n",
