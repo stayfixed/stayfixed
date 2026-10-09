@@ -2847,13 +2847,13 @@ top-level keys (`{hooks: {...}}`); a `hooks` nested under another key is not one
 end the frontmatter at a `---` within a line and read a key indented by a tab (from its program, not
 a run); the row reads each way. It says a file declares none only for plain YAML it reads exactly:
 `key: value` lines with plain keys and values on their line, block scalars, flow lists of plain
-scalars, nested lines indented by spaces, comments, in at most 10,000 lines. Any other frontmatter
-where it finds no `hooks` (a tag, an anchor, an alias, a merge key, a `?` key, a flow mapping, a tab
-in an indentation, a value over lines, a directive, a `---` or `...` line, NEL, LS, a Unicode blank)
-is named as one it cannot tell about, a `warn`. Names are compared without case. Any path the row
-cannot read, a FIFO or a directory it cannot list among them, is named as one it can say nothing of,
-also a `warn`, and a path outside the path grammar, every name in it the repository's, as a file
-whose path the row does not print.
+scalars, nested lines indented by spaces, comments, in at most 10,000 lines ending within 8,388,608
+characters. Any other frontmatter where it finds no `hooks` (a tag, an anchor, an alias, a merge
+key, a `?` key, a flow mapping, a tab in an indentation, a value over lines, a directive, a `---` or
+`...` line, NEL, LS, a Unicode blank) is named as one it cannot tell about, a `warn`. Names are
+compared without case. Any path the row cannot read, a FIFO or a directory it cannot list among
+them, is named as one it can say nothing of, also a `warn`, and a path outside the path grammar,
+every name in it the repository's, as a file whose path the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and

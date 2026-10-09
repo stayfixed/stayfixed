@@ -1292,8 +1292,9 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
 ]
 
-# A frontmatter is read to `LINES_READ` lines and no further, and the text is never split into lines
-# whole: a file of many short lines asked a gigabyte and more at the read cap.
+# A frontmatter is read to `LINES_READ` lines and `CHARACTERS_READ` characters and no further, and
+# the text is never split into lines whole: at the read cap, a file of many short lines asked a
+# gigabyte and more, and one of wide lines three.
 [[mutation]]
 name = "a frontmatter is read past the lines read"
 file = "src/stayfixed/doctor/frontmatter.py"
@@ -1325,6 +1326,19 @@ before = '''                if broken.count("\n") < LINES_READ:'''
 after = "                if True:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[line-separators-past-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter is read past the characters read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if max(ends) > CHARACTERS_READ:
+        return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-characters-read]",
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[wide-lines-past-the-characters-read]",
 ]
 
 [[mutation]]

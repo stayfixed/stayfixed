@@ -2144,10 +2144,12 @@ UNTOLD_SPELLED = {
     "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
     "a-tab-below-a-nested-block-scalar": "metadata:\n  summary: > # why\n  \thooks: {}\n",
     "below-a-tab-below-a-nested-block-scalar": "metadata:\n  summary: |-\n  \t\n  hooks: {}\n",
-    # A frontmatter of more lines than the row reads, which it does not read and so cannot tell
-    # of, and says so in its remedy. Mutation (oracle): `mutations/`'s "the plain subset is read
-    # past the lines read".
+    # A frontmatter of more lines, or one ending more characters into the file, than the row reads,
+    # which it does not read and so cannot tell of, and says so in its remedy. Mutations (oracle):
+    # `mutations/`'s "the plain subset is read past the lines read" -> `past-the-lines-read`; "a
+    # frontmatter is read past the characters read" -> `past-the-characters-read`.
     "past-the-lines-read": "name: probe\n" + "k: v\n" * 10_000,
+    "past-the-characters-read": "description: " + "x" * (1 << 23) + "\nhooks: {}\n",
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "
@@ -2157,7 +2159,7 @@ SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
     "exactly only `key: value` lines with plain keys, values on their own line, block scalars, "
     "flow lists of plain scalars, nested lines indented by spaces and comments, in a frontmatter "
-    "of at most 10,000 lines"
+    "of at most 10,000 lines that ends within 8,388,608 characters"
 )
 
 
@@ -2186,11 +2188,12 @@ def test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold(
 # quadratic reading takes minutes and a linear one a fraction of a second.
 LONG_LINES = {
     "blanks": ("a", " ", 1 << 20, "x\nhooks: {}\n"),
-    "tags": ("", "! ", 6 << 20, "hooks: {}\n"),
+    "tags": ("", "! ", 3 << 20, "hooks: {}\n"),
 }
-# The child's bound: a twentieth of what the quadratic reading took of either line above on a
-# laptop (ten and thirteen minutes), and fifty times what the linear one takes there, start-up
-# included, so neither load nor a fast machine moves a case across it.
+# The child's bound: at most a fourth of what the quadratic reading took of either line above on a
+# laptop (ten minutes, and two and a third), and fifty times what the linear one takes there,
+# start-up included, so neither load nor a fast machine moves a case across it. The tags stay
+# below `doctor.frontmatter.CHARACTERS_READ`, past which nothing is read at all.
 _LONG_LINE_SECONDS = 30
 
 
@@ -2263,11 +2266,21 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
 # of as it keeps a single character), and a long body below a short frontmatter, which was split
 # into lines with it. A file at the 64 MiB read cap asked a gigabyte and more; each of these is a
 # few mebibytes, which the old reader read with 30 to 85 MiB more. Past the lines read the answer
-# is "cannot tell", in the row's words; a body is no part of the answer.
+# is "cannot tell", in the row's words; a body is no part of the answer. And wide lines inside the
+# lines read, which a character past the Basic Multilingual Plane makes four bytes a character in
+# every copy of the text a reading takes: nine mebicharacters of them asked 105 to 115 MiB more,
+# and 64 MiB three gigabytes, before the characters read were bounded too.
 MANY_LINES = {
     "short-lines-past-the-lines-read": ("", "k: v\n", 1 << 20, "", "None"),
     "line-separators-past-the-lines-read": ("a: ", "xy\u2028", 1 << 20, "\n", "None"),
     "a-long-body": ("name: probe\n---\n", "xy\n", 1 << 21, "", "False"),
+    "wide-lines-past-the-characters-read": (
+        "",
+        "\t!t " + "a" * 1_000 + "\U0001f600\u3000\n",
+        9_000,
+        "",
+        "None",
+    ),
 }
 
 
@@ -2276,7 +2289,8 @@ def test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read(shape:
     # Mutations (oracle): `mutations/`'s "a frontmatter is read past the lines read" ->
     # `short-lines-past-the-lines-read`; "a frontmatter's line separators are read past the lines
     # read" -> `line-separators-past-the-lines-read`; "a skill file is split into lines whole" ->
-    # `a-long-body`.
+    # `a-long-body`; "a frontmatter is read past the characters read" ->
+    # `wide-lines-past-the-characters-read`.
     head, unit, count, tail, expected = MANY_LINES[shape]
     answer, grown = _read_in_a_child(head, unit, count, tail)
     assert answer == expected

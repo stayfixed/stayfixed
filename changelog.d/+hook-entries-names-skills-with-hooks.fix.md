@@ -18,8 +18,9 @@ hooks only where its frontmatter keeps to plain YAML that it reads exactly: `key
 plain keys and values on their own line, block scalars, flow lists of plain scalars, nested lines
 indented by spaces, and comments. Any other frontmatter in which it finds no `hooks` key, one with a
 tag, an anchor, an alias, a merge key or a flow mapping among others, is named as one it cannot tell
-about, and so is one of more than 10,000 lines, which the row does not read. A file or directory the
-row cannot read, a FIFO among them, is named as one it cannot say anything about.
+about, and so is one of more than 10,000 lines or ending more than 8,388,608 characters into the
+file, which the row does not read. A file or directory the row cannot read, a FIFO among them, is
+named as one it cannot say anything about.
 A link inside those directories, or a nested `.claude` that is one, is read where it leads inside
 the checkout, to a directory or to a `*.md` or `SKILL.md` file. One that leads out of the
 checkout, as a dotfiles setup's does, is not followed and is named as one that leads out, which

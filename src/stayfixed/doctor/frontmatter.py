@@ -21,12 +21,18 @@ from typing import Literal
 # memory however long it is.
 _FENCE = "---"
 _FENCE_LINE = re.compile(r"^---[^\S\n]*+$", re.MULTILINE)
-# The most lines of a frontmatter this reader reads, a named cap (CONTRIBUTING.md): a reading of
-# more is not read and answers "cannot tell", which names the file. Python keeps an object for each
-# line of each reading, so a file of short lines at `fsops.REGULAR_READ_LIMIT` asked a gigabyte and
-# more of one `doctor` run; ten thousand short lines ask a megabyte or two, and are far past any
-# frontmatter written by hand. No shipped file states it; `doctor.entries` names it in the remedy.
+# The most lines of a reading and characters of a frontmatter this reader reads, named caps
+# (CONTRIBUTING.md): past either, it does not read and answers "cannot tell", which names the file.
+# Python keeps an object for each line of each reading, so a file of short lines at
+# `fsops.REGULAR_READ_LIMIT` asked a gigabyte and more of one `doctor` run; and each reading copies
+# the text, at four bytes a character once one character in it is past the Basic Multilingual Plane,
+# so a file of wide lines asked three gigabytes. Ten thousand short lines ask a megabyte or two, and
+# eight mebicharacters of the widest about a hundred megabytes; a frontmatter written by hand is a
+# few lines. The characters are counted from the start of the file to where the frontmatter ends,
+# and the long-line tests in `tests/doctor/test_checks.py` stay below them. No shipped file states
+# either; `doctor.entries` names both in the remedy.
 LINES_READ = 10_000
+CHARACTERS_READ = 1 << 23
 # The fence that opens a frontmatter as Claude Code is read to find one, and the blanks and line
 # breaks after it, taken whole so that the text is scanned once.
 _OPENING = re.compile(r"---[\s\ufeff]*+")
@@ -265,7 +271,8 @@ def declares_hooks(text: str) -> bool | None:
     The answer is "no" only for a frontmatter inside the plain subset of YAML this reader reads
     exactly (`_plain`), none of whose keys at the first column is `hooks`. Any other is "yes" where
     a reading of it finds a top-level `hooks`, and "cannot tell" otherwise, so a frontmatter this
-    reader may misread is named either way. So is one past `LINES_READ`, which is not read.
+    reader may misread is named either way. So is one past `LINES_READ` or `CHARACTERS_READ`,
+    which is not read.
 
     The readings: the frontmatter as bounded above, and as Claude Code may bound it, by what its
     program text shows rather than by a measured run, at the first `---` after the opening line
@@ -287,6 +294,8 @@ def declares_hooks(text: str) -> bool | None:
     ends = [bound[1] for bound in (fenced, harness) if bound is not None]
     if not ends:
         return False
+    if max(ends) > CHARACTERS_READ:
+        return None
     bounds = []
     if fenced is not None:
         body = text[fenced[0] : max(fenced[0], fenced[1] - 1)]
@@ -445,7 +454,7 @@ def _holds_hooks(body: str) -> bool:
     """Whether a frontmatter's `body` holds a top-level `hooks` key, as `declares_hooks` reads one.
 
     The node is read where it stands in `body`, never in a copy of the text from there on: a
-    reading may be as long as the file, and each copy of it costs as much again."""
+    reading is up to `CHARACTERS_READ` long, and each copy of it would cost as much again."""
     lines = body.split("\n")
     first = next((index for index, line in enumerate(lines) if _CONTENT.match(line)), None)
     if first is None:
