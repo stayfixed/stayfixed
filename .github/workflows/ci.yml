@@ -35,14 +35,30 @@ jobs:
         # absolute-path containment case is the one that completes on Linux specifically,
         # because `/etc` and `/var` are real directories there and symlinks on macOS. The users
         # of a Claude Code / Codex plugin are overwhelmingly on macOS, and macOS runners are
-        # free on public repositories. One Python version there holds the job count at four.
+        # free on public repositories. One Python version there holds the job count at six.
+        #
+        # Nor is the interpreter axis. `pathlib`'s `is_file()`, `is_dir()`, `exists()` and
+        # `is_symlink()` raise on a name longer than the system takes up to 3.13 and answer
+        # `False` from 3.14, and a suite verified on 3.14 alone went red on every leg here. A
+        # leg is added beside the others and none is renamed: branch protection requires each
+        # existing check by its name.
+        #
+        # One leg pins a patch release, 3.11.4, because `3.11` resolves to the newest 3.11 and
+        # the floor `requires-python` admits is 3.11.0. Python 3.11.0 to 3.11.4 misread a
+        # possessive repeat of a group (fixed in 3.11.5), and Debian 12's own Python is 3.11.2:
+        # there a path grammar, a symbol path, a frontmatter's flow mapping and a commit footer
+        # each gave a verdict no later interpreter gives, and every leg here was green.
         include:
           - os: ubuntu-latest
             python: "3.11"
           - os: ubuntu-latest
+            python: "3.11.4"
+          - os: ubuntu-latest
             python: "3.12"
           - os: ubuntu-latest
             python: "3.13"
+          - os: ubuntu-latest
+            python: "3.14"
           - os: macos-latest
             python: "3.13"
     steps:
@@ -125,16 +141,21 @@ jobs:
   # than inside them.
   #
   # **Why one configuration is enough**, which is the half that had to be checked rather than
-  # assumed. The oracle proves "this mutation reddens this test" — a property of the code and of
-  # the tests, not of the platform. The matrix comment above argues the OS axis is load-bearing
-  # and it is right, but that argument is about the *tests*: `fsops.open_within` branches on
-  # `ELOOP` (Linux) against `ENOTDIR` (macOS). Every one of the 401 `reddens` targets, across 68
-  # test modules, was resolved to its function and read for skip gates before this was written.
-  # The only gates that exist are `shutil.which("git")`, `shutil.which("bash")`, a workflow
-  # file's presence, and `os.geteuid() == 0` — none platform-dependent, all satisfied here — and
-  # `sys.platform` and `platform.system()` appear nowhere under `tests/`, `src/` or `scripts/`.
-  # The errno divergence is absorbed inside one branch rather than by skipping a test, and no
-  # entry targets that line.
+  # assumed. The oracle proves "this mutation reddens this test" — a property of the code and of the
+  # tests, not of the platform. The matrix comment above argues the OS axis is load-bearing and it
+  # is right, but that argument is about the *tests*: `fsops.open_within` branches on `ELOOP`
+  # (Linux) against `ENOTDIR` (macOS). Every `reddens` target was resolved to its function and read
+  # for skip gates when this was written, and again when the wrapper's zsh case joined them. The
+  # gates ask for a program or a file the machine may lack — `git`, on `PATH` and at an absolute
+  # path; a `bash` to run as `sh`; `/usr/bin/id`, by which the wrapper's home cases name the user
+  # they ask the password database about; a zsh; this repository's `.git` and workflow files — for a
+  # user other than root, for an interpreter that has `os.waitid` or is 3.14, and for a filesystem
+  # that can hold a name that is not UTF-8. Some of those are platform-dependent, so it is this
+  # job's to satisfy them: every one is satisfied here but zsh, which `ubuntu-latest` does not carry
+  # and the step below installs, and the 3.14 gate, which skips two parametrized cases that no entry
+  # names. No test under `tests/`, and nothing in `src/` or `scripts/`, branches on `sys.platform`
+  # or `platform.system()`. The errno divergence is absorbed inside one branch rather than by
+  # skipping a test, and no entry targets that line.
   #
   # And if a platform gate is ever added to a `reddens` target, this goes red rather than quiet:
   # `_check` runs the clean tree first and demands `Outcome.passed`, which is
@@ -144,22 +165,25 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     # Derived, not rounded. The oracle proves entries in one scratch checkout per CPU the
-    # runner gives it — four on `ubuntu-latest` — against a bytecode cache warmed once from HEAD,
-    # and was measured at 173 s for 566 entries in this job, 0.31 s an entry. Until that change it
-    # ran one entry at a time with every pytest compiling from source: 2.02 s an entry, 1135 s for
-    # 562, under a 25-minute bound. The rest of the job came to ~8 s on that run; the budget
+    # runner gives it — four on `ubuntu-latest` — against a bytecode cache warmed once from HEAD.
+    # Measured in this job on 2026-10-08 (run 37727729829): 1,869 entries in 719 s, 0.385 s an
+    # entry, with the whole job at 727 s against the 12-minute bound it then had, so the job was
+    # cancelled eight seconds after the oracle printed that every mutation was caught. The rate
+    # had been 0.31 s at 566 entries: it climbs as the entries' tests do more, so it is
+    # re-measured from this job's runs, not assumed. The rest of the job came to ~8 s; the budget
     # test keeps its 60 s allowance for setup and 60 s for runner variance anyway.
     #
-    # 12 minutes is 720 s: less both allowances that leaves 600 s, which at this rate holds
-    # roughly **1,900 entries** in all, and at twice the rate — a runner with half the CPUs —
-    # about 950. No count of today's entries is written here, because every change that adds one
-    # would falsify it: the budget test counts `mutations/` itself, projects exactly this
-    # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
-    # measurement rather than at it, because a bound this job hits is a cancelled check, not a
-    # finding; and below the old 25, because a hung pytest should cost twelve minutes, not
-    # twenty-five. Not sharded: a matrix would rename the `oracle` check the branch protection
-    # requires, and multiply the setup cost; the parallelism lives inside the job instead.
-    timeout-minutes: 12
+    # 20 minutes is 1,200 s: less both allowances that leaves 1,080 s, which at this rate holds
+    # roughly **2,800 entries** in all; at twice the rate — a runner with half the CPUs — about
+    # 1,400, fewer than the set holds now, so the bound assumes the four-CPU runner. No count of
+    # today's entries is written here, because every change that adds one would falsify it: the
+    # budget test counts `mutations/` itself, projects exactly this sum (entries x rate + 60 s +
+    # 60 s) and reddens when it passes 1,200 s. Kept well above the measurement rather than at it,
+    # because a bound this job hits is a cancelled check, not a finding; and still bounded, because
+    # a hung pytest should cost twenty minutes, not GitHub's six hours. Not sharded: a matrix would
+    # rename the `oracle` check the branch protection requires, and multiply the setup cost; the
+    # parallelism lives inside the job instead.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -168,6 +192,14 @@ jobs:
           python-version: "3.13"
       - name: Install
         run: uv sync --locked
+      - name: zsh, for the wrapper's case that runs under it as sh
+        # The runner image carries bash and dash and no zsh, and the case that proves the wrapper's
+        # home lookup unsets a variable named for the user skips without one: a `reddens` target
+        # skipped here is a finding on the clean run, not a proof. This step reaches the Ubuntu
+        # archive, so the `oracle` check that branch protection requires now needs that mirror as
+        # well as PyPI and the actions: an outage fails this step, and with it the check. It fails
+        # closed: no mirror outage can let an untested set pass.
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: The mutation oracle
         run: uv run python scripts/mutation_oracle.py
 

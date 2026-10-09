@@ -22,12 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure
 from stayfixed.findings import Finding
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import contained_roots
-from stayfixed.memory.graph import WIKI_LINK, check_memory_graph
+from stayfixed.memory.graph import check_memory_graph, wiki_links
 from stayfixed.memory.notes import Note, Walk, walk
 from stayfixed.memory.store import Store, permitted_roots
 from stayfixed.printed import quoted
@@ -119,7 +120,10 @@ def _lines(note: Note) -> list[tuple[int, str]]:
     never as an internal error (2).
     """
     try:
-        text = note.path.read_text(encoding="utf-8")
+        # To the read cap, as the walk read it: a note past it by now is named, never read whole.
+        text = read_regular_text(note.path)
+    except OSError as exc:
+        raise Failure(f"{quoted(note.path.name)} cannot be read ({said(exc)})") from exc
     except UnicodeDecodeError as exc:
         raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))
@@ -151,7 +155,7 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
     because that link dangles for every other project. Empty for a store with no cross-project
     group — every non-overlay store."""
     overlay = overlay_root(store.machine)
-    if overlay is None or store.mode != "overlay":
+    if overlay is None or store.mode != OVERLAY_MODE:
         return []
     common, _project = permitted_roots(overlay, config.project.name)
     common_groups = {
@@ -165,9 +169,9 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
         if note.store_group not in common_groups:
             continue
         for number, line in _lines(note):
-            for target in WIKI_LINK.findall(line):
-                if target in project_notes:
-                    found.append(Finding(AUDIENCE, _where(note, store), number, target))
+            for link in wiki_links(line):
+                if link.group(1) in project_notes:
+                    found.append(Finding(AUDIENCE, _where(note, store), number, link.group(1)))
     return found
 
 

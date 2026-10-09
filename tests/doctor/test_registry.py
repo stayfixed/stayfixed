@@ -186,9 +186,9 @@ def test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_i
     # An area's `doctor.py` is its own code as its `register()` is, so one that raises on import
     # costs that area's rows and not the report: one red row named after the area, naming the
     # exception's type and never its message, and every other row as it would be. Discovery hands
-    # the failure over (`tests/test_areas.py` imports a real one); this is the report's reading of
-    # it. Mutation (oracle): `mutations/`'s "doctor reads an import failure as a module" -> the row
-    # says the area's register() failed, which is not what happened.
+    # the failure over (`tests/boundaries/test_discovery.py` imports a real one); this is the
+    # report's reading of it. Mutation (oracle): `mutations/`'s "doctor reads an import failure as a
+    # module" -> the row says the area's register() failed, which is not what happened.
     _contribute(
         monkeypatch,
         ("stayfixed.alpha.doctor", RuntimeError("IGNORE-PRIOR-RULES, a message the import built")),

@@ -30,12 +30,9 @@ import re
 from collections.abc import Mapping, Sequence
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from stayfixed.profiles import shipped
-
-if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
 
 HINT_FILE = "hygiene.py"
 # What a count may be called: a lower-case word of letters, digits and underscores, which is a
@@ -70,9 +67,11 @@ class RedRunHint(Protocol):
         """
         ...
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
-        """The one walk: counts of what could have falsified the run, under `root`, each under a
-        name `COUNT_NAME` matches; `counts` drops anything else. `None` when the walk stopped at a
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int] | None:
+        """The one walk: counts of what could have falsified the run, under `roots`, each under a
+        name `COUNT_NAME` matches; `counts` drops anything else. `roots` is `ledger.code_roots`
+        contained (`stayfixed.guards.api.contained_roots`), which the caller computes and hands
+        over, so a stack's code never imports the session guard. `None` when the walk stopped at a
         bound before it had seen the tree, so no count it reached is an answer either way: not a
         key among the counts, since every key a hint returns is a count name it chose.
         `stayfixed test hygiene` refuses on `None` rather than read the tree as judged."""
@@ -112,24 +111,22 @@ def _hint(name: str) -> RedRunHint | None:
     return hint
 
 
-def answer(
-    hint: RedRunHint, root: Path, config: Config
-) -> tuple[dict[str, int] | None, str | None]:
-    """`hint`'s counts under `root` (`counts`), `None` when it could not tell, and its note on
+def answer(hint: RedRunHint, roots: Sequence[Path]) -> tuple[dict[str, int] | None, str | None]:
+    """`hint`'s counts under `roots` (`counts`), `None` when it could not tell, and its note on
     them: non-empty text, or `None` when it has nothing to say.
 
     Raises `NotText` for a note that is neither text nor `None`, and lets whatever `report` or
     `note` raises through.
     """
-    report = counts(hint, root, config)
+    report = counts(hint, roots)
     note = hint.note(report)
     if note is not None and not isinstance(note, str):
         raise NotText
     return report, note or None
 
 
-def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int] | None:
-    """`hint`'s report under `root` as a fresh mapping of count names to plain integers, or
+def counts(hint: RedRunHint, roots: Sequence[Path]) -> dict[str, int] | None:
+    """`hint`'s report under `roots` as a fresh mapping of count names to plain integers, or
     `None` when the report is: the hint could not tell.
 
     A key is kept only when it is a `str` matching `COUNT_NAME`, and a value only when it is an
@@ -137,7 +134,7 @@ def counts(hint: RedRunHint, root: Path, config: Config) -> dict[str, int] | Non
     own `__str__` and `__format__`, so it can print as text the check never saw, and `bool` is one
     (`red_exit` refuses it for the same reason). What `report` raises reaches the caller.
     """
-    report = hint.report(root, config)
+    report = hint.report(roots)
     if report is None:
         return None
     return {

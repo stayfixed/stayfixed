@@ -16,12 +16,14 @@ from typing import Any
 import pytest
 
 from stayfixed import fsops, jsonobject
-from stayfixed.attach.write import GITIGNORE, Detached, detach
+from stayfixed.attach.write import GITIGNORE, GROUP_UNASKED_IN_TREE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.memory.trust import record
+from stayfixed.project.init import init
+from stayfixed.project.uninstall import uninstall
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
@@ -29,7 +31,8 @@ from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.gitfixture import git
 from tests.parserlimits import LONG_NUMBER, NESTED, PAST_ENCODING, overflowing_indent
-from tests.runners import git_that_cannot_run
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
+from tests.runners import LsRemote, git_that_cannot_run
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -68,6 +71,29 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:
+    # The lifecycle's "uninstalled after a detach": `stayfixed uninstall` refuses an attached
+    # repository, so what a detach leaves behind decides whether it runs at all. An `init`
+    # footprint, a real attach that merged a rule and a hook entry, a detach, and the tree is the
+    # one `init` left; `uninstall` then runs and takes the footprint back, and a second one finds
+    # nothing to take. Mutation: `mutations/`'s "detach leaves its ledger behind".
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "footprint")
+    initialised = snapshot(root)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert_snapshot_changed(root, initialised)
+    _detach(root, machine, home)
+    assert_snapshot_unchanged(root, initialised)
+    uninstall(root, machine=machine, dry_run=False, force=())
+    assert not (root / MANIFEST_PATH).exists() and not (root / LEDGER).exists()
+    with pytest.raises(Refusal):
+        uninstall(root, machine=machine, dry_run=False, force=())
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
@@ -533,8 +559,8 @@ def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
     # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
     # `attach`'s — the home directory was fine when the repository was attached.
     #
-    # Mutation (declared, "detach discovers the harness anchor from inside the withdrawal"):
-    # the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+    # Mutation (declared, `mutations/`'s "detach discovers the harness anchor from inside the
+    # withdrawal"): the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -575,8 +601,8 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
     # broken one refuses above the first withdrawal.
     #
-    # Mutation (`mutations/`, "detach reads the ignore region after it has already
-    # withdrawn"): the remainder computed where the write happens → the snapshot below changes.
+    # Mutation (`mutations/`'s "detach stops reading the ignore region before its first
+    # withdrawal"): the region is met only where it is written → the snapshot below changes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
@@ -593,6 +619,31 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` reads `.gitignore` to the read cap, and `detach` read the same file whole: a
+    # `.gitignore` past the cap stopped an `attach` and was read to its end by the `detach` beside
+    # it. Both read it through `fsops.read_regular_text` now, and `detach` refuses it above the
+    # first withdrawal, naming the file as the project names it and never by the path it opened.
+    # The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s "detach reads
+    # .gitignore with no bound" -> the region is withdrawn.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    ignore = root / GITIGNORE
+    assert extract(ignore.read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH) is not None
+    limit = 16 * 1024
+    ignore.write_text(ignore.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    before = snapshot(root)
+    with pytest.raises(Failure) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == ".gitignore cannot be read (larger than this reader reads)"
+    assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
 
 
 def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
@@ -699,8 +750,8 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
     one made the detach exit 2 exactly as `{"format": 99}` had.
 
-    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "the
-    manifest reader lets undecodable bytes out as a crash again".
+    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "a read
+    refusal lets undecodable bytes out as a crash again".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -1169,6 +1220,24 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
     assert_snapshot_unchanged(root, before)
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # Every entry is one plain name and no link is on the way: the link tree itself cannot be
+    # searched, so whether a group's place is a link cannot be asked. "is not one directory name"
+    # and its remedy, taking the entry out, named a cause the entry did not have.
+    #
+    # Mutation (oracle): `mutations/`'s "detach words a group it cannot ask about as one that
+    # leaves the tree".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    before = snapshot(root)
+    with unsearchable(root / DEFAULT_MEMORY), pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert str(refused.value) == GROUP_UNASKED_IN_TREE.format(fault="Permission denied")
+    assert_snapshot_unchanged(root, before)
+
+
 def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path: Path) -> None:
     # The same refusal `attach` makes, and the same missing file name.
     #
@@ -1393,8 +1462,8 @@ def test_a_local_settings_write_back_the_encoder_cannot_follow_is_refused_and_re
     # as it does on Python 3.12 near 994 levels. No single mutation reddens it, and that is the
     # point: two layers answer the overflow, `json_text` and the guard around `detach`'s copy and
     # comparison, and each is proven alone -- `mutations/`'s "the JSON writer lets an encode past
-    # the interpreter's recursion escape" by the engine's forced case, and "detach copies and
-    # compares the settings document unguarded" by
+    # the interpreter's recursion escape" -> by the engine's forced case; "detach copies and
+    # compares the settings document unguarded" -> by
     # `test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing`.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -1417,7 +1486,7 @@ def test_a_local_settings_file_linked_to_a_device_stops_detach_before_it_removes
     # `detach` reads `.claude/settings.local.json` to take back what `attach` merged into it, and
     # read a link to a device through: `/dev/null` read as an empty file and the run went on.
     # Only a regular file is read, so it stops before it removes anything. Mutation (declared):
-    # "the settings reader reads a file through any link".
+    # `mutations/`'s "the settings reader reads a file through any link".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -1439,7 +1508,7 @@ def test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read(tmp_path: Pa
     # there to `/dev/zero` read until memory ran out. Only a regular file is read, and the refusal
     # names the ledger as the project names it, never the machine's path. `/dev/null` tells the
     # guard apart without hanging: read, it is an empty ledger, "not valid JSON". Mutation
-    # (declared): "the attach ledger is read through any link".
+    # (declared): `mutations/`'s "the attach ledger is read through any link".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
@@ -1487,7 +1556,7 @@ def test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_
     # left with it, and neither step was guarded: on Python 3.14 under a reduced stack a document
     # the parser read raised `RecursionError` at either, an internal error. Forced at each step
     # here; both are the reader's refusal of a document nested too deep. Mutation (declared):
-    # "detach copies and compares the settings document unguarded".
+    # `mutations/`'s "detach copies and compares the settings document unguarded".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"

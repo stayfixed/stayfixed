@@ -41,12 +41,12 @@ SOURCE = ROOT / "src" / "stayfixed"
 # whole of what went wrong with `hooks`.
 AREAS = sorted(path.parent.name for path in SOURCE.glob("*/api.py"))
 
-# The one area whose `api.py` **defines** rather than re-exports, named rather than skipped
-# silently — for `tests/test_areas.py`'s stated reason, that an exemption nobody can see is how
-# the violation a guard exists to catch gets merged green. `stayfixed.hooks.api`'s own docstring
+# The one area whose `api.py` **defines** rather than re-exports, named rather than skipped silently
+# — for `tests/boundaries/test_api_surface.py`'s stated reason, that an exemption nobody can see is
+# how the violation a guard exists to catch gets merged green. `stayfixed.hooks.api`'s own docstring
 # argues it and CONTRIBUTING records it: the handler vocabulary is what `registry`, `dispatch`,
-# `sink` and every area's `hooks.py` import, so re-exporting a name defined in one of those
-# would be an import cycle. The back-door half of the rule still applies to it in full.
+# `sink` and every area's `hooks.py` import, so re-exporting a name defined in one of those would be
+# an import cycle. The back-door half of the rule still applies to it in full.
 DEFINES_ITS_OWN = frozenset({"hooks"})
 
 # The names an area's modules import only under `if TYPE_CHECKING:`, so that an annotation
@@ -122,10 +122,10 @@ def test_the_export_list_is_exactly_what_the_module_imports_from_its_area(area: 
         if not isinstance(node, ast.ImportFrom) or node.module == "__future__":
             continue
         assert node.module is not None
-        # The back-door half, and it holds for every area including the one that defines its
-        # own: a surface that reached into another area would make this module a way past that
-        # area's `api.py` with none of the crossings `tests/test_areas.py` counts. Scoped to
-        # the other areas and not to every `stayfixed.` name, for that walk's own reason — the
+        # The back-door half, and it holds for every area including the one that defines its own: a
+        # surface that reached into another area would make this module a way past that area's
+        # `api.py` with none of the crossings `tests/boundaries/test_api_surface.py` counts. Scoped
+        # to the other areas and not to every `stayfixed.` name, for that walk's own reason — the
         # configuration layer and the leaves are not areas, and `stayfixed.hooks.api` names
         # `stayfixed.config.schema.Config` in `HandlerFn` because that is the handler signature.
         parts = node.module.split(".")
@@ -190,7 +190,7 @@ def test_every_type_the_surface_names_in_a_signature_is_on_the_surface(area: str
 def test_the_surface_is_a_module_not_the_package_init(area: str) -> None:
     # Measured: with the re-export list in `__init__.py`, `discover()` imports the whole area —
     # configuration layer included — on every call, because area discovery imports a package
-    # before it imports the submodule it wants, and `tests/test_areas.py` goes red.
+    # before it imports the submodule it wants, and `tests/boundaries/test_discovery.py` goes red.
     package = importlib.import_module(f"stayfixed.{area}")
     init = Path(next(iter(package.__path__))) / "__init__.py"
     tree = ast.parse(init.read_text(encoding="utf-8"))

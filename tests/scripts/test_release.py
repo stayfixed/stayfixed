@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from stayfixed.errors import Failure, Refusal
+from stayfixed.jsonobject import DEPTH_CAP, NESTED
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
 from tests.cli import subparsers
@@ -359,6 +361,19 @@ def test_the_four_root_conditions_get_four_different_messages(tmp_path: Path) ->
     assert len({tuple(absent), tuple(a_file), tuple(unrelated), tuple(versionless)}) == 4
 
 
+def test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `--root` that is no repository root is no version disagreeing, and printed under "version
+    # drift:" it read as one. Said alone, exit 1 as before. Mutation: `mutations/`'s "a root the
+    # release check cannot read is reported as version drift".
+    missing = tmp_path / "nope"
+    assert release.main(["check", "--root", str(missing)]) == 1
+    assert capsys.readouterr().out == (
+        f"{missing} does not exist; --root must name a repository root\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "body", "kind"),
     [
@@ -380,23 +395,24 @@ def test_a_malformed_source_is_reported_with_its_filename(
     assert kind in str(raised.value)
 
 
-# Past `json`'s own depth on every supported interpreter: 3.11 stops near 1000, 3.12 and 3.13
-# between 5000 and 10000 (measured on 3.11.15, 3.12.13 and 3.13.0).
-JSON_DEPTH = 100_000
-
-
 @pytest.mark.parametrize("name", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
-def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, name: str) -> None:
+def test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform(
+    tmp_path: Path, name: str
+) -> None:
     # `json` answers nesting past its depth with `RecursionError`, not `JSONDecodeError`, and the
-    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Mutation
-    # (declared): the language chosen without the source's name -> "TOML", and this reddens.
+    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Where that
+    # depth is, is the interpreter's and the platform's: 3.11 to 3.13 stop short of
+    # `jsonobject.DEPTH_CAP`, and 3.14 follows as deep as the C stack allows, past 100,000 levels on
+    # Linux and not on macOS, so a case that asserted `json` raised at a fixed depth passed on one
+    # and not the other. One level past the cap is refused by the product's own reader on all of
+    # them, in the same words. Mutation (oracle): `mutations/`'s "release check reads a JSON source
+    # past the shared reader".
     root = _repo(tmp_path)
-    (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
-    with pytest.raises(RecursionError):
-        json.loads((root / name).read_text())
+    nested = "[" * DEPTH_CAP + "]" * DEPTH_CAP
+    (root / name).write_text('{"version": ' + nested + "}")
     with pytest.raises(release.MalformedSource) as raised:
         release.check(root)
-    assert str(raised.value).startswith(f"{name} is not valid JSON: ")
+    assert str(raised.value) == f"{name} {NESTED}"
 
 
 @pytest.mark.parametrize(
@@ -418,10 +434,10 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
 @pytest.mark.parametrize(
     ("name", "body", "shape"),
     [
-        (".claude-plugin/plugin.json", "[]", "its top level is not an object"),
-        (".codex-plugin/plugin.json", '"0.1.0"', "its top level is not an object"),
+        (".claude-plugin/plugin.json", "[]", "is not a JSON object"),
+        (".codex-plugin/plugin.json", '"0.1.0"', "is not a JSON object"),
         ("pyproject.toml", 'project = "x"\n', "its project is not a table"),
-        (".claude-plugin/marketplace.json", "[]", "its top level is not an object"),
+        (".claude-plugin/marketplace.json", "[]", "is not a JSON object"),
         (".claude-plugin/marketplace.json", '{"plugins": ["version"]}', "not a list of objects"),
         (".claude-plugin/marketplace.json", '{"plugins": "x"}', "not a list of objects"),
         (".claude-plugin/marketplace.json", "{not json", "is not valid JSON"),
@@ -443,8 +459,8 @@ def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
     # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
     # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
     # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
-    # passed in silence. Mutations (oracle): "a manifest whose top level is not an object is read
-    # with .get" and "the marketplace reads a plugins value that is not a list of objects".
+    # passed in silence. Mutations (oracle): `mutations/`'s "release check reads a JSON source past
+    # the shared reader" and "the marketplace reads a plugins value that is not a list of objects".
     root = _repo(tmp_path)
     (root / name).write_text(body)
     with pytest.raises(release.MalformedSource) as raised:
@@ -833,17 +849,61 @@ def test_no_record_and_a_missing_file_are_both_drift(tmp_path: Path) -> None:
     [b"{not json\n", b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n'],
     ids=["not-json", "not-utf8"],
 )
-def test_a_record_that_cannot_be_read_fails_the_drift_check_and_never_reads_clean(
+def test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean(
     tmp_path: Path, body: bytes
 ) -> None:
-    # `drift` has no arm of its own for this: the reader's `UnreadableRecord` passes through it,
-    # and that class is a `Failure`, so the check exits 1 naming the record rather than reading
-    # a corrupt one as no drift. No mutation of its own — the raise is the reader's, and the
-    # entries on `read_record` that name `tests/release/test_hashes.py` pin it there.
+    # A corrupt record is never read as no drift. It is drift like any other, naming the record
+    # and the command that writes it again: let out as the reader's `UnreadableRecord`, it was
+    # `stayfixed: failed:` on stderr, a third spelling of a record problem, and `--json` lost the
+    # object both commands otherwise print. Mutation: `mutations/`'s "a record that cannot be read
+    # leaves the drift check as a failure".
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_bytes(body)
-    with pytest.raises(Failure, match=re.escape(RECORD)):
-        release.drift(root)
+    [problem] = release.drift(root)
+    assert problem.startswith(f"{RECORD} is ")
+    assert problem.endswith("; run `uv run python scripts/release.py hashes`")
+
+
+# Each way the tree and its record disagree, and what both commands then say of it.
+RECORD_PROBLEMS = {
+    "missing": (
+        lambda root: (root / RECORD).unlink(),
+        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`",
+    ),
+    "a-file-gone": (
+        lambda root: (root / "hooks" / "run-hook.sh").unlink(),
+        f"{RECORD} names hooks/run-hook.sh, which is not in the tree",
+    ),
+    "a-file-edited": (
+        lambda root: (root / "hooks" / "run-hook.sh").write_text("# edited\n", encoding="utf-8"),
+        f"{RECORD} does not match hooks/run-hook.sh; run `uv run python scripts/release.py hashes`",
+    ),
+    "not-a-record": (
+        lambda root: (root / RECORD).write_text("[]\n", encoding="utf-8"),
+        f"{RECORD} is present and is not a format-1 record; run "
+        "`uv run python scripts/release.py hashes`",
+    ),
+}
+
+
+@pytest.mark.parametrize(("spoil", "problem"), RECORD_PROBLEMS.values(), ids=RECORD_PROBLEMS)
+def test_both_commands_spell_a_record_problem_one_way(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    spoil: Callable[[Path], object],
+    problem: str,
+) -> None:
+    # `check` said "version drift" of a record no version disagrees with, `hashes --check` said
+    # "release record drift" of the same state, and a record that was not one was `stayfixed:
+    # failed:`. One spelling now, on stdout, from both, with the exit code and the remedy as they
+    # were. Mutation: `mutations/`'s "the release check reports a record problem as version drift".
+    root = hashed_plugin(_repo(tmp_path))
+    release.write_record(root)
+    spoil(root)
+    for argv in (["check"], ["hashes", "--check"]):
+        assert release.main([*argv, "--root", str(root)]) == 1
+        captured = capsys.readouterr()
+        assert (captured.out, captured.err) == (f"release record drift: {problem}\n", "")
 
 
 def test_the_cli_writes_the_record_and_check_exits_one_on_drift(

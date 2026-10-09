@@ -27,12 +27,15 @@ nor an inherited `GIT_DIR` can point this module at another project's notes. Bot
 by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block that
 applies with no trust prompt in a non-interactive session.
 
-**The machine file makes the same claim.** `machine_config_path` gates `STAYFIXED_CONFIG` and
-`XDG_CONFIG_HOME` alike behind `interactive`, since gating one alone is worth nothing: both
-variables reach the same file, and this area routes the store's overlay anchor
-(`overlay_root(None)`) and the trust record (`trust._trust_file(None)`) through it. A committed
-`env` block that could set either would choose which overlay root `permitted_roots` is computed
-from, and which `trust.json` `may_inject` consults, wherever no `--machine` is threaded.
+**The machine file makes the same claim.** `machine_config_path` reads none of
+`STAYFIXED_CONFIG`, `XDG_CONFIG_HOME` and `HOME` (the home directory is the password database's),
+since gating one alone is worth nothing: each of them reaches the same file, and this area routes
+the store's overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
+through it. A committed
+`env` block setting `STAYFIXED_CONFIG`, or direnv, mise or a devcontainer setting
+`XDG_CONFIG_HOME` or `HOME` from a file the clone commits, would choose which overlay root
+`permitted_roots` is computed from, and which `trust.json` `may_inject` consults, wherever no
+`--machine` is threaded.
 
 Stated exactly, because the exposure is not the same size as the invariant: pointing a variable
 somewhere of the author's choosing would **suppress** memory — no overlay root and no recorded
@@ -51,11 +54,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
+from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import GitUnavailable, git_answer, origin_remote
 from stayfixed.printed import clipped, quoted
 
@@ -89,9 +94,9 @@ class Store:
     # The machine file this store was resolved against, carried rather than re-passed.
     #
     # Not an optional keyword on every function that reads the store: a `None` there is not
-    # inert — it re-reads `$XDG_CONFIG_HOME/stayfixed/config.toml` out of the process
-    # environment, silently changing `permitted_roots`, the index destination, and which
-    # `trust.json` is consulted — so a caller that forgot one argument would get a different
+    # inert — it re-reads the machine file under the password database's home rather than the
+    # one `resolve` was given, silently changing `permitted_roots`, the index destination, and
+    # which `trust.json` is consulted — so a caller that forgot one argument would get a different
     # overlay, a different write target and a different trust record, with nothing to say so.
     #
     # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
@@ -279,8 +284,11 @@ def read_binding_record(record: Path) -> dict[str, str]:
     stops the run, so a broken record never becomes a first attach; and `attach`'s
     `_first_attach` keeps today's date, which is a note and binds nothing. Whether there is a
     record at all is the caller's question too, asked before this.
+
+    Read through `fsops.read_regular_text`, so a record swapped for a FIFO or a device after that
+    question is refused unread, an `OSError` like any other, and one past the cap is refused too.
     """
-    raw = tomllib.loads(record.read_text(encoding="utf-8"))
+    raw = tomllib.loads(read_regular_text(record))
     return {key: value for key, value in raw.items() if isinstance(value, str) and value}
 
 
@@ -292,7 +300,7 @@ def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """
     record = overlay / PROJECTS / project / PROJECT_RECORD
     recorded = None
-    if record.is_file():
+    if fsops.is_file(record):
         try:
             recorded = read_binding_record(record).get("remote")
         except (OSError, UnicodeDecodeError, *UNPARSEABLE):
@@ -338,11 +346,20 @@ def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
     return common if group == COMMON_GROUP else own / group
 
 
-def _declared(root: Path, config: Config) -> Path | None:
+def _declared(root: Path, config: Config) -> Path | Unresolved:
+    """`paths.memory` under `root`, or why it is refused, in words that name the cause."""
     try:
         return contained(root, config.paths.memory, allow_final_symlink=True)
+    except PathUnasked as exc:
+        return Unresolved(
+            "a directory on the way to paths.memory cannot be checked for a symlink",
+            f"paths.memory ({config.paths.memory!r}) cannot be checked for a symlink ({exc.fault})",
+        )
     except PathEscape:
-        return None
+        return Unresolved(
+            "paths.memory does not stay inside the project",
+            f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
+        )
 
 
 def _group_targets(
@@ -356,10 +373,10 @@ def _group_targets(
         except PathEscape as exc:
             unavailable[group] = str(exc)
             continue
-        if not target.exists():
+        if not fsops.exists(target):
             unavailable[group] = f"{clipped(group)} is not in the store"
             continue
-        if target.is_symlink():
+        if fsops.is_symlink(target):
             if overlay is None:
                 unavailable[group] = f"{clipped(group)} is a link and no overlay is recorded"
                 continue
@@ -382,7 +399,7 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
     index rendered from it has no developer notes, and `--check` would call that index current. A
     store is one store however it is named, so this name resolves as the plain run does.
     """
-    if override is None or overlay is None or config.memory.mode != "overlay":
+    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:
         return False
     own = permitted_roots(overlay, config.project.name)[1]
     return Path(override).expanduser().resolve() == own.resolve()
@@ -402,7 +419,7 @@ def _resolve_at(
         override = None
     if override is not None:
         base = Path(override).expanduser()
-    elif mode == "local-only":
+    elif mode == LOCAL_ONLY_MODE:
         try:
             # `contained` with no `allow_final_symlink` refuses a symlink at *any* level
             # between the root and the target, which testing `base.is_symlink()` would not:
@@ -412,6 +429,11 @@ def _resolve_at(
             # `paths.memory`, left open one directory higher — and in the mode the preset
             # ships by default, where the whole store is otherwise ungoverned by `contained`.
             base = contained(root, str(LOCAL_STORE))
+        except PathUnasked as exc:
+            return None, Unresolved(
+                "a directory on the way to the local-only store cannot be checked for a symlink",
+                str(exc),
+            )
         except PathEscape as exc:
             return None, Unresolved(
                 "the local-only store is not a real directory inside the project",
@@ -419,11 +441,8 @@ def _resolve_at(
             )
     else:
         declared = _declared(root, config)
-        if declared is None:
-            return None, Unresolved(
-                "paths.memory does not stay inside the project",
-                f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
-            )
+        if isinstance(declared, Unresolved):
+            return None, declared
         base = declared
         # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
         # `paths.memory` itself must be a real directory — one link per group, not one link for the
@@ -431,27 +450,27 @@ def _resolve_at(
         # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
         # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
         # `paths.memory` was pointed at — including another project's share.
-        if declared.is_symlink():
+        if fsops.is_symlink(declared):
             return None, Unresolved(
                 f"paths.memory is a symlink, and {mode} memory must be a real directory",
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
             )
-    if mode == "overlay":
+    if mode == OVERLAY_MODE:
         if overlay is None:
             return None, Unresolved(
                 "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
             )
-        if not overlay.is_dir():
+        if not fsops.is_dir(overlay):
             return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
         unbound = _bound(overlay, config.project.name, root)
         if unbound is not None:
             return None, unbound
-    if not base.is_dir():
+    if not fsops.is_dir(base):
         # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
         # it refuses, so it is named as the way out only there.
-        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == "overlay" else "")
+        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == OVERLAY_MODE else "")
         return None, Unresolved(said, str(base))
-    groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
+    groups, unavailable = _group_targets(base, config, overlay if mode == OVERLAY_MODE else None)
     if not groups:
         # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
         # bounded in number by nothing, and this reason reaches a refusal with no `--json`. In
@@ -561,7 +580,7 @@ def inside_project(store: Store) -> bool:
     """
     if any(_inside(target, store.root) for target in store.groups.values()):
         return True
-    return store.mode != "overlay"
+    return store.mode != OVERLAY_MODE
 
 
 def in_repository(store: Store, path: Path) -> bool:

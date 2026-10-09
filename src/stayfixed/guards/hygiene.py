@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards import bashscan
+from stayfixed.guards.roots import contained_roots
 from stayfixed.profiles.hints import answer, shipped_hints
 
 if TYPE_CHECKING:
@@ -147,7 +148,7 @@ def _recognises(hint: RedRunHint, commands: Sequence[Sequence[str]]) -> bool:
 
 def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:
     try:
-        return answer(hint, root, config)[1]
+        return answer(hint, contained_roots(root, config))[1]
     except Exception:
         return None
 

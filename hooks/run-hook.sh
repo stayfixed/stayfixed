@@ -40,9 +40,12 @@
 # wrapper row names it.
 #
 # **A containment is worth no more than the anchor it measures against, and this one has two.**
-# `CLAUDE_PROJECT_DIR` reaches this process from the same committed `env` block the containment
-# exists to defeat, and `git` was a name resolved through the same `PATH` — so measuring against
-# either one alone was a redirect with a longer name for the third time in this file. Measured:
+# `CLAUDE_PROJECT_DIR` is read out of the same environment a committed `env` block writes to —
+# Claude Code 2.1.288 set the real project root over the block's value on the hooks
+# `docs/cli.md` records it measured on, but that is one harness's answer on some events, not a
+# guarantee this file can lean on — and `git` was a name resolved through the `PATH` that block
+# can set — so measuring against either one alone was a redirect with a longer name for the third
+# time in this file. Measured:
 # `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own `python3`
 # "outside the project root" and it ran the launcher; and on the Codex path, where
 # `CLAUDE_PROJECT_DIR` is unset, a clone shipping a `git` had that binary executed on every hook
@@ -53,6 +56,34 @@
 # variables are stripped from its environment and never reach the interpreter below. Measured
 # with an ad-hoc-signed copy of `/bin/bash` running this file: `DYLD_INSERT_LIBRARIES` reached
 # both the probe and the launcher, `-I` notwithstanding. Keep the shebang a protected shell.
+#
+# **No program this file runs is found through `PATH`, but the interpreter it contains.** Claude
+# Code applies a committed `env` block's `PATH` to every hook, and resolves a relative entry against
+# the project (measured on 2.1.293), so a command named bare here is one the clone can ship.
+# Measured before this rule: a clone's `fakebin/dirname` and `fakebin/env` ran on every hook. So
+# every other command below is a shell builtin, the two programs this file needs are named by
+# absolute path — `git` from the list below, and `/usr/bin/env`, which every supported system has
+# — and `dirname`'s answer is a parameter expansion.
+#
+# **No function the environment exports stands in for a command this file runs.** bash imports a
+# function from every variable named `BASH_FUNC_<name>%%`, in POSIX mode too, so wherever `/bin/sh`
+# is bash — macOS, Fedora, Arch — any environment that reaches a hook can define one. A function
+# wins over a regular builtin. Measured
+# through this file on bash 3.2.57 as `/bin/sh`: a `BASH_FUNC_pwd%%` naming a program in the clone
+# ran it five times per hook, past the terminal gate and the containment, with no `PATH` entry at
+# all and the hook's answer unchanged; bash 5.2.37 run as `sh` imports the same functions. So the
+# first statement removes the function of every name this file runs that is not a special builtin,
+# `python3` among them because `command -v` answers a function's bare name and the probe would run
+# it, and `command_not_found_handle`, which bash 4 and later call unasked. `unset` itself cannot be
+# replaced: in POSIX mode a special builtin is found before any function, and a `BASH_FUNC_unset%%`,
+# like one for `set`, `export`, `exit` or `shift`, was measured never to run. The functions defined
+# below replace an imported namesake, each before its first use. `[` is spelled `test` throughout,
+# because bash 3.2 in POSIX mode refuses `unset -f [` as not a valid identifier, and an imported `[`
+# then ran on every test. dash, busybox ash, ksh93 and zsh import no functions and the line removes
+# nothing; stderr is discarded because native zsh names each absent one. What the shell acts on
+# before this line, `SHELLOPTS` with `PS4` or a loader variable, no line here can refuse, and
+# Claude Code passes it on from a trusted folder by design (`SECURITY.md`).
+unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null
 set -u
 
 refuse() { echo "stayfixed: $1; refusing" >&2; exit 2; }
@@ -62,12 +93,12 @@ degrade() { echo "stayfixed: $1; continuing open" >&2; exit 0; }
 # with the shell's own "unbound variable" and exit 1 — measured as exit 1 with no token on
 # /bin/sh (bash 3.2.57), and exit 0 under `zsh --emulate sh`, so the mapping is not even
 # portable. A disarmed guard must say so.
-[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"
+test $# -ge 1 || refuse "SF_ARGV no policy argument"
 policy="$1"
 shift
 
 fail() {
-  if [ "$policy" = closed ]; then refuse "$1"; fi
+  if test "$policy" = closed; then refuse "$1"; fi
   degrade "$1"
 }
 
@@ -77,7 +108,11 @@ fail() {
 # process from somewhere else would choose the Python program we then execute, before any
 # stayfixed guard runs. Whether a project `env` block can in fact shadow a plugin-provided
 # variable is unmeasured, and this does not depend on the answer.
-launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
+#
+# `${0%/*}` is `dirname`'s answer for every path this file is run by, without running `dirname`; a
+# bare `run-hook.sh`, given to `sh` or found through `PATH`, is in `.`, and one at `/` is in `/`.
+case $0 in */*) here=${0%/*} ;; *) here=. ;; esac
+launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 
 # Every entry but the dispatcher's relies on `--root` defaulting to the current directory, and
 # no harness promises to launch a hook inside the project. Resolved here, once, rather than
@@ -92,12 +127,13 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 # its own tree had that binary executed on every hook invocation, before any guard of ours, with
 # its stdout becoming the root every entry then runs against.
 #
-# `gitenv.GIT_ENV_KEEP` keeps `PATH` on purpose and says why: the machine owner's `git` must
-# answer rather than the macOS shim. That ruling holds where it is made, one layer down, where
-# `git` answers a question inside a stayfixed that has already chosen its interpreter. Here its
-# answer decides which programs may run at all, so the trade goes the other way — and the
-# ruling's concern is kept without keeping `PATH`, by asking the machine owner's own installs
-# before `/usr/bin/git`. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
+# The same list, in the same order, is `stayfixed.gitenv.GIT_CANDIDATES`, where every `git` a hook
+# asks inside stayfixed comes from (the launcher's marker, below); `tests/test_git_run.py` holds
+# the two equal. Two spellings held equal, and kept so: exporting the `git` chosen here for
+# stayfixed to take would hand it a variable that names a program, which nothing inherited may
+# do on this path, and checking that value would be a second rule for the same choice.
+# The machine owner's own installs come before `/usr/bin/git`, so the macOS shim answers only where
+# nothing else is installed. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
 # environment-chosen too, so that would be the same hole one directory along.
 #
 # The first candidate that exists is *the* git. Trying the next one when it answers nothing would
@@ -106,13 +142,39 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 # takes the answer the code already gives for a root it cannot trust: a token, `open` degrading
 # and `closed` refusing.
 #
-# `env -i` with a *fixed* PATH and HOME — `gitenv.GIT_ENV_KEEP` minus the locale names this query
-# has no use for, and minus the inherited `PATH`, which no longer chooses the binary and has no
-# further business here. `gitenv._git_toplevel` scrubs the identical call one layer down
-# and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
-# a different repository, and every `--root`-defaulting entry then reads that repository's
-# `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
-# GIT_WORK_TREE=repoB <wrapper>` put the launcher in repoB.
+# `/usr/bin/env -i` with a *fixed* PATH, and the password database's home as HOME —
+# `gitenv.GIT_ENV_KEEP` minus the locale names this query has no use for, and minus the inherited
+# `PATH`, which no longer chooses the binary and has no further business here. The fixed `PATH` is
+# `stayfixed.gitenv.trusted_path()`'s, each candidate's directory and then the system's, the one
+# every `git` stayfixed runs below is handed, so a helper git runs by name is found where that
+# git is; both queries here are git's own built-ins and ran nothing under either. `HOME` chooses git's
+# global configuration, which names programs git runs, and direnv, mise or a devcontainer can set
+# it to a directory the clone commits, so it is the home `stayfixed.gitenv.hook_home` hands every
+# `git` stayfixed runs below: the database's entry for this user, asked through the shell's own
+# `~name` for the name `id -un` gives. `id` is taken as `git` is, from absolute paths and never
+# through `PATH`: the system's own, then NixOS's, which has no `/usr/bin/id`. With `/usr/bin/id`
+# alone, NixOS got no home, and with it lost a global `safe.directory` and so git's anchor for a
+# checkout another user owns. A name that is not a plain one, a name of digits alone, a user the
+# database lists no absolute home for, or a system with `id` at none of these paths gets no
+# `HOME`, never the inherited one.
+#
+# zsh, which `/bin/sh` may be on macOS, expands `~name` from a variable called `name` holding an
+# absolute path before it asks the database, as `sh` too, so a variable in the hook's environment
+# named for the user chose this home. The lookup therefore runs in a subshell that first unsets
+# the variable of that name, spliced into the `eval` so the name is expanded before the unset, and
+# the subshell keeps a name equal to one of this file's own variables from touching it. A name no
+# variable can have, one with a `.` or a `-` or a leading digit, is not unset: dash and zsh end
+# the subshell on `unset` of a name that is not an identifier, which measured as no `HOME` for
+# every such user. A name the shell keeps read-only, such as `PPID` or `UID` under bash, cannot be
+# unset, and the `&&` after the unset gives that user no `HOME`. A name of digits alone is not
+# looked up at all: to bash and zsh `~0` is the top of the directory stack, the directory the
+# harness launched the hook in, not a user.
+#
+# `gitenv._git_toplevel` scrubs the identical `env -i` call one layer down and names the failure
+# verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for a different repository,
+# and every `--root`-defaulting entry then reads that repository's `stayfixed.toml`, budgets and
+# note store. Measured: `cd repoA; GIT_DIR=repoB/.git GIT_WORK_TREE=repoB <wrapper>` put the
+# launcher in repoB.
 #
 # Asked **here**, in the directory the harness launched us in, and never after the `cd` below:
 # with `CLAUDE_PROJECT_DIR` naming a tree elsewhere, a `git` asked from inside that tree would
@@ -127,18 +189,34 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 git_bin=
 for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin/git \
   /run/current-system/sw/bin/git /usr/bin/git /bin/git; do
-  if [ -x "$g" ]; then
+  if test -x "$g"; then
     git_bin="$g"
     break
   fi
 done
-[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
-git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
+test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
+git_path=/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin
+git_home=
+git_user=
+for i in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do
+  if test -x "$i"; then
+    git_user=$("$i" -un 2>/dev/null) || git_user=
+    break
+  fi
+done
+case $git_user in
+  '' | -* | *[!A-Za-z0-9._-]*) ;;
+  [0-9]*[!0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
+  [0-9]*) ;;
+  *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
+esac
+case $git_home in /*) ;; *) git_home= ;; esac
+git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
 # answer; what it no longer does is decide it alone for the containment.
 root="${CLAUDE_PROJECT_DIR:-}"
-[ -n "$root" ] || root="$git_root"
+test -n "$root" || root="$git_root"
 # A root that could not be *resolved* is not fatal: the command finds no configuration and emits
 # nothing, which is the correct open degradation. A root that was resolved and cannot be entered
 # is a different state and used to be silent — the process stayed in the harness's cwd, and if
@@ -156,7 +234,7 @@ root="${CLAUDE_PROJECT_DIR:-}"
 # and the containment is anchored on it. A root beginning with `-` is parsed as an option
 # without the `--`.
 project=
-if [ -n "$root" ]; then
+if test -n "$root"; then
   CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"
   project=$(pwd -P)
 fi
@@ -166,7 +244,7 @@ fi
 # compared on its own: it is the first member of the checkout list below, because a checkout is
 # what it names.
 git_project=
-[ -z "$git_root" ] || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pwd -P)
+test -z "$git_root" || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pwd -P)
 
 # **Every checkout of this repository, and not only the one the hook runs in.** Both anchors
 # above name a single checkout, and a clone's committed bytes reach every checkout of it: inside
@@ -181,7 +259,7 @@ git_project=
 # A function and not a bare substitution: a `case` inside `$( )` is a parse error on the
 # `/bin/sh` macOS ships (bash 3.2), which this file has to run under.
 list_checkouts() {
-  env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
+  /usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
     while IFS= read -r line; do
       case "$line" in
         "worktree "*)
@@ -200,7 +278,7 @@ list_checkouts() {
 # list worktrees must not cost the containment its git anchor entirely. The declared mutation is
 # therefore on the list, which a linked worktree can tell apart from this line.
 git_checkouts=
-[ -z "$git_root" ] || git_checkouts=$(
+test -z "$git_root" || git_checkouts=$(
   printf '%s\n' "$git_project"
   list_checkouts
 )
@@ -233,15 +311,16 @@ git_checkouts=
 # every candidate on the strength of a question it could not ask would turn an unresolvable root
 # into no hooks at all.
 under_root() {
-  [ -n "$2" ] || return 1
-  [ "$1" = "$2" ] && return 0
-  [ "${1#"$2"/}" != "$1" ] && return 0
+  test -n "$2" || return 1
+  test "$1" = "$2" && return 0
+  test "${1#"$2"/}" != "$1" && return 0
   return 1
 }
 
 in_project() {
-  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
-  [ -n "$dir" ] || return 1
+  case $1 in */*) dir=${1%/*} ;; *) dir=. ;; esac
+  dir=$(CDPATH= cd -- "${dir:-/}" 2>/dev/null && pwd -P) || return 1
+  test -n "$dir" || return 1
   under_root "$dir" "$project" && return 0
   # One checkout per line, `git_project` among them: `IFS` is a newline for this split and is
   # restored after it. The only caller is the candidate loop below, which runs under `set -f`,
@@ -266,8 +345,8 @@ in_project() {
 # `STAYFIXED_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
 # only to exit 0 for a trivial `-I -c` — so unguarded it is a redirect with a longer name, and the
 # repository-planted interpreter was measured running `<plugin>/scripts/stayfixed hook PreToolUse`
-# on every tool call. It is therefore honoured exactly where `config/machine.py` honours
-# `STAYFIXED_CONFIG`: from an interactive terminal. A hook's stdin is the harness's JSON payload
+# on every tool call. It is therefore honoured only where a person is, as `attach`'s `--machine`
+# is: from an interactive terminal. A hook's stdin is the harness's JSON payload
 # on a pipe and `doctor` hands its own probe `/dev/null`, so neither path can be redirected by an
 # `env` block, while a machine owner debugging the probe by hand still gets their list.
 #
@@ -282,7 +361,7 @@ in_project() {
 # reaches the version check rather than an option error. The contract, and the loader variables
 # `-I` cannot reach: `docs/cli.md`, "The chosen interpreter starts isolated".
 candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3'
-if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
+if test -t 0 && test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
 p=
 skipped_in_project=
 # `set -f` for the split: a candidate is a program name or a path, never a pattern, and without
@@ -292,7 +371,7 @@ skipped_in_project=
 set -f
 for c in $candidates; do
   resolved=$(command -v "$c" 2>/dev/null) || continue
-  [ -n "$resolved" ] || continue
+  test -n "$resolved" || continue
   if in_project "$resolved"; then
     skipped_in_project=1
     continue
@@ -313,8 +392,8 @@ set +f
 # one *was* found, and deliberately not run — and the one remedy that exists was named only in
 # `docs/cli.md` and the changelog, neither of which is where they are standing. So the in-tree
 # arm names it here.
-if [ -z "$p" ]; then
-  if [ -n "$skipped_in_project" ]; then
+if test -z "$p"; then
+  if test -n "$skipped_in_project"; then
     fail "SF_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
   fi
   fail "SF_NO_PY no python3 of 3.11 or newer among the candidates"
@@ -324,8 +403,14 @@ fi
 # printed its own `Permission denied` and exited 2 with no token of ours — the unattributed exit
 # 2 this file's header is about, and a state `doctor`'s wrapper row read as green because it
 # keys on finding a token (measured with `chmod 000`).
-[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
+test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
+# **The launcher is told this file launched it**, and only then does stayfixed take every `git` it
+# runs from the list above, with a fixed `PATH` (`stayfixed.gitenv.git_program`): a `stayfixed`
+# run anywhere else, at a terminal or in a CI step, keeps the `git` on its `PATH`. Set here, over
+# whatever value was inherited, so an `env` block or a parent that presets it cannot turn that
+# off; set anywhere else, it can only make stayfixed's `git` stricter, never looser.
+export STAYFIXED_HOOK_WRAPPER=1
 # `-I` for the reason the probe takes it.
 "$p" -I "$launcher" "$@"
 rc=$?

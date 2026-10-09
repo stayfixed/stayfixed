@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
 
@@ -58,7 +59,7 @@ def repository_prefix(root: Path) -> str:
     if ancestor is None:
         raise Refusal(ROOT_THROUGH_SYMLINK)
     below = lexical.parts[len(ancestor.parts) :]
-    linked = any(ancestor.joinpath(*below[: n + 1]).is_symlink() for n in range(len(below)))
+    linked = any(fsops.is_symlink(ancestor.joinpath(*below[: n + 1])) for n in range(len(below)))
     spelled = "".join(f"{part}/" for part in below)
     if linked or spelled != prefix.rstrip("\n"):
         raise Refusal(ROOT_THROUGH_SYMLINK)

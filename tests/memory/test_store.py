@@ -17,6 +17,7 @@ from stayfixed.memory.store import (
     resolve,
 )
 from tests.gitfixture import git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -158,6 +159,44 @@ def test_local_only_refuses_a_store_reached_through_a_symlinked_ancestor(tmp_pat
     config = a_config(root, "local-only")
     assert resolve(root, config) is None
     assert "symlink" in (refusal_reason(root, config) or "")
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_local_only_store_that_cannot_be_asked_about_is_refused_for_that(tmp_path: Path) -> None:
+    # `.stayfixed/local` is a real directory nobody may search, so whether the store is a link
+    # cannot be asked; no link is on the way, and "not a real directory inside the project" named
+    # a cause the store did not have. Mutation (oracle): `mutations/`'s "the store words a
+    # local-only store it cannot ask about as a link".
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
+    config = a_config(root, "local-only")
+    with unsearchable(root / ".stayfixed" / "local"):
+        assert resolve(root, config) is None
+        reason = refusal_reason(root, config) or ""
+    assert reason.startswith(
+        "a directory on the way to the local-only store cannot be checked for a symlink"
+    )
+    assert "(Permission denied)" in reason
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that(tmp_path: Path) -> None:
+    # The same for `paths.memory`. The loader asks the same question of every `[paths]` value, so
+    # a directory that stops being searchable once the configuration has loaded is the way here.
+    # Mutation (oracle): `mutations/`'s "the store words a paths.memory it cannot ask about as an
+    # escape".
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / "docs" / "memory" / "developer").mkdir(parents=True)
+    config = a_config(root, "in-repo")
+    with unsearchable(root / "docs"):
+        assert resolve(root, config) is None
+        reason = refusal_reason(root, config) or ""
+    assert reason.startswith(
+        "a directory on the way to paths.memory cannot be checked for a symlink"
+    )
+    assert "stay inside" not in reason
 
 
 def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_overlay_mode(

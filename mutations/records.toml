@@ -86,6 +86,7 @@ before = '        return fsops.unlink_within(root, relative, pointing_at=source)
 after = '        return fsops.unlink_within(root, relative)'
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]
 
 # Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
@@ -287,7 +288,7 @@ reddens = [
 [[mutation]]
 name = "a freshly allocated identifier overwrites an existing entry file"
 file = "src/stayfixed/ledger/write.py"
-before = '    if path.exists():'
+before = '    if fsops.exists(path):'
 after = '    if False:'
 reddens = ["tests/ledger/test_write.py::test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns"]
 
@@ -356,19 +357,60 @@ reddens = ["tests/docs/test_commands.py::test_docs_check_takes_no_store"]
 [[mutation]]
 name = "an empty Premise marker is satisfied by text anywhere later in the plan"
 file = "src/stayfixed/docs/plans.py"
-before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)'
-after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
+before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*[^\S\n]*\S)?", re.MULTILINE)'
+after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*\s*\S)?", re.MULTILINE)'
 reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
+
+# Every premise marker before a colon reaches that colon, so the markers are read on once each:
+# searched for from every marker, 16,000 with no colon after them took half a second, and four
+# times as long at each doubling.
+[[mutation]]
+name = "a premise marker is read on from every marker"
+file = "src/stayfixed/docs/plans.py"
+before = "    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(prose))"
+after = '    return re.search(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", prose, re.MULTILINE) is not None'
+reddens = ["tests/docs/test_plans.py::test_a_long_plan_is_linted_in_time_linear_in_its_length[premise markers]"]
+
+# Claims come in order, so a claim's sentence end and the expectation markers are read forward
+# once beside them: from the paragraph's start at every claim, 16,000 claims took 12.7 s, and four
+# times as long at each doubling.
+[[mutation]]
+name = "a claim's sentence is looked for from its paragraph's start"
+file = "src/stayfixed/docs/plans.py"
+before = """            while end is not None and end.end() <= match.start():
+                opening, end = end.end(), next(ends, None)"""
+after = "            opening = max((e.end() for e in _SENTENCE_END.finditer(text, 0, match.start())), default=0)"
+reddens = [
+  "tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[a sentence each]",
+  "tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[one sentence]",
+]
+
+[[mutation]]
+name = "an expectation marker is looked for over the claim's whole sentence again"
+file = "src/stayfixed/docs/plans.py"
+before = "            if marker is not None and marker.end() <= match.end():"
+after = "            if _MARKED_AS_EXPECTATION.search(text[opening : match.end()]):"
+reddens = ["tests/docs/test_plans.py::test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length[one sentence]"]
 
 # A plan names what its tasks remove, so once they land a finished plan must not read as dead.
 [[mutation]]
 name = "a path a plan declares on a Delete line reads as a dead reference once it is gone"
 file = "src/stayfixed/docs/plans.py"
-before = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
-after = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)'
+before = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+after = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test):\s*(.+)$", re.MULTILINE)'
 reddens = [
   "tests/docs/test_plans.py::test_a_path_the_plan_declares_deleted_is_not_a_dead_reference_once_it_is_gone",
 ]
+
+# A declaring line's match starts on the dash's own line: led by `^\s*`, it was read for from every
+# line start in the blank lines above, 16,000 of them in a third of a second, four times as long at
+# each doubling.
+[[mutation]]
+name = "a declaring line is read for from every blank line above it"
+file = "src/stayfixed/docs/plans.py"
+before = '_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+after = '_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)'
+reddens = ["tests/docs/test_plans.py::test_a_long_plan_is_linted_in_time_linear_in_its_length[blank lines]"]
 
 [[mutation]]
 name = "a line a plan marks (delete) reads as a dead reference once its path is gone"
@@ -453,6 +495,39 @@ after = '''        text = blank_code_spans(
             blank_fences(__import__("stayfixed.memory.notes").memory.notes.read_note(note.path).body)
         )'''
 reddens = ["tests/memory/test_graph.py::test_refs_walks_the_store_once_for_its_findings_and_the_graph"]
+
+# A link is read once: where none is found from an opening `[[`, none is from any `[[` before the
+# next `]`, so that stretch is taken whole. Found from every `[[`, 16,000 `[` took half a second,
+# four times as long at each doubling.
+[[mutation]]
+name = "a wiki link is read for again from every opening bracket"
+file = "src/stayfixed/memory/graph.py"
+before = "    return (link for link in _LINK.finditer(text) if link.group(1) is not None)"
+after = '    return re.finditer(r"\[\[([^\]]+)\]\]", text)'
+reddens = [
+  "tests/memory/test_graph.py::test_a_long_note_s_links_are_read_in_time_linear_in_its_length[opening brackets]",
+  "tests/memory/test_graph.py::test_a_long_note_s_links_are_read_in_time_linear_in_its_length[unclosed links]",
+]
+
+# The separators are possessive, so `re` keeps no record per separator: greedy, a mebibyte of
+# blanks between two links took 154 MiB more to read.
+[[mutation]]
+name = "the separators between two links are given back"
+file = "src/stayfixed/memory/graph.py"
+before = '_SEPARATORS = re.compile(r"(?:[,\s]|\band\b|\bor\b)*+")'
+after = '_SEPARATORS = re.compile(r"(?:[,\s]|\band\b|\bor\b)*")'
+reddens = ["tests/memory/test_graph.py::test_a_long_gap_between_two_links_is_read_in_memory_linear_in_its_length"]
+
+# Two links repeat only when separators fill the whole gap between them: code between them is not a
+# list of the same note.
+[[mutation]]
+name = "a repeat is noted across code between two links"
+file = "src/stayfixed/memory/graph.py"
+before = "            and _SEPARATORS.fullmatch(text, before.end(), link.start())"
+after = "            and _SEPARATORS.match(text, before.end(), link.start())"
+reddens = [
+  "tests/memory/test_graph.py::test_a_link_inside_a_code_span_or_fence_is_not_a_link_and_code_between_links_is_not_a_repeat",
+]
 
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
@@ -608,11 +683,99 @@ reddens = [
 [[mutation]]
 name = "a stale index a killed renumber left is sent to bugs index"
 file = "src/stayfixed/ledger/check.py"
-before = '        remedy = f"renumber {move[0]} {move[1]}" if move else "index"'
-after = '        remedy = "index"'
+before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
+after = "    return f\"is stale; run: stayfixed {register.name} index\""
 reddens = [
   "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-pointer]",
   "tests/ledger/test_check.py::test_a_stale_index_a_killed_renumber_left_names_the_renumber_that_finishes_it[before-sibling-sweep]",
+]
+
+# A write of the move's own that fails is the move's failure, naming the re-run that finishes it:
+# let out as the `OSError` it is, it was an internal error, exit 2, that named no way on.
+[[mutation]]
+name = "a renumber's failed target write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = '            raise unfinished(f"{directory}/{new}.md", error) from error'
+after = "            raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[target]"]
+
+[[mutation]]
+name = "a renumber's failed pointer write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = '            raise unfinished(f"{directory}/{old}.md", error) from error'
+after = "            raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[pointer]"]
+
+[[mutation]]
+name = "a renumber's failed index write escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = "        raise unfinished(register.index, error) from error"
+after = "        raise"
+reddens = ["tests/ledger/test_commands.py::test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it[index]"]
+
+# The index written after `new` has filed its entry, and by `index` itself: a failure there is the
+# command's, naming what was filed and the command that finishes the job, never an internal error
+# after which an operator files the same report again.
+[[mutation]]
+name = "a filing whose index write fails escapes as an internal error"
+file = "src/stayfixed/ledger/write.py"
+before = "        _write_index(root, register)\n    except OSError as error:\n        unindexed = FILED_UNINDEXED.format("
+after = "        _write_index(root, register)\n    except OSError as error:\n        raise\n        unindexed = FILED_UNINDEXED.format("
+reddens = ["tests/ledger/test_commands.py::test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_index"]
+
+[[mutation]]
+name = "an index write that fails escapes as an internal error"
+file = "src/stayfixed/ledger/commands.py"
+before = "        reason = fsops.said(error)\n        raise Failure("
+after = "        raise\n        raise Failure("
+reddens = ["tests/ledger/test_commands.py::test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun"]
+
+# The allocator's warning says the number may be taken on a branch this checkout has not fetched,
+# and a filing that stops at the index is the one whose number the operator acts on next.
+[[mutation]]
+name = "a filing whose index write fails drops the allocator's warning"
+file = "src/stayfixed/ledger/write.py"
+before = '        warned = f"{unindexed}; {allocation.warning}" if allocation.warning else unindexed'
+after = "        warned = unindexed"
+reddens = ["tests/ledger/test_commands.py::test_a_filing_whose_index_write_fails_keeps_the_allocators_warning"]
+
+# Two entries that differ only in `id:`, which a `bugs new` run twice files, make a move of either
+# explain the same stale index, and naming the first voided the entry nobody moved.
+[[mutation]]
+name = "a stale index several renumbers explain names the first of them"
+file = "src/stayfixed/ledger/check.py"
+before = "    if len(commands) > 1:"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_stale_index_more_than_one_renumber_explains_names_each_and_runs_none",
+]
+
+# The sweep runs before the index write and retitles the other entries that name the old number,
+# so each line of the entries as they stand is matched with the found index's line as it was or as
+# the sweep writes it: matched only as it was, the retitled rows, alone or beside a title that named
+# the new number before the move, left the check naming `bugs index`. And the moved entry's own row,
+# put back, is never swept, so the line as it was is half the rule.
+[[mutation]]
+name = "a stale index a killed renumber left is matched with the sweep left in place"
+file = "src/stayfixed/ledger/check.py"
+before = "        line in (before, sweep.sub(new, before)) for before, line in zip(was, now, strict=True)"
+after = "        line == before for before, line in zip(was, now, strict=True)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-chained-move]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-title-naming-it]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[both-kinds-of-row]",
+]
+
+[[mutation]]
+name = "a stale index a killed renumber left is matched only with the sweep applied"
+file = "src/stayfixed/ledger/check.py"
+before = "        line in (before, sweep.sub(new, before)) for before, line in zip(was, now, strict=True)"
+after = "        line == sweep.sub(new, before) for before, line in zip(was, now, strict=True)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-chained-move]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-title-naming-it]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[a-title-naming-the-new-number]",
+  "tests/ledger/test_check.py::test_a_renumber_killed_at_its_index_names_itself_when_its_sweep_rewrote_a_row[both-kinds-of-row]",
 ]
 
 [[mutation]]
@@ -645,8 +808,8 @@ reddens = [
 [[mutation]]
 name = "a renumber adopts a symlink at its target"
 file = "src/stayfixed/ledger/write.py"
-before = "    if target.is_symlink() or not target.is_file():"
-after = "    if not target.is_file():"
+before = "    if fsops.is_symlink(target) or not fsops.is_file(target):"
+after = "    if not fsops.is_file(target):"
 reddens = [
   "tests/ledger/test_write.py::test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own_half",
 ]
@@ -1135,7 +1298,7 @@ reddens = [
 [[mutation]]
 name = "a home that is not there stops being a refusal"
 file = "src/stayfixed/memory/worktree.py"
-before = "    if not root.is_dir():"
+before = "    if not fsops.is_dir(root):"
 after = "    if False:"
 reddens = [
   "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link",
@@ -1205,8 +1368,8 @@ reddens = [
 [[mutation]]
 name = "the session link step discovers the harness anchor after it has written"
 file = "src/stayfixed/memory/worktree.py"
-before = "    harness_anchor(worktree, home)\n    created: list[Path] = []"
-after = "    created: list[Path] = []"
+before = "        harness_anchor(worktree, harness.home)\n    created: list[Path] = []"
+after = "        pass\n    created: list[Path] = []"
 reddens = [
   "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all",
 ]
@@ -1219,7 +1382,7 @@ reddens = [
 [[mutation]]
 name = "the bug ledger reports itself uninitialised and checks nothing"
 file = "src/stayfixed/ledger/check.py"
-before = "    return not directory.is_dir() and not is_generated_index(index_text(root, register))"
+before = "    return not fsops.is_dir(directory) and not is_generated_index(index_text(root, register))"
 after = "    return True"
 reddens = [
   "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[bugs check]",
@@ -1795,8 +1958,8 @@ reddens = [
 [[mutation]]
 name = "memory refs names a note that stopped decoding unescaped"
 file = "src/stayfixed/memory/refs.py"
-before = "{quoted(note.path.name)}"
-after = "{note.path.name}"
+before = "{quoted(note.path.name)} is not valid UTF-8"
+after = "{note.path.name} is not valid UTF-8"
 reddens = [
   "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
 ]
@@ -2055,7 +2218,7 @@ reddens = [
 [[mutation]]
 name = "a recorded overlay root that is gone reads as an unrecorded project"
 file = "src/stayfixed/memory/store.py"
-before = "        if not overlay.is_dir():"
+before = "        if not fsops.is_dir(overlay):"
 after = "        if False:"
 reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
@@ -2096,7 +2259,7 @@ reddens = [
 [[mutation]]
 name = "an override naming the share is dropped in every mode"
 file = "src/stayfixed/memory/store.py"
-before = '    if override is None or overlay is None or config.memory.mode != "overlay":'
+before = '    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:'
 after = "    if override is None or overlay is None:"
 reddens = [
   "tests/memory/test_commands.py::test_the_share_named_outside_overlay_mode_is_the_store_it_names",
@@ -2135,7 +2298,7 @@ file = "src/stayfixed/memory/doctor.py"
 before = "from typing import TYPE_CHECKING\n"
 after = "from typing import TYPE_CHECKING\n\nfrom stayfixed.errors import Failure\n"
 reddens = [
-  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
 ]
 
 # The same import nested in a `try`, which runs on import all the same: a walk of the module's
@@ -2146,7 +2309,18 @@ file = "src/stayfixed/memory/doctor.py"
 before = "from typing import TYPE_CHECKING\n"
 after = "from typing import TYPE_CHECKING\n\ntry:\n    from stayfixed.memory.bundles import SLOTS\nexcept ImportError:\n    pass\n"
 reddens = [
-  "tests/test_areas.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
+# The note store's walk stops at the one walk cap and says it could not tell, since an `in-repo`
+# store is a tree a clone commits.
+[[mutation]]
+name = "the note store's walk lists every entry"
+file = "src/stayfixed/memory/doctor.py"
+before = "            if listed > fsops.WALK_ENTRIES:"
+after = "            if False:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_note_store_past_the_walk_cap_is_one_the_row_cannot_tell_about[4]",
 ]
 
 # A note's backticked path is resolved to ask whether it lies inside the store, and Python 3.11 and
@@ -2165,8 +2339,8 @@ reddens = [
 [[mutation]]
 name = "the uninitialised arm reads the bug ledger's directory whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = "    directory = entry_dir(root, register)\n    return not directory.is_dir()"
-after = "    directory = root / \"docs/bugs\"\n    return not directory.is_dir()"
+before = "    directory = entry_dir(root, register)\n    return not fsops.is_dir(directory)"
+after = "    directory = root / \"docs/bugs\"\n    return not fsops.is_dir(directory)"
 reddens = [
   "tests/ledger/test_register.py::test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live",
 ]
@@ -2214,8 +2388,8 @@ reddens = [
 [[mutation]]
 name = "a stale index is sent to the bug ledger's index command whatever the register"
 file = "src/stayfixed/ledger/check.py"
-before = '        stale = f"is stale; run: stayfixed {register.name} {remedy}"'
-after = '        stale = f"is stale; run: stayfixed bugs {remedy}"'
+before = "    return f\"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}\""
+after = "    return f\"is stale; run: {commands[0] if commands else 'stayfixed bugs index'}\""
 reddens = [
   "tests/ledger/test_register.py::test_a_second_registers_findings_name_its_own_paths_and_commands",
 ]
@@ -2464,8 +2638,8 @@ reddens = [
 [[mutation]]
 name = "the base's copy reads the default machine file"
 file = "src/stayfixed/ledger/check.py"
-before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)"
-after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)"
+before = "        copy = loads(decoded, root, label=FORK_COPY, personal=personal)"
+after = "        copy = loads(decoded, root, label=FORK_COPY)"
 reddens = [
   "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
 ]
@@ -2525,9 +2699,9 @@ reddens = [
   "tests/memory/test_commands.py::test_a_committed_index_is_reported_untrusted",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": each reader of a
-# committed file a glob found reads it through that reader, so a link to a device or a FIFO is
-# one more file it cannot read, in that reader's own words.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": each
+# reader of a committed file a glob found reads it through that reader, so a link to a device or a
+# FIFO is one more file it cannot read, in that reader's own words.
 [[mutation]]
 name = "the ledger's entry reader follows a link to a device"
 file = "src/stayfixed/ledger/entries.py"
@@ -2546,11 +2720,128 @@ reddens = [
   "tests/memory/test_notes.py::test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group_is_read",
 ]
 
+# The index is a file a clone can commit: `memory index --check` reads it to the read cap, and one
+# past it is drift, never read to its end.
+[[mutation]]
+name = "the harvest reads the index with no bound"
+file = "src/stayfixed/memory/index.py"
+before = "        text = read_regular_text(path)\n    except (OSError, UnicodeDecodeError):\n        return {}"
+after = "        text = path.read_text(encoding=\"utf-8\")\n    except (OSError, UnicodeDecodeError):\n        return {}"
+reddens = [
+  "tests/memory/test_index.py::test_an_index_past_the_read_cap_hands_the_harvest_nothing",
+]
+
+# The reference check reads each note a second time for its line numbers, to the cap the walk read
+# it to, and a note past it by then is a failure naming it.
+[[mutation]]
+name = "the reference check reads a note again with no bound"
+file = "src/stayfixed/memory/refs.py"
+before = "        text = read_regular_text(note.path)"
+after = '        text = note.path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_grew_past_the_read_cap_after_the_walk_is_a_failure_naming_it",
+]
+
+# The reference scan reads files a clone commits: to the read cap, and a file past it is one the
+# scan could not read, never one read to its end.
+[[mutation]]
+name = "the reference scan reads a file with no bound"
+file = "src/stayfixed/ledger/scan.py"
+before = "            raw = read_regular_bytes(path)"
+after = "            raw = path.read_bytes()"
+reddens = [
+  "tests/ledger/test_scan.py::test_a_file_past_the_read_cap_is_one_the_scan_could_not_read",
+]
+
+# A binary past the read cap is told by its first bytes and has no text and no error, as one under
+# the cap has: read as one the scan could not read, a model or a database in the tree made every
+# `bugs renumber` a "must be fixed by hand" that no re-run cleared.
+[[mutation]]
+name = "a file past the read cap is one the scan could not read whatever it holds"
+file = "src/stayfixed/ledger/scan.py"
+before = "            told = said(error) if _starts_as_text(path) else None"
+after = "            told = said(error)"
+reddens = [
+  "tests/ledger/test_scan.py::test_a_binary_past_the_read_cap_is_skipped_as_a_binary_is_and_text_past_it_is_not",
+  "tests/ledger/test_write.py::test_renumber_leaves_a_binary_past_the_read_cap_alone_and_reports_nothing",
+]
+
+[[mutation]]
+name = "the scan decodes the window that tells text as if it were the whole file"
+file = "src/stayfixed/ledger/scan.py"
+before = "    return any(_utf8(head[: len(head) - cut]) for cut in range(4))"
+after = "    return _utf8(head)"
+reddens = [
+  "tests/ledger/test_scan.py::test_a_binary_past_the_read_cap_is_skipped_as_a_binary_is_and_text_past_it_is_not",
+]
+
+# A citation is read a run at a time: the pattern it was read by tried every split of a run of
+# `../` between its two repeats, 8,000 of them in 0.7 s and four times as long at each doubling.
+[[mutation]]
+name = "a citation is read for at every split of a run of parent steps"
+file = "src/stayfixed/ledger/scan.py"
+before = "    for run in _CITING_RUN.finditer(text):"
+after = '''    cited = rf"((?:\.{{1,2}}/)*(?:[\w.-]+/)*{re.escape(last)}/({re.escape(prefix)}-\d+)\.md)"
+    old = re.compile(r"(?<![\w./-])" + cited)
+    yield from ((match.start(), match.group(1), match.group(2)) for match in old.finditer(text))
+    return
+    for run in _CITING_RUN.finditer(text):'''
+reddens = [
+  "tests/ledger/test_scan.py::test_a_long_file_s_citations_are_read_in_time_linear_in_its_length[a run of parent steps]",
+]
+
+# Nor by a pattern that keeps a record for each segment it might give back: linear in time without
+# the `../` repeat, and 140 MiB more over a citation behind a million segments.
+[[mutation]]
+name = "a citation's segments are read by a pattern that gives them back"
+file = "src/stayfixed/ledger/scan.py"
+before = "    for run in _CITING_RUN.finditer(text):"
+after = '''    cited = rf"((?:[\w.-]+/)*{re.escape(last)}/({re.escape(prefix)}-\d+)\.md)"
+    old = re.compile(r"(?<![\w./-])" + cited)
+    yield from ((match.start(), match.group(1), match.group(2)) for match in old.finditer(text))
+    return
+    for run in _CITING_RUN.finditer(text):'''
+reddens = [
+  "tests/ledger/test_scan.py::test_a_citation_behind_many_segments_is_read_in_memory_linear_in_its_length",
+]
+
+# A citation's line is counted on from the citation before it: from the file's start, a file of
+# 160,000 citations took 36 s, four times as long at each doubling.
+[[mutation]]
+name = "a citation's line is counted from the file's start"
+file = "src/stayfixed/ledger/scan.py"
+before = '            line += item.text.count("\n", counted, start)'
+after = '            line = item.text.count("\n", 0, start) + 1'
+reddens = [
+  "tests/ledger/test_scan.py::test_a_long_file_s_citations_are_read_in_time_linear_in_its_length[many citations]",
+]
+
+# The generated index's marker is read once: a run on either side of `index` read the span again
+# from each `index` in it, 16,000 of them in 2.6 s and four times as long at each doubling.
+[[mutation]]
+name = "the generated marker is read on from every index word"
+file = "src/stayfixed/ledger/index.py"
+before = '_GENERATED = re.compile(r"\A_Generated by `(?=[^`\n]*\bindex\b)[^`\n]*+` from ")'
+after = '_GENERATED = re.compile(r"\A_Generated by `[^`\n]*\bindex\b[^`\n]*` from ")'
+reddens = [
+  "tests/ledger/test_index.py::test_a_long_index_marker_is_read_in_time_linear_in_its_length[unclosed]",
+  "tests/ledger/test_index.py::test_a_long_index_marker_is_read_in_time_linear_in_its_length[closed without from]",
+]
+
+[[mutation]]
+name = "the index check reads the index with no bound"
+file = "src/stayfixed/memory/index.py"
+before = "        current = read_regular_text(path) if fsops.is_file(path) else None"
+after = '        current = path.read_text(encoding="utf-8") if fsops.is_file(path) else None'
+reddens = [
+  "tests/memory/test_index.py::test_an_index_past_the_read_cap_is_drift_and_never_read_to_its_end",
+]
+
 [[mutation]]
 name = "the trust digest follows a note or index linked to a device"
 file = "src/stayfixed/memory/trust.py"
-before = "        with open_regular(path) as stream:"
-after = "        with path.open(\"rb\") as stream:"
+before = "        content, over = fsops.read_bounded(path, fsops.REGULAR_READ_LIMIT)"
+after = "        content, over = path.read_bytes(), False"
 reddens = [
   "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
 ]
@@ -2571,4 +2862,320 @@ before = "            content = _TOO_LARGE + content"
 after = "            content = _UNREADABLE"
 reddens = [
   "tests/memory/test_trust.py::test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant",
+]
+
+# CONTRIBUTING makes `api.py` the only cross-area import surface, and before this guard nothing
+# asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
+# `hooks.sink`, and both merged green. The guard now walks every module under `src/stayfixed/`.
+# This mutation puts a violation back — the plan check reading the ledger area's private
+# `register` module for a name its `api.py` publishes — and the guard must name it. The name still
+# exists at the private spelling, so the mutated tree imports and runs: what goes red is the
+# boundary assertion and nothing else.
+[[mutation]]
+name = "an area reaches past another area's api.py again"
+file = "src/stayfixed/docs/plans.py"
+before = 'from stayfixed.ledger.api import bug_register'
+after = 'from stayfixed.ledger.register import bug_register'
+reddens = [
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
+]
+
+# No home in the password database is no trust record: none is read, and none is written beside
+# whatever directory the command happens to run in.
+[[mutation]]
+name = "a trust record with no home is written beside the working directory"
+file = "src/stayfixed/memory/trust.py"
+before = '        raise Failure(NO_HOME)'
+after = '        return Path("trust.json")'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+[[mutation]]
+name = "a trust record with no home is read as a path"
+file = "src/stayfixed/memory/trust.py"
+before = '    if path is None or not fsops.is_file(path):'
+after = '    if not fsops.is_file(path):'
+reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_in_the_database_fails_and_writes_nothing"]
+
+# With no `--home`, the harness link is anchored on `HOME` only from a terminal, and on the
+# password database's home everywhere else; a user the database lists no home for has no anchor.
+[[mutation]]
+name = "the harness link is anchored on HOME off a terminal"
+file = "src/stayfixed/memory/worktree.py"
+before = '    base = anchor_home() if home is None else home'
+after = '    base = Path.home() if home is None else home'
+reddens = ["tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal"]
+
+[[mutation]]
+name = "the harness link has an anchor where the database lists no home"
+file = "src/stayfixed/memory/worktree.py"
+before = '    if base is None:'
+after = '    if False:'
+reddens = ["tests/memory/test_worktree.py::test_no_home_in_the_database_is_a_refusal_off_a_terminal"]
+
+# A hook trusts only the password database's home, and the harness finds its memory directory
+# through `HOME`: where the two differ the hook makes no harness link, and says so, rather than
+# making one the harness never reads.
+[[mutation]]
+name = "the worktree-link hook makes the harness link where HOME is not the database's home"
+file = "src/stayfixed/memory/hooks.py"
+before = '        home = anchor_home(interactive=False) if homes_agree() else None'
+after = '        home = anchor_home(interactive=False)'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+# Off a terminal the hook anchors the harness link on the database's home resolved once: the walk
+# opens its root with `O_NOFOLLOW`, so an entry that is itself a symlink, handed over unresolved,
+# was refused there and the session told that the rest of the links could not be created.
+[[mutation]]
+name = "the worktree-link hook anchors the harness link on the database's home unresolved"
+file = "src/stayfixed/memory/hooks.py"
+before = "        from stayfixed.config.machine import anchor_home, homes_agree"
+after = "        from stayfixed.config.machine import homes_agree, owner_home as anchor_home"
+reddens = [
+  "tests/memory/test_hooks.py::test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook",
+]
+
+[[mutation]]
+name = "the worktree-link hook says nothing of the harness link it withheld"
+file = "src/stayfixed/memory/hooks.py"
+before = '        if links.withheld:'
+after = '        if False:'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+[[mutation]]
+name = "a link without the harness half makes the harness link anyway"
+file = "src/stayfixed/memory/worktree.py"
+before = "    if isinstance(harness, Withhold):\n        approved = harness_link_needed(store, config)"
+after = "    if False:\n        approved = harness_link_needed(store, config)"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_link_without_the_harness_half_makes_the_tree_and_says_what_it_withheld",
+]
+
+# A trust record that cannot be written under the database's home is a failure naming the
+# directory, never an internal error; and where the homes differ the command says where it wrote.
+[[mutation]]
+name = "an unwritable trust record directory ends as an internal error"
+file = "src/stayfixed/memory/trust.py"
+before = "    except OSError as exc:\n        where = ("
+after = "    except LookupError as exc:\n        where = ("
+reddens = [
+  "tests/memory/test_commands.py::test_trust_where_the_database_home_cannot_be_written_fails_naming_the_directory",
+]
+
+[[mutation]]
+name = "memory trust keeps quiet about where it wrote while the homes differ"
+file = "src/stayfixed/memory/commands.py"
+before = '    if store.machine is None and written is not None and not homes_agree():'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+]
+
+# The line for a withheld harness link names `attach` only where `attach` makes the link: an
+# overlay store. It refuses every other mode, and for those the hook is the only maker.
+[[mutation]]
+name = "the withheld link line names attach for every store"
+file = "src/stayfixed/memory/hooks.py"
+before = "    overlay = config.memory.mode == OVERLAY_MODE"
+after = "    overlay = True"
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store",
+  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link[local-only]",
+]
+
+[[mutation]]
+name = "the withheld link line points a user with no home at a home"
+file = "src/stayfixed/memory/hooks.py"
+before = "    if passwd_home() is None:"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link",
+]
+
+# Where the database lists no home, `HOME` is not the cause for an overlay store either.
+[[mutation]]
+name = "the withheld link line asks the store's mode before the database"
+file = "src/stayfixed/memory/hooks.py"
+before = "        return NO_HARNESS_LINK_OVERLAY_NO_HOME if overlay else NO_HARNESS_LINK_NO_HOME"
+after = "        return NO_HARNESS_LINK_OVERLAY if overlay else NO_HARNESS_LINK_NO_HOME"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-set]",
+  "tests/memory/test_doctor.py::test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link[overlay-unset]",
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
+]
+
+# An empty `HOME` in a session is told that it names no home, and is sent to no `attach`, which no
+# empty `HOME` lets make a link the harness reads through it.
+[[mutation]]
+name = "an empty HOME in a session is told what a HOME that differs is told"
+file = "src/stayfixed/memory/hooks.py"
+before = "    if home_is_empty(env):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+]
+
+# `attach` at a terminal links under the `HOME` it reads there, which has to name a home.
+[[mutation]]
+name = "the withheld link line for a user with no home asks only that HOME be set"
+file = "src/stayfixed/memory/hooks.py"
+before = '    "set to a home directory, and start sessions with that HOME",'
+after = '    "set, and start sessions with that HOME",'
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
+]
+
+# A session with no `HOME`, or an empty one, reads no link `attach` makes under a terminal's.
+[[mutation]]
+name = "the withheld link line for a user with no home leaves sessions on the HOME they had"
+file = "src/stayfixed/memory/hooks.py"
+before = '    "set to a home directory, and start sessions with that HOME",'
+after = '    "set to a home directory",'
+reddens = [
+  "tests/memory/test_hooks.py::test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store[overlay-no entry]",
+]
+
+# The harness link's refusal at a terminal whose `HOME` is empty names `HOME`, not the database,
+# which lists a home there.
+[[mutation]]
+name = "attach blames the password database for an empty HOME at a terminal"
+file = "src/stayfixed/memory/worktree.py"
+before = "        if override_is_honoured() and home_is_empty():"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
+]
+
+# `doctor`'s `harness-link` row warns where a hook withholds the harness link, asked of the
+# report's environment through the predicate the hook asks of its own.
+[[mutation]]
+name = "the harness-link row reads HOME as the database's home whatever it names"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if homes_agree(context.env):"
+after = "    if True:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link",
+]
+
+[[mutation]]
+name = "the harness-link row asks this process's HOME rather than the report's"
+file = "src/stayfixed/memory/doctor.py"
+before = "    if homes_agree(context.env):"
+after = "    if homes_agree():"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook",
+]
+
+# An unset `HOME` agrees, and is no home: the `ok` row does not say it is the database's.
+[[mutation]]
+name = "the harness-link row says an unset HOME is the database's home"
+file = "src/stayfixed/memory/doctor.py"
+before = '        if "HOME" in context.env:'
+after = "        if True:"
+reddens = [
+  "tests/memory/test_doctor.py::test_a_home_the_database_records_leaves_the_harness_link_to_the_hook[unset]",
+]
+
+# A link an earlier release made under `HOME` is still the harness's, so its withdrawal on a lapse
+# survives the hook making nothing there; and only under an absolute `HOME`.
+[[mutation]]
+name = "a lapsed link under HOME stays once the harness half is withheld"
+file = "src/stayfixed/memory/worktree.py"
+before = '        if not approved and harness.under is not None:'
+after = '        if False:'
+reddens = [
+  "tests/memory/test_worktree.py::test_a_lapsed_link_under_home_is_withdrawn_even_with_the_harness_half_withheld",
+]
+
+[[mutation]]
+name = "a lapsed link is withdrawn under a relative home"
+file = "src/stayfixed/memory/worktree.py"
+before = "    if not home.is_absolute():\n        return []"
+after = "    if False:\n        return []"
+reddens = ["tests/memory/test_worktree.py::test_a_relative_home_and_an_approved_store_are_not_withdrawn_under"]
+
+[[mutation]]
+name = "the worktree-link hook hands on a relative HOME to withdraw under"
+file = "src/stayfixed/memory/hooks.py"
+before = '    if not chosen or not os.path.isabs(chosen):'
+after = '    if not chosen:'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases"]
+
+[[mutation]]
+name = "the worktree-link hook withdraws nothing under HOME"
+file = "src/stayfixed/memory/hooks.py"
+before = '                harness=MakeUnder(home) if home is not None else Withhold(_lapsed_link_home()),'
+after = '                harness=MakeUnder(home) if home is not None else Withhold(),'
+reddens = ["tests/memory/test_hooks.py::test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs"]
+
+# A home the withdrawal walk cannot open — itself a symlink, or not searchable — is passed over,
+# never reported to the session as links that could not be made.
+[[mutation]]
+name = "a home the withdrawal cannot open is reported as a failed link"
+file = "src/stayfixed/memory/worktree.py"
+before = '    except (Refusal, OSError):'
+after = '    except Refusal:'
+reddens = ["tests/memory/test_worktree.py::test_a_home_the_walk_cannot_open_is_passed_over_when_withdrawing"]
+
+# The machine's trust record that cannot be read is named once with the reason in words: the
+# error's own text named the same absolute path a second time.
+[[mutation]]
+name = "a trust record that cannot be read is reported with the error's own text"
+file = "src/stayfixed/memory/trust.py"
+before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
+after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
+reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
+
+# What an error says about a file is spelt once, `fsops.said`; a reader spelling it from the
+# error's own fields again is a private copy of it, and the four there were each said less.
+[[mutation]]
+name = "a reader spells the error's words again rather than saying them"
+file = "src/stayfixed/docs/hygiene.py"
+before = '        raise Failure(f"{shown}: could not be read ({said(error)})") from None'
+after = '        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None'
+reddens = ["tests/test_fsops.py::test_no_module_but_fsops_says_an_error_by_its_strerror"]
+
+# A store, or a directory on the way to it, that cannot be asked whether it is a link is refused in
+# words that name that, and not as a link or an escape it is not.
+[[mutation]]
+name = "the store words a local-only store it cannot ask about as a link"
+file = "src/stayfixed/memory/store.py"
+before = """
+            return None, Unresolved(
+                "a directory on the way to the local-only store cannot be checked for a symlink","""
+after = """
+            return None, Unresolved(
+                "the local-only store is not a real directory inside the project","""
+reddens = [
+  "tests/memory/test_store.py::test_a_local_only_store_that_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "the store words a paths.memory it cannot ask about as an escape"
+file = "src/stayfixed/memory/store.py"
+before = '            "a directory on the way to paths.memory cannot be checked for a symlink",'
+after = '            "paths.memory does not stay inside the project",'
+reddens = [
+  "tests/memory/test_store.py::test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "the harness anchor words a place it cannot ask about as a link"
+file = "src/stayfixed/memory/worktree.py"
+before = "    except PathUnasked as exc:\n        raise Refusal("
+after = "    except OSError as exc:\n        raise Refusal("
+reddens = [
+  "tests/memory/test_worktree.py::test_a_claude_directory_nobody_may_search_is_refused_for_that",
+]
+
+# `detach` withdraws the harness link under the other home a harness may read it under too, only
+# where it points at this store, and the `<slug>` directory it sat in with it.
+[[mutation]]
+name = "detach leaves the directory the other home's harness link sat in"
+file = "src/stayfixed/memory/worktree.py"
+before = "        with contextlib.suppress(OSError):\n            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
 ]

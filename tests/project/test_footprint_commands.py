@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import shutil
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ from stayfixed.project.commands import CI_LEFT, CI_PINNED
 from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from tests import parserlimits
 from tests.gitfixture import git, needs_git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.project.repos import forge_record, initialised, tree
 from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -104,6 +107,81 @@ def test_a_manifest_past_the_parser_is_refused_in_its_own_words(
     code, data = _run(root, tmp_path, command, "--dry-run")
     assert code == 2
     assert data["summary"] == f"refused: {MANIFEST_PATH} {clause}"
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize(
+    "argv", [("init", "--yes"), ("upgrade",), ("uninstall",)], ids=["init", "upgrade", "uninstall"]
+)
+@pytest.mark.parametrize("link", [".stayfixed", MANIFEST_PATH.as_posix()])
+def test_a_committed_link_into_a_directory_nobody_may_search_is_refused_in_words(
+    tmp_path: Path, link: str, argv: tuple[str, ...]
+) -> None:
+    # A clone commits a link as text and needs no mode: an absolute target under a directory its
+    # user cannot search makes every path through the link a fault to ask about. The manifest was
+    # asked for with a bare existence check, which met that fault, and all three commands ended in
+    # `internal error: PermissionError` with the manifest's absolute path. The manifest is asked
+    # through `contained` now, as reading it always was, so the link is refused by name.
+    # Mutation (oracle): `mutations/`'s "init, upgrade and uninstall ask for the manifest past
+    # contained" -> every case ends in an internal error again.
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    if link == ".stayfixed":
+        shutil.rmtree(root / link)
+    else:
+        (root / link).unlink()
+    (root / link).symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, *argv)
+    assert code == 2
+    assert (
+        data["summary"] == f"refused: {str(MANIFEST_PATH)!r} passes through a symlink at {link!r}"
+    )
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+def test_uninstall_refuses_a_local_directory_linked_where_nobody_may_search_by_name(
+    tmp_path: Path,
+) -> None:
+    # The same fault one directory down: whether `attach`'s ledger is there was asked of the path
+    # whole, through the link. Mutation (oracle): `mutations/`'s "uninstall asks for attach's
+    # ledger past contained".
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    shutil.rmtree(root / ".stayfixed" / "local", ignore_errors=True)
+    (root / ".stayfixed" / "local").symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, "uninstall")
+    assert code == 2
+    assert data["summary"] == (
+        "refused: '.stayfixed/local/attach.json' passes through a symlink at '.stayfixed/local'"
+    )
+
+
+@needs_git
+@ROOT_SEARCHES_EVERYTHING
+@pytest.mark.parametrize("left", [".stayfixed/assessment.json", ".stayfixed/local/artifacts.json"])
+def test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link(
+    tmp_path: Path, left: str
+) -> None:
+    # A file of stayfixed's own ledger that is a link is removed as one. Whether it was a directory
+    # to leave was asked first, through the link, which met the fault past it: an internal error
+    # after every other file had gone. Mutation (oracle): `mutations/`'s "uninstall follows a link
+    # where its ledger belongs to ask whether it is a directory".
+    root = initialised(tmp_path)
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (root / left).parent.mkdir(parents=True, exist_ok=True)
+    (root / left).unlink(missing_ok=True)
+    (root / left).symlink_to(locked / "x")
+    with unsearchable(locked):
+        code, data = _run(root, tmp_path, "uninstall")
+    assert code == 0, data["summary"]
+    assert not os.path.lexists(root / left)
 
 
 @needs_git
@@ -198,9 +276,9 @@ def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_f
     # saying its artifact lived inside a host file (a region, or keyed entries) is never retired
     # that way: forced, the stub would delete the host file and everything a person wrote in it.
     # It is counted as an orphan, by the one rule both commands apply. The kind is read off the
-    # committed manifest, and it can only turn a removal into an orphan. Mutation (oracle): "a
-    # region record this build does not produce is retired as a whole file" -> the forced run
-    # removes the host file, and the first assertion reddens for both commands.
+    # committed manifest, and it can only turn a removal into an orphan. Mutation (oracle):
+    # `mutations/`'s "a region record this build does not produce is retired as a whole file" -> the
+    # forced run removes the host file, and the first assertion reddens for both commands.
     root = initialised(tmp_path)
     target = "docs/stayfixed/rules/python.md"
     host = root / target
@@ -298,8 +376,8 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     assert code == 0, data
     # Every directory the first run emptied goes too: each pass prunes above what it removed in a
     # `finally`, so the pass that stopped still emptied the directories of the files it took.
-    # Mutation (oracle): "a pass that stops part-way leaves the directories it emptied" -> the
-    # `docs/roadmap.md` case keeps `docs/`.
+    # Mutation (oracle): `mutations/`'s "a pass that stops part-way leaves the directories it
+    # emptied" -> the `docs/roadmap.md` case keeps `docs/`.
     assert tree(root) == {"README.md"}, sorted(tree(root))
     assert resumable
 
@@ -317,11 +395,11 @@ def test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_noth
     the heading and exit code the command prints. The footprint pass refuses a region whose
     begin marker is gone; the write-once pass refuses a `CLAUDE.md` that became a symlink.
 
-    Mutations (oracle): "upgrade's refusal reads no plan", "uninstall's refusal reads only the
-    write-once plan" and "uninstall's refusal reads only the footprint plan" -> the run goes on
-    to `apply`, whose own backstop refuses the refused plan: exit 2 with the engine's message and
-    no report, and in the `uninstall-once` case only after the footprint pass has removed its
-    files. The matching case reddens.
+    Mutations (oracle): `mutations/`'s "upgrade's refusal reads no plan", "uninstall's refusal reads
+    only the write-once plan" and "uninstall's refusal reads only the footprint plan" -> the run
+    goes on to `apply`, whose own backstop refuses the refused plan: exit 2 with the engine's
+    message and no report, and in the `uninstall-once` case only after the footprint pass has
+    removed its files. The matching case reddens.
     """
     root = initialised(tmp_path)
     if refusing == "footprint":

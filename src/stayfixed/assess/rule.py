@@ -318,7 +318,7 @@ def read_base_gates(
     text = read_base(root, base, branch=branch)
     if text is None:
         return {}
-    config = loads(text, root, machine=machine, interactive=False, label=BASE_COPY)
+    config = loads(text, root, machine=machine, label=BASE_COPY)
     return config.gates.custom
 
 
@@ -340,11 +340,11 @@ def judge(
     tree's configuration unless something was refused, then the base's; it enforces what either
     side enforces.
     """
-    tree = loads(tree_text, root, machine=machine, interactive=False)
+    tree = loads(tree_text, root, machine=machine)
     if base_text is None:
         return ConfigVerdict(None, (), tree, tree.stayfixed.enforcing)
     try:
-        base = loads(base_text, root, machine=machine, interactive=False, label=BASE_COPY)
+        base = loads(base_text, root, machine=machine, label=BASE_COPY)
     except Failure as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has

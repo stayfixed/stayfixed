@@ -26,6 +26,7 @@ from typing import Any
 
 from stayfixed.errors import Refusal
 from stayfixed.jsonobject import json_object, json_text
+from stayfixed.printed import clipped
 
 ENTRY_MARKER = "# stayfixed:"
 _MARKER = re.compile(r"#\s*stayfixed:([A-Za-z0-9][A-Za-z0-9._-]*)\s*$")
@@ -140,11 +141,15 @@ def _groups(raw: dict[str, Any], event: str) -> list[dict[str, Any]]:
     filtered away. `apply_entries` writes the structure it built back over the user's file, so
     dropping a group it did not recognise deletes somebody else's hook and says nothing."""
     groups = _hooks_table(raw).get(event, [])
+    # The event through `printed.clipped`: it is a key of a document a clone can commit, and this
+    # refusal reaches a terminal and a model.
     if not isinstance(groups, list):
-        raise EntriesError(f"'hooks.{event}' is not a list")
+        raise EntriesError(f"'hooks.{clipped(event)}' is not a list")
     for group in groups:
         if not isinstance(group, dict):
-            raise EntriesError(f"'hooks.{event}' holds an entry group that is not an object")
+            raise EntriesError(
+                f"'hooks.{clipped(event)}' holds an entry group that is not an object"
+            )
     return groups
 
 
@@ -208,25 +213,35 @@ def owned_ids(document: str) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Placed:
-    """One hook entry where a harness reads it: its event, its group's matcher, and its command.
+    """One hook entry where a harness reads it: its event, its group's matcher, its command, and
+    the whole entry.
 
-    All three, because each decides what the entry does: the event is when the harness runs the
-    command and the matcher is for which tools, so one command under another event or matcher is
-    another hook. That is why `doctor` compares a grant as a `Placed` and never as a command alone
-    — a repository that hung a granted command somewhere it was not granted would otherwise be
-    vouched for.
+    Each decides what the entry does: the event is when the harness runs it and the matcher is for
+    which tools, so one entry under another event or matcher is another hook; and every field of
+    the entry besides its command says what the harness does with it -- an entry of `type`
+    `http` posts the event's input to its `url` and ignores `command`, and `args`, `shell` or
+    `async` change what runs, or when. That is why `doctor` compares a grant as a `Placed` and
+    never as a command alone: a repository that hung a granted command somewhere it was not
+    granted, or inside an entry that does something else, would otherwise be vouched for.
+    `command` is kept beside the whole because the marker is read off it.
 
     `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
     each integer in it as its text, as `_read_entries` reads it: a string and anything else a
     clone may commit there are each one value, and a matcher that is absent stays apart from one
     that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
-    never guesses what a harness makes of it. Never printed: an event and a matcher are bytes a
-    repository chose.
+    never guesses what a harness makes of it. `entry` is the entry as JSON text by the same rule,
+    with its keys sorted, so the order a file spells them in changes nothing and any field it adds,
+    drops or changes does. One difference the rule cannot see: an integer and the string of its
+    digits read alike, so a `"timeout": "30"` equals a granted `30`. That is benign, because it
+    vouches for no entry that runs anything the grant does not: the command, the `type` and every
+    other field still have to match, and a timeout is how long, not what. Never printed: an event,
+    a matcher and an entry are bytes a repository chose.
     """
 
     event: str
     matcher: str | None
     command: str
+    entry: str
 
 
 def _matcher(group: dict[str, Any]) -> str | None:
@@ -250,12 +265,22 @@ def placed_entries(document: str) -> list[Placed]:
     return [_placed(event, group, entry) for event, group, entry in _read_entries(document)]
 
 
+def _whole(entry: dict[str, Any]) -> str:
+    """An entry as `Placed.entry` holds it: JSON text with sorted keys, each integer as the walk
+    read it. Refused as `settings_text` refuses a document, where the encoder cannot follow the
+    entry or its text would pass the read cap: an entry the reader took meets neither, short of
+    one holding tens of megabytes of text outside ASCII, which the encoder escapes."""
+    return json_text(
+        entry, _DOCUMENT, error=EntriesError, limit=_past_parser(_DOCUMENT), sort_keys=True
+    )
+
+
 def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
     """One entry as `Placed` holds it: one place for every walk, so a grant read back through
     `placed_entries` and an entry `live_entries` reads are compared in the same terms."""
     command = entry.get("command")
     text = command if isinstance(command, str) else ""
-    return Placed(event, _matcher(group), text)
+    return Placed(event, _matcher(group), text, _whole(entry))
 
 
 @dataclass(frozen=True)
@@ -347,7 +372,8 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
     LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
     `placed_entries`, which refuses every shape the merge would, so it skips nothing. One
     spelling, for `doctor`'s `hook-entries` and `assess`'s `foreign-hooks`, so the two never
-    give two answers about one file.
+    give two answers about one file; and, strict, for `attach --check`'s reading of the settings
+    file `attach` merges into, which must refuse what the merge refuses.
     """
     if lenient:
         return live_entries(document.removeprefix("\ufeff"))
@@ -360,8 +386,8 @@ def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
 
     Read back through the document `apply_entries` would write and not off `wanted` itself,
     because what a grant is compared with is what the walk reads out of a settings file: an
-    integer in a matcher is its text there, and a grant that kept it a number would never equal
-    the entry it installed. Refuses what `placed_entries` refuses.
+    integer in a matcher or an entry, such as a `timeout`, is its text there, and a grant that kept
+    it a number would never equal the entry it installed. Refuses what `placed_entries` refuses.
     """
     return placed_entries(json.dumps({"hooks": wanted}))
 

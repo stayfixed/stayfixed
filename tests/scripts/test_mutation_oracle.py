@@ -23,7 +23,15 @@ from types import ModuleType
 import pytest
 
 from tests import gitfixture
-from tests.declarations import ANCHOR, SCRIPT, cited_names, declared
+from tests.declarations import (
+    ANCHOR,
+    SCRIPT,
+    cited_names,
+    declared,
+    empty_anchors,
+    unread_citations,
+    unread_names,
+)
 from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git
 from tests.scriptload import load
@@ -1052,6 +1060,34 @@ def test_a_citation_is_read_across_comment_lines_and_through_a_list() -> None:
     assert cited_names(text) == ["the first wrapped one", "the second", "a third", "a fourth"]
 
 
+def test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines() -> None:
+    # The tree's commonest citation says what each mutation does: `"a" -> x; "b" -> y`. Only the
+    # first name was read, so a later one could be renamed away with every test green, and one
+    # was: a comment went on citing an entry a refactor had removed. What an arrow says ends at
+    # the citation's own lines, so a quote in the code under a comment, or past a blank line in a
+    # document, is never read as a name. Mutations (declared): `mutations/`'s "the citation parser
+    # loses the names an arrow list carries after the first" -> only the first name of each list
+    # is read; "the citation parser reads an arrow past the citation's own lines" -> `"remote"`
+    # and `"x"` are read as names.
+    text = (
+        f'    # Mutations: {ANCHOR} "the first" -> the `a`\n'
+        '    # case; "the second" -> `b`, and "the third" -> `c`, "the fourth"\n'
+        '    # and "the fifth" -> the rest.\n'
+        f'    # And {ANCHOR} "a sixth" -> the case\n'
+        '    run_git(root, "remote", "add")\n'
+        f'{ANCHOR} "a seventh" -> nothing more\n\nsaid, "x" here.\n'
+    )
+    assert cited_names(text) == [
+        "the first",
+        "the second",
+        "the third",
+        "the fourth",
+        "the fifth",
+        "a sixth",
+        "a seventh",
+    ]
+
+
 @needs_git
 @pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
 def test_every_cited_entry_name_is_declared() -> None:
@@ -1075,6 +1111,96 @@ def test_every_cited_entry_name_is_declared() -> None:
     # A walk-based assertion states its walk is non-empty: a parser that read nothing passes.
     assert len(cited) > 100, len(cited)
     assert [(path, name) for path, name in cited if name not in names] == []
+
+
+def test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads() -> None:
+    # A citation through a comma rather than `'s` read as one to a person and as nothing to
+    # `cited_names`, and four of the tree's 138 named no entry: three shortened with an ellipsis,
+    # one renamed away; a quote straight after a lead, singular or plural, names no set. Mutations
+    # (declared): `mutations/`'s "the citation spelling rule lets a comma or a colon through" -> no
+    # line is told; "the citation spelling rule reads no further than the set's own line" -> the
+    # third is not; "the citation spelling rule misses a quote straight after a plural lead" -> the
+    # last is not.
+    set_name = ANCHOR.removesuffix("'s")
+    quote = '"'  # so that no line of this file is the shape the rule refuses
+    text = (
+        f'# Mutation: {set_name}, "one".\n'
+        f'# Mutation ({set_name}: "two").\n'
+        f"# Mutations: {set_name},\n"
+        '#   "three".\n'
+        f'# Mutation: {ANCHOR} "four"; {set_name} holds the rest.\n'
+        f"# Mutation (oracle): {quote}five{quote}, and (by hand) the lead alone.\n"
+        f"# Mutations (oracle): {quote}six{quote} and {quote}seven{quote}.\n"
+    )
+    assert unread_citations(text) == [1, 2, 3, 6, 7]
+
+
+def test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told() -> None:
+    # The reader read the first name of each of these and stopped, or read none, so a later name
+    # could be renamed away with every test green; 292 quoted names in 71 files were read by
+    # nothing. Every quote of a declared name must be one the reader reads. Mutations (declared):
+    # `mutations/`'s "a quoted entry name the citation reader skips is never told" -> every case
+    # but the read one reddens; "a quoted entry name that wraps is never told" -> the wrapped one
+    # is not told; "the citation walk reads an entry's own name line as a citation" -> the
+    # declaration is told too.
+    names = {"a", "b", "c", "a wrapped one"}
+    plants = {
+        "a quote after an arrow": f'# {ANCHOR} "a" -> "x"; "b" -> y.\n',
+        "prose between names": f'# {ANCHOR} "a" for the first, and "b" for the rest.\n',
+        "a bulleted list": f'# {ANCHOR}\n# - "a"\n# - "b"\n',
+        "an arrow joined by a bare and": f'# {ANCHOR} "a" -> drops x and "b" -> drops y.\n',
+        "a name in parentheses": f'# {ANCHOR} "a" -> x; and dropping it ("b", "c") passes.\n',
+        "no anchor": '# held by "a" and "a wrapped\n# one".\n',
+        "read": f'# {ANCHOR} "a" -> x; "b" -> y, and "a wrapped\n# one" or "c".\n',
+        "a declaration": 'name = "a"\n# but "b" is cited.\n',
+    }
+    assert {case: unread_names(text, names) for case, text in plants.items()} == {
+        "a quote after an arrow": [(1, "b")],
+        "prose between names": [(1, "b")],
+        "a bulleted list": [(2, "a"), (3, "b")],
+        "an arrow joined by a bare and": [(1, "b")],
+        "a name in parentheses": [(1, "b"), (1, "c")],
+        "no anchor": [(1, "a"), (1, "a wrapped one")],
+        "read": [],
+        "a declaration": [(2, "b")],
+    }
+
+
+def test_an_anchor_that_reads_no_name_is_told() -> None:
+    # A list set out under the anchor, or prose after it, reads no name at all, so the anchor
+    # vouches for nothing. Mutation (declared): `mutations/`'s "an anchor that reads no name is
+    # never told" -> this reddens.
+    text = f'# {ANCHOR}\n# - "a"\n# {ANCHOR} "b".\n# and {ANCHOR} the rest, in prose.\n'
+    assert empty_anchors(text) == [1, 4]
+
+
+@needs_git
+@pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
+def test_every_citation_is_spelled_the_way_the_citation_reader_reads() -> None:
+    # The walk `test_every_cited_entry_name_is_declared` makes, asking the other question: a
+    # citation it cannot read is one whose name nothing checks. That is a citation spelled another
+    # way, a quote of a declared name the reader does not read, and an anchor that reads no name.
+    names = {" ".join(mutation.name.split()) for mutation in declared()}
+    unread: list[tuple[str, int]] = []
+    unread_quotes: list[tuple[str, int, str]] = []
+    empty: list[tuple[str, int]] = []
+    walked = 0
+    for path in _git(REPOSITORY, "ls-files", "-z").split("\0"):
+        source = REPOSITORY / path
+        if not path or path.startswith("docs/plans/") or not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        walked += 1
+        unread.extend((path, line) for line in unread_citations(text))
+        unread_quotes.extend((path, line, name) for line, name in unread_names(text, names))
+        empty.extend((path, line) for line in empty_anchors(text))
+    assert walked > 300, walked  # a walk-based assertion states its walk is non-empty
+    assert unread == []
+    assert unread_quotes == []
+    assert empty == []
 
 
 # --- the declarations directory, one file per group ------------------------------------------

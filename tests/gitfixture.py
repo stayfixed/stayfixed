@@ -245,3 +245,48 @@ def answer_shallow_check(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
         return real(where, *args, **kwargs)
 
     monkeypatch.setattr(gitenv, "git_run", answered)
+
+
+class _Stdin:
+    """A `sys.stdin` that is, or is not, a terminal."""
+
+    def __init__(self, tty: bool) -> None:
+        self.tty = tty
+
+    def isatty(self) -> bool:
+        return self.tty
+
+
+def at_a_terminal(monkeypatch: pytest.MonkeyPatch, tty: bool) -> None:
+    """Have this process be run from a terminal, or not, for the length of one test: the seam
+    `stayfixed.config.machine.override_is_honoured` reads. It does not choose the `git` the
+    product runs, which only `launched_by_the_hook_wrapper` does; a case that shows so sets both."""
+    monkeypatch.setattr("sys.stdin", _Stdin(tty))
+
+
+def launched_by_the_hook_wrapper(monkeypatch: pytest.MonkeyPatch, launched: bool) -> None:
+    """Have this process be one `hooks/run-hook.sh` launched, or not, for the length of one test:
+    the variable `stayfixed.gitenv.git_program` reads, and with it which `git` the product runs.
+    A test is not one unless its environment says so; a case about the difference says which."""
+    if launched:
+        monkeypatch.setenv(gitenv.HOOK_WRAPPER_VARIABLE, gitenv.HOOK_WRAPPER_LAUNCHED)
+    else:
+        monkeypatch.delenv(gitenv.HOOK_WRAPPER_VARIABLE, raising=False)
+
+
+def stand_in_git(monkeypatch: pytest.MonkeyPatch, stand_in: Path) -> None:
+    """Have the product run `stand_in` wherever it runs `git`, for the length of one test.
+
+    The first `git` on `PATH`, which a `Runner` launch and every `git_run` outside a hook resolve
+    it through, and the one candidate `stayfixed.gitenv` takes in a stayfixed the hook wrapper
+    launched. A `git` put on `PATH` alone is never run there: that is the rule, not a seam.
+    """
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(stand_in),))
+    monkeypatch.setenv("PATH", f"{stand_in.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+def no_git(monkeypatch: pytest.MonkeyPatch, nowhere: Path) -> None:
+    """Have no `git` the product can launch, for the length of one test: no candidate exists and
+    `PATH` names only `nowhere`, a directory with no `git` in it."""
+    monkeypatch.setattr(gitenv, "GIT_CANDIDATES", (str(nowhere / "git"),))
+    monkeypatch.setenv("PATH", str(nowhere))

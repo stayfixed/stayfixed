@@ -108,7 +108,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
-from stayfixed.config.paths import PathEscape, contained
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath, utf_8_name
 from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
@@ -248,14 +248,11 @@ def _install_plugins(
 
 
 def _read_document(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}, ""
-    except OSError as exc:
-        raise Failure(f"{path} cannot be read: {exc}") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+    with fsops.reading(path, Failure):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}, ""
     if not text.strip():
         return {}, text
     # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is
@@ -349,13 +346,21 @@ def _write_user_settings(
 
 
 def _settings_symlink(home: Path) -> Path | None:
-    """The first symlink between `home` and the settings file, or `None`."""
+    """The first symlink between `home` and the settings file, or `None`.
+
+    Asked once `contained` has refused, only to name the link. A path below a link into a
+    directory nobody may search cannot be asked, and is passed over so the link above it is the
+    one named, as `contained` names it; with no link found, `contained`'s own refusal stands.
+    """
     target = home / USER_SETTINGS
     for ancestor in [target, *target.parents]:
         if ancestor == home:
             return None
-        if ancestor.is_symlink():
-            return ancestor
+        try:
+            if fsops.is_symlink(ancestor):
+                return ancestor
+        except OSError:
+            continue
     return None
 
 
@@ -443,8 +448,9 @@ def _check_settings_parent(settings: Path) -> None:
 
     `is_dir() and not is_symlink()` and not `exists()`: it is exactly the pair the write refuses
     one frame down, so this check adds no rule of its own. It moves the existing one earlier.
-    A symlinked *home* stays fine, and is a different question — `_check_settings_path` answers
-    that one, and `open_within` never applies `O_NOFOLLOW` to the root it is handed.
+    A symlinked *home* is a different question, which `_check_settings_path` answers; here the
+    root is the file's own directory, and `open_within` opens the root it is handed with
+    `O_NOFOLLOW`, as it opens every component below it, so that directory may not be a link.
 
     **And the file itself, which the write does not refuse.** With `--settings` the root is the
     file's own directory and the walk is one component deep, so `open_within` never opens the
@@ -462,13 +468,15 @@ def _check_settings_parent(settings: Path) -> None:
     `home.mkdir(parents=True)` and after the machine configuration had been written.
     """
     parent = settings.parent
-    if not (parent.is_dir() and not parent.is_symlink()):
+    if not (fsops.is_dir(parent) and not fsops.is_symlink(parent)):
         raise Refusal(
             f"{settings} cannot be written: its directory has to exist and be a real directory, "
             f"because {_SYMLINKED_SETTINGS}"
         )
     try:
         contained(parent, settings.name)
+    except PathUnasked as exc:
+        raise Refusal(f"{settings} cannot be checked for a symlink ({exc.fault})") from exc
     except PathEscape as exc:
         raise Refusal(
             f"{settings} is a symlink to {settings.resolve()}; {_SYMLINKED_SETTINGS}. A dotfiles "
@@ -476,7 +484,7 @@ def _check_settings_parent(settings: Path) -> None:
             f"which writes the file this link leads to, or replace the link with a real file"
         ) from exc
     # After the symlink refusal, so no link can be behind this answer.
-    if settings.is_dir():
+    if fsops.is_dir(settings):
         raise Refusal(
             f"{settings} is a directory; --settings names the settings file to write, not the "
             f"directory to write it in"
@@ -520,7 +528,7 @@ class _Repository:
 def _nearest_directory(path: Path) -> Path:
     """`path`, or its nearest ancestor that is a directory: `--root` and a `create:`
     destination may name one that does not exist."""
-    while not path.is_dir() and path != path.parent:
+    while not fsops.is_dir(path) and path != path.parent:
         path = path.parent
     return path
 

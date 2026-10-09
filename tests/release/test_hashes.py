@@ -200,8 +200,8 @@ def test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser(
 ) -> None:
     # The record goes through the one JSON object reader, so the depth bound every other reader of
     # a JSON document applies holds here too: on Python 3.14 a bare `json.loads` followed 20,000
-    # levels. The bound lowered, so a shallow document meets it. Mutation (declared): "the hash
-    # record is parsed with a bare json.loads".
+    # levels. The bound lowered, so a shallow document meets it. Mutation (declared): `mutations/`'s
+    # "the hash record is parsed with a bare json.loads".
     monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
     root = hashed_plugin(tmp_path)
     (root / RECORD).write_text(DEEPER_THAN_FOUR, encoding="utf-8")

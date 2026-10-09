@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import subprocess
 import sys
 from pathlib import Path
@@ -9,9 +10,22 @@ import pytest
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.paths import PathEscape
 from stayfixed.hooks.api import EVENTS, Decision, HookEvent, Policy
+from stayfixed.memory import hooks as memory_hooks
 from stayfixed.memory import worktree as worktree_module
-from stayfixed.memory.hooks import NOT_LINKED, PARTIAL, REVOKED, register
-from stayfixed.memory.worktree import Links, PartialLink
+from stayfixed.memory.hooks import (
+    LINKED,
+    NO_HARNESS_LINK,
+    NO_HARNESS_LINK_NO_HOME,
+    NO_HARNESS_LINK_OVERLAY,
+    NO_HARNESS_LINK_OVERLAY_NO_HOME,
+    NOT_LINKED,
+    PARTIAL,
+    REVOKED,
+    Withheld,
+    register,
+)
+from stayfixed.memory.worktree import Links, MakeUnder, PartialLink, Withhold
+from tests.ownerhome import as_owner_home
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -127,9 +141,9 @@ def test_no_handler_in_this_area_ever_denies(tmp_path: Path) -> None:
 
 
 def test_discovery_does_not_import_the_configuration_layer() -> None:
-    # `tests/test_areas.py` asserts this for the whole package; asserted here too, because it
-    # is this area's own discipline that keeps it true — every config import lives inside a
-    # handler body, and a module-level one would redden a test belonging to no area at all.
+    # `tests/boundaries/test_discovery.py` asserts this for the whole package; asserted here too,
+    # because it is this area's own discipline that keeps it true — every config import lives inside
+    # a handler body, and a module-level one would redden a test belonging to no area at all.
     done = subprocess.run(
         [sys.executable, "-c", LIST_IMPORTS],
         capture_output=True,
@@ -246,3 +260,182 @@ def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
         for fragment in HOSTILE_GROUP.splitlines():
             if fragment.strip():
                 assert fragment not in NOT_LINKED
+
+
+def _recording(seen: list[object], *, withheld: bool = False) -> object:
+    def recorded(*_args: object, harness: object) -> Links:
+        seen.append(harness)
+        return Links(withheld=withheld and isinstance(harness, Withhold))
+
+    return recorded
+
+
+def test_the_harness_link_goes_under_the_owners_home_where_home_agrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A hook is never a person at a terminal, so the home the harness link is made under is the
+    # password database's. Where `HOME` names the same directory, the harness reads it there.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setenv("HOME", str(owner))
+    seen: list[object] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [MakeUnder(owner)]
+    assert contexts == [None]
+
+
+@pytest.mark.parametrize(
+    ("database", "line"),
+    [("another home", NO_HARNESS_LINK), ("no entry", NO_HARNESS_LINK_NO_HOME)],
+    ids=["another home", "no entry"],
+)
+def test_no_harness_link_is_made_where_home_is_not_the_databases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: str, line: Withheld
+) -> None:
+    # The harness finds its memory directory through `HOME`, and a hook trusts only the database's
+    # home. Where the two differ, a link made under the second is one the harness never reads, so
+    # the tree's links are made, the harness link is not, and the session is told what is true of
+    # this store. A relative `HOME` names a directory inside the clone: nothing is made there,
+    # and nothing is withdrawn there either.
+    as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
+    monkeypatch.setenv("HOME", "fakehome")
+    seen: list[object] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [Withhold()]
+    assert contexts == [line.line]
+
+
+def test_an_empty_home_gets_no_harness_link_even_in_the_databases_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` is a value and names no home: the harness reads it as `""`, so a link made
+    # under the database's home is one it never reads. The hook made it, and said nothing. Run from
+    # the database's home, where `Path("").resolve()` is that home. The line names `HOME` as the
+    # cause, and sends nobody to `attach`, which no `HOME` that is empty lets make a link the
+    # harness reads. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password
+    # database's home", "an empty HOME is read as the directory a command runs in" and "an empty
+    # HOME in a session is told what a HOME that differs is told".
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    monkeypatch.setenv("HOME", "")
+    seen: list[object] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen, withheld=True))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    contexts = [handler.run(an_event(root), config).context for handler in register()]
+    assert seen == [Withhold()]
+    assert contexts == [
+        "stayfixed: HOME is empty, so it names no home directory and a hook makes no harness "
+        "memory link; start sessions with HOME set to this user's home in the password database"
+    ]
+
+
+def test_a_database_home_that_is_itself_a_symlink_gets_the_harness_link_from_the_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shipped path for an entry naming a symlink (`/Users/me` linking to a volume) with `HOME`
+    # agreeing: the hook hands `link` the entry resolved once, since the walk opens its root with
+    # `O_NOFOLLOW`, and the link is made under the real directory, where `HOME` finds it. The
+    # worktree tests reach the same rule through `link`'s own default and cannot see this call.
+    # Mutation: `mutations/`'s "the worktree-link hook anchors the harness link on the database's
+    # home unresolved".
+    from stayfixed.memory.store import resolve
+    from stayfixed.memory.trust import record
+    from stayfixed.memory.worktree import harness_memory_path
+    from tests.memory.test_worktree import a_checkout, a_worktree
+
+    real = tmp_path / "real-home"
+    real.mkdir()
+    linked = tmp_path / "linked-home"
+    linked.symlink_to(real, target_is_directory=True)
+    as_owner_home(monkeypatch, linked)
+    monkeypatch.setenv("HOME", str(linked))
+    root, _, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    # Resolved as the hook resolves it, with the machine file where the database's home puts it,
+    # so the approval is the one the hook reads.
+    store = resolve(tree, config)
+    assert store is not None
+    record(store, config)
+    contexts = [handler.run(an_event(tree), config).context for handler in register()]
+    harness = harness_memory_path(tree, real)
+    assert harness.is_symlink()
+    assert harness.resolve() == store.path.resolve()
+    assert contexts == [LINKED.format(count=4)]
+
+
+def test_a_lapsed_link_is_looked_for_under_an_absolute_home_that_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An upgrader's link under `HOME`, made by an earlier release, is still the harness's; so the
+    # withdrawal half looks there, and only there, when `HOME` is absolute.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    elsewhere = tmp_path / "elsewhere"
+    monkeypatch.setenv("HOME", str(elsewhere))
+    seen: list[object] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        handler.run(an_event(root), config)
+    assert seen == [Withhold(elsewhere)]
+
+
+@pytest.mark.parametrize("database", ["another home", "no entry"])
+@pytest.mark.parametrize("mode", ["overlay", "in-repo", "local-only"])
+def test_the_withheld_link_line_names_only_what_makes_the_link_for_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, database: str
+) -> None:
+    # `attach` attaches overlay stores only, and refuses the other two modes; for those, the hook
+    # is the only thing that makes the link, so the line names no command that would refuse. A
+    # user the database lists no home for is told so, whatever the store: `HOME` is not the cause
+    # there, since no `HOME` agrees with no home.
+    as_owner_home(monkeypatch, tmp_path / "owner" if database == "another home" else None)
+    config = load(a_project(tmp_path), machine=tmp_path / "absent.toml")
+    config = dataclasses.replace(config, memory=dataclasses.replace(config.memory, mode=mode))
+    line = memory_hooks.no_harness_link(config, {"HOME": "fakehome"})
+    if mode == "overlay":
+        assert line == (
+            NO_HARNESS_LINK_OVERLAY
+            if database == "another home"
+            else NO_HARNESS_LINK_OVERLAY_NO_HOME
+        )
+        assert "stayfixed attach --store" in line.remedy
+        if database == "no entry":
+            # `attach` at a terminal links under the `HOME` it reads there, which has to name a
+            # home: an empty one is set and names none. Only a session started with that `HOME`
+            # reads the link, and this one's may be unset or empty, so the line says so too.
+            # Mutations (oracle): `mutations/`'s "the withheld link line for a user with no home
+            # asks only that HOME be set" and "the withheld link line for a user with no home
+            # leaves sessions on the HOME they had".
+            assert line.remedy == (
+                "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a "
+                "terminal with HOME set to a home directory, and start sessions with that HOME"
+            )
+    else:
+        assert line == (NO_HARNESS_LINK if database == "another home" else NO_HARNESS_LINK_NO_HOME)
+        assert "attach" not in line.line
+    assert line.cause.startswith("HOME is not" if database == "another home" else "the password")
+
+
+def test_a_store_not_approved_for_a_harness_link_says_nothing_of_the_one_withheld(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The vacuity guard for the lines above: they are said only when a link was due, so an
+    # untrusted store under a differing `HOME` is as quiet as it is anywhere else.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setenv("HOME", "fakehome")
+    seen: list[object] = []
+    monkeypatch.setattr(worktree_module, "link", _recording(seen))
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    assert [handler.run(an_event(root), config).context for handler in register()] == [None]

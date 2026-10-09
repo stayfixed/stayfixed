@@ -12,7 +12,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
-from stayfixed import __version__
+from stayfixed import __version__, fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.paths import contained, validate_paths
 from stayfixed.config.schema import (
@@ -43,6 +43,7 @@ from stayfixed.config.schema import (
 )
 from stayfixed.errors import Failure
 from stayfixed.findings import LISTED_LIMIT, listed
+from stayfixed.fsops import read_regular_text, said
 from stayfixed.presets import available, load_preset
 
 CONFIG_FILE = "stayfixed.toml"
@@ -133,7 +134,9 @@ class ConfigError(Failure):
 # Fixed text and a path stayfixed chose or the owner typed. Not the decoder's message: it is only
 # a byte and an offset, but the one sentence says what to do about every such file.
 NOT_UTF8 = "{path} is not UTF-8 text; stayfixed reads it only as UTF-8"
-# The error's class name and not its message, which repeats the path and adds nothing to act on.
+# What the error says, in `fsops.said`'s words, and not its message, which repeats the path and
+# adds nothing to act on; never its class's name, which for a reader's own refusal is a name of
+# stayfixed's internals (`fsops.TooLarge`, `fsops.NotRegularFile`) and names no condition.
 UNREADABLE = "{path} cannot be read ({error})"
 NOT_THERE = "{path} does not exist; run `stayfixed init` first"
 
@@ -183,14 +186,14 @@ def read_machine_toml(path: Path) -> dict[str, Any] | None:
     message, which quotes the file's own text. An absent file is the ordinary state before
     `stayfixed setup` has run, and each caller says what it means.
     """
-    if not path.is_file():
+    if not fsops.is_file(path):
         return None
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MachineConfigError(NOT_UTF8.format(path=path)) from None
     except OSError as exc:
-        raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None
+        raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None
     try:
         return tomllib.loads(text)
     except UNPARSEABLE as exc:
@@ -453,9 +456,10 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     return Budgets(preset=dict(preset["budgets"]), configured=dict(configured))
 
 
-def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
+def _personal(machine: Path | None, preset: dict[str, Any]) -> Personal:
     values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    raw = read_machine_toml(machine)
+    # `None` is a machine with no home to hold the file (`machine_config_path`), read as no file.
+    raw = None if machine is None else read_machine_toml(machine)
     if raw is None:
         # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
         # else. A fault here would be the preset's, not a machine's, and must not be relabelled.
@@ -469,34 +473,16 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         raise MachineConfigError(f"{machine}: {exc}") from None
 
 
-def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:
+def load(root: Path, *, machine: Path | None = None) -> Config:
     """Read `stayfixed.toml` under the preset, and `[personal]` out of the machine file.
 
-    `interactive` is threaded to `machine_config_path`, because `machine.py`'s docstring says "a
-    caller that knows it is a hook, the MCP server or a `stayfixed gate` run says
-    `interactive=False` rather than relying on the terminal check", and the one shipped
-    non-interactive caller — `hooks.commands.run_hook` — needs a way to say it. Left to the
-    `isatty` sniff, a hook's gate would hold only by circumstance (its stdin is a pipe) rather
-    than by construction.
-
-    **It defaults to `False`, so that one command reads one machine file.** The overlay root's
-    reader and `trust._trust_file` — the two anchors that locating the note store and trusting
-    in-repo notes rest on — resolve that same file with `interactive=False` always. With
-    the sniff as the default, an interactive run with `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` set
-    would read `[personal]` from the owner's chosen file and `[overlay] root` and `trust.json` from
-    `~/.config/stayfixed/`, so an XDG-honouring owner who wrote one file with both tables would get
-    `[personal]` honoured and the overlay silently unrecorded — `stayfixed memory index` refusing
-    with "no overlay root is recorded in the machine configuration; run `stayfixed setup`" about a
-    file it had just read successfully.
-
-    Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a
-    pair. So the whole file follows the stricter of the two rules, and `--machine` stays the
-    supported way to name another one — honoured by all three readers, because it is a path a
-    person typed rather than one an environment chose. `stayfixed doctor` is where an ignored
-    `XDG_CONFIG_HOME` should be reported, which `machine.py`'s docstring nominates it for.
-
-    `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
-    what *would* have been honoured.
+    With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
+    the overlay root's reader and `trust._trust_file` read too, which no variable moves: an
+    interactive run with `XDG_CONFIG_HOME` set once read `[personal]` from the file it named and
+    `[overlay] root` and `trust.json` from `~/.config/stayfixed/`, so an owner who wrote one file
+    with both tables got `[personal]` honoured and the overlay silently unrecorded. `--machine`
+    is the supported way to name another file, honoured by all three readers, because it is a
+    path a person typed rather than one an environment chose.
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
     `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
@@ -506,7 +492,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     text = read_document(root)
     if text is None:
         raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
-    return loads(text, root, machine=machine, interactive=interactive)
+    return loads(text, root, machine=machine)
 
 
 def read_document(root: Path) -> str | None:
@@ -515,17 +501,18 @@ def read_document(root: Path) -> str | None:
     `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
     which keeps every byte but the values it sets, and universal-newline translation would have
     rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
-    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal.
+    first, as for every configured path, so a symlinked `stayfixed.toml` is a refusal; then read
+    to the read cap, a regular file only (`fsops.read_regular_text`), as every reader of a
+    committed file reads one.
     """
     try:
-        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
-            return stream.read()
+        return read_regular_text(contained(root, CONFIG_FILE), newline="")
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
     except OSError as exc:
-        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None
 
 
 def loads(
@@ -533,7 +520,6 @@ def loads(
     root: Path,
     *,
     machine: Path | None = None,
-    interactive: bool | None = False,
     label: str | None = None,
     personal: Personal | None = None,
 ) -> Config:
@@ -594,7 +580,7 @@ def loads(
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
     if personal is None:
-        personal = _personal(machine or machine_config_path(interactive=interactive), preset)
+        personal = _personal(machine or machine_config_path(), preset)
     config = Config(
         stayfixed=stayfixed,
         project=project,

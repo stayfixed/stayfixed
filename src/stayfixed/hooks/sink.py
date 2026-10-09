@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.fsops import (
     UnsafePath,
     open_within,
@@ -125,7 +126,7 @@ class DataSink:
         base = self.root / MARKERS
         try:
             sessions = sorted(
-                (path for path in base.iterdir() if path.is_dir()),
+                (path for path in base.iterdir() if fsops.is_dir(path)),
                 key=lambda path: path.stat().st_mtime_ns,
                 reverse=True,
             )

@@ -515,9 +515,9 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
     # that it indexes the token — a report that named the last window, or 0, or the hit count,
     # would satisfy "an offset is printed" and send the reader to the wrong place.
     #
-    # Mutation (declared, "the neutrality gate reports the last matching window instead of the
-    # first"): drop the `and digest not in first` guard -> the offset becomes 25 and the first
-    # assertion reddens on the value. The planted token is a made-up word passed in as a
+    # Mutation (declared, `mutations/`'s "the neutrality gate reports the last matching window
+    # instead of the first"): drop the `and digest not in first` guard -> the offset becomes 25 and
+    # the first assertion reddens on the value. The planted token is a made-up word passed in as a
     # one-entry denylist, for the reason `test_the_gate_discriminates` gives.
     probe = "quernstone"
     planted = ((len(probe), digest_of(probe)),)
@@ -533,7 +533,7 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
     # Reported as a byte offset the line below said `at 53` for a token at character 49, so a
     # contributor following `CONTRIBUTING.md` sliced ten characters and read 'nstone her'.
     #
-    # Mutation (declared, "the neutrality gate reports a byte offset into a file of
+    # Mutation (declared, `mutations/`'s "the neutrality gate reports a byte offset into a file of
     # characters"): the conversion is dropped -> this reddens on 53 != 49.
     housed = "the gate — the one that walks the tree — refuses quernstone here"
     where = housed.index(probe)

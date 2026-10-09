@@ -16,12 +16,19 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
-from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, binding_for, unlinked_groups
+from stayfixed.attach.binding import (
+    MEMORY_GROUP_ESCAPES,
+    MEMORY_GROUP_UNASKED,
+    UnreadableRecord,
+    binding_for,
+    unlinked_groups,
+)
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
-from stayfixed.config.paths import PathEscape
+from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -29,6 +36,7 @@ from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -108,7 +116,7 @@ def test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument(
     tmp_path: Path,
 ) -> None:
     # This is the overlay's whole trust model. The overlay is trusted BY CONSTRUCTION, and the
-    # construction is that `machine_config_path(interactive=False)` makes the machine file
+    # construction is that `machine_config_path` makes the machine file
     # unselectable by a repository — `machine.py` spends twenty lines on why gating one of a pair of
     # equivalent inputs "is not a partial defence, it is a redirect with a longer name". Deriving
     # the root from `--store`'s own parent throws all of that away: the source of every allow rule
@@ -378,7 +386,7 @@ def test_a_project_name_reaches_neither_refusal_of_this_module(tmp_path: Path) -
     # `project.name` is repository-authored and one lowercase segment is a wide enough grammar for
     # instruction-shaped text; `skills/attach/SKILL.md` tells the model to relay these messages. Two
     # of them interpolated a path with the name in it. The rule was already applied correctly in
-    # `permissions.check` and `write.py`; this is the same rule, two messages over. Mutation: either
+    # `attach.check` and `write.py`; this is the same rule, two messages over. Mutation: either
     # message formatted with `expected` / `record` again → reddens.
     root, store = _project_and_store(tmp_path, recorded=None, origin="x", name=HOSTILE_NAME)
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")
@@ -425,6 +433,26 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
     (root / ".claude" / "settings.local.json").unlink()
     with pytest.raises(EntriesError):
         diff_permissions(root, binding)
+
+
+def test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record is read to the read cap (`fsops.read_regular_text`), and one past it stops the
+    # run as any record that cannot be read does. The refusal says why in the reader's words: the
+    # class name it printed before named stayfixed's internals (`TooLarge`) and no condition. The
+    # cap is lowered so the record is small. Mutation (oracle): `mutations/`'s "a read refusal says
+    # an unreadable file by its error's class name" -> `(TooLarge)`.
+    root, store = _project_and_store(tmp_path, recorded="x", origin="x")
+    limit = 4 * 1024
+    record = store.parent / PROJECT_RECORD
+    record.write_text(record.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(UnreadableRecord) as refused:
+        read_binding(root, store=store, machine=_machine(tmp_path, overlay=store.parents[2]))
+    assert str(refused.value).endswith(
+        f"<this project's name>/{PROJECT_RECORD} cannot be read (larger than this reader reads)"
+    )
 
 
 def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_time(
@@ -504,6 +532,25 @@ def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_senten
     assert "ignore-prior-rules" not in str(caught.value)
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape(
+    tmp_path: Path,
+) -> None:
+    # A real `paths.memory` nobody may search leaves every group under it unaskable, and no link
+    # is on the way: "does not name a subdirectory, or paths.memory is a symlink" named two causes
+    # it did not have. Mutation (oracle): `mutations/`'s "unlinked_groups words a group it cannot
+    # ask about as an escape".
+    text = (
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[memory]\nmode = "overlay"\ngroups = ["developer"]\nindex_extra = []\n'
+    )
+    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True)
+    with unsearchable(tmp_path / DEFAULT_MEMORY), pytest.raises(PathUnasked) as caught:
+        unlinked_groups(tmp_path, config)
+    assert str(caught.value) == MEMORY_GROUP_UNASKED.format(fault="Permission denied")
+
+
 @pytest.mark.parametrize("group", ["", ".", "a/", "a//b"])
 def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true(
     tmp_path: Path, group: str
@@ -546,7 +593,7 @@ def test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count(
     # 200 x "é" is 400 bytes: too long for Linux's 255-byte names, a name on APFS, which counts
     # 255 characters. The share check asks the kernel, so it answers as the filesystem does on
     # either; the lookup is stubbed so both answers are tested on any OS. Mutation (declared):
-    # "the share check counts a name's bytes" -> `no-such-file` reads as too long.
+    # `mutations/`'s "the share check counts a name's bytes" -> `no-such-file` reads as too long.
     name = "é" * 200
     real = Path.lstat
 

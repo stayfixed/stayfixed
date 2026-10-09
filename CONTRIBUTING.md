@@ -15,10 +15,12 @@ uv run python scripts/mutation_oracle.py          # every declared mutation stil
 uv run python scripts/release.py check            # version discipline
 ```
 
-All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
-the mutation oracle, which is this project's headline obligation and not an optional extra, and
-the coverage floor, which is why `pytest -q` alone will give you a green tree and a red pull
-request. CI runs three more steps you can reproduce only from a build (`uv build`, then
+All five run in CI. Four of them, every one but the mutation oracle (the suite with its coverage
+floor, ruff, mypy and `scripts/release.py check`), run on Linux for Python 3.11, 3.11.4, 3.12,
+3.13 and 3.14 and on macOS for 3.13, which is why `pytest -q` alone will give you a green tree
+and a red pull request. The mutation oracle, which is this project's headline obligation and not
+an optional extra, runs in a job of its own on Linux under 3.13 (see [Tests](#tests)). CI runs
+three more steps you can reproduce only from a build (`uv build`, then
 `scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
 reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
 in either is ours to diagnose, not yours.
@@ -32,8 +34,8 @@ sent back however good it looks otherwise.
 
 **The runtime imports only the standard library.** Hooks run under whatever `python3` the
 wrapper finds, before any environment exists, so a third-party import works on your machine and
-fails inside a hook on somebody else's. `tests/test_import_boundary.py` enforces this on every
-supported interpreter. Development dependencies (`pytest`, `ruff`, `mypy`, `towncrier`) are
+fails inside a hook on somebody else's. `tests/boundaries/test_layering.py` enforces this on
+every supported interpreter. Development dependencies (`pytest`, `ruff`, `mypy`, `towncrier`) are
 fine; a runtime one is not.
 
 **Writes go through `fsops`.** `config.paths.contained()` decides whether a configured path
@@ -42,6 +44,18 @@ fine; a runtime one is not.
 `O_NOFOLLOW` walk, so a component that becomes a symlink after the check cannot redirect it.
 Do not add a `Path.write_text`, a `mkdir(parents=True)` or an `os.replace` on a string path to
 code that puts files into a repository.
+
+**So do questions about what is at a path.** Ask them through `fsops.is_file`, `is_dir`, `exists`
+and `is_symlink`, never through `pathlib`'s methods of those names, because `pathlib`'s answer to a
+fault depends on the interpreter: up to Python 3.13 it raises on a name or a path longer than the
+system takes and on a directory that cannot be searched, and from 3.14 it answers `False` for both.
+A clone reaches either with a committed symlink, so one command was an internal error on one
+interpreter and went quietly on on the other, and a suite run on one proved nothing about the
+other. The `fsops` predicates answer one way on all of them: nothing there for a path that reaches
+no file, a name too long included, and a raise for a fault that leaves the question open.
+`tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape`
+refuses any other call, except the few it pins with a reason (the package's own files, an
+`os.DirEntry`).
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
@@ -141,32 +155,72 @@ delivery's code or call its behaviour except through discovery, which is how any
 core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
 `hooks.py` and `doctor.py` by name and call the `register()` each publishes, without knowing which
 area it is, and the bullets below are that contract. One crossing still exists, and it is pinned in
-`CORE_TO_DELIVERY` in `tests/test_areas.py` because it is meant to stay rather than be cut:
-`stayfixed setup --overlay` creates or records the overlay as the last step of machine setup, so
-`setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and those
-rows stay until the step leaves `setup`. A row is one import statement and the names it takes, held
-as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing, a
-second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
+`CORE_TO_DELIVERY` in `tests/boundaries/test_delivery.py` because it is meant to stay rather than be
+cut: `stayfixed setup --overlay` creates or records the overlay as the last step of machine setup,
+so `setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and
+those rows stay until the step leaves `setup`. A row is one import statement and the names it takes,
+held as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing,
+a second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
 whose import has gone alike. `scripts/` is repository tooling and stays under the `api.py` rule
-alone.
+alone. The rules this section names live under `tests/boundaries/`, a file for each (discovery, the
+`api.py` surface, delivery and the import layers), and share one reading of the syntax tree,
+`astscan.py`, which has cases of its own.
 
 That rule reads import statements, so a module named to `importlib.import_module` is invisible to
-it, and two rules of their own hold that door. No core module but `areas.py` imports by a string
-through `importlib.import_module` or `__import__`, under any alias, except the profile discovery
-`DYNAMIC_IMPORTERS` in `tests/test_areas.py` pins with its reason; and the core imports the modules
-that can import by a string any other way (`importlib` beyond `importlib.resources`, `pkgutil`,
-`runpy`, `zipimport`) only where `MACHINERY_IMPORTERS` pins it, with what each file reaches in them.
-Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal.
+it, and two rules of their own in `tests/boundaries/test_delivery.py` hold that door. The first
+reads names: no core module names `import_module` or `__import__`, a module's own `__spec__` or
+`__loader__`, the finders on `sys` (`meta_path`, `path_hooks`, `path_importer_cache`),
+`sys.breakpointhook`, or a builtin that runs text (`exec`, `eval`, `compile`, `breakpoint`,
+`__builtins__`) wherever it is the builtin in that scope, under any alias, except `areas.py`'s two
+imports by name and the profile discovery `DYNAMIC_IMPORTERS` pins with its reason. `__builtins__`,
+which every module carries, is also read off any module (`json.__builtins__`) and in a `from` of any
+module. Only a function's own binding, a comprehension's variable or an import from a module other
+than `builtins` hides such a builtin, in its scope and the scopes it encloses. Python looks a
+module's or a class body's names up at run time, where a binding may not have run, may have been
+deleted, or may be the builtin itself (`exec = exec`), so a binding of one of these names there
+hides nothing and is a row of its own, to pin or rename; a walrus in a comprehension binds in the
+scope around it. A docstring is prose and is not read. The second reads imports: the core imports
+the standard library from the modules `STANDARD_IMPORTS` lists, none of which imports a module named
+by a string but through a name the first rule reads, and any other import (`importlib` and `pkgutil`
+among them) is a row of `MACHINERY_IMPORTERS`, with what each file reaches in it.
+`importlib.resources` is held too: `files` imports the anchor it is handed when that names a module,
+so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
+of it is a row.
+
+Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
+and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
+`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`. No other module refers
+to `cli.discover_registrars`, which hands on what discovery found.
+
+These rules are a tripwire, not a proof: they catch a crossing written the ordinary way. They cannot
+see an attribute chain through an allowed module (`dataclasses.inspect.importlib`, or
+`urllib.request` read off the `urllib` that `import urllib.parse` binds), a module already in
+`sys.modules`, a loader or finder reached by a computed name (`getattr(sys, "meta" + "_path")`),
+an import in a module or a class body that fails and is caught, which hides a builtin the first
+rule then takes for the file's own, code built from text at run time, or a string an allowed
+module evaluates (an annotation built at run time and handed to `typing.get_type_hints`). Review is
+what holds those.
 
 What source cannot show is when a pardoned statement runs, so
 `test_in_isolation_no_core_module_loads_a_delivery_area` imports every core module in a clean
 interpreter and refuses any delivery module among what it loaded: the core loads the private layer
 only when a command asks for it.
 
+The packages under `src/stayfixed/` import one another without a cycle
+(`test_the_packages_import_one_another_without_a_cycle_at_module_level`), counting each import that
+runs when its module is imported. An import inside a function, which defers a load until a command
+asks for it, and one under `if TYPE_CHECKING:`, which never runs, are not counted. A leaf that two
+packages share, such as the path grammar in `grammar.py`, lives where neither has to import the
+other for it. The modules import one another without a cycle too, and there an import inside a
+function counts (`test_the_modules_import_one_another_without_a_cycle_even_inside_functions`):
+deferring a load keeps a module from being left half-initialised, and does not make two modules that
+need each other one layer. An import of a submodule counts as an import of every package above it
+too, since Python runs each package's `__init__.py` first.
+
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
-  handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
-  interpreter imports neither the configuration layer nor the presets.
+  handler body, never at module level: `tests/boundaries/test_discovery.py` asserts that discovery
+  in a clean interpreter imports neither the configuration layer nor the presets.
 - `doctor.py` with a `register() -> Contribution` gives it rows in `stayfixed doctor`'s report: its
   `(name, check)` pairs are asked after the core's own checks, in area-name order, each with the
   report's `Context` and through the same guard, so a check that raises costs its own row and not
@@ -194,17 +248,17 @@ only when a command asks for it.
   the `Context` for it. That is the one answer it caches: code an area reaches through its own
   modules, such as the binding and the note store, resolves the root again.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
-  every import sits inside a function body; `tests/test_areas.py` holds that one.
-- `api.py` is the area's import surface. Other areas import from it and from nothing else, and
-  its `__all__` must equal exactly what it imports — a test parses the file and checks, and
-  `tests/test_areas.py` walks every module under `src/stayfixed/` and `scripts/` and fails on an
-  import that reaches past one. The rule holds every package that publishes an `api.py`, an area
-  or not (`release` is held to its surface like any area), and every area without one
-  (`assess`), none of whose modules anything outside it may import. The list is what consumers
-  actually reach for, not what the area finds tidy: a consumer that needs something absent from
-  it grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI
-  frame rather than an area, and its one direct import of `hooks.policy` is named in that test
-  rather than skipped silently.
+  every import sits inside a function body; `tests/boundaries/test_discovery.py` holds that one.
+- `api.py` is the area's import surface. Other areas import from it and from nothing else, and its
+  `__all__` must equal exactly what it imports — a test parses the file and checks, and
+  `tests/boundaries/test_api_surface.py` walks every module under `src/stayfixed/` and `scripts/`
+  and fails on an import that reaches past one. The rule holds every package that publishes an
+  `api.py`, an area or not (`release` is held to its surface like any area), and every area without
+  one (`assess`), none of whose modules anything outside it may import. The list is what consumers
+  actually reach for, not what the area finds tidy: a consumer that needs something absent from it
+  grows it deliberately, in a commit that says which consumer and why. `cli.py` is the CLI frame
+  rather than an area, and its one direct import of `hooks.policy` is named in that test rather than
+  skipped silently.
 - **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `HandlerFn`, `Sink`, `NullSink` and the sink's on-disk layout —
@@ -236,11 +290,14 @@ The agents are core knowledge too, held in one place. A harness — Claude Code,
 `harnesses.detect` which value it runs under and shapes its stdout with that value's `render`, and
 the event a handler reads does not say which value that was. That is all detection decides, and
 `detect`'s docstring says why. Adding a harness is adding a value — a positive `detects`, its
-project-root variable, its `render`, its settings files and its `reach`, the tier each enforcement
-surface holds at under it — and nothing that reads those needs an edit: `doctor` walks the settings
-files every value names, and the README's table of what each agent enforces is held equal to every
-value's `reach` by a test. It is not only a value: what a new harness still touches outside the
-registry is listed in the module docstring of `src/stayfixed/harnesses.py`.
+project-root and plugin-root variables, its `render`, its settings files, the places it reads hooks
+out of a Markdown frontmatter, its memory directory if it keeps one, and its `reach`, the tier each
+enforcement surface holds at under it — and nothing that reads those needs an edit: `doctor` walks
+the settings files and the places every value names, and the README's table of what each agent
+enforces is held equal to every value's `reach` by a test. It is not only a value: what a new
+harness still touches outside the registry is listed in the module docstring of
+`src/stayfixed/harnesses.py`, and `tests/test_harnesses.py` holds that list to every string in the
+package that names a harness.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their
@@ -311,7 +368,7 @@ winning and the empty prefix's group taking anything no other prefix matches. Th
 on purpose. The plugin directory holds the version for a reviewer when a file reaches 256 KiB and
 when the plugin passes 512 files, and the plugin folder is this repository's root, so every tracked
 file counts: one file per area would need no table, and would spend about twenty of those 512 where
-nine do. That trade is why `GROUP_OF` is a table kept by hand, the exception to "no shared registry"
+eleven do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry"
 under "Areas". The size is checked on every pull request (`tests/test_payload.py`) and the count
 only at a release, where `scripts/release.py check --tag` refuses a plugin folder holding more than
 512 files: this repository is more than the plugin, so a pull request may carry it past the count,
@@ -322,10 +379,14 @@ reaches its cap, three quarters of the directory's; a group that does is split b
 which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
-true. That makes a name a reference, and two things hold it to one: the oracle refuses a name
-two entries share, and `tests/scripts/test_mutation_oracle.py` resolves every such citation in a
+true. That makes a name a reference, and two things hold it to one: the oracle refuses a name two
+entries share, and `tests/scripts/test_mutation_oracle.py` resolves every such citation in a
 tracked file outside `docs/plans/` against the declared names, so renaming an entry is an edit to
-every comment that cites it.
+every comment that cites it. Further names follow the first under the same anchor, joined by a
+comma, `and` or `or`, or as an arrow list that says what each one breaks (`"a" -> …; "b" -> …`).
+That file also reads every quote of a declared name in those files and refuses one the reader does
+not read, a name after prose, in a bulleted list or in parentheses among them, and an anchor that
+reads no name, because a name nothing reads can be renamed away with every test green.
 
 A comment in a group file speaks for the entry below it and for the entries after that which carry
 no comment of their own — the file's header speaks for the file and heads no entry — and never by
@@ -342,7 +403,7 @@ first thing a run does is drop every `stayfixed-oracle-*` checkout but its own, 
 what it dropped.
 
 CI runs the whole set in a job of its own, called `oracle`, on one configuration —
-`ubuntu-latest` with Python 3.13 — while the tests go on running on all four. The oracle proves
+`ubuntu-latest` with Python 3.13 — while the tests go on running on all six. The oracle proves
 that a mutation reddens a test, which is a property of the code and of the tests rather than of
 the platform, and at 657 to 751 s a run it was 76% of the `checks` job and had pushed it past
 its fifteen-minute bound. Its own job has its own budget, and `ci.yml` says what that budget
@@ -350,8 +411,22 @@ buys in further entries; `test_the_mutation_oracle_has_a_job_of_its_own_with_a_b
 reddens when the set outgrows it, so you find that out here rather than from a cancelled job.
 
 Say plainly what narrowed: your local run is still the full check, and CI's guarantee is now
-that the set holds on Linux under 3.13. A mutation that holds there and not on macOS would
-reach `main`, where before it would have been caught in the pull request.
+that the set holds on Linux under 3.13. A mutation that holds there and not on macOS, or not
+under another interpreter, would reach `main`, where before it would have been caught in the
+pull request.
+
+A possessive repeat (`*+`, `++`) of one character or class may stand in any pattern; of a group,
+only where every pass is single characters and anchors followed by repeats of one character that
+may match nothing, or one repeat of one character that needs at most one, alone
+(`(?:\.[a-z][a-z]*+)++`, never `(?:\.[a-z]++)++` or `(?i)(?:[a-z]{2,}|-)*+`). Python 3.11.0 to
+3.11.4, Debian 12's among them, go on from where a failed pass of any other shape stopped (fixed
+in 3.11.5), and no atomic group stands anywhere, since it keeps the record a possessive repeat
+drops. `tests/test_patterns.py` holds the shape, and CI's `checks (ubuntu-latest, 3.11.4)` leg
+runs every reader's tests on an interpreter with the bug.
+
+Run the oracle on Python 3.12 or later. Two entries, a function's and a class's type parameters
+going unread, are caught by a case written in 3.12's syntax for them, which is skipped below
+3.12, so on 3.11 both survive and the run reports them.
 
 Four things are findings: a mutation that *survives*; one whose `before`
 line no longer exists, because the assertion and the line it is about have drifted apart; one

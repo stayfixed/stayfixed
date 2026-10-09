@@ -90,7 +90,7 @@ line may carry more of the product's name (a proper noun, so a capital or a digi
 version or a link (lowercase, but carrying a digit or a ``/``, which no English word does), the
 markdown link target the canonical footer ends with, and punctuation — and then it must end. A
 word beginning with a lowercase letter is prose and ends the match. The cost is stated beside
-``_FOOTER_TAIL``: a lowercase-typed footer is missed here, and that is the cheap direction,
+``_FOOTER_WORD``: a lowercase-typed footer is missed here, and that is the cheap direction,
 because the harness appends a ``Co-Authored-By:`` trailer alongside it that the trailer rule
 catches, while nothing puts a deleted sentence back.
 
@@ -148,8 +148,10 @@ _VENDORS = (
 # A `-by:` trailer: any `<Something>-by:` key, because Reviewed-by, Signed-off-by and
 # Tested-by are all used by agent harnesses; the value is what decides, and `_trailer_offence`
 # requires it to end at its address. A value folded onto a continuation line is read to the end
-# of the first line only (see the docstring).
-_TRAILER = re.compile(r"^[ \t]*[\w-]*-by:[ \t]*(?P<value>.+?)[ \t]*$", re.IGNORECASE)
+# of the first line only (see the docstring). Only the key is a pattern: the value is the rest of
+# the line with its blanks trimmed, by `_trailer_value`, because a lazy value ended by blanks
+# rescanned the blanks at every character and took seconds over a line of tens of thousands.
+_TRAILER = re.compile(r"[ \t]*[\w-]*-by:", re.IGNORECASE)
 # The address rule: the bot's own domain. A person employed there is the documented cost.
 # Two domains are deliberately absent, for one reason: `github.com` is what GitHub puts on
 # ordinary human web-UI commits, and `google.com` is the address of every Google employee.
@@ -158,11 +160,17 @@ _TRAILER = re.compile(r"^[ \t]*[\w-]*-by:[ \t]*(?P<value>.+?)[ \t]*$", re.IGNORE
 # one: Gemini has no vendor domain here and only its two long product phrases in `_PRODUCTS`,
 # so a trailer naming it any other way is not caught on this surface. Widening this table is a
 # decision about false positives, not an oversight to patch.
+#
+# A vendor's domain or any subdomain of it: the pattern `@(?:[\w-]+\.)*<domain>\b`, which
+# `_names_a_vendor_domain` reads a label at a time, because `re` kept a record for every label it
+# might give back, 60 MiB over an address of half a million of them.
 _VENDOR_DOMAINS = re.compile(
-    r"@(?:[\w-]+\.)*(?:anthropic\.com|openai\.com|cursor\.(?:sh|com)|codeium\.com"
+    r"(?:anthropic\.com|openai\.com|cursor\.(?:sh|com)|codeium\.com"
     r"|windsurf\.com|mistral\.ai|devin\.ai|aider\.chat)\b",
     re.IGNORECASE,
 )
+# What follows an `@`: the labels and the dots between them, read once.
+_DOMAIN_RUN = re.compile(r"@([\w.-]*+)")
 # The name rule, and `fullmatch` is the whole of it: the trailer's display name must be a
 # product phrase AND NOTHING ELSE. `Claude Lemaire` is a person, and so are `Devin Clark` and
 # `Gemini Rossi`, which is why this can never be a search. The cost is stated rather than
@@ -171,8 +179,13 @@ _VENDOR_DOMAINS = re.compile(
 # positives this whole table exists to avoid. Those bots are caught, if at all, by their mail
 # domain in `_VENDOR_DOMAINS`; a bot with neither an exact product name nor a vendor domain is a
 # known gap, like Gemini's above.
+#
+# A model's version words are possessive, so `re` keeps no record per word, and a word given back
+# could only end the name before a blank, which `fullmatch` refuses anyway. A word's first
+# character is read ahead of its possessive rest, so a pass of the repeat can fail only before it
+# reads a run: the shape every supported Python reads alike (CONTRIBUTING.md, "Tests").
 _PRODUCTS = re.compile(
-    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]+)*|github copilot|copilot"
+    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"
     r"|cursor agent|openai codex|codex|devin|windsurf|aider|gemini cli|gemini code assist)",
     re.IGNORECASE,
 )
@@ -196,12 +209,24 @@ _PRODUCTS = re.compile(
 # this back is what amputates a body sentence, and nothing puts a deleted sentence back — while a
 # footer missed on this surface is still a commit whose paired `Co-Authored-By:` trailer the
 # trailer rule catches, and `commit check` still fails it in CI.
-_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"
+#
+# Each word is read once, and whole where it can be: a word carrying a digit or a `/` first, then
+# one of the product's name, and a word read is never given back. Read as a choice between the two
+# to backtrack over, a word such as `A1` that is both doubled the work at each one, and a line that
+# went on into prose after forty took longer than any hook can wait; and each word given back
+# rescanned the rest of the line. The verdicts are the same: a word read whole leaves the end of
+# the line no less to match than any shorter reading of it.
+#
+# So `_is_footer` reads the words one match at a time and then the end, rather than as a repeat of
+# a group: a possessive repeat of the words took the blank before a word that is neither on Python
+# 3.11.0 to 3.11.4, which end a failed pass of it where the pass stopped (CONTRIBUTING.md,
+# "Tests"), and `Generated with Claude Code ](notes)` was a footer there that is prose elsewhere.
+_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)
+_FOOTER_END = re.compile(r"(?:\]\([^)\s]*\))?\]?[^\w]*$")
 # A footer names the vendor as a word, never as a prefix of a package (`openai-python`) or a
 # possessive (`openai's`).
 _FOOTER = re.compile(
-    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])"
-    rf"{_FOOTER_TAIL}",
+    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])",
     re.IGNORECASE,
 )
 # The marker is the whole line, optionally `by <tool>`; a sentence that starts with the words
@@ -216,11 +241,21 @@ _MARKER = re.compile(
 _WORD = re.compile(r"\w")
 
 
+def _trailer_value(line: str) -> str | None:
+    """The value of the `-by:` trailer `line` is, or `None` where it is not one: the rest of the
+    line past the key, without the blanks around it. `line` holds no line break, since both
+    readers cut the message with `str.splitlines()`. A value of blanks alone names nobody."""
+    key = _TRAILER.match(line)
+    if key is None:
+        return None
+    return line[key.end() :].strip(" \t") or None
+
+
 def _trailer_offence(line: str) -> bool:
-    match = _TRAILER.match(line)
-    if match is None:
+    value = _trailer_value(line)
+    if value is None:
         return False
-    name, bracket, address = match.group("value").partition("<")
+    name, bracket, address = value.partition("<")
     # A trailer whose value is a BARE ADDRESS -- `Co-Authored-By: noreply@anthropic.com`, angle
     # brackets left off -- has no display name, so `address` was empty and `_VENDOR_DOMAINS`
     # could never fire on it while the bracketed form was caught. The same hole as the
@@ -252,14 +287,46 @@ def _trailer_offence(line: str) -> bool:
     _, bracket, tail = address.rpartition(">")
     if bracket and _WORD.search(tail):
         return False
-    if _VENDOR_DOMAINS.search(address):
+    if _names_a_vendor_domain(address):
         return True
     return _PRODUCTS.fullmatch(name.strip()) is not None
 
 
+def _is_footer(line: str) -> bool:
+    """Whether `line` is a generated-with footer: its words up to the vendor's (`_FOOTER`), then
+    each word past it that is more of the product's name, a version or a link (`_FOOTER_WORD`),
+    and then nothing but the line's end (`_FOOTER_END`)."""
+    footer = _FOOTER.match(line)
+    if footer is None:
+        return False
+    end = footer.end()
+    while (word := _FOOTER_WORD.match(line, end)) is not None:
+        end = word.end()
+    return _FOOTER_END.match(line, end) is not None
+
+
+def _names_a_vendor_domain(address: str) -> bool:
+    """Whether an `@` in `address` is followed by a vendor's domain, or by labels and then one.
+
+    Each run after an `@` is read once: a vendor is tried at its start and after each dot that
+    closes a label, up to the first label that is empty, which is where the pattern's labels end;
+    and no run of labels after an `@` holds another `@`."""
+    for run in _DOMAIN_RUN.finditer(address):
+        labels = run.group(1)
+        start = 0
+        while True:
+            if _VENDOR_DOMAINS.match(labels, start):
+                return True
+            dot = labels.find(".", start)
+            if dot <= start:
+                break
+            start = dot + 1
+    return False
+
+
 _PATTERNS: tuple[tuple[str, Callable[[str], bool]], ...] = (
     ("attribution trailer naming an AI tool", _trailer_offence),
-    ("generated-with footer", lambda line: _FOOTER.search(line) is not None),
+    ("generated-with footer", _is_footer),
     ("AI-generated marker line", lambda line: _MARKER.search(line) is not None),
 )
 

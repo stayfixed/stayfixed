@@ -148,8 +148,8 @@ def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) 
     # The write-once half of `InitReport.refused`, which the case above cannot reach: its
     # refusal is the footprint pass's. A `CLAUDE.md` that is a symlink is refused by the
     # write-once pass alone, and the run must stop there with its report. Mutation (oracle):
-    # "init's refusal reads only the footprint plan" -> the run goes on to `apply`, whose own
-    # backstop refuses the plan: exit 2 with the engine's message, and no report.
+    # `mutations/`'s "init's refusal reads only the footprint plan" -> the run goes on to `apply`,
+    # whose own backstop refuses the plan: exit 2 with the engine's message, and no report.
     root = repository(tmp_path)
     (tmp_path / "elsewhere.md").write_text("theirs\n", encoding="utf-8")
     (root / "CLAUDE.md").symlink_to(tmp_path / "elsewhere.md")
@@ -384,9 +384,9 @@ def test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_reco
     # Created here, pushed with `git push -u origin main`, adopted from a feature branch: an
     # `origin` and no `origin/HEAD`. The feature branch was written as the base, so the workflow
     # gated it. Now `main` is written and the note names the command that records the remote's
-    # default. Mutations (oracle): "an origin with no origin/HEAD takes the branch checked out"
-    # -> the base branch assertion reddens; "the unrecorded remote head is never noted" -> the
-    # note assertion reddens.
+    # default. Mutations (oracle): `mutations/`'s "a remote with no origin/HEAD takes the branch
+    # checked out" -> the base branch assertion reddens; "the unrecorded remote head is never noted"
+    # -> the note assertion reddens.
     #
     # The remote is created on `main`, as a forge creates it. Left to git's own default, its
     # `HEAD` named a branch that was never pushed wherever that default is `master` — upstream
@@ -432,8 +432,8 @@ def test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_a
     # and pushed there, or cloned with `-o upstream`, which records `upstream/HEAD` — has no
     # head detection reads. It is still a repository with a remote, adopted from a feature
     # branch, so `main` stands and the note names `--base-branch`, which answers it whatever the
-    # remote is called. Mutation (oracle): "only an origin remote keeps the default" -> the
-    # feature branch is written.
+    # remote is called. Mutation (oracle): `mutations/`'s "only an origin remote keeps the default"
+    # -> the feature branch is written.
     bare = tmp_path / "upstream.git"
     if shape == "pushed":
         root = repository(tmp_path, origin=None)
@@ -459,8 +459,8 @@ def test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No answer to `git remote` is not "no remote": the branch checked out is not taken, and the
-    # note says git could not tell. Mutation (oracle): "remotes git cannot list are never noted"
-    # -> the note is missing.
+    # note says git could not tell. Mutation (oracle): `mutations/`'s "remotes git cannot list are
+    # never noted" -> the note is missing.
     from stayfixed.gitenv import git_run as real
 
     root = repository(tmp_path, origin=None)
@@ -479,7 +479,8 @@ def test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted(tmp_path: P
     # With no `origin/HEAD`, a repository on `develop` takes `develop` as its base: the report
     # says where the branch came from, so a person on a feature branch reads it before the
     # workflow gates the wrong one. `main` is what the default was anyway, and says nothing.
-    # Mutation (oracle): "the checked-out branch is never noted" -> the note assertion reddens.
+    # Mutation (oracle): `mutations/`'s "the checked-out branch is never noted" -> the note
+    # assertion reddens.
     root = repository(tmp_path, origin=None)
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0 and HEAD_CURRENT not in printed, printed
@@ -520,8 +521,8 @@ def test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes(
     # The round trip through the real parser: the questions' own flags, each given its default,
     # write what `--yes` alone writes. The `not-derivable` repository's origin names no project,
     # so `--name` answers it, and its twin is one whose name derives to `widget`. Mutation
-    # (oracle): "an answered name is still detected strictly" -> the `not-derivable` case is
-    # refused naming the grammar, exit 2.
+    # (oracle): `mutations/`'s "an answered name is still detected strictly" -> the `not-derivable`
+    # case is refused naming the grammar, exit 2.
     origin = "git@github.com:owner/widget.git" if derivable else "git@github.com:owner/Not A.git"
     root = repository(tmp_path / "answered", origin=origin)
     code, printed = _run(root, tmp_path, "--questions", "--json")
@@ -568,17 +569,18 @@ def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
     # A name or a branch is refused naming the rule and never the value, which is text a
     # person may have pasted from anywhere; a choice is refused by `choices`, whose error quotes
     # only the operator's own argument. `--profile` takes only the names this build ships.
-    # Mutations (oracle): "an answer outside its grammar is taken as typed" -> `name` and
-    # `branch` redden; "--local takes a file no gate can do without" -> `not-eligible` reddens.
-    # (By hand: `--profile` without `choices` -> `profile` reddens with no `SystemExit`: the name
-    # reaches `init`, and only the profile loader refuses it, after the parser.)
+    # Mutations (oracle): `mutations/`'s "a flag's grammar takes a value outside it as typed:
+    # gate --base a short name a tag answers for, init an answer" -> `name` and `branch` redden;
+    # "--local takes a file no gate can do without" -> `not-eligible` reddens. (By hand: `--profile`
+    # without `choices` -> `profile` reddens with no `SystemExit`: the name reaches `init`, and only
+    # the profile loader refuses it, after the parser.)
     root = repository(tmp_path)
     with pytest.raises(SystemExit):
         _invoke(root, tmp_path, *argv)
     err = capsys.readouterr().err
     assert "Not A Name" not in err
     # The rule in words, never the pattern: Python's `\Z` reads as nothing to a person.
-    # Mutation (oracle): "the --name refusal prints the pattern" -> `name` reddens.
+    # Mutation (oracle): `mutations/`'s "the --name refusal prints the pattern" -> `name` reddens.
     assert "\\Z" not in err
     if "--name" in argv:
         assert NAME_RULE in err
@@ -590,8 +592,9 @@ def test_an_answer_over_a_document_the_user_wrote_is_refused(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Answers reach only a document this run creates; a `stayfixed.toml` already there is the
-    # answer, so a flag over it would be silently dropped. Mutation (oracle): "an answer
-    # overrides a stayfixed.toml the user wrote" -> the first run adopts the file and exits 0.
+    # answer, so a flag over it would be silently dropped. Mutation (oracle): `mutations/`'s "an
+    # answer overrides a stayfixed.toml the user wrote" -> the first run adopts the file and exits
+    # 0.
     root = repository(tmp_path)
     (root / "stayfixed.toml").write_text(DOCUMENT, encoding="utf-8")
     before = snapshot(root)
@@ -607,8 +610,8 @@ def test_an_answer_over_a_document_the_user_wrote_is_refused(
 @needs_git
 def test_a_refused_adoption_says_its_version_would_be_written(tmp_path: Path) -> None:
     # A refused run writes nothing, the stamp included, so its note must not say "wrote".
-    # A directory at `CLAUDE.md` is refused by the write-once pass. Mutation (oracle): "a
-    # refused adoption reports its version stamp as written".
+    # A directory at `CLAUDE.md` is refused by the write-once pass. Mutation (oracle):
+    # `mutations/`'s "a refused adoption reports its version stamp as written".
     root = repository(tmp_path)
     hand_written = '[project]\nname = "widget"\n'
     (root / "stayfixed.toml").write_text(hand_written, encoding="utf-8")
@@ -668,8 +671,8 @@ def test_past_the_listed_limit_the_custom_gate_note_counts_the_rest(
 ) -> None:
     # Bounded by the one cap every list of names on a line takes, `LISTED_LIMIT`, and not by a
     # second limit of its own: a file with many gates prints the first names and a count, never a
-    # list as long as the repository makes it. Mutation (oracle): "init's custom-gate note keeps
-    # a limit of its own" -> the exactly-the-limit case reddens.
+    # list as long as the repository makes it. Mutation (oracle): `mutations/`'s "init's custom-gate
+    # note keeps a limit of its own" -> the exactly-the-limit case reddens.
     root = repository(tmp_path)
     names = [f"g{n:02}" for n in range(LISTED_LIMIT + extra)]
     (root / "stayfixed.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
@@ -690,7 +693,8 @@ def test_a_document_init_writes_names_no_custom_gate(tmp_path: Path) -> None:
 @needs_git
 def test_an_adopted_document_without_a_version_is_named_in_a_note(tmp_path: Path) -> None:
     # The one line `init` writes into a file a person wrote is said, in the text and in
-    # `--json`. Mutation (oracle): "an adopted document's added version goes unmentioned".
+    # `--json`. Mutation (oracle): `mutations/`'s "an adopted document's added version goes
+    # unmentioned".
     root = repository(tmp_path)
     (root / "stayfixed.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")

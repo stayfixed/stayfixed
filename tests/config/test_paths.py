@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 from dataclasses import fields
 from pathlib import Path
@@ -14,9 +15,11 @@ from stayfixed.config.paths import (
     contained,
     validate_paths,
 )
-from stayfixed.config.schema import PATH_VALUE, Config, Paths
+from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
+from stayfixed.grammar import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -72,6 +75,90 @@ def test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw(tmp_path: Path)
     assert_never_raw(str(raised.value))
     assert str(raised.value).endswith(f"passes through a symlink at {CRAFTED!r}")
     assert str(tmp_path) not in str(raised.value)
+
+
+# What `contained` answers when an ancestor's `lstat` meets each fault: the path, or the refusal's
+# ending. Only the shapes whose path an `lstat` cannot find something at, since the ones it can are
+# the link and no-link cases above.
+CONTAINED_ANSWERS: dict[str, str | None] = {
+    "nothing-there": None,
+    "below-a-file": None,
+    "a-name-longer-than-a-name": None,
+    "past-the-longest-path": None,
+    # The link is still found: an `lstat` of the link itself does not follow it.
+    "through-a-link-loop": "passes through a symlink at 'loop'",
+    "through-a-link-to-a-name-longer-than-a-name": "passes through a symlink at 'far'",
+    "below-a-directory-that-cannot-be-searched": (
+        "cannot be checked for a symlink at 'locked/child' (Permission denied)"
+    ),
+    # The link above the ancestor no `lstat` can ask is the cause, so it is the one named.
+    "through-a-link-into-a-directory-that-cannot-be-searched": (
+        "passes through a symlink at 'into-locked'"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(CONTAINED_ANSWERS))
+def test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter(
+    tmp_path: Path, shape: str
+) -> None:
+    # `Path.is_symlink()` raised `ENAMETOOLONG` up to Python 3.13 and answered `False` from 3.14,
+    # so `attach` over a group directory that fits, with its placeholder name inside past the
+    # longest path, was an internal error on one interpreter and attached on the other. A path
+    # that reaches no file holds no link to follow; a fault that leaves the question open is a
+    # refusal in words, by the ancestor's place under the root and never its absolute path.
+    #
+    # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
+    # takes as a fault" -> the two over-long shapes refuse; "contained reads an ancestor it cannot
+    # ask about as no link" -> the unsearchable directory is contained.
+    if unmet_here(shape):
+        pytest.skip("root searches every directory")
+    relative = shaped(tmp_path, shape)
+    try:
+        assert lstat_fault(tmp_path / relative) == LSTAT_FAULT[shape]
+        refused = CONTAINED_ANSWERS[shape]
+        if refused is None:
+            assert contained(tmp_path, relative) == tmp_path / relative
+        else:
+            with pytest.raises(PathEscape) as raised:
+                contained(tmp_path, relative)
+            assert str(raised.value) == f"{relative!r} {refused}"
+    finally:
+        unlock(tmp_path)
+
+
+def test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write(
+    tmp_path: Path,
+) -> None:
+    # `contained`'s own comment makes this argument, and nothing held it: an ancestor whose
+    # `lstat` meets `ENAMETOOLONG` is read as no link, so a link inside a real tree past the
+    # longest path is not seen there. The descriptor walk every write goes through reaches it one
+    # component at a time and refuses it of its own accord, and that is the safety. Built by
+    # descriptor, as only such a walk can. Mutations (oracle): `mutations/`'s "the path predicates
+    # read a name longer than the system takes as a fault" -> `contained` refuses instead; "the
+    # containment walk follows a symlinked directory" -> the write lands outside.
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parts: list[str] = []
+    descriptor = os.open(tmp_path, os.O_RDONLY)
+    try:
+        while len(str(tmp_path / "/".join(parts))) <= longest:
+            os.mkdir("d" * 200, dir_fd=descriptor)
+            below = os.open("d" * 200, os.O_RDONLY, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = below
+            parts.append("d" * 200)
+        os.symlink(outside, "link", dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    # The premise: the link's own path is one no `lstat` can be handed.
+    assert lstat_fault(tmp_path.joinpath(*parts, "link")) == errno.ENAMETOOLONG
+    relative = "/".join([*parts, "link", "note.md"])
+    assert contained(tmp_path, relative) == tmp_path / relative
+    with pytest.raises(UnsafePath):
+        write_within(tmp_path, relative, "text\n")
+    assert list(outside.iterdir()) == []
 
 
 def test_a_symlink_pointing_inside_the_root_is_still_refused(tmp_path: Path) -> None:
@@ -218,6 +305,7 @@ REFUSED = (
     "./docs",  # a leading './'
     "docs/./x.md",  # a '.' component anywhere
     "docs/../x.md",  # a '..' component the charset spells out of ordinary letters
+    "docs/..",  # a '..' component that ends the value
     ".",
     "..",
     "/etc/stayfixed",
@@ -327,7 +415,7 @@ def test_a_paths_value_inside_stayfixeds_own_directory_is_refused_and_never_quot
     # committed `agents_md = ".stayfixed/local/attach.json"` had `upgrade` rewrite the ledger.
     # Case and depth for the reasons `.git` has them: a case-folding filesystem, and a nested
     # package initialised on its own. The refusal names the key, never the value.
-    # Mutation (oracle): "a [paths] value may name stayfixed's own directory".
+    # Mutation (oracle): `mutations/`'s "a [paths] value may name stayfixed's own directory".
     text = (
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[paths]\nagents_md = "{value}"\n'

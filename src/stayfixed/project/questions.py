@@ -20,7 +20,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from stayfixed.config.schema import BRANCH_NAME, MEMORY_MODES, PROJECT_NAME
+from stayfixed.config.schema import (
+    BRANCH_NAME,
+    IN_REPO_MODE,
+    LOCAL_ONLY_MODE,
+    MEMORY_MODES,
+    OVERLAY_MODE,
+    PROJECT_NAME,
+)
 from stayfixed.project.templates import LOCAL_ELIGIBLE
 
 # Each question's `stayfixed.toml` key, and the flag on `stayfixed init --yes` that answers it.
@@ -37,8 +44,8 @@ SCHEMA = "https://json-schema.org/draft/2020-12/schema"
 # The source of a default that nothing in the repository chose.
 PRESET = "the preset's default"
 MEMORY_TITLES = {
-    "in-repo": "In this repository, committed with the code",
-    "local-only": "On this machine only, under .stayfixed/local/",
+    IN_REPO_MODE: "In this repository, committed with the code",
+    LOCAL_ONLY_MODE: "On this machine only, under .stayfixed/local/",
 }
 OVERLAY_RECORDED = "In your private overlay, which this machine records"
 OVERLAY_NEXT = "In a private overlay, which the setup skill creates or records next"
@@ -90,7 +97,7 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     preset = preset_defaults(found.name or "project")
     titles = {
         **MEMORY_TITLES,
-        "overlay": OVERLAY_RECORDED if _overlay_recorded(machine) else OVERLAY_NEXT,
+        OVERLAY_MODE: OVERLAY_RECORDED if _overlay_recorded(machine) else OVERLAY_NEXT,
     }
     name: dict[str, Any] = {"type": "string", "title": "Project name", "pattern": NAME_PATTERN}
     if found.name:

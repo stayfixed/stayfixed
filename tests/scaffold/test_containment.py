@@ -109,7 +109,7 @@ def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_r
     # `contained()`'s own `..`-shaped message never fires for it, and folding it into
     # `HOSTILE_PATHS` let one guard silently cover for the other. Asserted directly against the
     # grammar instead.
-    from stayfixed.config.schema import PATH_VALUE
+    from stayfixed.grammar import PATH_VALUE
 
     assert PATH_VALUE.match("/etc") is None
 
@@ -139,7 +139,7 @@ def test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted(
     # `load_preset` ran `{name!r}` into this refusal, and it runs exactly for a value that failed
     # the identifier check — so it was the one message guaranteed to carry whatever the clone
     # wrote. `config.loader._enum`'s ruling: the key and the rule, never the value.
-    # Oracle: `mutations/`, "a preset name outside the rule is quoted back again".
+    # Oracle: `mutations/`'s "a preset name outside the rule is quoted back again".
     write_config(
         tmp_path, VALID_HEAD.replace('preset = "recommended"', f'preset = "{HOSTILE_TEXT}"')
     )
@@ -154,7 +154,7 @@ def test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted(
 def test_a_preset_this_build_does_not_ship_is_refused_and_never_quoted(tmp_path: Path) -> None:
     # The second refusal is reached only by a name that passed the identifier rule, so ESC and a
     # line break cannot arrive here; an instruction spelled in letters can, and is the hostile
-    # value. Oracle: `mutations/`, "a preset this build does not ship is quoted back again".
+    # value. Oracle: `mutations/`'s "a preset this build does not ship is quoted back again".
     write_config(
         tmp_path, VALID_HEAD.replace('preset = "recommended"', 'preset = "IGNOREPRIORRULES"')
     )
@@ -185,7 +185,7 @@ def test_preset_membership_is_the_listings_answer_and_not_the_filesystems(
     # The portable half of the case above. With the listing emptied, `recommended.toml` is still
     # on disk, so a check that asks the filesystem loads it and one that asks the listing
     # refuses — on a case-sensitive filesystem as much as on macOS, where the CI oracle does
-    # not run. Oracle: `mutations/`, "preset membership is asked of the filesystem again".
+    # not run. Oracle: `mutations/`'s "preset membership is asked of the filesystem again".
     monkeypatch.setattr(presets, "shipped_presets", lambda: [])
     with pytest.raises(Failure, match="does not ship"):
         load_preset("recommended")
@@ -193,7 +193,7 @@ def test_preset_membership_is_the_listings_answer_and_not_the_filesystems(
 
 def test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule() -> None:
     # `str.isalnum()` admitted every Unicode letter, so this reached the second refusal instead
-    # of the first. Oracle: `mutations/`, "the preset rule admits any Unicode letter again".
+    # of the first. Oracle: `mutations/`'s "the preset rule admits any Unicode letter again".
     with pytest.raises(Failure, match="is not a plain identifier"):
         load_preset("récommended")
 
@@ -307,11 +307,11 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
 
     **No single-edit mutation reddens this, and that is measured rather than assumed.** Two
     guards stand in front of the write — the `[paths]` grammar and `contained()`'s component
-    rule — and each refuses the value alone, which is the point of having both. With both
-    mutations applied together ("the [paths] grammar admits a spelling the write refuses
-    again" and "contained normalises the value away, so plan stops agreeing with apply"), this
-    run reaches `apply` and the manifest assertion reddens. The
-    oracle proves each guard separately through the siblings those entries name.
+    rule — and each refuses the value alone, which is the point of having both. With both of
+    `mutations/`'s "the [paths] grammar admits a spelling the write refuses again" and "contained
+    normalises the value away, so plan stops agreeing with apply" applied together, this run
+    reaches `apply` and the manifest assertion reddens. The oracle proves each guard separately
+    through the siblings those entries name.
     """
     root = tmp_path / "widget"
     root.mkdir()
@@ -342,9 +342,9 @@ def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
     hook's bytes and mode are something the run could actually have changed.
 
     Two guards again, the `[paths]` loop and the walk's own copy of the rule, and either alone
-    refuses. With both "a [paths] value may name git's control directory again" and "the walk
-    writes inside git's control directory again" applied, the hook is rewritten and this
-    reddens; each alone is proven by the siblings those entries name.
+    refuses. With both of `mutations/`'s "a [paths] value may name git's control directory
+    again" and "the walk writes inside git's control directory again" applied, the hook is rewritten
+    and this reddens; each alone is proven by the siblings those entries name.
     """
     root = tmp_path / "widget"
     root.mkdir()

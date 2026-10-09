@@ -191,9 +191,9 @@ def test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_the
 def test_the_runbook_and_audits_readme_take_their_names_from_the_bug_ledgers_register() -> None:
     # The register links the runbook and the audits directory, and `init` writes both files; the
     # two names live once, beside the register, so neither side can be respelled alone and no
-    # target is built from a link a register may leave unset. Mutations (oracle): "init writes the
-    # runbook where the bug index does not link it" and "init writes the audits README under a
-    # directory the bug index does not link" -> the equalities below redden.
+    # target is built from a link a register may leave unset. Mutations (oracle): `mutations/`'s
+    # "init writes the runbook where the bug index does not link it" and "init writes the audits
+    # README under a directory the bug index does not link" -> the equalities below redden.
     config = preset_defaults("widget")
     moved = replace(config, paths=replace(config.paths, bugs="ledger", runbooks="guides"))
     ledger = bug_register(moved)
@@ -424,9 +424,9 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     them, read off one relation (`templates.Owners`); a guard of its own for one pass, which this
     test used to pin, was shadowed by it and is gone.
 
-    Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
-    no refusal, and every case reddens; "places are compared case-sensitively for ownership" ->
-    the case-variant case does.
+    Mutation (oracle): `mutations/`'s "an artifact may target a file another artifact is built to
+    write" -> no refusal, and every case reddens; "places are compared case-sensitively for
+    ownership" -> the case-variant case does.
     """
     config = preset_defaults("widget")
     footprint_clash = replace(
@@ -469,9 +469,9 @@ def test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_
     place is one file in any case, and a place only another configuration builds (the workflow
     under `mode = "none"`) is still another artifact's.
 
-    Mutations (oracle): "the AGENTS.md skeleton and its region stop sharing a file by design" ->
-    the pair's place is foreign to each; "places are compared case-sensitively for ownership" ->
-    `claude.md` is nobody's.
+    Mutations (oracle): `mutations/`'s "the AGENTS.md skeleton and its region stop sharing a file by
+    design" -> the pair's place is foreign to each; "places are compared case-sensitively for
+    ownership" -> `claude.md` is nobody's.
     """
     owners = _prepared(preset_defaults("widget")).owners
     assert owners.foreign("agents-md", "AGENTS.md") == frozenset()
@@ -788,10 +788,10 @@ def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: 
     # branches are all held to `BRANCH_NAME` before a rendered caller names the branch; a name git
     # itself refuses as a branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a
     # component starting with `.`, the name `HEAD`) is a caller that can never run, so the grammar
-    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate
-    # branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock' component
-    # git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`,
-    # `.lock` and `HEAD` cases redden.
+    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): `mutations/`'s
+    # "the gate branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock'
+    # component git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the
+    # `a..b`, `.lock` and `HEAD` cases redden.
     accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
     assert bool(BRANCH_NAME.match(name)) == accepted, name
 

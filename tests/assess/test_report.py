@@ -72,8 +72,8 @@ def test_an_advisory_gate_warns_and_an_enforcing_one_errors() -> None:
 def test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason() -> None:
     # A gate that could not judge the tree has no finding, so a pull request would see no
     # annotation for it at all where the run still fails on it. Its reason is stayfixed's own
-    # fixed text, never an exception's. Mutation (oracle): "a gate that could not run is not
-    # annotated" -> both lines are missing.
+    # fixed text, never an exception's. Mutation (oracle): `mutations/`'s "a gate that could not run
+    # is not annotated" -> both lines are missing.
     reason = COULD_NOT_RUN.format(command="plan check --base <base>")
     run = _run(
         [
@@ -216,8 +216,8 @@ def test_a_gate_not_started_after_the_run_failed_says_so_everywhere_a_gate_print
 def test_the_config_line_names_at_most_the_listed_limit_of_refused_keys() -> None:
     # A custom gate's key is the repository's to add, so the refused keys are bounded in number
     # by nothing; the line counts every one and names the first `LISTED_LIMIT`, and the job
-    # summary's table below it carries each key's verdict. Mutation (oracle): "the config line
-    # names every refused key" -> this reddens.
+    # summary's table below it carries each key's verdict. Mutation (oracle): `mutations/`'s "the
+    # config line names every refused key" -> this reddens.
     keys = [f"gates.custom.g{n:02}" for n in range(LISTED_LIMIT + 3)]
     verdict = ConfigVerdict(
         "installed",

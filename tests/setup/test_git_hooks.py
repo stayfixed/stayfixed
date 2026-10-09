@@ -158,6 +158,63 @@ def test_uninstall_with_nothing_installed_reports_that_and_writes_nothing(tmp_pa
     assert result.data["restored"] is None
 
 
+# What `--uninstall` finds at the hook path — whether a foreign hook was there first, and whether
+# stayfixed's was installed over it — and the line it prints, `{hook}` being that path.
+UNINSTALLED = {
+    "ours": (False, True, "removed {hook}; there was no foreign hook to restore"),
+    "chained": (True, True, "removed {hook}; restored the foreign hook chained to it"),
+    "nothing": (False, False, "there is no stayfixed hook at {hook}; nothing was removed"),
+    "foreign": (
+        True,
+        False,
+        "left {hook} as it was: it is not stayfixed's hook; nothing was removed",
+    ),
+}
+
+
+@pytest.mark.parametrize(("mine", "ours", "line"), UNINSTALLED.values(), ids=UNINSTALLED)
+def test_uninstall_says_whether_it_removed_stayfixeds_hook(
+    tmp_path: Path, mine: bool, ours: bool, line: str
+) -> None:
+    # It said "removed …; there was no foreign hook to restore" whatever it found: with no hook
+    # there it removed nothing, and with a foreign hook there both halves were false, that hook
+    # being in place and untouched. The installed hook's own text names this command, so the line
+    # says which of the four it met, and `--json` carries it as `found`. Mutations:
+    # `mutations/`'s "uninstall says it removed a hook when there was none" and "uninstall says
+    # it removed a hook when the hook there is not stayfixed's".
+    root = _repo(tmp_path)
+    directory = hooks_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    hook = directory / HOOK_NAME
+    if mine:
+        hook.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        hook.chmod(0o755)
+    if ours:
+        run_setup(_args(root=str(root)))
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert result.summary == line.format(hook=hook)
+    found = "removed" if ours else "foreign" if mine else "absent"
+    assert result.data["found"] == found
+    if mine:
+        assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
+
+
+def test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so(tmp_path: Path) -> None:
+    # The command's half of `tests/guards/test_githooks.py`'s case: what is not a regular file at
+    # the hook path is not stayfixed's, so the line says it was left, and the run exits 0, where
+    # it refused with exit 2. Mutation: `mutations/`'s "uninstall reads a hook that is not a
+    # regular file".
+    root = _repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.mkdir(parents=True)
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert (
+        result.summary == f"left {hook} as it was: it is not stayfixed's hook; nothing was removed"
+    )
+    assert (result.exit_code, result.data["found"]) == (0, "foreign")
+    assert hook.is_dir()
+
+
 def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:
     # `installed.replaced` is true when the hook already there is ours, not a stranger's —
     # `run_git_hooks` reports that case with its own summary rather than the "kept and chained

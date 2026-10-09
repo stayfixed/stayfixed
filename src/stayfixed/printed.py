@@ -5,8 +5,8 @@ any of them may hold a line break followed by `::error::…`, which a GitHub Act
 from a job's output as a workflow command, or an escape sequence, which drives the reader's
 terminal. `trust.wrap` marks such text as data for a model and escapes no byte for either of
 those readers, so a printed name needs one of the two bounds below on its content. Both answer from
-`PATH_VALUE`, the one grammar a path may print in: ASCII letters, digits, `.`, `_` and `-` in
-`/`-separated segments. A name inside it prints as itself, so ordinary output is unchanged.
+`grammar.PATH_VALUE`, the one grammar a path may print in: ASCII letters, digits, `.`, `_` and `-`
+in `/`-separated segments. A name inside it prints as itself, so ordinary output is unchanged.
 
 - `printable` withholds a name outside the grammar. It is for a line whose command also carries
   the name in `--json`, and for any line a model reads, where a name that holds spaces could
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from stayfixed.config.schema import PATH_VALUE
+from stayfixed.grammar import PATH_VALUE
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.
 # Fixed text, and it says where the name itself went.

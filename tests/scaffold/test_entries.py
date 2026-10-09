@@ -192,8 +192,9 @@ def test_a_real_settings_document_sits_far_inside_the_depth_bound() -> None:
     # the cap: on 3.14 (the one interpreter whose parser follows past it) nested objects stopped
     # encoding at about 21,700 levels of `==` and 28,900 of `json.dumps(indent=2)` (measured on
     # 3.14.7), so a cap raised past 20,000 would let 3.14 read what it cannot write back.
-    # Mutations (declared): "the JSON object reader's depth bound is raised past what 3.14
-    # encodes" and "the JSON object reader's depth bound is lowered under what a harness writes".
+    # Mutations (declared): `mutations/`'s "the JSON object reader's depth bound is raised past what
+    # 3.14 encodes" and "the JSON object reader's depth bound is lowered under what a harness
+    # writes".
     marked = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
     assert 1_000 <= jsonobject.DEPTH_CAP < 20_000
     assert json.loads(apply_entries(marked, {})) == {}
@@ -305,6 +306,20 @@ def test_an_entry_that_is_not_an_object_refuses_rather_than_vanishing() -> None:
     }
     with pytest.raises(EntriesError, match="holds an entry that is not an object"):
         apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+
+
+@pytest.mark.parametrize("groups", [None, [5]], ids=["not-a-list", "not-an-object"])
+def test_an_event_a_refusal_names_is_printed_bounded(groups: object) -> None:
+    # The event is a key of a settings document a clone can commit, and the refusal naming it
+    # reaches a terminal and a model, so it is printed through `printed.clipped`: a line break and
+    # a workflow command inside it arrive escaped and cannot start a line. Mutation (oracle):
+    # `mutations/`'s "a refused event is printed as the document spells it" -> the line break is in
+    # the message.
+    event = "Stop\n::error::x"
+    with pytest.raises(EntriesError) as refused:
+        apply_entries(json.dumps({"hooks": {event: groups}}), {})
+    assert "\n" not in str(refused.value)
+    assert repr(event) in str(refused.value)
 
 
 def test_several_well_formed_entries_in_one_group_are_not_swept_up() -> None:

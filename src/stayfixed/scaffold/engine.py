@@ -40,7 +40,15 @@ from typing import Protocol
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import PROJECT_NAME, Config
 from stayfixed.errors import Refusal
-from stayfixed.fsops import UnsafePath, path_key, remove_within, write_within
+from stayfixed.fsops import (
+    UnsafePath,
+    path_key,
+    read_regular_text,
+    remove_within,
+    unreadable,
+    write_within,
+)
+from stayfixed.printed import quoted
 from stayfixed.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from stayfixed.scaffold.manifest import Kind, Location, Manifest, Record, digest
@@ -201,21 +209,28 @@ def local_copies(
     return (*current, *left_copies(template, config, digests, owners))
 
 
-def _read(path: Path) -> tuple[str | None, str | None]:
+def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
     """`(content, reason)`: a reason is a refusal for this one artifact, never for the plan.
+
+    The reason names the file by `relative`, its path from the project root, and says why in
+    words (`fsops.unreadable`), as every other refusal here does: the error's own text carries the
+    absolute path, this machine's layout, and `path` is a configured target a clone may choose.
 
     `newline=""` and not `read_text`: universal-newline translation turns every `\\r\\n` and
     every lone `\\r` into `\\n` before `regions.py` is reached, and `regions.py` is the module
     promising to return every byte outside its own markers unchanged. Translating on the way in
     makes that promise false for a CRLF file no matter how carefully the rewrite is done.
+
+    To the read cap, a regular file only (`fsops.read_regular_text`): the file is one a clone
+    commits, so one past the cap, or a FIFO a local process left there, is this artifact's
+    refusal rather than a read to its end or a wait on a writer.
     """
     try:
-        with path.open(encoding="utf-8", newline="") as stream:
-            return stream.read(), None
+        return read_regular_text(path, newline=""), None
     except FileNotFoundError:
         return None, None
     except (OSError, UnicodeDecodeError) as exc:
-        return None, f"{path} cannot be read: {exc}"
+        return None, unreadable(quoted(relative), exc)
 
 
 def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, str]:
@@ -349,7 +364,7 @@ def plan(
         if refused:
             continue
 
-        current, reason = _read(path)
+        current, reason = _read(path, target)
         if reason is not None:
             refusals.append(Refused(template.id, target, reason))
             continue
@@ -494,7 +509,7 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
         old_path = contained(root, record.target, resolved_root=resolved_root)
     except PathEscape as exc:
         return _left_behind(template, record, str(exc))
-    old, reason = _read(old_path)
+    old, reason = _read(old_path, record.target)
     if reason is not None:
         return _left_behind(template, record, reason)
     if old is None:
@@ -538,7 +553,7 @@ def _left_locally(
         path = contained(root, copy, resolved_root=resolved_root)
     except PathEscape as exc:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, str(exc), None)
-    current, reason = _read(path)
+    current, reason = _read(path, copy)
     if reason is not None:
         return Action(Verb.SKIP_MODIFIED, template.id, copy, None, reason, None)
     if current is None or _present_stamp(template, current) is None:
@@ -574,7 +589,9 @@ def _plan_retired(
             # dropped a record whose target differs, so this one names `target`.
             actions.append(Action(Verb.REMOVE, template.id, target, None, ALREADY_GONE, record))
             return
-        unchanged.append(template.id)
+        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,
+        # it told the owner every run after its removal that the file the release notes say was
+        # removed is "unchanged", and counted it, and a fresh overlay that never had it the same.
         return
     if location is Location.LOCAL:
         # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the

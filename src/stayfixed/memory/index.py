@@ -17,11 +17,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
-from stayfixed.fsops import write_atomically
+from stayfixed.fsops import TooLarge, read_regular_text, write_atomically
 from stayfixed.memory.notes import (
     UNRANKED,
     Note,
@@ -133,7 +134,7 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
     `memory index` must be able to create, and answering the permission question without
     existence is what lets it.
     """
-    if store.mode != "overlay":
+    if store.mode != OVERLAY_MODE:
         return None
     overlay = overlay_root(store.machine)
     if overlay is None:
@@ -168,10 +169,10 @@ def index_source(store: Store, config: Config) -> Path | None:
     behind it sources that file, resolved.
     """
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
-        return target.resolve() if target.exists() else None
+    if not fsops.is_symlink(target):
+        return target.resolve() if fsops.exists(target) else None
     resolved = _resolved_if_permitted(store, config, target)
-    return resolved if resolved is not None and resolved.exists() else None
+    return resolved if resolved is not None and fsops.exists(resolved) else None
 
 
 def _appended(path: Path | None) -> dict[str, str]:
@@ -182,10 +183,11 @@ def _appended(path: Path | None) -> dict[str, str]:
     index symlinked at another project's share would persist that project's text into this
     one's notes — and in overlay mode from there onto every machine.
     """
-    if path is None or not path.is_file():
+    if path is None or not fsops.is_file(path):
         return {}
     try:
-        text = path.read_text(encoding="utf-8")
+        # To the read cap, as `check_index` reads the same file.
+        text = read_regular_text(path)
     except (OSError, UnicodeDecodeError):
         return {}
     return {target: title for title, target in entries_in(text)}
@@ -241,7 +243,7 @@ def _to_machine(store: Store, config: Config) -> bool:
     if source is not None:
         return not in_repository(store, source)
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
+    if not fsops.is_symlink(target):
         return not in_repository(store, target)
     resolved = _resolved_if_permitted(store, config, target)
     return resolved is not None and not in_repository(store, resolved)
@@ -484,7 +486,7 @@ def _destination(store: Store, config: Config) -> Path:
     if source is not None:
         return source
     target = store.path / INDEX_NAME
-    if not target.is_symlink():
+    if not fsops.is_symlink(target):
         return target
     resolved = _resolved_if_permitted(store, config, target)
     if resolved is None:
@@ -506,8 +508,9 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
     text = render_index(reconciled, config, store)
     path = _destination(store, config)
     try:
-        current = path.read_text(encoding="utf-8") if path.is_file() else None
-    except UnicodeDecodeError:
+        # To the read cap, as every reader of a file a clone can commit reads it.
+        current = read_regular_text(path) if fsops.is_file(path) else None
+    except (UnicodeDecodeError, TooLarge):
         # Not what the render writes, whatever else it holds: drifted, and `stayfixed memory
         # index` replaces it.
         current = None
@@ -540,7 +543,7 @@ def write_index(store: Store, config: Config, text: str) -> Path:
     checkout; `trust.refresh_if_trusted` resolves both to the same file, so the record still
     covers the index it just wrote.
     """
-    if not store.path.is_dir():
+    if not fsops.is_dir(store.path):
         raise Failure(f"{store.path} does not exist; the store was not created")
     path = _destination(store, config)
     write_atomically(path, text)

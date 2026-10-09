@@ -67,9 +67,14 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import stayfixed
-from stayfixed import REPOSITORY_URL
+from stayfixed import REPOSITORY_URL, fsops
 from stayfixed.config.loader import CONFIG_FILE, MachineConfigError, load
-from stayfixed.config.machine import machine_config_path
+from stayfixed.config.machine import (
+    homes_agree,
+    machine_config_path,
+    override_is_honoured,
+    passwd_home,
+)
 from stayfixed.config.schema import Config
 from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
@@ -86,7 +91,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import Unregistered, contributions
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import listed
-from stayfixed.harnesses import CODEX, Tier
+from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -177,23 +182,24 @@ def _own_root() -> Path | None:
     cannot: `hooks/` is outside the module root by design, and `None` is the honest answer.
     """
     own = Path(stayfixed.__file__).resolve().parents[2]
-    return own if (own / WRAPPER).is_file() else None
+    return own if fsops.is_file(own / WRAPPER) else None
 
 
+# Every registered harness's name for the plugin root, `CANONICAL`'s first, read off the registry.
 # Both names, because both reach this process: Codex exports `PLUGIN_ROOT` and also
 # `CLAUDE_PLUGIN_ROOT`, as the spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`)
 # measured in its *Codex plugin hooks* trial, so a rule written against one of them is
 # `config/machine.py`'s own finding again — "gating one of a pair of equivalent inputs is not a
 # partial defence, it is a redirect with a longer name". Neither is ever executed; see
 # `plugin_root`.
-NAMED_ROOTS = ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
+NAMED_ROOTS = tuple(dict.fromkeys(harness.plugin_root_env for harness in (CANONICAL, *HARNESSES)))
 
 
 def _named_root(env: Mapping[str, str]) -> Path | None:
     """The plugin root either of `NAMED_ROOTS` names, when it carries a wrapper."""
     for name in NAMED_ROOTS:
         named = env.get(name)
-        if named and (Path(named) / WRAPPER).is_file():
+        if named and fsops.is_file(Path(named) / WRAPPER):
             return Path(named)
     return None
 
@@ -207,10 +213,11 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     `Context` carries both this and `own_root`, and the executing check takes the second.
 
     **This stayfixed's own root first, and the named variable only after it.** A plugin-root
-    variable is the same class of input `config/machine.py` gates `STAYFIXED_CONFIG` and
-    `XDG_CONFIG_HOME` on: a committed `.claude/settings.json` `env` block reaches this process
-    without a trust prompt. `hooks/run-hook.sh` derives its launcher from its own path for that
-    reason, and this is the same rule one layer up.
+    variable is the same class of input as `STAYFIXED_CONFIG`, which `config/machine.py` does not
+    read at all: a committed `.claude/settings.json` `env` block reaches this process without a
+    trust prompt.
+    `hooks/run-hook.sh` derives its launcher from its own path for that reason, and this is the
+    same rule one layer up.
 
     The variable is still consulted, because there is one arrangement self-derivation cannot
     answer for: a stayfixed installed as a wheel beside a separately installed plugin — which is
@@ -431,8 +438,10 @@ def _wrapper(context: Context) -> Row:
         for key, value in context.env.items()
         if not key.startswith(("CLAUDE_", "PLUGIN_", "STAYFIXED_"))
     }
-    env["CLAUDE_PLUGIN_ROOT"] = str(root)
-    env["CLAUDE_PROJECT_DIR"] = str(context.root)
+    # Under Claude Code's names for the two roots, as `hooks/hooks.json` runs the wrapper.
+    for variable, value in ((CLAUDE.plugin_root_env, root), (CLAUDE.project_dir_env, context.root)):
+        if variable is not None:
+            env[variable] = str(value)
     try:
         done = subprocess.run(  # noqa: S603 - list form, never a shell; stayfixed's own wrapper
             [str(root / WRAPPER), "open", "--version"],
@@ -591,7 +600,12 @@ WORKFLOW = ".github/workflows/stayfixed.yml"
 # diagnostic.
 WORKFLOW_MAX_BYTES = 256 * 1024
 # Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
-_USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")
+# The word after `uses:` is read once, and its ref found in it by `_pinned_refs`: a pattern that
+# ran on past the word's first character to the last call in it read the word again from every
+# `uses:` inside it, ten seconds over a file at the cap holding nothing else.
+_USES_KEY = "uses:"
+_USES = re.compile(rf"{_USES_KEY}\s*+(\S++)")
+_CALL = "/.github/workflows/check.yml@"
 # Said of a path that is there and is not a regular file: a directory, a device, a FIFO, or a
 # symlink to any of those. Fixed text, and the file's own bytes are never reached.
 WORKFLOW_NOT_A_FILE = (
@@ -700,8 +714,8 @@ def _ci_ref(context: Context) -> Row:
     # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
     # rather than the `OSError` one below, which would name `IsADirectoryError`; the arm's own
     # sentence says what a reader needs and carries no platform's spelling of the fault.
-    if not workflow.is_file():
-        if workflow.exists() or workflow.is_symlink():
+    if not fsops.is_file(workflow):
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):
             return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
         # No file at all, which is not agreement either. `return row` here alone would report
         # `ok` — "[ci] ref is a released stayfixed commit" — for a repository with no gate in it,
@@ -714,16 +728,17 @@ def _ci_ref(context: Context) -> Row:
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
     try:
-        with workflow.open("rb") as handle:
-            raw = handle.read(WORKFLOW_MAX_BYTES + 1)
+        # Through `fsops.read_bounded`, so what is opened is asked again: a FIFO swapped in after
+        # the check above is refused unread rather than waited on.
+        raw, over = fsops.read_bounded(workflow, WORKFLOW_MAX_BYTES)
     except OSError as exc:
         return Row(
             WARN,
-            f"{WORKFLOW} is there and could not be read ({type(exc).__name__}), so whether it "
+            f"{WORKFLOW} is there and could not be read ({fsops.said(exc)}), so whether it "
             f"pins the same ref as [ci] ref was not checked",
             CI_REF_REMEDY,
         )
-    if len(raw) > WORKFLOW_MAX_BYTES:
+    if over:
         # Over the cap is itself an answer, the way it is for the hook sink's log: this is not a
         # file `init` rendered, and a `uses:` line past the cap would be compared against bytes
         # that were never read. Never the ref's own verdict, for the reason the arms around it
@@ -743,7 +758,7 @@ def _ci_ref(context: Context) -> Row:
     # `finditer` and not `search`: the first `uses:` in the file may belong to another job, and
     # a recognisable pin after it is still the pin GitHub acts on. Every recognisable one is
     # compared, so a second job pinning something else is a finding too.
-    pinned = {match.group(1) for match in _USES.finditer(rendered)}
+    pinned = _pinned_refs(rendered)
     if not pinned:
         # Read and not recognised. Returning the ref's own verdict here would read as "the
         # workflow agrees", which is the false green the `OSError` arm beside it already refuses
@@ -762,6 +777,26 @@ def _ci_ref(context: Context) -> Row:
             CI_REF_REMEDY,
         )
     return row
+
+
+def _pinned_refs(text: str) -> set[str]:
+    r"""Every ref a `uses:` word in `text` pins: what follows the last call in the word that has a
+    character before it and one after, as `uses:\s*\S+/\.github/workflows/check\.yml@(\S+)`
+    read it. A word that pins nothing is passed over whole, since a `uses:` inside it reaches no
+    call the word does not, except one that ends the word, which reads the word after it."""
+    pinned = set()
+    at = 0
+    while (match := _USES.search(text, at)) is not None:
+        word = match.group(1)
+        call = word.rfind(_CALL)
+        if call >= 0 and call + len(_CALL) == len(word):
+            call = word.rfind(_CALL, 0, call)
+        at = match.end()
+        if call > 0:
+            pinned.add(word[call + len(_CALL) :])
+        elif word.endswith(_USES_KEY):
+            at -= len(_USES_KEY)
+    return pinned
 
 
 def _is_record(line: bytes) -> bool:
@@ -815,7 +850,7 @@ def _diagnostics(context: Context) -> Row:
         )
     base = Path(data) / DIRECTORY
     try:
-        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+        sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
     except OSError as exc:
         # The harness data root is somebody else's directory on somebody else's filesystem, and
         # an unreadable one is a fact about this machine rather than a fault in the
@@ -824,23 +859,21 @@ def _diagnostics(context: Context) -> Row:
         # where the row can still say what it could and could not count.
         return Row(
             WARN,
-            f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
+            f"the hook sink's session markers could not be listed ({fsops.said(exc)}), so "
             f"neither the session count nor the failure count below can be given",
             DIAGNOSTICS_REMEDY,
         )
     log = base / DIAGNOSTICS
-    if not log.is_file():
+    if not fsops.is_file(log):
         return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
     try:
-        with log.open("rb") as handle:
-            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)
+        raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)
     except OSError as exc:
         return Row(
             WARN,
-            f"the hook sink's log is there and could not be read ({type(exc).__name__})",
+            f"the hook sink's log is there and could not be read ({fsops.said(exc)})",
             DIAGNOSTICS_REMEDY,
         )
-    over = len(raw) > DIAGNOSTICS_MAX_BYTES
     count = sum(1 for line in raw.splitlines() if _is_record(line))
     if not count and not over:
         return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
@@ -852,21 +885,70 @@ def _diagnostics(context: Context) -> Row:
     )
 
 
-# The two variables that can name the machine configuration file, and are honoured only from an
-# interactive shell. `config/machine.py` nominates this check by name: "a machine owner who sets
-# one really does lose it on the hook path rather than getting a wrong answer quietly".
+# The two variables that could name the machine configuration file, and that no command reads.
+# `config/machine.py` nominates this check by name: a machine owner who sets one "really does lose
+# it rather than getting a wrong answer quietly". `HOME` is the third, and its own sentence
+# (`_ignored_home`), because it is ignored only when it differs.
 IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 
 def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
-    if not set_here:
+    home = _ignored_home(context.env)
+    if not set_here and home is None:
         return Row(OK, "no environment variable is being ignored")
-    return Row(
-        WARN,
+    if not set_here and home is not None:
+        return Row(WARN, *home)
+    detail = (
         f"{listed(set_here)} is set and is not honoured on the hook path: the machine "
-        f"configuration is ~/.config/stayfixed/config.toml and nothing else there",
-        "pass --machine <path> to a command that must read a different file",
+        f"configuration is ~/.config/stayfixed/config.toml and nothing else there"
+    )
+    remedy = "pass --machine <path> to a command that must read a different file"
+    if home is not None:
+        detail, remedy = f"{detail}; {home[0]}", f"{remedy}; {home[1]}"
+    return Row(WARN, detail, remedy)
+
+
+# What an upgrade from a release that read `HOME` asks of a person whose `HOME` is not the
+# database's home. Given only to a person at a terminal: off one, `HOME` may be a directory a
+# clone ships, and an agent told to move the files under it would carry the clone's files into the
+# owner's own home. Nothing under `HOME` is ever looked at or named, either way.
+_MOVE_YOUR_FILES = (
+    "if you kept files of your own under HOME's .config/stayfixed before this release, check that "
+    "they are yours and move them to {owner} before you run `stayfixed setup` or another command "
+    "that writes there; otherwise nothing"
+)
+_FROM_A_TERMINAL = "run `stayfixed doctor` from your own terminal to see what to do about it"
+
+
+def _ignored_home(env: Mapping[str, str]) -> tuple[str, str] | None:
+    """What `HOME` costs on the hook path, when it is not the password database's home: a detail
+    and a remedy, or `None` when the two homes are one.
+
+    Off a terminal the home directory is the database's entry and not `HOME`
+    (`config.machine.owner_home`), and stayfixed's machine files are under it for every command.
+    A container or home-manager setup whose `HOME` is another directory is not refused for that;
+    it is told here which directory those files are under. Asked of `config.machine.homes_agree`,
+    the predicate every hook asks, so this row warns exactly where a hook stops reading `HOME`: an
+    unset `HOME` agrees, and an empty one and a user the database lists no home for never do. What
+    else a hook withholds while the homes differ is an area's to say in its own row, as
+    `memory`'s `harness-link` says it of the harness memory link. The value of `HOME` is not
+    printed: `doctor` may be run by an agent whose environment a repository chose.
+    """
+    if homes_agree(env):
+        return None
+    recorded = passwd_home()
+    if recorded is None:
+        return (
+            "the password database lists no home directory for this user, so off a terminal "
+            "none of stayfixed's machine files is read, whatever HOME says",
+            "pass --machine <path> to a command that must read a machine configuration file",
+        )
+    owner = recorded / ".config" / "stayfixed"
+    return (
+        f"HOME is not the home directory the password database records for this user, and is "
+        f"not honoured on the hook path: stayfixed's machine files are under {owner}",
+        _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,
     )
 
 
@@ -999,7 +1081,7 @@ def run_checks(
     # on to `load`, which refuses it, and is reported as one that does not load whatever it
     # points at, rather than as no file at all when it points at `/dev/zero`.
     document = root / CONFIG_FILE
-    if not (document.is_symlink() or document.is_file()):
+    if not (fsops.is_symlink(document) or fsops.is_file(document)):
         return [
             Check(
                 first,
@@ -1014,11 +1096,10 @@ def run_checks(
             ),
         ]
     # The machine file, resolved once and handed to `load`, so the file the row below names when
-    # it does not load is the file that was read. `load` resolves no `--machine` with
-    # `interactive=False`, which honours neither variable that can name another file; naming it
-    # through the terminal check instead told an owner at a terminal with `STAYFIXED_CONFIG` set
-    # to fix the file the variable names, which nothing had read.
-    read = machine_config_path(interactive=False) if machine is None else machine
+    # it does not load is the file that was read: the one no variable moves. Named through the
+    # terminal check instead, it once told an owner at a terminal with `STAYFIXED_CONFIG` set to
+    # fix the file the variable names, which nothing had read.
+    read = machine_config_path() if machine is None else machine
     try:
         config = load(root, machine=read)
     except MachineConfigError:
@@ -1046,7 +1127,7 @@ def run_checks(
         # The message is not quoted: the loader builds it out of the file's own keys and values.
         # Nor is the class it raised, which is stayfixed's vocabulary and not a reason: the row
         # says the rule in words, and names a command that prints the loader's own message.
-        if document.is_symlink():
+        if fsops.is_symlink(document):
             detail = (
                 f"{CONFIG_FILE} is a symbolic link, which no command follows, so nothing else "
                 f"can be checked against it"

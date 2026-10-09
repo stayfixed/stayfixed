@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from stayfixed.config.loader import read_machine_toml
-from stayfixed.config.machine import machine_config_path
+from stayfixed.config.machine import in_owner_home, machine_config_path
 
 
 def overlay_root(machine: Path | None) -> Path | None:
@@ -27,16 +27,20 @@ def overlay_root(machine: Path | None) -> Path | None:
     record no overlay answer `None`: an absent file (the ordinary state before `setup` has run),
     no `[overlay]` table, and a table with no usable `root`.
 
-    With no file named, the file is the one no variable can move (`interactive=False`): the
+    With no file named, the file is the one no variable can move (`machine_config_path`): the
     root anchors where the note store may resolve, and a committed `.claude/settings.json` can
-    set a variable in a session no person is watching.
+    set a variable in a session no person is watching. A machine with no home off a terminal
+    (`config.machine.owner_home`) has no such file, and records no overlay.
     """
-    path = machine_config_path(interactive=False) if machine is None else machine
-    raw = read_machine_toml(path)
+    path = machine_config_path() if machine is None else machine
+    raw = None if path is None else read_machine_toml(path)
     if raw is None:
         return None
     section = raw.get("overlay")
     if not isinstance(section, dict):
         return None
     value = section.get("root")
-    return Path(str(value)).expanduser() if isinstance(value, str) and value else None
+    # A leading `~` is the home this file lives under, and never `HOME`: the path anchors where
+    # the note store may resolve, and direnv, mise or a devcontainer can set `HOME` from a file
+    # the clone commits.
+    return in_owner_home(value) if isinstance(value, str) and value else None

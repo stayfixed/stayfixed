@@ -366,7 +366,7 @@ reddens = [
 [[mutation]]
 name = "commit strip writes through a symlink"
 file = "src/stayfixed/guards/commands.py"
-before = '    if path.is_symlink():'
+before = '    if fsops.is_symlink(path):'
 after = '    if False:'
 reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
 
@@ -407,8 +407,8 @@ reddens = [
 [[mutation]]
 name = "a hook is ours only when its bytes are today's text"
 file = "src/stayfixed/guards/githooks.py"
-before = '        return HOOK_MARKER in path.read_text(encoding="utf-8")'
-after = '        return path.read_text(encoding="utf-8") == HOOK_TEXT'
+before = '        return HOOK_MARKER in content.decode("utf-8")'
+after = '        return content.decode("utf-8") == HOOK_TEXT'
 reddens = [
   "tests/guards/test_githooks.py::test_a_hook_an_earlier_release_wrote_is_still_ours",
 ]
@@ -474,6 +474,21 @@ file = "src/stayfixed/guards/commit.py"
 before = '    if not _paragraph_is_all_attribution(lines, start, len(lines)):'
 after = '    if False:'
 reddens = ["tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged"]
+
+# A trailer's value is the rest of its line, trimmed. Found by a lazy pattern ended by blanks, it
+# gives the same verdicts and rescans the blanks from every character of the value: 116 s over
+# 160,000 blanks, a line any commit message can carry into the hook or CI.
+[[mutation]]
+name = "a trailer's value is found by a lazy match"
+file = "src/stayfixed/guards/commit.py"
+before = '''    return line[key.end() :].strip(" \t") or None
+'''
+after = '''    lazy = re.match(r"[ \t]*(.+?)[ \t]*$", line[key.end() :])
+    return lazy.group(1) if lazy else None
+'''
+reddens = [
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[trailer blanks]",
+]
 
 # A trailer's value ends at its address; a value that continues INTO A WORD past it is a sentence.
 # Without that test everything past the `>` is discarded as part of the address, so `Reviewed-by:
@@ -571,15 +586,58 @@ reddens = [
 # deleted that sentence from the message before the commit existed, reporting only a count. The
 # worse of the two failure directions by the module's own docstring — the range check still
 # catches a trailer the hook left behind, and nothing puts a deleted sentence back. The
-# replacement is the pre-fix pattern exactly: an empty tail is "the line may go on forever".
+# replacement is the pre-fix reading exactly: the line may go on forever past the vendor's word.
 [[mutation]]
 name = "a generated-with footer may run on into a sentence again"
 file = "src/stayfixed/guards/commit.py"
-before = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
-after = '_FOOTER_TAIL = r""'
+before = "    return _FOOTER_END.match(line, end) is not None"
+after = "    return True"
 reddens = [
   "tests/guards/test_commit.py::test_negative_samples_are_untouched",
   "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
+]
+
+# The words past a footer's vendor are read once each and never given back. Read as a choice to
+# backtrack over, a line that went on into prose took time exponential in its words that are both
+# a name and a version (`A1`: 7 s at 24) and quadratic in its slashes (1.6 s at 16,000).
+[[mutation]]
+name = "a footer's words are given back to be read again"
+file = "src/stayfixed/guards/commit.py"
+before = '''    while (word := _FOOTER_WORD.match(line, end)) is not None:
+        end = word.end()
+    return _FOOTER_END.match(line, end) is not None'''
+after = '''    words = r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))*"
+    return re.match(words + _FOOTER_END.pattern, line[end:], re.IGNORECASE) is not None'''
+reddens = [
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer words]",
+  "tests/guards/test_commit.py::test_a_long_message_line_is_judged_in_time_linear_in_its_length[footer slashes]",
+]
+
+# A word never given back must be read whole the first time, so a word carrying a digit or a `/`
+# is tried before a name word: read first as a name, `2.1-beta` ends at the `-`, and with nothing
+# given back the footer is lost.
+[[mutation]]
+name = "a footer's word is read as a name before a version"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)'
+after = '_FOOTER_WORD = re.compile(r"[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*)", re.IGNORECASE)'
+reddens = [
+  "tests/guards/test_commit.py::test_a_real_footer_survives_the_bounded_tail",
+]
+
+# A word that is no more of the product's name, no version and no link ends the words before its
+# blank, so the line's end is judged from there. Python 3.11.0 to 3.11.4 judged it past the blank
+# while the words were a possessive repeat, and `Generated with Claude Code ](notes)` was a footer.
+[[mutation]]
+name = "a footer's words end past the blank before a word that is none"
+file = "src/stayfixed/guards/commit.py"
+before = '''        end = word.end()
+    return _FOOTER_END.match(line, end) is not None'''
+after = '''        end = word.end()
+    end = len(line) - len(line[end:].lstrip(" \t"))
+    return _FOOTER_END.match(line, end) is not None'''
+reddens = [
+  "tests/guards/test_commit.py::test_a_footer_tail_a_blank_parts_from_its_words_is_prose",
 ]
 
 # The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL
@@ -896,8 +954,8 @@ reddens = [
 [[mutation]]
 name = "attribute asks is_file, so a submodule gitlink reads as a missing file"
 file = "src/stayfixed/guards/attribute.py"
-before = "not (into / name).exists()"
-after = "not (into / name).is_file()"
+before = "not fsops.exists(into / name)"
+after = "not fsops.is_file(into / name)"
 reddens = [
   "tests/guards/test_attribute.py::test_a_submodule_gitlink_is_present_and_not_a_missing_file",
 ]
@@ -905,7 +963,7 @@ reddens = [
 [[mutation]]
 name = "attribute stops asking is_symlink, so a dangling symlink reads as a missing file"
 file = "src/stayfixed/guards/attribute.py"
-before = " and not (into / name).is_symlink()"
+before = " and not fsops.is_symlink(into / name)"
 after = ""
 reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
@@ -1098,10 +1156,10 @@ reddens = ["tests/profiles/test_hints.py::test_two_recognising_hints_both_speak"
 name = "a hint's note is computed outside its guard"
 file = "src/stayfixed/guards/hygiene.py"
 before = """    try:
-        return answer(hint, root, config)[1]
+        return answer(hint, contained_roots(root, config))[1]
     except Exception:
         return None"""
-after = "    return answer(hint, root, config)[1]"
+after = "    return answer(hint, contained_roots(root, config))[1]"
 reddens = ["tests/profiles/test_hints.py::test_a_hint_that_raises_costs_its_note_not_the_dispatch"]
 
 [[mutation]]
@@ -1279,4 +1337,161 @@ reddens = [
   "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[nested]",
   "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_parser_in_its_own_words[long]",
   "tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_stdin_past_the_depth_bound",
+]
+
+# The interpreter and the manifest of one stack are stack words like its runner: a core module that
+# names either is moved into that stack's profile or pardoned with its reason.
+[[mutation]]
+name = "the core names the Python interpreter"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """INTERPRETER = "python"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+[[mutation]]
+name = "the core names a Python project's manifest"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """MANIFEST = "pyproject.toml"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+# The CLI frame's seam hands on every area's `register`, which a module could pick one area's out
+# of by `__module__`, so no module but the frame refers to it.
+[[mutation]]
+name = "a core module picks one area's commands out of the CLI frame's registrars"
+file = "src/stayfixed/guards/hygiene.py"
+before = "def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"
+after = """def _memory_registrar() -> object:
+    from stayfixed.cli import discover_registrars
+
+    return [r for r in discover_registrars() if r.__module__ == "stayfixed.memory.commands"]
+
+
+def _note(hint: RedRunHint, root: Path, config: Config) -> str | None:"""
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+[[mutation]]
+name = "the core names the Python interpreter by its shell name"
+file = "src/stayfixed/guards/hygiene.py"
+before = 'LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"'
+after = """INTERPRETER = "python3"
+LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:\""""
+reddens = [
+  "tests/test_language_neutral.py::test_no_core_module_names_a_stack_it_does_not_pardon",
+]
+
+# `setup --git-hooks --uninstall` says whether it removed stayfixed's hook, found none, or left a
+# foreign one alone: it said "removed" of all three, both halves false where a foreign hook stood.
+[[mutation]]
+name = "uninstall says it removed a hook when there was none"
+file = "src/stayfixed/guards/githooks.py"
+before = "        return Removed(target, None, Found.ABSENT)"
+after = "        return Removed(target, None, Found.REMOVED)"
+reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[nothing]"]
+
+[[mutation]]
+name = "uninstall says it removed a hook when the hook there is not stayfixed's"
+file = "src/stayfixed/guards/githooks.py"
+before = "        return Removed(target, None, Found.FOREIGN)"
+after = "        return Removed(target, None, Found.REMOVED)"
+reddens = ["tests/guards/test_githooks.py::test_uninstall_leaves_a_hook_it_did_not_write", "tests/setup/test_git_hooks.py::test_uninstall_says_whether_it_removed_stayfixeds_hook[foreign]"]
+
+# Whether a hook is stayfixed's is read off its bytes as a regular file, to the read cap: read with
+# `read_text`, a FIFO at the hook path hung `setup --git-hooks` and `--uninstall`. And a hook it
+# cannot read is neither ours nor foreign: read as foreign, stayfixed's own hook at mode 000 was
+# "not stayfixed's" to `--uninstall` and renamed to `.local` and chained by `install`.
+[[mutation]]
+name = "the hook installer reads a hook with no bound"
+file = "src/stayfixed/guards/githooks.py"
+before = "        content = fsops.read_regular_bytes(path)"
+after = "        content = path.read_bytes()"
+reddens = [
+  "tests/guards/test_githooks.py::test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on",
+]
+
+[[mutation]]
+name = "a hook that cannot be read is read as a foreign one"
+file = "src/stayfixed/guards/githooks.py"
+before = "    except OSError as exc:\n        raise Refusal(\n            UNREADABLE.format("
+after = "    except OSError as exc:\n        return False\n        raise Refusal(\n            UNREADABLE.format("
+reddens = [
+  "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[install]",
+  "tests/guards/test_githooks.py::test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign[uninstall]",
+]
+
+# stayfixed writes only a regular file at the hook path, so `--uninstall` leaves anything else there
+# as foreign, unopened: it refused a directory or a FIFO with exit 2, as a hook it could not read.
+[[mutation]]
+name = "uninstall reads a hook that is not a regular file"
+file = "src/stayfixed/guards/githooks.py"
+before = '    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):'
+after = '    if fsops.is_symlink(target) or not _ours(target, "nothing was removed"):'
+reddens = [
+  "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[fifo]",
+  "tests/guards/test_githooks.py::test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook[directory]",
+  "tests/setup/test_git_hooks.py::test_uninstall_over_a_directory_at_the_hook_path_leaves_it_and_says_so",
+]
+
+# A regular file past the read cap is foreign, not unreadable: stayfixed's own hook is a couple of
+# kilobytes, so `install` chains such a hook and `--uninstall` leaves it, as 0.2.0 did.
+[[mutation]]
+name = "a hook past the read cap is refused as one that cannot be read"
+file = "src/stayfixed/guards/githooks.py"
+before = "    except fsops.TooLarge:\n        return False\n    except OSError as exc:"
+after = "    except OSError as exc:"
+reddens = ["tests/guards/test_githooks.py::test_a_hook_past_the_read_cap_is_a_foreign_one"]
+
+# A vendor's domain is tried after each label of an address, a label at a time, so `re` keeps no
+# record per label: as a pattern that could give labels back, an address of a million labels took
+# 124 MiB more to judge.
+[[mutation]]
+name = "an address's labels are read by a pattern that gives them back"
+file = "src/stayfixed/guards/commit.py"
+before = "    if _names_a_vendor_domain(address):"
+after = '    if re.search(r"@(?:[\w-]+\.)*" + _VENDOR_DOMAINS.pattern, address, re.IGNORECASE):'
+reddens = ["tests/guards/test_commit.py::test_a_long_trailer_is_judged_in_memory_linear_in_its_length[address labels]"]
+
+[[mutation]]
+name = "a vendor's domain is tried only right after the @"
+file = "src/stayfixed/guards/commit.py"
+before = "            start = dot + 1"
+after = "            break"
+reddens = [
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged[Co-Authored-By: A Bot <bot@eu.api.anthropic.com>]",
+]
+
+# A model's version words are possessive, so `re` keeps no record per word: greedy, a name of a
+# million words took 124 MiB more to judge.
+[[mutation]]
+name = "a model's version words are given back"
+file = "src/stayfixed/guards/commit.py"
+before = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"'
+after = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]+)*|github copilot|copilot"'
+reddens = ["tests/guards/test_commit.py::test_a_long_trailer_is_judged_in_memory_linear_in_its_length[model words]"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a model's words open on their possessive run"
+file = "src/stayfixed/guards/commit.py"
+before = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.][\w.]*+)*+|github copilot|copilot"'
+after = '    r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]++)*+|github copilot|copilot"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# The same, for the words past a footer's vendor, which `_is_footer` reads one match at a time.
+[[mutation]]
+name = "a footer's words are a possessive repeat"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_WORD = re.compile(r"[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*)", re.IGNORECASE)'
+after = '_FOOTER_WORD = re.compile(r"(?:[ \t]+(?:\S*[\d/]\S*|(?-i:[A-Z0-9])[\w.]*))++", re.IGNORECASE)'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
 ]

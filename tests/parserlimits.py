@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Valid JSON nested past what `json.loads` follows: it raises `RecursionError` on every supported
-# Python.
+# Valid JSON nested far past `jsonobject.DEPTH_CAP`. `json.loads` raises `RecursionError` on it up
+# to 3.13; on 3.14 its reach is the C stack's, which differs by platform (a manifest 100,000 levels
+# deep parsed on Linux and not on macOS), so a reader that bounds the depth it follows refuses it
+# alike everywhere, and a case asserts what such a reader answers, never that `json` raises.
 NESTED = "[" * 200_000 + "]" * 200_000
 
 # An integer literal longer than the interpreter converts, 4,300 digits by default on every

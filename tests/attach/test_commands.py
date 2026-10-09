@@ -16,10 +16,12 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
+from stayfixed.overlay.layout import COMMON_MEMORY
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
-from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
+from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
 from tests.cli import cli
 from tests.gitfixture import run_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -44,6 +46,10 @@ def _a_terminal_and_never_the_developers_own_home(
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+
+# `Path.home` as the library defines it, before the fixture below replaces it for every case.
+_REAL_HOME = Path.home
 
 
 def invoke(argv: list[str]) -> int:
@@ -184,10 +190,10 @@ def test_no_command_prints_a_path_a_repository_chose(
 def test_a_non_interactive_session_may_not_name_the_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `config/machine.py` gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` behind this same
-    # question and generalises past them: "Gating one of a pair of equivalent inputs is not a
-    # partial defence, it is a redirect with a longer name." `--machine` is a third member of
-    # that class, and this is the command that turns that file into capability — the overlay
+    # `config/machine.py` reads neither `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and generalises
+    # past them: "Gating one of a pair of equivalent inputs is not a partial defence, it is a
+    # redirect with a longer name". `--machine` is a third member of that class, held to a
+    # terminal, and this is the command that turns that file into capability — the overlay
     # root, and from it allow rules, hook entries and standing rules. A repository that has the
     # agent run `attach --machine ./vendored.toml --store ./vendored/projects/p/memory` supplies
     # both sides of the containment check out of its own tree.
@@ -219,6 +225,29 @@ def test_the_flag_is_refused_and_never_quietly_ignored(
         == 2
     )
     assert "--machine" in capsys.readouterr().err
+
+
+def test_the_machine_flag_is_refused_for_a_reason_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The refusal a person reads explains the flag's own rule. It once said the flag followed the
+    # rule `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` follow, after no command read either of them
+    # any more, so it explained itself by a rule that no longer existed. The words are the
+    # assertion's own, and detach's refusal is the same one. Mutation (oracle): `mutations/`'s
+    # "the --machine refusal leans on two variables no command reads" -> the old sentence.
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    refused = (
+        "stayfixed: refused: --machine names the file that decides which overlay this command "
+        "trusts, so here it is honoured only from an interactive shell: anywhere else the command "
+        "may be an agent's, and a repository can tell an agent which file to name. Run this from "
+        "a terminal, or drop the flag and let it read the machine configuration this machine "
+        "records\n"
+    )
+    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert (code, out, err) == (2, "", refused), argv
 
 
 def test_a_command_with_no_machine_flag_is_unaffected_by_the_gate(
@@ -271,7 +300,7 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     # `skills/attach/SKILL.md` tells the model to relay what detach removed, so an allow rule
     # shaped like an instruction arrived attributed to stayfixed.
     #
-    # `permissions.check` reduces `already_present` to `len(...)` on exactly this reasoning, and
+    # `attach.check` reduces `already_present` to `len(...)` on exactly this reasoning, and
     # this branch removed a marker id **bounded by a grammar** from `doctor`'s output on it. An
     # allow rule is less bounded than that, not more, so counts here or the three disagree.
     #
@@ -526,6 +555,473 @@ def test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike(
     assert_snapshot_unchanged(tmp_path, before)
 
 
+# Every shape of the settings document `attach` merges into that the real run refuses, and the
+# overlay grant's one shape both read alike, each spelled once for both commands: `--check`
+# promises to read what `attach` reads, so each half must refuse exactly what the other does, in
+# the same words. `null` is a value, never an absent key, wherever an object or a list belongs.
+REFUSED_SHAPES = {
+    "permissions-null": ({"permissions": None}, "'permissions' is not an object"),
+    "permissions-a-list": ({"permissions": []}, "'permissions' is not an object"),
+    "allow-null": (
+        {"permissions": {"allow": None}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "allow-a-string": (
+        {"permissions": {"allow": "all"}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "allow-a-number": (
+        {"permissions": {"allow": [42]}},
+        "'permissions.allow' is not a list of strings",
+    ),
+    "hooks-null": ({"hooks": None}, "'hooks' is not an object"),
+    "hooks-a-list": ({"hooks": []}, "'hooks' is not an object"),
+    "event-null": ({"hooks": {"Stop": None}}, "'hooks.Stop' is not a list"),
+    "event-an-object": ({"hooks": {"Stop": {}}}, "'hooks.Stop' is not a list"),
+    "group-a-number": (
+        {"hooks": {"Stop": [5]}},
+        "'hooks.Stop' holds an entry group that is not an object",
+    ),
+    "group-hooks-null": (
+        {"hooks": {"Stop": [{"hooks": None}]}},
+        "an entry group's 'hooks' is not a list",
+    ),
+    "group-hooks-a-string": (
+        {"hooks": {"Stop": [{"hooks": "x"}]}},
+        "an entry group's 'hooks' is not a list",
+    ),
+    "entry-a-string": (
+        {"hooks": {"Stop": [{"hooks": ["x"]}]}},
+        "an entry group holds an entry that is not an object",
+    ),
+}
+# And the shapes both read, so neither half refuses by refusing everything: an absent key is no
+# rules and no entries, and an entry with no command is somebody else's to keep.
+READ_SHAPES = {
+    "empty": {},
+    "permissions-empty": {"permissions": {}},
+    "allow-empty": {"permissions": {"allow": []}},
+    "hooks-empty": {"hooks": {}},
+    "event-empty": {"hooks": {"Stop": []}},
+    "group-without-hooks": {"hooks": {"Stop": [{}]}},
+    "group-hooks-empty": {"hooks": {"Stop": [{"hooks": []}]}},
+    "entry-without-command": {"hooks": {"Stop": [{"hooks": [{"type": "command"}]}]}},
+}
+
+
+def _granting(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A project whose overlay grants one rule and one hook entry, so the real run reaches the
+    merge into the project's settings file rather than leaving it untouched."""
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,), hooks={"Stop": [{"hooks": [ENTRY]}]})
+    return root, store, _machine(tmp_path, overlay=store.parents[2])
+
+
+@pytest.mark.parametrize("shape", sorted(REFUSED_SHAPES))
+def test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], shape: str
+) -> None:
+    # `--check` read the allow list and the hook table with filters of its own, while the real run
+    # refused the same shapes: `null` where an object or a list goes, and a group or an entry that
+    # is not an object. `--check` exited 0 promising a clean diff, and `attach --yes` then exited
+    # 2 on the same file. One reader each now, shared by both. Mutation (oracle): `mutations/`'s
+    # "check filters the hook shapes the merge refuses" -> the hook cases end `--check` otherwise.
+    # The allow list's reader is proven where nothing past the diff is read, in the case below.
+    document, clause = REFUSED_SHAPES[shape]
+    root, store, machine = _granting(tmp_path)
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text(json.dumps(document), encoding="utf-8")
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == attached.err == f"stayfixed: refused: {SETTINGS}: {clause}\n"
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+@pytest.mark.parametrize("shape", ["permissions-null", "allow-null", "written-back-past-the-cap"])
+def test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    # The real run reads the project's settings file in the diff, ahead of its refusal for a
+    # checkout with no `origin`, and refuses these there; `--check` reads it in the same diff and
+    # refuses them alike. Past that refusal `--check` reads nothing more, so the diff's own reading
+    # is the only one that can stop it here: elsewhere the run's later merge refuses the same
+    # documents too, and a `--check` that asks what the run asks meets that one as well.
+    # Mutations (oracle): `mutations/`'s "check reads a null allow list as no rules" -> the `null`
+    # cases, and "attach plans a settings write-back the next read refuses" -> the last, end
+    # `--check` with the finding's `1`.
+    root, store, machine = _granting(tmp_path)
+    run_git(root, "remote", "remove", "origin")
+    (root / ".claude").mkdir(exist_ok=True)
+    if shape == "written-back-past-the-cap":
+        monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
+        (root / SETTINGS).write_text(_wide(1_000), encoding="utf-8")
+    else:
+        (root / SETTINGS).write_text(json.dumps(REFUSED_SHAPES[shape][0]), encoding="utf-8")
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith(f"stayfixed: refused: {SETTINGS}")
+
+
+@pytest.mark.parametrize("shape", sorted(READ_SHAPES))
+def test_check_and_attach_both_read_the_settings_shapes_either_reads(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], shape: str
+) -> None:
+    # The other half of the case above, over the same reader: neither command refuses these.
+    root, store, machine = _granting(tmp_path)
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text(json.dumps(READ_SHAPES[shape]), encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 0
+    assert invoke(["attach", "--yes", *flags]) == 0
+    assert "refused" not in capsys.readouterr().err
+
+
+def test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_alike(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The overlay's grant file is read by one reader for both commands already; it read a group's
+    # `null` `hooks` as no entries while the allow list's reader refuses `null`. One reading of
+    # `null` for every document `attach` reads: refused, as any other value that is not a list.
+    # Mutation (oracle): `mutations/`'s "attach reads an overlay group's null hooks as none" ->
+    # both commands exit 0.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,), hooks={"Stop": [{"hooks": None}]})
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == attached.err
+    assert checked.err.endswith(": an entry group's 'hooks' is not a list\n")
+
+
+# Ledgers the real run cannot take, and the code it ends with: one it cannot read is a failure,
+# one naming what `attach` never writes is a refusal, and one that is itself a link is refused
+# before it is read, as a path that passes through a symlink.
+UNREADABLE_LEDGERS = {
+    "not-json": ("{", 1),
+    "not-a-record": (json.dumps({"rules": ["Bash(rm -rf /)"]}), 2),
+    # Longer than every other file either command reads, so the lowered cap stops this one alone.
+    "past-the-cap": (json.dumps({"store": "x" * 1_000_000}), 1),
+    "a-link": ("", 2),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNREADABLE_LEDGERS))
+def test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    # `--check` did not read `.stayfixed/local/attach.json`, so it answered 0 over a ledger that
+    # stopped the run, and a CI step running it passed where `attach` failed. It reads the ledger
+    # with the run's reader now, so the two end with one code and one line. Mutation (oracle):
+    # `mutations/`'s "check skips the reads the run makes before its first write".
+    text, code = UNREADABLE_LEDGERS[shape]
+    root, store, machine = _granting(tmp_path)
+    ledger = root / LEDGER
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    if shape == "a-link":
+        (tmp_path / "elsewhere.json").write_text("{}", encoding="utf-8")
+        ledger.symlink_to(tmp_path / "elsewhere.json")
+    else:
+        ledger.write_text(text, encoding="utf-8")
+    if shape == "past-the-cap":
+        monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text) - 1)
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags]) == code
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == code
+    attached = capsys.readouterr()
+    assert checked.err == attached.err and checked.err.startswith("stayfixed: ")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def _check_then_attach(
+    flags: list[str], capsys: pytest.CaptureFixture[str]
+) -> tuple[tuple[int, str], tuple[int, str]]:
+    """`attach --check` and then `attach --yes` over one checkout: each one's code and stderr."""
+    checked = invoke(["attach", "--check", *flags])
+    checked_err = capsys.readouterr().err
+    attached = invoke(["attach", "--yes", *flags])
+    return (checked, checked_err), (attached, capsys.readouterr().err)
+
+
+def test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real run reads and decodes every overlay rule source before its first write, and fails
+    # on one that is not UTF-8; `--check` listed the rule files without reading one, so it exited
+    # 0 over a rule the run then failed on, and a CI step running it passed. It reads them with
+    # the run's reader now. Mutation (oracle): `mutations/`'s "check skips the reads the run makes
+    # before its first write".
+    root, store, machine = _granting(tmp_path)
+    rule = store.parents[2] / "common" / "codex" / "z.rules"
+    rule.write_bytes(b"\xff\xfe not text\n")
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    line = f"stayfixed: failed: {rule} is not UTF-8 text, so nothing was written\n"
+    assert checked == attached == (1, line)
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_on_a_home_whose_claude_is_a_link_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The ordinary dotfiles layout, `~/.claude` linked in from elsewhere, refuses the real run
+    # before its first write, because the harness memory link is written under a walk that follows
+    # no symlink. `--check` never asked, so it exited 0 for a run that then refused. It asks the
+    # run's question now, of the home the run asks it of: the one a terminal names, which this
+    # module's fixture makes `tmp_path / "home"`. Mutation (oracle): `mutations/`'s "check skips
+    # the reads the run makes before its first write".
+    root, store, machine = _granting(tmp_path)
+    elsewhere = tmp_path / "dotfiles" / "claude"
+    elsewhere.mkdir(parents=True)
+    (tmp_path / "home" / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    before = snapshot(tmp_path)
+    (checked, checked_err), (attached, attached_err) = _check_then_attach(
+        _flags(root, store, machine), capsys
+    )
+    assert checked == attached == 2
+    assert checked_err == attached_err
+    assert checked_err.startswith("stayfixed: refused: the harness memory link cannot be reached")
+    assert "passes through a symlink at '.claude'" in checked_err
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real run reads the machine's trust record before its first write and refuses one that
+    # does not parse, since the index render and the harness link both read it after the writes.
+    # `--check` never read it, so it exited 0 for a run that then refused. Mutation (oracle):
+    # `mutations/`'s "check skips the reads the run makes before its first write".
+    root, store, machine = _granting(tmp_path)
+    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (checked, checked_err), (attached, attached_err) = _check_then_attach(
+        _flags(root, store, machine), capsys
+    )
+    assert checked == attached == 2
+    assert checked_err == attached_err
+    assert checked_err.startswith(f"stayfixed: refused: {machine.parent / 'trust.json'}")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def _origin_not_text(root: Path, tmp_path: Path) -> None:
+    run_git(root, "remote", "remove", "origin")
+    config = root / ".git" / "config"
+    with config.open("ab") as stream:
+        stream.write(b'[remote "origin"]\n\turl = git@example.com:o/\xff.git\n')
+
+
+def _exclude_file(root: Path) -> Path:
+    exclude = root / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(exist_ok=True)
+    return exclude
+
+
+def _claude_linked_in(root: Path, tmp_path: Path) -> None:
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+
+
+# Refusals the real run makes past its gates and before its first write, each of which `--check`
+# once answered with 0, or with another refusal's line, and the setup that reaches each one.
+PAST_THE_GATES = {
+    "origin-not-text": _origin_not_text,
+    "group-leaves-the-share": lambda root, _: (root / "stayfixed.toml").write_text(
+        (root / "stayfixed.toml")
+        .read_text(encoding="utf-8")
+        .replace('groups = ["developer", "project-stable"]', 'groups = ["../../escape"]'),
+        encoding="utf-8",
+    ),
+    "gitignore-region-doubled": lambda root, _: (root / ".gitignore").write_text(
+        "# stayfixed:ignore:begin\n# stayfixed:ignore:begin\n# stayfixed:ignore:end\n",
+        encoding="utf-8",
+    ),
+    "gitignore-not-text": lambda root, _: (root / ".gitignore").write_bytes(b"\xff\xfe\n"),
+    "exclude-block-doubled": lambda root, _: _exclude_file(root).write_text(
+        "# stayfixed:attach:begin\n# stayfixed:attach:begin\n# stayfixed:attach:end\n",
+        encoding="utf-8",
+    ),
+    "claude-linked-in": _claude_linked_in,
+}
+
+
+@pytest.mark.parametrize("case", sorted(PAST_THE_GATES))
+def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    # The three cases above and these were all the same defect: the run asked a question
+    # `--check` never did, so the preview answered clean, or with another refusal's words, over a
+    # checkout the run then refused. `--check` asks them through the run's own planning now, so
+    # each ends both commands with one code and one line. Mutations (oracle): `mutations/`'s
+    # "the gates do not ask what the share holds" -> the first case reddens; "check skips the
+    # reads the run makes before its first write" -> the rest do.
+    root, store, machine = _granting(tmp_path)
+    PAST_THE_GATES[case](root, tmp_path)
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith("stayfixed: refused: ")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+@pytest.mark.parametrize("stop", ["no-origin", "group-never-moved"])
+def test_check_reads_nothing_past_where_the_run_stops(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], stop: str
+) -> None:
+    # The run refuses a checkout with no `origin` and a group that never moved before it reads
+    # what comes after, so a trust record that does not parse never decides its code; `--check`
+    # reports each as the finding it is, exit 1, and reads no further either. Mutations (oracle):
+    # `mutations/`'s "check reads past a checkout with no origin" and "check reads past a group
+    # that never moved".
+    root, store, machine = _granting(tmp_path)
+    if stop == "no-origin":
+        run_git(root, "remote", "remove", "origin")
+    else:
+        (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 1
+    assert capsys.readouterr().err == ""
+    assert invoke(["attach", "--yes", *flags]) == 2
+    assert "trust.json" not in capsys.readouterr().err
+
+
+def test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a checkout with no `origin` before it counts the groups that never moved, and
+    # that count is what refuses a `memory.groups` entry outside `paths.memory`. `--check` counted
+    # them all the same, so it refused for the entry (2) where the run refused for the `origin`,
+    # each in its own words. It reports the missing `origin` as its finding now, exit 1, and counts
+    # no group until there is one. Mutation (oracle): `mutations/`'s "check counts the groups at a
+    # checkout with no origin".
+    from stayfixed.memory.api import NO_REMOTE
+
+    root, store, machine = _granting(tmp_path)
+    run_git(root, "remote", "remove", "origin")
+    PAST_THE_GATES["group-leaves-the-share"](root, tmp_path)
+    flags = _flags(root, store, machine)
+    before = snapshot(tmp_path)
+    assert invoke(["attach", "--check", *flags, "--json"]) == 1
+    checked = capsys.readouterr()
+    assert checked.err == ""
+    data = json.loads(checked.out)
+    assert data["state"] == "no-origin" and data["real_directories"] == 0
+    assert invoke(["attach", "--yes", *flags]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {NO_REMOTE}\n"
+    assert_snapshot_unchanged(tmp_path, before)
+
+
+def test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` before it reaches the ledger, so a
+    # leftover ledger it could not take never decides its code. `--check` reads the ledger only
+    # where the run would, so the two still end with one code: read first, `--check` exited 1 on
+    # the ledger where the run exited 2 on the mode. Mutation (oracle): `mutations/`'s "check
+    # reads the attach ledger whatever the memory mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    ledger = root / LEDGER
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{", encoding="utf-8")
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    # `--check` reports the refusal in its report, and the run refuses with it; neither names the
+    # ledger.
+    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
+    assert "attach.json" not in checked.out + checked.err + attached.err
+
+
+def test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` before it asks what the share holds, so
+    # an `origin` the overlay's record cannot hold never decides its code. `--check` asks the share
+    # only where the run would, so it reports the mode's refusal with the rest of its report, exit
+    # 2, rather than ending on the share's refusal turned into the mode's on stderr. Mutation
+    # (oracle): `mutations/`'s "check asks what the share holds whatever the memory mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    _origin_not_text(root, tmp_path)
+    flags = _flags(root, store, machine)
+    assert invoke(["attach", "--check", *flags]) == 2
+    checked = capsys.readouterr()
+    assert invoke(["attach", "--yes", *flags]) == 2
+    attached = capsys.readouterr()
+    assert checked.err == ""
+    assert "memory.mode is 'in-repo'" in checked.out and "memory.mode is 'in-repo'" in attached.err
+
+
+def _settings_permissions_null(root: Path, _: Path) -> None:
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text('{"permissions": null}', encoding="utf-8")
+
+
+def _settings_not_text(root: Path, _: Path) -> None:
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_bytes(b"\xff\xfe")
+
+
+# What `--check` reads for the rest of its report outside overlay mode, where the run has already
+# refused: a group outside `paths.memory`, which the count refuses; a settings file whose
+# `permissions` is `null`, which the diff refuses; and one that is not UTF-8, which it fails on.
+PAST_THE_MODE = {
+    "group-leaves-the-share": PAST_THE_GATES["group-leaves-the-share"],
+    "settings-permissions-null": _settings_permissions_null,
+    "settings-not-text": _settings_not_text,
+}
+
+
+@pytest.mark.parametrize("case", sorted(PAST_THE_MODE))
+def test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    # The run refuses a `memory.mode` other than `overlay` right after the binding, and reads
+    # nothing else. `--check` reports that refusal on its line with the rest of its report, so it
+    # reads the diff, the groups and the rule files the run never reaches, and whatever refused or
+    # failed there ended it instead, in other words and at times with another code. A refusal or
+    # failure there now gives way to the run's own refusal of the mode. Mutation (oracle):
+    # `mutations/`'s "check lets the rest of its report decide a repository outside overlay mode".
+    root, store, machine = _granting(tmp_path)
+    config = root / "stayfixed.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    PAST_THE_MODE[case](root, tmp_path)
+    before = snapshot(tmp_path)
+    checked, attached = _check_then_attach(_flags(root, store, machine), capsys)
+    assert checked == attached
+    assert checked[0] == 2 and checked[1].startswith("stayfixed: refused: memory.mode is 'in-repo'")
+    assert_snapshot_unchanged(tmp_path, before)
+
+
 def test_attach_reads_each_of_its_two_documents_once_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -626,6 +1122,476 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     assert code == 0
     assert "--in-repo-memory" not in out
     assert harness_memory_path(root, tmp_path / "home").is_symlink()
+
+
+def test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The way out `doctor` gives a user the password database lists no home for is `attach` from a
+    # terminal, which takes `HOME` there. With `HOME` unset too, there is no home anywhere, and
+    # `Path.home()` raised in `attach` and `detach` alike: an internal error, where a refusal
+    # saying what names a home belongs. The real `Path.home` is put back, safe here: with no
+    # `HOME` and no database entry it reads no home, the developer's included. Mutation (oracle):
+    # `mutations/`'s "a terminal with no home at all raises" -> an internal error, naming no
+    # `HOME`; the refusal's words are the assertions' own.
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert cli(root, tmp_path, "attach", "--store", str(store), machine=machine)[0] == 0
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    record(resolved, config)
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.delenv("HOME", raising=False)
+    as_owner_home(monkeypatch, None)
+    for argv in (["attach", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert code == 2, argv
+        assert "internal error" not in out + err
+        assert "lists no home directory for this user" in out + err
+        assert "at a terminal, set HOME to name one" in out + err
+
+
+def test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` names no home, and at a terminal `HOME` is the home the harness link goes
+    # under. `Path.home` reads it as `/`, so `attach` aimed the link at `/.claude/projects/...`
+    # and ended in an internal error on a read-only root; it now refuses before its first write,
+    # naming `HOME` and not the database, which lists a home here. `--check` and `detach`, which
+    # make nothing under the home, so a mutated run cannot either. The real `Path.home` is put
+    # back, safe here because it reads the empty `HOME` and never the developer's. Mutations
+    # (oracle): `mutations/`'s "an empty HOME at a terminal is read as the root directory" and
+    # "attach blames the password database for an empty HOME at a terminal".
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert cli(root, tmp_path, "attach", "--store", str(store), machine=machine)[0] == 0
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.setenv("HOME", "")
+    as_owner_home(monkeypatch, tmp_path / "home")
+    refused = (
+        "stayfixed: refused: HOME is empty, so it names no home directory and there is nowhere "
+        "to put the harness memory link; set HOME to your home directory and run this again\n"
+    )
+    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
+        code, out, err = cli(root, tmp_path, *argv, machine=machine)
+        assert (code, out, err) == (2, "", refused), argv
+
+
+# What `attach` and `--check` add to their line, off a terminal, where `HOME` is not the home the
+# password database records: written out here rather than imported from the code under test.
+_UNREAD = {
+    "elsewhere": (
+        "attach run here makes no harness memory link, since off a terminal it goes only under "
+        "this user's home in the password database and a harness started with this HOME looks "
+        "under HOME; run `stayfixed attach --store <overlay>/projects/<project>/memory` from a "
+        "terminal, or in a session started with HOME set to that home"
+    ),
+    "empty": (
+        "attach run here makes no harness memory link, since off a terminal it goes only under "
+        "this user's home in the password database and a harness started with an empty HOME does "
+        "not look there; run `stayfixed attach --store <overlay>/projects/<project>/memory` in a "
+        "session started with HOME set to that home"
+    ),
+}
+_WAITS = (
+    "the harness memory link was not created, because the link tree it would expose sits inside "
+    "this repository and has no approval yet; run `stayfixed memory trust --in-repo-memory`, then "
+    "`stayfixed attach` again"
+)
+
+
+def _owner_with_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, store: Path, *, home: str
+) -> tuple[Path, Path]:
+    """The database's home with the machine file naming the overlay, off a terminal, and `HOME`
+    as the case says: `owner` (that home), `elsewhere`, `empty` or `unset`. `--machine` is refused
+    off a terminal, so the file is where the run reads it. Returns `(owner, elsewhere)`."""
+    from tests.ownerhome import as_owner_home
+
+    owner, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(f'[overlay]\nroot = "{store.parents[2]}"\n', encoding="utf-8")
+    elsewhere.mkdir()
+    as_owner_home(monkeypatch, owner)
+    if home == "unset":
+        monkeypatch.delenv("HOME", raising=False)
+    else:
+        chosen = {"owner": str(owner), "elsewhere": str(elsewhere), "empty": ""}[home]
+        monkeypatch.setenv("HOME", chosen)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    return owner, elsewhere
+
+
+def _approve(root: Path) -> None:
+    """`stayfixed memory trust --in-repo-memory`, recorded under the database's home."""
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
+
+    config = load(root, machine=None)
+    resolved = resolve(root, config, machine=None)
+    assert resolved is not None
+    record(resolved, config)
+
+
+def _harness_link(home: Path, checkout: Path) -> Path:
+    """`<home>/.claude/projects/<slug>/memory` for `checkout`, where a harness started with `home`
+    as `HOME` looks."""
+    slug = str(checkout.resolve()).replace("/", "-").replace(".", "-")
+    return home / ".claude" / "projects" / slug / "memory"
+
+
+@pytest.mark.parametrize("home", sorted(_UNREAD))
+def test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    home: str,
+) -> None:
+    # Off a terminal the harness memory link goes under the password database's home, and a
+    # harness finds its memory directory through `HOME`. Where the two differ, an empty `HOME`
+    # included, `attach` made the link where that harness never looks and said `attached: 1
+    # link(s)`; it then refused the whole run, a first attach on a store with no approval included,
+    # which makes no harness link at all. It now binds and links the tree in every checkout, makes
+    # no harness link in any, and says so with a way out that leads to a link that harness reads,
+    # `--check` with it; it never makes the link under `HOME`, which off a terminal may be a
+    # directory the clone chose. Mutations (oracle): `mutations/`'s "attach off a terminal makes
+    # the harness link under a home the harness does not read" -> a link under the database's
+    # home, and the line says nothing; "attach tells an empty HOME off a terminal what a HOME that
+    # differs is told" -> the empty case's words; "attach says nothing of the harness link it
+    # withholds" and "attach --check says nothing of the harness link the run would withhold" ->
+    # the line, and "attach makes the harness link in the owning checkout it withholds it from"
+    # and "attach makes the harness link in a worktree it withholds it from" -> a link under the
+    # database's home.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    side = tmp_path / "side"
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home=home)
+    argv = ["attach", "--root", str(root), "--store", str(store)]
+    counts = "0 allow rule(s) and 0 hook entr(ies) would be added, 0 already present"
+    note = _UNREAD[home]
+    assert (invoke([*argv, "--check"]), *capsys.readouterr()) == (
+        0,
+        f"unbound; {counts}; 0 Codex standing-rule file(s) would be placed; {note}\n",
+        "",
+    )
+    assert (invoke([*argv, "--yes"]), *capsys.readouterr()) == (
+        0,
+        f"attached: 6 link(s), 0 Codex rule file(s); settings unchanged; binding recorded; "
+        f"{_WAITS}; {note}\n",
+        "",
+    )
+    _approve(root)
+    assert (invoke([*argv, "--check"]), *capsys.readouterr()) == (
+        0,
+        f"bound; {counts}; 0 Codex standing-rule file(s) would be placed; {note}\n",
+        "",
+    )
+    assert (invoke([*argv, "--yes"]), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        f"recorded; {note}\n",
+        "",
+    )
+    assert fsops.is_symlink(root / DEFAULT_MEMORY / "MEMORY.md")
+    assert fsops.is_symlink(side / DEFAULT_MEMORY / "MEMORY.md")
+    assert not os.path.lexists(owner / ".claude")
+    assert not os.path.lexists(elsewhere / ".claude")
+
+
+def test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The settings-file fallback stands in for the harness link where a real directory sits at its
+    # path under the database's home; where the link is withheld that path is not one a harness
+    # started with this `HOME` reads, so the run takes no fallback and plans none: no settings
+    # file, and no line for one in the exclude block. Mutations (oracle): `mutations/`'s "attach
+    # takes the settings fallback for a harness link it withholds" -> the settings file is
+    # written; "attach plans the settings fallback for a harness link it withholds" -> the block
+    # lists it.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, _ = _owner_with_machine_file(tmp_path, monkeypatch, store, home="elsewhere")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    _harness_link(owner, root).mkdir(parents=True)
+    capsys.readouterr()
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        f"recorded; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert not os.path.lexists(root / SETTINGS)
+    assert SETTINGS not in (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+
+
+def test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_earlier_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A run with `HOME` the database's home, the store approved and a real directory where the
+    # harness link goes, records the settings fallback; a later run where `HOME` differs leaves
+    # that key as it stands and makes no link, so its line must not say the key "was recorded …
+    # instead", which reads as its own act beside a note that it makes none. Mutation (oracle):
+    # `mutations/`'s "attach tells a fallback key it leaves as one it recorded".
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    _harness_link(owner, root).mkdir(parents=True)
+    assert invoke(argv) == 0
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        "attached: 0 link(s), 0 Codex rule file(s); settings unchanged; binding already "
+        "recorded; autoMemoryDirectory stays in .claude/settings.local.json, where an earlier "
+        f"attach recorded it; `stayfixed detach` removes it; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("channel", ["key", "link"])
+def test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    channel: str,
+) -> None:
+    # A run with `HOME` the database's home and the store approved gives a harness the store: the
+    # link under that home, or the settings fallback where a real directory sits in the link's
+    # place. Once a pull lapses the approval, a later run where `HOME` differs makes no harness
+    # link, and still takes back what the earlier one gave: the link under the database's home,
+    # and the key, which every harness opening this project reads whatever its `HOME`. Mutations
+    # (oracle): `mutations/`'s "attach keeps a lapsed store's settings fallback on a run that
+    # withholds the harness link" -> the key stays, and the line says this run recorded it;
+    # "attach keeps a lapsed store's harness link under the database's home on a run that
+    # withholds it" -> the link stays.
+    from stayfixed.attach.api import ledger
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    link = _harness_link(owner, root)
+    if channel == "key":
+        link.mkdir(parents=True)
+    assert invoke(argv) == 0
+    # Non-vacuous: the run with `HOME` the database's home gave the channel this case takes back.
+    if channel == "key":
+        assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    else:
+        assert link.resolve() == (root / DEFAULT_MEMORY).resolve()
+    (store.parents[2] / COMMON_MEMORY / "pulled.md").write_text("# n\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    settings = "settings merged" if channel == "key" else "settings unchanged"
+    assert (invoke(argv), *capsys.readouterr()) == (
+        0,
+        f"attached: 0 link(s), 0 Codex rule file(s); {settings}; binding already recorded; "
+        f"{_WAITS}; {_UNREAD['elsewhere']}\n",
+        "",
+    )
+    assert not os.path.lexists(root / SETTINGS)
+    assert ledger(root).settings_keys == ()
+    assert not fsops.is_symlink(link)
+
+
+def test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The vacuity guard for the two above, and the way out they name followed: off a terminal with
+    # `HOME` the database's home (a session started with it), the run makes the harness link under
+    # it; at a terminal with another `HOME`, under that one; neither says a word of `HOME`. A user
+    # the database lists no home for is told that, by the anchor, and never that `HOME` differs.
+    # Mutations (oracle): `mutations/`'s "attach off a terminal withholds the harness link under a
+    # HOME that agrees" -> no link in the first; "attach at a terminal withholds the harness link
+    # under a HOME that differs" -> none in the second; "attach off a terminal blames HOME for a
+    # user the database lists no home for" -> `unread_home` answers with `HOME`'s words.
+    from stayfixed.attach.check import check
+    from stayfixed.attach.write import unread_home
+    from stayfixed.errors import Refusal
+    from tests.ownerhome import as_owner_home
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    capsys.readouterr()
+    linked = (
+        "attached: 1 link(s), 0 Codex rule file(s); settings unchanged; binding already recorded"
+    )
+    assert (invoke(argv), *capsys.readouterr()) == (0, f"{linked}\n", "")
+    assert _harness_link(owner, root).resolve() == (root / DEFAULT_MEMORY).resolve()
+    monkeypatch.setattr(Path, "home", _REAL_HOME)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    assert (invoke(argv), *capsys.readouterr()) == (0, f"{linked}\n", "")
+    assert _harness_link(elsewhere, root).resolve() == (root / DEFAULT_MEMORY).resolve()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    as_owner_home(monkeypatch, None)
+    assert unread_home() is None
+    machine = owner / ".config" / "stayfixed" / "config.toml"
+    with pytest.raises(Refusal) as refused:
+        check(root, store=store, machine=machine, home=None)
+    assert str(refused.value) == (
+        "the password database lists no home directory for this user, so there is nowhere to put "
+        "the harness memory link; at a terminal, set HOME to name one"
+    )
+
+
+def _attached_with_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, under: tuple[str, ...]
+) -> tuple[Path, Path, Path]:
+    """An attached checkout whose store is approved, with the harness memory link under each home
+    `under` names: `database`, made off a terminal with `HOME` that home, and `HOME`, made at a
+    terminal whose `HOME` is `elsewhere/`, as `attach` makes each. Returns `(root, owner,
+    elsewhere)`, left off a terminal with `HOME` unset."""
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    if "database" in under:
+        assert invoke(argv) == 0
+    if "HOME" in under:
+        monkeypatch.setattr(Path, "home", _REAL_HOME)
+        monkeypatch.setenv("HOME", str(elsewhere))
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        assert invoke(argv) == 0
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.delenv("HOME")
+    for home in (owner, elsewhere):
+        link = _harness_link(home, root)
+        assert fsops.is_symlink(link) == (("database" if home == owner else "HOME") in under)
+    return root, owner, elsewhere
+
+
+def _detached(links: int, *notes: str) -> str:
+    """`detach`'s line for the fixture above, with `links` withdrawn and `notes` after it."""
+    said = "".join(f"; {note}" for note in notes)
+    return (
+        f"detached: 0 allow rule(s), 0 hook entr(ies), 0 Codex rule file(s), {links} link(s), "
+        f"4 directory(ies); the binding record was left in place{said}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "under"),
+    [
+        pytest.param("off a terminal", ("HOME",), id="off-a-terminal-under-home"),
+        pytest.param("off a terminal", ("database", "HOME"), id="off-a-terminal-under-both"),
+        pytest.param("at a terminal", ("database", "HOME"), id="at-a-terminal-under-both"),
+    ],
+)
+def test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    under: tuple[str, ...],
+) -> None:
+    # `attach` puts the harness memory link under `HOME` at a terminal and under the password
+    # database's home off one, so where the two differ a link can stand under either, and a
+    # harness started with the other `HOME` reads it there. `detach` withdrew under one: off a
+    # terminal the link under `HOME` stayed, dangling once the tree it pointed into went, and at a
+    # terminal the one under the database's home did, and the line said nothing. It now withdraws
+    # under both, each only where the link points at this store, counted in its line, with the
+    # directory each sat in. Mutations (oracle): `mutations/`'s "detach withdraws under one home
+    # where HOME is not the database's" -> each case leaves a link; "detach looks under HOME for
+    # the other home at a terminal" -> the terminal case leaves the database's.
+    root, owner, elsewhere = _attached_with_links(tmp_path, monkeypatch, under)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    if case == "at a terminal":
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (
+        0,
+        _detached(3 + len(under)),
+        "",
+    )
+    for home in (owner, elsewhere):
+        assert not os.path.lexists(_harness_link(home, root).parent)
+
+
+@pytest.mark.parametrize("home", ["unset", "owner", "empty", "relative"])
+def test_detach_withdraws_under_the_one_home_where_there_is_no_other(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    home: str,
+) -> None:
+    # The vacuity guard for the case above: an unset `HOME` and one that agrees name no other home,
+    # and an empty or relative one names none a harness link can be under, so `detach` withdraws
+    # under the database's home alone, as before, and says nothing of another. Mutation (oracle):
+    # `mutations/`'s "detach looks under a relative HOME" -> the relative case's line names a home
+    # it did not look under.
+    root, owner, _ = _attached_with_links(tmp_path, monkeypatch, ("database",))
+    if home != "unset":
+        monkeypatch.setenv("HOME", {"owner": str(owner), "empty": "", "relative": "rel"}[home])
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (0, _detached(4), "")
+    assert not os.path.lexists(_harness_link(owner, root))
+
+
+def test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Under the other home, which off a terminal is a `HOME` the clone may have chosen, only a
+    # link to this store goes: one to anything else is left standing. And a home whose walk
+    # refuses, a `.claude` there that is a symlink, is passed over and named, never refused: by
+    # then nothing has been withdrawn, but a refusal over a home `attach` never wrote under would
+    # leave no command that takes back what it did write. Mutations (oracle): `mutations/`'s "the
+    # withdrawal stops checking what the link it removes points at" -> the other link goes;
+    # "detach refuses where the other home cannot be walked" -> exit 2; "detach's line says
+    # nothing of a home it did not look under" -> the note is missing.
+    root, owner, elsewhere = _attached_with_links(tmp_path, monkeypatch, ("database",))
+    foreign = _harness_link(elsewhere, root)
+    foreign.parent.mkdir(parents=True)
+    foreign.symlink_to(tmp_path / "another-store", target_is_directory=True)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (0, _detached(4), "")
+    assert fsops.is_symlink(foreign)
+    root, owner, elsewhere = _attached_with_links(tmp_path / "again", monkeypatch, ("database",))
+    (tmp_path / "dotfiles").mkdir()
+    (elsewhere / ".claude").symlink_to(tmp_path / "dotfiles", target_is_directory=True)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (
+        0,
+        _detached(
+            4,
+            "the harness memory link under HOME was not looked for, because a directory on the way "
+            "to it is missing, a symlink or unreadable",
+        ),
+        "",
+    )
+    assert not os.path.lexists(_harness_link(owner, root))
 
 
 def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
@@ -808,8 +1774,8 @@ def test_a_group_name_is_judged_by_what_the_filesystem_takes_and_not_by_its_byte
     # bytes against `PC_NAME_MAX` refused it on macOS, where the attach it previews works. So the
     # verdict is asked of the filesystem the test runs on, and the commands must agree with it.
     # Counting bytes again reddens this on macOS; the oracle runs on Linux, where bytes are what
-    # the filesystem counts, so the declared mutation, "the share check counts a name's bytes",
-    # is proven by `tests/attach/test_binding.py`'s stubbed lookup instead.
+    # the filesystem counts, so `mutations/`'s "the share check counts a name's bytes" is proven
+    # by `tests/attach/test_binding.py`'s stubbed lookup instead.
     from stayfixed.attach.binding import PATH_CANNOT_EXIST
     from stayfixed.config.loader import CONFIG_FILE
     from tests.attach.test_binding import CONFIG

@@ -68,7 +68,7 @@ DECLARATIONS = ROOT / "mutations"
 #
 # **A hand-kept table, and a deliberate exception to CONTRIBUTING's "areas are discovered by
 # name — there is no shared registry to edit".** One file per area would need no table, and it
-# would be about twenty files where these are nine. The plugin directory holds the version for a
+# would be about twenty files, not eleven. The plugin directory holds the version for a
 # reviewer past 512 files as well as at a file of 256 KiB, and with the repository root as the
 # plugin folder every tracked file counts against the 512 (`tests/test_payload.py` holds the tree
 # to the size, and `scripts/release.py check --tag` a release to the count), so the groups are as
@@ -81,10 +81,11 @@ GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/templates/", "project"),
     ("src/stayfixed/profiles/", "project"),
     ("src/stayfixed/presets/", "project"),
+    ("src/stayfixed/scaffold/", "scaffold"),
     ("src/stayfixed/guards/", "guards"),
     ("src/stayfixed/setup/", "install"),
     ("src/stayfixed/overlay/", "install"),
-    ("src/stayfixed/doctor/", "install"),
+    ("src/stayfixed/doctor/", "doctor"),
     ("src/stayfixed/memory/", "records"),
     ("src/stayfixed/docs/", "records"),
     ("src/stayfixed/ledger/", "records"),

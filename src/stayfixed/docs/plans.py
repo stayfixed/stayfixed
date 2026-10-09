@@ -85,6 +85,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.layout import local_base
 from stayfixed.config.paths import contained
 from stayfixed.docs.hygiene import read_document
@@ -97,7 +98,11 @@ from stayfixed.prose import blank_fences, path_references, present_within, resol
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-_DECLARES = re.compile(r"^\s*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
+# A line declaring paths: a dash, after blanks on its own line. Led by `^\s*`, the pattern reached
+# the same dash from every line start in the blank lines above it, reading them again from each:
+# 0.33 s over 16,000 of them, and four times as long at each doubling. A match from a line above
+# ends where the one from the dash's own line does, so the paths declared are the same.
+_DECLARES = re.compile(r"^[^\S\n]*-\s*(?:Create|Test|Delete):\s*(.+)$", re.MULTILINE)
 _LINE_MARK = re.compile(r"\((?:create|delete)\)", re.IGNORECASE)
 # "confirm", "verify", and "check" all phrase a step as already knowing the answer it claims to
 # test. `no(?!-)` keeps a compound word like "no-op" out of the negation: a hyphen is a word
@@ -111,7 +116,12 @@ _LEADING = re.compile(
 # anywhere later in the document — exactly the unfilled-marker case these rules exist to catch.
 # Anchoring to non-newline whitespace forces the content onto the marker's own line.
 _SCOPE_LINE = re.compile(r"^\*\*Scope:\*\*[^\S\n]*\S", re.MULTILINE)
-_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)
+#
+# A premise marker, read to the first colon after it, past line ends; the group holds when the
+# marker closes there and has content on its line. Every marker before that colon reaches the same
+# one, so `_has_premise` reads each stretch once with `finditer`, where a search from each marker
+# read the stretch again: 0.51 s over 16,000 markers with no colon after them.
+_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*+(:\*\*[^\S\n]*\S)?", re.MULTILINE)
 # The colour idiom, present tense. `fails`/`passes` are deliberately absent: see the module
 # docstring for the measurement that removed them.
 _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+green)"
@@ -368,22 +378,36 @@ def asserted_outcomes(prose: str) -> list[int]:
     """Lines opening a claim that states a mutation's outcome as fact."""
     found: set[int] = set()
     for text, line_of in logical_blocks(prose):
+        # The marker is read over the claim's own SENTENCE, up to where the claim ends, and never
+        # over the lines the match happens to span. A match starts at its GOVERNOR, so a marker
+        # written before the governor fell outside that span whenever the text wrapped between
+        # the two — the same wrap-dependence the paragraph reading removed from detection,
+        # relocated into the exemption. A sentence is the unit `Expected:` marks: a marker in a
+        # neighbouring sentence still exempts nothing, and one written after the claim is not
+        # read at all.
+        #
+        # Claims come in order, so the sentence ends and the markers are read forward once each
+        # beside them. Read again from the block's start at every claim, a paragraph of 32,000
+        # claims took 52 s, four times as long at each doubling. A marker is a word, so one lies
+        # within a claim's sentence exactly when the first that starts in it ends by the claim's
+        # end.
+        ends = _SENTENCE_END.finditer(text)
+        markers = _MARKED_AS_EXPECTATION.finditer(text)
+        end, marker, opening = next(ends, None), next(markers, None), 0
         for match in _ASSERTED_OUTCOME.finditer(text):
-            # The marker is read over the claim's own SENTENCE, up to where the claim ends, and
-            # never over the lines the match happens to span. A match starts at its GOVERNOR, so
-            # a marker written before the governor fell outside that span whenever the text
-            # wrapped between the two — the same wrap-dependence the paragraph reading removed
-            # from detection, relocated into the exemption. A sentence is the unit `Expected:`
-            # marks: a marker in a neighbouring sentence still exempts nothing, and one written
-            # after the claim is not read at all.
-            opening = max(
-                (end.end() for end in _SENTENCE_END.finditer(text, 0, match.start())),
-                default=0,
-            )
-            if _MARKED_AS_EXPECTATION.search(text[opening : match.end()]):
+            while end is not None and end.end() <= match.start():
+                opening, end = end.end(), next(ends, None)
+            while marker is not None and marker.start() < opening:
+                marker = next(markers, None)
+            if marker is not None and marker.end() <= match.end():
                 continue
             found.add(line_of[match.start()])
     return sorted(found)
+
+
+def _has_premise(prose: str) -> bool:
+    """Whether a premise marker in `prose` closes with content on its line (`_PREMISE_LINE`)."""
+    return any(marker.group(1) for marker in _PREMISE_LINE.finditer(prose))
 
 
 def _lint_one(
@@ -400,7 +424,7 @@ def _lint_one(
     # Per plan, not per line: these are properties of the document, not of one line in it.
     if not _SCOPE_LINE.search(prose):
         found.append(Finding("scope-missing", where, None, _SCOPE_MISSING))
-    if fixes.search(prose) and not _PREMISE_LINE.search(prose):
+    if fixes.search(prose) and not _has_premise(prose):
         found.append(Finding("premise-missing", where, None, _PREMISE_MISSING))
     declared: set[str] = set()
     for line in _DECLARES.findall(prose):
@@ -431,7 +455,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     unlinted: list[Path] = []
     diff_scoped = False
     if plans:
-        missing = [p for p in plans if not p.is_file()]
+        missing = [p for p in plans if not fsops.is_file(p)]
         if missing:
             raise Failure("not a plan file: " + ", ".join(str(p) for p in missing))
         # Every finding carries a repo-relative path, so a named plan outside the root is
@@ -454,10 +478,10 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
                 f"git status could not be read under {root}, so uncommitted plans could not "
                 "be found"
             )
-        selected = [p for p in touched if p.is_file()]
+        selected = [p for p in touched if fsops.is_file(p)]
         unlinted = [p for p in pending if p not in set(touched)]
     else:
-        selected = sorted(plans_dir.glob("*.md")) if plans_dir.is_dir() else []
+        selected = sorted(plans_dir.glob("*.md")) if fsops.is_dir(plans_dir) else []
     findings: list[Finding] = []
     fixes = bug_register(config).ids.fixes
     for path in sorted(selected):

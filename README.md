@@ -103,9 +103,11 @@ Codex.
 
 One session guard blocks, `bg-cleanup`, and it judges only a command the agent runs in the
 background: one that leaves an `&` job behind with no `trap … EXIT` to stop it, or that begins with
-`sleep`, is refused before it starts, and the refusal names the remedy. The same command run in the
-foreground passes. stayfixed has no switch that turns a guard off, in configuration or on the
-command line, so a false block is a defect: report it in
+`sleep` (directly, or behind `env` or `uv run` and uv's options), is refused before it starts, and
+the refusal names the remedy. Other wrappers, such as `nohup`, `timeout` or `bash -c`, are not
+read through ([`docs/cli.md`](docs/cli.md#stayfixed-guard-bg-cleanup) lists them). The same
+command run in the foreground passes. stayfixed has no switch that turns a guard off, in
+configuration or on the command line, so a false block is a defect: report it in
 [an issue](https://github.com/stayfixed/stayfixed/issues) with the command it refused.
 
 On Claude Code a guard's refusal stopped the command before it ran when this was measured
@@ -177,7 +179,7 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # sixteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # seventeen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you say
@@ -211,8 +213,8 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Which repositories' committed notes you have approved | `stayfixed memory trust` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]`. `~` is your home as the password database records it, never `HOME`, which direnv, mise or a devcontainer can set from a file the repository commits ([docs/cli.md](docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/trust.json` | Which repositories' committed notes you have approved, under the same home | `stayfixed memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `stayfixed init`, or `attach` on a repository `init` has not set up |
@@ -426,7 +428,7 @@ stayfixed adopt promote                                # enforce every gate that
 stayfixed adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
-stayfixed doctor                                       # sixteen checks over this installation, one line
+stayfixed doctor                                       # seventeen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal
@@ -459,8 +461,12 @@ rendered into it — against the store's absolute path, in `~/.config/stayfixed/
 You are saying: *I have read what this repository committed under its memory directory, and it
 may reach the model as data.* Any later change to any of those files makes the hash disagree
 and the approval lapse until you look again and re-run it. A store whose notes are yours —
-`overlay` mode, where the notes live in your own machine-level overlay — needs no approval, and
-recording one for it is inert.
+`overlay` mode, where the notes live in your own machine-level overlay — needs no approval for
+its notes to reach a session: the standing-rules and volatile-notes bundles deliver them without
+one. The record still matters there. The store's directory of links sits inside the repository,
+and the record is what lets `stayfixed attach` create the harness memory link to it; until one
+exists, `stayfixed memory index` and `memory fit` say the link waits for it, and `attach` says
+so instead of making the link.
 
 ## Memory, in one page
 
@@ -494,7 +500,8 @@ note's `index:` line. A second writer appending entries to `MEMORY.md` is expect
 `memory.mode` decides where the store is. `local-only` (the default — `.stayfixed/local/memory`,
 git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
 behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
-your projects) puts them outside it, and notes that are yours need no approval. The gate keys on
+your projects) puts them outside it, and notes that are yours need no approval, though the harness
+memory link to that directory of links waits for one (see `stayfixed memory trust` above). The gate keys on
 where a note actually sits, never on what the repository's own `stayfixed.toml` declares — a clone
 that wrote `mode = "local-only"` would otherwise gate itself.
 

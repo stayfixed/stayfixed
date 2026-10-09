@@ -3,7 +3,9 @@
 `upgrade` refuses to move a project backward, `doctor`'s `versions` row points by direction, and
 `stayfixed gate` admits an upgrade only where `upgrade` would move to it: one comparison, so the
 three cannot disagree about which way a recorded version lies. The overlay's `requires` reader
-compares a floor through the same component grammar, so the two bound a component alike.
+reads a floor through the same component grammar and decides the floor's own triple by
+`pre_release`, the reading `later` orders a release after, so a pre-release does not meet the
+floor of the release it comes before.
 
 A leaf module: it imports nothing from `stayfixed`.
 """
@@ -44,6 +46,50 @@ _PRE_RELEASE = re.compile(
     r"(?:[-_.]?dev[-_.]?[0-9]{0,9})?\Z",
     re.IGNORECASE,
 )
+
+
+# What PEP 440 lets follow a release's leading `X.Y.Z`: its appendix's pattern less the epoch and
+# those three components. Further release components, then at most one pre-release segment (`a`,
+# `b`, `rc` and their spellings), one post-release (`post`, `rev`, `r`, or `-N`) and one
+# development segment (`dev`), in that order and each with or without a separator before it, then
+# a local label after `+`, which is no segment of the version's. Read as one grammar because a
+# search for each segment as a word of its own kept missing spellings PEP 440 allows: segments run
+# together with no separator (`1.0.0.post1dev2`, `1.0.0rc1post2`) were read as other segments, or
+# as none.
+_SUFFIX = re.compile(
+    r"\A(?P<release>(?:\.[0-9]+)*)"
+    r"(?P<pre>[-_.]?(?:alpha|a|beta|b|preview|pre|c|rc)[-_.]?[0-9]*)?"
+    r"(?P<post>-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"
+    r"(?P<dev>[-_.]?dev[-_.]?[0-9]*)?"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?\Z",
+    re.IGNORECASE,
+)
+
+
+def pre_release(version: str) -> bool:
+    """Whether `version` orders before the release its leading `X.Y.Z` names, by its suffix: the
+    one reading of a pre-release here.
+
+    The suffix is read by PEP 440's grammar (`_SUFFIX`), and orders before the release where it
+    has a pre-release segment (`1.0.0rc1`, `1.0.0-rc.1`, and `1.0.0rc1.post2`, which comes before
+    `1.0.0` as `1.0.0rc1` does), or a development segment with no post-release before it
+    (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2`, spelled with or without its separators, is a
+    development release of a post-release, which comes after. A further release component other
+    than zero names a later release (`1.0.0.1rc1`), and the local label after `+` is no segment
+    (`1.0.0+local.rc1` is not one). A suffix outside that grammar, and a version with no leading
+    `X.Y.Z`, are no pre-release this module reads: the triple decides.
+    """
+    found = VERSION.match(version)
+    if found is None:
+        return False
+    parts = _SUFFIX.match(version[found.end() :])
+    if parts is None:
+        return False
+    if parts["release"].replace(".", "").strip("0"):
+        return False
+    if parts["pre"] is not None:
+        return True
+    return parts["dev"] is not None and parts["post"] is None
 
 
 def later(version: str, than: str) -> bool | None:

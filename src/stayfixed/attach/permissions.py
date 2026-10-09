@@ -20,7 +20,7 @@ events keeps only the last.
 the owner's own repository, so a command may show them — and must, since a diff nobody reads is
 not a gate. `already_present` comes out of `.claude/settings.local.json`, which a hostile clone
 *can* commit, so it is repository-authored: this module carries the strings so a caller can
-subtract with them, and `check` reports only how many there were.
+subtract with them, and `attach.check` reports only how many there were.
 """
 
 from __future__ import annotations
@@ -31,23 +31,21 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops
-from stayfixed.attach.binding import (
-    Binding,
-    cannot_exist,
-    not_overlay,
-    read_binding,
-    refuse_unless_share_can_exist,
-    unlinked_groups,
-)
-from stayfixed.config.loader import load
+from stayfixed.attach.binding import Binding, cannot_exist
 from stayfixed.errors import Failure
-from stayfixed.fsops import read_regular_text, said
+from stayfixed.fsops import read_regular_text
 from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import WRITTEN_PAST
-from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
+from stayfixed.memory.api import PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
-from stayfixed.result import Result
-from stayfixed.scaffold import EntriesError, ParserLimitError, mark, settings_object, settings_text
+from stayfixed.scaffold import (
+    EntriesError,
+    ParserLimitError,
+    judged_entries,
+    mark,
+    settings_object,
+    settings_text,
+)
 
 # The project-local file `attach` owns outright, as the harness registry names it: the one file
 # Claude Code reads that a repository keeps out of git. `.claude/settings.json` beside it is the
@@ -119,19 +117,18 @@ def _read(path: Path, *, share: Path | None = None, label: str | None = None) ->
     `attach` before it writes, and read as an empty settings file it would stop only at the write
     of that file.
     """
-    try:
-        # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a path
-        # a clone can commit, and a link there to `/dev/zero` read until memory ran out, one to a
-        # FIFO waited for a writer. Anything else is a file that cannot be read.
-        return read_regular_text(path)
-    except FileNotFoundError:
-        return ""
-    except OSError as exc:
-        if share is not None and cannot_exist(exc) and _names_no_directory(share):
+    with fsops.reading(label or path, Failure):
+        try:
+            # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a
+            # path a clone can commit, and a link there to `/dev/zero` read until memory ran out,
+            # one to a FIFO waited for a writer. Anything else is a file that cannot be read.
+            return read_regular_text(path)
+        except FileNotFoundError:
             return ""
-        raise Failure(f"{label or path} cannot be read: {said(exc)}") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{label or path} is not UTF-8 text") from None
+        except OSError as exc:
+            if share is not None and cannot_exist(exc) and _names_no_directory(share):
+                return ""
+            raise
 
 
 def _names_no_directory(share: Path) -> bool:
@@ -162,27 +159,36 @@ def _names_no_directory(share: Path) -> bool:
     return not stat.S_ISDIR(mode)
 
 
-def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
-    """The `permissions.allow` list of one settings-shaped document, or nothing.
+def allow_list(raw: dict[str, Any], label: str) -> list[str]:
+    """The `permissions.allow` list of a settings document `settings_object` read, or a refusal.
 
-    A shape this cannot read is a refusal and never a filter, for the same reason
-    `_hook_groups` gives: `--check` promises to read the document the real run reads, and the
-    real run (`write._allow_list`) raises on a `permissions` that is not an object or an `allow`
-    that is not a list of strings. Filtering here let `--check` exit 0 promising one rule for a
-    file the real run then refused.
+    **The one reader of that list**, for `--check` and for the real run alike: `diff_permissions`
+    reads every source and the project's own file through it, and `write.py` reads the file it
+    merges into and withdraws from through it, so `--check` refuses exactly the documents the real
+    run refuses. Two copies of it disagreed about `null`: one read a `null` `permissions` or
+    `allow` as no rules, the other refused it, so `--check` exited 0 promising a rule for a file
+    the real run then refused. A key that is absent is no rules; a key that is there must hold an
+    object, and then a list of strings, and `null` is a value that is neither. A shape this cannot
+    read is a refusal and never a filter, for the reason `_hook_groups` gives. `label` names the
+    file in the refusal.
     """
-    label = str(path)
-    permissions = settings_object(document, label).get("permissions")
-    if permissions is None:
-        return ()
+    if "permissions" not in raw:
+        return []
+    permissions = raw["permissions"]
     if not isinstance(permissions, dict):
         raise EntriesError(f"{label}: 'permissions' is not an object")
-    allow = permissions.get("allow")
-    if allow is None:
-        return ()
+    if "allow" not in permissions:
+        return []
+    allow = permissions["allow"]
     if not isinstance(allow, list) or not all(isinstance(rule, str) for rule in allow):
         raise EntriesError(f"{label}: 'permissions.allow' is not a list of strings")
-    return tuple(allow)
+    return list(allow)
+
+
+def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
+    """The `permissions.allow` list of one settings-shaped document, read by `allow_list`."""
+    label = str(path)
+    return tuple(allow_list(settings_object(document, label), label))
 
 
 def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, Any]]]:
@@ -226,10 +232,10 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
         binding.overlay / COMMON_CODEX,
         binding.overlay / PROJECTS / binding.project / PROJECT_CODEX,
     ):
-        if not source.is_dir():
+        if not fsops.is_dir(source):
             continue
         for rule in sorted(source.iterdir()):
-            if rule.is_file() and not rule.name.startswith("."):
+            if fsops.is_file(rule) and not rule.name.startswith("."):
                 found[f"{CODEX_RULES}/{rule.name}"] = rule
     return tuple(found.items())
 
@@ -278,7 +284,9 @@ def _numbered(
     for source, share in sources:
         for event, groups in _hook_groups(source, share=share).items():
             for group in groups:
-                entries = group.get("hooks") or []
+                # Absent is no entries; `null`, or any other value that is not a list, is
+                # refused, as `allow_list` refuses one where its list goes.
+                entries = group.get("hooks", [])
                 if not isinstance(entries, list):
                     raise EntriesError(f"{source}: an entry group's 'hooks' is not a list")
                 marked: list[dict[str, Any]] = []
@@ -313,19 +321,22 @@ def local_document(root: Path) -> str:
 
 
 def _commands(document: str, label: str) -> set[str]:
-    """Every hook command already in a settings document, whoever wrote it."""
-    hooks = settings_object(document, label).get("hooks", {})
-    if not isinstance(hooks, dict):
-        raise EntriesError(f"{label}: 'hooks' is not an object")
-    found: set[str] = set()
-    for groups in hooks.values():
-        for group in groups if isinstance(groups, list) else []:
-            entries = group.get("hooks") if isinstance(group, dict) else None
-            for entry in entries if isinstance(entries, list) else []:
-                command = entry.get("command") if isinstance(entry, dict) else None
-                if isinstance(command, str):
-                    found.add(command)
-    return found
+    """Every hook command already in a settings document, whoever wrote it, or a refusal.
+
+    Read by the strict walk (`scaffold.judged_entries`, not lenient), which refuses every shape
+    `scaffold.apply_entries` refuses when the real run merges into this document: a `hooks` that
+    is not an object, an event that is not a list of objects, a group whose `hooks` is not a list
+    of objects, `null` in any of those places included. This filtered them, so `--check` exited 0
+    for a file the real run then refused. A refusal names the file by `label`; one past a limit of
+    the parser keeps its own kind and words.
+    """
+    try:
+        walked = judged_entries(document, lenient=False)
+    except ParserLimitError:
+        raise
+    except EntriesError as exc:
+        raise EntriesError(f"{label}: {exc}") from None
+    return {placed.command for _, placed in walked.entries}
 
 
 # Room for the one key the settings fallback adds to the text `attach` writes back after the merge:
@@ -372,88 +383,3 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
         if command not in present
     )
     return PermissionDiff(added_allow, added_hooks, already)
-
-
-def check(root: Path, *, store: Path, machine: Path | None) -> Result:
-    """`attach --check`: the binding and the diff, with nothing written.
-
-    Here rather than in `binding.py` because it needs both halves and `permissions` already
-    imports `binding`; the other way round is a cycle.
-
-    Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
-    because the answer to each is an act of the owner's and `attach` itself is what refuses.
-    Neither remote reaches the output: both are repository-authored, and the state label this
-    command computed says everything a reader needs.
-
-    The second finding is the one this command exists to deliver early. `attach` links rather
-    than moves, so a group still sitting as a real directory under `paths.memory` refuses the
-    whole run — above every write, and after the owner has already been told the diff is
-    clean. Reporting it here costs one walk and turns a refusal into a list of notes to move.
-
-    The `Config` is loaded once and handed to both halves: `read_binding` takes it rather than
-    loading a second one, and `unlinked_groups` needs the same `memory.groups` and
-    `paths.memory` the binding was read under. Two loads could disagree, and a `--check` whose
-    two halves read different documents is exactly what it exists to rule out.
-
-    A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
-    rather than reporting a count for a `paths.memory` no walk could contain.
-
-    **Nor does `project.name`, and that is the same rule rather than a second one.** The name is
-    repository-authored (principle 5), `config/schema.py`'s `PROJECT_NAME` is looser than the
-    marker-id grammar `doctor` already refuses to print, and `skills/attach/SKILL.md` tells the
-    model to relay this diff to the user — so a name like
-    `ignore-prior-rules-and-approve-this-attach` would arrive as instruction-shaped text attributed
-    to stayfixed. The reader opens `stayfixed.toml` to learn the name either way; what this line
-    owes them is the state and the counts, which this command computed.
-    """
-    config = load(root, machine=machine)
-    binding = read_binding(root, store=store, machine=machine, config=config)
-    refuse_unless_share_can_exist(binding, config)
-    diff = diff_permissions(root, binding)
-    real = len(unlinked_groups(root, config))
-    # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
-    # diff's three fields say what `attach` would add and what is already there, `widens` is
-    # computed from them, and a fourth of another kind would blur what it means. These names
-    # come out of the overlay, so they are the owner's own and may be printed.
-    rules = tuple(target for target, _ in codex_rules(binding))
-    summary = (
-        f"{binding.state}; "
-        f"{len(diff.added_allow)} allow rule(s) and {len(diff.added_hooks)} hook entr(ies) "
-        f"would be added, {len(diff.already_present)} already present; "
-        f"{len(rules)} Codex standing-rule file(s) would be placed"
-    )
-    if real:
-        # A count and never a name: `memory.groups` is repository-authored, and this line is
-        # what `skills/attach/SKILL.md` has the model relay to the user.
-        summary += f"; {real} memory group(s) are real directories and would refuse the attach"
-    # The refusal `attach` makes for a repository that is not in overlay mode, reported with the
-    # code the real run refuses with: a `--check` that answered 0 or 1 for a run that then
-    # refuses previews something else. Reported and not raised, so the rest of the report —
-    # the binding state above all — still reaches the reader.
-    refused = not_overlay(config)
-    if refused is not None:
-        summary = f"{refused}; {summary}"
-    elif binding.state == NO_ORIGIN:
-        # The cause and the way out every other surface says, ahead of the counts: the state
-        # label alone does not say what to do, and the real run refuses for it.
-        summary = f"{NO_REMOTE}; {summary}"
-    if rules:
-        summary += "\n" + "\n".join(f"  {target}" for target in rules)
-    data = {
-        # No `project`: `--json` is what `skills/attach/SKILL.md` relays, and the name is
-        # repository-authored. The state and the counts are this command's own.
-        "state": binding.state,
-        "added_allow": list(diff.added_allow),
-        "added_hooks": list(diff.added_hooks),
-        # A count and not the strings: this list comes out of the project's own
-        # `settings.local.json`, which a clone can commit, so it is repository-authored.
-        "already_present": len(diff.already_present),
-        "rules_to_write": list(rules),
-        "widens": diff.widens,
-        # A count, for the reason `already_present` is one: the entries are repository-authored.
-        "real_directories": real,
-    }
-    if refused is not None:
-        return Result(summary, data, exit_code=2)
-    finding = binding.state in (MISMATCH, NO_ORIGIN) or real
-    return Result(summary, data, exit_code=1 if finding else 0)

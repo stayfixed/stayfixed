@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import io
 import json
+import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -17,6 +19,7 @@ from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSi
 from stayfixed.hooks.commands import run_hook
 from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, read_event
 from tests.gitfixture import git
+from tests.ownerhome import as_owner_home
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
 
@@ -574,6 +577,34 @@ def test_the_walk_finds_the_root_through_a_git_file(
     assert ev.project_root == tmp_path
 
 
+def test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Within a few characters of the longest path, `<cwd>/.git` is past it. `Path.exists()` raised
+    # on that up to Python 3.13 and answered `False` from 3.14, so under Codex, where `cwd` is the
+    # payload's, every hook in such a directory was an internal error on one interpreter and
+    # `PreToolUse` refused every tool call. The walk reads it as no `.git` there on every
+    # interpreter and goes on to the parents. Mutations (oracle): `mutations/`'s "the path
+    # predicates read a name longer than the system takes as a fault" -> this reddens on every
+    # interpreter; "the hook's walk for .git asks pathlib what is there" -> it reddens up to 3.13.
+    (tmp_path / ".git").mkdir()
+    longest = os.pathconf(tmp_path, "PC_PATH_MAX")
+    deep = tmp_path
+    # Each step adds a separator and at least one character, so the loop ends whatever length
+    # `tmp_path` starts at. One character short of the mark, a step of none left `deep` where it
+    # was, and a 72-character `tmp_path` under Linux's 4096 met that and hung.
+    while len(str(deep)) < longest - 3:
+        deep = deep / ("d" * max(1, min(200, longest - 4 - len(str(deep)))))
+    deep.mkdir(parents=True)
+    # The premise: the path to its `.git` is one no `stat` can be handed.
+    with pytest.raises(OSError) as past:
+        os.stat(deep / ".git")
+    assert past.value.errno == errno.ENAMETOOLONG
+    monkeypatch.setattr("stayfixed.gitenv._git_toplevel", _forbidden)
+    ev = read_event({"hook_event_name": "PreToolUse", "cwd": str(deep)}, {})
+    assert ev.project_root == tmp_path
+
+
 def test_the_walk_resolves_a_symlinked_root_the_way_git_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -664,6 +695,7 @@ def _harness(
         project_dir_env=project_dir_env,
         render=render,
         reach=CLAUDE.reach,
+        plugin_root_env="FAKE_PLUGIN_ROOT",
         detects=detects,
     )
 
@@ -821,3 +853,28 @@ def test_a_clamped_answer_is_the_detected_harnesss_envelope() -> None:
     assert recorder.records == [
         {"event": "PreToolUse", "handler": "*", "error": "context-truncated"}
     ]
+
+
+def test_a_user_the_password_database_does_not_list_still_gets_an_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A container run under a uid with no entry has no home off a terminal, so no machine file:
+    # the configuration loads with the preset's `[personal]` and the guards still answer. Read as
+    # an error instead, a `closed` entry would refuse every tool call on such a machine.
+    as_owner_home(monkeypatch, None)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\nstate = "installed"\n\n'
+        '[project]\nname = "widget"\n\n[memory]\nmode = "local-only"\n',
+        encoding="utf-8",
+    )
+    seen: list[object] = []
+
+    def note(ev: HookEvent, config: object) -> HookResult:
+        seen.append(config)
+        return HookResult()
+
+    probe = Handler(name="probe", event="PreToolUse", policy=Policy.CLOSED, run=note)
+    payload: dict[str, object] = {"cwd": str(tmp_path), "tool_name": "Bash"}
+    assert _hook(monkeypatch, "PreToolUse", payload, probe, env={"HOME": str(tmp_path)}) == 0
+    assert len(seen) == 1 and seen[0] is not None

@@ -6,6 +6,7 @@ from typing import Any
 
 from stayfixed.cli import build_parser, discover_registrars
 from stayfixed.guards.hooks import BASH
+from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import EVENTS
 from stayfixed.hooks.registry import discover
 
@@ -15,7 +16,9 @@ from stayfixed.memory.api import SLOTS
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOKS = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-WRAPPER = '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh"'
+# Every command runs the wrapper under the plugin root Claude Code names, which the harness
+# registry states and `doctor`'s `wrapper` row sets: one name, so the file and the row cannot part.
+WRAPPER = f'"${{{CLAUDE.plugin_root_env}}}/hooks/run-hook.sh"'
 
 
 def _entries() -> list[tuple[str, str, dict[str, Any]]]:
@@ -82,9 +85,9 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
     # volatile notes. The set above cannot see an order, so two entries that swap their parts
     # still pass it.
     #
-    # Mutation (oracle): `mutations/`'s "a session-start part is filed twice and another not at
-    # all" reddens the set; "two session-start parts swap places in the hooks file" keeps the set
-    # and reddens the order.
+    # Mutations (oracle): `mutations/`'s "a session-start part is filed twice and another not at
+    # all" -> the set reddens; "two session-start parts swap places in the hooks file" -> the set
+    # holds and the order reddens.
     session_start = [
         entry["command"].split()[2:]
         for event, _matcher, entry in _entries()

@@ -217,8 +217,8 @@ reddens = [
 [[mutation]]
 name = "the smoke job demands an exfiltration summary the scenario no longer prints"
 file = ".github/workflows/smoke.yml"
-before = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
-after = '          grep -qx "7 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+before = '          grep -qx "9 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
+after = '          grep -qx "8 row(s), 0 failure(s)" "$RUNNER_TEMP/hostile.out"'
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
 ]
@@ -443,7 +443,7 @@ file = "scripts/check_artifacts.py"
 before = "from stayfixed.overlay.api import OVERLAY_FILES"
 after = "from stayfixed.overlay.layout import OVERLAY_FILES"
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The step whose exit status is the verdict. `stayfixed gate` already exits 0 for an advisory
@@ -517,7 +517,7 @@ reddens = [
 [[mutation]]
 name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "    timeout-minutes: 12"
+before = "    timeout-minutes: 20"
 after = "    timeout-minutes: 1"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
@@ -1245,7 +1245,7 @@ reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_g
 [[mutation]]
 name = "the group table loses a row and its entries route to the catch-all"
 file = "scripts/mutation_oracle.py"
-before = '    ("src/stayfixed/doctor/", "install"),'
+before = '    ("src/stayfixed/doctor/", "doctor"),'
 after = ''
 reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
 
@@ -1381,8 +1381,8 @@ reddens = [
 [[mutation]]
 name = "release check counts the plugin folder without a tag"
 file = "scripts/release.py"
-before = "    if tag is not None:\n        problems += plugin_folder_counts(root)"
-after = "    if True:\n        problems += plugin_folder_counts(root)"
+before = "    if tag is not None:\n        kinds[FOLDER_COUNT] = plugin_folder_counts(root)"
+after = "    if True:\n        kinds[FOLDER_COUNT] = plugin_folder_counts(root)"
 reddens = ["tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count"]
 
 [[mutation]]
@@ -1411,6 +1411,31 @@ reddens = [
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
 ]
 
+# A record problem is spelled one way by both commands: `check` said "version drift" of a record no
+# version disagrees with, and a record that is not one left `drift` as a `Failure`, a third
+# spelling on stderr with `--json`'s object lost.
+[[mutation]]
+name = "the release check reports a record problem as version drift"
+file = "scripts/release.py"
+before = "        kinds[RECORD_DRIFT] = drift(root)"
+after = "        kinds[VERSION_DRIFT] += drift(root)"
+reddens = [
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[missing]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-gone]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-edited]",
+]
+
+[[mutation]]
+name = "a record that cannot be read leaves the drift check as a failure"
+file = "scripts/release.py"
+before = "    except UnreadableRecord as exc:\n        return [f\"{exc}; run `{COMMAND} hashes`\"]"
+after = "    except UnreadableRecord:\n        raise"
+reddens = [
+  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-json]",
+  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-utf8]",
+  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[not-a-record]",
+]
+
 # --- The release script returns its findings as every command does ---------------------------
 # While these were the installed CLI's `release` group, it was the one area reporting a finding
 # by raising `Failure`, and the cost was in `--json`: the frame (which the script still runs
@@ -1420,8 +1445,8 @@ reddens = [
 [[mutation]]
 name = "release check's drift arm carries no data again"
 file = "scripts/release.py"
-before = '        return Result("version drift: " + "; ".join(problems), data, exit_code=1)'
-after = '        return Result("version drift: " + "; ".join(problems), {}, exit_code=1)'
+before = "        return Result(summary, data, exit_code=1)"
+after = "        return Result(summary, {}, exit_code=1)"
 reddens = [
   "tests/scripts/test_release.py::test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
@@ -1429,8 +1454,8 @@ reddens = [
 [[mutation]]
 name = "release hashes --check's drift arm carries no data again"
 file = "scripts/release.py"
-before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
-after = '            return Result("release record drift: " + "; ".join(problems), {}, exit_code=1)'
+before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), {}, exit_code=1)'
 reddens = [
   "tests/scripts/test_release.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
@@ -1440,8 +1465,8 @@ reddens = [
 [[mutation]]
 name = "release check meets a version source nested past the parser as an internal error"
 file = "scripts/release.py"
-before = "    except (json.JSONDecodeError, *UNPARSEABLE) as exc:"
-after = "    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:"
+before = "    except UNPARSEABLE as exc:\n        raise MalformedSource(f\"{name} is not valid TOML: {exc}\") from None"
+after = "    except tomllib.TOMLDecodeError as exc:\n        raise MalformedSource(f\"{name} is not valid TOML: {exc}\") from None"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-read]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-read]",
@@ -1450,39 +1475,33 @@ reddens = [
 [[mutation]]
 name = "release check meets a pyproject.toml nested past the parser as an internal error"
 file = "scripts/release.py"
-before = "    except UNPARSEABLE as exc:"
-after = "    except tomllib.TOMLDecodeError as exc:"
+before = "    except UNPARSEABLE as exc:\n        raise MalformedSource(f\"{PYPROJECT} is not valid TOML: {exc}\") from None"
+after = "    except tomllib.TOMLDecodeError as exc:\n        raise MalformedSource(f\"{PYPROJECT} is not valid TOML: {exc}\") from None"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-pyproject]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[versions-pyproject]",
 ]
 
-# `json` answers nesting past its depth with `RecursionError` as `tomllib` does, and the arm that
-# catches both used to be the TOML one: a deep `plugin.json` was reported as "not valid TOML".
+# A JSON source is read through the product's own reader, which refuses by the source's name every
+# way the parse can fail and a document nested past its cap at the same depth on every platform:
+# `json`'s own reach is the C stack's on 3.14, and a deep `plugin.json` was once "not valid TOML".
 [[mutation]]
-name = "release check calls a malformed JSON source not valid TOML"
+name = "release check reads a JSON source past the shared reader"
 file = "scripts/release.py"
-before = '    language = "JSON" if name.endswith(".json") else "TOML"'
-after = '    language = "TOML"'
+before = "    return json_object(text, name, error=MalformedSource)"
+after = "    return json.loads(text)"
 reddens = [
-  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.claude-plugin/plugin.json]",
-  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.codex-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform[.claude-plugin/plugin.json]",
+  "tests/scripts/test_release.py::test_a_manifest_nested_past_the_reader_is_refused_alike_on_every_platform[.codex-plugin/plugin.json]",
   "tests/scripts/test_release.py::test_a_malformed_source_is_reported_with_its_filename[.claude-plugin/plugin.json-{not json-JSON]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[claude-manifest-list]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-list]",
+  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
 ]
 
 # A version source of the wrong shape decodes cleanly, so the decoder's catches never see it:
 # a `.get` on a list or a string was an internal error naming no file. Each reader asks the
 # shape it reads in, and the marketplace's rule stops reading a string entry with `in`.
-[[mutation]]
-name = "a manifest whose top level is not an object is read with .get"
-file = "scripts/release.py"
-before = "    if not isinstance(document, dict):"
-after = "    if False:"
-reddens = [
-  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[claude-manifest-list]",
-  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-list]",
-]
-
 [[mutation]]
 name = "a pyproject.toml whose project is not a table is read with .get"
 file = "scripts/release.py"
@@ -1502,23 +1521,14 @@ reddens = [
   "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-plugins-string]",
 ]
 
-[[mutation]]
-name = "a marketplace that is not JSON ends release check as an internal error"
-file = "scripts/release.py"
-before = "    except (json.JSONDecodeError, RecursionError) as exc:"
-after = "    except ():"
-reddens = [
-  "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
-]
-
 # The repository's own record of its shipped files is held clean by one test and shown able to fail
 # by another: a copy of it with one digest changed must exit 1, or the check that keeps it current
 # could pass anything.
 [[mutation]]
 name = "hashes --check exits clean on a drifted record"
 file = "scripts/release.py"
-before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
-after = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=0)'
+before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=0)'
 reddens = ["tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check"]
 
 # Every message that sends the reader back to the release script names the command to run. The
@@ -1630,3 +1640,13 @@ after = ""
 reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_wheel_without_the_python_profiles_code_is_named[stayfixed/profiles/python/__init__.py]",
 ]
+
+# A `--root` that is no repository root is no version disagreeing: printed under "version drift:",
+# it read as one.
+[[mutation]]
+name = "a root the release check cannot read is reported as version drift"
+file = "scripts/release.py"
+before = "        return {NOT_A_ROOT: [unusable]}, found"
+after = "        return {VERSION_DRIFT: [unusable]}, found"
+reddens = ["tests/scripts/test_release.py::test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not"]
+

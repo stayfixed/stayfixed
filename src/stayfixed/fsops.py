@@ -44,7 +44,7 @@ import contextlib
 import errno
 import os
 import stat
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
@@ -98,6 +98,29 @@ def said(error: OSError) -> str:
     if isinstance(error, UnsafePath):
         return str(error)
     return error.strerror or type(error).__name__
+
+
+def unreadable(label: object, error: OSError | UnicodeDecodeError) -> str:
+    """What a reader says of a file it could not read, named as `label`: that it cannot be read,
+    and why in `said`'s words, or that it is not UTF-8 text. The one wording, so a file named by the
+    project and never by the path it was opened by is named so in every refusal of it."""
+    if isinstance(error, UnicodeDecodeError):
+        return f"{label} is not UTF-8 text"
+    return f"{label} cannot be read ({said(error)})"
+
+
+@contextmanager
+def reading(label: object, refusal: Callable[[str], Exception]) -> Iterator[None]:
+    """Raise `refusal` with `unreadable`'s sentence for a read inside it that fails, an `OSError`
+    chained to it and a decoding error not: the frame every reader of a file that answers in a
+    refusal of its own puts around its read. An arm that answers a missing file otherwise goes
+    inside it, and re-raises what it does not answer."""
+    try:
+        yield
+    except OSError as exc:
+        raise refusal(unreadable(label, exc)) from exc
+    except UnicodeDecodeError as exc:
+        raise refusal(unreadable(label, exc)) from None
 
 
 def path_key(relative: str) -> str:
@@ -178,6 +201,62 @@ def names_regular_file(path: Path) -> bool:
     return stat.S_ISREG(mode)
 
 
+# `NAMES_NO_FILE`, and a name or a whole path longer than the system takes. The kernel refuses the
+# last before it looks anything up, so it gets the answer a dangling link and a loop get: nothing a
+# reader that names the path whole can open is there. A clone reaches it with a committed link
+# whose target holds a name longer than a file name may be, which makes every path through the
+# link one, and a repository-chosen string joined into a path reaches it too. `names_regular_file`
+# keeps it apart for the readers that must count such a link as a file they cannot read.
+REACHES_NO_FILE = NAMES_NO_FILE | {errno.ENAMETOOLONG}
+
+
+def _reached_mode(path: Path, *, follow: bool) -> int | None:
+    """The mode `stat` (or `lstat`, when not `follow`) finds at `path`, or `None` when the path
+    reaches no file: one of `REACHES_NO_FILE`, or a NUL, which names no file anywhere. Any other
+    fault is raised: a path that cannot be asked about is the caller's to classify."""
+    try:
+        return (os.stat(path) if follow else os.lstat(path)).st_mode
+    except OSError as exc:
+        if exc.errno in REACHES_NO_FILE:
+            return None
+        raise
+    except ValueError:
+        return None
+
+
+# `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()`, answered alike on every interpreter.
+# `pathlib`'s own answer `False` for `NAMES_NO_FILE` and raise any other fault up to Python 3.13,
+# and answer `False` for every fault from 3.14 (`os.path`'s rule), so one path a clone can shape
+# was an internal error on one interpreter and a quiet "nothing there" on the other, and the suite
+# proved only the interpreter it ran on. These choose: `REACHES_NO_FILE` is nothing there, as it
+# was on 3.14, and any other fault -- a directory that cannot be searched, an I/O error -- raises,
+# as it did up to 3.13, because "cannot tell" is not "no". Each follows links as its `pathlib`
+# namesake does: `is_symlink` asks `lstat`, the other three `stat`.
+
+
+def is_file(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches a regular file; see above."""
+    mode = _reached_mode(path, follow=True)
+    return mode is not None and stat.S_ISREG(mode)
+
+
+def is_dir(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches a directory; see above."""
+    mode = _reached_mode(path, follow=True)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def exists(path: Path) -> bool:
+    """Whether `path`, followed through links, reaches anything; see above."""
+    return _reached_mode(path, follow=True) is not None
+
+
+def is_symlink(path: Path) -> bool:
+    """Whether `path` itself, not followed, is a symbolic link; see above."""
+    mode = _reached_mode(path, follow=False)
+    return mode is not None and stat.S_ISLNK(mode)
+
+
 class NotRegularFile(OSError):
     """A path a reader was handed names something other than a regular file. An `OSError`, so
     every reader's existing "could not be read" arm is its answer without a branch of its own."""
@@ -200,6 +279,18 @@ class TooLarge(OSError):
 # and `attach` refuses a settings file whose write-back would pass it (`permissions`). No shipped
 # file states it.
 REGULAR_READ_LIMIT = 64 * 1024 * 1024
+# A named cap (CONTRIBUTING.md#named-caps): how many directory entries a walk over a repository's
+# tree that looks for something lists, one total across everything that walk lists, before it stops
+# and says it could not tell. One number for every walk that has that answer, each reading it here
+# when it starts: `doctor`'s walk for files whose frontmatter declares hooks and its walk of the
+# note store (`memory.doctor`), and the Python profile's walk for stale bytecode, which runs on a
+# hook's timeout, so the shipped file that changes with it is `hooks/hooks.json`
+# (`profiles/python/hygiene.py` says what was measured against that timeout: listing this many
+# entries took under half a second with a warm cache). `docs/cli.md` states it for both commands.
+# The ledger's scan (`ledger.scan`) does not read it: it reads every file under the project's code
+# roots, as git lists them or, where git cannot, as its walk finds them, and a scan that stopped
+# short would pass a reference it never read, so it has no "could not tell" to stop at.
+WALK_ENTRIES = 500_000
 
 # The open `open_regular` makes: it follows a link at the last component, because `attach` links
 # each memory group and `MEMORY.md` into the overlay in overlay mode and those are read through
@@ -220,7 +311,8 @@ def open_regular(path: Path) -> BinaryIO:
     between that check and the open can still be opened -- without blocking and without becoming
     the controlling terminal -- and is refused unread, because the descriptor must be the same
     file the check saw. A link to a regular file is read, as before. No bound on what is then
-    read: `read_regular_bytes` and `read_regular_text` hold the read to `REGULAR_READ_LIMIT`.
+    read: `read_bounded` holds the read to a bound, and `read_regular_bytes` and
+    `read_regular_text` to `REGULAR_READ_LIMIT`.
     """
     checked = os.stat(path)
     if not stat.S_ISREG(checked.st_mode):
@@ -240,23 +332,109 @@ def open_regular(path: Path) -> BinaryIO:
     return os.fdopen(descriptor, "rb")
 
 
-def read_regular_bytes(path: Path) -> bytes:
-    """The bytes of `path`, a regular file followed through links: `open_regular`'s rules, and
-    `TooLarge` for a file longer than `REGULAR_READ_LIMIT`."""
+# The open `read_bounded_within` makes of the last component under a root: `_REGULAR_OPEN`'s, and a
+# link there is refused as every component above it is.
+_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)
+
+
+@contextmanager
+def open_directory(path: Path) -> Iterator[int]:
+    """A descriptor for the directory `path`, its last component not followed if it is a link,
+    closed when the block ends: the `root` `read_bounded_within` reads several files under with
+    one open."""
+    descriptor = os.open(path, _DIR_FLAGS)
+    try:
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _opened_within(root: Path | int, relative: str) -> int:
+    """A descriptor for `root/relative` opened for reading, no component of it followed if it is a
+    symbolic link, the file included; `NotRegularFile` if it is anything else. `root` an open
+    directory descriptor takes one name and no path below it."""
+    if isinstance(root, int):
+        parts = checked_components(relative)
+        if len(parts) != 1:
+            raise UnsafePath(f"{relative!r} is not one name in the directory it is read from")
+        descriptor = os.open(parts[0], _WITHIN_OPEN, dir_fd=root)
+    else:
+        with open_within(root, relative) as (dir_fd, name):
+            descriptor = os.open(name, _WITHIN_OPEN, dir_fd=dir_fd)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _read_upto(descriptor: int, size: int) -> bytes:
+    """Up to `size` bytes from `descriptor`, fewer only at its end: unbuffered, since a header of a
+    few bytes costs a buffer's allocation per file otherwise, and looped, since one `read` may
+    return less than it was asked for."""
+    chunks: list[bytes] = []
+    while size > 0:
+        chunk = os.read(descriptor, size)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size -= len(chunk)
+    return b"".join(chunks)
+
+
+def _bounded(content: bytes, limit: int) -> tuple[bytes, bool]:
+    """`content`, read to one byte past `limit`, cut to `limit`, and whether it ran past it."""
+    return content[:limit], len(content) > limit
+
+
+def read_bounded(path: Path, limit: int) -> tuple[bytes, bool]:
+    """At most `limit` bytes of a regular file, and whether it holds more than that.
+
+    The one reader of a file held to a bound, whatever the bound is, and `read_bounded_within` the
+    one under a root. `path` is opened by `open_regular`'s rules: followed through symbolic links,
+    and a regular file only. The open never waits on a FIFO, anything but a regular file is
+    `NotRegularFile`, and one byte past `limit` is asked for and no more, so a file that reads on
+    for as long as anyone asks costs `limit + 1` bytes and is over.
+    """
     with open_regular(path) as stream:
-        content = stream.read(REGULAR_READ_LIMIT + 1)
-    if len(content) > REGULAR_READ_LIMIT:
+        return _bounded(stream.read(limit + 1), limit)
+
+
+def read_bounded_within(root: Path | int, relative: str, limit: int) -> tuple[bytes, bool]:
+    """`read_bounded` of `relative` under `root`, reached as `open_within` reaches a file.
+
+    No component is followed if it is a symbolic link, the file included, and the descriptor
+    opened is asked whether it is a regular file, so the open never waits on a FIFO either. `root`
+    may be a directory `open_directory` opened, and `relative` then one name in it, so a reader of
+    many files in one directory opens it once.
+    """
+    descriptor = _opened_within(root, relative)
+    try:
+        return _bounded(_read_upto(descriptor, limit + 1), limit)
+    finally:
+        os.close(descriptor)
+
+
+def read_regular_bytes(path: Path, *, limit: int | None = None) -> bytes:
+    """The bytes of a regular file, reached as `read_bounded` reaches it, and `TooLarge` for one
+    longer than `limit`, or than `REGULAR_READ_LIMIT` where a reader holds its files to no cap of
+    its own."""
+    content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)
+    if over:
         raise TooLarge(errno.EFBIG, "larger than this reader reads", str(path))
     return content
 
 
-def read_regular_text(path: Path, *, newline: str | None = None) -> str:
-    """`read_regular_bytes(path)` decoded as UTF-8, a `UnicodeDecodeError` where it is not.
+def read_regular_text(path: Path, *, newline: str | None = None, limit: int | None = None) -> str:
+    """`read_regular_bytes(path, limit=limit)` decoded as UTF-8, a `UnicodeDecodeError` where it
+    is not.
 
     `newline` as `open` takes it, for the two spellings readers use: `None` translates every CRLF
     and lone CR to LF, as `Path.read_text` does, and `""` keeps the file's own line endings.
     """
-    text = read_regular_bytes(path).decode("utf-8")
+    text = read_regular_bytes(path, limit=limit).decode("utf-8")
     if newline is None:
         return text.replace("\r\n", "\n").replace("\r", "\n")
     return text

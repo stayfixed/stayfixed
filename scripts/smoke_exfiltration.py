@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from smoke_hooks import developer_free_env, fixture_repository
+from smoke_hooks import developer_free_env, fixture_repository, with_owner_home
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<stayfixed:repository-data"
@@ -41,9 +41,9 @@ DELIMITER = "<<<stayfixed:repository-data"
 # a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
-# How many rows this scenario declares. Asserted at the end, because six of the eight assert an
+# How many rows this scenario declares. Asserted at the end, because seven of the nine assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
-EXPECTED_ROWS = 8
+EXPECTED_ROWS = 9
 
 
 @dataclass
@@ -73,8 +73,8 @@ class Planted:
 def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Every subprocess here reads stdin from a pipe, which is what a hook's stdin is.
 
-    It is also the gate: `config/machine.py` honours `STAYFIXED_CONFIG` only from an
-    interactive terminal, so a pipe is the state the clone's `env` block actually meets.
+    It is also the gate: nothing stayfixed honours only from an interactive terminal, `attach`'s
+    `--machine` among it, is honoured on a pipe, the state the clone's `env` block actually meets.
     """
     return subprocess.run(  # noqa: S603
         argv,
@@ -197,7 +197,11 @@ def main(argv: list[str]) -> int:
     for flag in ("--plugin-root", "--fixture", "--scratch"):
         parser.add_argument(flag, required=True, type=Path)
     args = parser.parse_args(argv)
-    plugin_root = args.plugin_root.resolve()
+    # The owner's home is the scratch one in the password database too, which is where stayfixed
+    # looks for it off a terminal (`smoke_hooks.with_owner_home`); `plant` puts it at `home`.
+    plugin_root = with_owner_home(
+        args.plugin_root.resolve(), args.scratch / "owner-home-plugin", args.scratch / "home"
+    )
     report = Report([])
     planted = plant(args.fixture, args.scratch, plugin_root)
     env = hostile_env(planted, plugin_root)
@@ -294,6 +298,39 @@ def main(argv: list[str]) -> int:
         f"canary={CANARY in without.stdout}",
     )
 
+    # --- a home the clone names ------------------------------------------------------------
+    # Claude Code applies no `HOME` from the clone's `env` block, but direnv, mise or a
+    # devcontainer can set one from a file the clone commits, and the wrapper enters the clone
+    # before Python starts, so `HOME=fakehome` is a directory the clone ships. It ships the
+    # owner's own record there, moved out of the owner's home: the digest is one a clone computes
+    # from its own content. Relative and absolute, the note stays out; moved back, the same record
+    # lets it through under the same `HOME`, so the absence is the home's doing.
+    retrusted = stayfixed(
+        plugin_root,
+        ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
+        env,
+        planted.clone,
+    )
+    planted_record = planted.clone / "fakehome" / ".config" / "stayfixed" / "trust.json"
+    planted_record.parent.mkdir(parents=True, exist_ok=True)
+    trust_record(planted).replace(planted_record)
+    spelled = {
+        "relative": through_wrapper(wrapper, bundle, {**env, "HOME": "fakehome"}, planted.clone),
+        "absolute": through_wrapper(
+            wrapper, bundle, {**env, "HOME": str(planted.clone / "fakehome")}, planted.clone
+        ),
+    }
+    planted_record.replace(trust_record(planted))
+    owners = through_wrapper(wrapper, bundle, {**env, "HOME": "fakehome"}, planted.clone)
+    report.row(
+        retrusted.returncode == 0
+        and all(done.returncode == 0 and CANARY not in done.stdout for done in spelled.values())
+        and CANARY in owners.stdout,
+        "a trust record under a HOME the clone names is never read",
+        ", ".join(f"{name} canary={CANARY in done.stdout}" for name, done in spelled.items())
+        + f", the owner's record under the same HOME canary={CANARY in owners.stdout}",
+    )
+
     # --- the wrapper's containment, made reachable ------------------------------------------
     # The four absolute candidates are not masked by a `PATH` entry, so on a runner that has
     # one of them the fall-through is never reached and the assertion would be on a token that
@@ -357,11 +394,11 @@ def main(argv: list[str]) -> int:
     # Run here rather than below because the row above needs its refusal: `doctor`'s
     # `ignored-env` row is emitted because the variable is SET and never checks that the value
     # was ignored, so the sentence it prints stays true under the mutation it exists to catch.
-    # Measured: deleting the tty gate in `config/machine.py` — the gate that module's own
-    # docstring calls its whole security record — left that row reporting ok while the clone's
-    # configuration was being honoured. `attach` resolves the overlay through
-    # `machine_config_path`, and its refusal names the overlay it resolved, so which of the two
-    # files was read is a fact this scenario can read rather than assert.
+    # Measured while `config/machine.py` still honoured those variables at a terminal: deleting
+    # that tty gate, which the module's docstring then called its whole security record, left
+    # that row reporting ok while the clone's configuration was being honoured. `attach` resolves
+    # the overlay through `machine_config_path`, and its refusal names the overlay it resolved, so
+    # which of the two files was read is a fact this scenario can read rather than assert.
     inside = planted.clone / "evil" / "overlay" / "projects" / "smoke" / "memory"
     attached = stayfixed(
         plugin_root,
@@ -407,8 +444,8 @@ def main(argv: list[str]) -> int:
     )
 
     print("skip  memory_search under an explicit project= — stayfixed does not depend on mcp")
-    # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
-    # that executed one row prints the same green last line as a run that executed all eight —
+    # The floor this script had none of. Seven of its nine rows assert an ABSENCE, and a run
+    # that executed one row prints the same green last line as a run that executed all nine —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still
     # green. The sibling script states its own count for the same reason.
     ran = len(report.rows)

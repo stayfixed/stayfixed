@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import errno
 import os
 import stat
 import subprocess
@@ -29,6 +31,7 @@ from stayfixed.fsops import (
     write_atomically_at,
     write_within,
 )
+from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
 
 
 def _umasked(mode: int = NEW_FILE_MODE) -> int:
@@ -560,6 +563,23 @@ def test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by() ->
     assert fsops.said(OSError("/machine/checkout/src/a.py: refused")) == "OSError"
 
 
+def test_no_module_but_fsops_says_an_error_by_its_strerror() -> None:
+    # One spelling for what an error says about a file, `fsops.said`. Private copies of it drifted
+    # from it twice: two spelt it without its `UnsafePath` arm, and two fell back to the error's
+    # whole message, the path it was opened by included. Any read of `.strerror` under `src/` is
+    # such a copy, so the walk refuses every one but `said`'s own. Mutation (oracle):
+    # `mutations/`'s "a reader spells the error's words again rather than saying them".
+    source = Path(fsops.__file__).parent
+    found = sorted(
+        f"{path.relative_to(source).as_posix()}:{number}"
+        for path in source.rglob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if ".strerror" in line
+    )
+    # The walk finds `said`'s own read, so a walk that stopped finding any cannot pass.
+    assert len(found) == 1 and found[0].startswith("fsops.py:"), found
+
+
 def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers(
     tmp_path: Path,
 ) -> None:
@@ -574,8 +594,8 @@ def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_calle
     assert fsops.names_regular_file(tmp_path / "to-regular") is True
     # Names no file: nothing there, a dangling link, a loop, a component that is not a directory,
     # and something that is not a regular file. Mutations (oracle): `mutations/`'s "hook-entries
-    # is blind to a settings path that names no file" raises for the first four, and "hook-entries
-    # reads a settings path that is no regular file" answers `True` for the directory.
+    # is blind to a settings path that names no file" -> the first four raise; "hook-entries reads
+    # a settings path that is no regular file" -> the directory answers `True`.
     (tmp_path / "dangling").symlink_to(tmp_path / "nothing-here")
     (tmp_path / "loop").symlink_to(tmp_path / "loop")
     (tmp_path / "directory").mkdir()
@@ -594,6 +614,118 @@ def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_calle
     with pytest.raises(OSError) as raised:
         fsops.names_regular_file(tmp_path / "past-a-name")
     assert raised.value.errno not in fsops.NAMES_NO_FILE
+
+
+# What `is_file`, `is_dir`, `exists` and `is_symlink` answer for each shape, in that order, or
+# `OSError` where all four raise.
+PREDICATE_ANSWERS: dict[str, tuple[bool, bool, bool, bool] | type[OSError]] = {
+    "a-regular-file": (True, False, True, False),
+    "a-directory": (False, True, True, False),
+    "a-link-to-a-file": (True, False, True, True),
+    "a-link-to-a-directory": (False, True, True, True),
+    "a-dangling-link": (False, False, False, True),
+    "a-link-loop": (False, False, False, True),
+    "a-link-to-a-name-longer-than-a-name": (False, False, False, True),
+    "nothing-there": (False, False, False, False),
+    "below-a-file": (False, False, False, False),
+    "through-a-link-loop": (False, False, False, False),
+    "a-name-longer-than-a-name": (False, False, False, False),
+    "past-the-longest-path": (False, False, False, False),
+    "through-a-link-to-a-name-longer-than-a-name": (False, False, False, False),
+    "below-a-directory-that-cannot-be-searched": OSError,
+    "through-a-link-into-a-directory-that-cannot-be-searched": OSError,
+    "a-nul": (False, False, False, False),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(LSTAT_FAULT))
+def test_the_path_predicates_answer_each_fault_alike_on_every_interpreter(
+    tmp_path: Path, shape: str
+) -> None:
+    # `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()` raise `ENAMETOOLONG` and
+    # `EACCES` up to Python 3.13 and answer `False` for them from 3.14, so a path a clone shapes
+    # was an internal error on one interpreter and "nothing there" on the other. `fsops` answers
+    # one way on all of them: a name or a path longer than the system takes reaches nothing, as a
+    # dangling link and a loop do, and a fault that leaves the question open raises.
+    #
+    # Mutations (oracle): `mutations/`'s "the path predicates read a name longer than the system
+    # takes as a fault" -> the four `ENAMETOOLONG` shapes raise; "the path predicates read a fault
+    # they cannot answer as nothing there" -> the unsearchable directory answers; "the path
+    # predicates raise on a NUL" -> `a-nul`; and "is_file answers for anything that is there",
+    # "is_dir answers for anything that is there", "exists answers for a link it did not follow"
+    # and "is_symlink follows the link it is asked about".
+    if unmet_here(shape):
+        pytest.skip("root searches every directory")
+    path = tmp_path / shaped(tmp_path, shape)
+    try:
+        # The shape meets the fault it is named for, or it proves nothing about that fault.
+        assert lstat_fault(path) == LSTAT_FAULT[shape]
+        expected = PREDICATE_ANSWERS[shape]
+        asks = (fsops.is_file, fsops.is_dir, fsops.exists, fsops.is_symlink)
+        if expected is OSError:
+            for ask in asks:
+                with pytest.raises(OSError) as raised:
+                    ask(path)
+                assert raised.value.errno == errno.EACCES
+        else:
+            assert tuple(ask(path) for ask in asks) == expected
+    finally:
+        unlock(tmp_path)
+
+
+# The calls of `is_file`, `is_dir`, `exists` and `is_symlink` under `src/` that are not `fsops`'
+# own, by file and function, and why each may stay. None asks `pathlib` about a path a repository
+# can shape.
+OTHER_PREDICATES: dict[tuple[str, str, str], tuple[int, str]] = {
+    ("areas.py", "_has_submodule", "is_file"): (2, "the package's own directory"),
+    ("overlay/template.py", "templates", "is_dir"): (1, "the wheel's own template tree"),
+    ("project/templates.py", "read", "is_dir"): (1, "the wheel's own template tree"),
+    ("profiles/__init__.py", "shipped", "is_dir"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "shipped", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/__init__.py", "load_profile", "is_file"): (1, "a resource of the package's own"),
+    ("profiles/hints.py", "hint_modules", "is_file"): (1, "a resource of the package's own"),
+    # `os.DirEntry`'s, which answers alike on every interpreter.
+    ("doctor/hooked.py", "_nested", "is_dir"): (1, "an os.DirEntry"),
+    ("doctor/hooked.py", "_nested", "is_symlink"): (1, "an os.DirEntry"),
+    ("profiles/python/hygiene.py", "_bytecode", "is_dir"): (1, "an os.DirEntry"),
+}
+
+
+def test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape() -> None:
+    # `Path.is_file()`, `is_dir()`, `exists()` and `is_symlink()` raise on a name longer than the
+    # system takes, and on a directory that cannot be searched, up to Python 3.13, and answer
+    # `False` from 3.14, so the suite passing on one interpreter said nothing about the other:
+    # `attach` over a deep checkout was an internal error on 3.11 to 3.13 and attached on 3.14.
+    # `fsops` answers one way on all of them, so the walk refuses any other call of the four but
+    # the ones `OTHER_PREDICATES` names, each on a path no repository writes. Mutation (oracle):
+    # `mutations/`'s "the harness link's check asks pathlib what is there".
+    source = Path(fsops.__file__).parent
+    found: dict[tuple[str, str, str], int] = {}
+    for path in sorted(source.rglob("*.py")):
+        relative = path.relative_to(source).as_posix()
+        if relative == "fsops.py":
+            continue
+        # Each call by the definitions around it, `Class.method` for a method, so a call in a
+        # class body or at module level is a row too.
+        scopes: list[tuple[ast.AST, str]] = [(ast.parse(path.read_text(encoding="utf-8")), "")]
+        while scopes:
+            scope, name = scopes.pop()
+            for node in ast.iter_child_nodes(scope):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    scopes.append((node, f"{name}.{node.name}" if name else node.name))
+                    continue
+                scopes.append((node, name))
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("is_file", "is_dir", "exists", "is_symlink")
+                    and not (
+                        isinstance(node.func.value, ast.Name) and node.func.value.id == "fsops"
+                    )
+                ):
+                    key = (relative, name or "<module>", node.func.attr)
+                    found[key] = found.get(key, 0) + 1
+    assert found == {key: count for key, (count, _) in OTHER_PREDICATES.items()}
 
 
 def test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused(
@@ -707,8 +839,9 @@ def test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read(
     # A regular file can be endless: on Linux `/proc/self/pagemap` is `S_ISREG` with a size of 0
     # and reads on for as long as anyone asks, so the read stops one byte past the limit and
     # refuses a file that has it. The limit lowered here, so a file at it and one past it are
-    # cheap. Mutations (declared): "the regular-file reader reads past its limit" -> the longer
-    # file is read; "the regular-file reader refuses a file at its limit" -> the shorter is not.
+    # cheap. Mutations (declared): `mutations/`'s "the regular-file reader reads past its limit" ->
+    # the longer file is read; "the regular-file reader refuses a file at its limit" -> the shorter
+    # is not.
     monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 4)
     (tmp_path / "at.md").write_bytes(b"abcd")
     (tmp_path / "past.md").write_bytes(b"abcde")
@@ -723,3 +856,95 @@ def test_the_read_limit_sits_far_above_every_file_its_readers_take() -> None:
     # The legitimate readers' files are a few kilobytes -- `MEMORY.md`'s own budget is 25,600
     # bytes -- so the bound must be far above them and still far under a machine's memory.
     assert 1024 * 1024 <= fsops.REGULAR_READ_LIMIT <= 1024 * 1024 * 1024
+
+
+def test_a_bounded_read_returns_what_fits_and_says_whether_more_is_there(tmp_path: Path) -> None:
+    # One reader for every bound: a file at the bound is read whole and is not over, one a byte
+    # longer is read to the bound and is, with or without a root. Mutations (declared):
+    # `mutations/`'s "the regular-file reader reads past its limit" -> the longer file is not over;
+    # "the regular-file reader refuses a file at its limit" -> the file at the bound is.
+    (tmp_path / "at.md").write_bytes(b"abcd")
+    (tmp_path / "past.md").write_bytes(b"abcde")
+    for at, past in (
+        (fsops.read_bounded(tmp_path / "at.md", 4), fsops.read_bounded(tmp_path / "past.md", 4)),
+        (
+            fsops.read_bounded_within(tmp_path, "at.md", 4),
+            fsops.read_bounded_within(tmp_path, "past.md", 4),
+        ),
+    ):
+        assert at == (b"abcd", False)
+        assert past == (b"abcd", True)
+
+
+def test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_file(
+    tmp_path: Path,
+) -> None:
+    # Under a root the file is reached as a write reaches it: a link at the last component is
+    # refused, and so is one above it, where without a root a link to a regular file is read. A
+    # directory is refused as not a regular file. Mutation (declared): `mutations/`'s "a symlinked
+    # .pyc is followed" -> the linked file is read under the root.
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "file.md").write_bytes(b"x")
+    (tmp_path / "real" / "link.md").symlink_to(tmp_path / "real" / "file.md")
+    (tmp_path / "linked").symlink_to(tmp_path / "real", target_is_directory=True)
+    assert fsops.read_bounded_within(tmp_path, "real/file.md", 4) == (b"x", False)
+    assert fsops.read_bounded(tmp_path / "real" / "link.md", 4) == (b"x", False)
+    with pytest.raises(OSError) as refused:
+        fsops.read_bounded_within(tmp_path, "real/link.md", 4)
+    assert refused.value.errno == errno.ELOOP
+    with pytest.raises(UnsafePath):
+        fsops.read_bounded_within(tmp_path, "linked/file.md", 4)
+    with pytest.raises(NotRegularFile):
+        fsops.read_bounded_within(tmp_path, "real", 4)
+
+
+def test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
+    # The open under a root never waits, and what it opened is asked whether it is a regular file:
+    # a FIFO opened without a writer reads as empty, so it must be refused by its descriptor. In a
+    # child under a timeout, so a regression fails this case rather than hanging. Mutations
+    # (declared): `mutations/`'s "a .pyc that is a named pipe is opened waiting for a writer" -> the
+    # child times out; "a .pyc that is not a regular file is read" -> the FIFO reads as empty.
+    os.mkfifo(tmp_path / "pipe.md")
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed import fsops\n"
+        "try:\n"
+        "    print(fsops.read_bounded_within(Path(sys.argv[1]), 'pipe.md', 4))\n"
+        "except fsops.NotRegularFile:\n"
+        "    print('refused')\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("the open under a root waited on a FIFO")
+    assert done.stdout == "refused\n", done.stderr
+
+
+def test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link(
+    tmp_path: Path,
+) -> None:
+    # A reader of many files in one directory opens it once (`open_directory`) and reads each
+    # name under it, by the same rules as under a root path: one name and no path below it, no
+    # link followed, a regular file only. Mutation (declared): `mutations/`'s "a name under an open
+    # directory may be a path" -> the file below a subdirectory is read.
+    (tmp_path / "file.md").write_bytes(b"abcde")
+    (tmp_path / "link.md").symlink_to(tmp_path / "file.md")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "file.md").write_bytes(b"x")
+    with fsops.open_directory(tmp_path) as directory:
+        assert fsops.read_bounded_within(directory, "file.md", 4) == (b"abcd", True)
+        assert fsops.read_bounded_within(directory, "file.md", 5) == (b"abcde", False)
+        with pytest.raises(OSError) as refused:
+            fsops.read_bounded_within(directory, "link.md", 4)
+        assert refused.value.errno == errno.ELOOP
+        with pytest.raises(UnsafePath):
+            fsops.read_bounded_within(directory, "sub/file.md", 4)
+        with pytest.raises(NotRegularFile):
+            fsops.read_bounded_within(directory, "sub", 4)

@@ -20,6 +20,8 @@ enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) asks of every path a 
 from __future__ import annotations
 
 import os
+import stat
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -96,9 +98,22 @@ class Installed(NamedTuple):
     replaced: bool
 
 
+class Found(Enum):
+    """What `uninstall` found at the hook path. One value, so no answer can say that it both removed
+    stayfixed's hook and left a foreign one; a report built from `restored` alone said "removed" of
+    all three. A hook that cannot be read is none of them: `uninstall` refuses it."""
+
+    REMOVED = "removed"  # stayfixed's hook, which is gone
+    ABSENT = "absent"  # no hook at all
+    FOREIGN = "foreign"  # a hook stayfixed did not write, left as it was
+
+
 class Removed(NamedTuple):
+    """What `uninstall` found at the hook path, and the hook it put back there, if any."""
+
     path: Path
     restored: Path | None
+    found: Found
 
 
 def git_path(root: Path, name: str, what: str) -> Path:
@@ -135,10 +150,32 @@ def hooks_dir(root: Path) -> Path:
     return git_path(root, "hooks", "hooks directory")
 
 
-def _ours(path: Path) -> bool:
+# What `install` and `uninstall` say of a hook they cannot read. `{path}` is git's own hooks
+# directory, which the reports name absolutely, as every other line of this module does.
+UNREADABLE = "{path} could not be read ({reason}); {outcome}"
+
+
+def _ours(path: Path, outcome: str) -> bool:
+    """Whether the hook at `path` is stayfixed's, by its marker; bytes that are not UTF-8 are not.
+
+    Read as a regular file only, to the read cap (`fsops.read_regular_bytes`): a FIFO there is
+    never waited on, as `read_text` waited on it. A hook that cannot be read is neither ours nor
+    foreign, and is refused, ending in `outcome`, what the caller did not do: read as foreign, it
+    was "not stayfixed's" to `uninstall` and renamed and chained by `install` when it was
+    stayfixed's own at mode 000. A regular file past the cap is the exception, and is foreign:
+    stayfixed's own hook is a couple of kilobytes, so one that long is certainly not it.
+    """
     try:
-        return HOOK_MARKER in path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        content = fsops.read_regular_bytes(path)
+    except fsops.TooLarge:
+        return False
+    except OSError as exc:
+        raise Refusal(
+            UNREADABLE.format(path=path, reason=fsops.said(exc), outcome=outcome)
+        ) from exc
+    try:
+        return HOOK_MARKER in content.decode("utf-8")
+    except UnicodeDecodeError:
         return False
 
 
@@ -146,21 +183,21 @@ def install(root: Path) -> Installed:
     directory = hooks_dir(root)
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
-    if target.is_symlink():
+    if fsops.is_symlink(target):
         raise Refusal(f"{target} is a symlink; refusing to write through it")
-    if target.is_dir():
+    if fsops.is_dir(target):
         raise Refusal(f"{target} is a directory; refusing to install a hook over it")
-    replaced = target.exists() and _ours(target)
+    replaced = fsops.exists(target) and _ours(target, "nothing was installed")
     # A `.local` found where our hook is *not* installed was put there by somebody else, and
     # the shipped hook `exec`s whatever sits at that name, so installing over it would run a
     # stranger's file under stayfixed's name. Note the bound, which is the whole of the
     # contract: this fires only while our hook is absent. Once ours is installed, the `.local`
     # beside it is presumed to be the one we preserved, and a file that appears there
     # afterwards is vouched for by nothing here — see `uninstall`.
-    if local.exists() and not replaced:
+    if fsops.exists(local) and not replaced:
         raise Refusal(f"{local} already exists and was not preserved by stayfixed; move it aside")
     preserved: Path | None = None
-    if target.exists() and not replaced:
+    if fsops.exists(target) and not replaced:
         target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
@@ -174,8 +211,12 @@ def uninstall(root: Path) -> Removed:
     directory = hooks_dir(root)
     target = directory / HOOK_NAME
     local = directory / (HOOK_NAME + LOCAL_SUFFIX)
-    if not target.exists() or target.is_symlink() or not _ours(target):
-        return Removed(target, None)
+    if not os.path.lexists(target):
+        return Removed(target, None, Found.ABSENT)
+    # stayfixed writes only a regular file here, so a link, a directory or a FIFO is foreign as
+    # surely as a regular file past the read cap is, and is left in place unopened.
+    if not stat.S_ISREG(os.lstat(target).st_mode) or not _ours(target, "nothing was removed"):
+        return Removed(target, None, Found.FOREIGN)
     target.unlink()
     # Whatever sits at `.local` is restored, and this does *not* check that install put it
     # there. It cannot: `install` refuses a stray `.local` only while our hook is absent, so a
@@ -184,7 +225,7 @@ def uninstall(root: Path) -> Removed:
     # the honest end of that state rather than a new exposure, and it is deliberate: the
     # `.local` name is the contract `setup` relies on, and a provenance marker or an
     # unconditional refusal here would be this module inventing a different one.
-    if local.exists():
+    if fsops.exists(local):
         local.rename(target)
-        return Removed(target, target)
-    return Removed(target, None)
+        return Removed(target, target, Found.REMOVED)
+    return Removed(target, None, Found.REMOVED)

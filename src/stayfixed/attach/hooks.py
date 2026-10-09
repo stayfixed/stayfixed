@@ -55,8 +55,8 @@ The cost, stated rather than hidden: an overlay that becomes unpushed *during* a
 compaction of a repository with nothing wrong with it, inside a budget shared with the handler
 that links the note store.
 
-Every import below the vocabulary is inside the handler body: `tests/test_areas.py` asserts
-that discovery in a clean interpreter leaves `stayfixed.config`, `stayfixed.presets` and
+Every import below the vocabulary is inside the handler body: `tests/boundaries/test_discovery.py`
+asserts that discovery in a clean interpreter leaves `stayfixed.config`, `stayfixed.presets` and
 `stayfixed.release` out of `sys.modules`.
 """
 
@@ -70,7 +70,6 @@ from stayfixed.hooks.api import Handler, HookEvent, HookResult, Policy
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
-OVERLAY_MODE = "overlay"
 # `SessionStart.source` values that are one context asking again, and the only thing this module
 # reads the payload for.
 #
@@ -169,6 +168,8 @@ def _asked_before(event: HookEvent) -> bool:
 
 
 def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
+    from stayfixed.config.schema import OVERLAY_MODE
+
     if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:
         return HookResult()
     try:

@@ -49,8 +49,9 @@ def test_a_footprint_with_nothing_kept_out_of_git_writes_no_ledger(tmp_path: Pat
 def test_an_unedited_copy_follows_a_changed_template(tmp_path: Path) -> None:
     # With the render as the only oracle, every unedited copy read as somebody's after a release
     # changed its template: `skip_modified`, and `uninstall` refused over it. The ledger says
-    # these are the bytes stayfixed wrote. Mutation (oracle): "an unedited artifact kept out of git
-    # is skipped as not stayfixed's once its template changes" -> the verb is `skip_modified`.
+    # these are the bytes stayfixed wrote. Mutation (oracle): `mutations/`'s "an unedited artifact
+    # kept out of git is skipped as not stayfixed's once its template changes" -> the verb is
+    # `skip_modified`.
     _written(tmp_path)
     config = a_config(tmp_path, local=("agents-md",))
     planned = plan(tmp_path, config, [a_template(render=lambda: "BODY 2\n")])
@@ -61,8 +62,8 @@ def test_an_unedited_copy_follows_a_changed_template(tmp_path: Path) -> None:
 
 
 def test_a_retired_unedited_copy_goes_after_its_template_changed(tmp_path: Path) -> None:
-    # Mutation (oracle): "the ledger never vouches for bytes stayfixed wrote kept out of git" ->
-    # the copy is listed as changed and stays.
+    # Mutation (oracle): `mutations/`'s "the ledger never vouches for bytes stayfixed wrote kept out
+    # of git" -> the copy is listed as changed and stays.
     _written(tmp_path)
     config = a_config(tmp_path, local=("agents-md",))
     retired = a_template(retired=True, render=lambda: "BODY 2\n")
@@ -102,8 +103,8 @@ def test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_stayfixeds
 ) -> None:
     # Nothing ever judged it again: `upgrade` created the committed file and left the copy, and
     # `uninstall` refused over it for good with a `--force` no action could reach. Mutation
-    # (oracle): "a copy left kept out of git when its id left [artifacts] local is never judged"
-    # -> the plan holds the create alone.
+    # (oracle): `mutations/`'s "a copy left kept out of git when its id left [artifacts] local is
+    # never judged" -> the plan holds the create alone.
     _written(tmp_path)
     config = a_config(tmp_path)
     planned = plan(tmp_path, config, [a_template(render=lambda: "BODY 2\n")])
@@ -134,6 +135,20 @@ def test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it(
     ]
 
 
+def test_an_unreadable_copy_left_kept_out_of_git_is_named_where_it_is(tmp_path: Path) -> None:
+    # The reason names the copy it is about, which is not the artifact's committed target the plan
+    # creates beside it. Mutation: `mutations/`'s "a left copy that cannot be read is named by the
+    # artifact's target".
+    _written(tmp_path)
+    (tmp_path / LOCAL).unlink()
+    (tmp_path / LOCAL).mkdir()
+    planned = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, LOCAL, f"{LOCAL} cannot be read (not a regular file)"),
+        (Verb.CREATE, "AGENTS.md", "new"),
+    ]
+
+
 def test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest(
     tmp_path: Path,
 ) -> None:
@@ -141,8 +156,8 @@ def test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_d
     # it only while the file's bytes digest to exactly what the entry states, bytes its writer
     # already names; the render vouches only at the artifact's own place, so a file there that
     # happens to hold this build's bytes is left and named, and so is one with other bytes.
-    # Mutation (oracle): "a left copy away from its own place goes on the render alone" -> the
-    # file holding the render is removed and the first assertion reddens.
+    # Mutation (oracle): `mutations/`'s "a left copy away from its own place goes on the render
+    # alone" -> the file holding the render is removed and the first assertion reddens.
     other = tmp_path / OTHER
     other.parent.mkdir(parents=True)
     other.write_text("BODY\n", encoding="utf-8")
@@ -181,8 +196,8 @@ def test_a_ledger_that_is_not_exactly_this_shape_is_absent(
     tmp_path: Path, artifacts: object, extra: dict[str, object]
 ) -> None:
     # A fault anywhere makes the whole ledger absent, which only sends the engine back to the
-    # render rule. Mutation (oracle): "a ledger entry may name a file outside the artifacts
-    # directory" -> the first two cases read as entries.
+    # render rule. Mutation (oracle): `mutations/`'s "a ledger entry may name a file outside the
+    # artifacts directory" -> the first two cases read as entries.
     _ledger(tmp_path, artifacts, **extra)
     assert LocalDigests.read(tmp_path).entries == {}
 
@@ -216,8 +231,8 @@ def test_removing_a_left_copy_keeps_the_record_of_the_committed_file(
     # The left copy's removal carries the artifact's id, and `apply` dropped the manifest record
     # by id alone: the committed file's live record went with the copy, `upgrade` then reported
     # the file unchanged for ever without recording it, and `uninstall` left it unlisted.
-    # Mutation (oracle): "removing a file drops the record of whatever file its artifact now
-    # names" -> the record is gone and the last assertion reddens.
+    # Mutation (oracle): `mutations/`'s "removing a file drops the record of whatever file its
+    # artifact now names" -> the record is gone and the last assertion reddens.
     _written(tmp_path)
     committed = "BODY\nours\n" if edited else "BODY\n"
     (tmp_path / "AGENTS.md").write_text(committed, encoding="utf-8")
@@ -235,8 +250,8 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
     # A stale entry, or `[paths]` values swapped, can put an artifact's left copy on the file
     # another artifact of the same plan now targets. That template judges its own file; judged
     # twice, the left copy's removal deleted it from under an `unchanged` verdict. Mutation
-    # (oracle): "a left copy at a file another template of the plan targets is judged twice" ->
-    # the plan removes the file and this reddens.
+    # (oracle): `mutations/`'s "a left copy at a file another template of the plan targets is judged
+    # twice" -> the plan removes the file and this reddens.
     _written(tmp_path)
     _ledger(
         tmp_path,
@@ -266,9 +281,9 @@ def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_
 ) -> None:
     # `AGENTS.md` is a place `owners` gives `agents-md`, so `LOCAL_ARTIFACTS/AGENTS.md` is that
     # artifact's copy, judged under its own id. A forged entry under `roadmap` naming it with its
-    # unedited digest removed it when no template of the plan targeted it. Mutation (oracle): "a
-    # ledger entry under one id reaches another artifact's copy kept out of git" -> the plan holds
-    # a `REMOVE` of that copy.
+    # unedited digest removed it when no template of the plan targeted it. Mutation (oracle):
+    # `mutations/`'s "a ledger entry under one id reaches another artifact's copy kept out of git"
+    # -> the plan holds a `REMOVE` of that copy.
     _written(tmp_path)
     _ledger(tmp_path, {"roadmap": {LOCAL: digest("BODY\n")}})
     roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
@@ -314,9 +329,9 @@ def test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_templa
 ) -> None:
     # The same-plan skip, compared the way the disk compares: an entry under `roadmap` at
     # `.../agents.md` names `agents-md`'s `.../AGENTS.md` where case folds, and with no
-    # `owners` given the plan's own targets are the only guard. Mutation (oracle): "a left copy
-    # at a case variant of a file the plan targets is judged twice" -> the plan removes the
-    # variant, which on macOS is `agents-md`'s copy, and this reddens.
+    # `owners` given the plan's own targets are the only guard. Mutation (oracle): `mutations/`'s "a
+    # left copy at a case variant of a file the plan targets is judged twice" -> the plan removes
+    # the variant, which on macOS is `agents-md`'s copy, and this reddens.
     _written(tmp_path)
     _variant(tmp_path)
     _ledger(

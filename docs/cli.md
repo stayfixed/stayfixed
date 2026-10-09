@@ -163,7 +163,11 @@ stops this from being a bare, trivially scripted command.
 The hash covers every note, `MEMORY.md`, and the repository-controlled configuration rendered
 into it, keyed by the store's absolute path. Change any of it and the approval lapses — you are
 asked again rather than silently kept. Notes that are *yours* (an overlay store) need no
-approval; recording one is inert rather than dangerous.
+approval to reach a session: the standing-rules and volatile-notes bundles deliver them without
+one. A record for an overlay store is not inert, though. The store's directory of links sits
+inside the repository, and the record is what lets `stayfixed attach` create the harness memory
+link to it: until one exists, `memory index` and `memory fit` say the link waits for it and
+`attach` names this command instead of making the link.
 
 Exits `2` if `trust.json` exists and does not parse. It holds every project's approval on the
 machine, so nothing will overwrite a file it could not read — repair or delete it.
@@ -224,11 +228,11 @@ Not something to run by hand. Its exit-code policy differs from every other comm
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
 your prompt. A `stayfixed.toml` that does not load takes the same path, and standard error names
-the kind of fault in stayfixed's own words rather than calling it an internal error:
+the kind of fault in stayfixed's own words, not an internal error's:
 `stayfixed: stayfixed.toml does not load (a file or value the loader refuses)` — a file it cannot
-read, one that is not TOML, or a value it refuses — or `(a path that leaves the project or passes
-through a symlink)` — a symlinked `AGENTS.md` is the second, since
-`agents_md` is a `[paths]` key — followed by `; refused` or `; continuing open`, and a pointer
+read, one that is not TOML, or a value it refuses — `(a path that leaves the project or passes
+through a symlink)`, such as a symlinked `AGENTS.md`, or `(a path on which a directory cannot be
+checked for a symlink)` — then `; refused` or `; continuing open`, and a pointer
 to `stayfixed docs check` for the detail. The loader's own message is never printed here:
 it carries the repository's text, and a refused `PreToolUse` shows this stream to the model.
 `stayfixed docs check` loads the same file and prints that message in full.
@@ -309,9 +313,8 @@ Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming
 a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
 set the real project root over it, while the block's other keys were applied.
 `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a candidate only to exit `0` for a trivial
-`-I -c`, so an unguarded list picks the interpreter that
-runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
-gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
+`-I -c`, so an unguarded list picks the interpreter that runs on every tool call — and it is
+therefore honoured from an interactive terminal, as `attach` honours `--machine`, and ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
 hands its own probe `/dev/null`, so a committed `.claude/settings.json` `env` block — which
 applies without a trust prompt in a non-interactive session — cannot reach it, while a machine
@@ -319,27 +322,25 @@ owner debugging the probe by hand still can. The `git` that resolves the project
 with an allowlisted environment for the same reason: an inherited `GIT_DIR` or `GIT_WORK_TREE`
 otherwise made it answer for a different repository.
 
-**`git` is chosen by the wrapper, not by `PATH`.** It answers the question the containment below
-is measured against, and on the Codex path — where `CLAUDE_PROJECT_DIR` is unset — it is the only
-anchor there is, so a bare `git` would let a clone that ships one have that binary executed on
-every hook invocation, before any guard. The wrapper therefore tries a fixed list of absolute
-paths and takes the first that exists, asking the machine owner's own installs before
-`/usr/bin/git`; nothing under `$HOME` is on the list, because `HOME` is environment-chosen too.
-A machine with `git` at none of them gets `SF_NO_GIT`. This is deliberately stricter than
-`stayfixed`'s own `git` calls, which do resolve through `PATH` so that the machine owner's `git`
-answers: those run inside a stayfixed that has already chosen its interpreter, while this one
-decides which programs may run at all.
+**`git` is chosen by the wrapper, not by `PATH`.** It answers the question the containment below is
+measured against, and on the Codex path, where `CLAUDE_PROJECT_DIR` is unset, it is the only anchor,
+so a bare `git` would let a clone that ships one have that binary run on every hook, before any
+guard. The wrapper therefore tries a fixed list of absolute paths and takes the first that exists,
+asking the machine owner's own installs before `/usr/bin/git`; nothing under `$HOME` is on the list,
+because `HOME` is environment-chosen too. A machine with `git` at none of them gets `SF_NO_GIT`. A
+`stayfixed` this wrapper launched takes its own `git` from the same list, with a fixed `PATH` for
+the programs git runs by name; anywhere else it resolves `git` through `PATH`, so the machine
+owner's `git` answers. Both give a hook's `git` the password database's home as `HOME`.
 
 **`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
 `python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
 `STAYFIXED_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
 another. The entry cannot simply go: it is the fall-through the built-in list exists for, and a
 machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
-paths. So the rule is narrower and matches what a hostile clone can actually stage — **no
-candidate whose resolved path lies inside the project root is used**, whatever spelling reached
-it. Both sides are resolved before they are compared, so a relative entry, a `.` in `PATH`, a
-`..` spelling and a symlink on either side all answer the same question. Where there is no
-project root to compare against, the candidate stands.
+paths. So the rule matches what a hostile clone can stage — **no candidate whose resolved path lies
+inside the project root is used**, whatever spelling reached it. Both sides are resolved before they
+are compared, so a relative entry, a `.` in `PATH`, a `..` spelling and a symlink on either side all
+answer alike. Where there is no project root to compare against, the candidate stands.
 
 **"The project root" here means either anchor.** `CLAUDE_PROJECT_DIR` and `git`'s answer are both
 taken, and a candidate inside *either* is refused. Measured against `CLAUDE_PROJECT_DIR` alone
@@ -389,7 +390,7 @@ under this project's name, or this checkout having **no `origin`** to check the 
 **a memory path refused**, so the notes were not examined at all; how
 many note groups are **real directories** rather than links into the overlay; the overlay's
 `stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
-does not meet**; and — only when none of those fired — the overlay's branch having **no
+does not meet**, a pre-release of the floor's version included; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
 up-to-date repository on a satisfied stayfixed hears nothing. Not one byte a repository wrote
 reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
@@ -433,6 +434,16 @@ Anything it cannot read is `2`: this is the fail-closed row of the CLI table, an
 guessed would be guessing. That is about the JSON, not about the command inside it: a command
 longer than the 64 KiB cap is not read either, and is allowed (`0`) rather than refused,
 because tokenizing an unbounded string in front of every Bash call is the larger fault.
+
+"Begins with `sleep`" is read off the first simple command's program, past a leading `(`,
+environment assignments (`FOO=1 sleep 30`), an absolute path (`/bin/sleep 30`), an `env` prefix
+(`env sleep 30`), and `uv run` with uv's own options before and after `run` (`uv run --no-project
+sleep 30`, `uv --quiet run --locked sleep 30`); `uv run -m sleep` and `uv run --script sleep`
+run a module or a file of that name and are not a `sleep`. The `; echo …` advice reads its
+`echo`, and the command before it, the same way. No other wrapper is read through: a
+backgrounded `nohup sleep 30`, `timeout 60 sleep 30`, `command sleep 30`, `time sleep 30`, `uvx
+sleep 30`, `uv tool run sleep 30` or `bash -c "sleep 30"` is not judged as a `sleep`, and answers
+`0`.
 
 This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
 smoke test and a person can ask it without a harness.
@@ -516,7 +527,11 @@ The `PostToolUse` `Bash` hook delivers the same note once per context after a re
 chosen by the command that failed rather than by configuration: each simple command of the
 red run is offered to every shipped profile's hint, and the dirty-tree line and the line of
 each profile whose runner it recognises (Python's: `pytest`, or `python -m pytest`) are
-delivered together. A red command no profile recognises gets no note. When Python's walk stopped
+delivered together. A runner is recognised behind environment assignments, an `env` prefix and
+`uv run` with uv's own options (`uv run --locked pytest`, `uv --quiet run pytest`, `uv run --
+pytest`). A value-taking option takes its value, so `uv run --with pytest echo` runs `echo`; an
+option outside uv's own list (`uv run --frobnicate pytest`) leaves the command whole, so no value
+is ever taken for the program. A red command no profile recognises gets no note. When Python's walk stopped
 at its bound, its line says the walk could not tell whether a stale build was imported, and
 names neither stale bytecode nor its absence.
 
@@ -602,7 +617,9 @@ rejection happens before the first write: a title or source the flat frontmatter
 hold is quoted for you; a `--related` value that is not an identifier, an index carrying content
 this tool did not generate (`2`), and an allocated identifier whose file already exists (`1`,
 naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
-result line, not hidden.
+result line, not hidden. An index that cannot be written once the entry is filed exits `1`,
+naming the filed entry, the reason and any skipped fetch, and saying to run `bugs index` once it
+can be written, not `bugs new` again, which would file it twice.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
@@ -623,6 +640,7 @@ something regenerating may delete. A reworded
 header is a stale index, not foreign content. The first paragraph names the generator, and that
 paragraph is recognised structurally rather than by an exact string, so an index left by an
 older generated format is still read as generated rather than refused as hand-written content.
+An index that cannot be written exits `1` with the reason.
 
 **Writes** `<paths.bug_index>`.
 
@@ -691,7 +709,11 @@ identifiers and is neither scanned nor swept.
 A stale index is sent to `bugs index`, except the one a `bugs renumber OLD NEW` killed before its
 last write leaves: when `NEW` holds `OLD`'s text, or `OLD` is the pointer that move titles toward
 `NEW`, and the index is exactly the one rendered before the move, the line names `run: stayfixed
-bugs renumber OLD NEW`, which finishes it.
+bugs renumber OLD NEW`, which finishes it; where several moves explain it, as for two entries that
+differ only in `id:`, it names each and says only the one started finishes it. The sweep may already
+have rewritten other entries, so each line is compared with the found index's line both as it was
+and with `OLD` rewritten to `NEW`: a void pointer an earlier move left toward `OLD`, or a title
+naming either, still names the renumber.
 
 **Writes** nothing.
 
@@ -710,8 +732,7 @@ missing and leaves the tree an uninterrupted run would have left, when resumed t
 pointer written by the resume carries the day it is written. A re-run of a move that finished —
 the pointer in place and the index fresh — changes nothing and says `OLD was already moved to
 NEW; nothing to do`, and `--json`'s `moved` is `false`, so a mention of `OLD` written since stays
-as it was written. While an interrupted move is what left the index stale, `bugs check` names this
-command, `run: stayfixed bugs renumber OLD NEW`, where it would name `bugs index`.
+as it was written. `bugs check` names this command while an interrupted move left the index stale.
 
 Rejects `OLD` equal to `NEW`, a missing `OLD`, and any other occupied `NEW` (`1`); the last says
 how to finish by hand a move whose `NEW` was edited after the kill, which the re-run can no longer
@@ -721,7 +742,9 @@ because once the pointer exists a stale mention in that file looks intentional t
 forever. The line counts them and names up to eight; `--json`'s `unswept` carries every one, each
 an object with `path` and `reason`. The path is relative to the root, and the reason is the error
 in words, naming no absolute path; a refusal of stayfixed's own may repeat the root-relative path.
-The moved entry's own body is the operator's to rewrite and is not swept.
+The moved entry's own body is the operator's to rewrite and is not swept. A write of the move's
+own that fails — `NEW`, the pointer at `OLD` or the index — exits `1` naming the file and the
+reason, and says that running the same move again once the file can be written finishes it.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
@@ -803,8 +826,10 @@ differ from every merge base's copy and from `REF`'s — so a change editing a d
 plan was written; a new plan is all such lines. Naming a plan as `PATH` settles every reference in
 it.
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
-an absolute one, or one that walks out through `..` — which is never settled against the
-filesystem, because that answer would be about the machine rather than about the repository. A
+an absolute one, one that walks out through `..`, or one that runs through a committed symlink
+pointing out of the tree — which is never settled against the filesystem, because that answer
+would be about the machine rather than about the repository. A symlink that stays inside the
+tree is followed. A
 base that does not resolve, one that shares no commit with `HEAD`, any base in a shallow clone,
 where the commits `HEAD` forked from can be cut off and an older commit stand in for them, and
 any base in a clone git refuses to say is shallow or not, are this command's `base-unresolvable`
@@ -899,7 +924,7 @@ A row names no finding: `assess` lists them as items.
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
-| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | a hook entry without stayfixed's marker |
+| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs stayfixed's caller workflow names no owner, or there is no file. Lines end at a line feed, and a carriage return just before one is dropped; words are separated by spaces and tabs, a `#` starts a comment at the line's start or after a blank, a line with an owner outside `@user`, `@org/team` and an email address decides nothing, and a line holding any other whitespace or control character, a carriage return anywhere else included, is read with no owner; not judged under `[ci] mode = "none"` |
 | `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `stayfixed*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. The repository's workflows are asked in turn under a budget of 30,000,000 matching steps, counted as they are taken; past it, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
@@ -1927,7 +1952,7 @@ no release could ever refresh it again. A manifest you edited is renamed all the
 record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
 refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
 read stops `init` with none of them changed. One it reads and then cannot write is named with a
-`<path> cannot be written: <reason>` line and left as it was, record included; the others are
+`<path> cannot be written (<reason>)` line and left as it was, record included; the others are
 renamed and recorded all the same, and the next run names the one left.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
@@ -2020,7 +2045,9 @@ what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, 
 no manifest (one generated from a template, since `publish-template` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
 other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
-nothing is removed, and its record is dropped. Any other copy may hold your own words, so it is
+nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
+nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
+does not name it. Any other copy may hold your own words, so it is
 listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
 `metadata.startup`, so move your rules into such notes and delete the README. Until then each run
@@ -2092,8 +2119,8 @@ permissions and hook entries you keep in the overlay are merged into
 **`--machine` is honoured only from an interactive shell.** This is the command that turns the
 machine configuration into capability: the overlay root comes from that file, and from the
 overlay come allow rules, hook entries and standing rules. `STAYFIXED_CONFIG` and
-`XDG_CONFIG_HOME` are already gated the same way and for the same reason — a repository can set
-an environment variable through a committed settings file, and it can just as easily tell an
+`XDG_CONFIG_HOME` are not read at all, for the same reason — a repository can set an
+environment variable through a committed settings file, and it can just as easily tell an
 agent to pass a flag. In a non-interactive session the flag is **refused** (`2`) rather than
 ignored, because silently falling back would read your real configuration while the caller
 believed it was reading the file it named. Omit it and the default file is read exactly as
@@ -2122,7 +2149,8 @@ remove the ledger.
 **Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
 `overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
 anything; `--check` says so first on its line, still reports the rest, and exits `2`, the code
-the real run refuses with.
+the real run refuses with. Where the rest cannot be read, `--check` ends with the run's refusal
+instead, the same code and the same line.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound`, `mismatch` or
 `no-origin`, the last with the cause and the way out ahead of the counts — the permission diff
@@ -2130,11 +2158,14 @@ the real run refuses with.
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
-content from the overlay is named here first. It does not ask what the real run asks after the
-diff: an overlay rule file that is not UTF-8, which the real run fails on (`1`), and a `trust.json`
-that does not parse, a doubled `stayfixed:ignore` region or `stayfixed:attach` block or a
-`.git/info` you cannot write, which it refuses (`2`). The real run does both before it writes
-anything.
+content from the overlay is named here first. It asks what the real run asks before its first write,
+through the run's own code, so where the run fails or refuses there, in any case the two lists below
+give before the first write, `--check` ends with the same code and the same line. The exceptions,
+besides overlay mode above, are where a flag or a finding decides: a widening without `--yes` and a
+mismatch without `--trust-remote` it reports and goes past, asking what follows as a run given the
+flag would; at a checkout with no `origin` and at a memory group that never moved it reports the
+finding, exits `1`, and of what the run asks next reads only the Codex rule files' names, so with no
+`origin` it counts no group (`real_directories` is `0`).
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
 `origin` and for the same reason — all three are findings you act on before the real run, and
@@ -2238,22 +2269,25 @@ It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is
 the harness memory link cannot be made, so when the link becomes possible again — or when the
 store's trust record lapses — that key is withdrawn in the same run. If it was all
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
-looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
-arises when stayfixed's own key was the file's entire contents.
+looked like before `attach` created it.
 
 **When the harness memory link waits for approval, `attach` says so.** The link exposes the
 link tree, which sits inside the repository, so it is made only once the store is approved; until
 then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
 `stayfixed attach` again.
 
+**At a terminal the harness memory link goes under `HOME`**, and an empty one, which names no home,
+is refused (`2`). Elsewhere it goes under the home the password database records, and only while
+`HOME` is that home or unset; otherwise `attach` makes no harness link or fallback, does the rest
+and exits `0`, saying what makes the link, as `--check` does.
+
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component
 below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
 name, above `attach`'s first write, above `detach`'s first withdrawal and above the first note
 link a session makes in a worktree, rather than written through. The refusal names the component
-and the way out, which is the same one `--settings`
-exists for on the `setup` side: make the directory real and have your dotfiles manager adopt the
-files inside it.
+and the way out, as `--settings` does for `setup`: make the directory real and have your dotfiles
+manager adopt the files inside it.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
@@ -2262,10 +2296,9 @@ failing one printed is quoted as `overlay create` quotes it (escaped, and cut to
 characters and its length).
 
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
-**or** on a non-zero count of memory groups that are still real directories, which are the findings
-the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other
-than `overlay`; the loading, binding and diff failures below end `--check` with the same codes as a
-real run.
+**or** on a non-zero count of memory groups that are still real directories, and `2` for a
+`memory.mode` other than `overlay`; a failure or refusal below that the run meets before its first
+write ends `--check` with the run's code and line instead, a mismatch's finding included.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:
@@ -2282,6 +2315,14 @@ answer, in the order the run meets them:
 - A Codex rule file in the overlay cannot be read or is not UTF-8.
 - `git worktree list` fails.
 
+For `stayfixed.toml`, the overlay's record of this project, its `permissions.json` and
+`hooks.json`, `.claude/settings.local.json` and the ledger, a file that "cannot be read" includes
+one that is not a regular file once a link to it is followed, such as a link to `/dev/zero` or to
+a FIFO, which is never waited on, and one longer than 64 MiB, which is as far as each of these is
+read. The machine configuration and the overlay's Codex rule files are read whole, and one that is
+not a regular file is passed over as absent. A ledger that is itself a link is refused (`2`) before
+it is read, as a path that passes through a symlink.
+
 Every failure in that list happens before anything is written. One way to exit `1` comes later,
 and leaves behind what was written before it: a store that still does not resolve once the link
 tree is built.
@@ -2294,7 +2335,14 @@ It exits `2` on a refusal, in the order the run meets them:
   own directory inside it.
 - A `memory.mode` other than `overlay`.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, that is not
-  JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read.
+  JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read:
+  anything but an object, a list of strings, a list of entry groups or a list of entries where
+  one goes, `null` included. An absent key is no rules and no entries. `--check` reads both with
+  the run's own readers, so it refuses exactly these documents.
+- A `.claude/settings.local.json` that stayfixed's indented write-back would make longer than the
+  64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
+  grows by its depth on every line, and `would be longer than this reader reads once written
+  back` keeps a run from leaving a file its next read refuses. `--check` refuses it too.
 - A widening without `--yes`; a checkout with no `origin`, whether or not the overlay records the
   project; a mismatch without `--trust-remote`; an `origin` whose URL is not UTF-8 text, which the
   overlay's record cannot hold.
@@ -2347,15 +2395,16 @@ deleted your whole `permissions` block, deny rules included.
 
 **Run it from the checkout you attached from.** `.stayfixed/local/` is untracked and per-checkout,
 so a sibling worktree does not carry the ledger of the checkout the attach was run from and
-`detach --root <that worktree>` answers "no ledger" — there is nothing there to reverse. Once it
-starts it reaches every checkout of the repository, including the one that owns the store; it is
-only the *starting* point that has to be the one holding the record.
+`detach --root <that worktree>` answers "no ledger". Once it starts it reaches every checkout of
+the repository, including the one that owns the store; only the *starting* point has to hold the
+record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with the harness memory link, removes the
+this checkout and every worktree together with the harness memory link (under both homes where
+`HOME` is not the database's, only a link to this store), removes the
 `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
 deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
 than left empty — for the exclude file, only when `attach` created it, which the block records, so
@@ -2367,10 +2416,10 @@ exclude file that is a symlink is left alone, because `attach` never writes thro
 exclude block stays while another checkout is attached.** The exclude file is shared by every
 worktree of the repository, while the ledger, the settings file and the `.codex/rules/` copies are
 each checkout's own; so when another checkout still holds a ledger, the block is kept for its files,
-the line ends by saying so, and `--json` reports `exclude_block_kept: true`. The detach of the last
-attached checkout takes it. Only a ledger an attach wrote counts: one git does not track (a clone
-that committed the file has it in every worktree) and that reads as a ledger. A `git` that cannot
-say whether the file is tracked counts it, and the block stays.
+the line ends by saying so, and `--json` reports `exclude_block_kept: true`. Only a ledger an
+attach wrote counts: one git does not track (a clone that committed the file has it in every
+worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
+it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
 ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
@@ -2390,12 +2439,13 @@ take a line out of a tracked file this command never wrote and leave `stayfixed 
 reading the footprint as hand-edited. A repository with no manifest is one no
 `init` has set up, and its region is withdrawn as before.
 
-A manifest this command **cannot read** — unreadable, not a JSON object, or written by a newer
-stayfixed — is read as no answer rather than as an answer, so the block stays and the detach
-finishes. That file is committed and `attach` never opens it, so a clone that ships a broken one
-would otherwise attach cleanly and then make every later `detach` exit `2` for ever, with the
-only way out being to delete a tracked file out of somebody else's repository. `--json` reports
-`ignore_region_removed: false`, and `stayfixed init` or a hand edit clears the block.
+A manifest this command **cannot read** — unreadable, not a JSON object, holding a `format` that is
+not a positive integer, or written by a newer stayfixed — is read as no answer rather than as an
+answer, so the block stays and the detach finishes. That file is committed and `attach` never opens
+it, so a clone that ships a broken one would otherwise attach cleanly and then make every later
+`detach` exit `2` for ever, with the only way out being to delete a tracked file out of somebody
+else's repository. `--json` reports `ignore_region_removed: false`, and `stayfixed init` or a hand
+edit clears the block.
 
 **Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,
 `.codex/rules/`, `.codex/`, `.claude/` and the directories above `paths.memory` this repository
@@ -2420,7 +2470,13 @@ Exits `0` on success. It exits `1` on a failure, in the order the run meets them
   TOML.
 - `.claude/settings.local.json` cannot be read or is not UTF-8.
 - `git` cannot list this repository's worktrees.
-- `.gitignore` cannot be read or is not UTF-8.
+- `.gitignore` cannot be read or is not UTF-8, when the `stayfixed:ignore` region in it is the one
+  `attach` wrote; a region `stayfixed init`'s footprint records is left where it is, and the file
+  is not read.
+
+"Cannot be read" means here what it means for `attach`: a link to a device or a FIFO, or a file
+longer than 64 MiB, which neither command reads past. A settings file an earlier release's
+`attach` wrote back past that size has to be cut down by hand before `detach` can run.
 
 It exits `2` on a refusal, in the order the run meets them:
 
@@ -2428,7 +2484,7 @@ It exits `2` on a refusal, in the order the run meets them:
 - A ledger naming files, settings keys or directories `attach` could not have written.
 - A `[paths]` value that leaves the project or passes through a symlink.
 - A `.claude/settings.local.json` that is not JSON or not a JSON object, or whose `hooks` has a
-  shape the withdrawal cannot read.
+  shape the withdrawal cannot read, or whose indented write-back would pass 64 MiB.
 - A home directory that is not there, or a component below it, `~/.claude` included, that is a
   symlink, in any checkout of the repository.
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
@@ -2583,10 +2639,10 @@ nonzero exit. What the failing plugin command printed is quoted as `overlay crea
 
 ## `stayfixed setup --git-hooks [--uninstall] [--root PATH]`
 
-Installs the commit-message hook into this repository's own hooks directory — `git
-rev-parse --git-path hooks`, never `core.hooksPath`, which is global state this command has no
-business owning and which a repository-wide install would silently compete with husky or
-`pre-commit` elsewhere on the machine.
+Installs the commit-message hook into this repository's own hooks directory — `git rev-parse
+--git-path hooks`, never `core.hooksPath`, which is global state this command has no business owning
+and which a repository-wide install would compete with husky or `pre-commit` elsewhere on the
+machine.
 
 A foreign hook of the same name is kept as `prepare-commit-msg.local` and the installed hook
 `exec`s it last, so nothing that was already running there stops running; `--uninstall` puts it
@@ -2597,37 +2653,48 @@ file nobody was told about is indistinguishable from a lost one.
 one machine-wide — and a single invocation has only one exit code to report, so it does one of
 the two.
 
-**Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only
-when a foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes
-the hook file only when it is stayfixed's, and renames the `.local` file beside it, when there is
-one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
+**Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only when a
+foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes the hook
+file only when it is stayfixed's, and renames the `.local` file beside it, when there is one, back
+to `prepare-commit-msg`. Its line says which it met: `removed <hook>` with whether a foreign hook
+was restored, `there is no stayfixed hook at <hook>; nothing was removed`, or `left <hook> as it
+was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `found` (`removed`,
+`absent` or `foreign`) beside `path` and `restored`. A FIFO or a directory at the path is foreign to
+`--uninstall`, which leaves it, and the install refuses it (`2`). A hook whose mode forbids reading
+is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
+it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
+kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset` is
+also given or the hook cannot be read.
 
 ---
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Sixteen checks over one installation. It **reports and never repairs**: every finding
+Seventeen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own eleven first, then the five about the
-private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`) and the
-private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
+The rows come in a fixed order: the installation's own eleven first, then the six about the
+private layer — the binding's (`attached`), the note store's (`bundles`, `store-debris`,
+`harness-link`) and the private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
 
 **Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
-rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
-resolves to, which the binding's row and the note store's rows each ask for themselves. Five of
-those are measured on a green attached installation — the wrapper probe and four `git`
-questions — and not one of the five leaves this machine. The `ci-ref` row's `git ls-remote` is a
-sixth on a repository that records a `[ci] ref` at all, and it is the only one that does leave:
-it goes through the `Runner` seam, which is what lets the case that pins the five answer it in
-process instead of launching it. That one is bounded at **30 seconds**, and not
-at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
-clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
-five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
-this area's own thirty.
+rows need — where the overlay keeps its hooks, what its `origin` is, where the note store
+resolves to, which the binding's row and the note store's rows each ask for themselves, and, for
+`hook-entries`, which files below the root a nested `.claude/skills` holds (`git ls-files`), asked
+a second time through each submodule's index where a `.gitmodules` sits at or above the root. Six
+of those are measured on a green attached installation with no submodules — the wrapper probe and
+five `git` questions — and seven where a `.gitmodules` is present; not one of them leaves this
+machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a `[ci] ref`
+at all, and it is the only one that does leave: it goes through the `Runner` seam, which is what
+lets the case that pins the six answer it in process instead of launching it. That one is bounded
+at **30 seconds**, not at the seam's own five minutes (the bound for `gh repo create --clone`), so a
+peer that does not answer cannot turn a one-line diagnostic into a five-minute block. Each `git ls-files` question has `gitenv`'s thirty
+seconds of its own for a query over a whole tree, so the two together may take up to a minute; the
+other `git` questions are `gitenv`'s five seconds, and the wrapper probe is this area's own
+thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
 repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
@@ -2639,8 +2706,7 @@ the check could not run, which is a red a clone could force.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
-check with `name`, `status`, `detail` and `remedy`. A remedy that is not in `--json` is a remedy
-nobody sees, so that is where they all are.
+check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 
 `status` is one of `ok`, `warn`, `red`, `skip`.
 
@@ -2650,27 +2716,28 @@ nobody sees, so that is where they all are.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every project skill whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; `.claude/skills/<name>/SKILL.md` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position; and, as a warning, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `codex-trust` | whether any stayfixed hook is untrusted on Codex, and, when `[stayfixed] agents` lists `codex`, which surfaces do not run there and which hold in CI | `stayfixed.toml`, the harness registry |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
-| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
-| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured, and a `HOME` that is not the home the password database records for this user, with the directory stayfixed's machine files are under instead, or that it records none; from a terminal, the remedy says to move files of your own there first | the environment, the password database |
+| `attached` | the overlay binding, and the harness memory path's shape, judged off a terminal only where `HOME` is the database's home | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
-| `store-debris` | files in the note store that are not notes | the note store |
+| `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
+| `harness-link` | whether a hook can make the harness memory link, which it cannot while `HOME` is not the database's home, said as the session is told it, with what makes the link instead | the environment, the password database |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
 
-**Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
+**Ten of the seventeen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
 never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
 The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
 no spike measured. When `[stayfixed] agents` lists `codex`, its detail also says what was
 measured: on Codex the session guards and session notices do not run, and the repository gates
-hold in CI. `ci-ref` was counted beside it and is not any more, and neither is `files`.
+hold in CI.
 `init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
 none — and which state is the ordinary one moves with the release history rather than with any
 code here: while no released tag matches the stayfixed running there is no commit to pin, so
@@ -2697,10 +2764,9 @@ moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line i
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
 rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. Nor
-is it whether some command elsewhere in the report would change the state: `stayfixed setup
---overlay`, which `attached` names when it skips for a machine that records no overlay, changes
-the state `pre-commit` skips on there too, and `pre-commit`'s arm still carries nothing. It is
-whether the skip is itself worth acting on. Those seven report something wrong that no other
+is it whether another row names a command that changes the state: `pre-commit`'s arm carries
+nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
+itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
 other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
@@ -2714,7 +2780,7 @@ plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROO
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces fifteen of them: with no `stayfixed.toml` in `--root`,
+One more case is not a skip but produces sixteen of them: with no `stayfixed.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
 The red row is the one to act on. A `stayfixed.toml` that is a symbolic link is one that does not
 load, whatever it points at, and the row says it is a link; for any other, the row names
@@ -2764,17 +2830,64 @@ ran):
 | A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
 
 So a skill a repository commits does run its own hooks once it is invoked. `hook-entries` does
-not judge them, and says so: each project skill whose `.claude/skills/<name>/SKILL.md` opens with
-a frontmatter (the lines between a first `---` line and the next one) holding a `hooks:` key at
-the start of a line is named as one whose hooks the row does not judge, a `warn` that never makes
-the row `red`. Nothing else of the YAML is parsed, and a frontmatter with no closing `---` is
-none. A `SKILL.md` the row cannot read, such as a link to a device or a directory, is named as
-one it cannot say anything about, also a `warn`. A skill's directory
-name is the repository's, so one outside the path grammar is named as a skill whose name the row
-does not print. Agents are not read. Whether the model can invoke a skill, and so run its hooks,
-without a person asking was not measured, because no model call ran. The plugin and agent rows
-held under that same limit, and say nothing about a logged-in session that has accepted the
-repository's trust prompt.
+not judge them, and says so, of every file whose frontmatter Claude Code reads for hooks:
+
+- every `SKILL.md` at any depth below the project's `.claude/skills`, and below a `.claude/skills`
+  anywhere else in the tree that git does not ignore, which Claude Code loads once a session reads
+  a file in that directory;
+- every `*.md` at any depth below `.claude/commands`, since a command file accepts a skill's
+  fields;
+- every `*.md` at any depth below `.claude/agents`, since an agent's frontmatter is documented to
+  carry hooks, though none ran in the measurement above.
+
+Each such file whose frontmatter (between a first `---` line and the next) holds a top-level `hooks`
+key is named as one whose hooks the row does not judge, a `warn`. The key is found bare, quoted
+either way (escapes read), behind a tag, an anchor or `? `, or among a flow mapping's top-level keys
+(`{hooks: {...}}`); a `hooks` nested under another key is not one. Claude Code 2.1.293 ends a
+frontmatter at a `---` within a line and reads one indented by tabs throughout (measured); the row
+reads each way. It says a file declares none only for plain YAML it reads exactly: `key: value`
+lines with plain keys, values on the key's line, block scalars, flow lists of scalars (below the
+key, indented deeper), nested lines indented by spaces, `- ` entries, comments, blank lines, in at
+most 10,000 lines ending within the file's first 8,388,608 characters. Any other frontmatter where
+it finds no `hooks`, one with a tag, a merge key, a tab in an indentation, another value over lines,
+a `---` line outside a list or block, NEL, LS or a Unicode blank among others, is named as one it
+cannot tell about, a `warn`. Names are compared without case. Any path the row cannot read, a FIFO
+or a directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and
+a path outside the path grammar, every name in it the repository's, as a file whose path the row
+does not print.
+
+The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
+The read follows a link inside them while it leads to a directory still inside the checkout, and
+lists a directory a link leads back to, and names a file two paths reach, once. A link whose name
+the row reads as a file, a `*.md` or a `SKILL.md`, is read when it leads to a file inside the
+checkout. A link of either kind that leads out, as a dotfiles setup links `.claude/agents`, is named
+as one that leads out and was not followed, a `warn` that marks no fault: what it leads to is not
+the repository's, so the row leaves it to you. Only a link to a file the row would not read, a
+skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and a link that
+loops.
+
+A `.claude/skills` below the root is found by asking git
+(`git ls-files --cached --others --exclude-standard`): the files a clone commits and the untracked
+ones git does not ignore. git lists a link as an entry of its own,
+so a link inside such a directory, such a directory that is a link, and a nested `.claude` that is
+one are read like the project's own. A submodule is one entry to that query, so where a
+`.gitmodules` sits at or above the root, git is asked again through each checked-out submodule's
+index (`git ls-files --cached --recurse-submodules`): what that index holds, staged or committed,
+not a file untracked in a submodule, which git cannot list so.
+
+**A skill inside a directory git ignores is not named**, such as one under `node_modules`: no clone
+carries an ignored file, so it is not the repository's to declare (whether Claude Code loads one is
+unmeasured), and listing those trees would stop the row short in a large checkout. Outside a git
+work tree, or where `git` fails, the row walks the tree instead, following no link but a nested
+`.claude/skills` or `.claude` that is one, never entering `.git`, and passing over a directory it
+cannot list. The reads and that walk list at most 500,000 directory entries in all; past that, the
+row says the walk stopped and it cannot tell of the files past it, a `warn`. In a work tree only the
+project's own three directories, and those links in or above a nested `.claude/skills` lead to,
+count toward it.
+
+Whether the model can invoke a skill, and so run its hooks, without a person asking was not
+measured: no model call ran. The plugin and agent rows share that limit, and say nothing of a
+logged-in session that accepted the repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
@@ -3285,6 +3398,34 @@ it: a committed `.claude/settings.json` `env` block would otherwise choose your 
 and your trust record. Pass `--machine <path>` to read a different file — a path you typed
 rather than one an environment chose, and honoured by every reader of it.
 
+**`~` here is your home directory as the password database records it, not `HOME`.** A direnv,
+mise or devcontainer setup can set `HOME`, and a hook runs in the project, so `HOME=fakehome`
+would name a directory the clone ships, with a `trust.json` in it. Every command reads and writes
+this file and `trust.json` under the database's home, `setup` and `memory trust` included, so the
+file you write is the one a hook reads; a `~` in `[overlay] root` means that home too. `HOME`
+still decides `--home`'s default and where `attach` at a terminal puts the harness memory link;
+empty, it names none, so `setup`, `attach` and `detach` stop there and `doctor` says so.
+
+A container or home-manager setup whose `HOME` is not its database entry is not refused:
+
+- Its files live under the entry's home. `memory trust` and `setup` say which directory they
+  wrote under, and `doctor`'s `ignored-env` row names it.
+- A hook gives no sign that a file under `HOME` is no longer read: approved notes stop arriving
+  and `[personal]` falls back to the preset. If you kept a `config.toml` or `trust.json` of your
+  own under `HOME`'s `.config/stayfixed` before this release, check that they are yours and move
+  them to the entry's home **before** running `setup` or `memory trust`, which write there, or
+  merge them afterwards. Move only files you put there yourself: a clone's `.envrc` can point
+  `HOME` at a directory it ships.
+- A hook makes no harness memory link while the two homes differ, because the harness finds its
+  memory directory through `HOME`; the session and `doctor`'s `harness-link` row say so. For an
+  overlay store, `stayfixed attach` run from a terminal links every worktree under `HOME`. For any
+  other store nothing else makes the link, so start sessions with `HOME` set to the database's home.
+  A link an earlier release made under `HOME` is still withdrawn when the store's approval lapses.
+
+A user the database lists no home for has no such file off `--machine`: nothing is read,
+`memory trust` and `setup` fail and say so, and a hook makes no harness memory link. A home the
+database records that cannot be written fails the same two commands naming the directory; no
+other place is one a hook reads.
+
 Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
-the environment, so one command could read the two halves of this file out of two different
-files: `[personal]` honoured, and the overlay silently unrecorded a few lines below it.
+the environment, so one command could read the two halves of this file from two different files.

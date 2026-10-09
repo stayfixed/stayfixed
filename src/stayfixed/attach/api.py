@@ -25,7 +25,7 @@ reads from outside the area:
 
 **`setup` is not a consumer.** This docstring used to say "`setup` runs `attach --check` and
 reads the same `Result`"; `src/stayfixed/setup/` imports nothing from `stayfixed.attach`, and
-`attach --check` is this area's own command module calling its own `permissions.check`. The
+`attach --check` is this area's own command module calling its own `attach.check`. The
 permission-diff half of the area — `check`, `diff_permissions` and the `PermissionDiff` it
 returns — was published on the strength of that sentence and left when the sentence did.
 
@@ -48,7 +48,7 @@ kept the names.
 The ledger's path and the `.gitignore` block `init` and `attach` both write are the core's
 (`config.layout`'s `ATTACH_LEDGER` and `IGNORE_BODY`), because `project` and `doctor` name them
 too and the core may not import this area; the crossings still pinned are listed in
-`tests/test_areas.py`.
+`tests/boundaries/test_delivery.py`.
 """
 
 from stayfixed.attach.binding import Binding, read_binding

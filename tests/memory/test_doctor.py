@@ -1,26 +1,49 @@
-"""What the `bundles` and `store-debris` rows in `stayfixed doctor` answer, now that `memory`
-contributes them.
+"""What the `bundles`, `store-debris` and `harness-link` rows in `stayfixed doctor` answer, now
+that `memory` contributes them.
 
 Every case runs the whole report through `run_checks`, so the rows are asked the way a user's
 `stayfixed doctor` asks them: discovered in this area's `doctor.py`, with the note store resolved
-by the lazy value its `register()` creates. The fixtures are the doctor area's own
+by the lazy value its `register()` creates. The exception is a case with `HOME` unset, which asks
+the `harness-link` row directly: `run_checks` hands its environment to the wrapper's real
+subprocess, which must keep the suite's `HOME`. The fixtures are the doctor area's own
 (`tests/doctor/test_checks.py`), shared rather than respelled.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
 import stayfixed.memory.answers as answers_module
+from stayfixed import fsops
 from stayfixed.config.loader import load
-from stayfixed.doctor.api import RED, SKIP
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.errors import Refusal
 from stayfixed.memory.api import PROJECTS
-from stayfixed.memory.doctor import NEARLY_FULL
-from tests.doctor.test_checks import _attached, _by_name, _checks, _initialised, _machine
+from stayfixed.memory.doctor import NEARLY_FULL, _harness_link
+from stayfixed.memory.hooks import (
+    NO_HARNESS_LINK,
+    NO_HARNESS_LINK_NO_HOME,
+    NO_HARNESS_LINK_OVERLAY,
+    NO_HARNESS_LINK_OVERLAY_NO_HOME,
+    Withheld,
+)
+from tests.doctor.test_checks import (
+    LOCAL_ONLY,
+    OVERLAY,
+    _attached,
+    _by_name,
+    _checks,
+    _context,
+    _env,
+    _initialised,
+    _machine,
+)
+from tests.ownerhome import as_owner_home
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -58,7 +81,7 @@ def test_a_store_that_refuses_skips_the_store_checks(
     # value calls it, in `memory.answers`.
     #
     # Mutation (oracle): `mutations/`'s "the delivery rows let a refusing store escape" -> the
-    # `Refusal` reaches the guard and both rows are red, "this check could not run: Refusal".
+    # `Refusal` reaches the guard and both rows are red with `this check could not run: Refusal`.
     root = _initialised(tmp_path, template=OUTSIDE)
     (root / ".stayfixed" / "local" / "memory").mkdir(parents=True)
     if how == "resolver-raises":
@@ -149,3 +172,144 @@ def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path:
     assert check.status == "warn"
     assert "1" in check.detail
     assert "scratch.txt" not in check.detail
+
+
+@pytest.mark.parametrize("entries", [3, 4])
+def test_a_note_store_past_the_walk_cap_is_one_the_row_cannot_tell_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entries: int
+) -> None:
+    # An `in-repo` store is a tree the repository commits, and the walk listed every entry in it,
+    # so a clone committing millions of files there stalled `doctor`. It stops at the walk cap,
+    # lowered here to three, and says it could not tell; a store of exactly three entries is read
+    # whole. Mutation (oracle): `mutations/`'s "the note store's walk lists every entry" -> `4`.
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 3)
+    root = _initialised(tmp_path)
+    store = root / ".stayfixed" / "local" / "memory" / "developer"
+    store.mkdir(parents=True)
+    for index in range(entries):
+        (store / f"n{index}.md").write_text("---\nname: n\ndescription: d\n---\n\nbody\n")
+    check = _by_name(_checks(tmp_path, root), "store-debris")
+    if entries == 3:
+        assert (check.status, check.detail) == (OK, "the note store holds notes and nothing else")
+    else:
+        assert (check.status, check.detail, check.remedy) == (
+            WARN,
+            "the walk of the note store stopped after 3 entries, so it cannot say whether the "
+            "store holds files that are not notes",
+            "run `stayfixed memory inventory` to see what the store holds",
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "withheld"),
+    [("overlay", NO_HARNESS_LINK_OVERLAY), ("local-only", NO_HARNESS_LINK)],
+    ids=["overlay", "local-only"],
+)
+def test_a_home_the_database_does_not_record_is_told_what_it_costs_the_harness_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, withheld: Withheld
+) -> None:
+    # A hook trusts only the password database's home and the harness finds its memory directory
+    # through `HOME`, so where the two differ the hook makes no harness link. The session is told
+    # once, at its start; this row is where the owner reads it again, in the hook's own words, so
+    # the two never disagree: `attach` from a terminal for an overlay store, which `attach` binds,
+    # and for the other modes, which it refuses, nothing but the hook. Mutations (oracle):
+    # `mutations/`'s "the harness-link row reads HOME as the database's home whatever it names"
+    # -> ok; "the withheld link line names attach for every store" -> the local-only case.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    root = _initialised(tmp_path, template=OVERLAY if mode == "overlay" else LOCAL_ONLY)
+    check = _by_name(_checks(tmp_path, root, env=_env(tmp_path, HOME="fakehome")), "harness-link")
+    assert check == Check("harness-link", WARN, withheld.cause, withheld.remedy)
+
+
+def _harness_row(tmp_path: Path, root: Path, env: dict[str, str] | None) -> tuple[str, str, str]:
+    """The `harness-link` row's status, detail and remedy: through the report where `env` is given,
+    and asked of the row directly on that environment where it is `None`, which leaves `HOME`
+    unset (the module docstring says why not through the report)."""
+    if env is not None:
+        check = _by_name(_checks(tmp_path, root, env=env), "harness-link")
+        return check.status, check.detail, check.remedy
+    row = _harness_link(_context(tmp_path, load(root, machine=_machine(tmp_path))))
+    return row.status, row.detail, row.remedy
+
+
+@pytest.mark.parametrize("home", ["set", "unset"])
+@pytest.mark.parametrize(
+    ("mode", "withheld"),
+    [("overlay", NO_HARNESS_LINK_OVERLAY_NO_HOME), ("local-only", NO_HARNESS_LINK_NO_HOME)],
+    ids=["overlay", "local-only"],
+)
+def test_a_user_the_database_lists_no_home_for_is_told_the_hook_makes_no_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, withheld: Withheld, home: str
+) -> None:
+    # No `HOME`, set or unset, agrees with no entry, so no hook makes the link, and the cause the
+    # row gives is the missing entry: "HOME is not this user's home in the password database"
+    # presumes a home the database does not have. `attach` from a terminal still links an overlay
+    # store, under the `HOME` it reads there; for a store `attach` does not bind nothing else
+    # does. Mutations (oracle): `mutations/`'s "the withheld link line points a user with no home
+    # at a home" -> both modes; "the withheld link line asks the store's mode before the
+    # database" -> `overlay`.
+    as_owner_home(monkeypatch, None)
+    root = _initialised(tmp_path, template=OVERLAY if mode == "overlay" else LOCAL_ONLY)
+    env = _env(tmp_path, HOME="fakehome") if home == "set" else None
+    assert _harness_row(tmp_path, root, env) == (WARN, withheld.cause, withheld.remedy)
+
+
+# What the row says where a hook can make the link: `HOME` is the database's home, or it is unset,
+# where the hook takes the database's and `HOME` is no home at all.
+AGREEING_HOME = (
+    "HOME is this user's home in the password database, so a hook can make the harness memory link"
+)
+NO_HOME_SET = (
+    "HOME is unset, so a hook can make the harness memory link under this user's home in the "
+    "password database"
+)
+
+
+@pytest.mark.parametrize("home", ["the-databases", "unset"])
+def test_a_home_the_database_records_leaves_the_harness_link_to_the_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str
+) -> None:
+    # The vacuity guard for the two above, and it is asked of the report's environment, never of
+    # this process's, whose `HOME` is the suite's and not the owner's. With `HOME` unset the row
+    # said `HOME` was the database's home. Mutations (oracle): `mutations/`'s "the harness-link
+    # row asks this process's HOME rather than the report's" -> a warning; "the harness-link row
+    # says an unset HOME is the database's home" -> `unset`.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    assert os.environ["HOME"] != str(owner)
+    root = _initialised(tmp_path)
+    if home == "the-databases":
+        assert _harness_row(tmp_path, root, _env(tmp_path, HOME=str(owner))) == (
+            OK,
+            AGREEING_HOME,
+            "",
+        )
+    else:
+        assert _harness_row(tmp_path, root, None) == (OK, NO_HOME_SET, "")
+
+
+@pytest.mark.parametrize("mode", ["overlay", "local-only"])
+def test_an_empty_home_is_told_the_hook_makes_no_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    # An empty `HOME` is a value and names no home: the harness reads it as `""` and looks for its
+    # memory directory under a relative `.claude`, so a hook makes no link, and the row says so in
+    # the hook's words, even run from the database's home. It said a hook could make the link, and
+    # then, for an overlay store, sent the user to `attach` from a terminal, which makes no link
+    # the harness reads through an empty `HOME`. Asked directly, as the unset case is. Mutations
+    # (oracle): `mutations/`'s "an empty HOME agrees with the password database's home" and "an
+    # empty HOME is read as the directory a command runs in" -> both modes; "an empty HOME in a
+    # session is told what a HOME that differs is told" -> both modes.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    root = _initialised(tmp_path, template=OVERLAY if mode == "overlay" else LOCAL_ONLY)
+    context = _context(tmp_path, load(root, machine=_machine(tmp_path)))
+    row = _harness_link(dataclasses.replace(context, env={"HOME": ""}))
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is empty, so it names no home directory and a hook makes no harness memory link",
+        "start sessions with HOME set to this user's home in the password database",
+    )

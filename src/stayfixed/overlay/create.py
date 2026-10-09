@@ -128,7 +128,7 @@ def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
 
 
 def _populated(target: Path) -> bool:
-    return (target / PROBE).is_dir()
+    return fsops.is_dir(target / PROBE)
 
 
 def _render_locally(root: Path, name: str) -> Path:
@@ -167,7 +167,7 @@ def create(
     # One spelling of "where this lands and what the owner is called", shared with the caller
     # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
     _, account = target_root(root, owner, name)
-    if not root.is_dir():
+    if not fsops.is_dir(root):
         # Both branches below start by opening this directory — the contained walk for the
         # local render, the subprocess `cwd` for the other — and a missing one is a mistyped
         # `--root`, which is a refusal a person can act on rather than an internal error.
@@ -197,7 +197,7 @@ def _initialise_repository(
     """
     rendered = "rendered from the shipped template; no network call was made"
     git_dir = target / ".git"
-    if git_dir.exists() or git_dir.is_symlink():
+    if fsops.exists(git_dir) or fsops.is_symlink(git_dir):
         return (
             rendered,
             "it was already a git repository, and its branch and remotes were left as they were",
@@ -456,7 +456,7 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     absent: list[str] = []
     notes: list[str] = []
     for relative in naming.MANIFESTS:
-        if not (root / relative).is_file():
+        if not fsops.is_file(root / relative):
             absent.append(relative)
             continue
         before = _read_manifest(root, relative)
@@ -471,7 +471,7 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
             fsops.write_within(root, relative, body)
         except OSError as exc:  # named and passed over; see the docstring
             unwritable.append(
-                f"{relative} cannot be written: {fsops.said(exc)}; "
+                f"{relative} cannot be written ({fsops.said(exc)}); "
                 "`stayfixed overlay init` names it once it can be"
             )
             continue
@@ -561,7 +561,7 @@ def _retire(
             try:
                 fsops.remove_within(root, action.target)
             except OSError as exc:
-                notes.append(f"left {quoted(action.target)}: cannot be removed: {fsops.said(exc)}")
+                notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")
                 continue
             notes.append(f"removed {quoted(action.target)}, which this release no longer ships")
             removed.append(action.target)
@@ -597,7 +597,7 @@ def _retire(
             fsops.write_within(root, action.target, action.payload)
         except OSError as exc:
             notes.append(
-                f"{action.target} cannot be written: {fsops.said(exc)}; "
+                f"{action.target} cannot be written ({fsops.said(exc)}); "
                 "`stayfixed overlay upgrade` writes it"
             )
             unwritten.add(action.target)
@@ -617,12 +617,10 @@ def _retire(
 
 
 def _read_manifest(root: Path, relative: str) -> str:
-    try:
-        return (root / relative).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise Failure(f"{relative} cannot be read: {exc}") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{relative} is not UTF-8 text") from None
+    """A manifest's text, read by `naming.manifest_text`; a failure that says why in words and
+    names the file as the overlay does, never by the path it was opened by."""
+    with fsops.reading(relative, Failure):
+        return naming.manifest_text(root, relative)
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:

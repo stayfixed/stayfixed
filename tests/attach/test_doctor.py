@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.attach.api import LOCAL_SETTINGS
-from stayfixed.attach.permissions import check as attach_check
+from stayfixed.attach.check import check as attach_check
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -39,6 +39,7 @@ from tests.doctor.test_checks import (
     _attached,
     _by_name,
     _checks,
+    _env,
     _initialised,
     _machine,
     _no_overlay_machine,
@@ -48,8 +49,9 @@ from tests.doctor.test_checks import (
 )
 from tests.floor import is_developers
 from tests.gitfixture import git as _git
+from tests.ownerhome import as_owner_home
 from tests.parserlimits import LONG_NUMBER, NESTED
-from tests.runners import git_that_cannot_run
+from tests.runners import Recorder, git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -118,6 +120,137 @@ def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path
     assert check.status == "warn"
     assert LEDGER in check.detail
     assert "stayfixed attach" in check.remedy
+
+
+def test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # At a terminal the harness memory path is under `HOME`, and an empty one names no home. The
+    # row checked `/.claude/projects/...` instead and sent the user to `attach`, which then failed
+    # there; it now says that `HOME` names none, and not that the database lists none, since it
+    # lists a home here. Asked of the row directly with no `--home`, which is how a person runs
+    # `doctor`. Mutation (oracle): `mutations/`'s "the attached row blames the password database
+    # for an empty HOME at a terminal".
+    from stayfixed.attach.doctor import _attached as attached_row
+    from stayfixed.attach.doctor import _Ledger
+    from stayfixed.memory.api import Answers
+    from tests.doctor.test_checks import _context
+
+    root = _attached(tmp_path)
+    as_owner_home(monkeypatch, tmp_path / "home")
+    monkeypatch.setenv("HOME", "")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    context = _context(root, load(root, machine=_machine(tmp_path)))
+    row = attached_row(context, Answers(), _Ledger())
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is empty, so it names no home directory and there is no harness memory path to check",
+        "set HOME to your home directory, or pass --home <path> to check the harness memory path "
+        "under that directory",
+    )
+
+
+# The `attached` row off a terminal where `HOME` is not the database's home: `attach`'s words, and
+# where `HOME` differs, the way to have the link under it checked. Written out, not imported.
+_UNREAD_ROWS = {
+    "elsewhere": (
+        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
+        "under this user's home in the password database and a harness started with this HOME "
+        "looks under HOME; the binding is bound",
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory` from a terminal, or in "
+        "a session started with HOME set to that home; `stayfixed doctor` run from a terminal "
+        "checks the link under HOME",
+    ),
+    "empty": (
+        "attached; attach run here makes no harness memory link, since off a terminal it goes only "
+        "under this user's home in the password database and a harness started with an empty HOME "
+        "does not look there; the binding is bound",
+        "run `stayfixed attach --store <overlay>/projects/<project>/memory` in a session started "
+        "with HOME set to that home",
+    ),
+}
+
+
+def _approved_with_a_link_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, under: str
+) -> tuple[Path, Path]:
+    """An attached checkout whose store is approved, the database's home pinned to `home/`, and
+    the harness memory link under `home/` (`database`) or under `elsewhere/` (`HOME`), where
+    `attach` from a terminal with that `HOME` puts it. Returns `(root, elsewhere)`."""
+    root = _attached(tmp_path)
+    owner, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
+    as_owner_home(monkeypatch, owner)
+    machine = _machine(tmp_path)
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+    slug = str(root.resolve()).replace("/", "-").replace(".", "-")
+    link = (owner if under == "database" else elsewhere) / ".claude" / "projects" / slug / "memory"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(store.path.resolve())
+    elsewhere.mkdir(exist_ok=True)
+    return root, elsewhere
+
+
+def _attached_row(tmp_path: Path, root: Path, *, home: Path | None) -> Check:
+    """The `attached` row with `home` as `--home`, `None` asking where the harness memory path is
+    as `doctor` itself does (`_checks` defaults it to a home of the test's). The row reads `HOME`
+    from the process; the other rows get the test's own home, whatever the case did to it."""
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home")}
+    rows = doctor_checks.run_checks(
+        root, home=home, machine=_machine(tmp_path), runner=Recorder(), env=env
+    )
+    return _by_name(rows, "attached")
+
+
+@pytest.mark.parametrize(
+    ("home", "under"), [("elsewhere", "database"), ("elsewhere", "HOME"), ("empty", "database")]
+)
+def test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str, under: str
+) -> None:
+    # Off a terminal, with `HOME` not the database's home, the row judged the link under the
+    # database's home: `ok` for a link only there, which a harness started with this `HOME` does
+    # not read, and "the harness sees no memory here" for a link only under `HOME`, which it does,
+    # with a remedy `attach` then declined. It now judges neither, since a `HOME` the clone chose
+    # could hold a link that reads green, and says what `attach` says, with the way to have the
+    # link under `HOME` checked. Mutations (oracle): `mutations/`'s "the attached row judges the
+    # harness link off a terminal whatever HOME says" -> each case is judged instead; "the
+    # attached row names no way to check the link under a HOME that differs" -> the remedy ends
+    # early.
+    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
+    monkeypatch.setenv("HOME", "" if home == "empty" else str(elsewhere))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    row = _attached_row(tmp_path, root, home=None)
+    assert (row.status, row.detail, row.remedy) == (WARN, *_UNREAD_ROWS[home])
+
+
+@pytest.mark.parametrize("case", ["unset", "agrees", "terminal", "--home"])
+def test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    # The vacuity guard for the case above: an unset `HOME` and one that agrees take the database's
+    # home off a terminal, a terminal takes `HOME`, and `--home` is the home it names, so each
+    # judges the link where it stands and finds it. Mutations (oracle): `mutations/`'s "attach
+    # off a terminal withholds the harness link under a HOME that agrees" -> the first two warn;
+    # "attach at a terminal withholds the harness link under a HOME that differs" -> the third
+    # does; "the attached row asks where HOME points when --home names the home" -> the fourth.
+    under = "HOME" if case == "terminal" else "database"
+    root, elsewhere = _approved_with_a_link_under(tmp_path, monkeypatch, under)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: case == "terminal")
+    if case == "unset":
+        monkeypatch.delenv("HOME", raising=False)
+    elif case == "agrees":
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    else:
+        monkeypatch.setenv("HOME", str(elsewhere))
+    row = _attached_row(tmp_path, root, home=tmp_path / "home" if case == "--home" else None)
+    assert (row.status, row.detail, row.remedy) == (
+        OK,
+        "attached; the harness memory path is a link to the store; the binding is bound",
+        "",
+    )
 
 
 def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
@@ -458,12 +591,12 @@ def test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable(
     # catch, from both rows that read the ledger: red, "this check could not run", exit 1, and the
     # remedy "report this", on a file a clone chose and an installation with nothing wrong with it.
     # Not JSON, it raised out of `ledger()`; nested past what `json.loads` follows, it raised
-    # `RecursionError` on every supported Python; holding a number longer than the interpreter
-    # converts, a plain `ValueError`; and on Python 3.14, whose parser follows deeper than `str()`
-    # does, a value the reader passed through `str()` overflowed it. Each row now reads the ledger
-    # as one that cannot be read, warns, and says so; `hook-entries` withholds its provenance column
-    # rather than computing it against an empty record, which would report every entry `attach`
-    # installed as one it did not. The vacuity guard is the core's
+    # `RecursionError`; holding a number longer than the interpreter converts, a plain `ValueError`;
+    # and on Python 3.14, whose parser follows deeper than `str()` does, a value the reader passed
+    # through `str()` overflowed it. Each row now reads the ledger as one that cannot be read,
+    # warns, and says so; `hook-entries` withholds its provenance column rather than computing it
+    # against an empty record, which would report every entry `attach` installed as one it did not.
+    # The vacuity guard is the core's
     # `test_an_entry_the_ledger_records_is_not_reported_as_claiming_the_marker`: the same fixture
     # with its ledger readable is green.
     #
@@ -636,9 +769,10 @@ def test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is
     #
     # Mutations (oracle): `mutations/`'s "hook-entries vouches for a granted command under any
     # event" -> the `another-event` cases are absolved; "hook-entries vouches for a granted
-    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and the walk
-    # dropping either from what it reads ("the hook entry walk reads every entry under one event",
-    # "the hook entry walk reads every entry without its matcher") absolves them on both sides.
+    # command under any matcher" -> the `another-matcher` and `no-matcher` cases are; and "the
+    # hook entry walk reads every entry under one event" or "the hook entry walk reads every entry
+    # without its matcher" -> the walk drops either from what it reads and absolves them on both
+    # sides.
     root = _attached(tmp_path)
     if binding == "unbound":
         (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).unlink()
@@ -992,7 +1126,7 @@ def test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_ove
     # "an unreadable record withholds judgement of every entry" -> both `forged-` cases with an
     # overlay that can be asked, and `owner-no-overlay`, are warnings again; "attach does not ask
     # the overlay about a ledger it cannot read" -> `owner-overlay` is red; "an unreadable record
-    # reads as one recording nothing" -> every red case and `owner-overlay` say "not recorded";
+    # reads as one recording nothing" -> every red case and `owner-overlay` say `not recorded`;
     # "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside
     # an unreadable record" -> both `-no-overlay` cases read the recorded overlay's sentence; "the
     # rebuild remedy is offered where the overlay cannot be asked" and "an unreadable ledger is
@@ -1934,7 +2068,7 @@ def test_an_owner_whose_own_binding_record_will_not_parse_is_told_where_to_look(
     # What `attach --check` stops on, which is the message its command line prints.
     store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
     with pytest.raises(Failure, match=f"/{PROJECT_RECORD} is not valid TOML"):
-        attach_check(root, store=store, machine=machine)
+        attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
 def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_that_will_not_parse(
@@ -1956,7 +2090,7 @@ def test_an_owners_binding_record_holding_a_number_past_the_parser_reads_as_one_
         assert "could not run" not in _by_name(rows, name).detail
     store = tmp_path / "overlay" / PROJECTS / OWN_NAME / "memory"
     with pytest.raises(Failure, match="is not valid TOML \\(holds a number longer"):
-        attach_check(root, store=store, machine=machine)
+        attach_check(root, store=store, machine=machine, home=tmp_path / "home")
 
 
 # The owner's own checkout after `origin` moved from ssh to https: the overlay's record binds this
@@ -2079,10 +2213,10 @@ def test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unr
     # neither of which was measured. A command claiming the stayfixed marker inside one is red
     # rather than the warning a file the walk cannot read gets: a conservative reading, since
     # whether a harness runs it is not known, and a clone could otherwise hide a forged entry
-    # there and keep the exit code at 0. Mutations (declared): "the live-entry walk skips a
-    # container without saying so" and "the live-entry walk reads an entry where a group goes as
-    # no entry" -> the row warns or reads "all accounted for"; "the live-entry walk overlooks a
-    # marked command it skipped" -> it warns.
+    # there and keep the exit code at 0. Mutations (declared): `mutations/`'s "the live-entry walk
+    # skips a container without saying so" and "the live-entry walk reads an entry where a group
+    # goes as no entry" -> the row warns or reads `all accounted for`; "the live-entry walk
+    # overlooks a marked command it skipped" -> it warns.
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -2097,7 +2231,8 @@ def test_an_entry_is_named_by_its_place_among_every_element_beside_it(tmp_path: 
     # The row named an entry by its place among the entries it judged, so with scalars beside it
     # -- skipped, as Claude Code skips them -- a forged entry fifth in its list was named "entry 2
     # of 2", a place a reader opening the file would not find. Every element of an entry list
-    # holds a place. Mutation (declared): "the live-entry walk numbers only the entries it reads".
+    # holds a place. Mutation (declared): `mutations/`'s "the live-entry walk numbers only the
+    # entries it reads".
     root = _forged_clone(tmp_path)
     path = root / COMMITTED
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -2129,3 +2264,21 @@ def test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_i
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     assert "could not be read as hook entries" in check.detail
     assert check.detail.endswith(": .codex/hooks.json")
+
+
+def test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Off a terminal the harness memory path is under the database's home, and a user it lists no
+    # home for has none: the machine's state, said as a warning, never "this check could not run",
+    # whose remedy is to report a defect.
+    root = _attached(tmp_path)
+    as_owner_home(monkeypatch, None)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    # No `--home`, so the row asks where the harness memory path is, as `doctor` itself does.
+    rows = doctor_checks.run_checks(
+        root, home=None, machine=_machine(tmp_path), runner=Recorder(), env=_env(tmp_path)
+    )
+    check = _by_name(rows, "attached")
+    assert check.status == "warn"
+    assert "lists no home directory" in check.detail

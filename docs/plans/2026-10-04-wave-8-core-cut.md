@@ -191,13 +191,13 @@ names the test or step that covers it, or "—" when the change cannot reach the
 
 | Command \ change | re-run, nothing changed | a project or install upgraded from `0.2.0` | a path moved or a file absent | killed or failing part-way | uninstalled or detached |
 |---|---|---|---|---|---|
-| `doctor` (Tasks 4–5, 8) | Task 5 `test_every_check_has_one_row_in_one_report`; Task 8 `test_the_codex_row_names_what_does_not_run_on_codex` | — (doctor reads the tree as it is; no state differs by version) | Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` | Task 4 `test_a_contribution_that_raises_costs_one_row` | Task 5 `test_an_unattached_project_reports_attached_as_it_did` |
-| `memory refs` (Task 3) | Task 3 `test_refs_reports_graph_notices_without_changing_its_exit` | — | — (refs already refuses an unresolved store: `tests/memory/test_refs.py`) | — | — |
-| `hook <event>` (Tasks 6, 7, 13) | Task 7 `test_a_detected_harness_renders_its_own_answer` | — for a marketplace install (`hooks/hooks.json` and the code ship in one plugin version, and the hook launcher runs the plugin's own `src`). Upgraded in place (a local-path marketplace or `--plugin-dir`), a session already running may keep the `hooks.json` it loaded until it reloads (not measured). Measured: against the new code, the four `memory session-context` slots `0.2.0`'s `hooks.json` has and this one removes (`preset-rules` 1, `index` 1–3) each exit `2` with `unknown bundle` on stderr, at the CLI and through `hooks/run-hook.sh`. A `SessionStart` hook's exit `2` cannot block (`tests/hooks/test_hooks_json.py`), so such a session goes on without those bundles at its next `SessionStart` (resume, clear or compact); where Claude Code shows that stderr was not measured | Task 7 `test_an_unknown_harness_renders_the_canonical_shape` | Task 7 `test_a_deny_never_goes_through_render` | — |
+| `doctor` (Tasks 4–5, 8) | Task 17 `tests/doctor/test_command.py::test_a_second_report_is_the_first_and_neither_writes_anything` (two runs, one report, the tree and home unchanged); the row set itself: Task 5 `test_every_check_has_one_row_in_one_report`, Task 8 `test_the_codex_row_names_what_does_not_run_on_codex` | Changes, and the Upgrading notes say so: on a `0.2.0` install whose machine records no overlay, `hook-entries` is red and the report exits `1`, where `0.2.0` warned and exited `0` (93a5ebb). Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` pins the red; nothing else in an unchanged `0.2.0` install changes doctor's verdict (lifecycle review's upgrade run: `0` red, `2` warn) | Task 5 `test_a_project_with_no_overlay_gets_skips_from_delivery_checks` | Task 4 `test_a_contribution_that_raises_costs_one_row` | Task 5 `test_an_unattached_project_reports_attached_as_it_did` |
+| `memory refs` (Task 3) | Task 17 `tests/memory/test_refs.py::test_a_second_run_answers_as_the_first_and_neither_writes_anything` (a stale path and a graph notice, two runs, one exit and line, the tree unchanged); the exit itself: Task 3 `test_refs_reports_graph_notices_without_changing_its_exit` | — | — (refs already refuses an unresolved store: `tests/memory/test_refs.py`) | — | — |
+| `hook <event>` (Tasks 6, 7, 13) | `tests/hooks/test_hook_command.py::test_a_once_per_context_handler_really_runs_once` (`hook PostToolUse` run twice through the CLI: the second delivers nothing) and `tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync` (the `SessionStart` handler asked again for one tree gives the same answer) | — for a marketplace install (`hooks/hooks.json` and the code ship in one plugin version, and the hook launcher runs the plugin's own `src`). Upgraded in place (a local-path marketplace or `--plugin-dir`), a session already running may keep the `hooks.json` it loaded until it reloads (not measured). Measured: against the new code, the four `memory session-context` slots `0.2.0`'s `hooks.json` has and this one removes (`preset-rules` 1, `index` 1–3) each exit `2` with `unknown bundle` on stderr, at the CLI and through `hooks/run-hook.sh`. A `SessionStart` hook's exit `2` cannot block (`tests/hooks/test_hooks_json.py`), so such a session goes on without those bundles at its next `SessionStart` (resume, clear or compact); where Claude Code shows that stderr was not measured | `tests/attach/test_hooks.py::test_a_mismatched_record_and_a_missing_overlay_each_get_their_own_line` (the overlay this machine records is gone: `SessionStart` says so in one line) and `tests/memory/test_hooks.py::test_a_broken_store_is_silence_not_an_exception` | Task 7 `test_a_deny_never_goes_through_render` | — |
 | `test hygiene` and the `PostToolUse` notice (Task 13) | Task 13 `test_a_red_pytest_run_gets_the_python_profiles_note` | — | Task 13 `test_test_hygiene_reports_a_profile_with_something_to_say_wherever_its_markers_sit`, `test_only_contained_code_roots_are_scanned` | Task 13 `test_a_hint_that_raises_costs_its_note_not_the_dispatch` | — |
 | `bugs new|index|check|renumber` (Tasks 14, 15) | Task 14 `test_the_bug_register_renders_the_index_byte_for_byte` | Task 14 `test_init_renders_the_empty_index_with_the_same_digest` | Task 15 `test_a_second_register_without_its_directory_is_inert_while_the_bug_ledger_is_live`; for the bug ledger: `tests/ledger/test_register.py::test_the_bug_ledgers_header_and_links_keep_their_bytes_on_every_layout`, and Task 15 `tests/project/test_templates.py::test_init_writes_the_runbook_and_audits_readme_where_the_bug_index_links_them` | `renumber`, kept and passed the register (`tests/ledger/test_write.py`): `test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints`, `test_renumber_reports_a_file_it_could_not_write_back`, `test_renumber_rejects_a_malformed_sibling_before_it_moves_anything`, `test_renumber_refuses_over_foreign_index_content_without_moving_anything` | — |
-| `init`, `upgrade`, `uninstall` (Task 2) | Task 2 `test_the_ignore_block_init_writes_is_the_block_attach_writes` | Task 2 same (the block's bytes pinned as at `aed27b6`, so `upgrade` sees no change) | Task 2 `test_an_attached_repository_is_refused_and_told_to_detach` (kept, pinned to the literal path) | — | Task 2 same |
-| `overlay upgrade`, `overlay init` (Task 12) | Task 12 `test_an_overlay_without_the_retired_files_plans_nothing` | Task 12 `test_each_released_copy_of_a_retired_file_is_removed` | Task 12 `test_an_edited_retired_file_is_kept_and_named` | — | — |
+| `init`, `upgrade`, `uninstall` (Task 2) | Task 17 `tests/project/test_upgrade.py::test_a_second_upgrade_to_the_same_release_writes_nothing` (the second run plans nothing and the tree is compared byte for byte) | Task 2 `test_the_ignore_block_init_writes_is_the_block_attach_writes` (the block's bytes pinned as at `aed27b6`, so `upgrade` sees no change) | Task 2 `test_an_attached_repository_is_refused_and_told_to_detach` (kept, pinned to the literal path) | — | Task 17 `tests/attach/test_detach.py::test_uninstall_after_a_real_detach_takes_the_footprint_back` (a real attach and detach over an `init` footprint, then `uninstall` runs, and a second finds nothing) |
+| `overlay upgrade`, `overlay init` (Task 12) | Task 12 `test_an_overlay_without_the_retired_files_plans_nothing` | Task 12 `test_each_released_copy_of_a_retired_file_is_removed` | Task 12 `test_an_overlay_without_the_retired_files_plans_nothing` (absent and unrecorded: no action, and not listed as unchanged) and `test_the_record_of_a_memory_readme_already_gone_is_dropped` (absent and recorded); an edited one: Task 12 `test_an_edited_retired_file_is_kept_and_named` | — | — |
 | `setup --overlay` (Task 1) | — | — | — | — | — (the pinned crossing; Task 1 `test_core_never_imports_delivery`) |
 | `scripts/release.py` (create, Task 11) | Task 11 `test_the_repository_passes_release_check` | — | Task 11 `test_a_drifted_record_fails_the_hashes_check` (create) | — | — |
 
@@ -1398,7 +1398,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
 
 #### Task 17: Measure the cut, review it, hand over the release
 
-- [ ] **Step 1: Counts.** On merged `dev`, re-run the Premise's measurements and record them in
+- [x] **Step 1: Counts.** On merged `dev`, re-run the Premise's measurements and record them in
   Findings beside the before counts. Every cell comes from a command, so anyone can re-run them:
 
   ```bash
@@ -1420,7 +1420,7 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
   git ls-files | wc -l
   ```
   If `build_parser` takes arguments by then, adapt the call and say so beside the number.
-- [ ] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
+- [x] **Step 2: Final review** over the merged `dev` (section 1's seats), on what no single pull
   request's review could see: the boundary as a whole, the README against the code, the lifecycle
   matrix end to end. Each finding is reproduced before it is acted on.
 - [ ] **Step 3: Publish the plugin from its own repository** (the owner's decision of
@@ -1430,26 +1430,236 @@ register is a value) and what this plan proved (byte-identity, a test-only secon
   2026-10-05 with pull requests free to add more, and moving the plugin into a subfolder here does not help, because the plugin
   directory holds a subfolder plugin whose hook runs a script that calls other files, as
   `hooks/run-hook.sh` does. `RELEASING.md`, section 2, is the step as the release process states it.
-- [ ] **Step 4: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
+- [x] **Step 4: Record** the review's outcome in Findings and hand the owner `RELEASING.md` for
   `0.3.0`, naming the changed release step (`scripts/release.py`).
 
 ## Findings
 
 ### Counts (Task 17)
 
-| Measure | Before (`aed27b6`) | After |
+| Measure | Before (`aed27b6`) | After (`a920ba1`) |
 |---|---|---|
-| Lines in `src/stayfixed/**/*.py` | 32,736 (141 files) | |
-| Commands registered by the parser | 38 | |
-| Command headings in `docs/cli.md` | 40 | |
-| Skills / agents | 14 / 1 | |
-| `hooks/hooks.json` entries (of them `SessionStart`) | 13 (11) | |
-| Mutation entries | 1,225 | |
-| Discovered areas | 12 | |
-| Core imports into delivery | 12 | |
-| Tracked files | 476 | |
+| Lines in `src/stayfixed/**/*.py` | 32,736 (141 files) | 35,879 (154 files) |
+| Commands registered by the parser | 38 | 33 |
+| Command headings in `docs/cli.md` | 40 | 35 |
+| Skills / agents | 14 / 1 | 14 / 1 |
+| `hooks/hooks.json` entries (of them `SessionStart`) | 13 (11) | 9 (7) |
+| Mutation entries | 1,225 | 1,648 |
+| Discovered areas | 12 | 11 |
+| Core imports into delivery | 12 | 2 (both in `src/stayfixed/setup/run.py`, the pinned crossing) |
+| Tracked files | 476 | 555 |
+
+`build_parser` now takes the registrars, so the command count is
+`build_parser(discover_registrars())` from `stayfixed.cli`; `build_parser()` alone registers none.
+
+The cut removed surface, not code. Five commands, four session-start entries, one area and ten of
+the twelve crossings are gone, but the source grew by 3,143 lines. The largest growth is in
+`attach` (+982), `ledger` (+667, one engine serving any register), `profiles` (+418, the hints the
+core no longer holds), `overlay` (+353), `doctor` (+343, contributions and claims) and
+`harnesses` (+246, the adapter). Of the 1,678 lines `attach`, `doctor` and `overlay` grew by
+together, 962 came from follow-up pull requests merged during the wave (#69, #77, #79, #83) and
+630 from the boundary pull request (#68), which moved the delivery checks into their areas
+(`git diff --numstat` over each first-parent merge). The largest removals are in `guards` (-454), `release`
+(-367, now repository tooling under `scripts/`) and `assess` (-117). Per-area counts:
+`git ls-tree -r --name-only <rev> -- src/stayfixed`, summed by top-level module.
 
 ### Final review (Task 17)
+
+Four seats reviewed merged `dev` (`a920ba1`): architecture, security, lifecycle and correctness. A
+fifth, independent pass reproduced every finding before anything was fixed, and it is the authority
+on each finding's true boundary. It confirmed 38 findings: 6 Important, 22 Minor or below plus 10
+Nits. Several came out broader than the seat reported (`CONFIRMED-BROADER`), and two narrower.
+
+- **Important:**
+  - **`hook-entries` vouched for a whole entry by its command alone.** An `http` entry carrying a
+    granted marker read as stayfixed's own. It now compares the entry whole.
+  - **The hook path took `HOME` from the environment.** A relative `HOME` from a settings env
+    block could select a clone-planted `trust.json`. The hook path now anchors on the password
+    database's home (`config/machine.py`, `owner_home` and `anchor_home`).
+  - **The release notes described 0.2.0 wrongly in four places:**
+    - a write-back story that never happened;
+    - the 64 MiB read cap as an unnamed upgrade path;
+    - damaged-overlay behaviour from inside the cycle presented as 0.2.0's;
+    - an overlay store's trust record called "inert".
+- **All findings were fixed in one pull request, `wp/core-cut-measure`,** in six sequential waves:
+  - A: what `hook-entries` vouches for, and the harness facts;
+  - B: the machine owner's home on the hook path;
+  - C: one bounded reader, and one reader per document;
+  - D: the boundary guards, now a positive stdlib allowlist and a scope-aware name rule;
+  - E: behaviour at the edges;
+  - F: the release notes, the documents and this plan's lifecycle matrix.
+
+  Each wave had a task review and scoped re-reviews. A final whole-branch review found one more
+  Important issue: an import cycle that `attach --check` introduced. `check` moved to
+  `src/stayfixed/attach/check.py`, and the module graph test, since moved under `tests/boundaries/`,
+  now counts imports inside functions too. The same
+  review found check-versus-run gaps that predate the branch. Eleven cases were measured, and ten
+  of them already ended differently in 0.2.0. `attach --check` now calls the run's own refusals
+  and planning, so where the run refuses or fails before its first write it ends with the run's
+  code and line, past the gates it reports instead: a widening without `--yes` and a mismatch
+  without `--trust-remote`, which it reads past, and a checkout with no `origin` and a memory group
+  that never moved, which it reports with exit `1`. Outside overlay mode,
+  anything past the binding gives way to the run's refusal of the mode. A last scoped
+  re-review found two more gaps: the module graph gave a module no edge to the packages above the
+  module it imports, and `--check` counted memory groups at a checkout with no `origin`. Both were
+  fixed before the push.
+- **`PATH` reached git on the hook path; it no longer does.** The owner measured Claude Code 2.1.293
+  on 2026-10-07. A committed settings env block's `PATH` reaches project and plugin hooks as
+  written, a relative entry resolved against the project, while `HOME` stays the real home and
+  `XDG_CONFIG_HOME` empty. The settings reference agrees: project and local settings cannot set
+  `HOME` or `XDG_*`, and `PATH` is not on that list. So, by the owner's decision:
+  - in a stayfixed the hook wrapper launched, `gitenv` runs the first executable of the wrapper's
+    absolute `git` candidates, one list spelled twice and held equal by a test, and hands it a
+    `PATH` of their directories and the system's, so a `git-lfs` filter or an fsmonitor program is
+    not the clone's either; no candidate is no answer. The wrapper exports
+    `STAYFIXED_HOOK_WRAPPER=1` immediately before it runs the launcher, over any inherited value,
+    and `gitenv` asks nothing else, so a value set elsewhere can only make git stricter;
+  - the wrapper no longer runs `dirname` or `env` by name, which a clone's `fakebin` also reached;
+  - the wrapper's first statement unsets every function named for a command it runs, and it
+    spells `[` as `test`. The git-path security review found that bash, `/bin/sh` on macOS,
+    imports a function from a `BASH_FUNC_<name>%%` variable, also in POSIX mode, and a function
+    wins over a regular builtin: `BASH_FUNC_pwd%%` ran a clone's program five times per hook with
+    no `PATH` entry at all. The review's one-line fix left `[` open, because bash 3.2 in POSIX
+    mode refuses `unset -f [`, and `BASH_FUNC_[%%` still ran it twenty-six times;
+  - anywhere else, `git` and its `PATH` are the environment's, as before: at a terminal, and in
+    `stayfixed gate` in CI or a command an agent runs, where a fixed list buys nothing (the job is
+    the repository's own, and the agent's `PATH` already chose the `stayfixed` binary) and would
+    cost a machine whose only `git` is under a Nix store or `/opt/local/bin` every answer. The
+    first cut of this fix keyed on "off a terminal", which covered those too; it was narrowed to
+    the wrapper, since the owner's decision was for the hook. `HOME` stays kept for git, since
+    Claude Code cannot set it.
+
+  Measured against `v0.2.0` through each shipped wrapper and launcher: every hook entry with a
+  planted program for every name in `/bin` and `/usr/bin` ran `git`, `git-lfs`, `dirname` and `env`
+  from the clone under 0.2.0, and none under the branch, also with the block presetting
+  `STAYFIXED_HOOK_WRAPPER=0`. `stayfixed gate` run without the wrapper, stdin not a terminal, ran
+  a `git` found only elsewhere on `PATH` under both. One residual cannot be closed inside
+  stayfixed: an agent that runs `stayfixed` through its shell tool runs the `stayfixed` that
+  `PATH` names, and that `stayfixed` runs the `git` `PATH` names.
+
+  What holds after the review: the hook path looks up no program through the inherited `PATH`
+  but the wrapper's contained last-resort `python3`, and no exported function replaces one of
+  the wrapper's builtins. What does not: `SHELLOPTS=xtrace` with `PS4='$(program)'` runs the
+  program in the harness's own `sh -c` before the wrapper starts, and the wrapper's `/bin/sh`
+  acts on both before its first line (measured against `/bin/sh` directly, not through Claude
+  Code). `SECURITY.md` puts it out of scope beside the loader variables. Claude Code applies a
+  trusted folder's `env` block to every process it starts and treats that as working as
+  designed, so there is nothing to report to it either.
+- **Every change a 0.2.0 caller must act on is in `changelog.d/+upgrading-from-0-2.upgrading.md`.**
+  Other user-visible changes have their own entries and are not repeated there. After the
+  pull request's review it holds 46 bullets, one contract each, each pointing at its full entry.
+
+Recorded, not changed:
+
+- **One claimant for the claims protocol.** `doctor`'s `Claims` and `Wording` are shaped for
+  several areas, but only `attach` claims entries today. The tuple shape stays until a second
+  claimant exists or the next wave's debt register shows none will.
+- **Harness detection decides no byte today.** `harnesses.detect` picks a `render`, and every
+  harness renders through the canonical one. This plan asked for that shape. It waits for a
+  non-steerable signal.
+- **`bg-cleanup` judges only the forms `docs/cli.md` names.** That is a command run in the
+  background, directly, through `env`, or through `uv run <options>`. `nohup`, `timeout`,
+  `command`, `uvx`, `uv tool run` and `bash -c` wrappers are not judged. The owner decided on
+  2026-10-07 to document this scope rather than widen the guard.
+- **`CLAUDE.md` is still written for a Codex-only project.** Changing it would make `upgrade` remove
+  a tracked file. The owner confirmed this on 2026-10-07.
+- **The overlay floor's pre-release ordering has no fragment.** No build ever carried a pre-release
+  version, so no user can meet the change. `docs/cli.md` states what the floor does.
+
+Left for later, by the owner's decision of 2026-10-07:
+
+1. **Publish the plugin from its own repository (Step 3), as its own pull request.**
+   - A generator produces the plugin tree.
+   - CI builds it, tests it, and attests the generated tree's digest.
+   - The owner pushes it with one command that checks the digest against the attestation, so CI
+     holds no credential to a second repository (`RELEASING.md`).
+   - The marketplace entry stays here, with a URL source pinned to the tag.
+   - The 512-file check moves to the generated tree.
+2. **A terminal command that makes the harness memory link** for in-repo and local-only stores when
+   `HOME` differs from the password database's home. The hook path no longer makes that link
+   itself.
+
+Near limits, as the pull request leaves them:
+
+- `mutations/install.toml` held 181,291 of 196,608 bytes and was split along `doctor/` during the
+  review fixes; the largest group file is now `mutations/core.toml`, at 183,007.
+- `docs/cli.md` is 498 bytes under the 256 KiB a plugin directory allows one file
+  (`tests/test_payload.py`). The next addition needs a split or a cut first.
+- An unreadable overlay `codex/` directory makes `attach` fail with an internal error
+  (`PermissionError`), as 0.2.0 did. Since the run refuses a missing `origin` before it reads that
+  directory, `--check` and the run end on different lines there. It is a defect of the run, left
+  for its own fix.
+- `hook-entries` reads a frontmatter only within a skill file's first 8,388,608 characters and
+  10,000 lines, and names a file past either as one it cannot tell about.
+
+### The pull request's own final review (2026-10-08 to 2026-10-09)
+
+An external review of the pull request at `afbda57`, five seats and a controller pass, found it
+not ready to merge: one blocker and six Important findings, with Minors in every area.
+
+- **The blocker:** CI was red on every interpreter it runs, while the pull request reported a
+  green suite measured on Python 3.14 alone. `contained()` asked each ancestor with
+  `Path.is_symlink()`, which raises on a name past the system's limit up to 3.13 and answers
+  `False` from 3.14. Every question about what is at a path now goes through `fsops` predicates
+  that answer one way on every interpreter, a test refuses `pathlib`'s, and CI gained a 3.14 leg.
+- **Important:**
+  - `attach` run from a linked worktree wrote the settings fallback without hiding it;
+  - a `HOME` inside the clone still chose the global configuration of hook-path git: every `git`
+    on the hook path, the wrapper's own included, now gets the password database's home, so the
+    statement above that `HOME` stays kept for git no longer holds on the hook path;
+  - `hook-entries` compared a grant field by field; it now compares the whole entry;
+  - core `doctor` carried the memory area's harness-link wording; the memory area's own
+    `harness-link` row now says it;
+  - `src/stayfixed/doctor/entries.py` held three responsibilities; it is split into the
+    frontmatter reader, the walk for hooked files and the judgement;
+  - the pull request's text, these Findings and two release-note entries misstated facts the code
+    settles.
+
+The fixes ran on the same branch, one wave at a time. Each wave was reviewed, then fixed in rounds
+until its review found nothing Critical or Important:
+
+- A: one answer to each path fault on every interpreter (one fix round);
+- B: behaviour at the edges, and the home the wrapper's git gets, held under zsh as `/bin/sh`, a
+  NixOS `id` and a user named by digits (two rounds);
+- C: `doctor`'s structure and the frontmatter reader (six rounds, the reader's);
+- R: the remaining patterns that read their input in more than linear time or memory;
+- E1: the split of `mutations/install.toml` along `doctor/`;
+- P: the possessive-repeat bug of Python 3.11.0 to 3.11.4 (one round);
+- D: simplifications, and an empty `HOME` read as a value that names no home (one round);
+- E: the boundary rules under `tests/boundaries/`, and every quoted mutation name read (three
+  rounds);
+- F: the documents, the release notes and this record.
+
+Over the review the mutation set grew from 1,858 to 2,129 entries.
+
+The owner's decisions:
+
+- Python's floor stays 3.11, since Debian 12's system Python is 3.11.2. The patterns that 3.11.0 to
+  3.11.4 read differently were rewritten to shapes those releases read alike, and CI's
+  `checks (ubuntu-latest, 3.11.4)` leg holds them, rather than the floor moving to 3.11.5.
+- The frontmatter reader answers "no" only for a frontmatter inside a plain YAML subset it reads
+  exactly, and "could not tell" for any other in which no reading finds `hooks`. Claude Code
+  2.1.293 was one of the four oracles it was measured against. An oracle of Claude Code's own
+  parse kept in the repository is left as an improvement after the release, one an outside
+  contributor may take.
+- The wrapper's list of `git` paths stays spelled twice, the two held equal by a test.
+- From 2026-10-09 only a Critical or Important finding opened another round. Every Minor went to
+  the follow-ups below.
+
+Decided during the review, as the hook and an unapproved store already behave: `attach` off a
+terminal, where `HOME` is not the database's home, withholds only the harness memory link and says
+so, and `detach` withdraws a link to the store under both homes.
+
+Not settled here: the review's first point on the pull request's text, how `HOME` reaches a hook,
+waits on the owner.
+
+Follow-ups, to file when the pull request closes:
+
+- `setup` writes the machine file before it finds that `--home` cannot be written, and ends in an
+  internal error when `--home` names a directory it cannot create.
+- What Claude Code does with an empty `HOME`, which the tests take to be a relative `.claude`, is
+  unmeasured.
+- An oracle of Claude Code's frontmatter parse for the skill reader.
 
 ### Pre-dispatch review (2026-10-04)
 

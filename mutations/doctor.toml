@@ -1,0 +1,2900 @@
+# The doctor group: the report on an installation — the core's checks and the run that asks
+# them, the rows the areas contribute, and `hook-entries` with its walk and frontmatter reader.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# In the block led by `mutations/`'s "the runner decodes a launched program's output strictly
+# again": a launched program's output is read with replacement characters, never strictly.
+[[mutation]]
+name = "doctor's wrapper row decodes the wrapper's stderr strictly again"
+file = "src/stayfixed/doctor/checks.py"
+before = '            errors="replace",'
+after = '            errors="strict",'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read",
+]
+
+# Which plugin root `doctor` trusts, first half. This ordering no longer decides what is *executed*
+# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `files`
+# reads its mode from. A plugin's own and one a repository committed are different files with
+# different meanings, and the row would otherwise report on the wrong one.
+[[mutation]]
+name = "doctor reads a named plugin root's files in preference to its own"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return _own_root() or _named_root(env)"
+after = "    return _named_root(env) or _own_root()"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_stayfixed_is_part_of",
+]
+
+# Which plugin root `doctor` trusts, and the entry that matters: `doctor` runs a subprocess out of
+# this answer. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
+# which `cli-path`'s own remedy and the README tell people to install -- a project that commits
+# `hooks/run-hook.sh` mode 100755 plus an `env` block naming its tree got that script RUN, and the
+# report then read `wrapper: ok`. Code execution and a false clean bill of health from a read-only
+# command.
+[[mutation]]
+name = "doctor executes the plugin root the environment named"
+file = "src/stayfixed/doctor/checks.py"
+before = "    root = context.own_root"
+after = "    root = context.plugin_root"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# The other half of the same containment: `files` keeps reading the wrapper's mode, because that
+# needs only a path -- and must say whose root it measured, so nobody reads "executable" off a
+# repository-planted file as a clean bill of health for the installation.
+[[mutation]]
+name = "doctor reports on a named plugin root's files without saying whose they are"
+file = "src/stayfixed/doctor/checks.py"
+before = '    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT'
+after = '    whose = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# The hostile clone, and the reason `doctor` has a provenance list at all: a hook entry that adds
+# the stayfixed marker to a hostile command is answered by listing every entry with its provenance.
+# An entry that claims the marker and is in no attach ledger is a repository saying it is stayfixed,
+# and without this comparison every such entry reads as one `attach` installed.
+[[mutation]]
+name = "doctor stops telling a claimed marker from one the attach ledger records"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if not holders and not unread:"
+after = "            if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
+]
+
+# The same check's other half, and the one a green report hides. Three arms used to swallow — an
+# OSError on the read, a JSON error inside the walk, and a Refusal out of `owned_ids` — and all
+# three produced "all accounted for" from the check whose whole purpose is that nobody's entries
+# go unlisted. `owned_ids` is asked here for its strictness: it shares its reader with
+# `apply_entries`, so a shape the merge would refuse is a shape this walk must admit it cannot
+# account for.
+[[mutation]]
+name = "doctor swallows a settings file it could not read instead of reporting it"
+file = "src/stayfixed/doctor/entries.py"
+before = "        except Refusal:\n            found.append((_BLIND, None, label))"
+after = "        except Refusal:\n            pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
+]
+
+# Reasons, never payloads. The sink's record carries `context` and `decision`, both filled from a
+# handler's own return value, and printing the record whole is the one place a repository's bytes
+# could reach a terminal — and the model reading it — unwrapped. The allowlist is the guard; without
+# it the check prints everything the record holds.
+[[mutation]]
+name = "doctor quotes a diagnostics log whose provenance it cannot establish"
+file = "src/stayfixed/doctor/checks.py"
+before = '        f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",'
+after = '        f"{counted}; {sessions} session(s) seen: " + raw.decode("utf-8", "replace"),'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted",
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# The cap the sink documents is enforced on WRITE, by `DataSink.diagnostic`. A file this process
+# did not write has no cap at all, and `${CLAUDE_PLUGIN_DATA}` is what decides which file that
+# is -- so the bound has to be applied again on the read or it is not a bound.
+[[mutation]]
+name = "doctor reads an environment-named log with no bound of its own"
+file = "src/stayfixed/doctor/checks.py"
+before = "        raw, over = fsops.read_bounded(log, DIAGNOSTICS_MAX_BYTES)"
+after = "        raw = log.read_bytes()\n        over = len(raw) > DIAGNOSTICS_MAX_BYTES"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# `red` is what gates the exit code. A directory this process cannot list is a fact about the
+# machine, not about the installation.
+[[mutation]]
+name = "doctor renders an unreadable harness data root as a red row"
+file = "src/stayfixed/doctor/checks.py"
+before = '''    try:
+        sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
+    except OSError as exc:'''
+after = '''    sessions = len(list((base / MARKERS).iterdir())) if fsops.is_dir(base / MARKERS) else 0
+    if False:
+        exc = OSError()'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning",
+]
+
+# The floor under `mutations/`'s "doctor renders an unreadable harness data root as a red row", for
+# every check at once.
+[[mutation]]
+name = "doctor renders an unreadable file as a broken check"
+file = "src/stayfixed/doctor/checks.py"
+before = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            WARN,'''
+after = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            RED,'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red",
+]
+
+# An area adds rows to the report through its own `doctor.py`. A discovery that found the areas
+# and never asked their checks would leave every contributed row out of the report with nothing
+# red to say so.
+[[mutation]]
+name = "doctor drops the checks an area contributes"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return CHECKS + tuple(check for contribution in contributed for check in contribution.checks)"
+after = "    return CHECKS + tuple(check for contribution in contributed for check in ())"
+reddens = [
+  "tests/doctor/test_registry.py::test_a_contributed_check_runs_after_the_core_checks",
+  "tests/doctor/test_checks.py::test_every_check_has_one_row_in_one_report",
+]
+
+# A contributed check is asked through `_guarded` as the core's are, so one that raises costs its
+# own row and never the report. The core's checks and the contributed ones share one call site, so
+# the mutation asks every check without the guard, and a contributed check's `RuntimeError` is
+# what escapes.
+[[mutation]]
+name = "doctor asks its checks without the guard"
+file = "src/stayfixed/doctor/checks.py"
+before = "    return [_guarded(name, check, context) for name, check in report_checks]"
+after = "    return [Check(name, **vars(check(context))) for name, check in report_checks]"
+reddens = [
+  "tests/doctor/test_registry.py::test_a_contribution_that_raises_costs_one_row",
+  "tests/doctor/test_entries.py::test_claims_that_raise_cost_the_hook_entries_row_alone",
+]
+
+# A row's name is its only identity in the summary line, `--json` and the skill's relay, so an
+# area that contributes a name already in the report -- a core check's, an earlier area's, or one
+# of its own -- costs its rows as one red row named after it, as a register() that raises does.
+[[mutation]]
+name = "doctor lets an area repeat a name the report already has"
+file = "src/stayfixed/doctor/registry.py"
+before = "        if name in named:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[core]",
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[another-area]",
+]
+
+[[mutation]]
+name = "doctor lets an area name two of its checks alike"
+file = "src/stayfixed/doctor/registry.py"
+before = '        named[name] = "it"'
+after = "        pass"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[itself]",
+]
+
+# The red row of an area that could not contribute is a name in the report too, so when the area's
+# name is already taken it is numbered past every name taken, never printed twice.
+[[mutation]]
+name = "an area's failure row takes a name the report already has"
+file = "src/stayfixed/doctor/registry.py"
+before = "    while name in owners:"
+after = "    while False:"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_that_repeats_a_name_in_the_report_costs_one_row_named_after_it[area-name-taken]",
+]
+
+# A failure row stands in for rows an area could not give, so it is named only once every
+# contribution's names are known: named as each area was met, it took a name a healthy later area's
+# check had, and that area was turned away for repeating it, its row gone from the report.
+[[mutation]]
+name = "an area's failure row is named before every contribution's names are known"
+file = "src/stayfixed/doctor/registry.py"
+before = """    answers = [
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    ]"""
+after = """    answers = (
+        _registered(qualified, found, owners) for qualified, found in discover_contributors()
+    )"""
+reddens = [
+  "tests/doctor/test_registry.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[register]",
+  "tests/doctor/test_registry.py::test_a_failing_areas_row_never_takes_a_healthy_areas_check_name[import]",
+]
+
+# Whether an area repeats a name is asked of a copy of the report's names: asked of the names
+# themselves, an area turned away leaves its first names taken by no row, and a later area that uses
+# one is turned away too.
+[[mutation]]
+name = "asking whether an area repeats a name records its names in the report"
+file = "src/stayfixed/doctor/registry.py"
+before = "    named = dict(owners)"
+after = "    named = owners"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_turned_away_for_a_repeated_name_leaves_its_other_names_free",
+]
+
+# The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
+# field over. `.stayfixed/local/attach.json` is a path a clone can commit, so a repository that
+# commits a marked hook entry *and* a ledger recording that entry's id got `hook-entries` to answer
+# "all accounted for" — a committable file silencing the one check whose entire purpose is that
+# nobody's entries go unlisted. An id is credible only if the entry it names is one the OVERLAY
+# currently grants, and the overlay is trusted by construction: its root comes from the machine
+# file.
+[[mutation]]
+name = "the attach ledger vouches for a hook entry on its own"
+file = "src/stayfixed/doctor/entries.py"
+before = "            elif askable and not any(_grants(answer, placed) for answer in holders):"
+after = "            elif False:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_and_nothing_grants_is_never_absolved",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
+]
+
+# Which ids a ledger records and which commands the overlay grants are the areas' to answer, so
+# `hook-entries` asks every area's `Claims`. A row that stopped asking would read nothing recorded
+# and nothing granted, and call every entry `attach` installed one that no attach recorded.
+[[mutation]]
+name = "hook-entries ignores what the areas claim"
+file = "src/stayfixed/doctor/entries.py"
+before = "        return [ask(context) for ask in context.claims]"
+after = "        return [ask(context) for ask in ()]"
+reddens = [
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
+  "tests/doctor/test_checks.py::test_an_entry_the_ledger_records_is_not_reported_as_claiming_the_marker",
+]
+
+# The overlay root is the machine file's, the core's, and more than one area reads it: the report's
+# `Context` resolves it on first read and keeps the answer, so one report asks the machine file once
+# however many rows read it. A plain property would ask it again for every reader.
+[[mutation]]
+name = "the report resolves the overlay root for every reader"
+file = "src/stayfixed/doctor/model.py"
+before = "    @cached_property\n    def overlay_root(self) -> Path | None:"
+after = "    @property\n    def overlay_root(self) -> Path | None:"
+reddens = [
+  "tests/attach/test_doctor.py::test_one_report_resolves_the_overlay_root_once_for_every_area",
+]
+
+# Every area that claims entries answers for its own, so the row asks every area. Read from the
+# last area alone, an entry an earlier area recorded reads as one nobody recorded, and the row tells
+# the owner to remove what that area installed.
+[[mutation]]
+name = "hook-entries keeps only the last area's recorded ids"
+file = "src/stayfixed/doctor/entries.py"
+before = "            holders = [answer for answer in answers if entry_id in (answer.recorded or {})]"
+after = "            holders = [answer for answer in answers[-1:] if entry_id in (answer.recorded or {})]"
+reddens = [
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
+]
+
+# The same for the other answer: an earlier area's granted commands dropped make its entries ones
+# the overlay "does not grant".
+[[mutation]]
+name = "hook-entries keeps only the last area's granted commands"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(_grants(answer, placed) for answer in answers[-1:])"
+reddens = [
+  "tests/doctor/test_entries.py::test_hook_entries_reads_what_every_area_claims",
+]
+
+# A grant vouches only for the record of the area that grants it. Read from every area, one area's
+# record of an id and another area's grant of the command absolve an entry neither put there whole,
+# and a record is a file a repository can write.
+[[mutation]]
+name = "hook-entries absolves an entry on one area's record and another area's grant"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(_grants(answer, placed) for answer in answers)"
+reddens = [
+  "tests/doctor/test_entries.py::test_one_areas_record_and_another_areas_grant_never_absolve_an_entry_together",
+]
+
+# The grant is compared by the marked command, so an id an area does grant, hung on a command it
+# does not, vouches for nothing.
+[[mutation]]
+name = "hook-entries compares a grant by its id rather than its command"
+file = "src/stayfixed/doctor/entries.py"
+before = "(_grants(answer, placed) for answer in holders)"
+after = "(entry_id in {marker_id(grant.command) for grant in (answer.granted or ())} for answer in holders)"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_and_grants_for_another_command_is_never_absolved",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# A record one area could not read is not one the next area's answer can stand in for: the ids it
+# would have named are unknown, so every entry's provenance is. Asked of the last area alone, a later
+# area's readable record turns "could not be established" back into a column computed without it.
+[[mutation]]
+name = "a later area's record overwrites one an earlier area could not read"
+file = "src/stayfixed/doctor/entries.py"
+before = "    unread = [answer for answer in answers if answer.recorded is None]"
+after = "    unread = [answer for answer in answers[-1:] if answer.recorded is None]"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+]
+
+# The same rule for an overlay one area could not ask: what it grants is unknown, and no other
+# area's grants vouch for the entries it would have.
+[[mutation]]
+name = "a later area's grants overwrite an overlay an earlier area could not ask"
+file = "src/stayfixed/doctor/entries.py"
+before = "    askable = all(answer.granted is not None for answer in answers)"
+after = "    askable = all(answer.granted is not None for answer in answers[-1:])"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+]
+
+# Where the overlay could not be asked, the grant comparison is withheld rather than computed:
+# every entry a record holds would otherwise be judged against grants nobody could read, and
+# reported red with a remedy telling the owner to remove what was installed.
+[[mutation]]
+name = "hook-entries judges provenance against an overlay that could not be asked"
+file = "src/stayfixed/doctor/entries.py"
+before = "            elif askable and not any("
+after = "            elif not any("
+reddens = [
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[granted-last]",
+]
+
+# And only the grant comparison: whether a record holds an entry's id needs the record alone, so a
+# committed ledger beside a committed entry it does not record is red where the overlay cannot be
+# asked. Withholding the whole column there turned that red into a warning and an exit of 0.
+[[mutation]]
+name = "an overlay that cannot be asked silences an entry no record holds"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if not holders and not unread:"
+after = "            if not holders and not unread and askable:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_id_no_area_records_is_red_even_where_no_overlay_can_be_asked",
+]
+
+# An entry a record holds where no holder's machine records a source to grant from: red, with the
+# sentence and remedy for recording one, never the refused grant's.
+[[mutation]]
+name = "hook-entries says the overlay does not grant what no overlay was recorded to grant"
+file = "src/stayfixed/doctor/entries.py"
+before = "                elif refusing := [answer for answer in holders if answer.sourced]:"
+after = "                elif refusing := holders:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_id_an_area_records_where_no_source_is_recorded_is_red_and_says_so",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_only_this_machines_state_turns_an_entry_the_ledger_records_into_a_warning[owner-no-overlay]",
+]
+
+# An area whose source answered and grants this checkout less than the one it is for says why, in
+# its own clause: "its source does not grant them" is false there. `attach`'s overlay, for a
+# checkout its record binds to another remote, grants the entry to the checkout it does bind.
+[[mutation]]
+name = "hook-entries says a source refused what its area says it grants elsewhere"
+file = "src/stayfixed/doctor/entries.py"
+before = '    return words.ungranted or f"{words.source} does not grant them"'
+after = '    return f"{words.source} does not grant them"'
+reddens = [
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+]
+
+# And in its own remedy: the area's `vouch` may be one it refuses there, as `attach --store` is on a
+# mismatch without `--trust-remote`.
+[[mutation]]
+name = "hook-entries offers the vouch an area says may be refused"
+file = "src/stayfixed/doctor/entries.py"
+before = "    return words.regrant or ("
+after = "    return ("
+reddens = [
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[readable]",
+  "tests/attach/test_doctor.py::test_an_owners_checkout_the_record_no_longer_binds_is_told_the_binding_is_wrong",
+]
+
+[[mutation]]
+name = "hook-entries offers the rebuild an area says may be refused, beside an unreadable record"
+file = "src/stayfixed/doctor/entries.py"
+before = '    return f"{_OPEN}; then {words.regrant or _rebuild(words)}"'
+after = '    return f"{_OPEN}; then {_rebuild(words)}"'
+reddens = [
+  "tests/doctor/test_entries.py::test_an_area_that_says_why_its_source_grants_less_is_told_in_its_words[unreadable]",
+]
+
+# A settings file the walk cannot read is a warning, and the row's status is the most severe of
+# its findings', so the blind file, told last, softens a row with nothing else to say and never a
+# red one. Read off the last finding alone, it turned an entry nothing vouches for, beside a
+# readable record or an unreadable one, and a file nothing can check, into a warning.
+[[mutation]]
+name = "a blind settings file softens a red row"
+file = "src/stayfixed/doctor/entries.py"
+before = "    status: Status = RED if RED in statuses else WARN if statuses else OK"
+after = "    status: Status = findings[-1].kind.status if findings else OK"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
+  "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
+]
+
+# Its remedy is offered only where nothing else has one: a reader with a red entry to open is told
+# how, not to check a file is valid JSON.
+[[mutation]]
+name = "a blind settings file's remedy displaces a red entry's"
+file = "src/stayfixed/doctor/entries.py"
+before = "    WARN,\n    0,\n    _blind,"
+after = "    WARN,\n    8,\n    _blind,"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[readable]",
+  "tests/doctor/test_entries.py::test_a_file_this_walk_cannot_read_keeps_an_unvouched_entry_red[unreadable]",
+]
+
+# A record that cannot be read may hold any id, so it withholds judgement only of an entry its own
+# area grants: that one may be the area's. Withholding more is the bypass this closes: a clone that
+# committed a ledger that will not parse beside a marked entry of its own got a warning and an exit
+# of 0 on every machine, overlay or none.
+[[mutation]]
+name = "an unreadable record withholds judgement of every entry"
+file = "src/stayfixed/doctor/entries.py"
+before = "                if any(_grants(answer, placed) for answer in unread):"
+after = "                if unread:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-overlay]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[not-json-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[not-json-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[rules-not-a-list-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[rules-not-a-list-no-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[nested-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_an_unreadable_ledger_fails_the_report[nested-no-overlay]",
+]
+
+# The other side of the same arm: an entry the unreadable record's own area grants may be one that
+# record holds, so the row warns rather than accuse it. Withholding nothing, an owner whose ledger
+# got corrupted reads red for every entry their overlay grants, told to remove what they installed.
+[[mutation]]
+name = "an unreadable record withholds judgement of nothing its area grants"
+file = "src/stayfixed/doctor/entries.py"
+before = "                if any(_grants(answer, placed) for answer in unread):"
+after = "                if False:"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
+]
+
+# And no less: an unreadable record is not an empty one. Judged as one, every entry `attach`
+# installed reads as recorded nowhere, red, with a remedy telling the owner to remove it.
+[[mutation]]
+name = "an unreadable record reads as one recording nothing"
+file = "src/stayfixed/doctor/entries.py"
+before = "            if not holders and not unread:"
+after = "            if not holders:"
+reddens = [
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[sourced]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-overlay]",
+  "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[not-json]",
+]
+
+# Beside an unreadable record as beside a readable one: where no overlay is recorded, the sentence
+# and remedy say to record one, never that one refused.
+[[mutation]]
+name = "hook-entries says the overlay does not grant what no overlay was recorded to grant, beside an unreadable record"
+file = "src/stayfixed/doctor/entries.py"
+before = "                    asked = [answer for answer in unread if answer.sourced]"
+after = "                    asked = unread"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_no_grant_covers_is_red_whatever_an_unreadable_record_would_say[unsourced]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-no-overlay]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-no-overlay]",
+]
+
+# Writing a new ledger needs the overlay `attach` installs from, so where it cannot be asked the
+# remedy stays with the file: told to remove the ledger there, an owner would trade a warning for a
+# red row `attach` cannot clear yet.
+[[mutation]]
+name = "the rebuild remedy is offered where the overlay cannot be asked"
+file = "src/stayfixed/doctor/entries.py"
+before = "_rebuild(area.wording) if area.granted is not None else"
+after = "_rebuild(area.wording) if True else"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay-unreadable]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-git-cannot-run]",
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[forged-overlay-unreadable]",
+]
+
+# And offered where it can be: the owner whose ledger got corrupted is told how to get it back, and
+# the walkthrough follows that remedy to green.
+[[mutation]]
+name = "an unreadable ledger is never told how to rebuild it"
+file = "src/stayfixed/doctor/entries.py"
+before = "_rebuild(area.wording) if area.granted is not None else"
+after = "_rebuild(area.wording) if False else"
+reddens = [
+  "tests/attach/test_doctor.py::test_an_unreadable_ledger_withholds_judgement_only_of_what_this_machines_overlay_grants[owner-overlay]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-first]",
+  "tests/test_install_path.py::test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_says",
+]
+
+# `hook-entries` tells each area's record, source and remedies in that area's own `Wording`, so a
+# reader opens the record that could hold an entry and runs the command that touches it. Each entry
+# below puts one sentence back in the wrong area's words, or in words no claimant gave.
+[[mutation]]
+name = "hook-entries names a record where no area claims one"
+file = "src/stayfixed/doctor/entries.py"
+before = """f"are not recorded in {' or '.join(records)}" if records else "are recorded nowhere\""""
+after = """f"are not recorded in {' or '.join(records)}\""""
+reddens = [
+  "tests/doctor/test_entries.py::test_with_no_area_claiming_anything_an_entry_claiming_the_marker_is_recorded_nowhere",
+]
+
+[[mutation]]
+name = "hook-entries names only the first area's record of an entry no record holds"
+file = "src/stayfixed/doctor/entries.py"
+before = "    records = list(dict.fromkeys(area.wording.record for area in areas))"
+after = "    records = list(dict.fromkeys(area.wording.record for area in areas[:1]))"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_no_record_holds_names_every_record_it_is_missing_from",
+]
+
+[[mutation]]
+name = "hook-entries names the first area's record wherever a record could not be read"
+file = "src/stayfixed/doctor/entries.py"
+before = "            found.append((_UNREADABLE, answer, None))"
+after = "            found.append((_UNREADABLE, answers[0], None))"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_unreadable_record_is_named_in_its_own_areas_words[second]",
+  "tests/doctor/test_entries.py::test_a_none_from_any_area_is_none_for_the_pool[recorded-last]",
+]
+
+[[mutation]]
+name = "hook-entries names only the first source that could not be asked"
+file = "src/stayfixed/doctor/entries.py"
+before = "            found.append((_UNASKABLE, answer, None))"
+after = "            found.append((_UNASKABLE, answers[0], None))"
+reddens = [
+  "tests/doctor/test_entries.py::test_two_unaskable_sources_each_get_their_own_part_and_remedy",
+]
+
+[[mutation]]
+name = "hook-entries tells a refused grant in the first area's words"
+file = "src/stayfixed/doctor/entries.py"
+before = "                    found.append((_UNGRANTED, refusing[0], where))"
+after = "                    found.append((_UNGRANTED, answers[0], where))"
+reddens = [
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[sourced]",
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+]
+
+[[mutation]]
+name = "hook-entries tells an unvouched entry in the first area's words"
+file = "src/stayfixed/doctor/entries.py"
+before = "                    found.append((_UNVOUCHED, holders[0], where))"
+after = "                    found.append((_UNVOUCHED, answers[0], where))"
+reddens = [
+  "tests/doctor/test_entries.py::test_each_red_entry_is_told_in_the_words_of_the_area_that_holds_it[unsourced]",
+]
+
+[[mutation]]
+name = "hook-entries tells an entry beside unreadable records in the first one's words"
+file = "src/stayfixed/doctor/entries.py"
+before = "                        found.append((_UNREAD_UNGRANTED, asked[0], where))"
+after = "                        found.append((_UNREAD_UNGRANTED, unread[0], where))"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_entry_only_an_unreadable_record_could_hold_is_told_in_a_sourced_areas_words",
+]
+
+# Each kind of finding is told one part per area, and its remedy is every area's, joined: two areas'
+# red entries of one kind are two areas' to repair. Keeping only the last area's remedy named the
+# first area's entries with no way out of them.
+[[mutation]]
+name = "hook-entries keeps only the last area's remedy for a kind"
+file = "src/stayfixed/doctor/entries.py"
+before = '    return Row(status, "; ".join(parts), "; ".join(dict.fromkeys(chosen)))'
+after = '    return Row(status, "; ".join(parts), "; ".join(list(chosen)[-1:]))'
+reddens = [
+  "tests/doctor/test_entries.py::test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy[sourced]",
+  "tests/doctor/test_entries.py::test_two_areas_red_entries_of_one_kind_each_get_their_own_remedy[unsourced]",
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[alpha]",
+]
+
+# An unreadable record and another area's unaskable source are two findings, each its own area's:
+# told only where no record was unreadable, the unaskable source and its remedy went unsaid.
+[[mutation]]
+name = "hook-entries tells an unaskable source only where every record could be read"
+file = "src/stayfixed/doctor/entries.py"
+before = "        elif answer.granted is None:"
+after = "        elif answer.granted is None and not unread:"
+reddens = [
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[alpha]",
+  "tests/doctor/test_entries.py::test_an_unreadable_record_beside_another_areas_unaskable_source_tells_both[omega]",
+]
+
+# An area answers what it cannot read as a `None` field, so claims that raise are a defect in its
+# code and red, as `Contribution.claims` promises. Reaching the report's guard as an `OSError` they
+# read as the machine's warning, and a forged entry the row would have listed kept the exit code 0.
+[[mutation]]
+name = "claims that raise an OSError reach the guard as one"
+file = "src/stayfixed/doctor/entries.py"
+before = "        raise UnansweredClaims from exc"
+after = "        raise"
+reddens = [
+  "tests/doctor/test_entries.py::test_claims_that_raise_an_os_error_are_red_and_never_a_warning",
+  "tests/doctor/test_command.py::test_claims_that_raise_an_os_error_fail_the_report",
+]
+
+# An area's `register()` is its own code as its checks are, so it gets their guard: one that raises,
+# or answers something that is not a `Contribution`, costs one red row named after the area and not
+# the report, which otherwise ends in an internal error with no report at all.
+[[mutation]]
+name = "doctor calls an area's register() unguarded"
+file = "src/stayfixed/doctor/registry.py"
+before = "    except Exception as exc:  # an area's own code, guarded as its checks are"
+after = "    except OSError as exc:  # an area's own code, guarded as its checks are"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[raises]",
+]
+
+[[mutation]]
+name = "doctor takes whatever an area's register() returns"
+file = "src/stayfixed/doctor/registry.py"
+before = "    if not _well_formed(contribution):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[none]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[bare-pairs]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[short-pair]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[name-not-text]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[check-not-callable]",
+  "tests/doctor/test_registry.py::test_an_area_whose_register_fails_costs_one_row_named_after_it[claims-not-callable]",
+]
+
+# An area's `doctor.py` that fails to import is its own code as its register() is: discovery hands
+# the failure over, and the row says the import failed rather than reading the failure as a module
+# whose register() then fails.
+[[mutation]]
+name = "doctor reads an import failure as a module"
+file = "src/stayfixed/doctor/registry.py"
+before = "    if isinstance(found, Exception):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_row_named_after_it",
+]
+
+# The row for an area that could not register is about stayfixed's own code, so it is red in the
+# early report too, where every other check after the first skips for want of a configuration.
+[[mutation]]
+name = "the early report skips an area that could not register"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if isinstance(check, Unregistered):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[register]",
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[import]",
+  "tests/doctor/test_registry.py::test_an_area_that_could_not_contribute_is_red_even_with_nothing_else_to_check[repeat]",
+]
+
+# The report has one row per check whatever the repository holds, so with no `stayfixed.toml` an
+# area's contributed check gets the skip every core check after the first gets. Naming the early
+# report's rows from the core's registry alone drops every contributed row from it.
+[[mutation]]
+name = "the early report names the core's checks alone"
+file = "src/stayfixed/doctor/checks.py"
+before = "    first, *rest = [name for name, _ in report_checks]"
+after = "    first, *rest = [name for name, _ in CHECKS]"
+reddens = [
+  "tests/doctor/test_registry.py::test_a_contributed_check_skips_with_the_core_when_there_is_nothing_to_check",
+]
+
+# Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
+# it stayed a claim rather than a fact. The `STAYFIXED_*` strip two lines above is what closes the
+# seam; this flag is the second, independent guard, so that a later edit narrowing the strip, or a
+# second variable gated on a terminal the way the wrapper gates `STAYFIXED_PYTHON_CANDIDATES`, still
+# meets a closed stdin. It also stops a wrapper that reads stdin holding the report open.
+[[mutation]]
+name = "doctor's wrapper probe inherits this process's stdin"
+file = "src/stayfixed/doctor/checks.py"
+before = "            stdin=subprocess.DEVNULL,"
+after = "            stdin=None,"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_wrapper_probe_never_inherits_this_process_stdin",
+]
+
+# --- install path: the cross-area import boundary ----------------------------------------
+#
+# `hook-entries` reads the machine's settings file's path off the harness registry. Asked of
+# `setup.api`, it loaded `setup.run` with the report and closed a dependency cycle between `doctor`,
+# `setup` and `overlay`.
+[[mutation]]
+name = "hook-entries asks setup for the machine's settings file"
+file = "src/stayfixed/doctor/entries.py"
+before = "(USER_SETTINGS,) = CLAUDE.settings"
+after = "from stayfixed.setup.api import USER_SETTINGS"
+reddens = [
+  "tests/doctor/test_entries.py::test_the_row_reads_the_machines_settings_file_off_the_harness_registry",
+]
+
+# The wrapper row runs the wrapper under Claude Code's names for the plugin root and the project
+# root, read off the harness registry. A name the row stopped setting would run the wrapper with no
+# project root, which it reads before any Python runs.
+[[mutation]]
+name = "the wrapper row names the project root in no variable"
+file = "src/stayfixed/doctor/checks.py"
+before = "(CLAUDE.project_dir_env, context.root)"
+after = "(None, context.root)"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_wrapper_runs_under_the_variables_the_harness_registry_names",
+]
+
+# Every harness fact a module spells outside the registry is pardoned, counted, by the item of the
+# registry's docstring that lists it: a literal put back where the registry is read is one more.
+[[mutation]]
+name = "doctor spells the project-root variable again"
+file = "src/stayfixed/doctor/checks.py"
+before = "(CLAUDE.project_dir_env, context.root)"
+after = '("CLAUDE_PROJECT_DIR", context.root)'
+reddens = [
+  "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
+]
+
+# A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
+# and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
+# fault". An empty remedy there is the report's loudest finding rendered as its quietest.
+[[mutation]]
+name = "the plugin-root skips go back to an empty remedy"
+file = "src/stayfixed/doctor/checks.py"
+before = '''PLUGIN_ROOT_REMEDY = (
+    f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
+    "lets `files` read the wrapper without making it runnable here"
+)'''
+after = 'PLUGIN_ROOT_REMEDY = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+]
+
+# The named-root skip carried a hand copy of the remedy's first half, and the copy had already
+# drifted from it by a comma before the constant was extracted.
+[[mutation]]
+name = "the named-root skip carries its own copy of the remedy"
+file = "src/stayfixed/doctor/checks.py"
+before = '''            "guard does",
+            RUN_FROM_OWN_ROOT,'''
+after = '''            "guard does",
+            "run `stayfixed doctor` from the plugin's own launcher so its root answers for itself",'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# `PATH` is read from the context because it is repository-authored; a path component is
+# unbounded and may hold a newline. Printing the resolved value put that text into `--json`,
+# which the doctor skill relays verbatim.
+[[mutation]]
+name = "doctor prints the PATH-derived location of the CLI"
+file = "src/stayfixed/doctor/checks.py"
+before = '    return Row(OK, "`stayfixed` resolves on PATH")'
+after = '    return Row(OK, f"`stayfixed` resolves on PATH at {found}")'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_cli_resolving_by_name_is_green_and_never_prints_where",
+]
+
+# The registry is the only place a check's name is spelled. A stray literal equal to a registry key
+# is exactly the state the refactor removed — a name a row could come to disagree with — so the
+# mutation re-introduces one rather than deleting a guard.
+[[mutation]]
+name = "a doctor check spells its own name again"
+file = "src/stayfixed/doctor/checks.py"
+before = 'WRAPPER = "hooks/run-hook.sh"'
+after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"files\""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
+]
+
+# The same stray in a module that defines a core check but does not register it: the scan reads
+# every module `CHECKS`' checks are defined in, not only the registry's.
+[[mutation]]
+name = "a stray hook-entries name in the module that defines the check"
+file = "src/stayfixed/doctor/entries.py"
+before = '_MACHINE_LABEL = f"~/{USER_SETTINGS}"'
+after = "_MACHINE_LABEL = f\"~/{USER_SETTINGS}\"\n_STRAY = \"hook-entries\""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
+]
+
+# The defect of `mutations/`'s "the release record is compared against itself", one area over, and
+# the one that matters to a user: `doctor files` compares the INSTALLED copies to the INSTALLED
+# record. Compare the record to itself and a modified plugin reports green.
+[[mutation]]
+name = "doctor files compares the record to itself"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if name not in actual or recorded.get(name) != actual[name]"
+after = "        if name not in recorded or recorded.get(name) != recorded[name]"
+reddens = [
+  "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
+]
+
+# A guard that shipped without an entry.
+
+# `doctor files`' own arm for a record that is present and is not a record. `_guarded` reds
+# every non-`OSError` exception, so letting `UnreadableRecord` escape still produces a red row
+# — which is why the test asserts the SENTENCE and not the status, and why this mutation is a
+# `raise` rather than a deletion: deleting the arm reddens nothing at all.
+[[mutation]]
+name = "doctor files lets an unreadable record escape to the generic red row"
+file = "src/stayfixed/doctor/checks.py"
+before = "    except UnreadableRecord:\n        return Row("
+after = "    except UnreadableRecord:\n        raise\n        return Row("
+reddens = [
+  "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
+]
+
+# ---------------------------------------------------------------------------------------------
+# Guards from a whole-branch review, each one an assertion that review added or changed, and
+# each entry's `after` chosen so the test reddens on the sentence or the value only the correct
+# behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
+# also produces.
+
+# `drift()` walks the record for the missing-from-tree direction and this row walked
+# `HASHED_FILES` for both, which is the same list only while the installed record and the
+# running build agree — and the record is read from `plugin_root`, which can name a plugin from
+# a different release than the `stayfixed` on `PATH`. A red status alone is produced by several
+# other arms of this row, so the case asserts the file name in the detail.
+[[mutation]]
+name = "doctor files walks only the files this build knows about"
+file = "src/stayfixed/doctor/checks.py"
+before = "        for name in sorted({*HASHED_FILES, *recorded})"
+after = "        for name in sorted(HASHED_FILES)"
+reddens = ["tests/doctor/test_checks.py::test_a_record_naming_a_file_this_build_does_not_ship_is_red"]
+
+# The record's keys are repository-authored — `read_record` validates the values and the record
+# is read from a plugin root a committed `env` block can name — and this detail is what
+# `doctor --json` carries and the skill relays verbatim. `_versions` refuses the same thing one
+# function up. The count is what keeps the union walk above load-bearing, so the case asserts
+# both the absent prose and the count that replaced it.
+[[mutation]]
+name = "doctor files quotes the record's own file names back"
+file = "src/stayfixed/doctor/checks.py"
+before = "    mine = [name for name in changed if name in HASHED_FILES]"
+after = "    mine = list(changed)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted",
+]
+
+# --- Four doctor rows that named the wrong cause ---------------------------------------------- The
+# three here and `mutations/`'s "a broken machine file is blamed on stayfixed.toml again" are the
+# sentences a person reads when something is wrong, so a row that names the wrong cause sends them
+# to fix the wrong thing. Each mutation restores exactly the sentence that was there.
+[[mutation]]
+name = "doctor calls a byte-correct file a mismatch again"
+file = "src/stayfixed/doctor/checks.py"
+before = '            problems.append(f"{listed(unrecorded)} is/are shipped here and not in the record")'
+after = '            problems.append(f"{listed(unrecorded)} do(es) not match the release record")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch",
+]
+
+[[mutation]]
+name = "doctor calls an absent file a mismatch again"
+file = "src/stayfixed/doctor/checks.py"
+before = '            problems.append(f"{listed(absent)} is/are absent from this installation")'
+after = '            problems.append(f"{listed(absent)} do(es) not match the release record")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch",
+]
+
+# `[ci] ref` is repository-authored and must be the commit of a released stayfixed. Which commits
+# those are is the `release` package's own rule (`is_released`, semver tags only), and the row's
+# verdict is what a reader acts on: a ref no released tag names is a project pinned to a gate
+# nobody shipped, reported green.
+[[mutation]]
+name = "a ci-ref that is no released commit is reported as a released commit"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if not is_a_release:"
+after = "        if is_a_release:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_released_commit_is_ok_and_an_unreleased_one_is_red",
+]
+
+# A supply-chain verdict, and the one `ci-ref` row that gates the exit code from the file rather
+# than from the configuration: the pin GitHub acts on is the workflow's `uses:` line, so a
+# workflow pinning something other than `[ci] ref` means the gate that runs is not the one
+# recorded. Returning the ref's own verdict there reads as "the workflow agrees" — the same false
+# green the two `warn` arms beside it refuse by name. The anchor is `_USES`, this module's own
+# pattern in the installed package; the file it reads is repository-authored and no byte of it is
+# printed.
+[[mutation]]
+name = "doctor stops comparing the workflow's pin with [ci] ref"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if pinned != {ref}:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_pins_something_else_is_red",
+]
+
+# The same row's other red, over the documented mutable opt-in. `[ci] ref = "v1"` is judged
+# against the public repository's own tag listing, and an alias the listing does not carry is a
+# project whose gate resolves to nothing; reported as the ordinary `warn` ("a mutable opt-in"), it
+# reads as an installation working. Uncovered as well as unproven until the case beside this
+# entry was written.
+[[mutation]]
+name = "an alias the public repository does not carry is reported as the mutable opt-in"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if ALIAS not in tags:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed",
+]
+
+# A verdict a reader acts on. With `[ci] mode = "reusable"`, a released sha recorded and no
+# `.github/workflows/stayfixed.yml`, the row reported `ok` — "[ci] ref is a released stayfixed
+# commit" — for a repository with no gate in it at all. That is the false green the `not pinned`
+# arm eleven lines below already refuses by name, and it is the state `init` itself leaves
+# whenever it reports `ci-workflow` under `skipped`. The mutation puts the false green back.
+[[mutation]]
+name = "doctor reports a pinned ref as ok with no workflow file to pin it in"
+file = "src/stayfixed/doctor/checks.py"
+before = '        if context.config.ci.mode == "reusable":'
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green",
+]
+
+# Spelled once. `overlay-requires`' remedy a few rows below reads `REPOSITORY_URL`, while
+# `cli-path`'s carried the address written out -- two places to change when the repository moves, in
+# the command whose whole job is finding the two halves of something that has stopped agreeing. The
+# test reads the function's source, because an identical literal satisfies an assertion about the
+# remedy's text.
+[[mutation]]
+name = "the cli-path remedy spells the repository URL again"
+file = "src/stayfixed/doctor/checks.py"
+before = '            f"run `uv tool install git+{REPOSITORY_URL}`",'
+after = '            "run `uv tool install git+https://github.com/stayfixed/stayfixed`",'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command",
+]
+
+# The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
+# `.github/workflows/stayfixed.yml`. This row read it with neither of the guards its two siblings in
+# the same module have -- `hook_entries` asks `is_file()` of every settings file before it opens
+# one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
+# `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
+# timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
+# back. None of the bytes reaches the report either way, so this is containment hygiene rather than
+# a leak, which is why it is a guard and not a refusal.
+[[mutation]]
+name = "doctor reads the rendered workflow without asking what it is"
+file = "src/stayfixed/doctor/checks.py"
+before = """    if not fsops.is_file(workflow):
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):"""
+after = """    if False:
+        if fsops.exists(workflow) or fsops.is_symlink(workflow):"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_is_not_a_file_does_not_hang_the_row",
+]
+
+# Over the bound is itself an answer, which is the sibling rule of `mutations/`'s "doctor reads an
+# environment-named log with no bound of its own" one function down: a workflow `init` rendered is
+# under 2 KiB, a file a clone committed there has no cap at all, and a `uses:` line past the bound
+# would be compared against bytes nobody read. So the arm must not fall through to the ref's own
+# verdict, which is what this entry breaks.
+#
+# **What has no entry, and why: an unbounded read itself.** A read of the whole file and the bounded
+# one answer "over the bound" identically -- the difference is how many bytes were held to answer
+# it, and no assertion at a testable file size can see that. Measured rather than assumed: this
+# entry's `after` was an unbounded read on its first run and the oracle reported it survived, which
+# is the finding that produced this paragraph. The sibling `_diagnostics` entry does redden, because
+# that row counts records *inside* what it read and an unbounded read counts more of them; this row
+# returns above its count. The bound on the read itself is `fsops.read_bounded`'s, held by
+# `mutations/`'s "the regular-file reader reads past its limit" and "the regular-file reader refuses
+# a file at its limit".
+[[mutation]]
+name = "doctor reads the rendered workflow with no bound of its own"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if over:\n        # Over the cap is itself an answer"
+after = "    if False:\n        # Over the cap is itself an answer"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_over_the_cap_is_not_the_refs_own_verdict",
+]
+
+# The strict decode was a red a *clone* could force. `read_text(encoding="utf-8")` raises
+# `UnicodeDecodeError`, a `ValueError`, which no arm of this row caught: it reached `_guarded` as
+# "this check could not run" and exit 1, out of the one row whose own rule is that a file it cannot
+# account for is named rather than absolved. A replaced byte cannot forge a sha -- `_USES` bounds
+# what is compared and nothing read here is printed.
+[[mutation]]
+name = "a workflow byte that is not utf-8 makes the ci-ref row a broken check"
+file = "src/stayfixed/doctor/checks.py"
+before = '    rendered = raw.decode("utf-8", errors="replace")'
+after = '    rendered = raw.decode("utf-8")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared",
+]
+
+# The one call this area makes that leaves the machine, and the five-minute cap it inherited.
+# `NETWORK_TIMEOUT_SECONDS` is written for `gh repo create --clone` and the clone behind it; the
+# `ci-ref` row reads one tag listing, on a command that prints one line of output and `docs/cli.md`
+# calls a diagnostic. `stayfixed init` recording a `[ci] ref` is what made the block reachable at
+# all. Two entries, this one and `mutations/`'s "the runner ignores the bound its caller asked for",
+# because the choice and the honouring of it are in different modules: without the second, a
+# caller's bound is accepted and ignored.
+[[mutation]]
+name = "doctor asks the public repository with no bound of its own"
+file = "src/stayfixed/doctor/commands.py"
+before = "        runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),"
+after = "        runner=subprocess_runner(),"
+reddens = [
+  "tests/doctor/test_command.py::test_the_runner_this_command_builds_is_bounded_for_a_diagnostic",
+]
+
+# In the block led by `mutations/`'s "the hook takes a symlinked stayfixed.toml by what it points
+# at": a symlinked `stayfixed.toml` is asked about by its own name first.
+[[mutation]]
+name = "doctor reads a stayfixed.toml linked to /dev/zero as no stayfixed.toml"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if not (fsops.is_symlink(document) or fsops.is_file(document)):"
+after = "    if not fsops.is_file(document):"
+reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]"]
+
+# A symlinked `stayfixed.toml` is refused by every command, and `doctor` says it is a link. Without
+# the arm it gets the row for a file that does not load, whose remedy is `docs check` and a fix
+# to the file, never replacing the link with the real file.
+[[mutation]]
+name = "doctor gives a symlinked stayfixed.toml the row for a file that does not load"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if fsops.is_symlink(document):"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
+]
+
+# `${CLAUDE_PLUGIN_DATA}` is a variable a committed `env` block can set, so the hook sink's log is a
+# file a clone can choose. A line of valid JSON the parser still cannot read -- an integer literal
+# longer than the interpreter converts, nesting past what it follows -- raised past `_is_record`'s
+# catch, and `diagnostics` read red, "this check could not run".
+[[mutation]]
+name = "doctor's hook sink reader lets a line past the parser's reach raise"
+file = "src/stayfixed/doctor/checks.py"
+before = "    except (ValueError, RecursionError):\n        return False\n    return isinstance(record, dict)"
+after = "    except (json.JSONDecodeError, UnicodeDecodeError):\n        return False\n    return isinstance(record, dict)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[long-number]",
+  "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[nested]",
+]
+
+# A settings file, or the directory holding it, can be committed as a symbolic link to a name longer
+# than a file name may be. Raised past the walk, `ENAMETOOLONG` puts `_guarded`'s warning in place of
+# all of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0; read
+# as no file, the walk skips a file that is there. `fsops.names_regular_file` raises it, and the walk
+# reads such a path as a file it is blind to.
+[[mutation]]
+name = "hook-entries skips a settings file it cannot ask about"
+file = "src/stayfixed/doctor/entries.py"
+before = "            regular = names_regular_file(path)\n        except OSError:\n            found.append((_BLIND, None, label))"
+after = "            regular = names_regular_file(path)\n        except OSError:\n            pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.claude]",
+  "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.codex/hooks.json]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_committed_path_doctor_cannot_ask_about_fails_the_report[.claude/settings.local.json-overlay]",
+]
+
+# Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it
+# may run. A file the walk refuses for that alone is red: read as one it is blind to, a warning,
+# it let a clone commit a marked entry beside such nesting and keep `stayfixed doctor`'s exit code
+# at 0, with or without a ledger, with an overlay recorded or not.
+[[mutation]]
+name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
+file = "src/stayfixed/doctor/entries.py"
+before = "        except ParserLimitError:\n            found.append((_UNCHECKED, None, label))"
+after = "        except ParserLimitError:\n            found.append((_BLIND, None, label))"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[nested-recording-it-overlay]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[nested-none-no-overlay]",
+]
+
+# The other half: a file this process may not read is this machine's state, which git cannot
+# commit and a harness running as the same user cannot read either, so it stays a warning.
+[[mutation]]
+name = "hook-entries reads every settings file it cannot read as one it cannot check"
+file = "src/stayfixed/doctor/entries.py"
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
+        except OSError:
+            found.append((_BLIND, None, label))"""
+after = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
+        except OSError:
+            found.append((_UNCHECKED, None, label))"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[recording-it-overlay]",
+  "tests/attach/test_doctor.py::test_a_settings_file_this_machine_cannot_read_keeps_a_warning[none-no-overlay]",
+]
+
+# One byte that is not UTF-8 in a settings file is no part of any entry: the marker and the commands
+# it marks are ASCII. Refused, it made the file one the walk is blind to, and a forged entry in it
+# lost its red to a warning and an exit of 0.
+[[mutation]]
+name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
+file = "src/stayfixed/doctor/entries.py"
+before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
+        except OSError:"""
+after = """            document = read_regular_bytes(path).decode("utf-8")
+        except (OSError, UnicodeDecodeError):"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
+  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-no-marked-entry]",
+]
+
+# The `codex-trust` row names the surfaces the registry says do not reach Codex, which is the one
+# measured fact a Codex user needs when they look.
+[[mutation]]
+name = "the codex-trust row lists no surface that does not run on Codex"
+file = "src/stayfixed/doctor/checks.py"
+before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
+after = "        absent: list[str] = []"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
+]
+
+# And it names only those: a row that told a Codex user the gates and the methodology do not run
+# either would be a false measurement, which a test deriving its expectation as the row does
+# cannot see.
+[[mutation]]
+name = "the codex-trust row says no surface runs on Codex"
+file = "src/stayfixed/doctor/checks.py"
+before = "        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]"
+after = "        absent = [str(surface) for surface, reach in CODEX.reach.items()]"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_codex_row_names_what_does_not_run_on_codex",
+]
+
+# In the block led by `mutations/`'s "the live-entry walk refuses a scalar where a list or an object
+# belongs": the row reads Claude Code's settings files by that walk and every other strictly, since
+# only Claude Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and
+# names a file the walk could only partly read.
+[[mutation]]
+name = "hook-entries reads every settings file leniently, Codex's included"
+file = "src/stayfixed/doctor/entries.py"
+before = "            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
+after = "            read = judged_entries(document, lenient=True)"
+reddens = [
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[scalar-event]",
+  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[byte-order-mark]",
+]
+
+[[mutation]]
+name = "hook-entries says nothing of a settings file it could only partly read"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+        if read.partly:
+            found.append((_BLIND, None, label))
+"""
+after = """
+        if False:
+            found.append((_BLIND, None, label))
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
+]
+
+[[mutation]]
+name = "hook-entries says nothing of a marked command the walk skipped"
+file = "src/stayfixed/doctor/entries.py"
+before = """
+        if read.hidden:
+            found.append((_HIDDEN, None, label))
+"""
+after = """
+        if False:
+            found.append((_HIDDEN, None, label))
+"""
+reddens = [
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
+]
+
+# In the block led by `mutations/`'s "hook-entries reads no project skill": a skill, command or
+# agent file whose frontmatter declares hooks is named as one the row does not judge, a warning and
+# never a red, and its frontmatter is read for a top-level `hooks` key between its two fences and
+# nothing more.
+[[mutation]]
+name = "hook-entries reads no project skill"
+file = "src/stayfixed/doctor/entries.py"
+before = "    found.extend((_SEEN[seen], None, where) for seen, where in hooked(context.root))\n"
+after = "    found.extend([])\n"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+]
+
+[[mutation]]
+name = "a skill declaring hooks makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_HOOKS = _Kind(\n    WARN,"
+after = "_SKILL_HOOKS = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+]
+
+[[mutation]]
+name = "a skill declaring hooks outranks a red finding's remedy"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_HOOKS = _Kind(\n    WARN,\n    0,"
+after = "_SKILL_HOOKS = _Kind(\n    WARN,\n    9,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_hooks_never_softens_a_red_row",
+]
+
+[[mutation]]
+name = "hook-entries prints a skill's name whole"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    return printable(relative, _UNPRINTED)"
+after = "    return relative"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_name_outside_the_path_grammar_is_withheld",
+]
+
+[[mutation]]
+name = "a skill's frontmatter runs past its closing fence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        body = _lines(text, fenced[0], max(fenced[0], end))'
+after = '        body = _lines(text, fenced[0], len(text))'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter reads an indented hooks key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+        if indent not in indents:
+            continue
+        below = content[index + 1 : index + 2]
+        continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+        key = _block_key(line[indent:], continued=continued)
+"""
+after = """
+        below = content[index + 1 : index + 2]
+        continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
+        key = _block_key(line.lstrip(" "), continued=continued)
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[nested-key]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter reads any key opening with hooks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return rest[: colon.start()].rstrip(" \t")'
+after = '        return rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)]'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
+]
+
+[[mutation]]
+name = "an unterminated frontmatter is read to the end"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if closing is None:
+        return None
+'''
+after = '''
+    if closing is None:
+        return opening.end(), len(text)
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
+]
+
+# A frontmatter is read to `LINES_READ` lines and `CHARACTERS_READ` characters and no further, and
+# the text is never split into lines whole: at the read cap, a file of many short lines asked a
+# gigabyte and more, and one of wide lines three.
+[[mutation]]
+name = "a frontmatter is read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+        if body.count("\n") >= LINES_READ:
+            continue
+'''
+after = '''
+        if False:
+            continue
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[short-lines-past-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter of exactly the lines read is not read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'body.count("\n") < LINES_READ and _plain(body)'
+after = 'body.count("\n") < LINES_READ - 1 and _plain(body)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[at-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter's line separators are read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''                if broken.count("\n") < LINES_READ:'''
+after = "                if True:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[line-separators-past-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter is read past the characters read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if max(ends) > CHARACTERS_READ:
+        return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-characters-read]",
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[wide-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a skill file is split into lines whole"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    fenced, harness = _fenced(text, start), _harness_fenced(text, start)"
+after = '''    lines = text.split("\n")
+    fenced, harness = _fenced(text, start), _harness_fenced(text, start)'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-long-body]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter keeps its byte-order mark"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    start = 1 if text.startswith(chr(0xFEFF)) else 0"
+after = "    start = 0"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+[[mutation]]
+name = "a file's byte-order mark is cut off a copy of it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+after = '''
+    text = text.removeprefix(chr(0xFEFF))
+    start = 0
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a file's lone CRs are turned into LFs before the characters read are counted"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+after = '''
+    text = _LONE_RETURN.sub("\n", text)
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a file's line breaks are turned into LFs before the characters read are counted"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+after = '''
+    text = text.replace("\r\n", "\n")
+    start = 1 if text.startswith(chr(0xFEFF)) else 0
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-byte-order-mark-and-wide-cr-lines-past-the-characters-read]",
+]
+
+[[mutation]]
+name = "a skill's frontmatter splits on LF alone"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return text[start:end].replace("\r\n", "\n").replace("\r", "\n")'
+after = '    return text[start:end]'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+# A frontmatter is answered "no" only where it keeps to the plain subset of YAML the reader reads
+# exactly; outside it, the readings are asked for `hooks`, and the answer is "yes" or "cannot
+# tell", which both name the file. Each part of the subset is admitted, and each shape outside it
+# refused, by a rule a case holds.
+[[mutation]]
+name = "a frontmatter inside the plain subset is answered without reading it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            return _holds_hooks(body)'
+after = '            return False'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+[[mutation]]
+name = "the plain subset admits no plain value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return "line" if _plain_scalar(value, flow=False) else None'
+after = '    return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[plain-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no quoted value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "line" if quoted and _ends(value[quoted.end() :]) else None'
+after = '        return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[quoted-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no comment after a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return not rest or (rest.startswith("#") and rest != after)'
+after = '    return not rest'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[quoted-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no block scalar"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "block" if header and _ends(value[header.end() :]) else None'
+after = '        return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "a block scalar's indicators are read as text after its opening"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_BLOCK_HEADER = re.compile(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?")'
+after = '_BLOCK_HEADER = re.compile(r"[|>]")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "a block scalar's text is read as lines of the subset"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if not rest or (scalar is not None and indent > scalar):'
+after = '        if not rest:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        flow = _items(value, 1, ",")'
+after = '        flow = None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits no quoted scalar in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            quoted = _QUOTED_ITEM.match(line, position)'
+after = '            quoted = None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-quoted-scalars]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-a-quoted-fence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-on-its-keys-line]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence left open on its key's line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "line" if flow == "]" else flow'
+after = '        return "line" if flow == "]" else None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-on-its-keys-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-plain-item-shaped-like-a-key-over-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence opening on the line below its key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            keyed = column'
+after = '            keyed = None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-below-its-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-hooks-below-its-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits no sequence entry"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_ENTRIES = re.compile(r"(?:-[ ][ ]*+)*+")'
+after = '_ENTRIES = re.compile(r"(?!)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[nested-mappings-and-sequences]",
+]
+
+[[mutation]]
+name = "the plain subset admits no nested line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if shape is None or indent:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[nested-mappings-and-sequences]",
+]
+
+[[mutation]]
+name = "the plain subset admits no comment line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+        if rest.startswith("#"):
+            continue
+'''
+after = '''
+        if False:
+            continue
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[comments-and-blank-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line of any shape"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if first and indent:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-below]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[double-quoted-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-merge-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-merge-tag]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-explicit-merge-tag]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-bare-flow-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-as-a-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-directive]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-marker-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line-above-an-alias]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-quoted-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a key behind a tag or an anchor"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:[!&][^ \t]*+[ \t][ \t]*+)?[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-merge-tag-on-a-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a merge key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:<<|[A-Za-z0-9_][A-Za-z0-9_.-]*+):(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-merge-key-over-nested-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits a quoted key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:\"[^\"]*+\"|[A-Za-z0-9_][A-Za-z0-9_.-]*+):(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-merge-key-over-nested-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-longer-quoted-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value behind a tag"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#&*|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tagged-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value behind an anchor"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#*!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-anchored-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits an alias for a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#&!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-alias-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow mapping for a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]#&*!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-mapping-as-a-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a brace in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PLAIN_ITEM = re.compile(r"[^,\[\]{}\"']*+")'''
+after = '''_PLAIN_ITEM = re.compile(r"[^,\[\]\"']*+")'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-brace-in-a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits anything after an item of a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+        elif last == "item":
+            return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-item-a-colon-follows]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-item-text-follows]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line of a flow sequence at its key's column"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            if not rest or indent <= sequence[0]:'
+after = '            if not rest:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-closing-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-item-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-empty-flow-sequence-closing-at-its-keys-column]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence that never closes"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return sequence is None'
+after = '    return True'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-that-never-closes]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-open-at-the-closing-fence]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence opening at its key's column"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'indent > opener and rest.startswith("[")'
+after = 'indent >= opener and rest.startswith("[")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-at-its-keys-column-below-a-comment]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence opening past the line below its key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        opener, keyed = keyed, None'
+after = '        opener = keyed'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-below-a-blank-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-below-a-comment]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence over lines as a sequence entry"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return shape if shape in ("line", "block") else None'
+after = '    return shape'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-over-lines-as-a-sequence-entry]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-over-lines-as-an-indented-entry]",
+]
+
+[[mutation]]
+name = "the plain subset admits a blank line inside a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            if not rest or indent <= sequence[0]:'
+after = '            if rest and indent <= sequence[0]:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-blank-line-inside-a-flow-sequence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-blank-line-inside-an-empty-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits text after the close of a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            return "]" if _ends(line[position + 1 :]) else None'
+after = '            return "]"'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[text-after-a-flow-sequence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-after-a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits a pair in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return opens and not (flow and _PAIR_OR_COMMENT.search(scalar))'
+after = '    return opens'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-of-pairs]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value over lines"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if first or (item == rest and item != "-"):
+        return None
+'''
+after = '''
+    if first:
+        return None
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-plain-value-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-plain-value-continued-below]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-end-line]",
+]
+
+[[mutation]]
+name = "the plain subset admits a tab in an indentation"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if rest.startswith("\t") or _UNPLAIN_CHARACTER.search(rest):'
+after = '        if _UNPLAIN_CHARACTER.search(rest):'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-after-spaces]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-in-a-block-scalars-text]",
+]
+
+[[mutation]]
+name = "the plain subset admits a next-line character"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '"[^\t\n -~\xa1-\u167f'
+after = '"[^\t\n -~\x85\xa1-\u167f'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-next-line-character]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line or paragraph separator"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\u200b-\u2027\u202a-\u202e'
+after = '\u200b-\u202e'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-line-separator]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-paragraph-separator]",
+]
+
+[[mutation]]
+name = "the plain subset admits a no-break space"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = ' -~\xa1-'
+after = ' -~\xa0-'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-no-break-space]",
+]
+
+[[mutation]]
+name = "the plain subset admits an ideographic space"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\u2060-\u2fff\u3001-\ud7ff'
+after = '\u2060-\ud7ff'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-ideographic-space]",
+]
+
+[[mutation]]
+name = "the plain subset admits a byte-order mark inside"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\ue000-\ufefe\uff00-\ufffd'
+after = '\ue000-\ufffd'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-byte-order-mark-inside]",
+]
+
+[[mutation]]
+name = "the plain subset admits a lone carriage return"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'not lone_return and '
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-lone-carriage-return]",
+]
+
+[[mutation]]
+name = "the plain subset admits an indented first line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if shape is None:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-indented-mapping]",
+]
+
+[[mutation]]
+name = "the plain subset admits a sequence at the top"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if first and item != rest:
+        return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-sequence-at-the-top]",
+]
+
+[[mutation]]
+name = "the plain subset is read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'body.count("\n") < LINES_READ and _plain(body)'
+after = '_plain(body)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-lines-read]",
+]
+
+# Claude Code may end a frontmatter at a `---` within a line and read a key indented by a tab: the
+# row reads the frontmatter each way it may be read and says "declares hooks" where any reading
+# holds `hooks`. Inside the plain subset, a frontmatter cut short at a `---` within a line holds no
+# key the whole one does not, so there the bound of `---` lines alone is read.
+[[mutation]]
+name = "a frontmatter Claude Code may end within a line is read only to a line of its own"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    if harness is not None and (fenced is None or harness[1] != fenced[1]):"
+after = "    if False:"
+reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line_are_named"]
+
+[[mutation]]
+name = "a frontmatter whose two bounds differ answers could not tell where both say no"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if not lone_return and body.count'
+after = '        if harness is not None and harness[1] == fenced[1] and not lone_return and body.count'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-quoted-value]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-inside-a-literal-block]",
+]
+
+[[mutation]]
+name = "a tab-indented frontmatter is read only as it stands"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        yield _untabbed(body)'
+after = '        yield body'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-mapping]",
+]
+
+[[mutation]]
+name = "a frontmatter is repaired of a tab only below its first line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if body.startswith("\t") or "\n\t" in body:'
+after = '    if "\n\t" in body:'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-tag-above-the-mapping]",
+]
+
+[[mutation]]
+name = "a skill file that names no file is unreadable"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        status = path.stat()\n    except OSError as exc:\n        if exc.errno in NAMES_NO_FILE:\n            return []\n"
+after = "        status = path.stat()\n    except OSError as exc:\n        if False:\n            return []\n"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link]",
+  "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[dangling-link-out]",
+]
+
+[[mutation]]
+name = "hook-entries passes over a skill file it cannot read"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+        content = read_regular_bytes(path)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return [(Seen.UNREAD, _label(relative))]
+"""
+after = """
+        content = read_regular_bytes(path)
+    except OSError as exc:
+        if exc.errno in NAMES_NO_FILE:
+            return []
+        return []
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-directory]",
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[a-fifo]",
+]
+
+[[mutation]]
+name = "hook-entries passes over a skills directory it cannot list"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            if exc.errno not in NAMES_NO_FILE:\n                found.append((Seen.UNREAD, _label(relative)))"
+after = "            if exc.errno not in NAMES_NO_FILE:\n                pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skills_directory_that_cannot_be_listed_is_named",
+]
+
+# Commands, agents and skills below the root declare hooks as a project's own skills do, and the
+# row read only `.claude/skills/<name>/SKILL.md`: each place, and each depth below it, is read.
+[[mutation]]
+name = "hook-entries reads no skill below the project root"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        for directory, place in _nested(root, budget):"
+after = "        for directory, place in ():"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[nested-skill]",
+]
+
+[[mutation]]
+name = "hook-entries reads a place one level deep"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            elif fsops.is_dir(root / child):"
+after = "            elif fsops.is_dir(root / child) and relative == top:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[skill-inside-a-skill]",
+]
+
+[[mutation]]
+name = "hook-entries reads only a command directory's own files"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            elif fsops.is_dir(root / child):"
+after = "            elif fsops.is_dir(root / child) and place.name is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command-in-a-namespace]",
+]
+
+[[mutation]]
+name = "hook-entries reads a skill file's name in its own case"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    return folded == place.name.casefold()"
+after = "    return name == place.name"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[lowercase-skill-file]",
+]
+
+[[mutation]]
+name = "hook-entries reads every file in a command directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = '        return folded.endswith(".md")'
+after = "        return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_plain_command_and_agent_files_leave_the_row_as_it_was",
+]
+
+# YAML spells one top-level key many ways, and the row read only a bare `hooks:` in the first
+# column: quoted either way, in a flow mapping, in a mapping indented as a whole, or behind a tag or
+# an anchor, the key declared hooks the row never named. Each spelling is read, at the top level
+# and no deeper.
+[[mutation]]
+name = "a frontmatter's quoted key is read as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """    if rest[:1] in ('"', "'"):"""
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[double-quoted]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[single-quoted]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[escaped]",
+]
+
+[[mutation]]
+name = "a frontmatter in flow style is read as no mapping"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if body.startswith("{", end) and not _keyed(body, end):'
+after = '    if False:'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-as-json]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-over-lines]",
+]
+
+[[mutation]]
+name = "a frontmatter's top level is its first column"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    indent = _past(_SPACES, content[0])'
+after = '    indent = 0'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[indented-mapping]",
+]
+
+[[mutation]]
+name = "a frontmatter key's tag or anchor hides it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    rest = rest[properties.end() :] if properties else rest"
+after = "    rest = rest"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored]",
+]
+
+# A frontmatter is read to the read cap, so a key line is read in time linear in its length: a
+# pattern that rescans the rest of the line at every step held `doctor` for hours on one line.
+[[mutation]]
+name = "a frontmatter key's tags are stripped one copy at a time"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = """
+    properties = _PROPERTIES.match(rest)
+    rest = rest[properties.end() :] if properties else rest
+"""
+after = '''
+    while rest[:1] in ("!", "&"):
+        parts = re.split(r"[ \t]+", rest, maxsplit=1)
+        rest = parts[1] if len(parts) == 2 else ""
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_line_is_read_in_time_linear_in_its_length[tags]",
+]
+
+[[mutation]]
+name = "a frontmatter key is found by a lazy match"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_KEY_END = re.compile(r":(?=[ \t]|\Z)")'
+after = '_KEY_END = re.compile(r"[ \t]*:(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_line_is_read_in_time_linear_in_its_length[blanks]",
+]
+
+# A repetition a long value reaches gives nothing back, so the reader keeps no record per character
+# of it.
+[[mutation]]
+name = "a frontmatter key's tags are given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")'''
+after = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*[ \t]*)*")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[tags-on-a-key]"]
+
+[[mutation]]
+name = "the properties ahead of a frontmatter's node are given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_AHEAD = re.compile(r"(?:[!&]\S*+\s*+)++(?:#[^\n]*+\s*+)*+")'''
+after = '''_AHEAD = re.compile(r"(?:[!&]\S*\s*)+(?:#[^\n]*\s*)*")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[anchors-ahead-of-a-flow-mapping]"]
+
+[[mutation]]
+name = "the run of properties ahead of a block mapping is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+|#[^\n]*+\s*+)++")'''
+after = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*\s*|#[^\n]*\s*)+")'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[anchors-ahead-of-a-block-mapping]"]
+
+[[mutation]]
+name = "a comment ends the properties ahead of a frontmatter's node"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+|#[^\n]*+\s*+)++")'''
+after = '''_PROPERTY_RUN = re.compile(r"(?:[!&]\S*+\s*+)++(?:#[^\n]*+\s*+)*+")'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-below-an-anchor-and-a-comment]",
+]
+
+[[mutation]]
+name = "a double-quoted scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_DOUBLE_QUOTED = r'"(?:[^"\\]++|\\.)*+"''''
+after = '''_DOUBLE_QUOTED = r'"(?:[^"\\]|\\.)*"''''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[double-quoted-key]"]
+
+[[mutation]]
+name = "a single-quoted scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
+after = '''_SINGLE_QUOTED = r"'(?:[^']|'')*'"'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[single-quoted-key]"]
+
+[[mutation]]
+name = "a flow mapping's plain scalar is given back"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''[^\s{}\[\],]*?(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
+after = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*)'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[plain-scalar-in-a-flow-mapping]"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a flow mapping's plain scalar is a possessive repeat"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''[^\s{}\[\],]*?(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
+after = '''(?:[^\s{}\[\],:]|:(?![\s{}\[\],]|$))*+)'''
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# The same, for a key's properties: a property's blanks read as blanks or the line's end are a
+# choice after its run, and the pass may fail there.
+[[mutation]]
+name = "the blanks after a frontmatter property may fail"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+[ \t]*+)*+")'''
+after = '''_PROPERTIES = re.compile(r"(?:[!&][^ \t]*+(?:[ \t]++|\Z))*+")'''
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# A plain scalar in a flow mapping ends before a colon that a blank, an indicator or the end follows:
+# read on past it, `{hooks: x}` holds a plain `hooks:` and no key.
+[[mutation]]
+name = "a flow mapping's plain scalar runs on past a colon and a blank"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
+after = '''(?=[\s{}\[\],]|\Z))'''
+reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]"]
+
+[[mutation]]
+name = "a flow mapping's keys are read at every depth"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            if candidate is not None and len(depth) == 1:'
+after = '            if candidate is not None:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-nested]",
+]
+
+[[mutation]]
+name = "a flow mapping's quoted scalars are read as tokens"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'rf"(?P<quoted>{_QUOTED})|'
+after = 'rf"(?P<quoted>(?!))|'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-in-a-quoted-value]",
+]
+
+# A flow mapping behind a tag or an anchor, on its line or the line above, is still one; and a
+# frontmatter outside the plain subset is read for a `hooks` key all the same.
+[[mutation]]
+name = "a flow mapping's tag or anchor hides it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    end = past.end() if past else bare'
+after = '    end = bare'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-anchored]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged-above]",
+]
+
+[[mutation]]
+name = "a flow mapping a colon follows is read as the whole frontmatter"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if not body.startswith("{", node) or _keyed(body, node):'
+after = '    if not body.startswith("{", node):'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key-tagged]",
+]
+
+[[mutation]]
+name = "a flow mapping a colon follows is read for its keys"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if body.startswith("{", end) and not _keyed(body, end):'
+after = '    if body.startswith("{", end):'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-mapping-as-a-key]",
+]
+
+# A flow mapping is read past a comment among its properties and past a tab after the first line's
+# spaces, beside the block reading, which is passed over only where the node is a flow mapping
+# behind its properties and then its comments; each reading only adds keys.
+[[mutation]]
+name = "the flow reading stops at a comment that properties follow"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    past = _PROPERTY_RUN.match(body, bare)'
+after = '    past = _AHEAD.match(body, bare)'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-properties-a-comment-splits]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-a-comment-on-a-property-line]",
+]
+
+[[mutation]]
+name = "a tab after a frontmatter's indentation hides the flow mapping behind it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    bare = _past(_BLANKS, body, start)'
+after = '    bare = start'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-past-a-tab-after-the-indentation]",
+]
+
+[[mutation]]
+name = "a flow mapping's lines are read as a block mapping's too"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    if not body.startswith("{", node) or _keyed(body, node):'
+after = '    if True:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-tagged-nested-over-lines]",
+]
+
+[[mutation]]
+name = "a flow mapping's lines behind its tag are read as a block mapping's too"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    node = ahead.end() if ahead else start'
+after = '    node = start'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-tagged-nested-over-lines]",
+]
+
+[[mutation]]
+name = "a mapping below a tag or an anchor alone on its line is read at the tag's indentation"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        keys = keys | _block_keys(content, {indent} | starts)'
+after = '        keys = keys | _block_keys(content, {indent})'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-above-an-indented-mapping]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored-above-an-indented-mapping]",
+]
+
+[[mutation]]
+name = "a frontmatter outside the plain subset is never read for hooks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return True if any(_holds_hooks(reading) for reading in _readings(bounds)) else None'
+after = '    return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[beside-an-alias]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-document-marker-line]",
+]
+
+[[mutation]]
+name = "an explicit key's comment is read as part of it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "        rest = rest[: comment.start()] if comment else rest"
+after = "        rest = rest"
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[explicit-key-before-a-comment]",
+]
+
+# A character Python reads as a blank or a line break and YAML does not is read as YAML reads it.
+[[mutation]]
+name = "a frontmatter is read only with Python's blanks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            yield from _repaired(body.translate(odd))'
+after = '            yield from _repaired(body)'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[an-anchor-holding-an-ideographic-space]",
+]
+
+[[mutation]]
+name = "a frontmatter is read only with YAML 1.2's line breaks"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'body.translate(odd | breaks)'
+after = 'body.translate(odd)'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-key-past-a-line-separator]",
+]
+
+# An explicit key that goes on below its line is one key over both lines to YAML: the reader reads
+# no key there rather than the part on the first line.
+[[mutation]]
+name = "an explicit key past its line is read as no key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if explicit and continued:
+        return None
+'''
+after = '''
+    if False:
+        return None
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-over-lines-opening-with-hooks]",
+]
+
+# A line at the top indentation inside a quoted or flow value over lines is read as a key. A reader
+# that skips such a line by the quotes or brackets it counts on the top-level lines above it hides
+# a real `hooks` key: below a nested value whose last line, at the top indentation, opens a quote
+# or a bracket, and inside a value a reader repairing broken YAML re-quotes; and one that takes a
+# quote left open on its line for one never closed hides the key below a value that closed.
+[[mutation]]
+name = "the frontmatter reader skips a line it guesses is inside a double-quoted value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if indent not in indents:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        if indent not in indents or sum(above.count('"') for above in top) % 2:'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-double-quote]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-flow-value]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-quoted-value-over-lines]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-value-a-repair-re-quotes]",
+]
+
+[[mutation]]
+name = "the frontmatter reader skips a line it guesses is inside a single-quoted or flow value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if indent not in indents:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        quotes = sum(above.count("'") for above in top)
+        depth = sum(above.count("[") + above.count("{") - above.count("]") - above.count("}") for above in top)
+        if indent not in indents or quotes % 2 or depth > 0:'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-nested-tail-opening-a-single-quote]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-that-never-closes]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[inside-a-flow-value-over-lines]",
+]
+
+[[mutation]]
+name = "the frontmatter reader skips every line below a quote left open on its line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if indent not in indents:'
+after = '''        top = [above for above in content[:index] if len(above) - len(above.lstrip(" ")) == indent]
+        if indent not in indents or any(above.count('"') % 2 for above in top):'''
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-value-over-lines]",
+]
+
+# The walk below the root lists a whole checkout, so it is bounded, enters no `.git`, and lists a
+# directory a link leads back to once; a walk that stopped is a warning that says so.
+[[mutation]]
+name = "the hooked-file walk lists past its cap"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        if self.left < 0:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so",
+]
+
+[[mutation]]
+name = "a hooked-file walk that stopped makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_SKILL_UNTOLD = _Kind(\n    WARN,"
+after = "_SKILL_UNTOLD = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so",
+]
+
+[[mutation]]
+name = "the hooked-file walk enters .git"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
+after = "            if not (is_directory or is_link):"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_below_the_root_never_enters_git_s_own_directory",
+]
+
+# In a work tree the nested places are asked of git's index: tracked and untracked files, never
+# ignored ones, which no clone carries and whose trees passed the walk's cap on every run; each
+# name compared without case. The walk is the fallback where git cannot answer.
+[[mutation]]
+name = "the nested-skill query lists ignored files"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            "--others",
+            "--exclude-standard",
+"""
+after = """
+            "--others",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_large_ignored_tree_is_neither_walked_nor_named",
+]
+
+[[mutation]]
+name = "the nested places are walked in a work tree"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        if queried is not None:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_large_ignored_tree_is_neither_walked_nor_named",
+]
+
+[[mutation]]
+name = "the nested-skill query lists only untracked files"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            "--cached",
+            "--others",
+"""
+after = """
+            "--others",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[pkg/.claude/skills/nested/SKILL.md]",
+]
+
+[[mutation]]
+name = "the nested-skill query lists only what the index holds"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            "--cached",
+            "--others",
+            "--exclude-standard",
+"""
+after = """
+            "--cached",
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_an_uncommitted_nested_skill_is_named_in_a_work_tree",
+]
+
+[[mutation]]
+name = "the nested-skill query compares names by case"
+file = "src/stayfixed/doctor/hooked.py"
+before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
+after = '        for spec in (f":(glob)**/{place.directory}", f":(glob)**/{place.directory}/**")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_nested_skill_is_named_in_any_case[pkg/.Claude/Skills/n/SKILL.md]",
+]
+
+[[mutation]]
+name = "the nested-skill query reads the root's own places again"
+file = "src/stayfixed/doctor/hooked.py"
+before = '        if not f"{entry}/".casefold().startswith(own):'
+after = "        if True:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_projects_own_claude_directory_as_a_link_is_read_once[queried]",
+]
+
+[[mutation]]
+name = "the nested walk compares directory names by case"
+file = "src/stayfixed/doctor/hooked.py"
+before = '    folded = f"/{relative}".casefold()'
+after = '    folded = f"/{relative}"'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_walk_outside_a_work_tree_folds_the_case_of_directories",
+]
+
+# A link inside a place is followed only while it stays under the root: one to `/` read every
+# Markdown file below it, and named a file outside the checkout by the path it was reached through.
+[[mutation]]
+name = "the hooked-file walk follows a link out of the checkout"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    return Path(os.path.realpath(path)).is_relative_to(real_root)"
+after = "    return True"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/skills/out]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/agents/a.md]",
+]
+
+# git lists a link as an entry of its own and never what it leads to, so each link the query
+# lists is read as a directory of its place; a submodule is one entry to `--cached`, so its index is
+# asked too. A link that leads out of the checkout is no defect, and is told as one that leads out.
+[[mutation]]
+name = "the nested-skill query reads no link it lists"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            if not (_reads(place, PurePosixPath(name).name) or os.path.islink(root / name)):"
+after = "            if not _reads(place, PurePosixPath(name).name):"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_inside_a_nested_skills_directory_is_followed_in_a_work_tree",
+]
+
+[[mutation]]
+name = "the nested-skill query asks no submodule"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    if any(os.path.lexists(directory / _GITMODULES) for directory in (root, *root.parents)):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_in_a_checked_out_submodule_is_named",
+]
+
+[[mutation]]
+name = "a directory link out of the checkout is told as unreadable"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                found.append((Seen.LINKED_OUT, _label(relative)))"
+after = "                found.append((Seen.UNREAD, _label(relative)))"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/skills/out]",
+]
+
+[[mutation]]
+name = "a file link out of the checkout is told as unreadable"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        return [(Seen.LINKED_OUT, _label(relative))]"
+after = "        return [(Seen.UNREAD, _label(relative))]"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/agents/a.md]",
+  "tests/doctor/test_checks.py::test_a_skill_file_that_is_no_regular_file_is_refused_and_named[/dev/zero]",
+]
+
+[[mutation]]
+name = "a link out of the checkout makes hook-entries red"
+file = "src/stayfixed/doctor/entries.py"
+before = "_LINKED_OUT = _Kind(\n    WARN,"
+after = "_LINKED_OUT = _Kind(\n    RED,"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_out_of_the_checkout_is_named_and_never_followed[.claude/commands]",
+]
+
+# A link that names no directory, a skill's `LICENSE` say, is passed over wherever it points, as it
+# is in the project's own places; a nested `.claude/skills` that is itself a link is read as theirs
+# are, by the query and by the walk.
+[[mutation]]
+name = "a link to a file is read as a directory of its place"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            if not S_ISDIR(status.st_mode):
+                continue
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_to_a_file_out_of_a_nested_skills_directory_is_passed_over[queried]",
+]
+
+[[mutation]]
+name = "the nested-skill query lists no link standing for a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = '        for spec in (f":(glob,icase)**/{place.directory}", f":(glob,icase)**/{place.directory}/**")'
+after = '        for spec in (f":(glob,icase)**/{place.directory}/**",)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested walk passes over a link standing for a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "            if not (is_directory or is_link) or name == _GIT_DIR:"
+after = "            if not is_directory or name == _GIT_DIR:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[inside-walked]",
+  "tests/doctor/test_checks.py::test_a_nested_skills_directory_that_is_a_link_is_read_or_named[outside-walked]",
+]
+
+# A nested `.claude` that is a link stands above a `.claude/skills`: its `skills` is read as such a
+# directory that is a link is, followed while it stays in the checkout and named where it leads
+# out, asked of git and walked alike, and the project's own `.claude` is not read twice.
+[[mutation]]
+name = "the nested-skill query lists no link standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "        elif (above := _above(name, places)) is not None and os.path.islink(root / name):"
+after = "        elif False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested-skill query asks git for no entry standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    pathspecs += ["
+after = "    pathspecs += [] and ["
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-queried]",
+]
+
+[[mutation]]
+name = "the nested walk passes over a link standing above a skills directory"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                if above is not None and above[0].casefold() != above[1].directory.casefold():"
+after = "                if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-walked]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[outside-walked]",
+]
+
+[[mutation]]
+name = "a link standing above a skills directory is compared by case"
+file = "src/stayfixed/doctor/hooked.py"
+before = '    standing = f"/{relative}".casefold()'
+after = '    standing = f"/{relative}"'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-in-another-case-queried]",
+  "tests/doctor/test_checks.py::test_a_nested_claude_directory_that_is_a_link_is_read_or_named[inside-in-another-case-walked]",
+]
+
+[[mutation]]
+name = "the nested walk reads the root's own places again"
+file = "src/stayfixed/doctor/hooked.py"
+before = "                if above is not None and above[0].casefold() != above[1].directory.casefold():"
+after = "                if above is not None:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_projects_own_claude_directory_as_a_link_is_read_once[walked]",
+]
+
+[[mutation]]
+name = "the hooked-file walk lists a directory each time it is reached"
+file = "src/stayfixed/doctor/hooked.py"
+before = """
+            if (status.st_dev, status.st_ino) in listed_once:
+                continue
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_link_back_up_a_skills_tree_is_listed_once",
+]
+
+[[mutation]]
+name = "the hooked-file walk names a file each time it is reached"
+file = "src/stayfixed/doctor/hooked.py"
+before = "    if (status.st_dev, status.st_ino) in read:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_skill_file_two_paths_reach_is_named_once",
+]
+
+[[mutation]]
+name = "hook-entries reads a settings file past the cap"
+file = "src/stayfixed/doctor/entries.py"
+before = "            document = read_regular_bytes(path).decode("
+after = "            document = path.read_bytes().decode("
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
+]
+
+# A `HOME` that is not the password database's home is named, with the directory stayfixed's
+# machine files are under, rather than ignored in silence; a user the database does not list is
+# told that no machine file is read. The row asks the predicate every hook asks, so it warns
+# exactly where a hook stops reading `HOME`, an unset one included.
+[[mutation]]
+name = "doctor says nothing of a HOME the password database does not record"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if homes_agree(env):\n        return None"
+after = "    if True:\n        return None"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
+]
+
+[[mutation]]
+name = "doctor reads an unset HOME as the database's home"
+file = "src/stayfixed/doctor/checks.py"
+before = "    if homes_agree(env):"
+after = '    if not env.get("HOME") or homes_agree(env):'
+reddens = [
+  "tests/doctor/test_checks.py::test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read",
+]
+
+[[mutation]]
+name = "doctor reads a home the password database does not list"
+file = "src/stayfixed/doctor/checks.py"
+before = "    recorded = passwd_home()\n    if recorded is None:"
+after = "    recorded = passwd_home()\n    if False:"
+reddens = ["tests/doctor/test_checks.py::test_a_user_the_password_database_does_not_list_is_told_no_file_is_read"]
+
+# Off a terminal `HOME` may be a directory a clone ships, so the upgrader's remedy to move the
+# files under it is given only to a person at a terminal.
+[[mutation]]
+name = "doctor advises moving files from HOME off a terminal"
+file = "src/stayfixed/doctor/checks.py"
+before = '        _MOVE_YOUR_FILES.format(owner=owner) if override_is_honoured() else _FROM_A_TERMINAL,'
+after = '        _MOVE_YOUR_FILES.format(owner=owner),'
+reddens = ["tests/doctor/test_checks.py::test_off_a_terminal_doctor_never_advises_moving_files_from_home"]
+
+[[mutation]]
+name = "ignored-env drops the HOME remedy when a variable is set too"
+file = "src/stayfixed/doctor/checks.py"
+before = '        detail, remedy = f"{detail}; {home[0]}", f"{remedy}; {home[1]}"'
+after = '        detail, remedy = f"{detail}; {home[0]}", remedy'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_variable_and_a_home_that_both_go_unhonoured_get_both_remedies",
+]
+
+# The core's row names the directory the machine files are under and nothing an area withholds
+# meanwhile: the harness memory link is the `memory` area's `harness-link` row, in its own words.
+[[mutation]]
+name = "doctor's core row speaks for the memory area's harness link"
+file = "src/stayfixed/doctor/checks.py"
+before = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}",'''
+after = '''        f"not honoured on the hook path: stayfixed's machine files are under {owner}; a hook makes no harness memory link",'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does",
+]
+
+# Each submodule discovery imports has one reader. A core module that asks for `commands` itself,
+# naming the submodule as a literal as every call must, can still pick one area's module out of the
+# answer by its name and call into the private layer.
+[[mutation]]
+name = "a core module picks one area's commands out of discovery"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+    from stayfixed.areas import area_modules
+
+    (memory,) = [m for m in area_modules("commands") if m.__name__ == "stayfixed.memory.commands"]
+    memory.register'''
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+# A module is loaded with no import statement through its own module's loader, a finder on `sys`, a
+# builtin that runs text, `__builtins__` and a string annotation `typing.get_type_hints` evaluates:
+# the name rule reads each by its name.
+[[mutation]]
+name = "a core function loads the note store through its own module's loader"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return type(__spec__.loader)("stayfixed.memory.store", "store.py")'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function loads the note store through a finder on sys.meta_path"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import sys
+
+        return sys.meta_path[-1].find_spec("stayfixed.memory.store", ["memory"])'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function imports the note store by running text"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return exec("import stayfixed.memory.store")'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function reaches __import__ through __builtins__"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        return getattr(__builtins__, "__imp" + "ort__")("stayfixed.memory.store")'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+[[mutation]]
+name = "a core function's string annotation imports the note store"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        def hinted(x: "__import__('stayfixed.memory.store')") -> None:
+            pass
+
+        return hinted'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The core imports the standard library from an allowlist, so a module nobody has measured as a
+# door is a row all the same: `timeit` runs an import written as text, `xml.dom.pulldom` binds
+# `xml`, off which `xml.sax.make_parser` imports a parser by its name, and `builtins` hands
+# `__import__` over by a computed name.
+[[mutation]]
+name = "a core function runs an import through timeit"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import timeit
+
+        return timeit.timeit("import stayfixed.memory.store", number=1)'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function reaches xml.sax through a sibling submodule's import"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import xml.dom.pulldom
+
+        return xml.sax.make_parser(["stayfixed.memory.store"])'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function takes __import__ from builtins by a computed name"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import builtins
+
+        return getattr(builtins, "__imp" + "ort__")("stayfixed.memory.store")'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# `sys.breakpointhook` imports whatever `PYTHONBREAKPOINT` names, and `sys` is on the core's list, so
+# the name rule reads the hook by its name.
+[[mutation]]
+name = "a core function hands an import to sys.breakpointhook"
+file = "src/stayfixed/doctor/checks.py"
+before = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""'''
+after = '''def _joined(words: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+
+    def _load() -> object:
+        import sys
+
+        return sys.breakpointhook()'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
+
+# The diagnostics row says why the session markers could not be listed in words, as its log arm
+# does: it named the error's class, which the fragment that says the row speaks in words denied.
+[[mutation]]
+name = "doctor names the error class of session markers it could not list"
+file = "src/stayfixed/doctor/checks.py"
+before = "            f\"the hook sink's session markers could not be listed ({fsops.said(exc)}), so \""
+after = "            f\"the hook sink's session markers could not be listed ({type(exc).__name__}), so \""
+reddens = ["tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning"]
+
+# A `uses:` word is read once: read again from every `uses:` inside it, a file of them at the cap
+# took ten seconds. Its ref is what follows the word's last call, and a word ending in `uses:`
+# hands on to the next.
+[[mutation]]
+name = "a uses: word is read again from every uses: inside it"
+file = "src/stayfixed/doctor/checks.py"
+before = "    while (match := _USES.search(text, at)) is not None:"
+after = '''    return {m.group(1) for m in re.finditer(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)", text)}
+    while (match := _USES.search(text, at)) is not None:'''
+reddens = ["tests/doctor/test_checks.py::test_a_long_workflow_is_read_for_its_pins_in_time_linear_in_its_length"]
+
+[[mutation]]
+name = "a uses: word pins what follows its first call"
+file = "src/stayfixed/doctor/checks.py"
+before = "        call = word.rfind(_CALL)"
+after = "        call = word.find(_CALL)"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[the last call]"]
+
+[[mutation]]
+name = "a word ending in uses: is passed over whole"
+file = "src/stayfixed/doctor/checks.py"
+before = "            at -= len(_USES_KEY)"
+after = "            pass"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[a word ending in uses:]"]
+
+# The call that ends a word has nothing after it, so the word's ref follows the call before it;
+# and a call at the word's start has nothing before it, so it pins nothing.
+[[mutation]]
+name = "the call that ends a word no longer falls back to the one before it"
+file = "src/stayfixed/doctor/checks.py"
+before = "            call = word.rfind(_CALL, 0, call)"
+after = "            call = -1"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[a call ending the word]"]
+
+[[mutation]]
+name = "a call with nothing before it pins"
+file = "src/stayfixed/doctor/checks.py"
+before = "        if call > 0:"
+after = "        if call >= 0:"
+reddens = ["tests/doctor/test_checks.py::test_a_uses_word_pins_what_the_pattern_read_it_to_pin[nothing before the call]"]
+
+# A single-quoted scalar whose quotes never pair up is no scalar to YAML, so it is no key either:
+# read as one ending at its last `''`, `? 'hooks''` was a `hooks` key no reading of YAML holds.
+[[mutation]]
+name = "a single-quoted scalar whose quotes never pair up ends at its last pair"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
+after = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-explicit-key-whose-quotes-never-pair]",
+]

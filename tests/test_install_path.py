@@ -31,7 +31,6 @@ import pty
 import re
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +45,7 @@ from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, marke
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
+from tests.ownerhome import plugin_root_with_owner_home, stayfixed_argv
 from tests.runners import Recorder
 from tests.snapshot import (
     assert_snapshot_changed,
@@ -189,7 +189,9 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
-    command = [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv]
+    # The launcher's own lines, with the password database answering the scratch home as `HOME`
+    # does: off a terminal, that is where the machine owner's home is read (`tests/ownerhome.py`).
+    command = [*stayfixed_argv(walk.home), *argv]
     if not tty:
         return subprocess.run(
             command,
@@ -217,7 +219,8 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The sixteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
+    """The seventeen rows, read back out of what `doctor --json` printed on the launcher's
+    stdout."""
     done = _cli(
         walk,
         "doctor",
@@ -231,7 +234,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 16, rows
+    assert len(rows) == 17, rows
     return rows
 
 
@@ -406,24 +409,33 @@ def _session(
     developer's own `~/.claude` or `~/.config/stayfixed`.
 
     `machine=False` for `stayfixed hook <event>`, which takes no such flag: the dispatcher hands
-    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/stayfixed/` and
-    nothing a session can name. `HOME` above is what keeps that inside the scratch tree, and a
-    caller that wants the hook path to see a machine file puts one there.
+    every handler `machine=None` on purpose, so a handler reads `.config/stayfixed/` under the
+    home the password database records, and nothing a session can name. The plugin root's
+    launcher pins that home to the scratch one `HOME` names (`_plugin_root`), and a caller that
+    wants the hook path to see a machine file puts one there.
     """
     env = developer_free_environ()
-    env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
+    plugin = _plugin_root(walk)
+    env["CLAUDE_PLUGIN_ROOT"] = str(plugin)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     env["HOME"] = str(walk.home)
     flags = ["--machine", str(walk.machine)] if machine else []
     return subprocess.run(
-        [str(WRAPPER), "open", *argv, *flags],
+        [str(plugin / "hooks" / WRAPPER.name), "open", *argv, *flags],
         cwd=walk.root,
         capture_output=True,
         text=True,
         check=False,
         env=env,
     )
+
+
+def _plugin_root(walk: Walkthrough) -> Path:
+    """This checkout as the plugin root a session's wrapper runs from, with the password
+    database answering the scratch home: the hook path reads the machine owner's home from
+    there and not from `HOME` (`tests/ownerhome.py`)."""
+    return plugin_root_with_owner_home(walk.home.parent, walk.home)
 
 
 def _bundle(walk: Walkthrough, bundle: str, part: int = 1) -> subprocess.CompletedProcess[str]:
@@ -497,11 +509,19 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     walk = _install_path(tmp_path)
     assert str(walk.overlay) in walk.machine.read_text(encoding="utf-8")
     env = developer_free_environ()
-    env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
+    plugin = _plugin_root(walk)
+    env["CLAUDE_PLUGIN_ROOT"] = str(plugin)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["HOME"] = str(walk.home)
     without = subprocess.run(
-        [str(WRAPPER), "open", "memory", "session-context", "--bundle", "standing-rules"],
+        [
+            str(plugin / "hooks" / WRAPPER.name),
+            "open",
+            "memory",
+            "session-context",
+            "--bundle",
+            "standing-rules",
+        ],
         cwd=walk.root,
         capture_output=True,
         text=True,
@@ -643,9 +663,9 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
-# What `docs/cli.md` says `stayfixed doctor` launches: five subprocesses on a green attached
+# What `docs/cli.md` says `stayfixed doctor` launches: six subprocesses on a green attached
 # installation *besides* the `ci-ref` row, which the stub runner below answers in process rather
-# than launching — so five here and six in production on a repository that records a `[ci] ref`,
+# than launching — so six here and seven in production on a repository that records a `[ci] ref`,
 # which is what `docs/cli.md` says.
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
@@ -654,7 +674,10 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # each area resolves the note store for its own rows, once per report, and in overlay mode a
 # resolution asks `git` for the checkout's `origin`. So `attached` and the store's two rows ask
 # it once each, where one shared context used to ask it once for all three.
-DOCTOR_LAUNCHES = 5
+#
+# Six and not five since `hook-entries` asks git's index which files below the root a nested
+# `.claude/skills` holds, in place of walking the whole tree.
+DOCTOR_LAUNCHES = 6
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -676,7 +699,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # **The one test here that keeps the library seam**, and the reason is the measurement
     # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
-    # run as a subprocess launches its five in a process no patch of ours can see. Everything
+    # run as a subprocess launches its six in a process no patch of ours can see. Everything
     # else in this module runs the launcher; this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
@@ -702,11 +725,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # The report is green first, so a count taken from a run that fell over early cannot pass.
     assert [check.name for check in checks if check.status == RED] == []
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the five the paragraph names, not five of something else: one wrapper probe,
-    # and four `git` questions. Asserted by shape rather than by full argv, because each of the
-    # four `git` calls carries the temporary checkout or overlay it asks about.
+    # And they are the six the paragraph names, not six of something else: one wrapper probe,
+    # and five `git` questions. Asserted by shape rather than by full argv, because each of the
+    # five `git` calls carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 4
+    assert sum(1 for argv in launched if argv[0] == "git") == 5
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
@@ -794,6 +817,49 @@ def test_an_owner_whose_ledger_will_not_parse_gets_back_to_green_the_way_doctor_
     )
 
 
+def test_an_overlay_grant_carrying_more_than_a_command_is_accounted_for_once_attached(
+    tmp_path: Path,
+) -> None:
+    # `hook-entries` vouches for an entry only where the whole entry is the one `attach` writes, so
+    # the owner it must not refuse is one whose overlay grants an entry with a `timeout` and a
+    # `statusMessage` beside its command: `attach` writes both as they are, and the row reads what
+    # it wrote. Run through the real `attach`, so the comparison is with the bytes it put in the
+    # settings file. Mutation (oracle): `mutations/`'s "a grant keeps the integers the walk reads
+    # as text" -> red.
+    walk = _install_path(tmp_path)
+    granted = {
+        "type": "command",
+        "command": "echo hi",
+        "timeout": 30,
+        "statusMessage": "Checking the command…",
+    }
+    (walk.overlay / "common" / "claude" / "hooks.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [granted]}]}}),
+        encoding="utf-8",
+    )
+    done = _cli(
+        walk,
+        "attach",
+        "--store",
+        str(walk.store),
+        "--yes",
+        "--machine",
+        str(walk.machine),
+        tty=True,
+    )
+    assert done.returncode == 0, done.stderr
+    written = json.loads((walk.root / ".claude" / "settings.local.json").read_text("utf-8"))
+    (entry,) = written["hooks"]["PreToolUse"][0]["hooks"]
+    assert (entry["timeout"], entry["statusMessage"]) == (30, granted["statusMessage"]), entry
+    rows = _doctor(walk)
+    assert next(row for row in rows if row["name"] == "hook-entries") == {
+        "name": "hook-entries",
+        "status": OK,
+        "detail": "1 stayfixed entr(ies), 0 foreign; all accounted for",
+        "remedy": "",
+    }
+
+
 def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:
     # The interactive-shell gate on `--machine`, reached through argv rather than through the
     # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
@@ -819,9 +885,9 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
     #
     # What would break it: remove the refusal and step 4's `--check` exits 0 with
     # `real_directories: 0`; remove the link tree and `RULE_BODY` never reaches the bundle;
-    # remove `init`'s footprint and the manifest assertion fails; let any row go red — the
-    # sixteenth, `overlay-requires`, is the one this branch added and it is answered here
-    # against a real overlay rather than a stub.
+    # remove `init`'s footprint and the manifest assertion fails; let any row go red —
+    # `overlay-requires`, the last, is the one this branch added and it is answered here against
+    # a real overlay rather than a stub.
     walk = _install_path(tmp_path, initialised=True)
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr

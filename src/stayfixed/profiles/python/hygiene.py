@@ -20,17 +20,17 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import stat
 import struct
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stayfixed.guards.api import contained_roots
+from stayfixed import fsops
+from stayfixed.fsops import open_directory, read_bounded_within
 
 if TYPE_CHECKING:
-    from stayfixed.config.schema import Config
     from stayfixed.profiles.hints import RedRunHint
 
 _PYTEST = "pytest"
@@ -71,19 +71,13 @@ _PYC_HASH_BASED = 0b1
 # there -- compares a 33-bit number against the 32 bits the header can hold and mismatches
 # forever.
 _PYC_MTIME_MASK = 0xFFFFFFFF
-# Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe was
-# put there by whoever wrote the tree, and opening it reads what it names, or waits on a pipe's
-# writer for good (a link to `/dev/stdin` hung a terminal). So the open refuses a symlink, returns
-# at once from a pipe, and what it opened is judged by its descriptor, which nothing can swap
-# between the check and the read. The source is not held to this: the interpreter follows a
-# symlinked source too.
-_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 # The two bounds on the walk for `.pyc` files, past either of which it stops and reports that it
-# could not tell. Named caps (CONTRIBUTING.md#named-caps), and the shipped file that changes with
-# them is `hooks/hooks.json`: the `PostToolUse` `Bash` hook that runs this walk after a red test
-# run has a 10 s timeout there, which the two together must stay well under. A hook that times
-# out delivers nothing and never banks its once-key, so an unbounded walk over a large tree was
-# paid again after every red run.
+# could not tell: `fsops.WALK_ENTRIES` on the listing, the one cap every walk over a repository's
+# tree that may stop there reads, and `BYTECODE_READ_FILES` on the reads. Named caps
+# (CONTRIBUTING.md#named-caps), and the shipped file that changes with them is `hooks/hooks.json`:
+# the `PostToolUse` `Bash` hook that runs this walk after a red test run has a 10 s timeout there,
+# which the two together must stay well under. A hook that times out delivers nothing and never
+# banks its once-key, so an unbounded walk over a large tree was paid again after every red run.
 #
 # The walk has two halves of very different cost, so each has its own count. Listing charges
 # every directory entry under the code roots, not only the bytecode. Reading charges every `.pyc`
@@ -97,7 +91,6 @@ _PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 # cache and the `git status` the same hook runs; it is more bytecode, and 500k more entries, than
 # a code root holds once virtual environments and dependency trees are outside it.
 # `docs/cli.md`'s `test hygiene` section states both numbers.
-BYTECODE_WALK_ENTRIES = 500_000
 BYTECODE_READ_FILES = 20_000
 
 # The two counts `report` returns, and the names `stayfixed test hygiene --json` prints them under.
@@ -120,27 +113,28 @@ UNTOLD = (
 )
 
 
-def _recorded_source_mtime(pyc: Path) -> int | None:
-    """The source mtime CPython recorded in `pyc`'s header, or `None` when there is not one.
+def _recorded_source_mtime(cache: int, name: str) -> int | None:
+    """The source mtime CPython recorded in the header of the `.pyc` called `name` in the open
+    `__pycache__` `cache`, or `None` when there is not one.
 
     Five things produce `None` and they all mean the same thing to the caller -- skip this
-    file: it is not a regular file (see `_PYC_OPEN` above), the header could not be read, it is
-    short, it was written by another interpreter and this one will never open it (see
-    `_PYC_MAGIC` above), or it is hash-based and therefore carries a hash fragment where an mtime
-    would be (see `_PYC_HASH_BASED` above).
+    file: it is not a regular file, the header could not be read, it is short, it was written by
+    another interpreter and this one will never open it (see `_PYC_MAGIC` above), or it is
+    hash-based and therefore carries a hash fragment where an mtime would be (see
+    `_PYC_HASH_BASED` above).
+
+    Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe
+    was put there by whoever wrote the tree, and opening it reads what it names, or waits on a
+    pipe's writer for good (a link to `/dev/stdin` hung a terminal). So it is read under its
+    `__pycache__`, opened once for all its files (`fsops.read_bounded_within` a directory
+    descriptor), which refuses a symlink, returns at once from a pipe, and judges what it opened by
+    its descriptor, which nothing can swap between the check and the read. The source is not held
+    to this: the interpreter follows a symlinked source too.
     """
     try:
-        descriptor = os.open(pyc, _PYC_OPEN)
+        header, _ = read_bounded_within(cache, name, _PYC_HEADER)
     except OSError:
         return None
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            return None
-        header = os.read(descriptor, _PYC_HEADER)
-    except OSError:
-        return None
-    finally:
-        os.close(descriptor)
     if len(header) < _PYC_HEADER:
         return None
     if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:
@@ -152,7 +146,7 @@ def _recorded_source_mtime(pyc: Path) -> int | None:
 
 def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
     """Every `__pycache__` directory under `roots` with the names in it that end in `.pyc`, or
-    `None` when the walk visited more than `BYTECODE_WALK_ENTRIES` entries and stopped. The cap
+    `None` when the walk visited more than `fsops.WALK_ENTRIES` entries and stopped. The cap
     is one total across `roots`, since every root a configuration lists would otherwise multiply
     the hook's time.
 
@@ -175,7 +169,7 @@ def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         visited += 1
-                        if visited > BYTECODE_WALK_ENTRIES:
+                        if visited > fsops.WALK_ENTRIES:
                             return None
                         if entry.is_dir(follow_symlinks=False):
                             pending.append(directory / entry.name)
@@ -190,7 +184,7 @@ def _bytecode(roots: Iterable[Path]) -> list[tuple[Path, list[str]]] | None:
 
 def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     """How many `.pyc` files under `roots` record a source mtime their source no longer has, or
-    `None` when the walk stopped at either cap -- `BYTECODE_WALK_ENTRIES` on the listing,
+    `None` when the walk stopped at either cap -- `fsops.WALK_ENTRIES` on the listing,
     `BYTECODE_READ_FILES` on the `.pyc` files it goes on to read: a count of what it reached
     before then would be no answer, in either direction."""
     walked = _bytecode(roots)
@@ -199,21 +193,30 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     stale = 0
     read = 0
     for cache, names in walked:
-        for name in names:
-            read += 1
-            if read > BYTECODE_READ_FILES:
-                return None
-            source = cache.parent / (name.split(".")[0] + ".py")
+        # Each `__pycache__` is opened once for every file read in it. One that cannot be opened
+        # has no file this walk can read, and its files still count towards the cap.
+        with ExitStack() as opened:
             try:
-                if not source.is_file():
-                    continue
-                recorded = _recorded_source_mtime(cache / name)
-                if recorded is None:
-                    continue
-                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
-                    stale += 1
+                directory: int | None = opened.enter_context(open_directory(cache))
             except OSError:
-                continue
+                directory = None
+            for name in names:
+                read += 1
+                if read > BYTECODE_READ_FILES:
+                    return None
+                if directory is None:
+                    continue
+                source = cache.parent / (name.split(".")[0] + ".py")
+                try:
+                    if not fsops.is_file(source):
+                        continue
+                    recorded = _recorded_source_mtime(directory, name)
+                    if recorded is None:
+                        continue
+                    if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
+                        stale += 1
+                except OSError:
+                    continue
     return stale
 
 
@@ -240,8 +243,7 @@ class PythonHint:
             current == "-m" and following == _PYTEST for current, following in pairwise(argv)
         )
 
-    def report(self, root: Path, config: Config) -> Mapping[str, int] | None:
-        roots = contained_roots(root, config)
+    def report(self, roots: Sequence[Path]) -> Mapping[str, int] | None:
         stale = _stale_bytecode(roots)
         if stale is None:
             return None
@@ -249,7 +251,7 @@ class PythonHint:
 
     def note(self, counts: Mapping[str, int] | None) -> str | None:
         if counts is None:
-            return UNTOLD.format(entries=BYTECODE_WALK_ENTRIES, files=BYTECODE_READ_FILES)
+            return UNTOLD.format(entries=fsops.WALK_ENTRIES, files=BYTECODE_READ_FILES)
         stale = counts.get(STALE_KEY, 0)
         if not stale:
             return None

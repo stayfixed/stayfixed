@@ -3,8 +3,8 @@
 A module and not the package's `__init__`, for one reason: `stayfixed.hooks.registry`
 imports `stayfixed.memory.hooks`, which imports the package first, so a re-export list in
 `__init__.py` pulls the whole area — configuration included — into every `discover()` call and
-reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
-characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
+reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a consumer
+six characters and keeps discovery cheap, without a lazy `__getattr__` that would cost every
 consumer its types.
 
 **The list is what consumers outside this area import, plus what those names oblige** — not
@@ -12,13 +12,14 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-two names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-four names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the binding record, which `attach` reads it with
 and answers its own way when it cannot (`read_binding_record`), the link tree
-(`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
-`harness_memory_path`, `Links`, `PartialLink`, `linked_names`, which `attach` reads to hide
+(`link`, `MakeUnder`, the home `attach` hands it for the harness link, `attach_main`,
+`detach_main`, `harness_anchor`, `harness_link_needed`, `harness_memory_path`, `Links`,
+`PartialLink`, `linked_names`, which `attach` reads to hide
 every name the tree holds from git, and `link_sources`, every path the tree points at in the
 overlay, which `attach` asks the length of before its first write), whether the machine records
 any approval for a store that
@@ -26,27 +27,29 @@ does not exist yet (`approval_recorded`, which `attach` asks before a first link
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
 asks before its first write, since the index render and the harness link read it after), the
 binding's one classifier and the states and causes it answers in (`binding_state`, `UNBOUND`,
-`MISMATCH`, `NO_ORIGIN`, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
-`DIFFERENT_REMOTE`), which `attach` answers the binding question with instead of a second
-classifier of its own, the bundle slots `tests/hooks/test_hooks_json.py` holds the hooks file to
-(`SLOTS`), the note store a `doctor` row reads, resolved once per area per report (`Answers`,
-which the `attach` area's own `doctor.py` creates for its row), and
+`BOUND`, which `attach`'s own doctor row reads, `MISMATCH`, `NO_ORIGIN`, and the causes
+`NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and `DIFFERENT_REMOTE`), which `attach` answers
+the binding question with instead of a second classifier of its own, the bundle slots
+`tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the note store a `doctor` row
+reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
+creates for its row), and
 the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
 link graph's check is this area's own (`memory.graph`, which `memory refs` reports), so the
 wiki-link grammar, the note walk and `resolved` have no reader outside it and are not here. The
 overlay root the machine file records and the checkout's `origin` are the core's to answer
 (`config.overlay.overlay_root`, `gitenv.origin_remote` and `gitenv.GitUnavailable`), because
 `init` asks them too and the core may not import this area; the crossings still pinned are
-listed in `tests/test_areas.py`.
+listed in `tests/boundaries/test_delivery.py`.
 
 **Ten more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and
-  a return type absent from a surface is a value a consumer can hold and cannot declare, which
-  `tests/test_surfaces.py` derives rather than restates. `BINDING_STATES` and `BOUND` complete the
-  closed vocabulary `binding_state` answers in, beside the three states that have a caller, for the
-  reason the trust region's bullet below gives.
+- **The store, and the rest of the binding's vocabulary**: `Store` is what `resolve` returns, and a
+  return type absent from a surface is a value a consumer can hold and cannot declare, which
+  `tests/test_surfaces.py` derives rather than restates. `Withhold` is the other half of what
+  `link`'s `harness` takes, beside the `MakeUnder` `attach` hands it, for the same reason.
+  `BINDING_STATES` completes the closed vocabulary `binding_state` answers in, beside the four
+  states that have a caller, for the reason the trust region's bullet below gives.
 
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
@@ -132,7 +135,9 @@ from stayfixed.memory.trust import (
 )
 from stayfixed.memory.worktree import (
     Links,
+    MakeUnder,
     PartialLink,
+    Withhold,
     attach_main,
     detach_main,
     harness_anchor,
@@ -161,11 +166,13 @@ __all__ = [
     "UNBOUND",
     "Answers",
     "Links",
+    "MakeUnder",
     "PartialLink",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
     "UnsafeNote",
+    "Withhold",
     "approval_recorded",
     "attach_main",
     "binding_state",

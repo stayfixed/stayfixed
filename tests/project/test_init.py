@@ -307,7 +307,8 @@ def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path)
     # name a ref `stayfixed.toml` does not record, which is the state `doctor` reports as red.
     # The remote is not asked at all: `_ci` answers this path before it reads the resolution,
     # and the ask was a network round trip, up to its whole timeout, for an answer nothing
-    # printed. Mutation (oracle): "the adoption path with no ref asks the network again".
+    # printed. Mutation (oracle): `mutations/`'s "the adoption path with no ref asks the network
+    # again".
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
@@ -362,8 +363,8 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
     has persisted `.stayfixed/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
-    Mutation (oracle): "an unreachable remote is answered with the adoption path's reason instead
-    of its own".
+    Mutation (oracle): `mutations/`'s "an unreachable remote is answered with the adoption path's
+    reason instead of its own".
     """
     offline = LsRemote(stdout="", code=128)
     online = LsRemote(stdout=LISTING)
@@ -469,7 +470,8 @@ def test_stayfixed_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_
 ) -> None:
     # Every command reads `stayfixed.toml` at the root, and the ignore block at the root is what
     # keeps `.stayfixed/local/` out of git: a copy under `.stayfixed/local/artifacts/` is never
-    # read. Mutation (declared): "stayfixed.toml or the ignore block may be kept out of git".
+    # read. Mutation (declared): `mutations/`'s "stayfixed.toml or the ignore block may be kept out
+    # of git".
     root = _repo(tmp_path)
     (root / "stayfixed.toml").write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -490,10 +492,10 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
 ) -> None:
     # `[paths] roadmap = "CLAUDE.md"`: each pass on its own has one artifact at that file, and
     # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
-    # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
-    # init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file where
-    # case folds, and is refused on every filesystem ("places are compared case-sensitively for
-    # ownership" reddens that case).
+    # Mutation (oracle): `mutations/`'s "an artifact may target a file another artifact is built to
+    # write" -> init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file
+    # where case folds, and is refused on every filesystem: `mutations/`'s "places are compared
+    # case-sensitively for ownership" -> that case reddens.
     root = _repo(tmp_path)
     (root / "stayfixed.toml").write_text(
         f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -538,7 +540,7 @@ def test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line(
     # `[stayfixed] version` is the one key stayfixed owns that the loader requires, so an adopted
     # file without it was left unloadable by the very run that adopted it. The dry run plans
     # the stamp and writes nothing; the real run adds that one line through the key editor.
-    # Mutation (oracle): "an adopted document without a version is left unloadable".
+    # Mutation (oracle): `mutations/`'s "an adopted document without a version is left unloadable".
     root = _repo(tmp_path)
     hand_written = '# ours\n[project]\nname = "widget"\n'
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
@@ -570,7 +572,8 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
     # The merged document `init` validates forces `state`, drops `enforced` and detects a name
     # the file may lack, so each of these passed `init` and left a manifest over a file no later
     # command could load. The file is now checked as it will be on disk, in the dry run too.
-    # Mutation (oracle): "an adopted document the next command cannot load is adopted anyway".
+    # Mutation (oracle): `mutations/`'s "an adopted document the next command cannot load is adopted
+    # anyway".
     root = _repo(tmp_path)
     document = ""
     if case != "empty-file":
@@ -590,9 +593,9 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
 @needs_git
 def test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too(tmp_path: Path) -> None:
     # The stamp is computed while planning, so the key editor's refusal of an inline `stayfixed`
-    # table meets the dry run as it would the real one. Mutation (oracle): "the adopted version
-    # is checked without being added" -> the loader refuses the version-less text instead, a
-    # `ConfigError` and not an `OwnedKeyError`.
+    # table meets the dry run as it would the real one. Mutation (oracle): `mutations/`'s "the
+    # adopted version is checked without being added" -> the loader refuses the version-less text
+    # instead, a `ConfigError` and not an `OwnedKeyError`.
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
         'stayfixed = { preset = "recommended" }\n\n[project]\nname = "widget"\n',

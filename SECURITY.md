@@ -54,15 +54,49 @@ In scope, and treated as security rather than as an ordinary bug:
   repository-data region it is wrapped in.
 - **The machine anchors.** Any way a repository can choose which machine configuration file,
   overlay root or `trust.json` stayfixed reads — for example through an environment variable a
-  committed settings file can set.
+  committed settings file can set, such as `STAYFIXED_CONFIG`, or through a `HOME` that direnv,
+  mise or a devcontainer applies from a file the repository commits. Claude Code's own `env`
+  block cannot set `HOME`.
 - **Destruction.** Any way a repository, or an ordinary mistake, silently destroys the machine
   owner's own state: the trust record, a hand-edited file, or a hook configuration stayfixed did
   not write.
+- **A program a hook runs.** Claude Code applies a committed `env` block's `PATH` to hooks, and
+  resolves a relative entry against the project (measured on Claude Code 2.1.293). So the hook path
+  looks up no program through the inherited `PATH` but the wrapper's last-resort `python3`, which it
+  refuses inside the project or any checkout of it (`docs/cli.md`): in a process the hook wrapper
+  launched, stayfixed runs `git` from fixed absolute paths and hands it a fixed `PATH` for the
+  programs git runs by name, such as `git-lfs`, and the wrapper names every other program by
+  absolute path. Every `git` on the hook path, the wrapper's own included, is handed the password
+  database's home for this user as `HOME`, or no `HOME` where the database lists none, so a `HOME`
+  that direnv, mise or a devcontainer points into the clone chooses no global git configuration,
+  whose `core.fsmonitor` names a program git runs on `status`. The wrapper's own two `git` calls
+  also get no `HOME` where it finds `id` at none of its absolute paths, where the name `id` gives
+  is not a plain one (empty, led by `-`, digits alone, or holding anything but letters, digits,
+  `.`, `_` and `-`), and where the name is one the shell keeps read-only, such as `PPID` or `UID`
+  under bash, since the lookup first unsets the variable of that name. A variable in the hook's
+  environment named for the user chooses no home either, where `/bin/sh` is zsh. Where `/bin/sh`
+  is bash, which imports a function from any `BASH_FUNC_<name>%%` variable, the wrapper first
+  removes any function named for a command it runs, so none stands in for one of its builtins. A
+  committed `PATH`, an exported function or a `HOME` that makes the wrapper or stayfixed run a
+  program the repository chose is in scope. What the shell acts on before the wrapper's first line
+  is not; see below.
 
 Out of scope:
 
 - Anything that requires the attacker to already be able to write to the machine owner's home
-  directory or to `PATH`. stayfixed runs the `git` on your `PATH` by design.
+  directory or to a directory on their own `PATH`. Outside a hook, at a terminal and in a
+  `stayfixed gate` step in CI, stayfixed runs the `git` on your `PATH` by design. In the commands
+  an agent runs through its own shell tool, `PATH` is the harness's to choose, and that includes
+  which `stayfixed` runs, and so which `git` it runs, which nothing inside stayfixed can decide.
+- `HOME` choosing git's global configuration outside a hook: `$HOME/.gitconfig` and
+  `$HOME/.config/git/config`. At a terminal and in a `stayfixed gate` step in CI, stayfixed
+  hands its `git` the environment's `HOME`, as it runs the `git` on its `PATH`, so that your
+  `safe.directory` and excludes answer, and a direnv, mise or devcontainer environment that sets
+  it there is the person's own, the same class as `PATH` at a terminal. Claude Code never applies
+  `HOME`, or any `XDG_*` variable, from a project's or a local `env` block: its settings reference
+  says so under "Variables Claude Code ignores in `env`", and Claude Code 2.1.293 was measured
+  keeping the real `HOME` and an empty `XDG_CONFIG_HOME` in project and plugin hooks.
+  `XDG_CONFIG_HOME`, git's other door to that configuration, is dropped before any `git` runs.
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
@@ -72,6 +106,17 @@ Out of scope:
   block or anywhere else. The loader acts on the hook wrapper's own shell before its first line, so
   no wrapper can refuse it. On macOS the wrapper's `/bin/sh` is SIP-protected and drops `DYLD_*`
   before anything below it starts; a shebang that loses that protection is in scope.
+- `SHELLOPTS` and `PS4` reaching a hook. bash, `/bin/sh` on macOS and on the Linux distributions
+  where it is bash, reads both at start-up, and with `xtrace` in `SHELLOPTS` it expands `PS4`
+  before every command, so `PS4='$(program)'` runs that program. Measured against `/bin/sh`
+  (bash 3.2.57) directly: the program ran in a `sh -c` handed a hook's command line, before that
+  command started, and in a script whose first line was `set +x`. The shell that runs a
+  shell-form hook command is the harness's, and the wrapper's own `/bin/sh` acts on both before
+  its first line, so, as with the loader's variables, no wrapper can refuse them. Claude Code does
+  not filter them either, by design: its settings reference applies an `env` block to every
+  session and its subprocesses, and once you trust a folder, that folder's `env` block and its
+  hooks run in your shells before stayfixed starts. Trust a folder in Claude Code only as far as
+  you would run its code.
 
 ## Supported versions
 

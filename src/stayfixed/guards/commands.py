@@ -175,7 +175,7 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     if raw.startswith("-"):
         raise Refusal(f"{raw!r} looks like an option, not a file")
     path = Path(raw)
-    if path.is_symlink():
+    if fsops.is_symlink(path):
         raise Refusal(f"{path} is a symlink; refusing to write through it")
     # `--root` elsewhere is never `-`-checked and is safe only because `Path(...).resolve()`
     # makes it absolute before any `git -C` sees it; this argument is not resolved, so it is.
@@ -226,6 +226,7 @@ _NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
     from stayfixed.guards.hygiene import dirty_count
+    from stayfixed.guards.roots import contained_roots
     from stayfixed.profiles import detects, load_profile
     from stayfixed.profiles.hints import NotText, answer, shipped_hints
 
@@ -248,7 +249,7 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     reports: dict[str, dict[str, int]] = {}
     for name, hint in ((name, hint) for name, hint in hints if hint is not None):
         try:
-            report, note = answer(hint, root, config)
+            report, note = answer(hint, contained_roots(root, config))
         except NotText:
             raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
         except Exception as exc:

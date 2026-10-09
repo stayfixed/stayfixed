@@ -585,8 +585,8 @@ def test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_stayfixed_s_wo
     # of unbounded patterns, or of thousands of themes, could hold the `trail` gate for seconds
     # per name and past its job's time limit. At each bound the
     # file loads; one past it fails as the other refused shapes do, naming the bound and never
-    # the pattern. Mutations (oracle): "a theme pattern of any length is compiled" -> the long
-    # pattern loads and this reddens; "a trail.toml of any number of themes is read" -> the
+    # the pattern. Mutations (oracle): `mutations/`'s "a theme pattern of any length is compiled" ->
+    # the long pattern loads and this reddens; "a trail.toml of any number of themes is read" -> the
     # extra theme loads and this reddens.
     def themes(count: int, pattern: str) -> str:
         return "".join(f'[[theme]]\nlabel = "t{i}"\npattern = "{pattern}"\n' for i in range(count))

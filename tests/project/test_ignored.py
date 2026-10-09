@@ -81,8 +81,8 @@ def test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_w
     while `git status` showed only the manifest. It is refused now, dry run included, and the
     refusal names the file through the report's own bound.
 
-    Mutation (oracle): "a write git ignores goes ahead" -> the region lands in `.env` and the
-    refusal is never raised.
+    Mutation (oracle): `mutations/`'s "a write git ignores goes ahead" -> the region lands in `.env`
+    and the refusal is never raised.
     """
     root = initialised(tmp_path)
     _ignoring(root, ".env")
@@ -123,8 +123,8 @@ def test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_comm
 ) -> None:
     # A committed `[paths]` value and a record carrying the digest of a tool-generated file under
     # an ignored directory had `uninstall` delete it and `upgrade` overwrite it with the roadmap:
-    # the record's digest matched, and git showed nothing. Mutation (oracle): "a write git
-    # ignores goes ahead" -> the marker is removed or rewritten.
+    # the record's digest matched, and git showed nothing. Mutation (oracle): `mutations/`'s "a
+    # write git ignores goes ahead" -> the marker is removed or rewritten.
     root = initialised(tmp_path)
     _ignoring(root, "build/")
     marker = root / "build" / "marker.txt"
@@ -290,9 +290,9 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
 ) -> None:
     # A guard that cannot answer must not read as a pass. `timed-out` is every `git` call ending
     # the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a repository was
-    # asked of `rev-parse`, which timed out too, so the guard passed. Mutation (oracle): "a guard
-    # whose git timed out reads as no repository" (ask `rev-parse` again) -> the `timed-out` case
-    # upgrades and this reddens; returning instead of refusing reddens both.
+    # asked of `rev-parse`, which timed out too, so the guard passed. Mutation (oracle):
+    # `mutations/`'s "a guard whose git timed out reads as no repository" (ask `rev-parse` again) ->
+    # the `timed-out` case upgrades and this reddens; returning instead of refusing reddens both.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
@@ -350,8 +350,8 @@ def test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_valu
     artifact this configuration still builds, such as `CLAUDE.md`, is refused earlier, as
     another artifact's file: `templates.Owners`.)
 
-    Mutation (oracle): "an ignored write passes at any artifact's preset place" -> the file is
-    overwritten or removed, and the refusal is never raised.
+    Mutation (oracle): `mutations/`'s "an ignored write passes at any artifact's preset place" ->
+    the file is overwritten or removed, and the refusal is never raised.
     """
     root = repository(tmp_path)
     _excluding(root, "docs/roadmap-history.md")

@@ -20,9 +20,10 @@ from stayfixed.doctor import checks, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
+from tests.boundaries.test_discovery import UNIMPORTABLE, plant_area
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
-from tests.test_areas import UNIMPORTABLE, plant_area
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
 @pytest.fixture(autouse=True)
@@ -65,13 +66,30 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Every command prints a one-line result. Sixteen rows on stdout would make `doctor`
+    # Every command prints a one-line result. Seventeen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
     out = capsys.readouterr().out
     assert code == 0
     assert len(out.strip().splitlines()) == 1
+
+
+def test_a_second_report_is_the_first_and_neither_writes_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The lifecycle's "re-run, nothing changed": `doctor` only reads, so a second run over the
+    # same tree reports what the first did and leaves the tree, the home directory included, as
+    # it was. No mutation: the command has no write for one to take away, so this holds a
+    # property of the whole run rather than one line.
+    root = _initialised(tmp_path)
+    argv = ["doctor", "--json", "--root", str(root), "--home", str(tmp_path / "home")]
+    (tmp_path / "home").mkdir(exist_ok=True)
+    before = snapshot(tmp_path)
+    first = (invoke(argv), capsys.readouterr().out)
+    second = (invoke(argv), capsys.readouterr().out)
+    assert first == second and json.loads(first[1])["checks"]
+    assert_snapshot_unchanged(tmp_path, before)
 
 
 def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
@@ -90,7 +108,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
     `Runner` protocol has no timeout and every stub in this suite is bounded at nothing. The
     factory is imported inside `run_doctor`, so patching the module attribute is the seam.
 
-    Mutation (oracle entry "doctor asks the public repository with no bound of its own"):
+    Mutation (`mutations/`'s "doctor asks the public repository with no bound of its own"):
     `subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS)` -> `subprocess_runner()` -> this reddens
     on the recorded keyword.
     """
@@ -203,7 +221,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 16
+    assert len(report["checks"]) == 17
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -211,7 +229,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and sixteen checks is already past eight. Asserted over a
+    # off the end of the line, and seventeen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

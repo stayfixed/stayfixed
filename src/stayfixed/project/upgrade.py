@@ -174,7 +174,7 @@ def upgrade(
     dry_run: bool,
     force: Sequence[str],
 ) -> UpgradeReport:
-    if not (root / MANIFEST_PATH).is_file():
+    if not Manifest.present(root):
         raise Refusal(NOT_INITIALISED)
     text = read_document(root)
     if text is None:

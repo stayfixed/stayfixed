@@ -1,10 +1,9 @@
 """Which overlay this repository is bound to, and whether the binding is really this one's.
 
-**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted
-*by construction*, and the construction is that
-`config.machine.machine_config_path(interactive=False)` makes the machine file unselectable by
-a repository — that module spends twenty lines on why gating one of a pair of equivalent
-variables "is not a partial defence, it is a redirect with a longer name". So:
+**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted *by
+construction*, and the construction is that `config.machine.machine_config_path` makes the machine
+file unselectable by a repository — that module spends twenty lines on why gating one of a pair of
+equivalent variables "is not a partial defence, it is a redirect with a longer name". So:
 
 1. the overlay root comes from `overlay_root(machine)` and never from `--store`. Deriving it
    from the store's own parent would make the source of every allow rule and every hook entry
@@ -30,11 +29,13 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.config.loader import UNPARSEABLE, load, toml_position
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import Config
+from stayfixed.config.paths import PathEscape, PathUnasked, contained
+from stayfixed.config.schema import OVERLAY_MODE, Config
 from stayfixed.errors import Failure, Refusal
+from stayfixed.fsops import said
 from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
     PROJECT_RECORD,
@@ -77,9 +78,15 @@ MEMORY_GROUP_ESCAPES = (
     "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
     "paths.memory is itself a symlink, so the entry is refused rather than counted"
 )
+# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
+# one: the sentence above would name a cause the entry does not have. `{fault}` is the system's
+# words for what stopped the question, never a path.
+MEMORY_GROUP_UNASKED = (
+    "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
+    "symlink ({fault}), so the entry is refused rather than counted"
+)
 
 
-OVERLAY_MODE = "overlay"
 # The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
 # question as the floor under this one, but it runs after every write `attach` makes: refused
 # there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
@@ -88,7 +95,8 @@ OVERLAY_MODE = "overlay"
 # prints.
 NOT_OVERLAY = (
     "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
-    "in an overlay to bind it to; only a repository whose memory.mode is 'overlay' is attached"
+    f"in an overlay to bind it to; only a repository whose memory.mode is {OVERLAY_MODE!r} is "
+    "attached"
 )
 
 
@@ -218,7 +226,7 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
         mode = None
     except OSError as exc:
         if not cannot_exist(exc):
-            raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
+            raise Failure(f"{where} cannot be read ({said(exc)})") from exc
         mode = 0
     if mode is not None and not stat.S_ISDIR(mode):
         raise Refusal(SHARE_CANNOT_EXIST.format(projects=binding.overlay / PROJECTS))
@@ -280,13 +288,6 @@ def not_overlay(config: Config) -> str | None:
     return NOT_OVERLAY.format(mode=config.memory.mode)
 
 
-def refuse_unless_overlay(config: Config) -> None:
-    """Raise `not_overlay`'s refusal, when there is one."""
-    refused = not_overlay(config)
-    if refused is not None:
-        raise Refusal(refused)
-
-
 @dataclass(frozen=True)
 class Binding:
     """What the overlay records about this repository, and what this repository says it is.
@@ -345,15 +346,12 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except OSError as exc:
         if cannot_exist(exc):
             return None
-        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
+        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
     if not stat.S_ISREG(found):
         return None
     try:
-        recorded = read_binding_record(record)
-    except OSError as exc:
-        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
-    except UnicodeDecodeError:
-        raise UnreadableRecord(f"{where} is not UTF-8 text") from None
+        with fsops.reading(where, UnreadableRecord):
+            recorded = read_binding_record(record)
     except UNPARSEABLE as exc:
         # A refused value is bounded before it may print, closing the leak every other
         # `toml_position` caller closes. `tomllib` builds its message as
@@ -403,7 +401,7 @@ def read_binding(
     that loader is what holds it to one path segment (`../common` is the value path containment
     protects against here, and the name becomes a directory under the overlay's `projects/`).
 
-    `config` is loaded here only when the caller does not already hold one. `permissions.check`
+    `config` is loaded here only when the caller does not already hold one. `attach.check`
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
@@ -457,10 +455,14 @@ def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
                 allow_final_symlink=True,
                 resolved_root=resolved,
             )
+        except PathUnasked as exc:
+            raise PathUnasked(
+                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
+            ) from exc
         except PathEscape as exc:
             # `group` and `config.paths.memory` are repository-authored, so the combined path
             # `contained` refuses is refused again, fixed text and never quoted back.
             raise PathEscape(MEMORY_GROUP_ESCAPES) from exc
-        if target.is_dir() and not target.is_symlink():
+        if fsops.is_dir(target) and not fsops.is_symlink(target):
             found.append(group)
     return tuple(found)

@@ -489,9 +489,9 @@ def test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone(tmp_path: 
     # the person answered. `builtin` runs none, and a custom gate it did not run is never
     # promoted: named beside a built-in it holds the whole promotion back, and with no names
     # every built-in that passes is promoted and the custom gate stays advisory. Mutations
-    # (oracle): "adopt promote --builtin still runs the custom gates" -> the marker is written
-    # and the gate promoted; "a named custom gate --builtin did not run holds nothing back" ->
-    # `docs` is written alone.
+    # (oracle): `mutations/`'s "adopt promote --builtin still runs the custom gates" -> the marker
+    # is written and the gate promoted; "a named custom gate --builtin did not run holds nothing
+    # back" -> `docs` is written alone.
     root, _ = _project(tmp_path)
     base = _with_marker_gate(root)
     before = _document(root)
@@ -522,8 +522,9 @@ def test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run(tmp_path: P
     # declined decides again rather than the command. The closing line names `assess --builtin
     # --json`: it is relayed as what to run next, and a plain `assess` would run the commands the
     # person declined. Mutation (advisory): the `skipped` names left out of the advisory list ->
-    # the command exits 0 and reddens. Mutation (oracle): "adopt promote --builtin hands on a
-    # command that runs the custom gates" -> the closing line is the plain one and this reddens.
+    # the command exits 0 and reddens. Mutation (oracle): `mutations/`'s "adopt promote --builtin
+    # hands on a command that runs the custom gates" -> the closing line is the plain one and this
+    # reddens.
     root, _ = _project(tmp_path)
     base = _with_marker_gate(root)
     code, out, err = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base)
@@ -566,8 +567,8 @@ def test_a_base_that_is_not_there_is_named_as_the_reason_the_gates_reading_it_di
     # says why and names `--base`, and the last line where the findings are. Mutation (by hand):
     # the note dropped -> the `--base` assertion reddens. The `--base` it suggests is the
     # project's own base branch: a fixed `refs/heads/main` sent a `develop` project to a branch
-    # it does not have. Mutation (oracle): "the missing-base note suggests main whatever the base
-    # branch" -> `develop` reddens.
+    # it does not have. Mutation (oracle): `mutations/`'s "the missing-base note suggests main
+    # whatever the base branch" -> `develop` reddens.
     root, _ = _project(tmp_path, branch=branch)
     code, out, err = cli(root, tmp_path, "adopt", "promote")
     assert code == 1, err
@@ -585,8 +586,8 @@ def test_every_command_that_runs_gates_gives_a_gate_the_same_json_row(tmp_path: 
     # `reason`, `count` and `failing`; `gate` dropped `reason` and `failing`; `adopt promote`
     # gave no row, only lists of names. Now each is `report.gate_row`, so the rows agree key for
     # key and value for value, and `adopt promote` marks enforcing the gates it promoted.
-    # Mutations (oracle): "adopt promote --json marks no gate it promoted enforcing" and "every
-    # command's gate --json row drops failing".
+    # Mutations (oracle): `mutations/`'s "adopt promote --json marks no gate it promoted enforcing"
+    # and "every command's gate --json row drops failing".
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
     code, out, err = cli(root, tmp_path, "assess", "--base", base, "--json")
@@ -704,8 +705,8 @@ def test_adopt_promote_names_at_most_the_listed_limit_in_each_list(
     # Custom gates are the repository's to add, so both lists on the line are bounded in number
     # by nothing: each names the first `LISTED_LIMIT` and counts the rest, and `--json` carries
     # every name. The transition is given, since only the line is under test. Mutation (oracle):
-    # "adopt promote names every gate it promoted" or "... every gate still advisory" -> this
-    # reddens.
+    # `mutations/`'s "adopt promote names every gate it promoted" or "adopt promote names every
+    # gate still advisory" -> this reddens.
     root, base = _project(tmp_path)
     promoted = tuple(f"p{n:02}" for n in range(LISTED_LIMIT + 3))
     skipped = tuple(f"s{n:02}" for n in range(LISTED_LIMIT + 2))

@@ -19,9 +19,12 @@ all, with where the claim was measured. The README's table of what each agent en
 equal to these values by a test, and `doctor`'s `codex-trust` row reads them, so a measurement
 that moves a tier is one edit here.
 
-A new harness is a value with a positive `detects`, its project-root variable, its `render`, its
-settings files and its `reach`. What follows still lives outside the registry, spelled for
-Claude Code or Codex, and a harness that differs from both in any of it is an edit there too:
+A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
+its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
+memory directory if it keeps one, and its `reach`. What follows still lives outside the registry,
+spelled for Claude Code or Codex, and a harness that differs from both in any of it is an edit
+there too. `tests/test_harnesses.py` holds the list to the code: every string in a module of the
+package that names a harness is pardoned there, each pardon by one of these items or as prose.
 
 - Each harness loads the plugin through a manifest of its own, `.claude-plugin/plugin.json` and
   `.codex-plugin/plugin.json`, which `scripts/release.py check` holds to one version, so another
@@ -36,19 +39,39 @@ Claude Code or Codex, and a harness that differs from both in any of it is an ed
   `hooks/hashes.json` records for it (`scripts/release.py hashes`).
 - `hooks.api.DATA_ROOT_VARIABLES` names the variables the sink and `doctor` find the harness's
   data root by.
-- `doctor` names the plugin-root variables in `NAMED_ROOTS`, runs the wrapper for its `wrapper`
-  row under Claude Code's variables, and reads `CODEX` by name in its `codex-trust` row.
+- `doctor` runs the wrapper for its `wrapper` row under `CLAUDE`'s two root variables whichever
+  harness is in use, with every variable under Claude Code's and Codex's prefixes taken out of its
+  environment first; names `CLAUDE_PLUGIN_ROOT` in the remedy of the rows that find no plugin
+  root and `${CLAUDE_PLUGIN_DATA}` in the `diagnostics` row's; and reads `CODEX` by name in its
+  `codex-trust` row.
+- `setup` installs the plugin through each harness's own command-line verbs,
+  `_MARKETPLACE_ADD` and `_PLUGIN_INSTALL` in `setup/run.py`, keyed by harness name, so another
+  harness is another entry in each.
+- `init` renders `CLAUDE.md`, Claude Code's pointer to `AGENTS.md`, whatever `[stayfixed] agents`
+  lists (`project.templates`, from the template `claude.md`): a project that lists Codex alone
+  gets it too.
+- The overlay spells each harness's half by name: its plugin manifests and `common/claude` and
+  `common/codex` (`overlay.layout`, re-exported by `overlay.api`, and the manifest directory
+  `overlay.create` probes for), and the per-project `claude` and `codex` directories,
+  `.codex/rules` and the directories it creates in a project, which `attach` reads and writes
+  (`attach.permissions`, `attach.write`). They are the overlay's layout as much as a harness's.
 - `memory session-context` writes a bundle to a `SessionStart` entry's stdout as it is, never
   through a `render`, so a harness that reads that event's output in another shape is an edit
   there.
 - One hook output cap, `native_caps.hook_output_chars`, is Claude Code's and is applied under
   every harness.
+- The hook payload is read in Claude Code's schema, the canonical one (`CANONICAL`): its keys
+  (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `run_in_background`), the tool
+  name `Bash` and its event names are spelled across the `hooks` package (`hooks.dispatch`,
+  `hooks.api`, `hooks.policy`, `hooks.sink`), in `guards` and in the areas' hook handlers, so a
+  harness whose payload differs is an edit to each.
 
 Elsewhere, code that needs a harness fact asks this registry: `doctor` walks every value's
-`settings` and `local_settings` for hook entries, and `attach` merges into the one file
-`CLAUDE.local_settings` names. Two modules older than it still spell paths of their own, `setup`
-the machine's settings file and `attach` the overlay's layout under `.claude/` and `.codex/`,
-which are a machine's and the overlay's as much as a harness's.
+`settings` and `local_settings` for hook entries and every value's `hooked` places for skills,
+commands and agents, reads `CLAUDE.settings` for the machine's settings file and the plugin-root
+variables off every value; `setup` reads the machine's settings file off `CLAUDE.settings` too;
+`attach` merges into the one file `CLAUDE.local_settings` names; and `memory` links a store into
+the directory `CLAUDE.memory_dir` names, whichever harnesses a project lists.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
@@ -114,6 +137,18 @@ class Reach:
 
 
 @dataclass(frozen=True)
+class Hooked:
+    """A directory whose Markdown files' YAML frontmatter a harness reads for hooks, relative to a
+    project root: the one name such a file has at any depth below it (`SKILL.md`), or `None` for
+    every name ending in `.md`, and whether the harness also reads the directory below the root,
+    under any directory of the tree."""
+
+    directory: str
+    name: str | None
+    nested: bool = False
+
+
+@dataclass(frozen=True)
 class Harness:
     name: str
     marker_dir: str
@@ -130,10 +165,28 @@ class Harness:
     # Every `Surface`, each with the tier it holds at under this harness. Compared, and left out
     # of the hash: a mapping has none, and the other fields already tell two harnesses apart.
     reach: Mapping[Surface, Reach] = field(hash=False)
+    # The variable this harness names the plugin's own root in: where `doctor` looks for the
+    # installed plugin when this process cannot name it, and the one it sets when it runs the
+    # wrapper. Every harness served names one.
+    plugin_root_env: str
     # Positive detection, for every harness but the canonical one, which is the fallback.
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
     render_profile: Callable[[Profile, str], Rendition] | None = None
+    # Where this harness reads Markdown whose frontmatter can declare hooks, which `doctor`'s
+    # `hook-entries` row names and does not judge.
+    hooked: tuple[Hooked, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class MemoryHarness(Harness):
+    """A harness that keeps a project's own memory, which `memory` links a store into: Claude Code
+    alone, so the fact is this type's and not every value's, and `memory` reads it off `CLAUDE`
+    with no question whether there is one."""
+
+    # Where this harness keeps a project's own memory, relative to the home directory, given the
+    # project's resolved path.
+    memory_dir: Callable[[str], str]
 
 
 def hook_specific_output(event_name: str, context: str) -> str:
@@ -181,6 +234,13 @@ def _claude_rule(profile: Profile, rules: str) -> Rendition:
     )
 
 
+def _claude_memory(project: str) -> str:
+    """`.claude/projects/<slug>/memory`, where Claude Code keeps a project's memory under the home
+    directory: the slug is the project's resolved path with `/` and `.` as `-`."""
+    slug = project.replace("/", "-").replace(".", "-")
+    return f"{CLAUDE_DIR}/projects/{slug}/memory"
+
+
 # The gates are the reusable workflow's, which runs the same under every agent: this repository's
 # smoke workflow runs it against a fixture project, and no agent takes part.
 _IN_CI = Reach(
@@ -199,7 +259,7 @@ _NO_CODEX_HOOK = Reach(
     measured_on="Codex 0.160.0",
 )
 
-CLAUDE = Harness(
+CLAUDE = MemoryHarness(
     name="claude",
     marker_dir=CLAUDE_DIR,
     settings=(f"{CLAUDE_DIR}/settings.json",),
@@ -230,6 +290,18 @@ CLAUDE = Harness(
         }
     ),
     render_profile=_claude_rule,
+    plugin_root_env="CLAUDE_PLUGIN_ROOT",
+    # A skill's frontmatter can declare hooks, and Claude Code ran one so declared once the skill
+    # was invoked (2.1.288, measured 2026-10-06); a command file accepts a skill's fields, and an
+    # agent's frontmatter is documented to carry hooks, though none ran in that measurement.
+    # Skills are also read from a `.claude/skills` below the project root, once a session reads a
+    # file in that directory.
+    hooked=(
+        Hooked(f"{CLAUDE_DIR}/skills", "SKILL.md", nested=True),
+        Hooked(f"{CLAUDE_DIR}/commands", None),
+        Hooked(f"{CLAUDE_DIR}/agents", None),
+    ),
+    memory_dir=_claude_memory,
 )
 # Codex reads `AGENTS.md` from the root down and no other instruction file, and follows no
 # import; `.codex/rules` holds command-execution policy, not instructions. The region is how a
@@ -261,6 +333,10 @@ CODEX = Harness(
         }
     ),
     detects=_codex_detects,
+    # Codex sets Claude Code's name for it too (`_codex_detects`).
+    plugin_root_env="PLUGIN_ROOT",
+    # No place where Codex reads hooks out of a Markdown frontmatter was measured, so none is
+    # stated, and `hook-entries` reads no Codex skill.
 )
 # Claude Code's hook schema is the de-facto one, which other harnesses imitate, so it answers
 # whatever no other value claims and detects nothing of its own.

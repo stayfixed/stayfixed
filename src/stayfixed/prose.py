@@ -37,14 +37,30 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+from stayfixed import fsops
+
 # The path, ending in an extension that starts with a letter; then, outside the group, a place
 # in the file: a line and a column, or a symbol path of any depth. The trade of an open extension:
 # a backticked `owner/lib.js` repository name or a dotted branch (`release/v1.x`) reads as one.
-REFERENCE = re.compile(
+# The symbol path is read as one run of word characters, dots and colons, and its colons are judged
+# after (`_BROKEN_SYMBOL`): read as a repeat of its parts, `re` kept a record for every part it
+# might give back, 77 MiB over a line of a mebibyte and a half, and a possessive repeat of them,
+# which keeps none, read `` `src/a.py::x::` `` as a claim on Python 3.11.0 to 3.11.4, which end a
+# failed pass of it where the pass stopped (CONTRIBUTING.md, "Tests").
+_REFERENCE = re.compile(
     r"`([A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)"
-    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"
+    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"
 )
-FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
+# Where such a run is no symbol path: three colons in a row, a colon alone, or a colon at its end.
+# Every other run is parts of word characters and dots, each after its own `::`.
+_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")
+# A fenced block, as the pattern `^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$` (multi-line, `.`
+# matching a line break) reads one: a line opening with three or more backticks or tildes, closed
+# by the first later line that is the same run alone between blanks. `blank_fences` reads it a
+# line at a time, because that pattern scanned the rest of the text from every opening line no
+# later line closes, and took seconds over a few thousand of them.
+_FENCE_MARKS = "`~"
+_FENCE_MIN = 3
 # Inline code, single-line so a stray backtick cannot swallow the lines after it. Blanked
 # AFTER fences (a fence can contain backticks).
 CODE_SPAN = re.compile(r"`[^`\n]*`")
@@ -59,9 +75,44 @@ HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")
 
 
 def blank_fences(text: str) -> str:
-    """``text`` with each fenced block replaced by its own height in blank lines."""
+    """``text`` with each fenced block replaced by its own height in blank lines.
 
-    return FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    An opening line's run is tried at its full length first and then one mark shorter, down to
+    three: the first length some later line closes alone chooses the block, and the first such
+    line ends it. Lines are read top to bottom, so for each run the lines that close it are
+    passed over once each, and the whole text is read in time linear in its length.
+    """
+    lines = text.split("\n")
+    closers: dict[tuple[str, int], list[int]] = {}
+    for number, line in enumerate(lines):
+        bare = line.strip(" \t")
+        if len(bare) >= _FENCE_MIN and bare[0] in _FENCE_MARKS and bare == bare[0] * len(bare):
+            closers.setdefault((bare[0], len(bare)), []).append(number)
+    # For each run, how many of the lines that close it lie above the line being read.
+    passed = dict.fromkeys(closers, 0)
+    number = 0
+    while number < len(lines):
+        body = lines[number].lstrip(" \t")
+        mark = body[:1]
+        run = len(body) - len(body.lstrip(mark)) if mark and mark in _FENCE_MARKS else 0
+        end = None
+        for length in range(run, _FENCE_MIN - 1, -1):
+            later = closers.get((mark, length))
+            if later is None:
+                continue
+            index = passed[mark, length]
+            while index < len(later) and later[index] <= number:
+                index += 1
+            passed[mark, length] = index
+            if index < len(later):
+                end = later[index]
+                break
+        if end is None:
+            number += 1
+            continue
+        lines[number : end + 1] = [""] * (end + 1 - number)
+        number = end + 1
+    return "\n".join(lines)
 
 
 def blank_code_spans(text: str, placeholder: str = "\x00") -> str:
@@ -78,7 +129,13 @@ def path_references(line: str) -> Iterator[str]:
     """Every backticked span in ``line`` that claims a path; bare filenames, and a span whose
     first component is a host (`HOST`), are prose."""
 
-    for match in REFERENCE.finditer(line):
+    at = 0
+    while (match := _REFERENCE.search(line, at)) is not None:
+        if match.group(2) is not None and _BROKEN_SYMBOL.search(match.group(2)):
+            # No claim opens at this backtick, and the next may open at the very next one.
+            at = match.start() + 1
+            continue
+        at = match.end()
         target = match.group(1)
         if "/" in target and not HOST.match(target):
             yield target
@@ -123,14 +180,15 @@ def present_within(root: Path, landed: Path) -> bool | None:
     a present file passing and an absent one reported. So the answer is taken from the claim's
     real path and only inside the root's, as a claim whose spelling leaves the root is not asked
     either; a symlink that stays inside the tree is followed. A name the filesystem cannot take
-    (`ENAMETOOLONG` for a 5,000-character path on Python 3.11 to 3.13) names nothing, and is
-    `False` rather than an exception. The plan lint, the always-loaded document's link check and
-    `memory refs` each ask it.
+    (`ENAMETOOLONG` for a 5,000-character path) names nothing, which `fsops.exists` answers on
+    every interpreter; and a claim the filesystem leaves open, under a directory that cannot be
+    searched, is `False` here rather than an exception. The plan lint, the always-loaded
+    document's link check and `memory refs` each ask it.
     """
     try:
         real = Path(os.path.realpath(landed))
         if not real.is_relative_to(os.path.realpath(root)):
             return None
-        return real.exists()
+        return fsops.exists(real)
     except OSError:
         return False

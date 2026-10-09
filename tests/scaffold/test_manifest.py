@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.paths import PathEscape
 from stayfixed.scaffold.manifest import (
     FORMAT,
@@ -72,6 +73,25 @@ def test_a_manifest_from_a_newer_stayfixed_refuses(tmp_path: Path) -> None:
         Manifest.read(tmp_path)
 
 
+@pytest.mark.parametrize("value", [None, "1", 1.0, True, [1], 0, -1], ids=repr)
+def test_a_format_that_is_not_a_positive_integer_is_damage_and_not_a_newer_stayfixed(
+    tmp_path: Path, value: object
+) -> None:
+    # A `format` of `null` or `"1"` is no number a stayfixed writes, newer or older, and was read
+    # as one written by a newer stayfixed, which sent the owner to upgrade the plugin; `true`, `0`
+    # and `-1` were read as formats. Each is a manifest that is not this module's shape, refused as
+    # the others are. Mutations (oracle): `mutations/`'s "a footprint manifest's format that is
+    # not an integer reads as a newer one" -> the refusal says to upgrade; "a footprint manifest's
+    # format below 1 is read" -> `0` and `-1` are read.
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    raw = raw_of(tmp_path)
+    raw["format"] = value
+    (tmp_path / MANIFEST_PATH).write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ManifestError) as refused:
+        Manifest.read(tmp_path)
+    assert str(refused.value) == f"{MANIFEST_PATH}: 'format' is not a positive integer"
+
+
 def test_records_are_written_in_id_order(tmp_path: Path) -> None:
     manifest = Manifest({}).with_record(a_record(id="zulu")).with_record(a_record(id="alpha"))
     manifest.write(tmp_path)
@@ -83,6 +103,23 @@ def test_a_malformed_manifest_refuses_rather_than_reading_as_empty(tmp_path: Pat
     (tmp_path / MANIFEST_PATH).write_text("{not json", encoding="utf-8")
     with pytest.raises(ManifestError):
         Manifest.read(tmp_path)
+
+
+def test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The manifest is committed, so a clone chooses its size: it is read to the read cap, as every
+    # reader of a committed file is, and one past it is unreadable, named as the project names it
+    # and never by the path it was opened by. The cap is lowered so the file is small. Mutation
+    # (oracle): `mutations/`'s "the footprint manifest is read with no bound" -> it is read whole.
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    limit = 4 * 1024
+    path = tmp_path / MANIFEST_PATH
+    path.write_text(path.read_text(encoding="utf-8") + " " * limit, encoding="utf-8")
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(ManifestError) as refused:
+        Manifest.read(tmp_path)
+    assert str(refused.value) == f"{MANIFEST_PATH} cannot be read (larger than this reader reads)"
 
 
 def test_an_unknown_kind_refuses(tmp_path: Path) -> None:

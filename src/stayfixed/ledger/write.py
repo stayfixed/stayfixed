@@ -28,6 +28,7 @@ from stayfixed.ledger.entries import (
 from stayfixed.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
 from stayfixed.ledger.register import Register
 from stayfixed.ledger.scan import citation_roots, scannable
+from stayfixed.printed import quoted
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
@@ -48,6 +49,20 @@ OCCUPIED = (
     "edited since, make it {old}'s text again with only its `id:` line changed and run this again"
 )
 LINE_BREAKS_ONLY = " — it differs from {old}'s moved text only in the line breaks at its end"
+# What `renumber` says of a write of its own that failed. Whichever write it was, running the same
+# move again once the file can be written finishes it, since a re-run makes only the writes still
+# missing; the move's own failure, exit 1, and never an internal error that names no way on.
+UNFINISHED = (
+    "the move is not finished: {path} could not be written ({reason}); once it can be, run "
+    "`stayfixed {name} renumber {old} {new}` again to finish it"
+)
+# What `new` says of an index it could not write after filing the entry. The entry is on disk by
+# then, so running `new` again files the same report twice; `index` writes the index and files
+# nothing. Built as `UNFINISHED` is: the paths are the register's, root-relative through `quoted`.
+FILED_UNINDEXED = (
+    "filed {path}, but {index} could not be written ({reason}); once it can be, run "
+    "`stayfixed {name} index`, not this command again, which would file it a second time"
+)
 _VOID_BODY = """
 Renumbered to [{new}]({new}.md) to resolve an identifier collision. The number stays
 occupied so a reference written before the repair still lands on an explanation.
@@ -129,7 +144,7 @@ def next_identifier(root: Path, register: Register, *, fetch: bool = True) -> Al
     ids = register.ids
     directory = entry_dir(root, register)
     numbers: set[int] = set()
-    if directory.is_dir():
+    if fsops.is_dir(directory):
         numbers.update(entry.number for entry in load_entries(root, register))
         numbers.update(
             ids.number(path.stem)
@@ -244,7 +259,7 @@ def file_entry(
     # says so when it fails), and `--root` need not be a git checkout at all. What it would
     # overwrite is the only copy of a bug report, so the file's existence decides — the same
     # refusal `renumber` makes about its target.
-    if path.exists():
+    if fsops.exists(path):
         raise LedgerError(
             f"{identifier} was allocated but {relative} already exists; nothing was written. "
             f"Run `stayfixed {register.name} check`: an entry file the allocator cannot account "
@@ -263,7 +278,19 @@ def file_entry(
     # leaving a broken entry file that every later `index`, `check` and `new` also fails on.
     parse_entry(text, path=Path(relative), register=register)
     fsops.write_within(root, relative, text)  # creates the ledger directory on the first entry
-    _write_index(root, register)
+    try:
+        _write_index(root, register)
+    except OSError as error:
+        unindexed = FILED_UNINDEXED.format(
+            path=quoted(relative),
+            index=quoted(register.index),
+            reason=fsops.said(error),
+            name=register.name,
+        )
+        # The allocator's warning too, as a filing that succeeds says it: a number that may be
+        # taken on a branch this checkout has not fetched is what the operator acts on next.
+        warned = f"{unindexed}; {allocation.warning}" if allocation.warning else unindexed
+        raise LedgerError(warned) from error
     return Filed(path, identifier, allocation.warning)
 
 
@@ -313,10 +340,10 @@ def _endpoints_written(
     was edited after the kill. A symlink there is refused before it is read, as anything but a
     regular file is: the move writes its target, it never adopts one.
     """
-    if not target.exists():
+    if not fsops.exists(target):
         return 0
     occupied = LedgerError(OCCUPIED.format(old=old, new=new, name=register.name, why=""))
-    if target.is_symlink() or not target.is_file():
+    if fsops.is_symlink(target) or not fsops.is_file(target):
         raise occupied
     held = read_ledger_text(target, where=Path(register.directory) / f"{new}.md")
     if held == moved:
@@ -393,7 +420,7 @@ def renumber(
     directory = register.directory
     source = root / directory / f"{old}.md"
     target = root / directory / f"{new}.md"
-    if not source.is_file():
+    if not fsops.is_file(source):
         raise LedgerError(f"{directory}/{old}.md does not exist")
     # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
     # names the file in every message either of them raises.
@@ -432,23 +459,34 @@ def renumber(
     if written == 2 and committed_index == render_index(entries, register):
         return Renumbered(source, (), moved=False)
 
+    def unfinished(path: str, error: OSError) -> LedgerError:
+        reason = fsops.said(error)
+        return LedgerError(
+            UNFINISHED.format(
+                path=quoted(path), reason=reason, name=register.name, old=old, new=new
+            )
+        )
+
     if written < 1:
-        fsops.write_within(root, f"{directory}/{new}.md", moved)
+        try:
+            fsops.write_within(root, f"{directory}/{new}.md", moved)
+        except OSError as error:
+            raise unfinished(f"{directory}/{new}.md", error) from error
     if written < 2:
         # Overwritten in place, never unlinked-then-recreated: the old identifier must resolve
         # to something at every instant from here on, including if the sweep below is
         # interrupted.
-        fsops.write_within(
-            root,
-            f"{directory}/{old}.md",
-            _void_pointer(
-                register,
-                old=old,
-                new=new,
-                title=f"renumbered to {new} — {source_entry.title}",
-                today=today or date.today().isoformat(),
-            ),
+        pointer = _void_pointer(
+            register,
+            old=old,
+            new=new,
+            title=f"renumbered to {new} — {source_entry.title}",
+            today=today or date.today().isoformat(),
         )
+        try:
+            fsops.write_within(root, f"{directory}/{old}.md", pointer)
+        except OSError as error:
+            raise unfinished(f"{directory}/{old}.md", error) from error
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, register)}
@@ -478,5 +516,8 @@ def renumber(
             unswept.append(
                 Unswept(item.relative.as_posix(), f"could not be written ({fsops.said(error)})")
             )
-    _write_index(root, register)
+    try:
+        _write_index(root, register)
+    except OSError as error:
+        raise unfinished(register.index, error) from error
     return Renumbered(source, tuple(unswept))

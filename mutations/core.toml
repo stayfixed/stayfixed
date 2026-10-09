@@ -22,53 +22,102 @@ before = '    if relative.startswith("/"):'
 after = '    if False:'
 reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
 
-# The machine file's location takes `XDG_CONFIG_HOME` or an override only from a caller at a
-# terminal.
+# The machine file's location is moved by no variable, from a terminal or not, so every reader and
+# writer of it, `load`, the overlay root and `setup`'s default among them, asks for one file.
 [[mutation]]
-name = "the machine path honours XDG_CONFIG_HOME non-interactively again"
+name = "the machine path honours XDG_CONFIG_HOME again"
 file = "src/stayfixed/config/machine.py"
-before = '    base = (env.get("XDG_CONFIG_HOME") if honoured else None) or str('
-after = '    base = env.get("XDG_CONFIG_HOME") or str('
+before = '    return home / DEFAULT_CONFIG_DIR / "stayfixed" / "config.toml"'
+after = '    return Path(os.environ.get("XDG_CONFIG_HOME") or home / DEFAULT_CONFIG_DIR) / "stayfixed" / "config.toml"'
 reddens = [
-  "tests/config/test_machine.py::test_the_override_is_ignored_when_the_caller_is_not_interactive",
-  "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
-]
-
-# Half a file behind a gate is not a gate. `load` resolved the machine file with the `isatty` sniff
-# while `overlay_root` and `_trust_file` — the two anchors store resolution and the trust record
-# rest on — always resolved it with `interactive=False`, so one command read `[personal]` out of one
-# file and `[overlay] root` out of another.
-[[mutation]]
-name = "one command reads its machine configuration from two different files again"
-file = "src/stayfixed/config/loader.py"
-before = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:'
-after = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:'
-reddens = [
+  "tests/config/test_machine.py::test_no_variable_moves_the_machine_file",
   "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
+  "tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads",
 ]
 
-# A keyed-entries template that names no entries is an error, never an instruction to remove the
-# user's wiring.
+# Off a terminal and at one, the machine file is under the password database's home, never
+# `HOME`'s: every reader and writer asks for the file a hook reads, and the trust record a clone
+# ships under a `HOME` it chose is never read.
 [[mutation]]
-name = "a keyed-entries template with no entries silently removes them"
-file = "src/stayfixed/scaffold/engine.py"
-before = '        if template.entries is None:'
-after = '        if False:'
-reddens = ["tests/scaffold/test_engine.py::test_a_keyed_entries_template_naming_no_entries_raises"]
-
-# The mirror of `mutations/`'s "a keyed-entries template with no entries silently removes them".
-# `entries=None` silently uninstalled the user's wiring; entries carrying no marker silently fail to
-# install it, because `owned()` renders the marked entries alone and so answers `{}` on both sides
-# of the comparison.
-[[mutation]]
-name = "a keyed-entries template with unmarked entries silently installs nothing"
-file = "src/stayfixed/scaffold/engine.py"
-before = '        if missing := unmarked(template.entries):'
-after = '        if (missing := unmarked(template.entries)) and False:'
+name = "the machine file follows HOME again"
+file = "src/stayfixed/config/machine.py"
+before = "    home = passwd_home()\n    if home is None:"
+after = "    home = Path.home()\n    if home is None:"
 reddens = [
-  "tests/scaffold/test_engine.py::test_a_keyed_entries_template_whose_entries_carry_no_marker_raises",
-  "tests/scaffold/test_engine.py::test_one_unmarked_entry_beside_a_marked_one_is_still_a_refusal",
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/config/test_machine.py::test_home_is_honoured_from_an_interactive_shell",
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
+  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
+
+# Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
+# devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
+# inside the clone a hook runs in, where a harness link would be made. The machine file and the
+# trust record beside it are held by `mutations/`'s "the machine file follows HOME again".
+[[mutation]]
+name = "the hook path takes the home directory from HOME again"
+file = "src/stayfixed/config/machine.py"
+before = '    return passwd_home()'
+after = '    return Path.home()'
+reddens = [
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
+]
+
+# A home the database records as no absolute path is no home: read as one, it is a directory
+# relative to wherever the process is, which on the hook path is the project.
+[[mutation]]
+name = "a home the password database records as a relative path is used"
+file = "src/stayfixed/config/machine.py"
+before = '    return Path(recorded) if os.path.isabs(recorded) else None'
+after = '    return Path(recorded)'
+reddens = ["tests/config/test_machine.py::test_a_home_the_database_records_as_no_absolute_path_is_no_home"]
+
+# A user the database does not list has no home off a terminal, and that is an answer, not an
+# exception that ends the command.
+[[mutation]]
+name = "a user the password database does not list ends the command"
+file = "src/stayfixed/config/machine.py"
+before = '    except KeyError:'
+after = '    except OSError:'
+reddens = [
+  "tests/config/test_machine.py::test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal",
+]
+
+# `~` in the machine file is the home that file lives under, never `HOME`.
+[[mutation]]
+name = "the overlay root's tilde is read from HOME"
+file = "src/stayfixed/config/overlay.py"
+before = '    return in_owner_home(value) if isinstance(value, str) and value else None'
+after = '    return Path(value).expanduser() if isinstance(value, str) and value else None'
+reddens = ["tests/config/test_overlay_root.py::test_a_root_under_tilde_is_the_owners_home_and_never_home"]
+
+[[mutation]]
+name = "a tilde with no home behind it is left to name a directory"
+file = "src/stayfixed/config/machine.py"
+before = '        return None if home is None else home / value[2:]'
+after = '        return Path(value) if home is None else home / value[2:]'
+reddens = [
+  "tests/config/test_overlay_root.py::test_a_root_under_tilde_is_not_recorded_where_the_database_lists_no_home",
+]
+
+# No home off a terminal is no machine file, for each of its readers, and never an error: a
+# `closed` hook that raised would refuse every tool call on such a machine.
+[[mutation]]
+name = "the configuration reads a machine file that has no home"
+file = "src/stayfixed/config/loader.py"
+before = '    raw = None if machine is None else read_machine_toml(machine)'
+after = '    raw = read_machine_toml(machine)'
+reddens = ["tests/hooks/test_dispatch.py::test_a_user_the_password_database_does_not_list_still_gets_an_answer"]
+
+[[mutation]]
+name = "the overlay root is read from a machine file that has no home"
+file = "src/stayfixed/config/overlay.py"
+before = '    raw = None if path is None else read_machine_toml(path)'
+after = '    raw = read_machine_toml(path)'
+reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases[no entry]"]
 
 # Every `git` this project asks a question of now goes through `git_run`, the hook path's
 # toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
@@ -76,7 +125,7 @@ reddens = [
 [[mutation]]
 name = "the git runner, and with it the hook path and the store, inherits the session's GIT_DIR"
 file = "src/stayfixed/gitenv.py"
-before = '            env=scrubbed_env(),'
+before = '            env=scrubbed_env(program.path),'
 after = ''
 reddens = [
   "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
@@ -84,16 +133,147 @@ reddens = [
   "tests/test_git_run.py::test_the_environment_is_scrubbed",
 ]
 
-# A relocated artifact whose old file was hand-edited leaves that file behind and reports it, rather
-# than removing it.
+# In a stayfixed the hook wrapper launched `git` is never found through `PATH`: Claude Code applies
+# a committed `env` block's `PATH` to every hook, so a bare `git` was the one the clone ships, run
+# by every hook that asked git anything. The choice as a whole is mutated, not `argv[0]` alone:
+# `subprocess` resolves a bare name through the `PATH` of the environment it is handed, which is
+# the fixed one, so a bare `git` there finds the same first candidate, and that mutant is
+# equivalent.
 [[mutation]]
-name = "a relocated artifact's hand-edited old file is orphaned silently"
-file = "src/stayfixed/scaffold/engine.py"
-before = '        return _left_behind(template, record, "relocated and hand-edited")'
-after = '        return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)'
+name = "the git runner takes git from PATH in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = '    program = git_program()'
+after = '    program = GitProgram("git", None)'
 reddens = [
-  "tests/scaffold/test_engine.py::test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported",
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
+
+# An absolute `git` handed the inherited `PATH` still runs the helpers it names by name from it: a
+# `git-lfs` filter, a `core.fsmonitor` program.
+[[mutation]]
+name = "the git runner hands git the inherited PATH in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = '            env=scrubbed_env(program.path),'
+after = '            env=scrubbed_env(),'
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# `HOME` chooses git's global configuration, whose `core.fsmonitor` names a program git runs on
+# `status`, and direnv, mise or a devcontainer can point it into the clone: measured, a clone's
+# `fakehome/.gitconfig` ran the clone's own program on a hook's `git status`. So in a hook git is
+# handed the password database's home, or none, and outside one the environment's.
+[[mutation]]
+name = "the git runner hands git the inherited HOME in a hook again"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if False:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[not listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[relative]",
+]
+
+[[mutation]]
+name = "a hook's git is handed no HOME where the password database lists one"
+file = "src/stayfixed/gitenv.py"
+before = """        if home is not None:
+            env["HOME"] = home"""
+after = """        if False:
+            env["HOME"] = home"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_the_database_home_and_never_an_inherited_one[listed]",
+  "tests/hooks/test_wrapper.py::test_a_home_inside_the_clone_names_no_program_a_hooks_git_runs[absolute]",
+]
+
+[[mutation]]
+name = "git is handed the password database's home outside a hook too"
+file = "src/stayfixed/gitenv.py"
+before = """    if launched_by_the_hook_wrapper():
+        env.pop("HOME", None)"""
+after = """    if True:
+        env.pop("HOME", None)"""
+reddens = [
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_is_handed_the_environment_s_home",
+]
+
+# The trusted `PATH` names each candidate's directory once.
+[[mutation]]
+name = "the trusted PATH repeats a directory"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.pathsep.join(dict.fromkeys([*directories, *SYSTEM_PATH]))'
+after = '    return os.pathsep.join([*directories, *SYSTEM_PATH])'
+reddens = ["tests/test_git_run.py::test_launched_by_the_hook_wrapper_git_is_handed_a_path_with_no_inherited_entry"]
+
+# The first candidate that is executable is the `git`; one that is missing is passed over.
+[[mutation]]
+name = "the git runner takes the first candidate whether or not it exists"
+file = "src/stayfixed/gitenv.py"
+before = '        if os.access(candidate, os.X_OK):'
+after = '        if True:'
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_the_first_existing_candidate_runs_never_the_git_on_path[off a terminal]",
+]
+
+# No candidate is no answer, never a lookup on the `PATH` a repository can set.
+[[mutation]]
+name = "no git candidate falls back to the one on PATH"
+file = "src/stayfixed/gitenv.py"
+before = """            return GitProgram(candidate, trusted_path())
+    return None"""
+after = """            return GitProgram(candidate, trusted_path())
+    return GitProgram("git", None)"""
+reddens = [
+  "tests/test_git_run.py::test_launched_by_the_hook_wrapper_no_candidate_is_no_answer_and_never_a_lookup_on_path",
+]
+
+# Outside a hook — a person's terminal, a CI step, a command an agent runs — the environment's own
+# `PATH` chooses `git` and is handed to it: the rule above is for the hook wrapper's processes.
+[[mutation]]
+name = "the git runner stops asking whether the hook wrapper launched it"
+file = "src/stayfixed/gitenv.py"
+before = '    if not launched_by_the_hook_wrapper():'
+after = '    if False:'
+reddens = [
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[at a terminal]",
+  "tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[off a terminal]",
+  "tests/test_git_run.py::test_a_stayfixed_no_hook_wrapper_launched_runs_the_git_on_path_off_a_terminal",
+  "tests/test_git_run.py::test_a_git_that_cannot_run_is_minus_one",
+  "tests/guards/test_commit.py::test_the_log_is_bounded_scrubbed_and_terminated",
+]
+
+# Only the value the wrapper writes counts, which is what makes its overwriting an inherited one
+# the guard: any value counting would leave the wrapper's overwrite deciding nothing.
+[[mutation]]
+name = "any value of the hook wrapper's variable takes git from the fixed list"
+file = "src/stayfixed/gitenv.py"
+before = '    return os.environ.get(HOOK_WRAPPER_VARIABLE) == HOOK_WRAPPER_LAUNCHED'
+after = '    return HOOK_WRAPPER_VARIABLE in os.environ'
+reddens = ["tests/test_git_run.py::test_not_launched_by_the_hook_wrapper_git_and_its_path_are_the_environment_s_own[another value]"]
+
+# One variable spelled twice, in Python and in the hook wrapper, and held equal.
+[[mutation]]
+name = "the git runner's hook wrapper variable drifts from the one the wrapper sets"
+file = "src/stayfixed/gitenv.py"
+before = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK_WRAPPER"'
+after = 'HOOK_WRAPPER_VARIABLE = "STAYFIXED_HOOK"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# One candidate list spelled twice, in Python and in the hook wrapper, and held equal in order.
+[[mutation]]
+name = "the git runner's candidates drift from the hook wrapper's"
+file = "src/stayfixed/gitenv.py"
+before = """    "/usr/bin/git",
+    "/bin/git","""
+after = """    "/bin/git",
+    "/usr/bin/git","""
+reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
 
 # The atomic write syncs the bytes to disk before it renames the file into place.
 [[mutation]]
@@ -365,16 +545,16 @@ reddens = ["tests/docs/test_prose.py::test_a_version_number_is_not_an_extension"
 [[mutation]]
 name = "a column stops being part of a location suffix"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
-after = '    r"(?::\d+|(?:::[\w.]+)+)?`"'
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+|(::[\w.:]+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # `::` joins a symbol path of any depth (`::TestA::test_x`, `::parser::parse`).
 [[mutation]]
 name = "a symbol path stops being read past its first `::`"
 file = "src/stayfixed/prose.py"
-before = '    r"(?::\d+(?::\d+)?|(?:::[\w.]+)+)?`"'
-after = '    r"(?::\d+(?::\d+)?|::[\w.]+)?`"'
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|(::[\w.]+))?`"'
 reddens = ["tests/docs/test_prose.py::test_a_location_suffix_is_not_part_of_the_name"]
 
 # A first component ending in a host's label (`example.com/`) is a dependency or a page, not a
@@ -405,6 +585,148 @@ before = 'HOST = re.compile(r"[^/]*[^./]\.[A-Za-z][A-Za-z0-9-]+/")'
 after = 'HOST = re.compile(r"[^/]*\.[A-Za-z][A-Za-z0-9-]+/")'
 reddens = ["tests/docs/test_prose.py::test_a_span_whose_first_component_is_a_host_is_prose"]
 
+# A symbol path is read as one run, so `re` keeps no record per part: read as a greedy repeat of
+# its parts, a line of a million parts took 154 MiB more to read.
+[[mutation]]
+name = "a symbol path's parts are given back"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]+)+))?`"'
+reddens = ["tests/docs/test_prose.py::test_a_long_symbol_path_is_read_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "a symbol path's parts are a possessive repeat"
+file = "src/stayfixed/prose.py"
+before = '    r"(?::\d+(?::\d+)?|(::[\w.:]+))?`"'
+after = '    r"(?::\d+(?::\d+)?|((?:::[\w.]++)++))?`"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# A symbol path's run is judged after it is read: no colon alone, no three in a row, and none at its
+# end, which is an empty part. Python 3.11.0 to 3.11.4 read the last as a claim when the parts were
+# a possessive repeat. One entry per rule.
+[[mutation]]
+name = "a symbol path with an empty last part is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty last part]",
+]
+
+[[mutation]]
+name = "a symbol path with three colons is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r"(?<!:):(?!:)|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[three colons]",
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[an empty first part]",
+]
+
+[[mutation]]
+name = "a symbol path with a lone colon is read"
+file = "src/stayfixed/prose.py"
+before = '_BROKEN_SYMBOL = re.compile(r":::|(?<!:):(?!:)|:\Z")'
+after = '_BROKEN_SYMBOL = re.compile(r":::|:\Z")'
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a colon alone]",
+]
+
+# Where no claim opens at a backtick, the search goes on from the next character, as a search for
+# the pattern does: from the span's end, the backtick that closed it is passed over.
+[[mutation]]
+name = "a broken symbol path's closing backtick opens no claim"
+file = "src/stayfixed/prose.py"
+before = "            at = match.start() + 1"
+after = "            at = match.end()"
+reddens = [
+  "tests/docs/test_prose.py::test_a_symbol_path_with_an_empty_part_or_a_lone_colon_claims_no_path[a claim at its closing backtick]",
+]
+
+# Fences are read a line at a time. The pattern they were read by scanned the rest of the text from
+# every opening line no later line closes, and from a long run at every length down to three: a
+# plan of 4,000 unclosed fences took 0.31 s, and the time grew with the square of the length.
+[[mutation]]
+name = "fences are found by a lazy match again"
+file = "src/stayfixed/prose.py"
+before = '''    lines = text.split("\n")
+    closers:'''
+after = '''    return re.sub(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.MULTILINE | re.DOTALL)
+    lines = text.split("\n")
+    closers:'''
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[openers no line closes]",
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[a long run]",
+]
+
+# An opening run no line closes at its own length is closed by the first line of one mark fewer,
+# down to three, as the pattern's backtracking read it.
+[[mutation]]
+name = "a fence's run is tried at its full length only"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(run, max(run - 1, _FENCE_MIN - 1), -1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed one mark shorter]",
+]
+
+[[mutation]]
+name = "a fence's closer may not stand between blanks"
+file = "src/stayfixed/prose.py"
+before = '''        bare = line.strip(" \t")'''
+after = "        bare = line"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a closer between blanks]",
+]
+
+# A closer is the same run, of the same mark, alone on its line: indexed under its own mark and
+# length only, so neither a longer run nor the other mark's closes a block.
+[[mutation]]
+name = "a longer run closes a shorter one"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for size in range(_FENCE_MIN, len(bare) + 1):
+                closers.setdefault((bare[0], size), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a longer run closes nothing]",
+]
+
+[[mutation]]
+name = "a closer of either mark closes"
+file = "src/stayfixed/prose.py"
+before = "            closers.setdefault((bare[0], len(bare)), []).append(number)"
+after = """            for either in _FENCE_MARKS:
+                closers.setdefault((either, len(bare)), []).append(number)"""
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[the other mark closes nothing]",
+]
+
+# A run is tried at its full length before any shorter one, as the pattern's backtracking did.
+[[mutation]]
+name = "a run is tried from three marks up"
+file = "src/stayfixed/prose.py"
+before = "        for length in range(run, _FENCE_MIN - 1, -1):"
+after = "        for length in range(_FENCE_MIN, run + 1):"
+reddens = [
+  "tests/docs/test_prose.py::test_a_fence_is_read_as_its_pattern_reads_one[a run closed at its own length]",
+]
+
+# Each run's pointer into its closers only moves forward: without it every opening line passes
+# over the closers above it again, N²/2 steps over N closed pairs.
+[[mutation]]
+name = "a fence's closers are searched from the first again"
+file = "src/stayfixed/prose.py"
+before = """            passed[mark, length] = index
+            if index < len(later):"""
+after = """            if index < len(later):"""
+reddens = [
+  "tests/docs/test_prose.py::test_fences_are_read_in_time_linear_in_the_text[closed pairs]",
+]
+
 # A claim is settled by its real path and only inside the root's: a committed symlink out of the
 # tree made each reader an existence oracle for the machine.
 [[mutation]]
@@ -418,16 +740,18 @@ reddens = [
   "tests/memory/test_refs.py::test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem",
 ]
 
-# A name too long for the filesystem names nothing: it is reported, never a crash of the check.
+# A claim the filesystem cannot answer for -- a directory on its way that cannot be searched -- is
+# reported as not found, never a crash of the check. A name too long for the filesystem no longer
+# reaches this arm: `fsops.exists` answers it on every interpreter.
 [[mutation]]
-name = "a path the filesystem cannot name crashes the reference checks"
+name = "a path the filesystem cannot answer for crashes the reference checks"
 file = "src/stayfixed/prose.py"
 before = "    except OSError:\n        return False\n"
 after = "    except NotImplementedError:\n        return False\n"
 reddens = [
-  "tests/docs/test_plans.py::test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash",
-  "tests/docs/test_hygiene.py::test_a_link_the_filesystem_cannot_name_is_missing_rather_than_a_crash",
-  "tests/memory/test_refs.py::test_a_reference_the_filesystem_cannot_name_is_a_finding_rather_than_a_crash",
+  "tests/docs/test_plans.py::test_a_reference_below_a_directory_that_cannot_be_searched_is_not_found_rather_than_a_crash",
+  "tests/docs/test_hygiene.py::test_a_link_below_a_directory_that_cannot_be_searched_is_missing_rather_than_a_crash",
+  "tests/memory/test_refs.py::test_a_reference_below_a_directory_that_cannot_be_searched_is_a_finding_rather_than_a_crash",
 ]
 
 # One digit rule, and every reader takes it from the constant. The allocator's `git log` source
@@ -792,7 +1116,7 @@ after = """from typing import TYPE_CHECKING, Any, Protocol
 from stayfixed.harnesses import project_root_variables
 """
 reddens = [
-  "tests/test_areas.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
+  "tests/boundaries/test_discovery.py::test_in_isolation_an_area_with_no_such_submodule_is_never_imported",
 ]
 
 # One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
@@ -879,8 +1203,8 @@ reddens = [
 [[mutation]]
 name = "no release record reads as a record naming nothing"
 file = "src/stayfixed/release/hashes.py"
-before = "    if not path.is_file():\n        return None"
-after = "    if not path.is_file():\n        return {}"
+before = "    if not fsops.is_file(path):\n        return None"
+after = "    if not fsops.is_file(path):\n        return {}"
 reddens = [
   "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
 ]
@@ -1008,14 +1332,88 @@ reddens = [
 # the clone's own spelling of its own `stayfixed.toml`, and neither consults anything the clone can
 # move, so a repository cannot choose which of the two answers it gets.
 # Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
-# and `./docs` all match the grammar again.
+# and `./docs` all match the grammar again. The entries after it take one rule out each.
 [[mutation]]
 name = "the [paths] grammar admits a spelling the write refuses again"
-file = "src/stayfixed/config/schema.py"
-before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
 after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
 reddens = [
   "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits an empty segment"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*/\Z)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a trailing slash"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!.*//)(?!.*/\Z)"'
+after = '    r"(?!.*//)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a segment of one or two dots"
+file = "src/stayfixed/grammar.py"
+before = '    r"(?!(?:.*/)?\.\.?(?:/|\Z))"'
+after = '    r"(?!\.\.?(?:/|\Z))"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits an absolute path"
+file = "src/stayfixed/grammar.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!-)"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+[[mutation]]
+name = "the [paths] grammar admits a value that opens on a dash"
+file = "src/stayfixed/grammar.py"
+before = '    r"^(?![/-])"'
+after = '    r"^(?!/)"'
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+# The grammar repeats no group, so `re` keeps no record per segment: read as a greedy repeat of
+# the segment, a name of a million segments took 124 MiB more to judge.
+[[mutation]]
+name = "a path's segments are given back"
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "the path grammar repeats its segments possessively"
+file = "src/stayfixed/grammar.py"
+before = '''    r"^(?![/-])"
+    r"(?!.*//)(?!.*/\Z)"
+    r"(?!(?:.*/)?\.\.?(?:/|\Z))"
+    r"[A-Za-z0-9._/-]+\Z"'''
+after = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]++)*+\Z"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
 ]
 
 # The other half of the two readers, beside `mutations/`'s "the [paths] grammar admits a spelling
@@ -1143,37 +1541,38 @@ reddens = [
   "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
 ]
 
-# The half the first fix missed: catching `ManifestError` alone let a symlinked manifest's
-# `PathEscape` through, and the detach exited 2 exactly as before. `mutations/`'s "an unreadable
-# manifest blocks the detach again" now puts that narrowing back; this one does the same to the
-# reader, where bytes that are not UTF-8 left `Manifest.read` as a `UnicodeDecodeError` rather than
-# as its own refusal.
-
+# `stayfixed.toml` is committed and read by every command and hook: to the read cap, a regular file
+# only, and one past the cap cannot be read.
 [[mutation]]
-name = "the manifest reader lets undecodable bytes out as a crash again"
-file = "src/stayfixed/scaffold/manifest.py"
-before = "        except (OSError, UnicodeDecodeError) as exc:"
-after = "        except OSError as exc:"
+name = "stayfixed.toml is read with no bound"
+file = "src/stayfixed/config/loader.py"
+before = '        return read_regular_text(contained(root, CONFIG_FILE), newline="")'
+after = """        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
+            return stream.read()"""
 reddens = [
-  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+  "tests/test_undecodable.py::test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so",
 ]
 
-# The ledger is tracked, so a clone can commit one nested past the parser or holding an integer
-# longer than Python converts. Read through `jsonobject`, each is a refusal in the reader's own
-# words; quoted, the refusal told the owner to raise an interpreter limit.
+# A file that cannot be read is said in `fsops.said`'s words, never by its error's class name: for a
+# reader's own refusal that name is stayfixed's internals (`TooLarge`, `NotRegularFile`), and it
+# names no condition a user can act on.
 [[mutation]]
-name = "the manifest reader quotes the parser's exception for a document past its reach"
-file = "src/stayfixed/scaffold/manifest.py"
-before = "        raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)"
-after = """        try:
-            raw = json.loads(text)
-        except (ValueError, RecursionError) as exc:
-            raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc"""
+name = "stayfixed.toml that cannot be read is said by its error's class name"
+file = "src/stayfixed/config/loader.py"
+before = "raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=said(exc))) from None"
+after = "raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None"
 reddens = [
-  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-upgrade]",
-  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[long-number-uninstall]",
-  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-upgrade]",
-  "tests/project/test_footprint_commands.py::test_a_manifest_past_the_parser_is_refused_in_its_own_words[nested-uninstall]",
+  "tests/test_undecodable.py::test_a_stayfixed_toml_past_the_read_cap_cannot_be_read_and_says_so",
+  "tests/test_undecodable.py::test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so",
+]
+
+[[mutation]]
+name = "a machine file that cannot be read is said by its error's class name"
+file = "src/stayfixed/config/loader.py"
+before = "raise MachineConfigError(UNREADABLE.format(path=path, error=said(exc))) from None"
+after = "raise MachineConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None"
+reddens = [
+  "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
 ]
 
 # The one list four places report as a count, and the one fault none of those areas can fix for
@@ -1213,26 +1612,6 @@ reddens = [
   "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]
 
-# In the block led by `mutations/`'s "a preset name outside the rule is quoted back again": a value
-# a clone writes into `[stayfixed] preset` or `profile` never reaches a refusal quoted.
-[[mutation]]
-name = "a profile outside one path segment is quoted back again"
-file = "src/stayfixed/scaffold/engine.py"
-before = '        raise PathEscape(f"[stayfixed] profile is not one path segment ({SOURCE_RULE})")'
-after = '        raise PathEscape(f"[stayfixed] profile {profile!r} is not one path segment ({SOURCE_RULE})")'
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_profile_outside_one_path_segment_is_refused_and_never_quoted",
-]
-
-[[mutation]]
-name = "a profile the listing lacks is quoted back again"
-file = "src/stayfixed/scaffold/engine.py"
-before = '            "[stayfixed] profile names a profile this version of stayfixed does not ship "'
-after = '            f"[stayfixed] profile {profile!r} is not shipped with this version of stayfixed "'
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
-]
-
 # The one writer into a `stayfixed.toml` somebody else owns: an edit is kept only when reading it
 # back gives exactly the document before it with that one key set. The multi-line case is the one
 # where the returned text still parses, which is the silent failure the read-back exists for.
@@ -1252,53 +1631,6 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except KeyError as exc:"
 reddens = [
   "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
-]
-
-# A region's record stamps the region's body, never the file around it, so its relocation is
-# judged by the region. The fabricated-record test is named too: its record now holds the digest
-# the engine really writes.
-[[mutation]]
-name = "a region's relocation is judged by the whole file's digest again"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if present is None or digest(present) != record.sha256:"
-after = "    if digest(old) != record.sha256:"
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose",
-  "tests/scaffold/test_engine.py::test_relocating_a_managed_region_removes_only_its_own_lines",
-]
-
-# `force` reaches the retired path too: a hand-edited retired artifact the user has decided to
-# remove anyway. `mutations/`'s "forcing a retired region deletes the file around it" is the guard
-# against the data loss that forcing a region would otherwise cause: with a forced payload of
-# `None`, the prose around the region goes with it.
-[[mutation]]
-name = "force stops reaching a retired artifact edited by hand"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if ours or target in forced:"
-after = "    if ours:"
-reddens = [
-  "tests/scaffold/test_engine.py::test_force_reaches_a_retired_artifact_edited_by_hand",
-  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
-]
-
-[[mutation]]
-name = "forcing a retired region deletes the file around it"
-file = "src/stayfixed/scaffold/engine.py"
-before = '''                _removal_payload(template, current),
-                "retired" if ours else "retired, forced",'''
-after = '''                _removal_payload(template, current) if ours else None,
-                "retired" if ours else "retired, forced",'''
-reddens = [
-  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
-]
-
-[[mutation]]
-name = "a file that held only stayfixed's region is rewritten empty instead of removed"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        return remainder if remainder else None"
-after = "        return remainder"
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_retired_region_that_was_the_whole_file_removes_the_file",
 ]
 
 # The gate set and per-gate enforcement. `mutations/`'s "the loader admits a gate the project does
@@ -1350,16 +1682,6 @@ before = "    unknown = [name for name in gates.builtin if name not in BUILTIN_G
 after = "    unknown: list[str] = []"
 reddens = [
   "tests/config/test_loader.py::test_a_built_in_gate_stayfixed_does_not_have_is_counted_and_never_quoted",
-]
-
-# `[stayfixed] profile` must name a profile this build ships.
-[[mutation]]
-name = "the engine accepts a profile this stayfixed does not ship"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if profile not in shipped:"
-after = "    if False:"
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
 ]
 
 # A harness's files are rendered only for a harness the project lists.
@@ -1416,201 +1738,6 @@ reddens = [
   "tests/test_harnesses.py::test_a_harness_can_key_a_set_and_a_dict",
 ]
 
-# An artifact kept out of git has no record, and its directory is git-ignored: an edit
-# overwritten or removed there is gone for good, so it is judged against this build's render.
-[[mutation]]
-name = "an edited artifact kept out of git is refreshed over, and git cannot give it back"
-file = "src/stayfixed/scaffold/engine.py"
-before = "                and location is Location.LOCAL\n                and present is not None\n                and target not in forced\n"
-after = "                and False\n"
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it",
-  "tests/project/test_upgrade.py::test_an_edited_artifact_kept_out_of_git_is_left_and_named",
-]
-
-[[mutation]]
-name = "a retired artifact kept out of git is removed whatever its bytes"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = ours_locally(template, current, target, digests)"
-after = "        ours = True"
-reddens = ["tests/scaffold/test_engine.py::test_a_retired_local_artifact_edited_by_hand_stays_unless_forced"]
-
-[[mutation]]
-name = "artifacts kept out of git share a directory with attach's ledger and the note store"
-file = "src/stayfixed/scaffold/local.py"
-before = 'LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"'
-after = "LOCAL_ARTIFACTS = LOCAL_ROOT"
-reddens = ["tests/scaffold/test_engine.py::test_a_local_artifact_moves_under_dot_stayfixed"]
-
-# A report prints targets, and a target a committed manifest recorded is repository-authored:
-# only one inside the path grammar may print as itself.
-[[mutation]]
-name = "a report prints a committed manifest's target raw"
-file = "src/stayfixed/scaffold/report.py"
-before = '    return item.target if PATH_VALUE.match(item.target) else f"<{item.artifact_id}>"'
-after = "    return item.target"
-reddens = [
-  "tests/scaffold/test_report.py::test_a_target_outside_the_path_grammar_prints_as_its_artifact_id",
-  "tests/project/test_footprint_commands.py::test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id",
-]
-
-# A retired file is removed only while its bytes are the ones its record states; an edited one
-# stays, is listed, and goes only with `--force`.
-[[mutation]]
-name = "a retired file is removed whatever its bytes, so a committed path and record reach a local edit"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = present is not None and digest(present) == record.sha256"
-after = "        ours = True"
-reddens = [
-  "tests/project/test_uninstall.py::test_a_committed_path_and_record_reach_only_bytes_the_same_commit_states",
-  "tests/project/test_uninstall.py::test_an_edited_file_stays_and_is_listed_and_force_takes_it",
-]
-
-# A `REMOVE` with a payload leaves a remainder. Counted as a deletion, a private remainder kept out
-# of git passes the check before any write, and the ignore block over it is only saved later.
-[[mutation]]
-name = "a region's remainder is counted as a deleted file"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    return action.verb is Verb.REMOVE and action.payload is None"
-after = "    return action.verb is Verb.REMOVE"
-reddens = ["tests/project/test_uninstall.py::test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written"]
-
-# The whole-file rule is "differs: skip it and name it, and `--force <path>` overwrites it". The
-# branch for a file with no record ignored `force`, so a caller workflow a person wrote held
-# `upgrade`'s version and pin back for ever, under a note whose one remedy did nothing. `forced`
-# is the caller's argv, compared with the target `plan` derived and contained, so no committed
-# file can force anything.
-[[mutation]]
-name = "--force stops reaching a whole file stayfixed did not write"
-file = "src/stayfixed/scaffold/engine.py"
-before = "                and template.kind not in _IN_FILE\n                and target not in forced\n"
-after = "                and template.kind not in _IN_FILE\n"
-reddens = [
-  "tests/scaffold/test_engine.py::test_force_takes_a_whole_file_stayfixed_did_not_write_and_records_it",
-  "tests/project/test_upgrade.py::test_a_workflow_stayfixed_did_not_write_holds_both_keys_until_it_is_forced",
-]
-
-# `LocalDigests` records what stayfixed last wrote under `.stayfixed/local/artifacts/`, which the
-# committed manifest never does. With the render as the only oracle, an unedited copy read as
-# somebody's after any release that changed its template: `upgrade` skipped it and `uninstall`
-# refused over it, calling it edited; and a copy whose id left `[artifacts] local` was never
-# judged again, so `uninstall` refused for good, suggesting a `--force` nothing could reach.
-[[mutation]]
-name = "an unedited artifact kept out of git is skipped as not stayfixed's once its template changes"
-file = "src/stayfixed/scaffold/engine.py"
-before = "                and not digests.matches(template.id, target, digest(present))\n"
-after = ""
-reddens = [
-  "tests/scaffold/test_local.py::test_an_unedited_copy_follows_a_changed_template",
-  "tests/project/test_upgrade.py::test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_changed",
-]
-
-[[mutation]]
-name = "the ledger never vouches for bytes stayfixed wrote kept out of git"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if present is not None and digests.matches(template.id, target, digest(present)):\n        return True"
-after = "    if False:\n        return True"
-reddens = [
-  "tests/scaffold/test_local.py::test_a_retired_unedited_copy_goes_after_its_template_changed",
-  "tests/project/test_uninstall.py::test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed",
-  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_changed",
-]
-
-[[mutation]]
-name = "a copy left kept out of git when its id left [artifacts] local is never judged"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        for copy in left_copies(template, config, digests, owners):\n            if path_key(copy) in planned:"
-after = "        for copy in ():\n            if path_key(copy) in planned:"
-reddens = [
-  "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_stayfixeds",
-  "tests/scaffold/test_local.py::test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it",
-]
-
-# The ledger is kept out of git, and a clone can force-add it anyway, so it authorizes nothing
-# beyond bytes its writer already names, under `.stayfixed/local/artifacts/`. Two layers, each
-# held by its own case: the reader drops a ledger naming anything outside that directory, and the
-# engine lets this build's render vouch for a file only at the artifact's own place there, so
-# anywhere else the recorded digest alone does.
-[[mutation]]
-name = "a ledger entry may name a file outside the artifacts directory"
-file = "src/stayfixed/scaffold/local.py"
-before = "            and target.startswith(f\"{LOCAL_ARTIFACTS}/\")\n"
-after = ""
-reddens = ["tests/scaffold/test_local.py::test_a_ledger_that_is_not_exactly_this_shape_is_absent"]
-
-[[mutation]]
-name = "a left copy away from its own place goes on the render alone"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    own = path_key(target) == path_key(f\"{LOCAL_ARTIFACTS}/{template.target}\")"
-after = "    own = True"
-reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest"]
-
-# A `[paths]` value moved while the artifact stayed in `[artifacts] local`: the old copy is at a
-# place the ledger records for its id and this configuration no longer gives it, and is judged
-# there. Without it no action named the old copy, and `uninstall` refused over it for good.
-[[mutation]]
-name = "a left copy is judged only where [artifacts] local no longer lists its id"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        if path_key(copy) != path_key(target)\n"
-after = "        if template.id not in config.artifacts.local\n"
-reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
-
-# A ledger is read as untrusted, and an entry under one id must never reach another artifact's
-# own place kept out of git, whose unedited bytes are predictable: a clone could otherwise
-# force-add an entry that has `upgrade` delete a write-once artifact's copy (`templates.Owners`).
-[[mutation]]
-name = "a ledger entry under one id reaches another artifact's copy kept out of git"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        and not (owners is not None and owners.foreign(template.id, copy.removeprefix(kept)))\n"
-after = ""
-reddens = [
-  "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
-  "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
-  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
-  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
-]
-
-# Within one plan, a left copy at a file another template of the plan targets is that template's
-# to judge; judged twice, its removal deleted the file from under an `unchanged` verdict.
-[[mutation]]
-name = "a left copy at a file another template of the plan targets is judged twice"
-file = "src/stayfixed/scaffold/engine.py"
-before = "            if path_key(copy) in planned:\n                continue\n"
-after = "            if False:\n                continue\n"
-reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_template_s"]
-
-# A removal takes the manifest record of the file it removed and no other. The copy an artifact
-# left kept out of git carries the artifact's id, and dropping by id alone took the live record of
-# its committed file with it, which every later run then read as nobody's.
-[[mutation]]
-name = "removing a file drops the record of whatever file its artifact now names"
-file = "src/stayfixed/scaffold/engine.py"
-before = "                if record is not None and path_key(record.target) == path_key(action.target):\n"
-after = "                if True:\n"
-reddens = [
-  "tests/scaffold/test_local.py::test_removing_a_left_copy_keeps_the_record_of_the_committed_file",
-  "tests/project/test_upgrade.py::test_forcing_a_left_copy_away_keeps_the_committed_file_recorded",
-]
-
-# In the block led by `mutations/`'s "places are compared case-sensitively for ownership": paths are
-# compared for identity case-folded, and each entry puts exact equality back at one site.
-[[mutation]]
-name = "a left copy at a case variant of a file the plan targets is judged twice"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    planned = {path_key(effective_target(template, config)[0]) for template in templates}"
-after = "    planned = {effective_target(template, config)[0] for template in templates}"
-reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_template_s"]
-
-# `_relocation`'s "a place this template could produce" is folded, so the folded trigger is what
-# keeps the engine from relocating a file onto itself: a record at a case variant of the target
-# is that file where case folds, and a relocation removed it beside an `unchanged` verdict.
-[[mutation]]
-name = "a record at a case variant of the target triggers a relocation"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        if record is not None and path_key(record.target) != path_key(target):"
-after = "        if record is not None and record.target != target:"
-reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation"]
-
 # The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`) is
 # also named by other entries whose guards it holds. Its own are `mutations/`'s "git's control
 # directory is named by no path", the shared `.git` predicate both call sites ask, and the guards
@@ -1633,21 +1760,6 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-upgrade]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-upgrade]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-uninstall]",
-]
-
-# A refusal returned in a report rather than raised: every recorded artifact refused.
-
-[[mutation]]
-name = 'the engine refuses every recorded artifact'
-file = "src/stayfixed/scaffold/engine.py"
-before = '        if reason is not None:'
-after = '        if reason is not None or record is not None:'
-reddens = [
-  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
-  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-new-file-at-an-ignored-place]",
-  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
-  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-symlinked-directory-no-value-uses]",
-  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
 ]
 
 # A file a person or a repository owns that is not UTF-8 is its reader's own failure, never an
@@ -1919,7 +2031,7 @@ reddens = [
 [[mutation]]
 name = "the hook takes a symlinked stayfixed.toml by what it points at"
 file = "src/stayfixed/hooks/commands.py"
-before = "        if document is not None and document.is_symlink():"
+before = "        if document is not None and fsops.is_symlink(document):"
 after = "        if False:"
 reddens = [
   "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-regular-file]",
@@ -2077,6 +2189,63 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
 ]
 
+# `contained` asks each ancestor with `lstat` and gives each fault its answer, rather than
+# inheriting `Path.is_symlink()`'s, which differs between Python 3.13 and 3.14. A fault that leaves
+# the question open is a refusal: no path is contained until every ancestor is asked.
+[[mutation]]
+name = "contained reads an ancestor it cannot ask about as no link"
+file = "src/stayfixed/config/paths.py"
+before = "            if exc.errno in REACHES_NO_FILE:"
+after = "            if True:"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# And by its place under the root, for the reason the symlink refusal gives.
+[[mutation]]
+name = "contained names an ancestor it cannot ask about by its absolute path"
+file = "src/stayfixed/config/paths.py"
+before = "                place = ancestor.relative_to(root).as_posix()"
+after = "                place = str(ancestor)"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+]
+
+# The link check itself, which the explicit `lstat` now answers. A link below one that loops, or
+# below one whose target no file can have, is still found at the link.
+[[mutation]]
+name = "contained lets a symlinked ancestor through"
+file = "src/stayfixed/config/paths.py"
+before = "        if stat.S_ISLNK(mode) and not (allow_final_symlink and ancestor == target):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_symlinked_intermediate_directory_is_refused",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-loop]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+]
+
+# A link into a directory nobody may search makes every path through it unaskable, and the link is
+# the cause: the walk asks every ancestor before it refuses the deepest one it could not ask.
+[[mutation]]
+name = "contained refuses at the first ancestor it cannot ask, before it looks for a link above"
+file = "src/stayfixed/config/paths.py"
+before = "                unasked.__cause__ = exc\n            continue"
+after = "                unasked.__cause__ = exc\n            raise unasked"
+reddens = [
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# A path on which a directory cannot be asked whether it is a link neither leaves the project nor
+# passes through a symlink, so the hook's line says what it is.
+[[mutation]]
+name = "the hook words a path it cannot check as an escape"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except PathUnasked:\n                return _unloadable(event_name, UNASKED_PATH)"
+after = "            except PathUnasked:\n                return _unloadable(event_name, ESCAPING_PATH)"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words",
+]
+
 # The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
 # itself can have several merge bases, and the one git picks alone, the newest by date, can already
 # hold what the change puts back or deletes.
@@ -2196,62 +2365,6 @@ reddens = [
   "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
 ]
 
-# `common/memory/README.md` became `_README.md`, and `overlay upgrade` created the new name beside
-# the old one, which the note reader went on reading as a note: `memory index --check` failed in
-# every attached project. Where the ledger records the file, its digest is what vouches for it.
-[[mutation]]
-name = "a retired overlay file the ledger records is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = present is not None and digest(present) == record.sha256"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[recorded]",
-]
-
-# An overlay generated from a template carries no ledger, so the bytes a release shipped are the
-# only evidence that its copy of a retired file is stayfixed's.
-[[mutation]]
-name = "a retired overlay file holding the shipped bytes is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[no-ledger]",
-]
-
-# The other side of the same line: with no ledger, a copy that is not the shipped bytes may hold
-# the owner's own words, and nothing else holds them.
-[[mutation]]
-name = "a retired overlay file with no ledger is removed whatever it holds"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = True"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A kept copy of the retired README is still read as a note, so the report names the way out.
-[[mutation]]
-name = "a kept retired overlay file is named without its way out"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if template.remedy:"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[recorded]",
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A retired file that is not there has nothing to remove: an overlay without one plans no action
-# for it, so a run on a fresh or already-cleared overlay reports nothing to do.
-[[mutation]]
-name = "a retired overlay file that is absent is planned for removal"
-file = "src/stayfixed/scaffold/engine.py"
-before = "            return\n        unchanged.append(template.id)\n        return\n    if location is Location.LOCAL:"
-after = "            return\n        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
-]
-
 # A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
 # `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
 [[mutation]]
@@ -2283,37 +2396,6 @@ reddens = [
   "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[clone-and-view]",
   "tests/overlay/test_create.py::test_what_git_init_prints_cannot_drive_a_terminal",
   "tests/overlay/test_create.py::test_a_probe_failure_is_printed_without_letting_it_drive_a_terminal",
-]
-
-# git ends a line at `\n` alone. Read as ending at a lone `\r` too, an exclude file whose last line
-# was `/zz\r` counted as ended, the block's begin marker was glued onto it, and `zz` showed in
-# `git status` while the repository was attached.
-[[mutation]]
-name = "a hash region reads a lone carriage return as a line end"
-file = "src/stayfixed/scaffold/regions.py"
-before = '    return line.endswith("\n") if style is Style.HASH else line.endswith(("\n", "\r"))'
-after = '    return line.endswith(("\n", "\r"))'
-reddens = [
-  "tests/scaffold/test_regions.py::test_a_hash_region_reads_lines_where_git_does",
-  "tests/attach/test_detach.py::test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern",
-]
-
-[[mutation]]
-name = "a hash region finds a marker across a lone carriage return"
-file = "src/stayfixed/scaffold/regions.py"
-before = "    pattern = _GIT_LINE if style is Style.HASH else _LINE"
-after = "    pattern = _LINE"
-reddens = ["tests/scaffold/test_regions.py::test_a_hash_region_reads_lines_where_git_does"]
-
-# git drops one `\r` before the `\n` that ends a line. A file holding `\r\n` whose last line ended
-# `/zz\r` got `\r\n` appended, git read `/zz\r`, and `zz` showed while attached.
-[[mutation]]
-name = "a hash region ends a line after a lone carriage return with the file's own ending"
-file = "src/stayfixed/scaffold/regions.py"
-before = '            lone_cr = style is Style.HASH and head[-1].endswith("\r")'
-after = "            lone_cr = False"
-reddens = [
-  "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
 
 # The note store a delivery row reads is resolved once per area per report, and a resolution
@@ -2395,34 +2477,6 @@ reddens = [
   "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
 ]
 
-# A document past a limit of the parser is refused as its own kind of `EntriesError`, so `doctor` can
-# tell it from a malformed one by name and every caller catching `EntriesError` still catches it.
-[[mutation]]
-name = "a document past a limit of the parser is refused outside the entries refusal"
-file = "src/stayfixed/scaffold/entries.py"
-before = "class ParserLimitError(EntriesError):"
-after = "class ParserLimitError(Refusal):"
-reddens = [
-  "tests/scaffold/test_surface.py::test_a_document_past_a_limit_of_the_parser_is_an_entries_refusal_of_its_own_kind",
-]
-
-# `owned_ids` answers ids and events, which no number is part of, so it reads every integer as its
-# text. Read with the interpreter's limit, a committed settings file holding a marked entry and a
-# number past that limit was refused, and `hook-entries` read the file as one it could not judge
-# rather than judging the entry: its red turned into a warning, and the owner's own file beside such
-# a number read as one nothing could account for.
-[[mutation]]
-name = "the settings engine reads a number past the parser's reach in the document doctor walks"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    return settings_object(document, numbers=str)"
-after = "    return settings_object(document)"
-reddens = [
-  "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
-  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_json_past_the_parsers_reach_fails_the_report[long-number-recording-it-overlay]",
-  "tests/attach/test_doctor.py::test_an_owners_settings_file_holding_a_number_past_the_parsers_reach_is_still_accounted_for",
-]
-
 # stayfixed declares that it makes no network request of its own; that holds only while no module
 # imports one of the standard library's network modules.
 [[mutation]]
@@ -2452,6 +2506,7 @@ before = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os,
 after = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)'
 reddens = [
   "tests/test_fsops.py::test_rmdir_parents_within_leaves_a_symlinked_directory_and_what_it_points_at",
+  "tests/config/test_paths.py::test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write",
 ]
 
 # A command named by a name the parser no longer registers, in a file a reader or a model reads.
@@ -2472,7 +2527,7 @@ file = "src/stayfixed/areas.py"
 before = "        except Exception as exc:  # an area's broken import is handed over, never raised here"
 after = "        except OSError as exc:  # an area's broken import is handed over, never raised here"
 reddens = [
-  "tests/test_areas.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
+  "tests/boundaries/test_discovery.py::test_an_area_submodule_that_fails_to_import_is_handed_over_as_its_exception",
   "tests/doctor/test_command.py::test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report",
 ]
 
@@ -2483,7 +2538,7 @@ name = "memory stops being a delivery area"
 file = "src/stayfixed/areas.py"
 before = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})'
 after = 'DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "overlay"})'
-reddens = ["tests/test_areas.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
+reddens = ["tests/boundaries/test_delivery.py::test_the_delivery_areas_are_attach_memory_and_overlay"]
 
 # The delivery rule reads import statements, so the core reaching the private layer by a string —
 # inside a function, where no import-time probe sees it run — crossed with every boundary test
@@ -2496,7 +2551,7 @@ after = '''    import importlib
 
     importlib.import_module("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function imports the note store through __import__"
@@ -2504,7 +2559,7 @@ file = "src/stayfixed/cli.py"
 before = '    return [module.register for module in area_modules("commands")]'
 after = '''    __import__("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 [[mutation]]
 name = "a core function imports the note store through an alias of import_module"
@@ -2514,10 +2569,10 @@ after = '''    from importlib import import_module as load
 
     load("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_imports_by_a_string_but_discovery"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # The standard library imports by a string without either name that rule reads:
-# `pkgutil.resolve_name` crossed with all of `test_areas.py` and `test_import_boundary.py` green.
+# `pkgutil.resolve_name` crossed with every import-boundary test green.
 # So the core's imports of the import machinery are pinned, each with what it reaches.
 [[mutation]]
 name = "a core function imports the note store through pkgutil.resolve_name"
@@ -2527,7 +2582,89 @@ after = '''    import pkgutil
 
     pkgutil.resolve_name("stayfixed.memory.store")
     return [module.register for module in area_modules("commands")]'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# `importlib.resources.files` imports the anchor it is handed when that names a module, so it reads
+# only the package's own data when handed `__package__` or `"stayfixed"`, and is the import
+# machinery in every other spelling.
+[[mutation]]
+name = "a core function opens the note store's resources by its module name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib import resources
+
+    resources.files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function opens the note store's resources through files imported by name"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    from importlib.resources import files
+
+    files("stayfixed.memory.store")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+# The standard library's other doors that import a module named by a string, each of which crossed
+# with every boundary test green: `pydoc.locate`, an unpickler, `marshal`'s code objects and
+# `logging.config`'s resolver. `logging.config` is a network module as well, which the outbound
+# rule holds on its own.
+[[mutation]]
+name = "a core function imports the note store through pydoc.locate"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pydoc
+
+    pydoc.locate("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function unpickles a reference to the note store"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import pickle
+
+    pickle.loads(b"cstayfixed.memory.store\nresolve\n.")
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function loads code through marshal"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import marshal
+
+    marshal.loads(marshal.dumps(None))
+    return [module.register for module in area_modules("commands")]'''
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+
+[[mutation]]
+name = "a core function resolves the note store through logging.config"
+file = "src/stayfixed/cli.py"
+before = '    return [module.register for module in area_modules("commands")]'
+after = '''    import logging.config
+
+    logging.config.BaseConfigurator({}).resolve("stayfixed.memory.store.resolve")
+    return [module.register for module in area_modules("commands")]'''
+reddens = [
+  "tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
+  "tests/test_outbound.py::test_no_module_imports_a_network_or_native_module",
+]
+
+# Discovery is exempt from the name rule for its two imports by name and nothing else, so it may
+# not run text, read a finder or reach a loader the way no other core module may.
+[[mutation]]
+name = "discovery runs text beside its two imports by name"
+file = "src/stayfixed/areas.py"
+before = "    return [importlib.import_module(name) for name in _qualified(submodule)]"
+after = """    def _load() -> None:
+        exec("import stayfixed.memory.store")
+
+    return [importlib.import_module(name) for name in _qualified(submodule)]"""
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_imports_by_a_string_but_discovery"]
 
 # Discovery is the door the delivery rule leaves open, and asking it for any submodule but the three
 # it is for walks every area through it, the private layer's included.
@@ -2537,7 +2674,36 @@ file = "src/stayfixed/hooks/registry.py"
 before = "                raise UnknownHookEvent("
 after = '''                area_modules("api")
                 raise UnknownHookEvent('''
-reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+reddens = ["tests/boundaries/test_discovery.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
+
+# The path grammar is a leaf that imports nothing from the package, because the configuration
+# reads it and prints through `findings`, which prints through `printed`, which reads it too: with
+# the grammar reading `config.schema` again, the configuration and the grammar import each other.
+[[mutation]]
+name = "the path grammar reads the configuration's schema again"
+file = "src/stayfixed/grammar.py"
+before = "import re"
+after = """import re
+
+from stayfixed.config.schema import Config"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+]
+
+# `profiles/__init__.py` imports `evaluate`, which imports `gitenv`, so `gitenv` reading any
+# submodule of `profiles`, even inside a function where no import fails, is a cycle through that
+# `__init__`: the import a review planted, which every cycle test passed until the module graph ran
+# the packages above the module imported.
+[[mutation]]
+name = "gitenv reads the profiles inside a function"
+file = "src/stayfixed/gitenv.py"
+before = "    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+after = """    from stayfixed.profiles.model import Check  # noqa: F401
+
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
 
 # One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
 # the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
@@ -2569,17 +2735,6 @@ after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
 reddens = [
   "tests/test_semver.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
   "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
-]
-
-# The overlay root anchors where the note store may resolve, so with no file named it is read from
-# the one path no variable can move, even from a terminal.
-[[mutation]]
-name = "the overlay root reads the machine file a variable names"
-file = "src/stayfixed/config/overlay.py"
-before = "    path = machine_config_path(interactive=False) if machine is None else machine"
-after = "    path = machine_config_path(interactive=True) if machine is None else machine"
-reddens = [
-  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
 ]
 
 # `init` writes the `.gitignore` block as a scaffold artifact and `attach` merges it into the file;
@@ -2620,34 +2775,6 @@ reddens = [
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[overlay-root]",
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[machine]",
   "tests/test_undecodable.py::test_a_file_without_read_permission_cannot_be_read_and_says_so[setup]",
-]
-
-# A retired artifact whose file was already gone read as unchanged and kept its record for good:
-# every later run passed over it again, and an overlay's memory README never got its successor.
-[[mutation]]
-name = "a retired record whose file is gone is kept for good"
-file = "src/stayfixed/scaffold/engine.py"
-before = """        if record is not None:
-            # The file is gone and its record is not"""
-after = """        if False:
-            # The file is gone and its record is not"""
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
-  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[upgrade-directory-there]",
-  "tests/project/test_upgrade.py::test_switching_ci_off_after_deleting_the_workflow_drops_its_record",
-]
-
-# Walking to a removal whose file was already gone failed, as a refusal, when its directory was
-# gone too, and named the file among those removed.
-[[mutation]]
-name = "apply walks to a removal whose file is already gone"
-file = "src/stayfixed/scaffold/engine.py"
-before = "                if action.payload is not None or os.path.lexists(root / action.target):"
-after = "                if True:"
-reddens = [
-  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
-  "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
 ]
 
 # `fsops.names_regular_file` is the one place a path that names no file is told from one that cannot
@@ -2691,48 +2818,99 @@ reddens = [
   "tests/test_fsops.py::test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers",
 ]
 
-# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
-# id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `placed_entries` walks
-# positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
-# walk key by id instead of counting entries, which is precisely the defect positional counting
-# exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
-# sees the command hung on the borrowed id.
+# `fsops`' four path predicates answer one way on every interpreter, where `pathlib`'s raise on a
+# fault up to Python 3.13 and answer `False` from 3.14. A name or a path longer than the system
+# takes reaches no file, as a dangling link and a loop do: raised, it ended `attach` over an
+# overlay with nothing wrong with it in an internal error on 3.11 to 3.13 alone. `contained` reads
+# the same set, so an ancestor past the longest path holds no link to follow there either.
 [[mutation]]
-name = "doctor counts hook entries by marker id rather than by position"
-file = "src/stayfixed/scaffold/entries.py"
-before = "                    found.append((places, _placed(event, group, entry)))"
-after = """                    placed = _placed(event, group, entry)
-                    here = marker_id(placed.command)
-                    if here is None or here not in {marker_id(seen.command) for _, seen in found}:
-                        found.append((places, placed))"""
+name = "the path predicates read a name longer than the system takes as a fault"
+file = "src/stayfixed/fsops.py"
+before = "REACHES_NO_FILE = NAMES_NO_FILE | {errno.ENAMETOOLONG}"
+after = "REACHES_NO_FILE = NAMES_NO_FILE"
 reddens = [
-  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
-  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[past-the-longest-path]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-to-a-name-longer-than-a-name]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[a-name-longer-than-a-name]",
+  "tests/config/test_paths.py::test_each_fault_an_ancestor_meets_has_one_answer_on_every_interpreter[past-the-longest-path]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-kept]",
+  "tests/attach/test_write.py::test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source[projects-absent]",
+  "tests/hooks/test_dispatch.py::test_the_walk_finds_the_root_above_a_directory_too_deep_to_name_its_dot_git",
+  "tests/config/test_paths.py::test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write",
 ]
 
-# The walk says where each entry sits, and `doctor` reads a grant back through the same walk, so
-# an entry is vouched for only under the event and the matcher it was granted under. A walk that
-# dropped either would drop it from both sides at once, and the owner's own command hung under
-# another event or matcher would read "all accounted for".
+# The hook's walk for `.git` asks `fsops` too: `Path.exists()` raised on a `<cwd>/.git` past the
+# longest path up to 3.13, so every hook in such a directory was an internal error there. The guard
+# walk reddens on every interpreter, and the walk's own case on 3.11 to 3.13.
 [[mutation]]
-name = "the hook entry walk reads every entry under one event"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    return Placed(event, _matcher(group), text)"
-after = '    return Placed("", _matcher(group), text)'
+name = "the hook's walk for .git asks pathlib what is there"
+file = "src/stayfixed/gitenv.py"
+before = '        if fsops.exists(directory / ".git"):'
+after = '        if (directory / ".git").exists():'
 reddens = [
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-bound]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-event-unbound]",
+  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
+]
+
+# Any other fault leaves the question open, and "cannot tell" is not "no": a directory that cannot
+# be searched raises, as it did up to 3.13, where 3.14 answered `False`.
+[[mutation]]
+name = "the path predicates read a fault they cannot answer as nothing there"
+file = "src/stayfixed/fsops.py"
+before = "        if exc.errno in REACHES_NO_FILE:"
+after = "        if True:"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[below-a-directory-that-cannot-be-searched]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[through-a-link-into-a-directory-that-cannot-be-searched]",
+]
+
+# A NUL names no file anywhere, and `pathlib`'s predicates answer it `False` on every interpreter.
+[[mutation]]
+name = "the path predicates raise on a NUL"
+file = "src/stayfixed/fsops.py"
+before = "        raise\n    except ValueError:\n        return None"
+after = "        raise"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-nul]",
 ]
 
 [[mutation]]
-name = "the hook entry walk reads every entry without its matcher"
-file = "src/stayfixed/scaffold/entries.py"
-before = '    if "matcher" not in group:'
-after = "    if True:"
+name = "is_file answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISREG(mode)"
+after = "    return mode is not None"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[another-matcher-bound]",
-  "tests/attach/test_doctor.py::test_a_granted_command_under_an_event_or_matcher_it_was_not_granted_under_is_not_vouched_for[no-matcher-unbound]",
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-directory]",
+]
+
+[[mutation]]
+name = "is_dir answers for anything that is there"
+file = "src/stayfixed/fsops.py"
+before = "    return mode is not None and stat.S_ISDIR(mode)"
+after = "    return mode is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-regular-file]",
+]
+
+# `exists` follows a link as `Path.exists()` does: a dangling one reaches nothing.
+[[mutation]]
+name = "exists answers for a link it did not follow"
+file = "src/stayfixed/fsops.py"
+before = "    return _reached_mode(path, follow=True) is not None"
+after = "    return _reached_mode(path, follow=False) is not None"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-dangling-link]",
+]
+
+# `is_symlink` asks `lstat`, as `Path.is_symlink()` does: followed, a link is what it names.
+[[mutation]]
+name = "is_symlink follows the link it is asked about"
+file = "src/stayfixed/fsops.py"
+before = "    mode = _reached_mode(path, follow=False)"
+after = "    mode = _reached_mode(path, follow=True)"
+reddens = [
+  "tests/test_fsops.py::test_the_path_predicates_answer_each_fault_alike_on_every_interpreter[a-link-to-a-file]",
 ]
 
 # A `memory.groups` entry holding a NUL reached `lstat` and every later path call as a `ValueError`,
@@ -2824,97 +3002,6 @@ reddens = [
   "tests/test_fsops.py::test_a_file_swapped_after_the_check_is_judged_by_what_was_opened",
 ]
 
-# The entries a harness runs out of a settings file, for `doctor`'s `hook-entries`: Claude Code
-# 2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section
-# held a scalar where an event's list, a group, a group's `hooks` or an entry belongs. Read with
-# the engine's strict walk, one such scalar made the file one the row was blind to, a warning, and
-# a forged entry beside it lost its red. `_admitted` states the rule once, for every place.
-[[mutation]]
-name = "the live-entry walk refuses a scalar where a list or an object belongs"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-    if isinstance(value, dict | list):
-        skipped.append(value)
-    return False
-"""
-after = """
-    if isinstance(value, dict | list):
-        skipped.append(value)
-        return False
-    raise EntriesError("not the kind this place holds")
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[event-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-not-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-hooks-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[entry-not-an-object]",
-]
-
-# A container in one of those places was not measured, and may hold a command a harness runs: the
-# walk keeps it, so the row still names the file as one it could not account for.
-[[mutation]]
-name = "the live-entry walk skips a container without saying so"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-    if isinstance(value, dict | list):
-        skipped.append(value)
-"""
-after = """
-    if isinstance(value, dict | list):
-        pass
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[group-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-a-list]",
-]
-
-# Not measured, and read conservatively: an object where a group goes that carries an entry's
-# `command` or `type` and no `hooks` list is kept with the skipped parts, and a command claiming the
-# stayfixed marker in any skipped part is red, since a harness may run what nothing here can check.
-[[mutation]]
-name = "the live-entry walk reads an entry where a group goes as no entry"
-file = "src/stayfixed/scaffold/entries.py"
-before = '            if "command" in group or "type" in group:'
-after = "            if False:"
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
-]
-
-[[mutation]]
-name = "the live-entry walk overlooks a marked command it skipped"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-            if marker_id(node) is not None:
-                return True
-"""
-after = """
-            if False:
-                return True
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
-]
-
-# Every element of an entry list holds a place, so the row names an entry where a person opening
-# the file finds it, scalars beside it included.
-[[mutation]]
-name = "the live-entry walk numbers only the entries it reads"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-                places += 1
-                if _admitted(entry, dict, skipped):
-"""
-after = """
-                if _admitted(entry, dict, skipped):
-                    places += 1
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_an_entry_is_named_by_its_place_among_every_element_beside_it",
-]
-
 # Read is not written: Python 3.12's C encoder does not handle `indent`, so an indented encode runs
 # the pure-Python encoder, which stops near 994 levels while the parser follows about 9,996. A
 # document between the two was read and then ended its writer in an internal error. The writer
@@ -2932,24 +3019,6 @@ after = """
 """
 reddens = [
   "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
-]
-
-[[mutation]]
-name = "the settings engine writes a merge back with a bare encode"
-file = "src/stayfixed/scaffold/entries.py"
-before = '    return settings_text(raw) + "\n"'
-after = '    return json.dumps(raw, indent=2) + "\n"'
-reddens = [
-  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[apply-entries]",
-]
-
-[[mutation]]
-name = "the settings engine renders its own entries with a bare encode"
-file = "src/stayfixed/scaffold/entries.py"
-before = "    return settings_text(claimed, sort_keys=True)"
-after = "    return json.dumps(claimed, indent=2, sort_keys=True)"
-reddens = [
-  "tests/scaffold/test_entries.py::test_a_write_back_the_encoder_cannot_follow_is_refused_as_nested[owned]",
 ]
 
 # The depth bound sits where every interpreter can write back what it read: above what a harness
@@ -3005,21 +3074,10 @@ reddens = [
   "tests/config/test_loader.py::test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it[budget]",
 ]
 
-# In the block led by "the live-entry walk refuses a scalar where a list or an object belongs": a file a harness
-# was measured running is read past a leading byte-order mark too.
-[[mutation]]
-name = "hook-entries is blind to a settings file opening with a byte-order mark"
-file = "src/stayfixed/scaffold/entries.py"
-before = 'return live_entries(document.removeprefix("\ufeff"))'
-after = 'return live_entries(document)'
-reddens = [
-  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
-]
-
-# In the block led by "the regular-file reader opens whatever a path names": the open never waits,
-# so a FIFO swapped in after the check cannot block it, and it follows a link at the last
-# component, because `attach` links each memory group and `MEMORY.md` into the overlay and those
-# are read and hashed through the link.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the open
+# never waits, so a FIFO swapped in after the check cannot block it, and it follows a link at the
+# last component, because `attach` links each memory group and `MEMORY.md` into the overlay and
+# those are read and hashed through the link.
 [[mutation]]
 name = "the regular-file reader waits on a FIFO swapped in after its check"
 file = "src/stayfixed/fsops.py"
@@ -3038,6 +3096,55 @@ reddens = [
   "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
   "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
   "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
+]
+
+# Under a root, `read_bounded` reaches a file as a write does, no link followed, the file's own
+# included, and judges what it opened by the descriptor; `.pyc` bytecode is read this way. Following
+# a symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
+# waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a pipe
+# whose writer has written a header reads like bytecode.
+[[mutation]]
+name = "a symlinked .pyc is followed"
+file = "src/stayfixed/fsops.py"
+before = '_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)'
+after = "_WITHIN_OPEN = _REGULAR_OPEN"
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed",
+  "tests/test_fsops.py::test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_file",
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
+]
+
+[[mutation]]
+name = "a name under an open directory may be a path"
+file = "src/stayfixed/fsops.py"
+before = """        if len(parts) != 1:
+            raise UnsafePath(f"{relative!r} is not one name in the directory it is read from")
+        descriptor = os.open(parts[0], _WITHIN_OPEN, dir_fd=root)"""
+after = """        descriptor = os.open(relative, _WITHIN_OPEN, dir_fd=root)"""
+reddens = [
+  "tests/test_fsops.py::test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_link",
+]
+
+[[mutation]]
+name = "a .pyc that is a named pipe is opened waiting for a writer"
+file = "src/stayfixed/fsops.py"
+before = '_WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)'
+after = '_WITHIN_OPEN = (_REGULAR_OPEN & ~os.O_NONBLOCK) | getattr(os, "O_NOFOLLOW", 0)'
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk",
+  "tests/test_fsops.py::test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer",
+]
+
+[[mutation]]
+name = "a .pyc that is not a regular file is read"
+file = "src/stayfixed/fsops.py"
+before = """        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)"""
+after = """        if False:
+            raise NotRegularFile(errno.EINVAL, "not a regular file", relative)"""
+reddens = [
+  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_read",
+  "tests/test_fsops.py::test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer",
 ]
 
 # `tomllib` converts a hex, octal or binary literal of any length, and `str` of one past 4,300
@@ -3086,14 +3193,14 @@ reddens = [
   "tests/config/test_loader.py::test_an_integer_key_just_under_its_bound_loads",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": the read stops one
-# byte past `REGULAR_READ_LIMIT`, because a regular file can be endless (`/proc/self/pagemap`), and
-# a file at the limit is read.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": the read
+# stops one byte past its limit, `REGULAR_READ_LIMIT` for this reader, because a regular file can be
+# endless (`/proc/self/pagemap`), and a file at the limit is read.
 [[mutation]]
 name = "the regular-file reader reads past its limit"
 file = "src/stayfixed/fsops.py"
-before = "    if len(content) > REGULAR_READ_LIMIT:"
-after = "    if False:"
+before = "    return content[:limit], len(content) > limit"
+after = "    return content, False"
 reddens = [
   "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
 ]
@@ -3101,10 +3208,58 @@ reddens = [
 [[mutation]]
 name = "the regular-file reader refuses a file at its limit"
 file = "src/stayfixed/fsops.py"
-before = "    if len(content) > REGULAR_READ_LIMIT:"
-after = "    if len(content) >= REGULAR_READ_LIMIT:"
+before = "    return content[:limit], len(content) > limit"
+after = "    return content[:limit], len(content) >= limit"
 reddens = [
   "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
+]
+
+# A reader may hold its files to a cap of its own below the read cap, a profile's configuration
+# files among them; the reader honours it rather than reading to the read cap.
+[[mutation]]
+name = "the regular-file reader ignores the cap a reader hands it"
+file = "src/stayfixed/fsops.py"
+before = "    content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)"
+after = "    content, over = read_bounded(path, REGULAR_READ_LIMIT)"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
+
+# A reader that refuses a file it could not read says why in `fsops.said`'s words, through
+# `fsops.reading`: never by the error's class name, which names stayfixed's internals and no
+# condition, and never in the error's own text, which carries the path the file was opened by.
+[[mutation]]
+name = "a read refusal says an unreadable file by its error's class name"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read ({type(error).__name__})"'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name",
+]
+
+[[mutation]]
+name = "a read refusal says an unreadable file in its error's own text"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read: {error}"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
+  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+# Bytes that are not UTF-8 are the reader's refusal, never a `UnicodeDecodeError` out of it: the
+# footprint manifest's left `Manifest.read` that way, and a detach exited 2 on a committed one.
+[[mutation]]
+name = "a read refusal lets undecodable bytes out as a crash again"
+file = "src/stayfixed/fsops.py"
+before = """    except UnicodeDecodeError as exc:
+        raise refusal(unreadable(label, exc)) from None
+"""
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
+  "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
 
 # A commit's copy of a document at the project's own path (`committed.py`), read one way for the
@@ -3202,15 +3357,8 @@ before = '    if ".." in lexical.parts:'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
 
-[[mutation]]
-name = "the live walk numbers each list from one"
-file = "src/stayfixed/scaffold/entries.py"
-before = "            for entry in entries:\n                places += 1\n"
-after = "            places = 0\n            for entry in entries:\n                places += 1\n"
-reddens = [
-  "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
-]
-
+# The release record reads in every encoding `json` detects, a byte-order mark and UTF-16 or
+# UTF-32 included, and not as UTF-8 alone.
 [[mutation]]
 name = "the release record is decoded as UTF-8 alone"
 file = "src/stayfixed/release/hashes.py"
@@ -3228,3 +3376,167 @@ after = "    if False:\n        raise _past(label, WRITTEN_PAST, error, limit)"
 reddens = [
   "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
 ]
+
+# The registry states where Claude Code reads Markdown whose frontmatter can declare hooks, and
+# `hook-entries` walks what it states: commands and agents declare hooks as skills do.
+[[mutation]]
+name = "hook-entries reads no command or agent file"
+file = "src/stayfixed/harnesses.py"
+before = """
+        Hooked(f"{CLAUDE_DIR}/commands", None),
+        Hooked(f"{CLAUDE_DIR}/agents", None),
+"""
+after = """
+"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[command]",
+  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it[agent]",
+]
+
+# Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as
+# `-`, which the registry states and `memory` links into.
+[[mutation]]
+name = "Claude Code's memory slug keeps a dot"
+file = "src/stayfixed/harnesses.py"
+before = '    slug = project.replace("/", "-").replace(".", "-")'
+after = '    slug = project.replace("/", "-")'
+reddens = [
+  "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
+]
+
+# `HOME` agrees with the database's home only when it resolves to it; read as agreeing anyway, a
+# hook makes the harness link where the harness does not look.
+[[mutation]]
+name = "any HOME agrees with the password database's home"
+file = "src/stayfixed/config/machine.py"
+before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
+after = '    return True'
+reddens = [
+  "tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases",
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[another-False]",
+]
+
+# An empty `HOME` is a value that names no home, as every program measured reads it, and never an
+# unset one; read as unset, a hook links where the harness does not look and both rows read ok.
+[[mutation]]
+name = "an empty HOME agrees with the password database's home"
+file = "src/stayfixed/config/machine.py"
+before = "    if chosen is None:"
+after = "    if not chosen:"
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
+]
+
+[[mutation]]
+name = "an empty HOME is read as the directory a command runs in"
+file = "src/stayfixed/config/machine.py"
+before = '    return chosen != "" and Path(chosen).resolve() == recorded.resolve()'
+after = '    return Path(chosen).resolve() == recorded.resolve()'
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_is_a_value_that_names_no_home[empty-False]",
+  "tests/memory/test_hooks.py::test_an_empty_home_gets_no_harness_link_even_in_the_databases_home",
+  "tests/memory/test_doctor.py::test_an_empty_home_is_told_the_hook_makes_no_link",
+  "tests/doctor/test_checks.py::test_an_empty_home_is_named_as_a_home_the_database_does_not_record",
+]
+
+# The database's home is resolved before it is a root, since the walk opens its root without
+# following a symlink and an entry naming one would otherwise get no harness link.
+[[mutation]]
+name = "a database home that is a symlink is used unresolved as a root"
+file = "src/stayfixed/config/machine.py"
+before = '    return home.resolve()'
+after = '    return home'
+reddens = [
+  "tests/config/test_machine.py::test_the_anchor_is_the_databases_home_resolved_and_home_as_typed_at_a_terminal",
+  "tests/memory/test_worktree.py::test_a_database_home_that_is_itself_a_symlink_still_gets_the_harness_link",
+]
+
+# At a terminal with `HOME` unset, for a user the database lists no home for, there is no home, and
+# `attach` says so rather than ending in `Path.home`'s error.
+[[mutation]]
+name = "a terminal with no home at all raises"
+file = "src/stayfixed/config/machine.py"
+before = """
+        try:
+            return Path.home()
+        except RuntimeError:
+            return None
+"""
+after = """
+        return Path.home()
+"""
+reddens = [
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_with_no_home_at_all_refuses_in_words",
+]
+
+# At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
+# harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
+[[mutation]]
+name = "an empty HOME at a terminal is read as the root directory"
+file = "src/stayfixed/config/machine.py"
+before = "        if home_is_empty():\n            return None"
+after = "        if False:\n            return None"
+reddens = [
+  "tests/config/test_machine.py::test_an_empty_home_at_a_terminal_names_no_home",
+  "tests/attach/test_commands.py::test_attach_at_a_terminal_whose_home_is_empty_refuses_in_words",
+  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+]
+
+# Whether a version orders before its release by its suffix, read by PEP 440's grammar for one:
+# segments may run together with no separator, a further release component other than zero names
+# a later release, the local label after `+` is no segment, a pre-release segment makes a
+# pre-release, and a `dev` after a post-release is a development release of that post-release,
+# which comes after the release. A suffix outside the grammar leaves the triple to decide.
+[[mutation]]
+name = "segments run together are no suffix PEP 440 allows"
+file = "src/stayfixed/semver.py"
+before = '    r"(?P<post>-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"'
+after = '    r"(?P<post>-[0-9]+|[-_.](?:post|rev|r)[-_.]?[0-9]*)?"'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1post2-False]"]
+
+[[mutation]]
+name = "a further release component is read as no later release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["release"].replace(".", "").strip("0"):'
+after = "    if False:"
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.1rc1-True]"]
+
+[[mutation]]
+name = "a local label is no part of the suffix grammar"
+file = "src/stayfixed/semver.py"
+before = '    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?\Z",'
+after = '    r"\Z",'
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1+local-False]"]
+
+[[mutation]]
+name = "a pre-release segment no longer makes a pre-release"
+file = "src/stayfixed/semver.py"
+before = '    if parts["pre"] is not None:'
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1]",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rc1.post2-False]",
+]
+
+[[mutation]]
+name = "a development release of a post-release reads as a pre-release"
+file = "src/stayfixed/semver.py"
+before = '    return parts["dev"] is not None and parts["post"] is None'
+after = '    return parts["dev"] is not None'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0.post1dev2-True]",
+]
+
+[[mutation]]
+name = "a suffix outside PEP 440 reads as a pre-release"
+file = "src/stayfixed/semver.py"
+before = """    if parts is None:
+        return False"""
+after = """    if parts is None:
+        return True"""
+reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0x-True]"]
+

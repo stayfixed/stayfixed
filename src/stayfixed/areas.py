@@ -35,11 +35,14 @@ Registrar = Callable[[SubParsers], None]
 # The areas that make up the private layer: `overlay` renders and upgrades the overlay, `attach`
 # binds a repository to it and takes back what that wrote, leaving the overlay's record of the
 # binding, and `memory` keeps the note store. Every other module under `src/stayfixed/` is the core.
+# One piece of the private layer sits in the core all the same: `templates/overlay/`, the tree
+# `overlay create --local` renders, is data the `overlay` area alone reads, and the import rules
+# below read code, so they cannot see it.
 # The core may not import a delivery area, through its `api.py` or otherwise, and a delivery area
 # may import the core, so the private layer can be reworked without touching the core.
-# `tests/test_areas.py`'s `test_core_never_imports_delivery` holds it, against the import statements
-# of the one crossing still pinned; since that reads import statements, the same file pins which
-# core modules import by a string, and through which of the import machinery, and
+# `tests/boundaries/test_delivery.py`'s `test_core_never_imports_delivery` holds it, against the
+# import statements of the one crossing still pinned; since that reads import statements, the same
+# file pins which core modules import by a string, and through which of the import machinery, and
 # `test_in_isolation_no_core_module_loads_a_delivery_area` holds that importing the core loads none
 # of the private layer.
 DELIVERY_AREAS: frozenset[str] = frozenset({"attach", "memory", "overlay"})

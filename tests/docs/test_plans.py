@@ -5,11 +5,12 @@ sample data.
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -83,7 +84,7 @@ def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
 
 def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) -> None:
     # Go's import spelling in a plan line failed the gate as a missing file of this repository.
-    # The path beside it on the same line is still checked. Oracle: `mutations/`, "a
+    # The path beside it on the same line is still checked. Oracle: `mutations/`'s "a
     # host-shaped first component is read as a directory".
     root, config = project(tmp_path)
     path = plan(root, SCOPE + "Use `gopkg.in/yaml.v3` to parse `internal/config/load.go`.\n")
@@ -94,39 +95,39 @@ def test_a_dependency_named_by_its_host_is_not_a_dead_reference(tmp_path: Path) 
 
 
 def test_a_reference_the_filesystem_cannot_name_is_not_found_rather_than_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     # A 5,000-character backticked path made `exists()` raise `ENAMETOOLONG` on Python 3.11 to
-    # 3.13, which crashed the lint on the author's own plan instead of reporting the claim.
-    # Forced here, portably, by making `exists` raise for that path. Oracle: `mutations/`, "a
-    # path the filesystem cannot name crashes the reference checks".
+    # 3.13, which crashed the lint on the author's own plan instead of reporting the claim, and
+    # answered `False` on 3.14. `fsops.exists` answers it on every interpreter, unforced. No entry
+    # of its own: `mutations/`'s "the path predicates read a name longer than the system takes as
+    # a fault" moves the answer to the arm below it, which answers the same.
     root, config = project(tmp_path)
     long = "src/" + "a" * 5000 + ".py"
-    real = Path.exists
-
-    def exists(self: Path, *args: Any, **kwargs: Any) -> bool:
-        if len(str(self)) > 4096:
-            raise OSError(errno.ENAMETOOLONG, "File name too long")
-        return real(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "exists", exists)
     path = plan(root, SCOPE + f"- Modify: `{long}`\n")
     found = lint(root, config, plans=[path]).findings
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, long)]
 
 
-def test_a_reference_too_long_for_this_filesystem_is_not_found(tmp_path: Path) -> None:
-    # The same case unforced, where the platform still raises; 3.14's `exists` answers False.
-    try:
-        (tmp_path / ("a" * 5000)).exists()
-    except OSError:
-        pass
-    else:
-        pytest.skip("this Python's exists() answers a name too long instead of raising")
+def test_a_reference_below_a_directory_that_cannot_be_searched_is_not_found_rather_than_a_crash(
+    tmp_path: Path,
+) -> None:
+    # What the existence query still raises -- a fault that leaves the question open -- is the
+    # reference checks' to answer, and they answer it as a claim not found rather than a crash.
+    # Oracle: `mutations/`'s "a path the filesystem cannot answer for crashes the reference checks".
+    if os.geteuid() == 0:
+        pytest.skip("root searches every directory")
     root, config = project(tmp_path)
-    long = "src/" + "a" * 5000 + ".py"
-    path = plan(root, SCOPE + f"- Modify: `{long}`\n")
-    assert rules(root, config, path) == ["dead-reference"]
+    (root / "src" / "locked" / "child").mkdir(parents=True)
+    path = plan(root, SCOPE + "- Modify: `src/locked/child/x.py`\n")
+    (root / "src" / "locked").chmod(0o600)
+    try:
+        found = lint(root, config, plans=[path]).findings
+    finally:
+        (root / "src" / "locked").chmod(0o700)
+    assert [(f.rule, f.line, f.detail) for f in found] == [
+        ("dead-reference", 3, "src/locked/child/x.py")
+    ]
 
 
 def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_filesystem(
@@ -136,7 +137,7 @@ def test_a_reference_through_a_symlink_out_of_the_tree_is_not_asked_of_the_files
     # made the lint a one-bit existence oracle for any path on the machine, a present file
     # passing and an absent one reported. A claim whose real path leaves the root is now not
     # settled at all, as one whose spelling leaves it is not. A symlink that stays inside the
-    # tree is still followed. Oracle: `mutations/`, "the plan lint follows a symlink out of
+    # tree is still followed. Oracle: `mutations/`'s "the plan lint follows a symlink out of
     # the tree", "a path claim is followed through a symlink out of the tree".
     root, config = project(tmp_path)
     outside = tmp_path / "outside"
@@ -238,6 +239,86 @@ def test_a_fixes_claim_names_the_bug_ledgers_configured_prefix(tmp_path: Path) -
     config = replace(config, ledger=replace(config.ledger, id_prefix="DF"))
     assert rules(root, config, plan(root, SCOPE + "Fixes DF-042.\n")) == ["premise-missing"]
     assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n")) == []
+
+
+# Plans the rules read in time quadratic in their length, each with the rules it must end in:
+# blank lines below the scope, which the declaring-line pattern read again from every one of them,
+# 0.33 s over 16,000; and premise markers no colon follows, which the premise pattern read on from
+# every marker to the end, 0.51 s over 16,000. Each is sized so that the old reading takes over
+# two minutes and the lint a quarter of a second.
+LONG_PLANS = {
+    "blank lines": (SCOPE + "\n" * (1 << 19), []),
+    "premise markers": (SCOPE + "Fixes BR-042.\n" + "**Premise\n" * (1 << 18), ["premise-missing"]),
+}
+# The child's bound: a fifteenth of the old reading's time over either plan on a laptop, and thirty
+# times the lint's there, start-up included.
+_LONG_PLAN_SECONDS = 10
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_PLANS))
+def test_a_long_plan_is_linted_in_time_linear_in_its_length(tmp_path: Path, shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a declaring line is read for from every blank line above
+    # it" -> `blank lines`; "a premise marker is read on from every marker" -> `premise markers`.
+    root, _ = project(tmp_path)
+    body, expected = LONG_PLANS[shape]
+    path = plan(root, body)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.config.loader import load\n"
+        "from stayfixed.docs.plans import lint\n"
+        "root, machine, path = map(Path, sys.argv[1:])\n"
+        "found = lint(root, load(root, machine=machine), plans=[path]).findings\n"
+        "print([finding.rule for finding in found])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root), str(tmp_path / "m.toml"), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_PLAN_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the plan lint ran past {_LONG_PLAN_SECONDS} s on one plan")
+    assert done.stdout == f"{expected}\n", done.stderr
+
+
+# Paragraphs of claims, one a line, which the asserted-outcome rule read again from the paragraph's
+# start at every claim: for the last sentence end before it, 12.7 s over 16,000 claims each in a
+# sentence of its own, and, where no sentence ends, for an expectation marker, 10.9 s over 16,000.
+# Each is sized so that the old reading takes three minutes and the rule a tenth of a second; the
+# answer is how many lines open a claim and the last of them.
+LONG_CLAIMS = {
+    "a sentence each": "It reddens 8.\n",
+    "one sentence": "it reddens 8\n",
+}
+_LONG_CLAIM_COUNT = 1 << 16
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_CLAIMS))
+def test_a_paragraph_of_claims_is_read_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under the plan lint's timeout. Mutations (oracle): `mutations/`'s "a claim's
+    # sentence is looked for from its paragraph's start" -> both cases; "an expectation marker is
+    # looked for over the claim's whole sentence again" -> `one sentence`.
+    probe = (
+        "import sys\n"
+        "from stayfixed.docs.plans import asserted_outcomes\n"
+        "found = asserted_outcomes(sys.argv[1] * int(sys.argv[2]))\n"
+        "print([len(found), found[-1]])\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, LONG_CLAIMS[shape], str(_LONG_CLAIM_COUNT)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_PLAN_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the asserted-outcome rule ran past {_LONG_PLAN_SECONDS} s on one paragraph")
+    assert done.stdout == f"{[_LONG_CLAIM_COUNT, _LONG_CLAIM_COUNT]}\n", done.stderr
 
 
 @pytest.mark.parametrize(
@@ -426,8 +507,8 @@ def test_a_base_that_will_not_resolve_is_raised_never_an_ok(tmp_path: Path) -> N
     # This gate ran green for its whole life on a shallow checkout that had no base ref. The
     # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
     # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
-    # finding, exit 1. Mutation (oracle): "an unresolvable base reads as a clean run" -> nothing
-    # is raised and this reddens.
+    # finding, exit 1. Mutation (oracle): `mutations/`'s "an unresolvable base reads as a clean run"
+    # -> nothing is raised and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")

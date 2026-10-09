@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
+import ast
 import itertools
 import json
+import re
+from collections import Counter
+from pathlib import Path
 
 import pytest
 
+from stayfixed import harnesses
 from stayfixed.harnesses import (
     CANONICAL,
     CLAUDE,
     CODEX,
     HARNESSES,
     Harness,
+    MemoryHarness,
     Surface,
     detect,
     select,
 )
 from stayfixed.profiles import load_profile
+from tests.test_language_neutral import _docstrings
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_the_claude_rule_is_path_scoped_and_points_at_the_one_copy() -> None:
@@ -87,6 +96,7 @@ OTHER = Harness(
     project_dir_env=None,
     render=CANONICAL.render,
     reach=CLAUDE.reach,
+    plugin_root_env="OTHER_PLUGIN_ROOT",
     detects=lambda env, payload: "OTHER_HARNESS" in env,
 )
 OTHER_INPUTS: tuple[tuple[dict[str, str], dict[str, object] | None], ...] = (
@@ -154,6 +164,7 @@ TEXT = Harness(
     project_dir_env=None,
     render=lambda event, context: f"[{event}] {context}",
     reach=CLAUDE.reach,
+    plugin_root_env="TEXT_PLUGIN_ROOT",
 )
 
 
@@ -240,3 +251,110 @@ def test_a_harness_can_key_a_set_and_a_dict() -> None:
     # without `field(hash=False)` -> hashing raises and this reddens.
     assert len(set(HARNESSES)) == len(HARNESSES)
     assert {harness: harness.name for harness in HARNESSES}[CODEX] == "codex"
+
+
+def test_claude_codes_memory_directory_is_keyed_by_the_projects_path() -> None:
+    # Claude Code keeps a project's memory under `~/.claude/projects/<slug>/memory`, the slug being
+    # the project's resolved path with `/` and `.` as `-`; `memory` links a store there and
+    # `doctor` reads it there, both through this value. Mutation (oracle): `mutations/`'s "Claude
+    # Code's memory slug keeps a dot" -> reddens; no test path holds a dot otherwise.
+    assert CLAUDE.memory_dir("/home/a.b/repo") == ".claude/projects/-home-a-b-repo/memory"
+    assert not isinstance(CODEX, MemoryHarness)
+
+
+# Every harness name in a string a module of the package spells outside this registry, as the
+# words `claude` and `codex` and Codex's own `PLUGIN_ROOT` and `PLUGIN_DATA`, standing alone:
+# letters and digits on neither side, any case, so `CLAUDE_PROJECT_DIR`, `.claude/skills` and
+# `common/codex` are mentions. Docstrings and comments are prose and are not read; every other
+# string constant, an f-string's literal parts included, is.
+HARNESS_WORDS = ("claude", "codex", "plugin_root", "plugin_data")
+_HARNESS_MENTION = re.compile(
+    r"(?<![a-z0-9])(" + "|".join(HARNESS_WORDS) + r")(?![a-z0-9])", re.IGNORECASE
+)
+
+# The mentions that are harness facts the registry does not carry, each with how many string
+# constants of its module make it and the phrase of `harnesses`' module docstring that lists it,
+# which must be there: a fact moved onto the registry takes its pardon with it, and a new one needs
+# a new item in that list. Counted, so a new constant beside a pardoned one reddens too.
+LISTED = {
+    ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
+    ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
+    ("src/stayfixed/project/templates.py", "claude"): (5, "`init` renders `CLAUDE.md`"),
+    ("src/stayfixed/project/layout.py", "claude"): (1, "from the template `claude.md`"),
+    ("src/stayfixed/overlay/layout.py", "claude"): (3, "(`overlay.layout`"),
+    ("src/stayfixed/overlay/layout.py", "codex"): (2, "(`overlay.layout`"),
+    ("src/stayfixed/overlay/api.py", "claude"): (1, "re-exported by `overlay.api`"),
+    ("src/stayfixed/overlay/api.py", "codex"): (2, "re-exported by `overlay.api`"),
+    ("src/stayfixed/overlay/create.py", "claude"): (
+        1,
+        "the manifest directory\n  `overlay.create`",
+    ),
+    ("src/stayfixed/attach/permissions.py", "claude"): (
+        1,
+        "(`attach.permissions`, `attach.write`)",
+    ),
+    ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
+    ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
+    ("src/stayfixed/doctor/checks.py", "claude"): (
+        3,
+        "every variable under Claude Code's and Codex's",
+    ),
+    ("src/stayfixed/doctor/checks.py", "codex"): (4, "reads `CODEX` by name in its"),
+    ("src/stayfixed/doctor/checks.py", "plugin_root"): (
+        1,
+        "names `CLAUDE_PLUGIN_ROOT` in the remedy",
+    ),
+    ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
+}
+# The mentions that are no fact the code acts on, each with how many constants make it and why.
+PROSE = {
+    # Messages naming the Codex rule files `attach` places, and `--check` would place.
+    ("src/stayfixed/attach/check.py", "codex"): 1,
+    ("src/stayfixed/attach/commands.py", "codex"): 2,
+    # The `hook-entries` remedies, which name the harness that runs a skill's hooks and the
+    # directories to look through.
+    ("src/stayfixed/doctor/entries.py", "claude"): 2,
+    # The refusal for a home directory whose `.claude` the link walk cannot follow.
+    ("src/stayfixed/memory/worktree.py", "claude"): 1,
+    # The commit-trailer guard's names of tools that sign commits as authors: the agent as an
+    # author of a commit, not as a harness stayfixed runs under.
+    ("src/stayfixed/guards/commit.py", "claude"): 2,
+    ("src/stayfixed/guards/commit.py", "codex"): 2,
+}
+
+
+def _harness_mentions() -> Counter[tuple[str, str]]:
+    """How many string constants of each module outside the registry name each harness word."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path in sorted((ROOT / "src" / "stayfixed").rglob("*.py")):
+        relative = path.relative_to(ROOT).as_posix()
+        if relative == "src/stayfixed/harnesses.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        prose = _docstrings(tree)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in prose
+            ):
+                words = {word.lower() for word in _HARNESS_MENTION.findall(node.value)}
+                found.update((relative, word) for word in words)
+    return found
+
+
+def test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says() -> None:
+    # The registry's docstring lists what a new harness still touches outside it, and four sites
+    # were missing from that list while it said every other fact was asked of the registry. Every
+    # mention is pardoned here, and the comparison is equality both ways: a new mention reddens
+    # this test, and so does a pardon whose mention is gone. Mutation (oracle): `mutations/`'s
+    # "doctor spells the project-root variable again" -> one constant more than its pardon.
+    assert not LISTED.keys() & PROSE.keys()
+    pardoned = Counter({site: count for site, (count, _) in LISTED.items()}) + Counter(PROSE)
+    assert _harness_mentions() == pardoned
+    listed = harnesses.__doc__ or ""
+    missing = {site: phrase for site, (_, phrase) in LISTED.items() if phrase not in listed}
+    assert missing == {}

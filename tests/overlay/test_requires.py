@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from stayfixed.overlay.api import requires_of, satisfies
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
@@ -71,6 +76,48 @@ def test_a_manifest_past_the_parsers_reach_is_nothing_declared(tmp_path: Path) -
         assert requires_of(root) is None, body[:8]
 
 
+def test_a_fifo_at_the_plugin_manifest_is_unreadable_to_its_readers_without_waiting(
+    tmp_path: Path,
+) -> None:
+    # Two readers of the overlay's plugin manifest read it with `read_text`, which waits on a FIFO
+    # for a writer that never comes: `requires_of`, which the SessionStart hook asks, and
+    # `owner_of`, which `overlay upgrade` asks. Both read it through `naming.manifest` now, a
+    # regular file only, so a FIFO is nothing declared and no owner, and the reader itself refuses
+    # it unread. `overlay_fault` reads it through `naming.manifest` too, but its answer for a FIFO
+    # comes from the `is_file` gate above that read, so it holds the probe's verdict and not the
+    # reader's. In a child under a timeout, so a regression fails this case rather than hanging.
+    # Mutation (oracle): `mutations/`'s "an overlay manifest is read without asking what it is" ->
+    # the child waits and this times out.
+    root = overlay_with(tmp_path / "overlay", ">=0.1.0")
+    (root / PLUGIN_MANIFEST).unlink()
+    os.mkfifo(root / PLUGIN_MANIFEST)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.overlay.api import requires_of\n"
+        "from stayfixed.overlay.identity import overlay_fault\n"
+        "from stayfixed.fsops import NotRegularFile\n"
+        "from stayfixed.overlay.naming import manifest, owner_of\n"
+        "root = Path(sys.argv[1])\n"
+        "try:\n"
+        "    manifest(root, '.claude-plugin/plugin.json')\n"
+        "except NotRegularFile:\n"
+        "    print('refused', end=' ')\n"
+        "print(requires_of(root), owner_of(root), overlay_fault(root) is not None)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("a reader of the overlay's plugin manifest waited on a FIFO")
+    assert done.stdout == "refused None None True\n", done.stderr
+
+
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     # Mutation (comment): compare `running.groups() >= floor.groups()` as strings -> the first
     # line reddens on `>=9.0.0` against `10.0.0`.
@@ -81,6 +128,91 @@ def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     assert satisfies(">=9.0.0", "10.0.0") is True
     assert satisfies(">=0.1.0", "0.1.0") is True
     assert satisfies(">=0.1.0", "0.0.9") is False
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["1.0.0rc1", "1.0.0.dev0", "1.0.0-rc.1", "1.0.0a1", "1.0.0rc1.post2", "1.0.0.dev3+g1234abc"],
+)
+def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
+    # `semver.later` orders a release after its own pre-release, and the floor compared the
+    # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
+    # it comes before: the session line and the `overlay-requires` row read it as met. A
+    # compound suffix carrying a pre-release segment does not meet it either. Mutations:
+    # `mutations/`'s "the declared floor is met by a pre-release of it" and "a pre-release
+    # segment no longer makes a pre-release".
+    assert satisfies(">=1.0.0", version) is False
+    assert satisfies(">=0.9.9", version) is True
+
+
+# What the floor `>=1.0.0` answers, one row a shape: met by a later triple whatever follows it, by
+# its own triple unless a pre-release of it follows, never by an earlier one. `satisfies` was a
+# chain of `semver.later`, `semver.pre_release` and a tuple comparison, and these are the chain's
+# answers, kept by the one comparison that replaced it; a differential over ten million floors and
+# versions found no other difference. `1.0.0rcdev` and `1.0.0adev1` are a pre-release word run into
+# its `dev`, which a reading of each segment as a word of its own met the floor with. Mutations
+# (oracle): `mutations/`'s "the declared floor is met by a pre-release of it", "the declared floor
+# stops being met by the version that equals it" and "the declared floor is not met by the version
+# equal to it" -> the rows of the floor's own triple. The segments PEP 440 lets run together with no
+# separator are read as it reads them: `1.0.0.post1dev2` is `1.0.0.post1.dev2`, which met the floor
+# at 0.2.0 and then stopped meeting it under a search for each segment as a word of its own, and
+# `1.0.0rc1post2` is a pre-release that search met the floor with. A further release component other
+# than zero is a later release, `1.0.0.1rc1` among them. Mutations (oracle): `mutations/`'s
+# "segments run together are no suffix PEP 440 allows", "a further release component is read as no
+# later release", "a local label is no part of the suffix grammar", "a pre-release segment no longer
+# makes a pre-release", "a development release of a post-release reads as a pre-release" and "a
+# suffix outside PEP 440 reads as a pre-release". The answers agree with `packaging`'s ordering over
+# every combination of segment, spelling and separator, 5,055 versions, checked offline.
+FLOOR_ANSWERS = [
+    ("1.0.0", True),
+    ("1.0.1", True),
+    ("1.0.1rc1", True),
+    ("2.0.0.dev1", True),
+    ("0.9.9", False),
+    ("0.9.9.post1", False),
+    ("1.0.0rc1", False),
+    ("1.0.0-rc.1", False),
+    ("1.0.0.dev0", False),
+    ("1.0.0rcdev", False),
+    ("1.0.0adev1", False),
+    ("1.0.0rc1.post2", False),
+    ("1.0.0rc1+local", False),
+    ("1.0.0.dev3+g1234abc", False),
+    ("1.0.0.post1", True),
+    ("1.0.0-1", True),
+    ("1.0.0+local", True),
+    ("1.0.0+local.rc1", True),
+    ("1.0.0.post1.dev2", True),
+    ("1.0.0.post1dev2", True),
+    ("1.0.0post1dev2", True),
+    ("1.0.0rc1post2", False),
+    ("1.0.0a1r1dev", False),
+    ("1.0.0.1rc1", True),
+    ("1.0.0.0rc1", False),
+    ("1.0.0x", True),
+    ("v1.0.0", None),
+]
+
+
+@pytest.mark.parametrize(("version", "met"), FLOOR_ANSWERS)
+def test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it(
+    version: str, met: bool | None
+) -> None:
+    assert satisfies(">=1.0.0", version) is met
+
+
+def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -> None:
+    # The legitimate user: `.post1` and `+local` builds, which `later` declines to order against
+    # the bare version, keep the answer the triple gives, a floor equal to it met. Mutation:
+    # `mutations/`'s "the declared floor stops being met by the version that equals it".
+    assert satisfies(">=1.0.0", "1.0.0.post1") is True
+    assert satisfies(">=1.0.0", "1.0.0+local") is True
+    # A local label is no segment of the version's own, whatever it spells, and a development
+    # release of a post-release comes after the release. Mutation: `mutations/`'s "a development
+    # release of a post-release reads as a pre-release".
+    assert satisfies(">=1.0.0", "1.0.0+local.rc1") is True
+    assert satisfies(">=1.0.0", "1.0.0.post1.dev2") is True
+    assert satisfies(">=1.0.1", "1.0.0.post1") is False
 
 
 def test_any_other_form_is_unreadable_never_satisfied() -> None:

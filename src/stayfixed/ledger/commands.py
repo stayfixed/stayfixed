@@ -8,12 +8,18 @@ from dataclasses import asdict
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, common_flags, root_and_config
+from stayfixed.errors import Failure
 from stayfixed.findings import labels, listed
 from stayfixed.ledger.register import BUG_SCHEMA, bug_register
-from stayfixed.printed import printable
+from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
+# What `index` says of an index it could not write: the command's failure, the reason in words,
+# where the `OSError` was an internal error that named no way on.
+UNWRITTEN = (
+    "{index} could not be written ({reason}); once it can be, run `stayfixed {name} index` again"
+)
 _INERT = "nothing to check: no ledger directory and no generated index"
 BASE_HELP = (
     "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
@@ -46,7 +52,13 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
             f"{index} is current ({len(entries)} entries)",
             {"written": False, "entries": len(entries)},
         )
-    fsops.write_within(root, index, rendered)
+    try:
+        fsops.write_within(root, index, rendered)
+    except OSError as error:
+        reason = fsops.said(error)
+        raise Failure(
+            UNWRITTEN.format(index=quoted(index), reason=reason, name=ledger.name)
+        ) from error
     return Result(
         f"rewrote {index} ({len(entries)} entries)", {"written": True, "entries": len(entries)}
     )

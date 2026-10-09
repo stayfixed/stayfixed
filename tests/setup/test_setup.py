@@ -1,6 +1,7 @@
 # tests/setup/test_setup.py
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -24,7 +25,9 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
+from tests.gitfixture import stand_in_git
 from tests.parserlimits import overflowing
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
@@ -122,7 +125,7 @@ def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) ->
     # `stayfixed.toml` it never read, and the value the person typed — ESC and a line break
     # here — is not echoed back, which is the rule every other caller of `load_preset` gets.
     # Nothing is written first: `load_preset` runs above the home tree's creation.
-    # Oracle: `mutations/`, "setup's preset refusal names the configuration key again".
+    # Oracle: `mutations/`'s "setup's preset refusal names the configuration key again".
     home = tmp_path / "home"
     with pytest.raises(Failure) as caught:
         setup(
@@ -194,6 +197,30 @@ def test_a_user_settings_file_past_the_parsers_reach_is_a_failure_naming_it(
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == document
 
 
+def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words(
+    tmp_path: Path,
+) -> None:
+    # The failure quoted the error whole, `[Errno 21] Is a directory: '<the path again>'`, where
+    # every other reader of a file says its reason in words, in parentheses (`fsops.said`).
+    # Mutation (oracle): `mutations/`'s "a read refusal says an unreadable file in its error's own
+    # text".
+    home = tmp_path / "home"
+    (home / USER_SETTINGS).mkdir(parents=True)
+    with pytest.raises(Failure) as caught:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert (
+        str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EISDIR)})"
+    )
+
+
 def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     # The Runner seam again. Two things could be wrong here that only an argv assertion can see: the
     # marketplace must be registered *before* anything is installed from it (a fresh machine cannot
@@ -219,8 +246,8 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test is
     # named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so every
     # install ran before its marketplace was registered -- the exact defect the first draft shipped
-    # -- and both assertions still passed, because both calls were still made. `mutations/`
-    # carries the swap as "a plugin is installed before its marketplace is registered".
+    # -- and both assertions still passed, because both calls were still made. `mutations/`'s
+    # "a plugin is installed before its marketplace is registered" carries the swap.
     assert installs, "the preset installs nothing, so the ordering below measures nothing"
     assert add in runner.calls
     for install in installs:
@@ -425,7 +452,7 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
     # `marketplace.json` — which is exactly the shape a careless `--overlay /tmp/whatever` would
     # have.
     #
-    # Mutation (`mutations/`, "the overlay probe stops looking for the manifests at all"):
+    # Mutation (`mutations/`'s "the overlay probe stops looking for the manifests at all"):
     # `overlay.identity.overlay_fault` stops iterating the manifests → an empty directory is
     # accepted as an overlay root and this reddens.
     empty = tmp_path / "not-an-overlay"
@@ -448,7 +475,7 @@ def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
     # *inside* the repository is exactly the shape of tree a clone can ship — so recording one there
     # is refused regardless of how convincing its layout is.
     #
-    # Mutation (`mutations/`, "setup stops refusing an overlay root inside the project"):
+    # Mutation (`mutations/`'s "setup stops refusing an overlay root inside the project"):
     # `_outside_the_project`'s path condition becomes `if False:` → a nested overlay is recorded
     # and this reddens.
     project = tmp_path / "project"
@@ -813,7 +840,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     # already happened. A purely structural check on a caller-supplied path belongs above the first
     # write.
     #
-    # Mutation (`mutations/`, "setup asks whether --overlay is an overlay after it has
+    # Mutation (`mutations/`'s "setup asks whether --overlay is an overlay after it has
     # already written"): the hoisted `_requested_overlay` call is replaced by one that trusts
     # the path, leaving only `_apply_overlay`'s floor → the refusal still arrives, and this
     # reddens on the two files and the argv.
@@ -899,9 +926,10 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     # `home/<name>` needs no created tree: it is `overlay.api.target_root`'s answer, known from the
     # arguments alone.
     #
-    # Mutation ("setup computes where a created overlay lands only after creating it"): the
-    # `_outside_the_project(destination, ...)` call in `_requested_overlay` is dropped, leaving
-    # `_apply_overlay`'s floor → `gh repo create` runs, and this reddens on the argv assertion.
+    # Mutation (`mutations/`'s "setup computes where a created overlay lands only after creating
+    # it"): the `_outside_the_project(destination, ...)` call in `_requested_overlay` is dropped,
+    # leaving `_apply_overlay`'s floor → `gh repo create` runs, and this reddens on the argv
+    # assertion.
     home = tmp_path / "home"
     home.mkdir()
     machine = tmp_path / "config.toml"
@@ -948,8 +976,9 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
     # excluded almost nothing. The manifests are now read, and have to name the tree
     # `stayfixed-overlay[-<owner>]`.
     #
-    # Mutation ("the overlay probe stops reading what the manifests name"): `identity`'s
-    # `_claims` arm is dropped → this directory is accepted and the refusal never fires.
+    # Mutation (`mutations/`'s "the overlay probe stops reading what the manifests name"):
+    # `identity`'s `_claims` arm is dropped → this directory is accepted and the refusal never
+    # fires.
     impostor = tmp_path / "some-plugin"
     (impostor / ".claude-plugin").mkdir(parents=True)
     (impostor / PLUGIN_MANIFEST).write_text(
@@ -977,7 +1006,7 @@ def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> No
     # clone shipping its two manifests at its own root was then accepted as the machine's trust
     # anchor.
     #
-    # Mutation ("setup stops refusing an overlay root that holds the project"): the
+    # Mutation (`mutations/`'s "setup stops refusing an overlay root that holds the project"): the
     # `or resolved_candidate in resolved_project.parents` arm becomes `or False` → the clone's
     # own root is recorded and this reddens.
     clone = tmp_path / "clone"
@@ -1071,7 +1100,7 @@ def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refus
         encoding="utf-8",
     )
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
     with pytest.raises(Refusal, match="same repository"):
         setup(
             "recommended",
@@ -1185,9 +1214,9 @@ def test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor
     # the candidate side alone. A `--root` that does not exist is asked about from its nearest
     # directory that does, where it used to be asked from its parent and nothing else.
     #
-    # Mutation ("setup asks git about --root from a directory that does not exist"): the walk
-    # up becomes one step → `no/such` does not exist, git gives no answer, only the path arm
-    # stands and the third root reddens.
+    # Mutation (`mutations/`'s "setup asks git about --root from a directory that does not exist"):
+    # the walk up becomes one step → `no/such` does not exist, git gives no answer, only the path
+    # arm stands and the third root reddens.
     _as(git_version, monkeypatch)
     _clone_with_a_bare_shaped_directory(tmp_path)
     with pytest.raises(Refusal, match="same repository"):
@@ -1230,9 +1259,10 @@ def test_a_root_inside_a_bare_shaped_directory_is_refused(
     # `core.bare = false` (`claims-a-checkout`) — and on every git version that is what refuses:
     # a project root with no checkout of its own to compare against is not one.
     #
-    # Mutation ("setup stops refusing a root git does not read as inside a checkout"): the
-    # `--is-inside-work-tree` refusal becomes `if False:` → the current-git cases fall to the
-    # retry's refusal, which does not say "bare repository", and the other cases are recorded.
+    # Mutation (`mutations/`'s "setup stops refusing a root git does not read as inside a
+    # checkout"): the `--is-inside-work-tree` refusal becomes `if False:` → the current-git cases
+    # fall to the retry's refusal, which does not say "bare repository", and the other cases are
+    # recorded.
     _as(git_version, monkeypatch)
     config = "[core]\n\tbare = false\n" if ov_config == "claims-a-checkout" else ""
     project, _ = _clone_with_a_bare_shaped_directory(tmp_path, config)
@@ -1249,8 +1279,8 @@ def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_th
     # times out, so the candidate-side walk finds nothing, and the sibling's `ov/` is refused by
     # the project's own record of its checkouts alone.
     #
-    # Mutation ("setup stops asking git whether the overlay is a checkout of the project"): the
-    # per-checkout comparison becomes `if False:` → the sibling is recorded.
+    # Mutation (`mutations/`'s "setup stops asking git whether the overlay is a checkout of the
+    # project"): the per-checkout comparison becomes `if False:` → the sibling is recorded.
     project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
     real = gitenv.git_run
 
@@ -1277,10 +1307,10 @@ def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
     # refuses when that is the project's. It can only add a refusal: whatever the candidate's
     # bytes make git answer, the listing's refusals still stand.
     #
-    # Mutation ("setup stops asking git from the candidate's side"): the candidate-side
-    # refusal becomes `if False:` → `s/ov` is recorded and both cases redden.
-    # Mutation ("the candidate-side walk stops at the first directory git will not answer
-    # for"): the step to the parent becomes `return None` → git refuses `ov/` as a bare
+    # Mutation (`mutations/`'s "setup stops asking git from the candidate's side"): the
+    # candidate-side refusal becomes `if False:` → `s/ov` is recorded and both cases redden.
+    # Mutation (`mutations/`'s "the candidate-side walk stops at the first directory git will not
+    # answer for"): the step to the parent becomes `return None` → git refuses `ov/` as a bare
     # repository, the walk never reaches `s`, and the current-git case reddens.
     #
     # On a git that ignores the key, `ov/` answers for itself, and what it commits can shape
@@ -1288,8 +1318,8 @@ def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
     # `points-elsewhere` commits `ov/commondir` naming a second bare-shaped `ov2/` whose config
     # says the same, so the answer is "not bare" with a common directory off the walk. Neither
     # can make git say `ov/` is inside a work tree, and the walk goes on past it.
-    # Mutation ("the candidate-side walk takes an answer from outside a work tree as the
-    # candidate's"): the `answer[1] == "true"` condition is dropped → the walk stops at `ov/`
+    # Mutation (`mutations/`'s "the candidate-side walk takes an answer from outside a work tree as
+    # the candidate's"): the `answer[1] == "true"` condition is dropped → the walk stops at `ov/`
     # and every `ignores-safe-bare` case reddens.
     _as(git_version, monkeypatch)
     main, sep = tmp_path / "s", tmp_path / "sep.git"
@@ -1323,7 +1353,8 @@ def test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule(
     # listed as `sup/.git/modules/sub`, so from a linked worktree of the submodule `sup/sub` is
     # on no list. The candidate-side walk reaches it through `sup/sub/.git`.
     #
-    # Mutation ("setup stops asking git from the candidate's side"): as above, both cases.
+    # Mutation (`mutations/`'s "setup stops asking git from the candidate's side"): as above, both
+    # cases.
     _as(git_version, monkeypatch)
     sub = tmp_path / "sub"
     sub.mkdir()
@@ -1379,12 +1410,12 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
     # `gitenv.git_run` decodes it losslessly, so it is an answer, and the test of a non-UTF-8
     # common directory above holds that.)
     #
-    # Mutation ("setup stops refusing an overlay when git cannot list the project's
+    # Mutation (`mutations/`'s "setup stops refusing an overlay when git cannot list the project's
     # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
     # legitimate-looking overlay below is recorded and `listing-exit` and `listing-empty`
     # redden.
-    # Mutation ("setup takes an answer git gave only without the key"): the refusal after the
-    # retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
+    # Mutation (`mutations/`'s "setup takes an answer git gave only without the key"): the refusal
+    # after the retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
     project = tmp_path / "project"
     project.mkdir()
     _git(project, "init", "-q", "-b", "main")
@@ -1430,10 +1461,10 @@ def test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay(
     # The layout is the separate-git-dir one, whose main checkout `s` only the candidate-side
     # walk can refuse, so each of the three places git is asked is the one that decides.
     #
-    # Mutation ("setup reads git giving no answer inside a checkout as no repository again"):
-    # the refusal in `_ask` becomes `if False:` → `every-call` and `the-candidate-side` record
-    # `s/ov`, and `the-listing` is refused for an empty listing, a message that names the wrong
-    # cause; all three redden.
+    # Mutation (`mutations/`'s "setup reads git giving no answer inside a checkout as no repository
+    # again"): the refusal in `_ask` becomes `if False:` → `every-call` and `the-candidate-side`
+    # record `s/ov`, and `the-listing` is refused for an empty listing, a message that names the
+    # wrong cause; all three redden.
     main, sep = tmp_path / "s", tmp_path / "sep.git"
     _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
     (main / "README.md").write_text("x", encoding="utf-8")
@@ -1465,8 +1496,8 @@ def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
     # asked from, there is no checkout for it to have named, so a git that cannot run at all
     # costs nothing and the path arm stands, as it did before.
     #
-    # Mutation ("setup refuses an overlay whenever git gives no answer, checkout or not"): the
-    # `in_work_tree` condition is dropped → this overlay is refused and this reddens.
+    # Mutation (`mutations/`'s "setup refuses an overlay whenever git gives no answer, checkout or
+    # not"): the `in_work_tree` condition is dropped → this overlay is refused and this reddens.
     project = tmp_path / "project"
     project.mkdir()
     overlay = tmp_path / "stayfixed-private"
@@ -1521,7 +1552,7 @@ def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) ->
         encoding="utf-8",
     )
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
 
 
 @pytest.mark.parametrize("dubious", sorted(DUBIOUS))
@@ -1610,7 +1641,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path:
     # has two stages and `setup` had only the second; `config.paths.contained` is the first,
     # and it now runs above the first write and names the link and the way out.
     #
-    # Mutation ("setup meets a symlinked ~/.claude only at write time"): the
+    # Mutation (`mutations/`'s "setup meets a symlinked ~/.claude only at write time"): the
     # `_check_settings_path(home)` call is dropped → the write-time floor still refuses, so the
     # refusal survives; this reddens on the machine file and on the remedy the message carries.
     home = tmp_path / "home"
@@ -1635,6 +1666,57 @@ def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path:
     assert not machine.is_file(), "the machine file was written before the refusal"
 
 
+@ROOT_SEARCHES_EVERYTHING
+def test_a_claude_directory_linked_into_a_directory_nobody_may_search_names_the_link(
+    tmp_path: Path,
+) -> None:
+    # Below the link nothing can be asked, and the walk that looks for the link to name asked the
+    # settings file first: `internal error: PermissionError`, with the absolute path, where the
+    # same link into a readable directory is a refusal naming it. Mutation (oracle):
+    # `mutations/`'s "setup's search for the settings link stops at a path it cannot ask about".
+    home = tmp_path / "home"
+    home.mkdir()
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (home / ".claude").symlink_to(locked / "x")
+    machine = tmp_path / "config.toml"
+    with unsearchable(locked), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=Recorder(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    assert f"{home / '.claude'} is a symlink" in str(refused.value)
+    assert not machine.is_file()
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_settings_file_in_a_directory_nobody_may_search_is_refused_for_that(
+    tmp_path: Path,
+) -> None:
+    # A real directory, so no link is on the way: "is a symlink to ..." named a cause the file did
+    # not have. Mutation (oracle): `mutations/`'s "setup --settings words a file it cannot ask
+    # about as a link".
+    settings = tmp_path / "locked" / "settings.json"
+    settings.parent.mkdir()
+    with unsearchable(settings.parent), pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "machine.toml",
+            runner=Recorder(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=settings,
+        )
+    assert str(refused.value) == f"{settings} cannot be checked for a symlink (Permission denied)"
+
+
 def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1643,7 +1725,7 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
     # the whole reason the walk exists. Patching the first stage out is how the interval is
     # reached deterministically — the alternative is a race nothing can schedule.
     #
-    # Mutation ("the write-time containment on the settings file is swallowed"): the
+    # Mutation (`mutations/`'s "the write-time containment on the settings file is swallowed"): the
     # `except UnsafePath` arm stops raising → `setup` reports a settings file it never wrote.
     monkeypatch.setattr("stayfixed.setup.run._check_settings_path", lambda home: None)
     home = tmp_path / "home"
@@ -1672,8 +1754,8 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
     # set in Claude Code's own plugin-config UI loses to the machine file, because one file has to
     # win and that one is the file every reader reads.
     #
-    # Mutation ("setup mirrors only the values this run itself added"): the argument goes back
-    # to `personal` → the second run leaves `""` in the settings file and this reddens.
+    # Mutation (`mutations/`'s "setup mirrors only the values this run itself added"): the argument
+    # goes back to `personal` → the second run leaves `""` in the settings file and this reddens.
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     for _ in range(1):
@@ -1753,7 +1835,7 @@ def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
     # reads, arriving through the remedy. So the test follows the advice rather than matching a
     # string, in both shapes of the accident.
     #
-    # Mutation (`mutations/`, "the symlink remedy prints a --home that writes somewhere
+    # Mutation (`mutations/`'s "the symlink remedy prints a --home that writes somewhere
     # else"): `_home_that_leads_there` stops checking that the link leads to a
     # `.claude/settings.json` at all → the per-file case below gets a command, and the
     # companion test's "no --home can name it" never fires.
@@ -1873,9 +1955,9 @@ def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything
     # component therefore created the home tree, wrote the machine configuration, and exited 2,
     # and the two cases below asserted the refusal and its sentence while never asking that.
     #
-    # Mutation (declared, "setup asks about the --settings directory only at write time"): the
-    # `else:` arm becomes `pass`. The `Refusal` still comes — one frame later — so the two
-    # `exists()` assertions are what redden, and the `raises` is not the claim here.
+    # Mutation (declared, `mutations/`'s "setup asks about the --settings directory only at write
+    # time"): the `else:` arm becomes `pass`. The `Refusal` still comes — one frame later — so the
+    # two `exists()` assertions are what redden, and the `raises` is not the claim here.
     home = tmp_path / "home"
     machine = tmp_path / "machine.toml"
     missing = tmp_path / "not-there" / "settings.json"
@@ -1981,9 +2063,9 @@ def test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_surviv
     # Measured before the fix: `is_symlink()` went `True -> False` and the dotfiles file was
     # still `{"mine": true}`. Both assertions below are that measurement.
     #
-    # Mutation (declared, "setup --settings asks about the directory and not the file"): the
-    # `contained` call goes -> the write lands, the link is replaced, and `pytest.raises`
-    # reddens with `DID NOT RAISE`.
+    # Mutation (declared, `mutations/`'s "setup --settings asks about the directory and not the
+    # file"): the `contained` call goes -> the write lands, the link is replaced, and
+    # `pytest.raises` reddens with `DID NOT RAISE`.
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     machine = tmp_path / "machine.toml"
@@ -2023,9 +2105,9 @@ def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anythin
     # the `except OSError` arm produces one either way, and what reddens under the declared
     # mutation is the two `exists()` assertions.
     #
-    # Mutation (declared, "setup --settings accepts a directory where the file goes"): the
-    # `is_dir()` refusal goes -> the run writes the home tree and the machine file before
-    # `os.replace` reports `IsADirectoryError`, and both assertions below redden.
+    # Mutation (declared, `mutations/`'s "setup --settings accepts a directory where the file
+    # goes"): the `is_dir()` refusal goes -> the run writes the home tree and the machine file
+    # before `os.replace` reports `IsADirectoryError`, and both assertions below redden.
     home = tmp_path / "home"
     machine = tmp_path / "machine.toml"
     directory = tmp_path / "claude" / "settings.json"

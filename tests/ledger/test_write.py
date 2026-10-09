@@ -24,7 +24,7 @@ from stayfixed.ledger.index import render_index
 from stayfixed.ledger.register import EVIDENCE_LABEL, bug_register
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
-from tests.gitfixture import git, plant_path, run_git
+from tests.gitfixture import git, no_git, plant_path, run_git, stand_in_git
 from tests.ledger.kills import Killed, killed_at
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -275,7 +275,7 @@ def test_outside_a_repository_there_is_no_history_to_warn_about(
     # both cases redden.
     root, config = project(tmp_path)
     if not git_runs:
-        monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
+        no_git(monkeypatch, tmp_path / "no-git-here")
     assert next_identifier(root, bug_register(config), fetch=False).warning is None
 
 
@@ -313,7 +313,7 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
+    stand_in_git(monkeypatch, wrapper)
     allocation = next_identifier(root, bug_register(config), fetch=False)
     assert allocation.identifier == "BR-002"
     assert allocation.warning is not None
@@ -423,7 +423,7 @@ def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
     # `renumber` regenerates the index at the end, so it makes `new`'s refusal before its first
     # write — and it is the destructive one: both endpoints and the whole sweep are already on
     # disk by the time the regeneration runs.
-    # Oracle: `mutations/`, "renumber regenerates over an index carrying content this tool
+    # Oracle: `mutations/`'s "renumber regenerates over an index carrying content this tool
     # did not generate" — measured, and the only test in the suite that reddens under it.
     root, config = project(tmp_path)
     seed(root, config, 1)
@@ -485,6 +485,25 @@ def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> 
     assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
     assert "BR-001" in fixture.read_text(encoding="utf-8")
     assert (root / "src" / "img.png").read_bytes() == b"BR-001"
+
+
+def test_renumber_leaves_a_binary_past_the_read_cap_alone_and_reports_nothing(
+    tmp_path: Path,
+) -> None:
+    # A database or a model larger than the read cap, under a suffix the scan does not know, is
+    # a binary like any other: a renumber skips it in silence. Read to the cap and refused as too
+    # large, it was a file "must be fixed by hand", exit 1, that no re-run clears. At the real cap,
+    # in a sparse file, so the case is the one a repository meets. Mutation: `mutations/`'s "a file
+    # past the read cap is one the scan could not read whatever it holds".
+    from stayfixed import fsops
+
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    model = root / "src" / "weights.sqlite"
+    with model.open("wb") as stream:
+        stream.write(b"SQLite format 3\x00\xff\xfe BR-001")
+        stream.truncate(fsops.REGULAR_READ_LIMIT + 1)
+    assert renumber(root, config, bug_register(config), "BR-001", "BR-009").unswept == ()
 
 
 def test_renumber_does_not_follow_a_symlink_out_of_the_tree(tmp_path: Path) -> None:
@@ -678,7 +697,7 @@ def test_a_renumber_killed_at_any_write_is_finished_by_running_it_again(
     # mentions of the old number the sweep never reached, which the void pointer makes look
     # intentional forever. So a re-run of the same move finishes it, and the tree it leaves is
     # the one an uninterrupted run leaves, byte for byte. `finished` is no kill at all: a re-run
-    # of a move that finished changes nothing. Mutations: `mutations/`, "a re-run of a renumber
+    # of a move that finished changes nothing. Mutations: `mutations/`'s "a re-run of a renumber
     # killed before its void pointer refuses again" and "a re-run of a renumber killed after
     # its void pointer writes both endpoints again".
     (tmp_path / "clean").mkdir()
@@ -712,7 +731,7 @@ def test_the_occupied_target_refusal_still_holds_for_anything_but_this_moves_own
     # target that differs from the moved text by one byte, and an old number already void
     # toward another identifier, are each an entry the move would destroy, and each is refused
     # with nothing written; so is a symlink at the target, even to the moved text itself, which
-    # the move would otherwise adopt as its new entry. Mutations: `mutations/`, "a renumber
+    # the move would otherwise adopt as its new entry. Mutations: `mutations/`'s "a renumber
     # resumes over a target that is not the moved text" and "a renumber adopts a symlink at its
     # target". The pointer toward another identifier is refused twice over — its title does not
     # start "renumbered to BR-009 — " and its related list and body name BR-007 — so no single
@@ -752,7 +771,7 @@ def test_renumbering_an_entry_to_its_own_identifier_is_refused_and_writes_nothin
     # With `old == new` the target is the source itself, so it is exactly the source's text with
     # its `id:` line rewritten, and the resumption read it as a move killed after its first write:
     # it overwrote the entry with a void pointer to itself and exited 0, and an entry filed and
-    # not yet committed was gone. Refused before anything is read. Mutation: `mutations/`,
+    # not yet committed was gone. Refused before anything is read. Mutation: `mutations/`'s
     # "renumber moves an entry onto its own identifier".
     root, config = project(tmp_path)
     seed(root, config, 1)
@@ -770,8 +789,8 @@ def test_an_old_entry_that_relates_to_the_target_is_not_this_moves_pointer(
     # by hand as a duplicate of a genuine `new`, or a live one that merely relates to it, is not
     # this move half-done, and resuming would sweep every mention of `old` over to `new`. Each is
     # titled as the move titles its pointer, so its other bytes are what refuse it. Mutations:
-    # `mutations/`, "a renumber resumes from any void entry toward its target" (the `void` case)
-    # and "a renumber resumes from any entry that relates to its target" (both).
+    # `mutations/`'s "a renumber resumes from any void entry toward its target" -> the `void`
+    # case reddens; "a renumber resumes from any entry that relates to its target" -> both do.
     root, config = project(tmp_path)
     seed(root, config, 3)
     bugs = root / "docs" / "bugs"
@@ -821,7 +840,7 @@ def test_a_half_moved_target_edited_since_is_refused_with_how_to_finish_by_hand(
     # an entry of its own and refuses. The refusal says so and how to finish, naming only the two
     # identifiers, which the identifier grammar has already held: nothing the repository wrote.
     # When the line breaks at the end are the only difference, it says that too, since a fixer's
-    # newline is invisible in an editor. Mutations: `mutations/`, "the occupied-target refusal
+    # newline is invisible in an editor. Mutations: `mutations/`'s "the occupied-target refusal
     # says nothing of an interrupted move" and "the occupied-target refusal does not say a final
     # newline is the only difference".
     root, config = project(tmp_path)
@@ -843,7 +862,7 @@ def test_a_move_whose_target_was_retitled_after_its_void_pointer_is_still_finish
     # the re-run refuse, with advice nobody could follow — the old entry's text is already the
     # pointer — and the mention the sweep never reached stayed silent for good. The pointer's
     # title is held only to the prefix the move writes; every other byte is compared. Mutation:
-    # `mutations/`, "the void pointer is recognised by the target's current title".
+    # `mutations/`'s "the void pointer is recognised by the target's current title".
     root, config = project(tmp_path)
     seed(root, config, 1, 2)
     _renumber_tree(root)
@@ -865,7 +884,7 @@ def test_a_pointer_shaped_old_entry_whose_title_is_not_the_moves_is_refused(
 ) -> None:
     # The other side of the relaxed title: every other byte of the pointer is the move's, and
     # its title is not "renumbered to <new> — …", so it is not this move's pointer and the
-    # mentions of the old number are not swept onto the new one. Mutation: `mutations/`, "the
+    # mentions of the old number are not swept onto the new one. Mutation: `mutations/`'s "the
     # void pointer's title is not held to the prefix the move writes".
     from stayfixed.ledger.write import _void_pointer
 

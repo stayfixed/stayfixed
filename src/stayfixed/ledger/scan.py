@@ -28,8 +28,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.fsops import said
+from stayfixed.fsops import read_regular_bytes, said
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from stayfixed.guards.api import contained_roots
 
@@ -49,6 +50,12 @@ FIXTURE_MARKER = "stayfixed:ledger:fixtures"
 # (CONTRIBUTING.md#named-caps), and no shipped file changes with it: a marker anywhere else is prose
 # about the marker.
 FIXTURE_MARKER_WINDOW = 2048
+# How much of a file past the read cap is read to tell whether it is text, by the rule a file under
+# the cap is told by: whether its bytes are UTF-8. A named cap (CONTRIBUTING.md#named-caps), and no
+# shipped file changes with it. A binary's first bytes give it away long before this; a text file
+# that stops being UTF-8 only further on is reported as one the scan could not read, which is the
+# direction a guess may err in.
+TEXT_WINDOW = 8 * 1024
 # Directory names neither reader walks into: vendored or generated trees that hold no reference
 # anyone filed. Matched against a name found below a scanned root, never against the checkout's
 # own path.
@@ -105,7 +112,7 @@ def document_roots(root: Path, config: Config) -> tuple[str, ...]:
             candidate = contained(root, parts[0], resolved_root=resolved_root)
         except PathEscape:
             continue
-        if candidate.is_dir():
+        if fsops.is_dir(candidate):
             found.append(parts[0])
     return tuple(found)
 
@@ -170,16 +177,16 @@ def _walked_files(root: Path, names: tuple[str, ...]) -> list[Path]:
     candidates: list[Path] = []
     for name in names:
         if name == TOP_LEVEL:
-            candidates.extend(child for child in root.iterdir() if not child.is_dir())
+            candidates.extend(child for child in root.iterdir() if not fsops.is_dir(child))
             continue
         base = root / name
-        if not base.is_dir():
+        if not fsops.is_dir(base):
             continue
         for parent, dirnames, filenames in os.walk(base):
             here = Path(parent)
             # In place, because that list is what `os.walk` descends into next.
             dirnames[:] = [
-                d for d in dirnames if d not in EXCLUDED_DIRNAMES and not (here / d).is_symlink()
+                d for d in dirnames if d not in EXCLUDED_DIRNAMES and not fsops.is_symlink(here / d)
             ]
             candidates.extend(here / filename for filename in filenames)
     return candidates
@@ -187,6 +194,25 @@ def _walked_files(root: Path, names: tuple[str, ...]) -> list[Path]:
 
 def is_fixture_holder(head: bytes) -> bool:
     return FIXTURE_MARKER.encode("utf-8") in head
+
+
+def _starts_as_text(path: Path) -> bool:
+    """Whether the first `TEXT_WINDOW` bytes of `path` are UTF-8, once the up to three bytes of a
+    character the window's end cuts in two are set aside; `True` when they cannot be read, so a
+    file that cannot be told is reported."""
+    try:
+        head, _ = fsops.read_bounded(path, TEXT_WINDOW)
+    except OSError:
+        return True
+    return any(_utf8(head[: len(head) - cut]) for cut in range(4))
+
+
+def _utf8(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
@@ -209,7 +235,15 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         try:
             if not stat.S_ISREG(path.lstat().st_mode):
                 continue
-            raw = path.read_bytes()
+            # To the read cap, by the bounded reader every reader of a committed file uses: a file
+            # past it is one this scan could not read, never one read to its end.
+            raw = read_regular_bytes(path)
+        except fsops.TooLarge as error:
+            # Not read to its end, so whether it is text is told from its first bytes: a binary has
+            # no text and no error, as one under the cap has, and text keeps the reader's error.
+            told = said(error) if _starts_as_text(path) else None
+            yield Scanned(path, relative, None, told)
+            continue
         except OSError as error:
             yield Scanned(path, relative, None, said(error))
             continue
@@ -222,23 +256,50 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
         yield Scanned(path, relative, text, None)
 
 
-def citation_pattern(register: Register) -> re.Pattern[str]:
-    """Loose on purpose: any `…/<ledger dirname>/<PREFIX>-nnn.md`. The decision is made by
-    resolving the match (`_cited_entry`), not by the pattern.
+# A run of the characters a citation is written in. Every citation lies inside one, and starts
+# where the run does: a path cited mid-word is not a citation.
+_CITING_RUN = re.compile(r"[\w./-]++")
+
+
+def citations(text: str, register: Register) -> Iterator[tuple[int, str, str]]:
+    r"""Every `…/<ledger dirname>/<PREFIX>-nnn.md` in `text`: where it starts, the path as written,
+    and the identifier. Loose on purpose: the decision is made by resolving the path
+    (`_cited_entry`), not here.
 
     A citation names an entry's FILE, and a tree writes that path three ways, not two: rooted
     at the repository from code, `../<dirname>/` from a sibling document, and a bare
     `<dirname>/` from a document sitting directly in the documents directory. Widening the
-    pattern instead would report a plan or design document that writes a bare path inside a
+    reading instead would report a plan or design document that writes a bare path inside a
     quoted example of this tool's own output; resolved against its own directory that lands
     somewhere that is not an entry path, and it drops out for the right reason rather than by
     an exclusion.
+
+    Read as the pattern
+    `(?<![\w./-])((?:\.{1,2}/)*(?:[\w.-]+/)*<dirname>/(<PREFIX>-\d+)\.md)` read it, but each run
+    once: the pattern tried every split of a run of `../` between its two repeats, 0.7 s over
+    8,000 of them and four times as long at each doubling, and kept a record for every segment
+    it might give back, 70 MiB over a mebibyte. Its `../` repeat adds nothing its second
+    repeat does not read, so a citation is a run's start to the last `<dirname>/<PREFIX>-nnn.md`
+    in it that follows the run's start or a `/` with no empty segment before it. Every character
+    of a citation is a run character, because a `[paths]` value and a prefix are spelled in them.
     """
     last = PurePosixPath(register.directory).name
     prefix = register.ids.prefix
-    return re.compile(
-        rf"(?<![\w./-])((?:\.{{1,2}}/)*(?:[\w.-]+/)*{re.escape(last)}/({re.escape(prefix)}-\d+)\.md)"
-    )
+    tail = re.compile(rf"{re.escape(last)}/({re.escape(prefix)}-\d+)\.md")
+    needle = f"{last}/{prefix}-"
+    for run in _CITING_RUN.finditer(text):
+        word = run.group()
+        # The last place a segment may end: none past an empty one, and none at all when the run
+        # opens on one.
+        empty = word.find("//")
+        reach = 0 if word.startswith("/") else len(word) if empty < 0 else empty + 1
+        at = word.rfind(needle, 0, reach + len(needle))
+        while at >= 0:
+            cited = tail.match(word, at) if at == 0 or word[at - 1] == "/" else None
+            if cited is not None:
+                yield run.start(), word[: cited.end()], cited.group(1)
+                break
+            at = word.rfind(needle, 0, at + len(needle) - 1)
 
 
 def _cited_entry(
@@ -277,7 +338,6 @@ def entry_citations(
     """
     directory = PurePosixPath(register.directory)
     index = PurePosixPath(register.index)
-    pattern = citation_pattern(register)
     found: defaultdict[str, list[tuple[PurePosixPath, int]]] = defaultdict(list)
     for item in scannable(root, citation_roots(root, config)):
         if item.text is None or item.relative == index or _under(item.relative, directory):
@@ -286,12 +346,15 @@ def entry_citations(
         # ledger directory's name, and few files carry one.
         if f"{directory.name}/" not in item.text:
             continue
-        for match in pattern.finditer(item.text):
-            if not _cited_entry(item.relative, match.group(1), match.group(2), directory):
+        # The line is counted on from the citation before it, never from the file's start, which
+        # took 36 s over a file of 160,000 citations, four times as long at each doubling.
+        line, counted = 1, 0
+        for start, written, identifier in citations(item.text, register):
+            if not _cited_entry(item.relative, written, identifier, directory):
                 continue
-            found[match.group(2)].append(
-                (item.relative, item.text.count("\n", 0, match.start()) + 1)
-            )
+            line += item.text.count("\n", counted, start)
+            counted = start
+            found[identifier].append((item.relative, line))
     return found
 
 

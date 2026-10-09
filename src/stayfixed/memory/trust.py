@@ -25,8 +25,8 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.machine import machine_config_path
 from stayfixed.config.schema import Config
-from stayfixed.errors import Refusal
-from stayfixed.fsops import open_regular, write_atomically
+from stayfixed.errors import Failure, Refusal
+from stayfixed.fsops import write_atomically
 from stayfixed.jsonobject import json_object
 from stayfixed.memory.index import INDEX_NAME
 from stayfixed.memory.store import Store, inside_project
@@ -70,18 +70,65 @@ def wrap(text: str, nonce: str) -> str:
     return f"{begin}\n{_LEAD}\n\n{text}\n{end}"
 
 
-def _trust_file(machine: Path | None) -> Path:
+def _trust_file(machine: Path | None) -> Path | None:
     """The record `may_inject` consults, beside the machine configuration file.
 
-    `machine=None` resolves it through `machine_config_path`, which gates **both** variables
-    that can name that file behind `interactive`. It gated only `STAYFIXED_CONFIG` once, and
-    `XDG_CONFIG_HOME` beside it chose this very file for a committed `.claude/settings.json`
-    `env` block, wherever no `--machine` was threaded — the gate the security record of this
-    module rests on, bypassed by the variable three lines below it. `store.py`'s module
-    docstring states what that exposure was and what bounded it.
+    `machine=None` resolves it through `machine_config_path`, which reads **neither** variable
+    that could name that file. It gated only `STAYFIXED_CONFIG` once, and
+    `XDG_CONFIG_HOME` beside it chose this very file for direnv, mise or a devcontainer applying
+    a file the clone commits (Claude Code's `env` block cannot set it), wherever no `--machine`
+    was threaded — the gate the security record of this module rests on, bypassed by the
+    variable three lines below it. `store.py`'s module docstring states what that exposure was
+    and what bounded it. `HOME` chose it the same way until the home directory, too, came from
+    the password database off a terminal.
+
+    `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
+    so nothing is trusted, and `record` refuses to invent a place for one.
     """
-    base = machine_config_path(interactive=False) if machine is None else machine
-    return base.parent / "trust.json"
+    base = machine_config_path() if machine is None else machine
+    return None if base is None else base.parent / "trust.json"
+
+
+NO_HOME = (
+    "the password database lists no home directory for this user, so there is no trust record "
+    "to write; pass --machine PATH to keep one beside that file, which no hook reads"
+)
+
+
+def record_path(machine: Path | None) -> Path | None:
+    """Where this machine's trust record is, for a command that says where it wrote."""
+    return _trust_file(machine)
+
+
+def _writable_trust_file(machine: Path | None) -> Path:
+    path = _trust_file(machine)
+    if path is None:
+        raise Failure(NO_HOME)
+    return path
+
+
+def _write_record(machine: Path | None, raw: dict[str, str]) -> None:
+    """Write the record, and fail naming its directory when that cannot be written.
+
+    With no `--machine` the directory is under the home the password database records, which a
+    system user's entry often names as a directory that is not there or not theirs. There is no
+    second place to put it that a hook would read, so the failure says which directory it was
+    rather than ending as an internal error about a temporary file.
+    """
+    path = _writable_trust_file(machine)
+    try:
+        write_atomically(path, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    except OSError as exc:
+        where = (
+            "it is under the home the password database records for this user, which is the "
+            "only place a hook reads a trust record"
+            if machine is None
+            else "it is beside the machine configuration file --machine names"
+        )
+        raise Failure(
+            f"{path.parent} cannot be written ({fsops.said(exc)}), so the trust record cannot be "
+            f"kept there; {where}"
+        ) from None
 
 
 @dataclass(frozen=True)
@@ -122,14 +169,13 @@ def _content_digest(path: Path) -> str:
     try:
         # A regular file only, followed through a link: `MEMORY.md` is one in overlay mode and
         # is hashed through it. Anything else is unreadable, and still moves the digest. Read to
-        # one byte past the cap, as `fsops.read_regular_bytes` reads, and a file that has that
-        # byte is hashed as what was read under `_TOO_LARGE`, never as one constant.
-        with open_regular(path) as stream:
-            content = stream.read(fsops.REGULAR_READ_LIMIT + 1)
+        # the cap `fsops.read_regular_bytes` reads to, and a file past it is hashed as what was
+        # read under `_TOO_LARGE`, never as one constant.
+        content, over = fsops.read_bounded(path, fsops.REGULAR_READ_LIMIT)
     except OSError:
         content = _UNREADABLE
     else:
-        if len(content) > fsops.REGULAR_READ_LIMIT:
+        if over:
             content = _TOO_LARGE + content
     return hashlib.sha256(content).hexdigest()
 
@@ -206,7 +252,8 @@ def _files(store: Store) -> list[tuple[str, Path]]:
         for path in sorted(store.groups[group].glob("*.md"))
     ]
     index = store.path / INDEX_NAME
-    if index.exists() or index.is_symlink():  # `is_symlink` so a dangling index still counts
+    # `is_symlink` so a dangling index still counts.
+    if fsops.exists(index) or fsops.is_symlink(index):
         found.append((INDEX_NAME, index))
     return found
 
@@ -276,13 +323,14 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     costs that project a re-approval instead of costing every project its record.
     """
     path = _trust_file(machine)
-    if not path.is_file():
+    if path is None or not fsops.is_file(path):
         return {}
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise UnreadableTrustRecord(
-            f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
+            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "
+            "overwrite it"
         ) from exc
     except UnicodeDecodeError:
         raise UnreadableTrustRecord(
@@ -335,7 +383,7 @@ def state(store: Store, config: Config) -> TrustState:
 def record(store: Store, config: Config) -> TrustState:
     raw = _recorded(store.machine)
     raw[_key(store)] = store_digest(store, config)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    _write_record(store.machine, raw)
     return state(store, config)
 
 
@@ -403,7 +451,7 @@ def refresh_if_trusted(
         return False  # an approved file is gone, and stayfixed does not delete notes
     raw = _recorded(store.machine)
     raw[_key(store)] = _digest_of(expected)
-    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    _write_record(store.machine, raw)
     return True
 
 

@@ -2,9 +2,9 @@
 
 Three areas register commands that take `--root` and `--machine` and then load
 `stayfixed.toml`; at three the convention is code. Not in `stayfixed.areas`: that module is
-imported by the hook registry, and `tests/test_areas.py` asserts that discovery in a clean
-interpreter imports neither the configuration layer nor the presets — this module imports the
-loader at module level and is imported only by `commands.py` modules.
+imported by the hook registry, and `tests/boundaries/test_discovery.py` asserts that discovery in
+a clean interpreter imports neither the configuration layer nor the presets — this module imports
+the loader at module level and is imported only by `commands.py` modules.
 """
 
 from __future__ import annotations

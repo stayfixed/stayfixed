@@ -32,7 +32,7 @@ from stayfixed.project.detect import NOT_DERIVABLE, detect
 from stayfixed.setup.run import _repository
 from tests.attach.test_write import RULE, _attachable
 from tests.cli import cli
-from tests.gitfixture import git, needs_git, plant_path
+from tests.gitfixture import git, needs_git, plant_path, stand_in_git
 from tests.guards.test_hygiene import repo
 from tests.project.repos import repository
 from tests.runners import Recorder
@@ -49,14 +49,13 @@ def _append(path: Path, raw: bytes) -> None:
 
 
 def _stand_in_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, printed: bytes) -> None:
-    """A `git` first on `PATH` that prints `printed` for any question; `scrubbed_env` keeps
-    `PATH`, so it is the one `git_run` launches."""
+    """A `git` the product runs (`stand_in_git`) that prints `printed` for any question."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     octal = "".join(f"\\{byte:03o}" for byte in printed)
     (bin_dir / "git").write_text(f"#!/bin/sh\nprintf '{octal}'\n", encoding="utf-8")
     (bin_dir / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    stand_in_git(monkeypatch, bin_dir / "git")
 
 
 def test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path(

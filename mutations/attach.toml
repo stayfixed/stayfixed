@@ -88,8 +88,8 @@ reddens = [
 ]
 
 # Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
-# gate -- a flag is a third member of the equivalence class `config/machine.py` gates
-# `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the machine file
+# gate -- a flag names the machine file, as `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` did before
+# `config/machine.py` stopped reading either, and this is the command that turns the machine file
 # into capability: the overlay root comes from it, and from the overlay come allow rules, hook
 # entries and Codex standing rules.
 [[mutation]]
@@ -101,6 +101,16 @@ reddens = [
   "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
   "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
   "tests/test_install_path.py::test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal",
+]
+
+# The gate's refusal explains the flag's own rule, and never by the two variables no command reads.
+[[mutation]]
+name = "the --machine refusal leans on two variables no command reads"
+file = "src/stayfixed/attach/commands.py"
+before = '''    "honoured only from an interactive shell: anywhere else the command may be an agent's, and "'''
+after = '''    "honoured only from an interactive shell — the same rule `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` already follow, and "'''
+reddens = [
+  "tests/attach/test_commands.py::test_the_machine_flag_is_refused_for_a_reason_of_its_own",
 ]
 
 # The ledger holds the owner's personal allow rules and lives under `.stayfixed/local/`, a path
@@ -205,10 +215,11 @@ reddens = [
 [[mutation]]
 name = "the no-origin refusal moves back below attach's first write"
 file = "src/stayfixed/attach/write.py"
-before = '''    if binding.state == NO_ORIGIN:
-        raise Refusal(NO_REMOTE)
-    if binding.state == MISMATCH and not trust_remote:'''
-after = '''    if binding.state == MISMATCH and not trust_remote:'''
+before = '''        if binding.state == NO_ORIGIN:
+            yield Stop(NO_REMOTE)
+            return
+        if binding.state == MISMATCH:'''
+after = '''        if binding.state == MISMATCH:'''
 reddens = [
   "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
 ]
@@ -280,8 +291,8 @@ reddens = [
 [[mutation]]
 name = "attach applies the owning-checkout entry point to --root"
 file = "src/stayfixed/attach/write.py"
-before = '''    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
-after = '''    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
+before = "    links = attach_main(owner, binding.store, config, machine=machine, home=home, withhold=withheld)"
+after = "    links = attach_main(root, binding.store, config, machine=machine, home=home, withhold=withheld)"
 reddens = [
   "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
 ]
@@ -290,10 +301,8 @@ reddens = [
 [[mutation]]
 name = "detach applies the owning-checkout withdrawal to --root"
 file = "src/stayfixed/attach/write.py"
-before = '''    for tree in checkouts:
-        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
-after = '''    for tree in [root]:
-        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+before = "    for tree in checkouts:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
+after = "    for tree in [root]:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
 reddens = [
   "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
 ]
@@ -321,7 +330,7 @@ reddens = [
 [[mutation]]
 name = "the ledger is read after attach has already written"
 file = "src/stayfixed/attach/write.py"
-before = '''    previous = _existing_ledger(root)
+before = '''    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
@@ -330,7 +339,7 @@ before = '''    previous = _existing_ledger(root)
 # read by the settings-candidate question above the first write, so moving the read would break
 # the name instead of the order.
 after = '''    _write_ignore_region(root, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
-    previous = _existing_ledger(root)
+    previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
@@ -351,29 +360,8 @@ file = "src/stayfixed/attach/write.py"
 # The block this moves runs from the anchor loop through the manifest's answer to the region read.
 # What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
 # strand a half-detached repository.
-before = '''    checkouts = _checkouts(root)
-    for tree in checkouts:
-        harness_anchor(tree, home)
-    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
-    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
-    # names the file and a region opened twice refuses, and both are knowable now. It is shared
-    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are
-    # each checkout's own, so it stays while another checkout still holds a ledger: taking it
-    # would show that checkout's settings file and rule copies in its `git status`.
-    kept = _another_attached(root, checkouts)
-    hidden = None if kept else exclude.withdrawn_block(root)
-    settings = _planned_settings(root, recorded)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
-    allow_removed = _withdraw_settings(root, settings)'''
-after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
-    settings = _planned_settings(root, recorded)
-    allow_removed = _withdraw_settings(root, settings)
-    checkouts = _checkouts(root)
-    for tree in checkouts:
-        harness_anchor(tree, home)
-    kept = _another_attached(root, checkouts)
-    hidden = None if kept else exclude.withdrawn_block(root)
-    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)'''
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -387,11 +375,8 @@ reddens = [
 [[mutation]]
 name = "attach's PartialLink forgets the links made before the failing call"
 file = "src/stayfixed/attach/write.py"
-before = '''        try:
-            more = link(tree, store, config, home=home)
-        except PartialLink as partial:
-            raise PartialLink([*created, *partial.created], partial) from partial'''
-after = '''        more = link(tree, store, config, home=home)'''
+before = "        try:\n            more = link(\n                tree, store, config, harness=MakeUnder(home) if withheld is None else withheld\n            )\n        except PartialLink as partial:\n            raise PartialLink([*created, *partial.created], partial) from partial"
+after = "        more = link(\n            tree, store, config, harness=MakeUnder(home) if withheld is None else withheld\n        )"
 reddens = [
   "tests/attach/test_links.py::test_a_partial_link_failure_carries_every_link_the_run_already_made",
 ]
@@ -404,7 +389,7 @@ reddens = [
 [[mutation]]
 name = "detach leaves behind the directories the attach created"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+before = '    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))'
 after = '    return ()'
 reddens = [
   "tests/attach/test_detach.py::test_detach_removes_the_directories_the_attach_created",
@@ -416,7 +401,7 @@ reddens = [
 [[mutation]]
 name = "attach records a directory that was already there"
 file = "src/stayfixed/attach/write.py"
-before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+before = '    return tuple(name for name in CREATED_DIRS if not _reached_directory(root / name))'
 after = '    return CREATED_DIRS'
 reddens = [
   "tests/attach/test_detach.py::test_detach_leaves_a_directory_that_was_there_before_the_attach",
@@ -467,9 +452,47 @@ reddens = [
 name = "attach --check filters a malformed allow list the real run refuses"
 file = "src/stayfixed/attach/permissions.py"
 before = "        raise EntriesError(f\"{label}: 'permissions.allow' is not a list of strings\")"
-after = "        return ()"
+after = "        return []"
 reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
+
+# One reader each for the settings document's allow list and its hook table, shared by `--check`
+# and the real run, so `--check` refuses exactly what `attach` refuses: `null` where an object or a
+# list goes, and a group or an entry that is not an object. A `--check` that read either with a
+# filter of its own exited 0 promising a clean diff for a file `attach --yes` then refused.
+[[mutation]]
+name = "check reads a null allow list as no rules"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return tuple(allow_list(settings_object(document, label), label))"
+after = """    raw = settings_object(document, label)
+    if raw.get("permissions") is None or raw["permissions"].get("allow") is None:
+        return ()
+    return tuple(allow_list(raw, label))"""
+reddens = [
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[permissions-null]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[allow-null]",
+]
+
+[[mutation]]
+name = "check filters the hook shapes the merge refuses"
+file = "src/stayfixed/attach/permissions.py"
+before = "        walked = judged_entries(document, lenient=False)"
+after = "        walked = judged_entries(document, lenient=True)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[event-null]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-a-number]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[group-hooks-null]",
+  "tests/attach/test_commands.py::test_check_refuses_exactly_the_settings_shapes_attach_refuses_in_its_words[entry-a-string]",
+]
+
+[[mutation]]
+name = "attach reads an overlay group's null hooks as none"
+file = "src/stayfixed/attach/permissions.py"
+before = '                entries = group.get("hooks", [])'
+after = '                entries = group.get("hooks") or []'
+reddens = [
+  "tests/attach/test_commands.py::test_an_overlay_group_whose_hooks_is_null_is_refused_by_check_and_attach_alike",
 ]
 
 # `project.name` is repository-authored and the attach skill relays these messages to the model.
@@ -488,8 +511,8 @@ reddens = [
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
-before = "    harness_anchor(root, home)\n    # The ledger's own path, held to the project"
-after = "    # The ledger's own path, held to the project"
+before = "    harness_anchor(root, home)\n    previous = existing_ledger(root)"
+after = "    previous = existing_ledger(root)"
 reddens = [
   "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
 ]
@@ -509,8 +532,8 @@ reddens = [
 [[mutation]]
 name = "unlinked_groups stops excluding a linked group"
 file = "src/stayfixed/attach/binding.py"
-before = "        if target.is_dir() and not target.is_symlink():"
-after = "        if target.is_dir():"
+before = "        if fsops.is_dir(target) and not fsops.is_symlink(target):"
+after = "        if fsops.is_dir(target):"
 reddens = [
   "tests/attach/test_binding.py::test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not",
 ]
@@ -549,8 +572,8 @@ reddens = [
 [[mutation]]
 name = "attach links over notes that never moved again"
 file = "src/stayfixed/attach/write.py"
-before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
-after = "        pass"
+before = "            yield Stop(REAL_DIRECTORIES.format(count=self.real))"
+after = "            pass"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -568,8 +591,13 @@ reddens = [
 [[mutation]]
 name = "the never-moved refusal names the memory groups instead of counting them"
 file = "src/stayfixed/attach/write.py"
-before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
-after = '        raise Refusal(REAL_DIRECTORIES.format(count=", ".join(real)))'
+before = """        self.real = len(unlinked_groups(self.root, config))
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=self.real))"""
+after = """        real = unlinked_groups(self.root, config)
+        self.real = len(real)
+        if self.real:
+            yield Stop(REAL_DIRECTORIES.format(count=", ".join(real)))"""
 reddens = [
   "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
 ]
@@ -582,8 +610,8 @@ reddens = [
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
-before = "    real = unlinked_groups(root, config)\n    if real:"
-after = "    _record_binding(binding)\n    real = unlinked_groups(root, config)\n    if real:"
+before = "        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
+after = "        _record_binding(binding)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -594,8 +622,8 @@ reddens = [
 [[mutation]]
 name = "the never-moved check is asked one write too late"
 file = "src/stayfixed/attach/write.py"
-before = "    real = unlinked_groups(root, config)"
-after = "    _write_ignore_region(root)\n    real = unlinked_groups(root, config)"
+before = "        self.real = len(unlinked_groups(self.root, config))"
+after = "        _write_ignore_region(self.root, \"\")\n        self.real = len(unlinked_groups(self.root, config))"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -617,7 +645,7 @@ reddens = [
 # so the count is stayfixed's own and the entries are the repository's.
 [[mutation]]
 name = "check names the groups that never moved instead of counting them"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = '        summary += f"; {real} memory group(s) are real directories and would refuse the attach"'
 after = '        summary += f"; {unlinked_groups(root, config)} are real directories"'
 reddens = [
@@ -629,7 +657,7 @@ reddens = [
 # argument restored two loads with the whole suite still green.
 [[mutation]]
 name = "check loads the configuration twice again"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
 after = "    binding = read_binding(root, store=store, machine=machine)"
 reddens = [
@@ -640,7 +668,7 @@ reddens = [
 # wrong.
 [[mutation]]
 name = "check reports the groups that never moved and still exits zero"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = "    finding = binding.state in (MISMATCH, NO_ORIGIN) or real"
 after = "    finding = binding.state in (MISMATCH, NO_ORIGIN)"
 reddens = [
@@ -805,11 +833,28 @@ reddens = [
 # `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
 # in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
 # guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
+# Each stop past the binding is passed only by the flag that answers it, never by the other one:
+# `--trust-remote` is no confirmation of what an attach grants, nor `--yes` an acceptance of a
+# remote the overlay does not record.
+[[mutation]]
+name = "attach passes a widening it was not told --yes for"
+file = "src/stayfixed/attach/write.py"
+before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
+after = "            (stop.flag == CONFIRMED) or (stop.flag == TRUST_REMOTE and trust_remote)"
+reddens = ["tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses"]
+
+[[mutation]]
+name = "attach passes a mismatch it was not told --trust-remote for"
+file = "src/stayfixed/attach/write.py"
+before = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and trust_remote)"
+after = "            (stop.flag == CONFIRMED and confirmed) or (stop.flag == TRUST_REMOTE and confirmed)"
+reddens = ["tests/attach/test_write.py::test_a_mismatched_remote_refuses_and_writes_nothing"]
+
 [[mutation]]
 name = "attach asks memory.mode only after it has written"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_overlay(config)"
-after = "    pass"
+before = "        if refused is not None:\n            yield Stop(refused)"
+after = "        if False:\n            yield Stop(refused)"
 reddens = [
   "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
 ]
@@ -844,7 +889,7 @@ reddens = [
 [[mutation]]
 name = "attach decides the settings fallback only once it has written"
 file = "src/stayfixed/attach/write.py"
-before = "    possible = _fallback_possible(root, config, machine=machine, home=home)"
+before = "    possible = unread is None and _fallback_possible(\n        root, config, owner=checkouts[0], machine=machine, home=home\n    )"
 after = "    possible = False"
 reddens = [
   "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
@@ -879,7 +924,7 @@ reddens = [
 [[mutation]]
 name = "a first attach treats the unapproved gate as possibly open"
 file = "src/stayfixed/attach/write.py"
-before = "        return approval_recorded(root / config.paths.memory, machine)"
+before = "        return approval_recorded(owner / config.paths.memory, machine)"
 after = "        return True"
 reddens = [
   "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
@@ -1175,7 +1220,7 @@ reddens = [
 # by the mismatch rule, while the real run refuses it.
 [[mutation]]
 name = "attach --check reports a missing origin without its cause"
-file = "src/stayfixed/attach/permissions.py"
+file = "src/stayfixed/attach/check.py"
 before = '        summary = f"{NO_REMOTE}; {summary}"'
 after = "        pass"
 reddens = [
@@ -1254,8 +1299,8 @@ reddens = [
 [[mutation]]
 name = "detach reads the block through a symlinked exclude file"
 file = "src/stayfixed/attach/exclude.py"
-before = "    if path.is_symlink() or not path.is_file():"
-after = "    if not path.is_file():"
+before = "    if fsops.is_symlink(path) or not fsops.is_file(path):"
+after = "    if not fsops.is_file(path):"
 reddens = [
   "tests/attach/test_detach.py::test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink",
 ]
@@ -1327,7 +1372,7 @@ reddens = [
 [[mutation]]
 name = "the exclude block forgets that it created the info directory"
 file = "src/stayfixed/attach/exclude.py"
-before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),"
+before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not fsops.is_dir(path.parent) else ()),"
 after = ""
 reddens = [
   "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
@@ -1373,7 +1418,7 @@ reddens = [
 [[mutation]]
 name = "detach walks to a link-tree name only when it removes it"
 file = "src/stayfixed/attach/write.py"
-before = "            if target.is_symlink():"
+before = "            if fsops.is_symlink(target):"
 after = "            if False:"
 reddens = [
   "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[paths-memory]",
@@ -1446,8 +1491,8 @@ reddens = [
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/stayfixed/attach/doctor.py"
-before = "    if harness.is_dir() and not harness.is_symlink():"
-after = "    if harness.is_dir() and not harness.exists():"
+before = "    if fsops.is_dir(harness) and not fsops.is_symlink(harness):"
+after = "    if fsops.is_dir(harness) and not fsops.exists(harness):"
 reddens = [
   "tests/attach/test_doctor.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
@@ -1967,19 +2012,11 @@ reddens = [
 [[mutation]]
 name = "attach writes for a project name the overlay has no directory for"
 file = "src/stayfixed/attach/write.py"
-before = "    refuse_unless_share_can_exist(binding, config)\n"
+before = "        refuse_unless_share_can_exist(binding, config)\n"
 after = ""
 reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-attach]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-attach]",
-]
-
-[[mutation]]
-name = "attach --check previews a project name the overlay has no directory for"
-file = "src/stayfixed/attach/permissions.py"
-before = "    refuse_unless_share_can_exist(binding, config)\n"
-after = ""
-reddens = [
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[a-file-holds-it-check]",
   "tests/attach/test_write.py::test_a_project_name_the_overlay_has_no_directory_for_is_refused_before_the_first_write[longer-than-a-file-name-check]",
 ]
@@ -2151,11 +2188,12 @@ reddens = [
   "tests/attach/test_doctor.py::test_an_owner_whose_projects_is_a_file_is_unbound_and_granted_what_common_grants[readable]",
 ]
 
-# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `attach` writes the settings file it merges into back through `settings_text`, so a document
-# read and then too deep for the encoder is refused before anything is written. (`detach`'s encode
-# sits inside the guard of "detach copies and compares the settings document unguarded", which
-# answers a bare encode's overflow the same way, so it carries no entry of its own.)
+# In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
+# recursion escape": `attach` writes the settings file it merges into back through `settings_text`,
+# so a document read and then too deep for the encoder is refused before anything is written.
+# (`detach`'s encode sits inside the guard of `mutations/`'s "detach copies and compares the
+# settings document unguarded", which answers a bare encode's overflow the same way, so it carries
+# no entry of its own.)
 [[mutation]]
 name = "attach encodes the settings merge with a bare json.dumps"
 file = "src/stayfixed/attach/write.py"
@@ -2165,9 +2203,9 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": `attach` reads the
-# committed `.gitignore` it adds its region to through that reader, so a link there to a device or
-# a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": `attach`
+# reads the committed `.gitignore` it adds its region to through that reader, so a link there to a
+# device or a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
 [[mutation]]
 name = "attach reads a .gitignore through any link"
 file = "src/stayfixed/attach/write.py"
@@ -2208,9 +2246,10 @@ reddens = [
   "tests/attach/test_binding.py::test_whether_a_name_is_too_long_is_the_kernels_verdict_and_never_a_count[no-such-file]",
 ]
 
-# In the block led by "the regular-file reader opens whatever a path names": `attach`, `--check`
-# and `detach` read the committed `.claude/settings.local.json` and the ledger through that reader,
-# and a refusal names the file as the project does, never by the machine's absolute path.
+# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names":
+# `attach`, `--check` and `detach` read the committed `.claude/settings.local.json` and the ledger
+# through that reader, and a refusal names the file as the project does, never by the machine's
+# absolute path.
 [[mutation]]
 name = "the settings reader reads a file through any link"
 file = "src/stayfixed/attach/permissions.py"
@@ -2225,11 +2264,11 @@ reddens = [
 [[mutation]]
 name = "the attach ledger is read through any link"
 file = "src/stayfixed/attach/write.py"
-before = "        text = fsops.read_regular_text(path)\n    except FileNotFoundError as exc:"
-after = "        text = path.read_text(encoding=\"utf-8\")\n    except FileNotFoundError as exc:"
-reddens = [
-  "tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read",
-]
+before = """            text = fsops.read_regular_text(path)
+        except FileNotFoundError as exc:"""
+after = """            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:"""
+reddens = ["tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read"]
 
 [[mutation]]
 name = "the .gitignore refusal prints the path it opened"
@@ -2240,9 +2279,32 @@ reddens = [
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
 ]
 
-# In the block led by "the JSON writer lets an encode past the interpreter's recursion escape":
-# `detach` copies the parsed settings document and compares what is left with it, and both recurse
-# as the encoder does, so either overflowing is the reader's refusal of a document nested too deep.
+# `detach` reads `.gitignore` as `attach` does, to the read cap, so a file past it that stops one
+# stops the other above its first withdrawal; and names it as the project does.
+[[mutation]]
+name = "detach reads .gitignore with no bound"
+file = "src/stayfixed/attach/write.py"
+before = """    with fsops.reading(GITIGNORE, Failure):
+        text = fsops.read_regular_text(path)"""
+after = """    with fsops.reading(GITIGNORE, Failure):
+        text = path.read_text(encoding="utf-8")"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+[[mutation]]
+name = "detach's .gitignore refusal prints the path it opened"
+file = "src/stayfixed/attach/write.py"
+before = "    with fsops.reading(GITIGNORE, Failure):"
+after = "    with fsops.reading(path, Failure):"
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+# In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
+# recursion escape": `detach` copies the parsed settings document and compares what is left with it,
+# and both recurse as the encoder does, so either overflowing is the reader's refusal of a document
+# nested too deep.
 [[mutation]]
 name = "detach copies and compares the settings document unguarded"
 file = "src/stayfixed/attach/write.py"
@@ -2259,9 +2321,9 @@ reddens = [
   "tests/attach/test_detach.py::test_a_settings_document_too_deep_to_copy_or_compare_is_refused_and_removes_nothing[compare]",
 ]
 
-# In the block led by "attach blames the project's name for an overlay whose projects/ or root is a
-# file": a link at the overlay root or `projects/` that names nothing is damage too, and asked with
-# `stat` alone it read as an overlay with no `projects/` yet.
+# In the block led by `mutations/`'s "attach blames the project's name for an overlay whose
+# projects/ or root is a file": a link at the overlay root or `projects/` that names nothing is
+# damage too, and asked with `stat` alone it read as an overlay with no `projects/` yet.
 [[mutation]]
 name = "the damaged-overlay probe follows a link that names nothing"
 file = "src/stayfixed/attach/binding.py"
@@ -2278,8 +2340,8 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_bound_checkouts_damaged_overlay_is_named_and_never_answered_by_removing_the_ledger[projects-is-a-dangling-link]",
 ]
 
-# In the block led by "the settings refusal prints the path it opened": a refusal of a file the
-# project names names it as the project does, never by the machine's absolute path.
+# In the block led by `mutations/`'s "the settings refusal prints the path it opened": a refusal of
+# a file the project names names it as the project does, never by the machine's absolute path.
 [[mutation]]
 name = "the settings refusal prints the path it opened"
 file = "src/stayfixed/attach/permissions.py"
@@ -2293,8 +2355,8 @@ reddens = [
 [[mutation]]
 name = "the settings refusal of a file that is not UTF-8 prints the path it opened"
 file = "src/stayfixed/attach/permissions.py"
-before = '        raise Failure(f"{label or path} is not UTF-8 text") from None'
-after = '        raise Failure(f"{path} is not UTF-8 text") from None'
+before = "    with fsops.reading(label or path, Failure):"
+after = "    with fsops.reading(path, Failure):"
 reddens = [
   "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
@@ -2302,11 +2364,9 @@ reddens = [
 [[mutation]]
 name = "the ledger refusal of a file that is not UTF-8 prints the path it opened"
 file = "src/stayfixed/attach/write.py"
-before = '        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None'
-after = '        raise Failure(f"{path} is not UTF-8 text") from None'
-reddens = [
-  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
-]
+before = "    with fsops.reading(ATTACH_LEDGER, Failure):"
+after = "    with fsops.reading(path, Failure):"
+reddens = ["tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it"]
 
 [[mutation]]
 name = "attach plans a settings write-back the next read refuses"
@@ -2314,8 +2374,7 @@ file = "src/stayfixed/attach/permissions.py"
 before = "    document = local_document(root)\n    _refuse_unless_written_back(document)\n"
 after = "    document = local_document(root)\n"
 reddens = [
-  "tests/attach/test_write.py::test_a_settings_file_whose_write_back_the_next_read_refuses_is_refused_before_any_write[check]",
-  "tests/attach/test_write.py::test_a_settings_write_back_past_the_cap_is_refused_and_one_inside_it_is_not[1000-check]",
+  "tests/attach/test_commands.py::test_check_refuses_a_settings_file_the_run_refuses_ahead_of_a_missing_origin[written-back-past-the-cap]",
 ]
 
 [[mutation]]
@@ -2325,4 +2384,487 @@ before = "    held = set(_allow_rules(document, Path(LOCAL_SETTINGS)))"
 after = "    held = set(_allow_rules(document, root / LOCAL_SETTINGS))"
 reddens = [
   "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
+
+# A user the password database lists no home for has no harness memory path off a terminal, and
+# the `attached` row says so as a warning rather than dying as a broken check.
+[[mutation]]
+name = "the attached row dies on a home the password database does not list"
+file = "src/stayfixed/attach/doctor.py"
+before = "        except Refusal:\n            # Refused only for a home it cannot name"
+after = "        except LookupError:\n            # Refused only for a home it cannot name"
+reddens = ["tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check"]
+
+# A linked worktree's harness link points at the store the owning checkout holds, so the fallback
+# and the waiting note are asked of that store: asked of the worktree's own link tree, a run that
+# made the link said it could not be created and recorded `autoMemoryDirectory` beside it, or
+# said it waited for an approval the store it linked already had.
+[[mutation]]
+name = "the settings fallback compares a worktree's link with that worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    store = _fallback_store(owner, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+after = "    store = _fallback_store(root, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
+reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made"]
+
+[[mutation]]
+name = "attach says the harness link waits by a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    elif _harness_waits(owner, config, machine=machine):"
+after = "    elif _harness_waits(root, config, machine=machine):"
+reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
+
+[[mutation]]
+name = "the unavailable fallback is asked of a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "        wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)"
+after = "        wanted = _fallback_wanted(root, config, owner=root, machine=machine, home=home)"
+reddens = ["tests/attach/test_links.py::test_a_worktree_whose_claude_is_linked_in_says_the_fallback_is_unavailable_only_when_wanted"]
+
+# The fallback is decided twice in a run, above the first write and after the links, and both
+# must ask the owning checkout's store: planned by a worktree's own, a store only the owner had
+# approved got a settings file written that the exclude block did not hide, and `--check`, which
+# plans the same way, answered clean.
+[[mutation]]
+name = "the settings fallback is planned by a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "    possible = unread is None and _fallback_possible(\n        root, config, owner=checkouts[0], machine=machine, home=home\n    )"
+after = "    possible = unread is None and _fallback_possible(\n        root, config, owner=root, machine=machine, home=home\n    )"
+reddens = [
+  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes",
+  "tests/attach/test_links.py::test_check_from_a_linked_worktree_refuses_where_only_the_owners_fallback_needs_a_line",
+]
+
+[[mutation]]
+name = "a first attach asks the approval of a worktree's own store"
+file = "src/stayfixed/attach/write.py"
+before = "        return approval_recorded(owner / config.paths.memory, machine)"
+after = "        return approval_recorded(root / config.paths.memory, machine)"
+reddens = ["tests/attach/test_links.py::test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record_takes"]
+
+
+# The ledger is what `stayfixed uninstall` reads as "this repository is attached", so a detach that
+# left it behind would leave a repository uninstall refuses for good.
+[[mutation]]
+name = "detach leaves its ledger behind"
+file = "src/stayfixed/attach/write.py"
+before = "    fsops.remove_within(root, ATTACH_LEDGER)\n    # Last, because the ledger lives in one of them."
+after = "    # Last, because the ledger lives in one of them."
+reddens = ["tests/attach/test_detach.py::test_uninstall_after_a_real_detach_takes_the_footprint_back"]
+
+# `write` imports `permissions` at module level, so `permissions` importing the writer back, even
+# inside a function where no import fails, is a cycle in the layering: the one `--check` made while
+# it lived in `permissions`.
+[[mutation]]
+name = "permissions reads the writer again inside a function"
+file = "src/stayfixed/attach/permissions.py"
+before = "    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))"
+after = """    from stayfixed.attach.write import existing_ledger  # noqa: F401
+
+    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
+# `attach --check` asks what the run asks past its gates and before its first write through the
+# run's own `plan_writes`, so a ledger, a harness anchor, an ignore file, an overlay rule or a trust
+# record the run cannot take ends both with one code and line; each of these was once unread here,
+# and `--check` answered clean over a checkout that stopped the run. Each case named here reddens
+# on its own, measured by hand.
+[[mutation]]
+name = "check skips the reads the run makes before its first write"
+file = "src/stayfixed/attach/check.py"
+before = "        unread = plan_writes(root, config, binding, diff, machine=machine, home=home).unread\n"
+after = "        pass\n"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[not-json]",
+  "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[a-link]",
+  "tests/attach/test_commands.py::test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_a_home_whose_claude_is_a_link_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-region-doubled]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-not-text]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[exclude-block-doubled]",
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[claude-linked-in]",
+]
+
+# The two refusals the run makes between its gates and the groups that never moved: an `origin` the
+# overlay's record cannot hold, and a group that leaves the share, which `--check` met only as the
+# never-moved count's own refusal, in other words.
+[[mutation]]
+name = "the gates do not ask what the share holds"
+file = "src/stayfixed/attach/write.py"
+before = "            refuse_unless_share_holds(binding, config)"
+after = "            pass"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[origin-not-text]",
+]
+
+# `--check` asks the share only where the run would, so outside overlay mode it reports the mode's
+# refusal with the rest of its report rather than ending on the share's.
+[[mutation]]
+name = "check asks what the share holds whatever the memory mode"
+file = "src/stayfixed/attach/write.py"
+before = "        if refused is None:\n            refuse_unless_share_holds(binding, config)"
+after = "        if True:\n            refuse_unless_share_holds(binding, config)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reports_a_repository_outside_overlay_mode_whatever_its_origin",
+]
+
+# And only where the run reads them: the run refuses a `memory.mode` other than `overlay` before the
+# ledger, so a `--check` that read it first ended such a repository with the ledger's code. Read
+# there now, the ledger's failure gives way to the mode's refusal, and the report is lost with it.
+[[mutation]]
+name = "check reads the attach ledger whatever the memory mode"
+file = "src/stayfixed/attach/check.py"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or stop.refusal == not_overlay(config) for stop in stops):"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_as_the_run_does_whatever_its_ledger",
+]
+
+# Nor past a checkout with no `origin`, or a group that never moved, both of which the run refuses
+# before the reads after them, and `--check` reports as findings.
+[[mutation]]
+name = "check reads past a checkout with no origin"
+file = "src/stayfixed/attach/check.py"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or stop.refusal == NO_REMOTE for stop in stops):"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[no-origin]",
+]
+
+[[mutation]]
+name = "check reads past a group that never moved"
+file = "src/stayfixed/attach/check.py"
+before = "    if all(stop.flag is not None for stop in stops):"
+after = "    if all(stop.flag is not None or \"real directories\" in stop.refusal for stop in stops):"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
+]
+
+# The groups are counted only where the run counts them: at a checkout with no `origin` the run
+# refuses first, and a `--check` that counted there ended with the count's refusal of a group
+# outside `paths.memory` instead.
+[[mutation]]
+name = "check counts the groups at a checkout with no origin"
+file = "src/stayfixed/attach/write.py"
+before = "            yield Stop(NO_REMOTE)\n            return\n"
+after = "            yield Stop(NO_REMOTE)\n"
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_no_group_at_a_checkout_with_no_origin_as_the_run_counts_none",
+]
+
+# Outside overlay mode the run refuses right after the binding, so what `--check` reads for the rest
+# of its report is never the run's answer: a refusal or failure there gives way to the run's own
+# refusal of the mode, where it ended `--check` in its own words and at times with exit 1.
+[[mutation]]
+name = "check lets the rest of its report decide a repository outside overlay mode"
+file = "src/stayfixed/attach/check.py"
+before = "        raise Refusal(refused) from None"
+after = "        raise"
+reddens = [
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[group-leaves-the-share]",
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-not-text]",
+  "tests/attach/test_commands.py::test_check_ends_a_repository_outside_overlay_mode_with_the_runs_refusal_whatever_the_rest[settings-permissions-null]",
+]
+
+# The harness's memory path for a checkout near the longest path is a name longer than a file name
+# may be, and `Path.is_symlink()` raised on it up to Python 3.13 where 3.14 answered `False`: the
+# same `attach --check` was an internal error on one and passed on the other. Asked of `pathlib`
+# again, the walk that holds `src/` to `fsops`' predicates reddens on every interpreter, and
+# `test_a_source_past_the_longest_path_under_a_project_with_no_directory_is_no_source` does on
+# 3.11 to 3.13.
+[[mutation]]
+name = "the harness link's check asks pathlib what is there"
+file = "src/stayfixed/attach/write.py"
+before = "    if fsops.is_symlink(harness) or not fsops.exists(harness):"
+after = "    if harness.is_symlink() or not harness.exists():"
+reddens = [
+  "tests/test_fsops.py::test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape",
+]
+
+# A `memory.groups` entry whose place cannot be asked whether it is a link is refused, in words that
+# name that: the escape sentences name a cause it does not have, and a remedy that is already true.
+[[mutation]]
+name = "unlinked_groups words a group it cannot ask about as an escape"
+file = "src/stayfixed/attach/binding.py"
+before = """
+        except PathUnasked as exc:
+            raise PathUnasked(
+                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
+            ) from exc"""
+after = """
+        except PathUnasked as exc:
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc"""
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape",
+]
+
+[[mutation]]
+name = "attach words a group it cannot ask about as an escape"
+file = "src/stayfixed/attach/write.py"
+before = "            raise Refusal(GROUP_UNASKED.format(fault=exc.fault)) from exc"
+after = "            raise Refusal(GROUP_ESCAPES) from exc"
+reddens = [
+  "tests/attach/test_write.py::test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refused_for_that",
+]
+
+[[mutation]]
+name = "detach words a group it cannot ask about as one that leaves the tree"
+file = "src/stayfixed/attach/write.py"
+before = "                raise Refusal(GROUP_UNASKED_IN_TREE.format(fault=exc.fault)) from exc"
+after = "                raise Refusal(GROUP_LEAVES_TREE) from exc"
+reddens = [
+  "tests/attach/test_detach.py::test_a_link_tree_nobody_may_search_refuses_for_that_before_anything_is_withdrawn",
+]
+
+# A directory `attach` would create, asked below a committed link into a directory nobody may
+# search, is one no write of the run reaches, so it is answered as there and never raised: the
+# containment refusal that names the link comes after it, and an internal error came first.
+[[mutation]]
+name = "attach asks whether a directory it would create is there through a link it cannot follow"
+file = "src/stayfixed/attach/write.py"
+before = """
+    try:
+        return fsops.is_dir(path)
+    except OSError:
+        return True"""
+after = """
+    return fsops.is_dir(path)"""
+reddens = [
+  "tests/attach/test_write.py::test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_check_and_run",
+]
+
+# The `attached` row at a terminal whose `HOME` is empty names `HOME`, not the database, which lists
+# a home there.
+[[mutation]]
+name = "the attached row blames the password database for an empty HOME at a terminal"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if override_is_honoured() and home_is_empty():"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_a_terminal_whose_home_is_empty_is_told_it_is_home_that_names_none",
+]
+
+# Off a terminal the harness memory link goes under the password database's home and a harness
+# looks under `HOME`: where they differ, an empty `HOME` included, `attach` made a link no harness
+# that `HOME` starts reads and said it had. It makes none in any checkout and does everything else,
+# takes no settings fallback for it, and says so, `--check` with it; at a terminal, where `HOME` is
+# the home the link goes under, and where the two agree, it makes the link, and a user the database
+# lists no home for is told that.
+[[mutation]]
+name = "attach off a terminal makes the harness link under a home the harness does not read"
+file = "src/stayfixed/attach/write.py"
+before = "    unread = unread_home() if home is None else None"
+after = "    unread = None"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[empty]",
+]
+
+[[mutation]]
+name = "attach tells an empty HOME off a terminal what a HOME that differs is told"
+file = "src/stayfixed/attach/write.py"
+before = "    return HOME_EMPTY if home_is_empty() else HOME_DIFFERS"
+after = "    return HOME_DIFFERS"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[empty]",
+]
+
+[[mutation]]
+name = "attach says nothing of the harness link it withholds"
+file = "src/stayfixed/attach/write.py"
+before = "        notes.append(planned.unread.note)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
+]
+
+# A fallback key a withheld run leaves is told as an earlier run's, not as this run's act.
+[[mutation]]
+name = "attach tells a fallback key it leaves as one it recorded"
+file = "src/stayfixed/attach/write.py"
+before = "    if keys and links.withheld:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_says_a_fallback_key_it_withholds_beside_is_an_earlier_runs",
+]
+
+[[mutation]]
+name = "attach --check says nothing of the harness link the run would withhold"
+file = "src/stayfixed/attach/check.py"
+before = '        summary += f"; {unread.note}"'
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
+]
+
+[[mutation]]
+name = "attach makes the harness link in the owning checkout it withholds it from"
+file = "src/stayfixed/attach/write.py"
+before = "    withheld = Withhold(anchor_home()) if withhold else None"
+after = "    withheld = None"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
+]
+
+[[mutation]]
+name = "attach makes the harness link in a worktree it withholds it from"
+file = "src/stayfixed/attach/write.py"
+before = "                tree, store, config, harness=MakeUnder(home) if withheld is None else withheld"
+after = "                tree, store, config, harness=MakeUnder(home)"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withholds_only_the_harness_link_where_home_is_not_where_it_goes[elsewhere]",
+]
+
+[[mutation]]
+name = "attach takes the settings fallback for a harness link it withholds"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.withheld:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds",
+]
+
+[[mutation]]
+name = "attach plans the settings fallback for a harness link it withholds"
+file = "src/stayfixed/attach/write.py"
+before = "    possible = unread is None and _fallback_possible("
+after = "    possible = _fallback_possible("
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_takes_no_settings_fallback_for_a_harness_link_it_withholds",
+]
+
+[[mutation]]
+name = "attach off a terminal withholds the harness link under a HOME that agrees"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if override_is_honoured() or passwd_home() is None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[unset]",
+]
+
+[[mutation]]
+name = "attach at a terminal withholds the harness link under a HOME that differs"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if homes_agree() or passwd_home() is None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[terminal]",
+]
+
+[[mutation]]
+name = "attach off a terminal blames HOME for a user the database lists no home for"
+file = "src/stayfixed/attach/write.py"
+before = "    if override_is_honoured() or homes_agree() or passwd_home() is None:"
+after = "    if override_is_honoured() or homes_agree():"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_database_lacks",
+  "tests/attach/test_doctor.py::test_no_home_in_the_password_database_is_a_warning_and_not_a_broken_check",
+]
+
+# A run that withholds the harness link still takes back what a store whose approval lapsed was
+# given by an earlier one: the settings fallback, and the link under the database's home.
+[[mutation]]
+name = "attach keeps a lapsed store's settings fallback on a run that withholds the harness link"
+file = "src/stayfixed/attach/write.py"
+before = "    if links.withheld:"
+after = "    if planned.unread is not None:"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[key]",
+]
+
+[[mutation]]
+name = "attach keeps a lapsed store's harness link under the database's home on a run that withholds it"
+file = "src/stayfixed/attach/write.py"
+before = "    withheld = Withhold(anchor_home()) if withhold else None"
+after = "    withheld = Withhold(None) if withhold else None"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_off_a_terminal_withdraws_what_a_lapsed_store_was_given_though_it_makes_no_link[link]",
+]
+
+# Off a terminal, where `HOME` is not the database's home, the `attached` row judged the link under
+# the database's home, which a harness started with this `HOME` does not read, and was wrong both
+# ways. It judges neither home and says what `attach` says, with the way to have the link under
+# `HOME` checked; with `--home` it judges the link under the home that names.
+[[mutation]]
+name = "the attached row judges the harness link off a terminal whatever HOME says"
+file = "src/stayfixed/attach/doctor.py"
+before = "    unread = unread_home() if context.home is None else None"
+after = "    unread = None"
+reddens = [
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-database]",
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[empty-database]",
+]
+
+[[mutation]]
+name = "the attached row names no way to check the link under a HOME that differs"
+file = "src/stayfixed/attach/doctor.py"
+before = "        if harness == HOME_DIFFERS:"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_doctor.py::test_off_a_terminal_the_attached_row_says_what_attach_says_where_home_is_not_where_it_goes[elsewhere-HOME]",
+]
+
+[[mutation]]
+name = "the attached row asks where HOME points when --home names the home"
+file = "src/stayfixed/attach/doctor.py"
+before = "    unread = unread_home() if context.home is None else None"
+after = "    unread = unread_home()"
+reddens = [
+  "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[--home]",
+]
+
+# `attach` puts the harness memory link under `HOME` at a terminal and under the database's home
+# off one, so where they differ `detach` withdraws under both, the second best-effort: only a link
+# to this store goes there, a home whose walk refuses is passed over and named, and an unset, an
+# agreeing, an empty or a relative `HOME` names no second home.
+[[mutation]]
+name = "detach withdraws under one home where HOME is not the database's"
+file = "src/stayfixed/attach/write.py"
+before = "    other = _other_harness_home() if home is None else None"
+after = "    other = None"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-both]",
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
+]
+
+[[mutation]]
+name = "detach looks under HOME for the other home at a terminal"
+file = "src/stayfixed/attach/write.py"
+before = '        return None if recorded is None else (recorded, "the home the password database records")'
+after = '        return None'
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
+]
+
+[[mutation]]
+name = "detach looks under a relative HOME"
+file = "src/stayfixed/attach/write.py"
+before = "    if not chosen or not os.path.isabs(chosen):\n        return None\n    return Path(chosen), \"HOME\""
+after = "    if not chosen:\n        return None\n    return Path(chosen), \"HOME\""
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_under_the_one_home_where_there_is_no_other[relative]",
+]
+
+[[mutation]]
+name = "detach refuses where the other home cannot be walked"
+file = "src/stayfixed/attach/write.py"
+before = "        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
+after = "        except LookupError:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
+]
+
+[[mutation]]
+name = "detach's line says nothing of a home it did not look under"
+file = "src/stayfixed/attach/commands.py"
+before = '        + "".join(f"; {note}" for note in removed.notes),'
+after = '        + "",'
+reddens = [
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]

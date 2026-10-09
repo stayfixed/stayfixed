@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,7 @@ from stayfixed.guards.commit import (
     offending_lines,
     strip_message,
 )
-from tests.gitfixture import git
+from tests.gitfixture import git, launched_by_the_hook_wrapper
 
 # Per test, not module-wide: most of this file is pure functions, and a module-level skip
 # would void the POSITIVES, the NEGATIVES and the one test the mutation entry names — which
@@ -63,6 +64,8 @@ POSITIVES = [
     "Reviewed-by: GitHub Copilot <copilot@github.com>",
     "Signed-off-by: bot <noreply@mistral.ai>",
     "Tested-by: Cursor Agent <agent@cursor.sh>",
+    # A vendor's subdomain: the domain is tried after each label, not only after the `@`.
+    "Co-Authored-By: A Bot <bot@eu.api.anthropic.com>",
     # A BARE ADDRESS, angle brackets left off. The value then has no display name to split at,
     # so `address` was the empty string and the domain rule could never fire -- while the very
     # same address in brackets was caught. The third way in past the trailer's value rule, and
@@ -151,6 +154,8 @@ FOOTERS = [
     "Generated with Claude Opus 5",
     "Generated with Codex.",
     "Generated with Cursor v1.2",
+    # A version a capital or a digit leads, read whole: read as a name word, it ends at the `-`.
+    "Generated with Claude Code 2.1-beta",
     "Generated with Claude Code (https://claude.com/claude-code)",
     "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code) \U0001f916",
 ]
@@ -235,6 +240,27 @@ def test_a_real_footer_survives_the_bounded_tail(line: str) -> None:
     # ends at the vendor word" -- loses every one of these, the canonical harness footer
     # included. Kept as a corpus so a later narrowing is measured against the whole class.
     assert offending_lines(line) == [Offence(1, "generated-with footer")]
+
+
+# Lines whose words past the vendor end on a blank and then a bracketed tail no word of a product's
+# name, version or link opens: prose, since the footer's markdown target follows the last word with
+# no blank. Python 3.11.0 to 3.11.4 read each as a footer while the words were a possessive repeat,
+# which they end where a failed word stopped, past its blank.
+PARTED_TAILS = [
+    "Generated with Claude Code ](notes)",
+    "Generated with Claude ](notes)!",
+    "Generated with Claude 4 ](notes)",
+]
+
+
+@pytest.mark.parametrize("line", PARTED_TAILS)
+def test_a_footer_tail_a_blank_parts_from_its_words_is_prose(line: str) -> None:
+    # Both rules that read a footer: the line is no offence, and strip gives the message back
+    # whole. Mutation (oracle): `mutations/`'s "a footer's words end past the blank before a word
+    # that is none" -> every case reddens.
+    message = f"docs: note the export\n\n{line}\n"
+    assert offending_lines(message) == []
+    assert strip_message(message) == message
 
 
 def test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words() -> None:
@@ -477,6 +503,103 @@ def test_a_message_that_is_only_attribution_strips_to_nothing() -> None:
     assert strip_message("Generated with Codex\n") == ""
 
 
+# Lines the rules took in time more than linear in their length, each followed by a trailer as
+# the message's last line, so the answer says the long line was judged and read past. A message
+# reaches these rules in the `prepare-commit-msg` hook and in CI's `commit check`, whatever its
+# author wrote. Each line is sized so that the old reading takes over an hour and a linear one a
+# fraction of a second; the last field says whether the line is itself an offence.
+LONG_LINES = {
+    # A trailer's value read by a lazy pattern ended by blanks, which scanned the blanks again
+    # from every character of the value: 116 s over 160,000 blanks.
+    "trailer blanks": ("Co-Authored-By: Claude", " ", 1 << 20, " <noreply@anthropic.com>", True),
+    # A footer-shaped line that goes on into prose, its words read as a choice to backtrack over:
+    # `A1` is both a name word and a version, which doubled the work at each one, 7 s at 24 of
+    # them; and every slash given back rescanned the rest of the line, 1.6 s at 16,000.
+    "footer words": ("Generated with Claude", " A1", 64, " and then by hand", False),
+    "footer slashes": ("Generated with Claude", " /", 1 << 19, " and then by hand", False),
+}
+_TRAILER_LABEL = ATTRIBUTION_LABELS[0]
+_LONG_LINE_PROBE = (
+    "import sys\n"
+    "from stayfixed.guards.commit import offending_lines\n"
+    "head, unit, count, tail = sys.argv[1:]\n"
+    "line = head + unit * int(count) + tail\n"
+    "last = 'Co-Authored-By: Claude <noreply@anthropic.com>'\n"
+    "print(offending_lines(f'fix: a thing\\n\\n{line}\\n{last}'))\n"
+)
+# The child's bound: far below what the old reading took of each line above on a laptop, and a
+# hundred times what the linear one takes there, start-up included, so neither load nor a fast
+# machine moves a case across it.
+_LONG_LINE_SECONDS = 30
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_LINES))
+def test_a_long_message_line_is_judged_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a trailer's value is found by a lazy match" ->
+    # `trailer blanks`; "a footer's words are given back to be read again" -> `footer words` and
+    # `footer slashes`.
+    head, unit, count, tail, offends = LONG_LINES[shape]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", _LONG_LINE_PROBE, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the commit-message rules ran past {_LONG_LINE_SECONDS} s on one long line")
+    judged = [Offence(3, _TRAILER_LABEL)] if offends else []
+    assert done.stdout == f"{[*judged, Offence(4, _TRAILER_LABEL)]}\n", done.stderr
+
+
+# Trailers whose rules held a record of match state per label of an address, or per word of a
+# model's name, when `re` kept one for each pass it might give back: 124 MiB more over a million of
+# either. Each is an offence, and is followed by a trailer as the message's last line, as above.
+LONG_TRAILERS = {
+    "address labels": ("Co-Authored-By: A Bot <noreply@", "a.", 1 << 20, "anthropic.com>"),
+    "model words": ("Co-Authored-By: Claude Opus", " a", 1 << 20, " <bot@example.org>"),
+}
+# The most the child may grow its peak resident size by while judging one of them: a few copies of
+# the two-mebibyte line, a quarter of that record.
+_LONG_TRAILER_BYTES = 32 << 20
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_TRAILERS))
+def test_a_long_trailer_is_judged_in_memory_linear_in_its_length(shape: str) -> None:
+    # The child measures its own peak resident size before and after (`ru_maxrss`, bytes on macOS
+    # and KiB on Linux), under a timeout. Mutations (oracle): `mutations/`'s "an address's labels
+    # are read by a pattern that gives them back" -> `address labels`; "a model's version words
+    # are given back" -> `model words`.
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.guards.commit import offending_lines\n"
+        "head, unit, count, tail = sys.argv[1:]\n"
+        "line = head + unit * int(count) + tail\n"
+        "last = 'Co-Authored-By: Claude <noreply@anthropic.com>'\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "judged = offending_lines(f'fix: a thing\\n\\n{line}\\n{last}')\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(grown, judged)\n"
+    )
+    head, unit, count, tail = LONG_TRAILERS[shape]
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the commit-message rules ran past {_LONG_LINE_SECONDS} s on one trailer")
+    grown, judged = done.stdout.split(maxsplit=1)
+    assert judged == f"{[Offence(3, _TRAILER_LABEL), Offence(4, _TRAILER_LABEL)]}\n", done.stderr
+    assert int(grown) < _LONG_TRAILER_BYTES, f"the rules grew the peak by {int(grown) >> 20} MiB"
+
+
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
@@ -689,7 +812,10 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
         return sp.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
     # A `GIT_DIR` the session happens to carry makes git answer for a different repository
-    # than the one the range is about; `scrubbed_env` is what drops it.
+    # than the one the range is about; `scrubbed_env` is what drops it. Outside a hook, where
+    # `git_run` hands git this process's own `PATH`, so the expected environment is the plain
+    # scrubbed one and no `git` on this machine is needed to reach `fake`.
+    launched_by_the_hook_wrapper(monkeypatch, False)
     monkeypatch.setenv("GIT_DIR", "/elsewhere/.git")
     monkeypatch.setattr(sp, "run", fake)
     # The bound is read below `git_run`, where the suite's floor has already lifted it: at the

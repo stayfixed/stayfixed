@@ -32,11 +32,11 @@ REDIRECTING = (
     "GIT_CEILING_DIRECTORIES",
 )
 
-# The one `git` in the suite that this module does not run, named rather than skipped silently
-# — for `tests/test_areas.py`'s stated reason, that an exemption nobody can see is how the
-# violation a guard exists to catch gets merged green. `tracked_files` asks the *real*
-# repository which files it tracks, reads the answer as bytes because `-z` separates with NUL,
-# and is the neutrality gate's own enumeration rather than a fixture being built.
+# The one `git` in the suite that this module does not run, named rather than skipped silently — for
+# `tests/boundaries/test_api_surface.py`'s stated reason, that an exemption nobody can see is how
+# the violation a guard exists to catch gets merged green. `tracked_files` asks the *real*
+# repository which files it tracks, reads the answer as bytes because `-z` separates with NUL, and
+# is the neutrality gate's own enumeration rather than a fixture being built.
 HAND_ROLLED_EXEMPT = frozenset({("test_neutral.py", "tracked_files")})
 
 # The shared fixture and the module you are reading, which are the two that may name the

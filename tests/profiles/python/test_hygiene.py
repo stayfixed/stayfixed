@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import fsops
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.guards.hygiene import simple_commands
@@ -56,9 +57,14 @@ def config(root: Path) -> Config:
     return load(root, machine=root.parent / "absent.toml")
 
 
+def reported(root: Path) -> Mapping[str, int] | None:
+    """The hint's report over the roots the guard hands it: `ledger.code_roots`, contained."""
+    return HINT.report(contained_roots(root, config(root)))
+
+
 def counted(root: Path) -> Mapping[str, int]:
     """The hint's counts for a walk that finished; a test that wants `None` asks `report`."""
-    report = HINT.report(root, config(root))
+    report = reported(root)
     assert report is not None
     return report
 
@@ -76,7 +82,7 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
     """A `.pyc` is stale when the source mtime recorded in its header (bytes 8-12) no longer
     matches the source's — the condition CPython itself checks. Compile, then move the source
     forward."""
-    # Oracle: `mutations/`, "stale bytecode is never counted".
+    # Oracle: `mutations/`'s "stale bytecode is never counted".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     compile_module(module)
@@ -91,7 +97,7 @@ UNTOLD = (
     "`__pycache__` directories under those roots and re-run before attributing anything."
 )
 READ_FILES = python_hygiene.BYTECODE_READ_FILES
-ENTRIES = python_hygiene.BYTECODE_WALK_ENTRIES
+ENTRIES = fsops.WALK_ENTRIES
 
 
 def a_stale_tree_of_eight_entries(tmp_path: Path) -> Path:
@@ -118,10 +124,10 @@ def test_a_walk_cut_short_by_its_cap_could_not_tell(
     # among eight entries is over a cap of seven. Oracle: `mutations/`'s "the stale-bytecode walk
     # ignores its cap".
     root = a_stale_tree_of_eight_entries(tmp_path)
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 8)
-    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 1}
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 7)
-    counts = HINT.report(root, config(root))
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 8)
+    assert reported(root) == {"stale": 1, "roots": 1}
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 7)
+    counts = reported(root)
     assert counts is None
     # Reddened by dropping `note`'s undetermined branch, which leaves the note silent; measured.
     assert HINT.note(counts) == UNTOLD.format(entries=7, files=READ_FILES)
@@ -144,9 +150,9 @@ def test_bytecode_past_the_read_cap_could_not_tell(
     for tag in ("one", "two"):
         (compiled.parent / f"mod.{tag}.pyc").write_bytes(compiled.read_bytes())
     monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 3)
-    assert HINT.report(root, config(root)) == {"stale": 3, "roots": 1}
+    assert reported(root) == {"stale": 3, "roots": 1}
     monkeypatch.setattr(python_hygiene, "BYTECODE_READ_FILES", 2)
-    counts = HINT.report(root, config(root))
+    counts = reported(root)
     assert counts is None
     assert HINT.note(counts) == UNTOLD.format(entries=ENTRIES, files=2)
 
@@ -166,10 +172,10 @@ def test_the_entry_cap_is_one_total_across_the_code_roots(
     (root / "tests").mkdir()
     for name in ("a.py", "b.py", "c.py"):
         (root / "tests" / name).write_text("", encoding="utf-8")
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 6)
-    assert HINT.report(root, config(root)) == {"stale": 1, "roots": 2}
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 4)
-    assert HINT.report(root, config(root)) is None
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 6)
+    assert reported(root) == {"stale": 1, "roots": 2}
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 4)
+    assert reported(root) is None
 
 
 def test_bytecode_under_a_hidden_directory_is_judged(tmp_path: Path) -> None:
@@ -223,7 +229,7 @@ def test_a_pyc_outside_a_pycache_is_not_judged(tmp_path: Path) -> None:
 
 def test_a_normally_compiled_pyc_is_not_stale(tmp_path: Path) -> None:
     """The everyday case, and what a naive `pyc mtime > source mtime` gets backwards."""
-    # Oracle: `mutations/`, "fresh bytecode is counted as stale".
+    # Oracle: `mutations/`'s "fresh bytecode is counted as stale".
     root = repo(tmp_path)
     # The `.pyc` must actually exist, or `stale == 0` passes by finding nothing to judge.
     assert compile_module(root / "src" / "mod.py").is_file()
@@ -238,7 +244,7 @@ def test_a_hash_based_pyc_is_not_judged(tmp_path: Path) -> None:
     `py_compile` switches to it on its own under `SOURCE_DATE_EPOCH`, and `compileall
     --invalidation-mode checked-hash` produces a tree of them.
     """
-    # Oracle: `mutations/`, "a hash-based .pyc is read as if it carried an mtime".
+    # Oracle: `mutations/`'s "a hash-based .pyc is read as if it carried an mtime".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     cache = module.parent / "__pycache__" / f"{module.stem}.{sys.implementation.cache_tag}.pyc"
@@ -286,7 +292,7 @@ def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
     three times and the one under `src` twice — `stale == 5` for two stale files, in a notice
     whose only job is to be believed about a number.
 
-    Oracle: `mutations/`, "a code root listed twice is walked twice". Measured both ways —
+    Oracle: `mutations/`'s "a code root listed twice is walked twice". Measured both ways —
     deleting BOTH pruning lines gives `stale == 5`, and the declared single-line mutation (the
     `if any(_covers(...))` guard alone) still gives `stale == 3`, because the descendant
     rebuild below it happens to collapse the exact repeat while leaving the nested root. Each
@@ -319,7 +325,7 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
     fresh, matches. Reading past the magic word counted the leftover and the notice then fired
     on every red run of a healthy tree. Measured before the magic check: `stale == 1`.
     """
-    # Oracle: `mutations/`, "a .pyc from another interpreter is read as this one's".
+    # Oracle: `mutations/`'s "a .pyc from another interpreter is read as this one's".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     # The CURRENT tag's bytecode, fresh — so a non-zero count can only come from the leftover.
@@ -331,9 +337,9 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
     # mtime deliberately unequal to the source's — the exact shape a stale leftover has.
     #
     # DERIVED from the running magic rather than written as some released version's literal,
-    # and that is not laziness: CI runs this suite on 3.11, 3.12 and 3.13, so any literal
-    # naming one of them is the RUNNING interpreter's magic on that leg and the test would
-    # then assert the opposite of what it means. The `!=` below is what the derivation has to
+    # and that is not laziness: CI runs this suite on every interpreter in `ci.yml`'s matrix, so
+    # any literal naming one of them is the RUNNING interpreter's magic on that leg and the test
+    # would then assert the opposite of what it means. The `!=` below is what the derivation has to
     # buy, so it is asserted rather than assumed.
     foreign_magic = bytes([importlib.util.MAGIC_NUMBER[0] ^ 0xFF]) + importlib.util.MAGIC_NUMBER[1:]
     assert len(foreign_magic) == 4
@@ -356,7 +362,7 @@ def test_a_pyc_that_is_a_symlink_is_not_followed(tmp_path: Path) -> None:
     Only the bytecode must be a regular file. A source that is a symlink is still compared,
     because the interpreter follows it too, and its stale bytecode is counted.
     """
-    # Oracle: `mutations/`, "a symlinked .pyc is followed" and "a source that is a symlink is not
+    # Oracle: `mutations/`'s "a symlinked .pyc is followed" and "a source that is a symlink is not
     # compared".
     root = repo(tmp_path)
     outside = tmp_path / "outside"
@@ -430,7 +436,7 @@ def test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk(tmp_path: Path) -> Non
     running after `PATIENCE_SECONDS`, it is waiting on the pipe, and opening the write end
     without blocking, which succeeds once a reader waits, releases it.
     """
-    # Oracle: `mutations/`, "a .pyc that is a named pipe is opened waiting for a writer".
+    # Oracle: `mutations/`'s "a .pyc that is a named pipe is opened waiting for a writer".
     root, pipe = a_tree_with_a_piped_pyc(tmp_path)
     counted: list[int] = []
     walker = threading.Thread(target=lambda: counted.append(stale(root)), daemon=True)
@@ -449,7 +455,7 @@ def test_a_pyc_that_is_a_named_pipe_is_never_read(tmp_path: Path) -> None:
     """A pipe whose writer has already written a whole stale header reads like a `.pyc`, and
     without waiting: only the check that the opened file is a regular one keeps it out of the
     count. The test holds both ends itself (`O_RDWR`), so the header sits in the pipe."""
-    # Oracle: `mutations/`, "a .pyc that is not a regular file is read".
+    # Oracle: `mutations/`'s "a .pyc that is not a regular file is read".
     root, pipe = a_tree_with_a_piped_pyc(tmp_path)
     writer = os.open(pipe, os.O_RDWR)
     try:
@@ -466,7 +472,7 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
     # `contained()` removed, `root/../outside` is a real directory and would be walked, so the
     # assertion below fails. Without the directory the entry would be dropped by `is_dir()`
     # alone and the containment call could be deleted with the test still green.
-    # Oracle: `mutations/`, "an escaping code root is followed".
+    # Oracle: `mutations/`'s "an escaping code root is followed".
     root = repo(tmp_path)
     (root.parent / "outside").mkdir()
     (root / CONFIG_FILE).write_text(
@@ -579,7 +585,7 @@ def test_a_red_pytest_run_behind_uvs_options_gets_the_same_note(tmp_path: Path) 
     # handler: before uv's options were read it got no notice at all, not even the core's
     # dirty-tree line, because `context_for` speaks only when a hint recognises the run. The
     # other spellings of uv's options are the scanner's own matrix, in `test_bashscan.py`.
-    # Oracle: `mutations/`, "uv's options stop being read past `run`".
+    # Oracle: `mutations/`'s "uv's options stop being read past `run`".
     root = faulty_python_tree(tmp_path)
     command = "uv sync --locked && uv run --locked pytest tests/x.py::t"
     result = hygiene().run(red_event(root, command), config(root))
@@ -595,7 +601,7 @@ def test_a_red_pytest_run_over_a_walk_cut_short_is_told_it_could_not_tell(
     # finished, so a stale `.pyc` the walk did not reach is not reported as absent. Reddened by
     # disabling the cap check, which puts the stale line here; measured.
     root = faulty_python_tree(tmp_path)
-    monkeypatch.setattr(python_hygiene, "BYTECODE_WALK_ENTRIES", 2)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 2)
     result = hygiene().run(red_event(root, "uv run pytest -q"), config(root))
     assert (
         result.context == f"{LEAD}\n- {DIRTY_ONE}\n- {UNTOLD.format(entries=2, files=READ_FILES)}"
@@ -609,7 +615,7 @@ def test_no_recognising_profile_means_no_notice(tmp_path: Path) -> None:
     # from any other failed command, and the notice is once per context: a dirty-tree line after
     # a failed `grep` would spend the one delivery the next failed test run needed. The Python
     # tree's stale `.pyc` is what makes this non-vacuous: a Python hint that answered for every
-    # command would put both lines here. Oracle: `mutations/`, "the Python hint recognises every
+    # command would put both lines here. Oracle: `mutations/`'s "the Python hint recognises every
     # command".
     root = faulty_python_tree(tmp_path)
     settings = config(root)

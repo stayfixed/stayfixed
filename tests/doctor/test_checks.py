@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess.
 
-One of the sixteen checks cannot be answered by this build and says so rather than guessing:
+One of the seventeen checks cannot be answered by this build and says so rather than guessing:
 `codex-trust`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
@@ -13,15 +13,19 @@ The same `pytestmark` `tests/attach` carries, for the same reason.
 
 from __future__ import annotations
 
+import dataclasses
+import errno
 import inspect
 import json
 import os
 import pty
 import shutil
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -32,7 +36,7 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.schema import Config
-from stayfixed.doctor import checks, entries, registry
+from stayfixed.doctor import checks, entries, hooked, registry
 from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Context, Row, run_checks
 from stayfixed.doctor.checks import (
     VERSION_AHEAD,
@@ -45,6 +49,7 @@ from stayfixed.doctor.checks import (
     plugin_root,
 )
 from stayfixed.doctor.entries import SETTINGS_FILES
+from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -52,6 +57,7 @@ from stayfixed.release.api import HASHED_FILES
 from stayfixed.setup.api import USER_SETTINGS
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.ownerhome import as_owner_home, pin_git_home
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.release.test_hashes import recorded
 from tests.runners import LsRemote, Recorder
@@ -150,9 +156,10 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     `tests/test_install_path.py::_doctor_env` does for the walkthrough.
 
     `PATH` is kept because the wrapper's interpreter probe is `command -v`, and a probe with no
-    `PATH` measures nothing.
+    `PATH` measures nothing. `HOME` is the test's own (`tests/conftest.py`), which is also what the
+    password database answers in this process, so `ignored-env` finds the two homes one.
     """
-    return {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home"), **extra}
+    return {"PATH": os.environ.get("PATH", ""), "HOME": os.environ["HOME"], **extra}
 
 
 def _initialised(tmp_path: Path, *, template: str = LOCAL_ONLY) -> Path:
@@ -271,7 +278,7 @@ def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_res
     tmp_path: Path,
 ) -> None:
     # A repository with no stayfixed.toml gets one red `not-initialised` row from doctor and a skip
-    # for every other check. Sixteen red checks for a repository that never heard of stayfixed is
+    # for every other check. Seventeen red checks for a repository that never heard of stayfixed is
     # noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
@@ -296,8 +303,9 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
     row = _by_name(_checks(tmp_path, root), "not-initialised")
     assert row.status == "red"
     # Said in words, never as the class the loader raised: "(PathEscape)" named stayfixed's own
-    # exception and not the rule. Mutation (oracle): "doctor gives a symlinked stayfixed.toml the
-    # row for a file that does not load" -> the generic line comes back and this reddens.
+    # exception and not the rule. Mutation (oracle): `mutations/`'s "doctor gives a symlinked
+    # stayfixed.toml the row for a file that does not load" -> the generic line comes back and this
+    # reddens.
     assert row.detail.startswith("stayfixed.toml is a symbolic link, which no command follows")
     assert "PathEscape" not in row.detail + row.remedy
     assert "real file" in row.remedy
@@ -334,7 +342,7 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     )
 
 
-# The report's sixteen names in the report's order, written out rather than read back from the
+# The report's seventeen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
@@ -352,6 +360,7 @@ REPORT = (
     "attached",
     "bundles",
     "store-debris",
+    "harness-link",
     "pre-commit",
     "overlay-requires",
 )
@@ -359,9 +368,9 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # sixteen are the same sixteen, once each. A literal tuple and not the registry read back, so
-    # a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
-    # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
+    # seventeen are the same seventeen, once each. A literal tuple and not the registry read back,
+    # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
+    # `mutations/`'s "doctor drops the checks an area contributes" -> the six delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
     # no machine file, no gh, no Codex and no network -- so the same run holds that every check
     # survives that, each with a status of the closed four: a check that raised would take the
@@ -374,10 +383,11 @@ def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
 def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Path) -> None:
     # A ledger recording an attach, a project configured for the overlay, and a machine that
     # records no overlay at all — the state of a clone on a machine where `stayfixed setup` has
-    # never run. Every delivery row asks a question only the overlay can answer, so each one
-    # skips rather than guessing, and none of them is red: a skip never reaches the exit code.
-    # Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area contributes"
-    # -> the five rows are missing and the comparison reddens.
+    # never run. Every delivery row but `harness-link` asks a question only the overlay can
+    # answer, so each one skips rather than guessing, and none of them is red: a skip never
+    # reaches the exit code. `harness-link` asks only whether `HOME` is the database's home, which
+    # it is here. Mutation (measured by hand): `mutations/`'s "doctor drops the checks an area
+    # contributes" -> the six rows are missing and the comparison reddens.
     #
     # The one red row is the core's `hook-entries`, and it is red on purpose: the ledger is a file
     # a clone can commit, and on a machine with no overlay nothing vouches for the entry it
@@ -386,9 +396,10 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
-    assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
-        delivery, SKIP
-    )
+    assert {row.name: row.status for row in rows if row.name in delivery} == {
+        **dict.fromkeys(delivery, SKIP),
+        "harness-link": OK,
+    }
     red = [(row.name, row.detail) for row in rows if row.status == RED]
     assert [name for name, _ in red] == ["hook-entries"], red
     assert "nothing on this machine vouches for them" in red[0][1]
@@ -510,13 +521,15 @@ def _shipped_wrapper_root(base: Path, *, with_launcher: bool) -> Path:
     """A plugin root carrying the **real** wrapper, and a launcher beside it or not.
 
     A copy and not the checkout, because the case below needs a root whose launcher is missing,
-    which is a thing one may not do to the checkout.
+    which is a thing one may not do to the checkout. The wrapper's own `git` reads this test's
+    `HOME`, and never the developer's configuration (`tests/ownerhome.py`, `pin_git_home`).
     """
     root = base / "plugin-root"
     (root / "hooks").mkdir(parents=True, exist_ok=True)
     shutil.copy(
         Path(stayfixed.__file__).resolve().parents[2] / "hooks" / "run-hook.sh", root / "hooks"
     )
+    pin_git_home(root / "hooks" / "run-hook.sh", Path(os.environ["HOME"]))
     (root / "hooks" / "run-hook.sh").chmod(0o755)
     if with_launcher:
         (root / "scripts").mkdir(parents=True, exist_ok=True)
@@ -555,6 +568,32 @@ def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
         "wrapper",
     )
     assert check.status == "ok"
+
+
+def test_the_wrapper_runs_under_the_variables_the_harness_registry_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The row runs the wrapper as `hooks/hooks.json` does, under Claude Code's names for the
+    # plugin root and the project root, and reads both names off the registry rather than spelling
+    # them. A wrapper planted as this process's own root records what it was handed. Mutation
+    # (oracle): `mutations/`'s "the wrapper row names the project root in no variable" -> the
+    # second line is empty.
+    planted = tmp_path / "plugin-root"
+    (planted / "hooks").mkdir(parents=True)
+    seen = tmp_path / "seen"
+    wrapper = planted / "hooks" / "run-hook.sh"
+    wrapper.write_text(
+        f'#!/bin/sh\nprintf "%s\\n%s\\n" "${CLAUDE.plugin_root_env}" "${CLAUDE.project_dir_env}" '
+        f'> "{seen}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setattr(checks, "_own_root", lambda: planted)
+    root = _initialised(tmp_path)
+    check = _by_name(_checks(tmp_path, root), "wrapper")
+    assert check.status == "ok", check
+    assert seen.read_text(encoding="utf-8").splitlines() == [str(planted), str(root)]
+    assert checks.NAMED_ROOTS == ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
 
 
 def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Path) -> None:
@@ -960,6 +999,112 @@ def test_neither_variable_set_is_not_a_finding(tmp_path: Path) -> None:
     assert check.status == "ok"
 
 
+def test_a_home_the_password_database_does_not_record_is_named_with_the_one_it_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A container or home-manager setup whose `HOME` is not its database entry is not refused:
+    # off a terminal stayfixed reads the entry's home, and this row says which. What a hook
+    # withholds meanwhile is an area's to say: the harness memory link is `memory`'s
+    # `harness-link` row, and the core names neither it nor the command that makes it. `HOME`'s
+    # own value is not printed, since an agent's environment may be a repository's choice. From a
+    # terminal, the remedy is the upgrader's: move the files of your own, checked first, before
+    # the commands that write. Mutation (oracle): `mutations/`'s "doctor's core row speaks for the
+    # memory area's harness link" -> the link is named here.
+    owner = tmp_path / "owner"
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    check = _by_name(
+        _checks(tmp_path, _initialised(tmp_path), env=_env(tmp_path, HOME="fakehome")),
+        "ignored-env",
+    )
+    assert check.status == "warn"
+    assert str(owner / ".config" / "stayfixed") in check.detail
+    assert "harness" not in check.detail + check.remedy
+    assert "attach" not in check.detail + check.remedy
+    assert "fakehome" not in check.detail + check.remedy
+    assert f"move them to {owner / '.config' / 'stayfixed'} before" in check.remedy
+    assert "check that they are yours" in check.remedy
+
+
+def test_off_a_terminal_doctor_never_advises_moving_files_from_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Off a terminal `HOME` may be a directory a clone ships, and an agent told to move the files
+    # under it would carry the clone's `trust.json` into the owner's own home. So the remedy there
+    # only sends the reader to a terminal, and names no file and no move.
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    check = _by_name(
+        _checks(tmp_path, _initialised(tmp_path), env=_env(tmp_path, HOME="fakehome")),
+        "ignored-env",
+    )
+    assert check.status == "warn"
+    assert "move" not in check.remedy
+    assert "from your own terminal" in check.remedy
+
+
+def test_a_variable_and_a_home_that_both_go_unhonoured_get_both_remedies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_owner_home(monkeypatch, tmp_path / "owner")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    env = _env(tmp_path, HOME="fakehome", XDG_CONFIG_HOME=str(tmp_path / "xdg"))
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "ignored-env")
+    assert "XDG_CONFIG_HOME" in check.detail and "password database" in check.detail
+    assert "--machine" in check.remedy and "move them to" in check.remedy
+
+
+def test_a_user_the_password_database_does_not_list_is_told_no_file_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    as_owner_home(monkeypatch, None)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "ignored-env")
+    assert check.status == "warn"
+    assert "lists no home directory" in check.detail
+    assert "--machine" in check.remedy
+
+
+def test_no_home_in_the_environment_or_the_database_is_told_no_file_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With `HOME` unset and no home in the password database, off a terminal no machine file is
+    # read and a hook makes no harness memory link (`config.machine.homes_agree` answers that the
+    # two disagree), while this row, which asked `HOME` before the database, read ok. Called
+    # directly on an empty environment, because `run_checks` hands its environment to the
+    # wrapper's real subprocess, which must keep the suite's `HOME`. Mutation (oracle):
+    # `mutations/`'s "doctor reads an unset HOME as the database's home" -> ok.
+    as_owner_home(monkeypatch, None)
+    context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
+    assert "HOME" not in context.env
+    row = checks._ignored_env(context)
+    assert row.status == WARN
+    assert "lists no home directory" in row.detail
+
+
+def test_an_empty_home_is_named_as_a_home_the_database_does_not_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty `HOME` is a value and names no home (`config.machine.homes_agree`), so off a
+    # terminal the machine files are under the database's home and not where `HOME` points, and
+    # the row says which directory, in the words it uses for any other `HOME`; it read ok. Run
+    # from the database's home, where `Path("").resolve()` is that home. Called directly, as the
+    # unset case is. Mutations (oracle): `mutations/`'s "an empty HOME agrees with the password
+    # database's home" and "an empty HOME is read as the directory a command runs in" -> ok.
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    as_owner_home(monkeypatch, owner)
+    monkeypatch.chdir(owner)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
+    row = checks._ignored_env(dataclasses.replace(context, env={"HOME": ""}))
+    assert (row.status, row.detail, row.remedy) == (
+        WARN,
+        "HOME is not the home directory the password database records for this user, and is not "
+        f"honoured on the hook path: stayfixed's machine files are under {owner}/.config/stayfixed",
+        "run `stayfixed doctor` from your own terminal to see what to do about it",
+    )
+
+
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
     # A project may lower a budget below the preset and never raise it. A value above the
     # preset is ignored rather than refused, so without this check nothing ever says that the
@@ -1166,6 +1311,10 @@ def test_a_harness_data_root_this_process_cannot_read_is_a_warning(tmp_path: Pat
     # check — so without this the two guards are indistinguishable and breaking the near one
     # is invisible. A reader is told what could not be listed, not that something could not be.
     assert "session markers" in check.detail
+    # And why, in words, as the log's arm of the same row says it: the error's class name was
+    # stayfixed's to know, not the reader's. Mutation: `mutations/`'s "doctor names the error
+    # class of session markers it could not list".
+    assert f"could not be listed ({os.strerror(errno.EACCES)})" in check.detail
 
 
 def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red(
@@ -1233,12 +1382,13 @@ UNCHECKABLE_REMEDY = (
 def test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check(
     tmp_path: Path, label: str
 ) -> None:
-    # Valid JSON nested past what `json.loads` follows raises `RecursionError` on every supported
-    # Python, and a harness may read it (Claude Code's parser does), so the hooks in it may run.
+    # Valid JSON nested past what the shared reader follows (`tests/parserlimits.py` says where
+    # `json.loads` stops), and a harness may read it (Claude Code's parser does), so the hooks in
+    # it may run.
     # Read as a file the walk is blind to, it was a warning and an exit of 0 beside a marked entry
     # nothing vouches for; it is red, because nothing here can say what the file holds. Mutations
     # (oracle): `mutations/`'s "the JSON object reader lets a document nested past the parser
-    # raise" -> the row reads "this check could not run"; "hook-entries reads a settings file past
+    # raise" -> the row reads `this check could not run`; "hook-entries reads a settings file past
     # the parser's reach as one it is blind to" -> it warns.
     root = _initialised(tmp_path)
     _walked(tmp_path, root, label).write_text('{"hooks": ' + NESTED + "}", "utf-8")
@@ -1277,9 +1427,8 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its
     # A number is no part of any entry's provenance, so the walk reads one as its text and judges
     # the entries beside it. It used to refuse the file: first as "this check could not run", then
     # as a file it was blind to, a warning, which let a marked entry beside such a number lose its
-    # red. Mutations (oracle): `mutations/`'s "the settings engine reads a number past the parser's
-    # reach in the document doctor walks" -> the row is red, a file it cannot check; "hook-entries
-    # counts entries with the interpreter's limit on numbers" -> "this check could not run".
+    # red. Mutation (oracle): `mutations/`'s "the settings engine reads a number past the parser's
+    # reach in the document doctor walks" -> the row is red, a file it cannot check.
     root = _initialised(tmp_path)
     foreign = {"hooks": [{"type": "command", "command": "echo hi"}]}
     _walked(tmp_path, root, label).write_text(
@@ -1303,7 +1452,8 @@ def test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record(
     # and an exit of 1. A line the parser cannot read is not a record. Mutation (oracle):
     # `mutations/`'s "doctor's hook sink reader lets a line past the parser's reach raise" -> red.
     # Not `NESTED`: its 400,000 bytes are past `DIAGNOSTICS_MAX_BYTES`, so the read would stop at
-    # the bound before the parser saw a whole line; 100,000 levels fit and still raise.
+    # the bound before the parser saw a whole line. 100,000 levels fit, and raise up to 3.13; on
+    # 3.14, where the parser's reach is the C stack's, a list that parses is no record either.
     text = (
         '{"error": ' + LONG_NUMBER + "}" if line == "long-number" else "[" * 100_000 + "]" * 100_000
     )
@@ -1361,8 +1511,13 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
     _past_a_name(tmp_path, root / link)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
     blinded = UNCHECKABLE_SETTINGS[link]
-    # A `.claude` past a name hides the project's skills too, and the row names them as well.
-    skills = f"; 1 {SKILL_UNREAD}: .claude/skills" if link == ".claude" else ""
+    # A `.claude` past a name hides the project's skills, commands and agents too, and the row
+    # names each of them as well.
+    skills = (
+        f"; 3 {SKILL_UNREAD}: .claude/skills, .claude/commands, .claude/agents"
+        if link == ".claude"
+        else ""
+    )
     remedy = f"; {SKILL_UNREAD_REMEDY}" if link == ".claude" else ""
     assert row == Check(
         "hook-entries",
@@ -1377,7 +1532,7 @@ def test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to(
 def test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Read through `fsops.read_regular_bytes`, as every other reader of a committed file is, so a
+    # Read through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the read cap, so a
     # regular file that never ends is refused at the cap rather than read until memory runs out,
     # and named as a file the walk could not read. The cap is lowered so the case is small.
     # Mutation (oracle): `mutations/`'s "hook-entries reads a settings file past the cap" -> the
@@ -1450,17 +1605,30 @@ def test_an_entry_is_numbered_across_every_list_in_its_file(tmp_path: Path) -> N
     assert row.detail.endswith(": .claude/settings.json entry 2 of 2"), row.detail
 
 
-# What the row says of a project skill whose frontmatter declares hooks, and of one it could not
-# read, and the way out of each.
-SKILL_HOOKS = "project skill(s) declare hooks in their frontmatter, which this row does not judge"
+# What the row says of a skill, command or agent file whose frontmatter declares hooks, of one it
+# could not read, and of a walk for them that stopped at its cap, and the way out of each.
+SKILL_HOOKS = (
+    "skill, command or agent file(s) declare hooks in their frontmatter, which this row does not "
+    "judge"
+)
 SKILL_HOOKS_REMEDY = (
-    "open each skill named above and check the hooks its frontmatter declares: Claude Code runs "
-    "them once the skill is invoked"
+    "open each file named above and check the hooks its frontmatter declares: Claude Code runs a "
+    "skill's once the skill is invoked"
 )
 SKILL_UNREAD = (
-    "project skill file(s) could not be read, so this row cannot say whether they declare hooks"
+    "skill, command or agent path(s) could not be read, so this row cannot say whether what they "
+    "hold declares hooks"
 )
-SKILL_UNREAD_REMEDY = "check that each skill file named above is a readable regular file"
+SKILL_UNREAD_REMEDY = (
+    "check that each path named above can be read: a regular file, or a directory this user can "
+    "list"
+)
+# A link in one of those places that leads out of the checkout, which the row does not follow.
+LINKED_OUT = "path(s) lead out of the checkout and were not followed"
+LINKED_OUT_REMEDY = (
+    "if a link named above is yours, as a dotfiles setup's is, look through what it leads to "
+    "yourself, since this row reads only what the repository holds"
+)
 NO_SKILL_ENTRIES = "0 stayfixed entr(ies), 0 foreign"
 
 
@@ -1526,7 +1694,8 @@ def test_a_skill_name_outside_the_path_grammar_is_withheld(tmp_path: Path) -> No
     assert row == Check(
         "hook-entries",
         WARN,
-        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: a skill whose name this row does not print",
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: a skill, command or agent file whose path this row "
+        "does not print",
         SKILL_HOOKS_REMEDY,
     )
 
@@ -1548,17 +1717,25 @@ NO_DECLARED_HOOKS: dict[str, str | bytes] = {
 }
 
 
-@pytest.mark.parametrize("shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file"])
+@pytest.mark.parametrize(
+    "shape", [*sorted(NO_DECLARED_HOOKS), "no-skill-file", "dangling-link", "dangling-link-out"]
+)
 def test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was(tmp_path: Path, shape: str) -> None:
     # The vacuity guard for the warning: only a top-level `hooks:` key line inside a frontmatter
     # closed by its second `---` line is one. Mutations (oracle): `mutations/`'s "a skill's
-    # frontmatter runs past its closing fence" -> "in-the-body"; "a skill's frontmatter reads an
-    # indented hooks key" -> "nested-key"; "a skill's frontmatter reads any key opening with
-    # hooks" -> "a-longer-key"; "an unterminated frontmatter is read to the end" ->
-    # "unterminated"; "a skill directory without SKILL.md is unreadable" -> "no-skill-file".
+    # frontmatter runs past its closing fence" -> `in-the-body`; "a skill's frontmatter reads an
+    # indented hooks key" -> `nested-key`; "a skill's frontmatter reads any key opening with
+    # hooks" -> `a-longer-key`; "an unterminated frontmatter is read to the end" ->
+    # `unterminated`; "a skill file that names no file is unreadable" -> `dangling-link` and
+    # `dangling-link-out`: a dangling link names no file wherever it points, so whether it names
+    # one is asked before whether it leads out of the checkout.
     root = _initialised(tmp_path)
     if shape == "no-skill-file":
         (root / ".claude" / "skills" / "empty").mkdir(parents=True)
+    elif shape in ("dangling-link", "dangling-link-out"):
+        (root / ".claude" / "skills" / "gone").mkdir(parents=True)
+        target = "nowhere" if shape == "dangling-link" else str(tmp_path / "nowhere" / "SKILL.md")
+        (root / ".claude" / "skills" / "gone" / "SKILL.md").symlink_to(target)
     else:
         _skill(root, "plain", NO_DECLARED_HOOKS[shape])
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
@@ -1579,28 +1756,63 @@ def test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read(tmp_path: Path) -
     )
 
 
-@pytest.mark.parametrize("target", ["/dev/zero", "a-directory"])
+# Frontmatters the row read as having no end, so as none, which Claude Code may end at the first
+# `---` after the opening line wherever that stands: in a longer run of dashes, or after a key's
+# value on its line. Claude Code 2.1.293 was measured ending one after a value on its line; the row
+# reads both bounds.
+HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE = {
+    "a-longer-run-of-dashes": "---\nhooks: {}\n----\nThe body.\n",
+    "after-a-value": "---\nhooks: {}\nname: probe---\nThe body.\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE))
+def test_hooks_before_a_fence_within_a_line_are_named(tmp_path: Path, shape: str) -> None:
+    # Mutation (oracle): `mutations/`'s "a frontmatter Claude Code may end within a line is read
+    # only to a line of its own" -> both.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", HOOKS_BEFORE_A_FENCE_WITHIN_A_LINE[shape])
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+    )
+
+
+@pytest.mark.parametrize("target", ["/dev/zero", "a-directory", "a-fifo"])
 def test_a_skill_file_that_is_no_regular_file_is_refused_and_named(
     tmp_path: Path, target: str
 ) -> None:
-    # Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to
-    # `/dev/zero` is refused unread, not read forever, and named as a skill file this row could not
-    # read, a warning. Mutation (oracle): `mutations/`'s "hook-entries passes over a skill file
-    # it cannot read" -> the row is green.
+    # Read through `fsops.read_regular_bytes`, `fsops`' one bounded reader at the read cap: a
+    # directory where the file goes is refused, a FIFO inside the checkout is refused without
+    # waiting on a writer, and each is named as a skill file this row could not read, a warning.
+    # Mutation (oracle): `mutations/`'s "hook-entries passes over a skill file it cannot read" ->
+    # `a-directory` and `a-fifo` are green. A link to `/dev/zero` leads out of the checkout, so it
+    # is not followed and is told as one leading out; followed, the reader would refuse a device.
     root = _initialised(tmp_path)
     path = root / ".claude" / "skills" / "probe" / "SKILL.md"
     path.parent.mkdir(parents=True)
     if target == "a-directory":
         path.mkdir()
+    elif target == "a-fifo":
+        os.mkfifo(path)
     else:
         path.symlink_to(target)
     row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
-    assert row == Check(
-        "hook-entries",
-        WARN,
-        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills/probe/SKILL.md",
-        SKILL_UNREAD_REMEDY,
-    )
+    if target == "/dev/zero":
+        assert row == Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: .claude/skills/probe/SKILL.md",
+            LINKED_OUT_REMEDY,
+        )
+    else:
+        assert row == Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills/probe/SKILL.md",
+            SKILL_UNREAD_REMEDY,
+        )
 
 
 def test_a_skills_directory_that_cannot_be_listed_is_named(tmp_path: Path) -> None:
@@ -1621,6 +1833,979 @@ def test_a_skills_directory_that_cannot_be_listed_is_named(tmp_path: Path) -> No
         WARN,
         f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNREAD}: .claude/skills",
         SKILL_UNREAD_REMEDY,
+    )
+
+
+def _file(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, "utf-8")
+
+
+# Places besides the project's own `.claude/skills/<name>/SKILL.md` whose frontmatter can declare
+# hooks: a command file, one in a namespace directory, an agent, a skill under a `.claude/skills`
+# below the root, a `SKILL.md` deeper inside a skill, and a skill file named in lower case, which a
+# filesystem that folds case finds where `SKILL.md` is looked for. Each is a mutation of its own
+# (oracle): `mutations/`'s "hook-entries reads no command or agent file" -> `command` and `agent`;
+# "hook-entries reads no skill below the project root" -> `nested-skill`; "hook-entries reads a
+# place one level deep" -> `skill-inside-a-skill`; "hook-entries reads only a command directory's
+# own files" -> `command-in-a-namespace`; "hook-entries reads a skill file's name in its own case"
+# -> `lowercase-skill-file`.
+HOOKED_ELSEWHERE = {
+    "command": ".claude/commands/deploy.md",
+    "command-in-a-namespace": ".claude/commands/ops/deploy.md",
+    "agent": ".claude/agents/reviewer.md",
+    "nested-skill": "pkg/.claude/skills/nested/SKILL.md",
+    "skill-inside-a-skill": ".claude/skills/deep/sub/SKILL.md",
+    "lowercase-skill-file": ".claude/skills/lower/skill.md",
+}
+
+
+@pytest.mark.parametrize("place", sorted(HOOKED_ELSEWHERE))
+def test_a_command_agent_or_nested_skill_declaring_hooks_is_a_warning_naming_it(
+    tmp_path: Path, place: str
+) -> None:
+    # A command file accepts a skill's frontmatter fields, an agent's frontmatter is documented to
+    # carry hooks, and a skill below the root loads once a session reads a file beside it, so the
+    # row read only the project's own skills and said "all accounted for" beside each of these.
+    root = _initialised(tmp_path)
+    _file(root, HOOKED_ELSEWHERE[place], SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {HOOKED_ELSEWHERE[place]}",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -> None:
+    # The legitimate repository the wider walk must not warn about: command and agent files whose
+    # frontmatter declares no hooks, a file beside them that is not Markdown, and a nested
+    # `.claude` with no skills. Mutation (oracle): `mutations/`'s "hook-entries reads every file
+    # in a command directory" -> the text file is named.
+    root = _initialised(tmp_path)
+    plain = "---\nname: plain\ndescription: no hooks\n---\nThe body.\n"
+    _file(root, ".claude/commands/deploy.md", plain)
+    _file(root, ".claude/commands/notes.txt", SKILL_WITH_HOOKS)
+    _file(root, ".claude/agents/reviewer.md", plain)
+    _file(root, "pkg/.claude/settings.json", "{}")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+# Frontmatter spellings of a top-level `hooks` key besides a bare one at the start of a line: each
+# quoting, a quoted key with an escape in it, a flow mapping (on one line, as JSON, over several,
+# and behind a tag or an anchor, on its line or the line above), a mapping indented as a whole, a
+# key behind a tag, an anchor or `? `, a key beside one the row cannot read whole, and a key below
+# a first key that is a flow mapping, tagged or not. Mutations (oracle): `mutations/`'s "a
+# frontmatter's quoted key is read as no key" -> the quoted cases; "a frontmatter in flow style is
+# read as no mapping" -> the flow cases; "a frontmatter's top level is its first column" ->
+# `indented-mapping`; "a frontmatter key's tag or anchor hides it" -> `tagged` and `anchored`; "a
+# flow mapping's tag or anchor hides it" -> `flow-tagged`, `flow-anchored` and
+# `flow-tagged-above`; "a frontmatter outside the plain subset is never read for hooks" ->
+# `beside-an-alias` and `below-a-document-marker-line`, each outside the subset the row reads
+# exactly and holding a `hooks` key all the same; "a flow mapping a colon follows is read as the
+# whole frontmatter" -> the two `below-a-flow-mapping-key` cases.
+HOOKS_SPELLED = {
+    "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
+    "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
+    "escaped": '"hoo\\x6bs": {}\n',
+    "flow": "{name: probe, hooks: {UserPromptSubmit: []}}\n",
+    "flow-as-json": '{"name": "probe", "hooks": {}}\n',
+    "flow-over-lines": "{name: probe,\n  description: a probe,\n  hooks:\n    {Stop: []}}\n",
+    "flow-tagged": "!!map {name: probe, hooks: {}}\n",
+    "flow-anchored": "&top {name: probe, hooks: {}}\n",
+    "flow-tagged-above": "!!map\n{name: probe, hooks: {}}\n",
+    "indented-mapping": "  name: probe\n  hooks:\n    UserPromptSubmit: []\n",
+    "tagged": "!!str hooks: {}\n",
+    "anchored": "&key hooks: {}\n",
+    "explicit-key": "? hooks\n: {}\n",
+    # An explicit key ends where a comment starts, which the row read as part of the key.
+    # Mutation (oracle): `mutations/`'s "an explicit key's comment is read as part of it".
+    "explicit-key-before-a-comment": "? hooks # the session's hooks\n: {}\n",
+    "beside-an-alias": "name: &k x\n*k : y\nhooks: {}\n",
+    "below-a-flow-mapping-key": "{a: 1}: x\nhooks: {}\n",
+    "below-a-flow-mapping-key-tagged": "!!map {a: 1}: x\nhooks: {}\n",
+    # A line at the top indentation inside a quoted or flow value over lines is read as a key. A
+    # reader that skips such lines has to know where every value above them ends, a nested one's
+    # included, and the one that guessed hid a real `hooks` key below it: a nested value's last line
+    # at the top indentation opening a quote or a bracket a key below closes, and a value a reader
+    # repairing broken YAML re-quotes on its own line. The reader has no skip left to break, so each
+    # mutation brings one back. Mutations (oracle): `mutations/`'s "the frontmatter reader skips a
+    # line it guesses is inside a double-quoted value" -> the double-quote and flow-value nested
+    # tails, `inside-a-quoted-value-over-lines` and `inside-a-value-a-repair-re-quotes`; "the
+    # frontmatter reader skips a line it guesses is inside a single-quoted or flow value" -> the
+    # single-quote nested tail, `below-a-value-that-never-closes` and
+    # `inside-a-flow-value-over-lines`; "the frontmatter reader skips every line below a quote left
+    # open on its line" -> `below-a-value-over-lines`.
+    "below-a-value-over-lines": 'description: "a\nb"\nhooks: {}\n',
+    "below-a-value-that-never-closes": "tags: [a,\nhooks: {}\n",
+    "below-a-nested-tail-opening-a-double-quote": 'a:\n  b: "x\nc: "\nhooks: y\nd: "z"\n',
+    "below-a-nested-tail-opening-a-single-quote": "a:\n  b: 'x\nc: '\nhooks: y\nd: 'z'\n",
+    "below-a-nested-tail-opening-a-flow-value": 'a:\n  b: [x, "\nc: "]\nhooks: y\nd: "w"\n',
+    "inside-a-value-a-repair-re-quotes": 'description: "a {b}\nhooks: x\nc: d"\n',
+    "inside-a-quoted-value-over-lines": 'description: "first\nhooks: x"\n',
+    "inside-a-flow-value-over-lines": "metadata: {a: 1,\nhooks: 2}\n",
+    # A mapping indented by tabs, which YAML does not take as indentation: a reader that repairs
+    # the tabs to spaces, as Claude Code may, reads `hooks` among its keys. Mutation (oracle):
+    # `mutations/`'s "a tab-indented frontmatter is read only as it stands".
+    "a-tab-indented-mapping": "\tname: probe\n\thooks: {}\n",
+    # A tag or an anchor alone on its line, the mapping starting on the line below at an
+    # indentation of its own, which YAML reads as the tagged or anchored node. Mutation (oracle):
+    # `mutations/`'s "a mapping below a tag or an anchor alone on its line is read at the tag's
+    # indentation" -> both.
+    "tagged-above-an-indented-mapping": "!!map\n  name: probe\n  hooks: {}\n",
+    "anchored-above-an-indented-mapping": "&top\n  name: probe\n  hooks: {}\n",
+    # The same with a comment line between the node's properties, which YAML reads past. Mutation
+    # (oracle): `mutations/`'s "a comment ends the properties ahead of a frontmatter's node".
+    "tagged-below-an-anchor-and-a-comment": "&top\n# a comment\n!!map\n  name: probe\n  hooks: x\n",
+    # A tag alone on a line a tab leads, which opens no key: repaired, it stands at the mapping's
+    # indentation, and the keys below it are the top level, on the first line as below it. Mutation
+    # (oracle): `mutations/`'s "a frontmatter is repaired of a tab only below its first line".
+    "a-tab-indented-tag-above-the-mapping": "\t!!map\n  name: probe\n  hooks: {}\n",
+    # A flow mapping behind properties a comment splits, on the comment's line or a line of its
+    # own, which YAML reads past to the mapping; and one past a tab after the indentation, which
+    # YAML 1.2 reads as a blank ahead of the node. Each was read as a block mapping holding no key.
+    # Mutations (oracle): `mutations/`'s "the flow reading stops at a comment that properties
+    # follow" -> the two comment cases; "a tab after a frontmatter's indentation hides the flow
+    # mapping behind it" -> `a-flow-mapping-past-a-tab-after-the-indentation`.
+    "a-flow-mapping-below-properties-a-comment-splits": (
+        "&top\n# a comment\n!!map\n  {name: probe, hooks: {}}\n"
+    ),
+    "a-flow-mapping-below-a-comment-on-a-property-line": (
+        "!t # a comment\n  &a {name: probe, hooks: {}}\n"
+    ),
+    "a-flow-mapping-past-a-tab-after-the-indentation": "  \t{name: probe, hooks: {}}\n",
+    # A key the reader finds below a line it cannot read past, a document marker, still declares
+    # hooks.
+    "below-a-document-marker-line": "--- a second document\nhooks: {}\n",
+    # Characters Python reads as blanks or line breaks and YAML does not: an ideographic space,
+    # which YAML 1.2 reads inside an anchor's name like a letter, and a line separator, at which
+    # YAML 1.1 breaks the line. Mutations (oracle): `mutations/`'s "a frontmatter is read only with
+    # Python's blanks" -> `an-anchor-holding-an-ideographic-space`; "a frontmatter is read only
+    # with YAML 1.2's line breaks" -> `a-key-past-a-line-separator`.
+    "an-anchor-holding-an-ideographic-space": "&to\u3000p {name: probe, hooks: {}}\n",
+    "a-key-past-a-line-separator": "name: probe\u2028hooks: {}\n",
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(HOOKS_SPELLED))
+def test_every_spelling_of_a_top_level_hooks_key_is_read(tmp_path: Path, spelling: str) -> None:
+    # YAML spells one key many ways, and the row read only the bare one at the start of a line, so
+    # a quoted `"hooks":` or a flow mapping declared hooks it never named.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", f"---\n{HOOKS_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+    )
+
+
+# Frontmatters inside the plain subset of YAML the row reads exactly, so the only ones it answers
+# "no" for: the shapes real skills write, each the vacuity guard of the part of the subset it
+# exercises, `hooks` among the nested keys, the text and the list items. Mutations (oracle):
+# `mutations/`'s "the plain subset admits no plain value" -> `plain-values`; "the plain subset
+# admits no quoted value" and "the plain subset admits no comment after a value" ->
+# `quoted-values`;
+# "the plain subset admits no block scalar", "a block scalar's text is read as lines of the
+# subset" and "a block scalar's indicators are read as text after its opening" ->
+# `block-scalars`; "the plain subset admits no flow sequence" -> `a-flow-sequence`; "the plain
+# subset admits no sequence entry" and "the plain subset admits no nested line" ->
+# `nested-mappings-and-sequences`; "the plain subset admits no comment line" ->
+# `comments-and-blank-lines`.
+NO_HOOKS_SPELLED = {
+    "plain-values": (
+        "name: probe\ndescription: Reviews code: use before merging # why\nlicense: MIT\n"
+        "version: 1.0\n"
+    ),
+    "quoted-values": (
+        "name: \"probe\"\ndescription: 'it''s a probe, hooks: x' # c\nargument-hint: \"[file]\"\n"
+    ),
+    "block-scalars": (
+        "description: >-\n  Use when\n  hooks: x\n\n  the user asks\nlicense: |2\n  - text\n"
+        "    # not a comment\nsummary: > # why\n  more\n"
+    ),
+    "a-flow-sequence": "allowed-tools: [Read, Grep, Bash(git add:*), hooks] # tools\n",
+    # A flow sequence of quoted scalars, on its key's line or over lines below it, as plugins
+    # write `allowed-tools` and `globs`: nothing in one can reach the top level, and Claude Code
+    # 2.1.293 registers no hook from any of these. Mutations (oracle): `mutations/`'s "the plain
+    # subset admits no quoted scalar in a flow sequence" -> the two quoted cases and
+    # `a-flow-sequence-opened-on-its-keys-line`; "the plain subset admits no flow sequence left
+    # open on its key's line" -> that case and `a-plain-item-shaped-like-a-key-over-lines`; "the
+    # plain subset admits no flow sequence opening on the line below its key" -> the two cases
+    # below their key.
+    "a-flow-sequence-of-quoted-scalars": (
+        'allowed-tools: ["Read", \'it\'\'s\', "a, b]", "hooks: x", Bash(git add:*)] # tools\n'
+    ),
+    "a-flow-sequence-of-a-quoted-fence": 'version: ["--- "] # c\n',
+    "a-flow-sequence-opened-on-its-keys-line": (
+        "allowed-tools: [\"Read\",\n  'Grep', hooks]\nkeywords: [\n    static analysis,\n  ]\n"
+    ),
+    "a-plain-item-shaped-like-a-key-over-lines": "name: [hooks:x,\n      ]\n",
+    "a-flow-sequence-opened-below-its-key": (
+        'globs:\n  [\n    "**/*.py",\n    "**/*.js",\n  ]\ntags:\n  [database, sql]\n'
+    ),
+    "a-flow-sequence-of-hooks-below-its-key": "description:\n [hooks]\n",
+    "nested-mappings-and-sequences": (
+        "metadata:\n  hooks: x\n  tags:\n    - a\n    - b: c\n      d: e\n    -\n    - - f\n"
+        "allowed-tools:\n- Read\n- Bash(git status:*)\n"
+    ),
+    "comments-and-blank-lines": (
+        "# a comment\nname: probe\n\n  # an indented comment\n\ndescription: x\n"
+    ),
+    # A frontmatter of as many lines as the row reads is read. Mutation (oracle): `mutations/`'s "a
+    # frontmatter of exactly the lines read is not read".
+    "at-the-lines-read": "name: plain\n" + "k: v\n" * 9_999,
+    # A `---` inside a line, where Claude Code may end the frontmatter: one cut short there holds
+    # fewer keys, and none the whole one does not. Mutation (oracle): `mutations/`'s "a frontmatter
+    # whose two bounds differ answers could not tell where both say no".
+    "a-fence-within-a-value": "description: Reviews code --- use before merging\n",
+    "a-fence-within-a-link": "description: See https://example.com/a---b\n",
+    "a-fence-within-a-quoted-value": 'description: "--- "\n',
+    "a-fence-inside-a-literal-block": "description: |\n  Line one\n  ---\n  Line three\n",
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(NO_HOOKS_SPELLED))
+def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over(
+    tmp_path: Path, spelling: str
+) -> None:
+    root = _initialised(tmp_path)
+    _skill(root, "plain", f"---\n{NO_HOOKS_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+# Frontmatters outside the plain subset of YAML the row reads exactly, in which no reading finds a
+# `hooks` key, so the row cannot say whether they declare hooks. Each was passed over as declaring
+# nothing, or could have been: a key the row cannot read whole, and YAML it may misread, which it
+# used to read as best it could and answer "no" for.
+#
+# Keys it cannot read whole: an alias (`*k`, which `&k` may have set to `hooks`), a merge key (`<<`,
+# or any key tagged `!!merge`, which a reader that honours it reads as every key of the mapping it
+# names), an explicit `? ` key whose key is not all on its line, a quoted key over several lines,
+# which YAML folds into one, a bare key of a flow mapping, and a key that is a flow collection.
+UNTOLD_SPELLED = {
+    "alias-key": "name: &k hooks\n*k : {}\n",
+    "merge-key": "base: &b\n  hooks: {Stop: []}\n<<: *b\n",
+    "merge-key-inline": "<<: {hooks: {}}\nname: a\n",
+    "flow-merge-key": "{<<: {hooks: x}, name: a}\n",
+    "explicit-key-below": "?\n  hooks\n: {}\n",
+    "explicit-key-continued": "? hoo\n  ks\n: {}\n",
+    "explicit-block-scalar": "? |-\n  hooks\n: {}\n",
+    "explicit-tag-alone": "? !!str\n  hooks\n: {}\n",
+    "double-quoted-over-lines": '"hoo\\\n  ks": {}\n',
+    "single-quoted-over-lines": "'hoo\n  ks': {}\n",
+    "flow-alias-key": "{name: &k hooks, *k : {}}\n",
+    "flow-explicit-key": "{? hooks : {}}\n",
+    "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
+    "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
+    # Quotes that never pair up as YAML reads them, which is no scalar to YAML: read as one ending
+    # at its last `''`, it was a `hooks` key, a "yes" no reading of YAML holds. Mutation (oracle):
+    # `mutations/`'s "a single-quoted scalar whose quotes never pair up ends at its last pair".
+    "an-explicit-key-whose-quotes-never-pair": "? 'hooks''\n",
+    "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
+    "a-merge-tag-on-a-key": "!!merge x:\n  hooks:\n    Stop: []\n",
+    "an-explicit-merge-tag": "name: probe\n? !!merge x\n:\n  hooks:\n    Stop: []\n",
+    "a-flow-merge-tag": "{!!merge a: {hooks: {}}}\n",
+    "a-merge-key-over-nested-lines": "<<:\n  hooks:\n    Stop: []\n",
+    "a-quoted-merge-key-over-nested-lines": '"<<":\n  hooks:\n    Stop: []\n',
+    "a-bare-flow-key": "{name: probe, hooks}\n",
+    "a-flow-sequence-as-a-key": "[hooks]:\n  Stop: []\n",
+    "a-flow-mapping-as-a-key": "{hooks: x}: y\n",
+    # An explicit key that opens with `hooks` and goes on below its line, which YAML reads as one
+    # key over both lines. Mutation (oracle): `mutations/`'s "an explicit key past its line is read
+    # as no key" -> the row reads the key as `hooks`.
+    "explicit-key-over-lines-opening-with-hooks": "? hooks\n  more\n: {}\n",
+    # YAML the row may misread: a `hooks` key nested in a flow mapping, in a sequence or a quoted
+    # value inside one, or after a comment in one; a quoted key, a quoted `<<`; a flow mapping over
+    # lines; a tag, an anchor or an alias on a value; a flow mapping or a flow sequence holding more
+    # than plain scalars as a value; a value over lines; a tab after a block scalar's indentation in
+    # its text; a directive or a document end; a character that YAML 1.1, YAML 1.2 and Python read
+    # otherwise; a lone CR; a first line indented; a sequence at the top. Mutations (oracle):
+    # `mutations/`'s "the plain subset admits a line of any shape" -> the cases whose line holds
+    # neither a plain key nor an entry; "the plain subset admits a key behind a tag or an anchor" ->
+    # `a-merge-tag-on-a-key`; "the plain subset admits a merge key" ->
+    # `a-merge-key-over-nested-lines`; "the plain subset admits a quoted key" ->
+    # `a-quoted-merge-key-over-nested-lines` and `a-longer-quoted-key`; "the plain subset admits a
+    # value behind a tag", "the plain subset admits a value behind an anchor", "the plain subset
+    # admits an alias for a value" and "the plain subset admits a flow mapping for a value" -> the
+    # value cases; "the plain subset admits a brace in a flow sequence" and "the plain subset admits
+    # a pair in a flow sequence" -> the two flow-sequence values; "the plain subset admits a value
+    # over lines" -> the two cases of a plain value and `a-document-end-line`; "the plain subset
+    # admits a tab in an indentation" -> the two tab cases; "the plain subset admits a next-line
+    # character", "the plain subset admits a line or paragraph separator", "the plain subset admits
+    # a no-break space", "the plain subset admits an ideographic space" and "the plain subset admits
+    # a byte-order mark inside" -> the character cases; "the plain subset admits a lone carriage
+    # return" -> `a-lone-carriage-return`; "the plain subset admits an indented first line" ->
+    # `an-indented-mapping`; "the plain subset admits a sequence at the top" ->
+    # `a-sequence-at-the-top`; and, where a case reads a key the mutation gives, `mutations/`'s "a
+    # flow mapping's keys are read at every depth" -> `flow-nested`, "a flow mapping's quoted
+    # scalars are read as tokens" -> `flow-in-a-quoted-value`, "a flow mapping's lines are read as a
+    # block mapping's too" and "a flow mapping's lines behind its tag are read as a block mapping's
+    # too" -> `flow-tagged-nested-over-lines`, "a flow mapping a colon follows is read for its keys"
+    # -> `a-flow-mapping-as-a-key`.
+    "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
+    "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
+    "flow-in-a-quoted-value": '{name: plain, description: "a, hooks: x"}\n',
+    "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
+    "a-longer-quoted-key": '"hooksmith": x\n',
+    "a-quoted-merge-key": '"<<": {hooks: x}\n',
+    "flow-tagged-nested-over-lines": "!!map {name: plain, metadata: {a: 1,\nhooks: x}}\n",
+    "a-tagged-value": "name: !!str probe\n",
+    "an-anchored-value": "name: &a probe\n",
+    "an-alias-value": "name: probe\nother: *a\n",
+    "a-flow-mapping-as-a-value": "metadata: {owner: me, hooks: x}\n",
+    "a-brace-in-a-flow-sequence": "allowed-tools: [Read, a{b}]\n",
+    "a-flow-sequence-of-pairs": "allowed-tools: [hooks: x]\n",
+    # A flow sequence past the narrow shapes the subset admits: an item followed by anything but a
+    # `,` or the `]` (a YAML 1.2 reader takes `"hooks":x` for a pair), a line at its key's column or
+    # one that never closes (Claude Code 2.1.293 fails to parse each), one opening at its key's
+    # column or past the line below its key, one over lines as a sequence entry, a blank line
+    # inside, or text after the `]`. Mutations (oracle): `mutations/`'s "the plain subset admits
+    # anything after an item of a flow sequence" -> the two `a-quoted-item-...` cases; "the plain
+    # subset admits a line of a flow sequence at its key's column" -> the three cases at the key's
+    # column that open on or below the key's line; "the plain subset admits a flow sequence that
+    # never closes" -> the two open ones; "the plain subset admits a flow sequence opening at its
+    # key's column" -> the two `...-opening-at-its-keys-column...` cases; "the plain subset admits
+    # a flow sequence opening past the line below its key" -> the two `...-opening-below-a-...`
+    # cases; "the plain subset admits a flow sequence over lines as a sequence entry" -> the two
+    # entry cases; "the plain subset admits a blank line inside a flow sequence" -> the two blank
+    # line cases; "the plain subset admits text after the close of a flow sequence" -> the two
+    # cases with text after it.
+    "a-quoted-item-a-colon-follows": 'allowed-tools: ["hooks":x]\n',
+    "a-quoted-item-text-follows": 'argument-hint: ["--- "a, b]\n',
+    "a-flow-sequence-closing-at-its-keys-column": "globs:\n  [a,\n]\n",
+    "an-item-at-its-keys-column": "globs: [a,\nb]\n",
+    "an-empty-flow-sequence-closing-at-its-keys-column": "description: [\n]\n",
+    "a-flow-sequence-that-never-closes": "globs: [a,\n  b\n",
+    "a-flow-sequence-open-at-the-closing-fence": "model: [a, b]\nname: [\n",
+    "a-flow-sequence-opening-at-its-keys-column": "globs:\n[a,\n  b]\n",
+    "a-flow-sequence-opening-at-its-keys-column-below-a-comment": (
+        "argument-hint: # c\n[\n  Read,]\n"
+    ),
+    "a-flow-sequence-opening-below-a-blank-line": "globs:\n\n  [a]\n",
+    "a-flow-sequence-opening-below-a-comment": "name: # c\n  # c\n      [\n  Read,]\n",
+    "a-flow-sequence-over-lines-as-a-sequence-entry": "tools:\n- [a,\n    b]\n",
+    "a-flow-sequence-over-lines-as-an-indented-entry": 'description: # c\n - ["a\\"]"\n    ]\n',
+    "a-blank-line-inside-a-flow-sequence": "globs: [a,\n\n  b]\n",
+    "a-blank-line-inside-an-empty-flow-sequence": "when_to_use: [\n\n    ]\n",
+    "text-after-a-flow-sequence": "tools: [a] b\n",
+    "a-fence-after-a-flow-sequence": "model: [a, b]---\n",
+    "a-plain-value-over-lines": "description: Use when\nthe user asks\n",
+    "a-plain-value-continued-below": "description: Use when\n  the user asks\n",
+    "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
+    "a-tab-in-a-block-scalars-text": "metadata:\n  summary: >\n   \tthe user: asks\n",
+    "a-directive": "%YAML 1.2\nname: probe\n",
+    "a-document-end-line": "name: probe\n...\nother: x\n",
+    "a-next-line-character": "name: a\x85b\n",
+    "a-line-separator": "name: a\u2028b\n",
+    "a-paragraph-separator": "name: a\u2029b\n",
+    "a-no-break-space": "name: a\xa0b\n",
+    "an-ideographic-space": "name: a\u3000b\n",
+    "a-byte-order-mark-inside": "name: a\ufeffb\n",
+    "a-lone-carriage-return": "name: probe\rdescription: x\n",
+    "an-indented-mapping": "  name: probe\n  description: x\n",
+    "a-sequence-at-the-top": "- name: probe\n- other: x\n",
+    # Where Claude Code's reading may differ from the row's: a `---` inside a line, where it may end
+    # the frontmatter, beside a key one of the two bounds cannot read whole, the alias below it or
+    # the quoted key it cuts; and a line opening with `---` and a blank, which YAML reads as a
+    # document marker and the row as the start of a key: what follows it is a document of its own,
+    # here a flow mapping holding `hooks`. Mutation (oracle): `mutations/`'s "the plain subset
+    # admits a line of any shape".
+    "a-fence-within-a-line-above-an-alias": "name: a---b\n*k : {}\n",
+    "a-fence-within-a-quoted-key": '"a---b": x\n',
+    "a-document-marker-line": "--- {name: probe, hooks: {}}\n",
+    # A tab that leads a line, which YAML does not take as indentation: a key indented by a tab,
+    # which Claude Code may read once the tab is spaces, however many; the second line of a value
+    # over lines; a line below a nested block scalar's text that its key's spaces and a tab lead,
+    # and the first line of a nested block scalar led so, where a YAML 1.2 parser reads a key on
+    # that line, or on a line below it, at the top level. Each is outside the subset on two counts
+    # at once, a tab in its indentation and a line that holds no plain key or leaves a value open,
+    # so no one mutation of the subset's rules reddens it; each count has cases of its own above.
+    "a-tab-indented-key": "name: probe\n\thooks: {}\n",
+    "a-tab-inside-a-value": 'description: "a\n\tb"\n',
+    "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
+    "a-tab-below-a-nested-block-scalar": "metadata:\n  summary: > # why\n  \thooks: {}\n",
+    "below-a-tab-below-a-nested-block-scalar": "metadata:\n  summary: |-\n  \t\n  hooks: {}\n",
+    # A frontmatter of more lines, or one ending more characters into the file, than the row reads,
+    # which it does not read and so cannot tell of, and says so in its remedy. Mutations (oracle):
+    # `mutations/`'s "the plain subset is read past the lines read" -> `past-the-lines-read`; "a
+    # frontmatter is read past the characters read" -> `past-the-characters-read`.
+    "past-the-lines-read": "name: probe\n" + "k: v\n" * 10_000,
+    "past-the-characters-read": "description: " + "x" * (1 << 23) + "\nhooks: {}\n",
+}
+SKILL_UNPARSED = (
+    "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "
+    "say whether they declare hooks"
+)
+SKILL_UNPARSED_REMEDY = (
+    "open each file named above and check whether its frontmatter declares hooks: this row reads "
+    "exactly only `key: value` lines with a plain key and the value on the key's line, block "
+    "scalars, flow lists of plain or quoted scalars, their lines below the key indented deeper "
+    "than it, nested lines indented by spaces, `- ` entries at any indentation, comments and blank "
+    "lines, in a frontmatter of at most 10,000 lines that ends within its file's first 8,388,608 "
+    "characters; a description carried on to the lines below its key is outside it, so write one "
+    "as a `>` block"
+)
+
+
+@pytest.mark.parametrize("spelling", sorted(UNTOLD_SPELLED))
+def test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold(
+    tmp_path: Path, spelling: str
+) -> None:
+    # Fails toward "could not tell", never toward "declares nothing": a warning naming the file,
+    # in words of its own, since the file was read and it is the key the row could not follow.
+    root = _initialised(tmp_path)
+    _skill(root, "probe", f"---\n{UNTOLD_SPELLED[spelling]}---\nThe body.\n")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_UNPARSED}: .claude/skills/probe/SKILL.md",
+        SKILL_UNPARSED_REMEDY,
+    )
+
+
+# Lines the frontmatter reader took in time quadratic in their length, each followed by a `hooks`
+# key so that the answer says the line was read past: a key's first character and then blanks with
+# no colon after them, which a lazy key pattern scanned again from every character, and tags ahead
+# of a key, which a loop copied the rest of the line again for each one to strip. A file is read
+# up to the 64 MiB read cap, so either stalled `doctor` for hours. Each is sized so that the
+# quadratic reading takes minutes and a linear one a fraction of a second.
+LONG_LINES = {
+    "blanks": ("a", " ", 1 << 20, "x\nhooks: {}\n"),
+    "tags": ("", "! ", 3 << 20, "hooks: {}\n"),
+}
+# The child's bound: at most a fourth of what the quadratic reading took of either line above on a
+# laptop (ten minutes, and two and a third), and fifty times what the linear one takes there,
+# start-up included, so neither load nor a fast machine moves a case across it. The tags stay
+# below `doctor.frontmatter.CHARACTERS_READ`, past which nothing is read at all.
+_LONG_LINE_SECONDS = 30
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_LINES))
+def test_a_frontmatter_line_is_read_in_time_linear_in_its_length(shape: str) -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutations (oracle): `mutations/`'s "a frontmatter key is found by a lazy match" -> `blanks`;
+    # "a frontmatter key's tags are stripped one copy at a time" -> `tags`.
+    head, unit, count, tail = LONG_LINES[shape]
+    probe = (
+        "import sys\n"
+        "from stayfixed.doctor.frontmatter import declares_hooks\n"
+        "head, unit, count, tail = sys.argv[1:]\n"
+        "print(declares_hooks(f'---\\n{head}{unit * int(count)}{tail}---\\n'))\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long line")
+    assert done.stdout == "True\n", done.stderr
+
+
+# Long values the frontmatter reader held hundreds of bytes of match state for per character, each
+# followed by a `hooks` key so that the answer says the value was read past: tags ahead of a key,
+# anchors ahead of a flow mapping or of a block mapping on the line below, a key quoted either way,
+# and a plain scalar in a flow mapping.
+# Python's `re` keeps a record for every pass of a repeated group it might give back, so a file at
+# the 64 MiB read cap asked gigabytes of one `doctor` run. Each is a mebibyte or so, which the
+# greedy patterns read with 115 to 530 MiB more and the possessive ones with a few.
+LONG_VALUES = {
+    "tags-on-a-key": ("x: 1\n", "! ", 1 << 19, "hooks: {}\n"),
+    "anchors-ahead-of-a-flow-mapping": ("", "&a ", 1 << 19, "{hooks: {}}\n"),
+    "anchors-ahead-of-a-block-mapping": ("", "&a ", 1 << 19, "\nhooks: {}\n"),
+    "double-quoted-key": ('"', "x", 1 << 20, '": 1\nhooks: {}\n'),
+    "single-quoted-key": ("'", "x", 1 << 20, "': 1\nhooks: {}\n"),
+    "plain-scalar-in-a-flow-mapping": ("{a: ", "x", 1 << 20, ", hooks: {}}\n"),
+}
+# The most a child may grow its peak resident size by while reading one of the values above: a
+# few times the copies the reader makes of a mebibyte of text, and a quarter of what the least
+# costly greedy pattern took.
+_LONG_VALUE_BYTES = 32 << 20
+
+
+@pytest.mark.parametrize("shape", sorted(LONG_VALUES))
+def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: str) -> None:
+    # The child measures its own peak resident size before and after the read, which macOS and
+    # Linux both report (`ru_maxrss`, in bytes on the one and in KiB on the other); a limit set
+    # with `setrlimit` is no test on macOS, which enforces none on resident size. Mutations
+    # (oracle): `mutations/`'s "a frontmatter key's tags are given back" -> `tags-on-a-key`; "the
+    # properties ahead of a frontmatter's node are given back" -> `anchors-ahead-of-a-flow-mapping`;
+    # "the run of properties ahead of a block mapping is given back" ->
+    # `anchors-ahead-of-a-block-mapping`;
+    # "a double-quoted scalar is given back" -> `double-quoted-key`; "a single-quoted scalar is
+    # given back" -> `single-quoted-key`; "a flow mapping's plain scalar is given back" ->
+    # `plain-scalar-in-a-flow-mapping`.
+    answer, grown = _read_in_a_child(*LONG_VALUES[shape])
+    assert answer == "True"
+    assert grown < _LONG_VALUE_BYTES, f"the reader grew its peak by {grown >> 20} MiB"
+
+
+# Files of many lines, which the reader held an object for each line of, each reading over: a
+# frontmatter of short lines past the lines it reads, one whose line separators the reading as
+# YAML 1.1 breaks into as many lines (of two characters each, which Python does not keep one copy
+# of as it keeps a single character), and a long body below a short frontmatter, which was split
+# into lines with it. A file at the 64 MiB read cap asked a gigabyte and more; each of these is a
+# few mebibytes, which the old reader read with 30 to 85 MiB more. Past the lines read the answer
+# is "cannot tell", in the row's words; a body is no part of the answer. And wide lines inside the
+# lines read, which a character past the Basic Multilingual Plane makes four bytes a character in
+# every copy of the text a reading takes: nine mebicharacters of them asked 105 to 115 MiB more,
+# and 64 MiB three gigabytes, before the characters read were bounded too; and the same lines ended
+# by a lone CR and a CRLF behind a byte-order mark, a file the reader copied whole to cut the mark
+# off and again for each kind of line break it turned into LFs before the bound.
+MANY_LINES = {
+    "short-lines-past-the-lines-read": ("", "k: v\n", 1 << 20, "", "None"),
+    "line-separators-past-the-lines-read": ("a: ", "xy\u2028", 1 << 20, "\n", "None"),
+    "a-long-body": ("name: probe\n---\n", "xy\n", 1 << 21, "", "False"),
+    "wide-lines-past-the-characters-read": (
+        "",
+        "\t!t " + "a" * 1_000 + "\U0001f600\u3000\n",
+        9_000,
+        "",
+        "None",
+    ),
+    "a-byte-order-mark-and-wide-cr-lines-past-the-characters-read": (
+        "",
+        "\t!t " + "a" * 1_000 + "\U0001f600\u3000\r\r\n",
+        16_000,
+        "",
+        "None",
+    ),
+}
+# What leads a case's text ahead of its opening `---`, where anything does.
+_LEADS = {"a-byte-order-mark-and-wide-cr-lines-past-the-characters-read": chr(0xFEFF)}
+
+
+@pytest.mark.parametrize("shape", sorted(MANY_LINES))
+def test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read(shape: str) -> None:
+    # Mutations (oracle): `mutations/`'s "a frontmatter is read past the lines read" ->
+    # `short-lines-past-the-lines-read`; "a frontmatter's line separators are read past the lines
+    # read" -> `line-separators-past-the-lines-read`; "a skill file is split into lines whole" ->
+    # `a-long-body`; "a frontmatter is read past the characters read" ->
+    # `wide-lines-past-the-characters-read`; "a file's line breaks are turned into LFs before the
+    # characters read are counted", "a file's lone CRs are turned into LFs before the characters
+    # read are counted" and "a file's byte-order mark is cut off a copy of it" ->
+    # `a-byte-order-mark-and-wide-cr-lines-past-the-characters-read`.
+    head, unit, count, tail, expected = MANY_LINES[shape]
+    answer, grown = _read_in_a_child(head, unit, count, tail, lead=_LEADS.get(shape, ""))
+    assert answer == expected
+    assert grown < _LONG_VALUE_BYTES, f"the reader grew its peak by {grown >> 20} MiB"
+
+
+def _read_in_a_child(
+    head: str, unit: str, count: int, tail: str, *, lead: str = ""
+) -> tuple[str, int]:
+    """`declares_hooks`' answer on `lead`, `---`, `head`, `count` times `unit`, `tail` and `---`,
+    read in a child under a timeout, and how much the child grew its peak resident size by reading
+    it. The text is joined in one step, so that building it peaks at its own size and a copy of it
+    the reader takes shows."""
+    probe = (
+        "import resource, sys\n"
+        "from stayfixed.doctor.frontmatter import declares_hooks\n"
+        "lead, head, unit, count, tail = sys.argv[1:]\n"
+        "text = ''.join([lead, '---\\n', head, *[unit] * int(count), tail, '---\\n'])\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+        "answer = declares_hooks(text)\n"
+        "grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * scale\n"
+        "print(answer, grown)\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, lead, head, unit, str(count), tail],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_LINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long value")
+    answer, grown = done.stdout.split() or ("", "0")
+    assert answer, done.stderr
+    return answer, int(grown)
+
+
+def test_a_link_back_up_a_skills_tree_is_listed_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Links are followed, as the harness follows them, so a link back up the tree would be walked
+    # until the cap and end in a warning that the walk could not tell. Each directory is listed
+    # once. A file is named once whichever path reaches it, so the walk's length is what shows a
+    # directory listed again: the cap is lowered to ten times what this tree lists, which a walk
+    # going round the loop passes long before the longest path ends it. Mutation (oracle):
+    # `mutations/`'s "the hooked-file walk lists a directory each time it is reached" -> the row
+    # also says the walk stopped.
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 60)
+    root = _initialised(tmp_path)
+    _skill(root, "probe", SKILL_WITH_HOOKS)
+    (root / ".claude" / "skills" / "probe" / "loop").symlink_to("..")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/probe/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_the_walk_for_hooked_files_stops_at_its_cap_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk below the root lists the whole tree, which in a large checkout is many entries, so
+    # it is bounded (`fsops.WALK_ENTRIES`), and a walk that stopped is no "all accounted for".
+    # Mutation (oracle): `mutations/`'s "the hooked-file walk lists past its cap" -> the nested
+    # skill is found and named instead.
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.claude/skills/nested/SKILL.md", SKILL_WITH_HOOKS)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 3)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; the walk for skill, command and agent files stopped after 3 "
+        "directory entries, so this row cannot say whether the files past them declare hooks",
+        "look through the repository's .claude directories yourself for skill, command and agent "
+        "files whose frontmatter declares hooks",
+    )
+
+
+def test_the_walk_below_the_root_never_enters_git_s_own_directory(tmp_path: Path) -> None:
+    # Git refuses to check out a path with a `.git` component, so nothing in one is the
+    # repository's, and it can hold many entries. Mutation (oracle): `mutations/`'s "the
+    # hooked-file walk enters .git" -> the planted skill is named.
+    root = _initialised(tmp_path)
+    _file(root, ".git/modules/pkg/.claude/skills/planted/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+def _repository(root: Path) -> Path:
+    """`root` as a git work tree with nothing committed."""
+    _git(root, "init", "-q", "-b", "main")
+    return root
+
+
+def test_a_large_ignored_tree_is_neither_walked_nor_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In a work tree the nested places are asked of git's index, tracked and untracked files but
+    # never ignored ones: a clone carries no ignored file, and an installed dependency's tree can
+    # pass any cap, which left a warning on every run that nothing could clear. Here the ignored
+    # tree is past a cap of 20 entries and holds a skill declaring hooks; the row says neither.
+    # Mutations (oracle): `mutations/`'s "the nested-skill query lists ignored files" -> the
+    # ignored skill is named; "the nested places are walked in a work tree" -> the walk stops.
+    root = _repository(_initialised(tmp_path))
+    _file(root, ".gitignore", "vendor/\n")
+    for n in range(30):
+        _file(root, f"vendor/pkg{n}/index.md", "x\n")
+    _file(root, "vendor/pkg0/.claude/skills/dep/SKILL.md", SKILL_WITH_HOOKS)
+    monkeypatch.setattr(fsops, "WALK_ENTRIES", 20)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "pkg/.claude/skills/nested/SKILL.md",
+        "pkg/.Claude/Skills/n/SKILL.md",
+        ".claude/skills/top/SKILL.md",
+    ],
+)
+def test_a_committed_nested_skill_is_named_in_any_case(tmp_path: Path, path: str) -> None:
+    # What a clone commits is what the row reads below the root, and a filesystem that folds case
+    # finds `.Claude/Skills` where `.claude/skills` is looked for; the root's own skill, which the
+    # query lists too, is named once, and read once, as the read-once case below holds. Mutations
+    # (oracle): `mutations/`'s "the nested-skill query lists only untracked files" -> the
+    # committed skills are missed; "the nested-skill query compares names by case" -> the second
+    # case is.
+    root = _repository(_initialised(tmp_path))
+    _file(root, path, SKILL_WITH_HOOKS)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "a nested skill")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries", WARN, f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {path}", SKILL_HOOKS_REMEDY
+    )
+
+
+def test_an_uncommitted_nested_skill_is_named_in_a_work_tree(tmp_path: Path) -> None:
+    # The owner's own skill, written and not yet added, is one a session loads and the next
+    # commit ships, so the query lists the untracked files git does not ignore beside the
+    # committed ones. Mutation (oracle): `mutations/`'s "the nested-skill query lists only what
+    # the index holds" -> the skill is missed and the row reads all accounted for.
+    root = _repository(_initialised(tmp_path))
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "the tree")
+    _file(root, "pkg/.claude/skills/draft/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/draft/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_the_walk_outside_a_work_tree_folds_the_case_of_directories(tmp_path: Path) -> None:
+    # Where git cannot answer, the bounded walk finds the nested places, and it compares directory
+    # names as the query does, without case. Mutation (oracle): `mutations/`'s "the nested walk
+    # compares directory names by case" -> the skill is missed.
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.Claude/Skills/n/SKILL.md", SKILL_WITH_HOOKS)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert (row.status, row.detail) == (
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.Claude/Skills/n/SKILL.md",
+    )
+
+
+@pytest.mark.parametrize("link", [".claude/commands", ".claude/skills/out", ".claude/agents/a.md"])
+def test_a_link_out_of_the_checkout_is_named_and_never_followed(tmp_path: Path, link: str) -> None:
+    # A committed link inside a place sent the walk out of the checkout, to any depth: one to `/`
+    # read every Markdown file below it. A link is followed only while it stays under the root, and
+    # one that leads out is named as such: not a defect, since a dotfiles setup links these
+    # directories out on purpose, and not a path that could not be read. Mutations (oracle):
+    # `mutations/`'s "the hooked-file walk follows a link out of the checkout" -> the file outside
+    # is named instead; "a directory link out of the checkout is told as unreadable" and "a file
+    # link out of the checkout is told as unreadable" -> the old words; "a link out of the checkout
+    # makes hook-entries red" -> red.
+    root = _initialised(tmp_path)
+    outside = tmp_path / "outside"
+    _file(outside, "deploy.md", SKILL_WITH_HOOKS)
+    _file(outside, "SKILL.md", SKILL_WITH_HOOKS)
+    (root / link).parent.mkdir(parents=True, exist_ok=True)
+    (root / link).symlink_to(outside / "deploy.md" if link.endswith(".md") else outside)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries", WARN, f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: {link}", LINKED_OUT_REMEDY
+    )
+
+
+def test_a_link_inside_a_nested_skills_directory_is_followed_in_a_work_tree(
+    tmp_path: Path,
+) -> None:
+    # git lists a link as an entry of its own and never what it leads to, so a committed link in a
+    # nested `.claude/skills` to a skill elsewhere in the checkout hid that skill in a work tree,
+    # while the walk outside one followed it. Each link the query lists is read as a directory of
+    # the place, within the walk's bound and only while it stays in the checkout. Mutation
+    # (oracle): `mutations/`'s "the nested-skill query reads no link it lists" -> the skill is
+    # missed.
+    root = _repository(_initialised(tmp_path))
+    _file(root, "hidden/evil/SKILL.md", SKILL_WITH_HOOKS)
+    (root / "pkg/.claude/skills").mkdir(parents=True)
+    (root / "pkg/.claude/skills/evil").symlink_to("../../../hidden/evil")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "a linked skill")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/evil/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def _in_a_work_tree(root: Path, where: str) -> Path:
+    """`root` as a work tree with everything in it committed, or left as it is for `"walked"`."""
+    if where == "queried":
+        _repository(root)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "the tree")
+    return root
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+def test_a_link_to_a_file_out_of_a_nested_skills_directory_is_passed_over(
+    tmp_path: Path, where: str
+) -> None:
+    # A link to a file the row would never read, a skill's `LICENSE` say, names no directory to
+    # look in, so it is passed over wherever it points, in the project's own `.claude/skills` and
+    # in a nested one, asked of git or walked. In a work tree it was told as a path leading out.
+    # Mutation (oracle): `mutations/`'s "a link to a file is read as a directory of its place" ->
+    # the `queried` case names it.
+    outside = tmp_path / "outside"
+    _file(outside, "hosts", "x\n")
+    root = _initialised(tmp_path)
+    _file(root, "pkg/.claude/skills/s/notes.txt", "x\n")
+    (root / "pkg/.claude/skills/s/LICENSE").symlink_to(outside / "hosts")
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("leads", ["inside", "outside"])
+def test_a_nested_skills_directory_that_is_a_link_is_read_or_named(
+    tmp_path: Path, where: str, leads: str
+) -> None:
+    # A nested `.claude/skills` that is itself a link was named by no path: git lists the link as
+    # one entry, which no pattern below the directory matches, and the walk follows no link. It is
+    # read as the project's own are: followed while it stays in the checkout, and named as a path
+    # that leads out where it does not. Mutations (oracle): `mutations/`'s "the nested-skill query
+    # lists no link standing for a skills directory" -> the `queried` cases; "the nested walk
+    # passes over a link standing for a skills directory" -> the `walked` cases.
+    target = tmp_path / "outside" if leads == "outside" else tmp_path / "project" / "kept"
+    _file(target, "s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / "pkg/.claude").mkdir(parents=True)
+    (root / "pkg/.claude/skills").symlink_to(target)
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    if leads == "inside":
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: pkg/.claude/skills/s/SKILL.md",
+            SKILL_HOOKS_REMEDY,
+        )
+    else:
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: pkg/.claude/skills",
+            LINKED_OUT_REMEDY,
+        )
+    assert row == expected
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("leads", ["inside", "inside-in-another-case", "outside"])
+def test_a_nested_claude_directory_that_is_a_link_is_read_or_named(
+    tmp_path: Path, where: str, leads: str
+) -> None:
+    # A nested `.claude` that is itself a link hid the skills below it: git lists the link as one
+    # entry, which no pattern for `.claude/skills` matches, and the walk follows no link. Its
+    # `skills` is read as a nested `.claude/skills` that is a link is: followed while it stays in
+    # the checkout, and named as a path that leads out where it does not; and its name is compared
+    # without case, as a filesystem that folds case finds it. Mutations (oracle): `mutations/`'s
+    # "the nested-skill query lists no link standing above a skills directory" and "the
+    # nested-skill query asks git for no entry standing above a skills directory" -> the `queried`
+    # cases; "the nested walk passes over a link standing above a skills directory" -> the
+    # `walked` cases; "a link standing above a skills directory is compared by case" -> the
+    # `inside-in-another-case` cases.
+    target = tmp_path / "outside" if leads == "outside" else tmp_path / "project" / "kept"
+    _file(target, "skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / "pkg").mkdir()
+    link = "pkg/.Claude" if leads == "inside-in-another-case" else "pkg/.claude"
+    (root / link).symlink_to(target)
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    if leads != "outside":
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: {link}/skills/s/SKILL.md",
+            SKILL_HOOKS_REMEDY,
+        )
+    else:
+        expected = Check(
+            "hook-entries",
+            WARN,
+            f"{NO_SKILL_ENTRIES}; 1 {LINKED_OUT}: pkg/.claude/skills",
+            LINKED_OUT_REMEDY,
+        )
+    assert row == expected
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+def test_the_projects_own_claude_directory_as_a_link_is_read_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    # The vacuity guard for the case above, at the root: the project's own `.claude` is read off
+    # the disk with its places, so a link standing for it is not read a second time as a nested
+    # one. A file is named once however many paths reach it, so what shows a second read is the
+    # places read, each listed by its real path. Mutations (oracle): `mutations/`'s "the
+    # nested-skill query reads the root's own places again" and "the nested walk reads the root's
+    # own places again" -> `.claude/skills` is read twice.
+    places: list[str] = []
+    read_place = hooked._read_place
+
+    def recorded(root: Path, real_root: Path, top: str, *rest: Any) -> list[hooked.Found]:
+        places.append(os.path.realpath(root / top))
+        return read_place(root, real_root, top, *rest)
+
+    monkeypatch.setattr(hooked, "_read_place", recorded)
+    _file(tmp_path / "project" / "kept", "skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    root = _initialised(tmp_path)
+    (root / ".claude").symlink_to(root / "kept")
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert len(places) == len(set(places)), places
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+# Two paths to one skill file, each a link inside the checkout: a nested `.claude`, or a nested
+# `.claude/skills`, standing for the project's own, and the project's own `.claude/skills` standing
+# for a nested one. Each link, real directory and file below it, as `(path, link target)`.
+TWO_PATHS = {
+    "nested-claude": [("pkg/.claude", "../.claude"), (".claude/skills/s/SKILL.md", None)],
+    "nested-skills": [("pkg/.claude/skills", "../../.claude/skills"), (".claude/skills/s", None)],
+    "own-skills": [(".claude/skills", "../pkg/.claude/skills"), ("pkg/.claude/skills/s", None)],
+}
+
+
+@pytest.mark.parametrize("where", ["queried", "walked"])
+@pytest.mark.parametrize("shape", sorted(TWO_PATHS))
+def test_a_skill_file_two_paths_reach_is_named_once(tmp_path: Path, shape: str, where: str) -> None:
+    # One file is one to review, so it is named once, by the first path the walk reaches it by,
+    # the project's own place; it was named again under the link's path, and counted twice.
+    # Mutation (oracle): `mutations/`'s "the hooked-file walk names a file each time it is
+    # reached" -> named twice.
+    root = _initialised(tmp_path)
+    for path, target in TWO_PATHS[shape]:
+        if target is not None:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).symlink_to(target)
+        elif path.endswith(".md"):
+            _file(root, path, SKILL_WITH_HOOKS)
+        else:
+            _file(root, f"{path}/SKILL.md", SKILL_WITH_HOOKS)
+    _in_a_work_tree(root, where)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: .claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
+    )
+
+
+def test_a_skill_in_a_checked_out_submodule_is_named(tmp_path: Path) -> None:
+    # The query's `--cached` lists a submodule as one entry and none of its files, so a skill a
+    # submodule commits went unnamed. A second query asks each checked-out submodule's index.
+    # Mutation (oracle): `mutations/`'s "the nested-skill query asks no submodule" -> the skill is
+    # missed.
+    (tmp_path / "module").mkdir()
+    module = _repository(tmp_path / "module")
+    _file(module, ".claude/skills/s/SKILL.md", SKILL_WITH_HOOKS)
+    _git(module, "add", "-A")
+    _git(module, "commit", "-q", "-m", "a skill")
+    root = _repository(_initialised(tmp_path))
+    _git(
+        root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(module), "vendored"
+    )
+    _git(root, "commit", "-q", "-m", "a submodule")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert row == Check(
+        "hook-entries",
+        WARN,
+        f"{NO_SKILL_ENTRIES}; 1 {SKILL_HOOKS}: vendored/.claude/skills/s/SKILL.md",
+        SKILL_HOOKS_REMEDY,
     )
 
 
@@ -1818,10 +3003,10 @@ def test_a_record_naming_a_file_this_build_does_not_ship_is_red(
     # The record is edited after it is written, because a release records exactly
     # `HASHED_FILES` and the case is a record that does not.
     #
-    # Mutation (declared, "doctor files walks only the files this build knows about"): the walk
-    # goes back to `HASHED_FILES` -> the extra name is never looked at, the row is `ok`, and
-    # both assertions below redden. The detail assertion is the one that names the arm: a red
-    # status alone is produced by several other arms of this row.
+    # Mutation (declared, `mutations/`'s "doctor files walks only the files this build knows
+    # about"): the walk goes back to `HASHED_FILES` -> the extra name is never looked at, the row is
+    # `ok`, and both assertions below redden. The detail assertion is the one that names the arm: a
+    # red status alone is produced by several other arms of this row.
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     planted = _planted_plugin(tmp_path, executable=True)
     recorded(planted)
@@ -1851,8 +3036,8 @@ def test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted(
     # the detail, and `skills/doctor/SKILL.md` tells the model to relay it verbatim. `_versions`
     # declines to quote the project's version string for exactly this reason.
     #
-    # Mutation (declared, "doctor files quotes the record's own file names back"): `mine`
-    # becomes every changed name -> the prose lands in the detail, the count disappears, and
+    # Mutation (declared, `mutations/`'s "doctor files quotes the record's own file names back"):
+    # `mine` becomes every changed name -> the prose lands in the detail, the count disappears, and
     # both assertions below redden. The assertions name the arm rather than the status: a red
     # row is produced by five other arms of this row, and by `_guarded` for any exception.
     monkeypatch.setattr(checks, "_own_root", lambda: None)
@@ -2008,19 +3193,18 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
 def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `load` reads the machine file with `interactive=False`, which honours neither
-    # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and the row named the file through the terminal
-    # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
-    # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
-    # variable names — which is fine, and was never read.
+    # `load` reads the machine file no variable moves, which honours neither `STAYFIXED_CONFIG` nor
+    # `XDG_CONFIG_HOME`, and the row once named the file through the terminal check instead. So an
+    # owner at a terminal with `STAYFIXED_CONFIG` set, whose `~/.config/stayfixed/config.toml` has a
+    # stray bracket in it, was told to fix the file the variable names — which is fine, and was
+    # never read.
     #
     # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
     # the one where no `--machine` was given. `HOME` is this test's, so the file `load` reads is
     # under it, and the variable names a well-formed file beside it.
     #
-    # Mutation: `run_checks`' `machine_config_path(interactive=False)` without its argument -> the
-    # file read and named is the variable's, which loads, and the first assertion reddens. The
-    # file is resolved once for both, so no mutation can make them differ again.
+    # The file is resolved once for both, through the one path no variable moves, so no mutation
+    # of `run_checks` can make them differ again.
     root = _initialised(tmp_path)
     home = tmp_path / "owner-home"
     read = home / ".config" / "stayfixed" / "config.toml"
@@ -2072,7 +3256,7 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     )
     monkeypatch.setenv("HOME", str(home))
     expected = home / ".config" / "stayfixed" / "config.toml"
-    assert machine_config_path(interactive=False) == expected, "the planted file is not reachable"
+    assert machine_config_path() == expected, "the planted file is not reachable"
     assert overlay_root(expected) == overlay, "the planted file records no overlay"
     row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
     assert row.status == SKIP, row
@@ -2256,7 +3440,7 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
     safety net for a hang nothing here foresees, and the row still runs in a daemon thread
     because a test that hangs is not a test that fails.
 
-    Mutation (oracle entry "doctor reads the rendered workflow without asking what it is"): the
+    Mutation (`mutations/`'s "doctor reads the rendered workflow without asking what it is"): the
     `is_file()` guard is removed -> the row reads the fed workflow, answers `ok`, and the status
     assertion reddens.
     """
@@ -2300,19 +3484,18 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
 def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
     """Over the bound is an answer, and it is not "the workflow agrees".
 
-    The read is `WORKFLOW_MAX_BYTES + 1` bytes, the shape `_diagnostics` reads its log with: a
-    file past the cap is not one `init` rendered, and a `uses:` line beyond it would be compared
-    against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can only be
-    the cap — a file that agrees would otherwise be green either way.
+    The read is `fsops.read_bounded` to `WORKFLOW_MAX_BYTES`, the shape `_diagnostics` reads its
+    log with: a file past the cap is not one `init` rendered, and a `uses:` line beyond it would be
+    compared against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can
+    only be the cap — a file that agrees would otherwise be green either way.
 
     What this case pins is the *arm* and not the number of bytes held to reach it: a bounded read
-    and an unbounded one answer `len(raw) > WORKFLOW_MAX_BYTES` alike, so no assertion here can
-    tell them apart. Measured, not assumed — the oracle entry's first spelling replaced
-    `handle.read(WORKFLOW_MAX_BYTES + 1)` with `handle.read()` and survived. The entry is on the
-    comparison instead, and says so.
+    and an unbounded one answer "over the cap" alike, so no assertion here can tell them apart.
+    Measured, not assumed — the oracle entry's first spelling replaced the bounded read with an
+    unbounded one and survived. The entry is on the arm instead, and says so.
 
-    Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
-    comparison is deleted -> this case fails on the status.
+    Mutation (`mutations/`'s "doctor reads the rendered workflow with no bound of its own"): the cap
+    arm is skipped -> this case fails on the status.
     """
     stub = LsRemote(stdout=LISTING)
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
@@ -2375,6 +3558,64 @@ def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _by_name(_checks(tmp_path, root, runner=stub), "ci-ref").status == OK
+
+
+# What a `uses:` word pins, each as the pattern `uses:\s*\S+/\.github/workflows/check\.yml@(\S+)`
+# read it: what follows the last call that has a character before it and one after, and a word
+# ending in `uses:` hands on to the word after it. Mutations (oracle): `mutations/`'s "a uses:
+# word pins what follows its first call" -> `the last call`; "a word ending in uses: is passed
+# over whole" -> `a word ending in uses:`; "the call that ends a word no longer falls back to the
+# one before it" -> `a call ending the word`; "a call with nothing before it pins" -> `nothing
+# before the call`.
+USES_WORDS = {
+    "the last call": (
+        "uses: a/.github/workflows/check.yml@x/.github/workflows/check.yml@v2",
+        {"v2"},
+    ),
+    "a call ending the word": (
+        "uses: a/.github/workflows/check.yml@v1/.github/workflows/check.yml@",
+        {"v1/.github/workflows/check.yml@"},
+    ),
+    "a word ending in uses:": ("uses: xuses: o/r/.github/workflows/check.yml@v3", {"v3"}),
+    "nothing before the call": ("uses: /.github/workflows/check.yml@v4", set()),
+}
+
+
+@pytest.mark.parametrize("case", sorted(USES_WORDS))
+def test_a_uses_word_pins_what_the_pattern_read_it_to_pin(case: str) -> None:
+    text, pinned = USES_WORDS[case]
+    assert checks._pinned_refs(text) == pinned
+
+
+# A file of `uses:` alone, which the pattern read again from every `uses:` in it to the end, ten
+# seconds at the read cap and four times as long at each doubling. The cap bounds what `doctor`
+# reads, so the reader is held on a text past it, where the old reading takes four minutes and
+# this one milliseconds; the pin after the run says the text was read to its end.
+_LONG_USES = 1 << 18
+_LONG_USES_SECONDS = 10
+
+
+def test_a_long_workflow_is_read_for_its_pins_in_time_linear_in_its_length() -> None:
+    # In a child under a timeout, so a regression fails this case rather than holding a worker.
+    # Mutation (oracle): `mutations/`'s "a uses: word is read again from every uses: inside it"
+    # -> this reddens.
+    probe = (
+        "import sys\n"
+        "from stayfixed.doctor.checks import _pinned_refs\n"
+        "text = 'uses:' * int(sys.argv[1]) + ' uses: o/r/.github/workflows/check.yml@abc'\n"
+        "print(_pinned_refs(text))\n"
+    )
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(_LONG_USES)],
+            capture_output=True,
+            text=True,
+            timeout=_LONG_USES_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"reading one workflow's pins ran past {_LONG_USES_SECONDS} s")
+    assert done.stdout == "{'abc'}\n", done.stderr
 
 
 def test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green(tmp_path: Path) -> None:

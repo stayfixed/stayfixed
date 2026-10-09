@@ -70,7 +70,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
             exit_code=1,
         )
     roadmap = contained(root, config.paths.roadmap)
-    if not roadmap.is_file():
+    if not fsops.is_file(roadmap):
         return missing
     trail = read_trail(trail_path(root, config))
     current = read_document(roadmap, config.paths.roadmap)

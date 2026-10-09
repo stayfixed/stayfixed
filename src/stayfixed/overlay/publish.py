@@ -223,7 +223,7 @@ def _ensure_repository(
 
 def _render_tree(rendered: Path) -> tuple[str, ...]:
     """The shipped files the render actually left, in `OVERLAY_FILES` order."""
-    return tuple(relative for relative in OVERLAY_FILES if (rendered / relative).is_file())
+    return tuple(relative for relative in OVERLAY_FILES if fsops.is_file(rendered / relative))
 
 
 def _replace_tree(clone: Path, rendered: Path, written: tuple[str, ...]) -> None:
@@ -248,9 +248,9 @@ def _replace_tree(clone: Path, rendered: Path, written: tuple[str, ...]) -> None
         if ".git" in path.relative_to(clone).parts:
             continue
         relative = str(path.relative_to(clone))
-        if path.is_file():
+        if fsops.is_file(path):
             fsops.remove_within(clone, relative)
-        elif path.is_dir() and not any(path.iterdir()):
+        elif fsops.is_dir(path) and not any(path.iterdir()):
             fsops.rmdir_within(clone, relative)
     for relative in written:
         fsops.write_within(clone, relative, (rendered / relative).read_text(encoding="utf-8"))
@@ -300,7 +300,7 @@ def publish_template(
         # not `--depth 1`: a shallow graft is not a history anyone wants pushed.
         cloned = runner.launch(["gh", "repo", "clone", slug, "clone"], scratch)
         clone = scratch / "clone"
-        if cloned.code != 0 or not clone.is_dir():
+        if cloned.code != 0 or not fsops.is_dir(clone):
             raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")
         _replace_tree(clone, rendered, written)
         added = _git(runner, ["-C", str(clone), "add", "-A"], clone)

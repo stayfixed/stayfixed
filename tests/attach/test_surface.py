@@ -22,7 +22,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     #
     # No mutation entry: the mutation is adding an export, which is two lines in `api.py` (the
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
-    # re-exporting `permissions.check` reddens this test and this test alone.
+    # re-exporting `check` reddens this test and this test alone.
     required = {
         # the ledger and the binding, which the suite reads from outside this area; the ledger's
         # path and the `.gitignore` block are `config.layout`'s, since the core names them too

@@ -131,9 +131,14 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     the model's memory comes from, and the two states it would hide are the same failure the real
     directory is flagged for: one reads nothing, the other reads somebody else's notes.
     """
+    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
+    from stayfixed.attach.write import HOME_DIFFERS, UnreadHome, unread_home
     from stayfixed.config.layout import ATTACH_LEDGER
+    from stayfixed.config.machine import home_is_empty, override_is_honoured
+    from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, WARN, Row
+    from stayfixed.errors import Refusal
     from stayfixed.memory.api import (
         DIFFERENT_REMOTE,
         MISMATCH,
@@ -145,19 +150,49 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
     )
 
     config = context.config
-    if config.memory.mode != "overlay":
+    if config.memory.mode != OVERLAY_MODE:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # stayfixed's own labels rather than a string a clone chose.
         return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
-    harness = harness_memory_path(context.root, context.home)
-    if harness.is_dir() and not harness.is_symlink():
-        return Row(
-            RED,
-            "the harness memory path is a real directory rather than a link to the store, so "
-            "this checkout looks attached and behaves like nothing",
-            f"remove {harness} and run `{ATTACH_STORE}`",
-        )
+    # Asked as `attach` asks it, with no `--home`: off a terminal, where `HOME` is not the home the
+    # link goes under, the path under that home is not the one a harness started with this `HOME`
+    # reads, and the one under `HOME` is not judged, since a `HOME` the clone chose could hold a
+    # link that reads green. The row says so in `attach`'s words instead of judging either.
+    unread = unread_home() if context.home is None else None
+    harness: Path | UnreadHome
+    if unread is not None:
+        harness = unread
+    else:
+        try:
+            harness = harness_memory_path(context.root, context.home)
+        except Refusal:
+            # Refused only for a home it cannot name: a user the password database lists no home
+            # for, off a terminal or at one where `HOME` is unset, or a terminal whose `HOME` is
+            # empty, which names none (`config.machine.owner_home`). That is this machine's state
+            # and not a broken check, so it is a warning that says what it costs; `ignored-env`
+            # says why.
+            if override_is_honoured() and home_is_empty():
+                return Row(
+                    WARN,
+                    "HOME is empty, so it names no home directory and there is no harness memory "
+                    "path to check",
+                    "set HOME to your home directory, or pass --home <path> to check the harness "
+                    "memory path under that directory",
+                )
+            return Row(
+                WARN,
+                "the password database lists no home directory for this user, so there is no "
+                "harness memory path to check and no hook makes one",
+                "pass --home <path> to check the harness memory path under that directory",
+            )
+        if fsops.is_dir(harness) and not fsops.is_symlink(harness):
+            return Row(
+                RED,
+                "the harness memory path is a real directory rather than a link to the store, so "
+                "this checkout looks attached and behaves like nothing",
+                f"remove {harness} and run `{ATTACH_STORE}`",
+            )
     if ledger.state(context.root) == NO_LEDGER:
         return Row(
             WARN,
@@ -199,10 +234,20 @@ def _attached(context: Context, answers: Answers, ledger: _Ledger) -> Row:
         return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
     if state == MISMATCH:
         return Row(RED, DIFFERENT_REMOTE, _REBIND)
+    if isinstance(harness, UnreadHome):
+        remedy = harness.remedy
+        if harness == HOME_DIFFERS:
+            remedy += f"; {_CHECKED_AT_A_TERMINAL}"
+        return Row(WARN, f"attached; {harness.cause}; the binding is {state}", remedy)
     status, shape, remedy = _harness_shape(context, answers, harness)
     return Row(
         status, f"attached; the harness memory path is {shape}; the binding is {state}", remedy
     )
+
+
+# Where `HOME` differs, the way to have this row judge the link under it: at a terminal `HOME` is
+# the home the link goes under, and this row checks it there.
+_CHECKED_AT_A_TERMINAL = "`stayfixed doctor` run from a terminal checks the link under HOME"
 
 
 # Why the overlay could not corroborate the ledger, as `_binding_answer`'s three answers. Not
@@ -295,6 +340,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     at all, which is a warning naming what could not be asked rather than a green sentence
     asserting what was not checked.
     """
+    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.memory.api import harness_link_needed
@@ -303,7 +349,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
     # `attach` puts it, whatever the wrong shape was.
     relink = f"run `{ATTACH_STORE}`"
     store = answers.store(context)
-    if harness.is_symlink():
+    if fsops.is_symlink(harness):
         if store is None:
             return (
                 WARN,
@@ -313,7 +359,7 @@ def _harness_shape(context: Context, answers: Answers, harness: Path) -> tuple[S
             )
         if harness.resolve() == store.path.resolve():
             return OK, "a link to the store", ""
-        if not harness.exists():
+        if not fsops.exists(harness):
             return RED, "a dangling link, so the harness reads nothing through it", relink
         return (
             RED,
@@ -391,9 +437,11 @@ def _granted_commands(context: Context) -> tuple[set[Placed] | None, str | None]
     `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
     the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
     still let a repository take an id the overlay does grant and hang a different command on it.
-    And each is where `attach` would write it — its event and its group's matcher, read back by
-    `scaffold.wanted_placements` as the `hook-entries` walk reads the settings file — because the
-    granted command hung under another event or matcher is a hook the overlay never granted.
+    And each is where `attach` would write it, and as it would write it — its event, its group's
+    matcher and the whole entry, read back by `scaffold.wanted_placements` as the `hook-entries`
+    walk reads the settings file — because the granted command hung under another event or matcher,
+    or inside an entry of another `type` or with fields the overlay did not write, is a hook the
+    overlay never granted.
 
     **The ledger is not read here.** The binding is the one `binding_for` derives from the overlay
     this machine records and the project's name, the same one `attach` would install from, and

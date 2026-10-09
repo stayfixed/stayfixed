@@ -12,7 +12,14 @@ import pytest
 
 from stayfixed.errors import Refusal
 from stayfixed.guards.commit import offending_lines
-from stayfixed.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
+from stayfixed.guards.githooks import (
+    HOOK_MARKER,
+    HOOK_NAME,
+    Found,
+    hooks_dir,
+    install,
+    uninstall,
+)
 from tests import gitfixture
 from tests.floor import floor_env
 
@@ -340,13 +347,137 @@ def test_reinstalling_over_a_chained_setup_keeps_the_preserved_hook(tmp_path: Pa
 
 
 def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
+    # And says so, `Found.FOREIGN`, where the answer was the one an uninstall of stayfixed's own
+    # hook with nothing chained gave; with no hook at all, `Found.ABSENT`. Mutations:
+    # `mutations/`'s "uninstall says it removed a hook when the hook there is not stayfixed's" and
+    # "uninstall says it removed a hook when there was none".
     root = repo(tmp_path)
     foreign = hooks_dir(root) / HOOK_NAME
     foreign.parent.mkdir(parents=True, exist_ok=True)
+    assert uninstall(root) == (foreign, None, Found.ABSENT)
     foreign.write_text("#!/bin/sh\necho foreign\n", encoding="utf-8")
     removed = uninstall(root)
-    assert removed.restored is None
+    assert removed == (foreign, None, Found.FOREIGN)
     assert "foreign" in foreign.read_text(encoding="utf-8")
+
+
+def _in_a_child(probe: str, root: Path, verb: str) -> str:
+    """What `probe` prints, run over `root` in a child under a timeout: a hook path that is a FIFO
+    hangs a reader that opens it, and a hang here fails the case rather than the worker."""
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", probe, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{verb} waited on the hook path")
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
+def test_a_fifo_at_the_hook_path_is_refused_by_install_and_never_waited_on(tmp_path: Path) -> None:
+    # Whether a hook is stayfixed's is read off its bytes, and the read waited on a FIFO for a
+    # writer that never came: `setup --git-hooks` and `--uninstall` both hung. It is read as a
+    # regular file only, to the read cap, so a FIFO is a hook `install` cannot read, and it can
+    # neither chain one nor write over it: refused. (`uninstall` leaves it as foreign, below.)
+    # Mutation: `mutations/`'s "the hook installer reads a hook with no bound".
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(hook)
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.errors import Refusal\n"
+        "from stayfixed.guards.githooks import install\n"
+        "try:\n"
+        "    install(Path(sys.argv[1]))\n"
+        "except Refusal as refused:\n"
+        "    print(refused)\n"
+    )
+    said = _in_a_child(probe, root, "install")
+    assert said.startswith(f"{hook} could not be read (not a regular file); "), said
+    assert hook.is_fifo()
+
+
+@pytest.mark.parametrize("shape", ["fifo", "directory"])
+def test_uninstall_leaves_a_fifo_or_a_directory_at_the_hook_path_as_a_foreign_hook(
+    tmp_path: Path, shape: str
+) -> None:
+    # stayfixed writes only a regular file at the hook path, so anything else there is as surely
+    # not its own as a regular file past the read cap: `--uninstall` leaves it in place and says
+    # it is not stayfixed's, where it refused it as a hook it could not read. A FIFO is never
+    # opened, and so never waited on; a regression to a plain open would wait for a writer, so
+    # this runs in a child under a timeout as its `install` sibling does. Mutation:
+    # `mutations/`'s "uninstall reads a hook that is not a regular file".
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    if shape == "fifo":
+        os.mkfifo(hook)
+    else:
+        hook.mkdir()
+    probe = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from stayfixed.guards.githooks import uninstall\n"
+        "path, restored, found = uninstall(Path(sys.argv[1]))\n"
+        "print(path, restored, found.name, sep='\\n')\n"
+    )
+    said = _in_a_child(probe, root, "uninstall")
+    assert said.splitlines() == [str(hook), "None", Found.FOREIGN.name]
+    assert hook.is_fifo() if shape == "fifo" else hook.is_dir()
+
+
+@pytest.mark.parametrize("verb", ["install", "uninstall"])
+def test_a_hook_that_cannot_be_read_is_neither_ours_nor_foreign(tmp_path: Path, verb: str) -> None:
+    # Whether it is stayfixed's cannot be told, so it is neither: read as foreign, `--uninstall`
+    # said "it is not stayfixed's hook" of stayfixed's own hook at mode 000, and `install`
+    # renamed that hook to `.local` and chained it. Each refuses, naming the reason, and leaves it
+    # where it is. Mutation: `mutations/`'s "a hook that cannot be read is read as a foreign one".
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root = repo(tmp_path)
+    hook = install(root).path
+    hook.chmod(0o000)
+    try:
+        with pytest.raises(Refusal) as refused:
+            install(root) if verb == "install" else uninstall(root)
+    finally:
+        hook.chmod(0o755)
+    assert str(refused.value).startswith(f"{hook} could not be read (Permission denied); ")
+    assert HOOK_MARKER in hook.read_text(encoding="utf-8")
+    assert not hook.with_name(HOOK_NAME + ".local").exists()
+
+
+def test_a_hook_past_the_read_cap_is_a_foreign_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # stayfixed's own hook is a couple of kilobytes, so a regular file longer than the read cap
+    # is certainly not it: it is foreign, chained by `install` and left alone by `--uninstall`,
+    # as 0.2.0 did, rather than refused as a hook that cannot be read. The cap is lowered to
+    # just past stayfixed's own hook, which is still read whole. Mutation: `mutations/`'s "a hook
+    # past the read cap is refused as one that cannot be read".
+    from stayfixed import fsops
+    from stayfixed.guards.githooks import HOOK_TEXT
+
+    limit = len(HOOK_TEXT.encode("utf-8")) + 16
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    root = repo(tmp_path)
+    hook = hooks_dir(root) / HOOK_NAME
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    foreign = "#!/bin/sh\necho foreign\n" + "#" * limit + "\n"
+    hook.write_text(foreign, encoding="utf-8")
+    assert uninstall(root) == (hook, None, Found.FOREIGN)
+    installed = install(root)
+    local = hook.with_name(HOOK_NAME + ".local")
+    assert (installed.replaced, installed.preserved) == (False, local)
+    assert local.read_text(encoding="utf-8") == foreign
+    assert uninstall(root) == (hook, hook, Found.REMOVED)
+    assert hook.read_text(encoding="utf-8") == foreign
 
 
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:

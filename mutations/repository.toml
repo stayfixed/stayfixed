@@ -387,7 +387,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops refusing under a closed policy"
 file = "hooks/run-hook.sh"
-before = '  if [ "$policy" = closed ]; then refuse "$1"; fi'
+before = '  if test "$policy" = closed; then refuse "$1"; fi'
 after = '  :'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_interpreter_of_the_floor_version_refuses_under_closed_only",
@@ -399,18 +399,28 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that it has no policy argument"
 file = "hooks/run-hook.sh"
-before = '[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"'
+before = 'test $# -ge 1 || refuse "SF_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
+# The release record holds the wrapper's bytes, comments included, so an edit to its text that
+# skipped `scripts/release.py hashes` is drift. Here, the comment that once said a committed `env`
+# block chooses `CLAUDE_PROJECT_DIR`, which `docs/cli.md` records Claude Code did not do.
+[[mutation]]
+name = "the wrapper's comment goes back to an env block choosing the project root"
+file = "hooks/run-hook.sh"
+before = "# `CLAUDE_PROJECT_DIR` is read out of the same environment a committed `env` block writes to —"
+after = "# `CLAUDE_PROJECT_DIR` reaches this process from the same committed `env` block the containment"
+reddens = ["tests/test_manifests.py::test_the_repository_itself_carries_a_current_release_record"]
+
 # The launcher is chosen by the wrapper's own path and never by a variable in its environment. A
-# committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` gates
-# two other variables on exactly that -- and this one would pick the Python program that runs before
-# any stayfixed guard does.
+# committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` reads
+# no `STAYFIXED_CONFIG` for exactly that -- and this one would pick the Python program that runs
+# before any stayfixed guard does.
 [[mutation]]
 name = "the wrapper takes its launcher from the environment again"
 file = "hooks/run-hook.sh"
-before = 'launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"'
+before = 'launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"'
 after = 'launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/stayfixed"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_plugin_root_in_the_environment_does_not_choose_the_launcher",
@@ -423,7 +433,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = 'test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
@@ -439,8 +449,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper lets the environment choose its interpreter off a terminal"
 file = "hooks/run-hook.sh"
-before = 'if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
-after = 'if [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+before = 'if test -t 0 && test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+after = 'if test -n "${STAYFIXED_PYTHON_CANDIDATES:-}"; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
 reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
 ]
@@ -469,8 +479,8 @@ reddens = [
 [[mutation]]
 name = "the interpreter containment compares a candidate's spelling instead of its resolved path"
 file = "hooks/run-hook.sh"
-before = '  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1'
-after = '  dir=$(dirname -- "$1") || return 1'
+before = '  dir=$(CDPATH= cd -- "${dir:-/}" 2>/dev/null && pwd -P) || return 1'
+after = '  dir=${dir:-/}'
 reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked PATH entry]",
 ]
@@ -493,8 +503,8 @@ reddens = [
 [[mutation]]
 name = "an unresolvable project root refuses every interpreter instead of none"
 file = "hooks/run-hook.sh"
-before = '  [ -n "$2" ] || return 1'
-after = '  [ -n "$2" ] || return 0'
+before = '  test -n "$2" || return 1'
+after = '  test -n "$2" || return 0'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
 ]
@@ -507,10 +517,285 @@ reddens = [
 [[mutation]]
 name = "the wrapper's git inherits the session's GIT_DIR again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# The wrapper's git gets the password database's home, as every `git` stayfixed runs in a hook
+# does: `HOME` chooses git's global configuration, and direnv, mise or a devcontainer can point
+# it into the clone.
+[[mutation]]
+name = "the wrapper hands the git that names the root the inherited HOME again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(/usr/bin/env -i PATH="$git_path" HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
+]
+
+[[mutation]]
+name = "the wrapper hands the git that lists the checkouts the inherited HOME again"
+file = "hooks/run-hook.sh"
+before = '  /usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  /usr/bin/env -i PATH="$git_path" HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_hands_its_git_the_database_home_and_never_an_inherited_one",
+]
+
+# The wrapper hands its `git` the `PATH` stayfixed hands every `git` it runs on the hook path
+# (`gitenv.trusted_path`), so a helper git runs by name is found in the same directories whichever
+# of the two ran it.
+[[mutation]]
+name = "the wrapper hands its git a PATH of its own"
+file = "hooks/run-hook.sh"
+before = "git_path=/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+after = "git_path=/usr/bin:/bin"
+reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
+
+[[mutation]]
+name = "the wrapper's worktree query is handed the old fixed PATH"
+file = "hooks/run-hook.sh"
+before = '  /usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  /usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+reddens = ["tests/test_git_run.py::test_the_hook_wrapper_and_git_run_take_git_from_one_list"]
+
+# zsh, which `/bin/sh` may be, expands `~name` from a variable called `name` before it asks the
+# password database, so a variable in the hook's environment named for the user chose the
+# wrapper git's home until the lookup unset it.
+[[mutation]]
+name = "the wrapper looks the home up without unsetting the variable named for the user"
+file = "hooks/run-hook.sh"
+before = '''  *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+after = '''  *) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_variable_named_for_the_user_chooses_no_home_for_the_wrappers_git_under_zsh_as_sh",
+]
+
+# `id` comes from absolute paths, as git does: with `/usr/bin/id` alone, NixOS's wrapper git got
+# no home, and a checkout another user owns lost git's anchor for the containment.
+[[mutation]]
+name = "the wrapper runs its first id candidate whether or not it is there"
+file = "hooks/run-hook.sh"
+before = '  if test -x "$i"; then'
+after = '  if :; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds[an id further down]",
+]
+
+[[mutation]]
+name = "the wrapper names the user by the environment's USER where it has no id"
+file = "hooks/run-hook.sh"
+before = '''git_home=
+git_user=
+'''
+after = '''git_home=
+git_user=${USER-}
+'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_takes_id_from_any_absolute_candidate_and_never_a_name_the_environment_holds[no id at all]",
+]
+
+# To bash and zsh `~0` is the top of the directory stack, the directory the hook was launched in,
+# so a user whose name is digits alone handed the wrapper's git that directory as its home.
+[[mutation]]
+name = "the wrapper looks a name of digits alone up again"
+file = "hooks/run-hook.sh"
+before = '''  [0-9]*[!0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+after = '''  [0-9]* | *[.-]*) git_home=$(eval "h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_of_digits_alone_names_no_directory_as_the_wrappers_git_home",
+]
+
+# Only a plain name reaches the lookup's `eval`. An empty one, what `id` gives under a uid the
+# database does not list, makes it `~` alone, the inherited `HOME`; `~-0` is the directory stack
+# to bash and zsh; and any byte the shell reads as syntax runs as code there.
+[[mutation]]
+name = "the wrapper looks an empty name up"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  -* | *[!A-Za-z0-9._-]*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[no name]",
+]
+
+[[mutation]]
+name = "the wrapper looks a name led by - up"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  '' | *[!A-Za-z0-9._-]*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[a name led by a dash]",
+]
+
+[[mutation]]
+name = "the wrapper looks up a name holding any byte"
+file = "hooks/run-hook.sh"
+before = '''  '' | -* | *[!A-Za-z0-9._-]*) ;;'''
+after = '''  '' | -*) ;;'''
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_name_that_is_not_a_plain_one_names_no_home_for_the_wrappers_git[a name holding shell syntax]",
+]
+
+# No program the wrapper runs is found through `PATH` but the interpreter it contains: a committed
+# `env` block's `PATH` reaches every hook, and a command named bare is one the clone can ship.
+# Measured: a clone's `fakebin/env` and `fakebin/dirname` ran on every hook.
+[[mutation]]
+name = "the wrapper runs env through PATH again to ask git for the root"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs env through PATH again to list the checkouts"
+file = "hooks/run-hook.sh"
+before = '  /usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+after = '  env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs dirname through PATH again to find its launcher"
+file = "hooks/run-hook.sh"
+before = 'case $0 in */*) here=${0%/*} ;; *) here=. ;; esac'
+after = 'here=$(dirname -- "$0")'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper runs dirname through PATH again to contain an interpreter"
+file = "hooks/run-hook.sh"
+before = '  case $1 in */*) dir=${1%/*} ;; *) dir=. ;; esac'
+after = '  dir=$(dirname -- "$1")'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+# No function the environment exports stands in for a command the wrapper runs: bash, `/bin/sh` on
+# macOS, imports one from every `BASH_FUNC_<name>%%` variable, and a function wins over a regular
+# builtin. Measured: `BASH_FUNC_pwd%%` ran a clone's program five times per hook with no `PATH`
+# entry, and `BASH_FUNC_[%%` twenty-six, a name bash 3.2 cannot unset.
+[[mutation]]
+name = "an exported function stands in for the wrapper's pwd again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+]
+
+[[mutation]]
+name = "an exported function stands in for the wrapper's test again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd python3 read true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+]
+
+[[mutation]]
+name = "an exported function stands in for the interpreter the wrapper probes again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_stands_in_for_the_interpreter_the_wrapper_probes",
+]
+
+[[mutation]]
+name = "the wrapper spells a test as [ again, which bash 3.2 cannot unset"
+file = "hooks/run-hook.sh"
+before = 'test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+after = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_a_builtin_of_the_wrappers",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# `echo` speaks only when the wrapper refuses or degrades, and `true` runs only when its `git` names
+# no root, so a hook that reaches its launcher runs neither, and each was on the unset line with no
+# case that would notice it leave. The trace of the wrapper names both, and a fault reaches both.
+[[mutation]]
+name = "an exported function stands in for the wrapper's echo again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle printf pwd python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_what_the_wrapper_runs_on_a_fault",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+[[mutation]]
+name = "an exported function stands in for the wrapper's true again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_function_the_environment_exports_runs_in_place_of_what_the_wrapper_runs_on_a_fault",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# The unset line is held to a trace of the wrapper, so the trace's reading is held too: an
+# assignment is no command, and `command -v` answers a function's bare name, which the wrapper then
+# runs.
+[[mutation]]
+name = "the trace reader takes an assignment for a name the wrapper runs"
+file = "tests/hooks/test_wrapper.py"
+before = """        if "=" in first.split("/", 1)[0] or first.startswith("/"):"""
+after = """        if first.startswith("/"):"""
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_trace_is_read_for_the_names_a_function_could_stand_in_for",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+[[mutation]]
+name = "the trace reader drops the name command -v is asked about"
+file = "tests/hooks/test_wrapper.py"
+before = """        if words[:2] == ["command", "-v"] and len(words) > 2 and "/" not in words[2]:"""
+after = "        if False:"
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_trace_is_read_for_the_names_a_function_could_stand_in_for",
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# bash 4 and later call `command_not_found_handle` unasked; no run of the wrapper looks a missing
+# command up, so the line is what holds it.
+[[mutation]]
+name = "bash's command_not_found_handle is left in place again"
+file = "hooks/run-hook.sh"
+before = 'unset -f cd command command_not_found_handle echo printf pwd python3 read test true 2>/dev/null'
+after = 'unset -f cd command echo printf pwd python3 read test true 2>/dev/null'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_removes_the_function_of_every_name_a_trace_shows_it_running",
+]
+
+# stayfixed takes every `git` a hook asks from the fixed list only when the wrapper tells the
+# launcher it launched it, and the wrapper overwrites a value an `env` block or a parent preset:
+# left standing, one that is not the wrapper's hands every hook's `git` back to that block's `PATH`.
+[[mutation]]
+name = "the wrapper stops telling the launcher it launched it"
+file = "hooks/run-hook.sh"
+before = 'export STAYFIXED_HOOK_WRAPPER=1'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[unset]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
+]
+
+[[mutation]]
+name = "the wrapper keeps a value of its launcher's marker the environment preset"
+file = "hooks/run-hook.sh"
+before = 'export STAYFIXED_HOOK_WRAPPER=1'
+after = 'export STAYFIXED_HOOK_WRAPPER="${STAYFIXED_HOOK_WRAPPER:-1}"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_launcher_is_told_the_wrapper_launched_it_whatever_value_was_inherited[another value]",
+  "tests/hooks/test_wrapper.py::test_no_program_a_committed_path_plants_runs_on_a_hook_that_asks_git",
 ]
 
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
@@ -520,8 +805,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher cannot be read"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
-after = '[ -f "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = 'test -f "$launcher" && test -r "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = 'test -f "$launcher" || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
 ]
@@ -607,8 +892,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper resolves git through PATH again"
 file = "hooks/run-hook.sh"
-before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
-after = 'git_root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(/usr/bin/env -i PATH="${PATH:-}" ${git_home:+"HOME=$git_home"} git rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
 ]
@@ -619,7 +904,7 @@ reddens = [
 [[mutation]]
 name = "no trustworthy git degrades in silence instead of printing a token"
 file = "hooks/run-hook.sh"
-before = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+before = 'test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",
@@ -791,6 +1076,60 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_there_is_one_session_start_entry_per_declared_bundle_slot",
 ]
 
+# The module graph counts an import inside a function as an edge, which is the whole of what it
+# adds to the package graph: read as that graph reads, it misses the cycle `--check` made through a
+# function-level import, and the edge the pinned crossing makes inside `setup/run.py` with it.
+[[mutation]]
+name = "the module graph stops reading imports inside a function"
+file = "tests/boundaries/test_layering.py"
+before = '    for node in astscan.imports([ast.parse(text)], inside_functions=True):'
+after = '    for node in astscan.imports([ast.parse(text)], inside_functions=False):'
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+  "tests/boundaries/test_layering.py::test_the_module_graph_reads_imports_inside_functions_and_names_the_module_imported",
+]
+
+# And every import is an edge to each package above the module it names, since Python runs that
+# package's `__init__` first: without those edges, a function-level import of a submodule closes a
+# cycle through its package's `__init__` that no cycle test sees, the shape a review planted in
+# `gitenv.py`.
+[[mutation]]
+name = "the module graph stops running the packages above the module imported"
+file = "tests/boundaries/test_layering.py"
+before = "            for name in {module} | (_packages_above(module) - started):"
+after = "            for name in {module}:"
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_module_graph_runs_every_package_above_the_module_imported",
+  "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
+]
+
+# The doctor rule and the package graph count the imports that run when their module is imported,
+# and a function body runs only when called: read as running on import, every deferred import in
+# an area's `doctor.py` is an offence.
+[[mutation]]
+name = "the import reading takes a function body for one that runs on import"
+file = "tests/boundaries/astscan.py"
+before = "        if not inside_functions and isinstance(node, FUNCTIONS):"
+after = "        if False:"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_the_imports_that_run_exclude_type_checking_and_on_request_function_bodies",
+  "tests/boundaries/test_discovery.py::test_an_areas_doctor_module_imports_only_inside_its_functions",
+]
+
+# The core imports the standard library from `STANDARD_IMPORTS` alone, and every module is held to
+# the standard library, so the list may name nothing outside it.
+[[mutation]]
+name = "the core's import list admits a module outside the standard library"
+file = "tests/boundaries/test_delivery.py"
+before = """        "typing",
+        "urllib.parse","""
+after = """        "typing",
+        "urllib.parse",
+        "yaml","""
+reddens = [
+  "tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned",
+]
+
 # The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
 # again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
 # stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten
@@ -799,11 +1138,11 @@ reddens = [
 # about the crossings.
 [[mutation]]
 name = "the cross-area import guard walks ten files instead of the package"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = '    files = sorted(source.rglob("*.py"))'
 after = '    files = sorted(source.rglob("commands.py"))'
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The cross-area import guard (`mutations/`'s "the cross-area import guard walks ten files instead
@@ -816,11 +1155,12 @@ reddens = [
 # used to. What reddens is the offence list, not a missing name.
 [[mutation]]
 name = "the boundary rule ignores a relative import again"
-file = "tests/test_areas.py"
+file = "tests/boundaries/astscan.py"
 before = '            if node.level:'
 after = '            if False:'
 reddens = [
-  "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+  "tests/boundaries/test_api_surface.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+  "tests/boundaries/test_astscan.py::test_an_import_names_its_module_in_every_spelling_and_a_relative_one_resolved",
 ]
 
 # The rule is about `api.py`, and it was keyed on discovery: `release` publishes a surface and
@@ -830,12 +1170,12 @@ reddens = [
 # are held without being discovered comes back empty.
 [[mutation]]
 name = "the boundary rule holds only discovered areas to their api.py again"
-file = "tests/test_areas.py"
-before = '    return sorted(set(_area_names(source)) | surfaces)'
-after = '    return _area_names(source)'
+file = "tests/boundaries/test_api_surface.py"
+before = '    return sorted(set(area_names(source)) | surfaces)'
+after = '    return area_names(source)'
 reddens = [
-  "tests/test_areas.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The delivery rule holds the core to never importing `attach`, `memory` or `overlay`. The tree
@@ -844,42 +1184,42 @@ reddens = [
 # and every importer starts counting as core.
 [[mutation]]
 name = "the delivery rule stops recognising a delivery module"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            delivery = bits[0] == "stayfixed" and len(bits) > 1 and bits[1] in areas'
 after = "            delivery = False"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 [[mutation]]
 name = "the delivery rule holds a delivery module to the core's rule"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = "    core = parts[0] not in areas"
 after = "    core = True"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # A pardon is for one statement and the names it takes, so the rule records the names: without
 # them two statements naming one module, or one that takes one more name, read as the row pinned.
 [[mutation]]
 name = "the delivery rule forgets which names a statement takes"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = "            taken = [(module, frozenset(alias.name for alias in node.names))]"
 after = "            taken = [(module, frozenset[str]())]"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # `from stayfixed import memory` names the area in an alias and the package as its module, so a
 # rule keyed on the module alone would read it as importing nothing from an area.
 [[mutation]]
 name = "the delivery rule reads `from stayfixed import memory` as importing nothing"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_delivery.py"
 before = '            if module == "stayfixed":'
 after = "            if False:"
 reddens = [
-  "tests/test_areas.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
+  "tests/boundaries/test_delivery.py::test_the_delivery_rule_judges_the_importer_and_the_imported",
 ]
 
 # The `## Shared flags` tables are the constants, held row by row. The mutation is in the document
@@ -1043,10 +1383,10 @@ reddens = [
 # crossing is still counted, so the `>= 60` floor does not move; only the offence is silenced.
 [[mutation]]
 name = "a second live crossing joins the area-boundary exemption"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})'
 after = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy"), ("memory/commands.py", "stayfixed.hooks.dispatch")})'
-reddens = ["tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module"]
+reddens = ["tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module"]
 
 # The README's `--json` paragraph named four commands where five emit the key, so a reader scripting
 # against it would have read a `memory refs` findings list as "this command does not report
@@ -1149,11 +1489,11 @@ reddens = [
 # that hid that violation.
 [[mutation]]
 name = "the boundary walk stops looking at scripts/"
-file = "tests/test_areas.py"
+file = "tests/boundaries/test_api_surface.py"
 before = 'scripts = sorted((ROOT / "scripts").glob("*.py"))'
 after = "scripts = []"
 reddens = [
-  "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
+  "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
 
 # The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check names that
@@ -1222,7 +1562,7 @@ reddens = [
 [[mutation]]
 name = "the README stops saying a foreground run passes the blocking guard"
 file = "README.md"
-before = "The same command run in the\nforeground passes. "
+before = "The same\ncommand run in the foreground passes. "
 after = ""
 reddens = [
   "tests/test_documents.py::test_the_readme_says_the_guards_have_no_off_switch_and_how_to_pass_one",
@@ -1577,11 +1917,111 @@ reddens = [
 [[mutation]]
 name = "the citation parser loses the names a list carries after the first"
 file = "tests/declarations.py"
-before = "            quoted = _FURTHER.match(text, quoted.end())"
-after = "            quoted = None"
+before = "            further = _FURTHER.match(text, quoted.end())"
+after = "            further = None"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
 ]
+
+# An arrow list says what each name's mutation does, `"a" -> x; "b" -> y`, and only its first name
+# was read: a comment went on citing an entry a refactor had removed, with the citation test green.
+[[mutation]]
+name = "the citation parser loses the names an arrow list carries after the first"
+file = "tests/declarations.py"
+before = "                further = _ARROW.match(text, quoted.end())"
+after = "                further = None"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines",
+]
+
+# What an arrow says ends with the citation's lines; read past them, a quote in the code below a
+# comment is taken for an entry's name.
+[[mutation]]
+name = "the citation parser reads an arrow past the citation's own lines"
+file = "tests/declarations.py"
+before = """                if further is not None and not _one_passage(further.group("said"), comment):"""
+after = "                if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_reads_every_name_of_an_arrow_list_and_no_quote_past_its_lines",
+  "tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared",
+]
+
+# A citation spelled through a comma or a colon is one the citation test never reads: 138 were,
+# and four of them named no entry.
+[[mutation]]
+name = "the citation spelling rule lets a comma or a colon through"
+file = "tests/declarations.py"
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+[[mutation]]
+name = "the citation spelling rule reads no further than the set's own line"
+file = "tests/declarations.py"
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[ #(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+[[mutation]]
+name = "the citation spelling rule misses a quote straight after a mutation's lead"
+file = "tests/declarations.py"
+before = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"|Mutations?(?: \([^)"]*\))?:?[\s#]*"')'''
+after = '''_UNREAD = re.compile("`mutations" + r'/`[,:]?[\s#(]*"')'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+[[mutation]]
+name = "the citation spelling rule misses a quote straight after a plural lead"
+file = "tests/declarations.py"
+before = "|Mutations?(?: "
+after = "|Mutation(?: "
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
+# A quote of a declared name is a citation, and one the reader does not read is a name nothing
+# checks: 292 were, in lists the reader stopped in and in comments with no anchor at all. The walk
+# takes an entry's own `name` line for the declaration it is, and an anchor that reads no name
+# vouches for nothing.
+[[mutation]]
+name = "a quoted entry name the citation reader skips is never told"
+file = "tests/declarations.py"
+before = '        if quoted.start("name") in read or text.startswith(_DECLARES, line_start):'
+after = "        if True:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+]
+
+[[mutation]]
+name = "a quoted entry name that wraps is never told"
+file = "tests/declarations.py"
+before = '''    spelled = (r"[\s#]+".join(map(re.escape, name.split())) for name in sorted(names))'''
+after = '''    spelled = (" ".join(map(re.escape, name.split())) for name in sorted(names))'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+]
+
+[[mutation]]
+name = "the citation walk reads an entry's own name line as a citation"
+file = "tests/declarations.py"
+before = '        if quoted.start("name") in read or text.startswith(_DECLARES, line_start):'
+after = '        if quoted.start("name") in read:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told",
+  "tests/scripts/test_mutation_oracle.py::test_every_citation_is_spelled_the_way_the_citation_reader_reads",
+]
+
+[[mutation]]
+name = "an anchor that reads no name is never told"
+file = "tests/declarations.py"
+before = "        if _QUOTED.match(text, at + len(ANCHOR)) is None:"
+after = "        if False:"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_an_anchor_that_reads_no_name_is_told"]
 
 # The plugin directory holds the version for a reviewer when a file other than an image or a font
 # is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
@@ -2289,3 +2729,467 @@ after = '                if keyword.arg in OVERRIDING'
 reddens = [
   "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[keywords-spread]",
 ]
+
+# A `stayfixed` a test starts off a terminal reads the password database's home, so one that
+# forgets the seam reads, or writes, the developer's own `~/.config/stayfixed` and still passes.
+# The static guard is what notices.
+[[mutation]]
+name = "a test starts stayfixed without the owner-home seam"
+file = "tests/guards/test_hooks.py"
+before = '        [*stayfixed_argv(home), "hook", event],'
+after = '        [sys.executable, "-m", "stayfixed", "hook", event],'
+reddens = [
+  "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
+]
+
+# The seam guard reads `-m stayfixed` wherever it stands in an argv, `-I -m stayfixed` included.
+[[mutation]]
+name = "the seam guard stops reading python -m stayfixed"
+file = "tests/test_owner_home_seam.py"
+before = '    return any(a == "-m" and b == "stayfixed" for a, b in itertools.pairwise(_words(elements)))'
+after = '    return False'
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+# A shell handed the wrapper, `["sh", wrapper, …]`, is a launch the seam walk read as data, so a
+# case that ran the real stayfixed that way was never asked for its seam.
+[[mutation]]
+name = "the seam walk reads no launch headed by a shell"
+file = "tests/test_owner_home_seam.py"
+before = """    if _wrapper_handed_to_a_shell(elements) is not None:
+        return True
+"""
+after = ""
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to",
+  "tests/test_owner_home_seam.py::test_every_stayfixed_a_test_starts_goes_through_the_owner_home_seam",
+]
+
+# A shell may take its own options before the wrapper, and `env` may start the shell: `sh -x
+# wrapper` and `env sh wrapper` run the wrapper as surely as `sh wrapper` does.
+[[mutation]]
+name = "the seam walk takes a shell's option for the program it runs"
+file = "tests/test_owner_home_seam.py"
+before = "    while rest and _option(rest[0]):"
+after = "    while False:"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk reads no shell that env starts"
+file = "tests/test_owner_home_seam.py"
+before = '''    if rest and (_literal(rest[0]) or "").rsplit("/", 1)[-1] == "env":'''
+after = "    if False:"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+# `env` runs a program after its own options, their arguments and its assignments, and may run the
+# wrapper itself by its `#!` line; a shell's option may take an argument, and under `-c` the
+# command may run the wrapper as `$0`, the element after it. Each runs the wrapper as surely.
+[[mutation]]
+name = "the seam walk takes env's own option for the program it runs"
+file = "tests/test_owner_home_seam.py"
+before = '''        while rest and ("=" in (_literal(rest[0]) or "") or _option(rest[0])):'''
+after = '''        while rest and ("=" in (_literal(rest[0]) or "")):'''
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk reads no wrapper env runs itself"
+file = "tests/test_owner_home_seam.py"
+before = "        if rest and _names_the_wrapper(rest[0]):\n            return rest[0]"
+after = "        if False:\n            return rest[0]"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk takes env's option argument for the program it runs"
+file = "tests/test_owner_home_seam.py"
+before = "            rest = rest[2:] if _literal(rest[0]) in _ENV_ARGUMENTS else rest[1:]"
+after = "            rest = rest[1:]"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk takes a shell's option argument for the program it runs"
+file = "tests/test_owner_home_seam.py"
+before = "        rest = rest[2:] if _literal(rest[0]) in _SHELL_ARGUMENTS else rest[1:]"
+after = "        rest = rest[1:]"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+[[mutation]]
+name = "the seam walk reads no wrapper a shell command runs as its $0"
+file = "tests/test_owner_home_seam.py"
+before = "            rest = [element for element in rest[1:3] if _names_the_wrapper(element)]"
+after = "            rest = [element for element in rest[1:2] if _names_the_wrapper(element)]"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+# A shell handed the wrapper names its root in the wrapper's path, not in its own name.
+[[mutation]]
+name = "the seam walk looks for a shell's root in the shell's own name"
+file = "tests/test_owner_home_seam.py"
+before = "        program = _wrapper_handed_to_a_shell(display.elts) or head"
+after = "        program = head"
+reddens = ["tests/test_owner_home_seam.py::test_the_walk_reads_each_shape_it_claims_to"]
+
+# What `EXEMPT` excuses for the runners of the wrapper tests is held run by run, and a runner the
+# walk does not read is excused whole.
+[[mutation]]
+name = "the wrapper-run walk judges _run alone"
+file = "tests/test_owner_home_seam.py"
+before = '            if isinstance(child, ast.Call) and getattr(child.func, "id", None) in _RUNNERS:'
+after = '            if isinstance(child, ast.Call) and getattr(child.func, "id", None) == "_run":'
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+]
+
+# The bash runs take their root from a helper of the file that builds a fake one, as one name of
+# a tuple: `root, log = _plugin_root_recording_git_homes(...)`.
+[[mutation]]
+name = "the wrapper-run walk reads a root bound in a tuple as no root"
+file = "tests/test_owner_home_seam.py"
+before = '            for name in ([target] if isinstance(target, ast.Name) else getattr(target, "elts", []))'
+after = "            for name in [target]"
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+  "tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home",
+]
+
+[[mutation]]
+name = "the wrapper-run walk takes no helper that builds a fake root"
+file = "tests/test_owner_home_seam.py"
+before = "    builders = _FAKE_OR_SEAMED | {"
+after = "    builders = _FAKE_OR_SEAMED or {"
+reddens = [
+  "tests/test_owner_home_seam.py::test_the_wrapper_run_walk_judges_every_runner_and_every_root_a_builder_gives",
+  "tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home",
+]
+
+# The wrapper's own `git` calls take the home the shell's `~name` finds, which no variable
+# redirects, so a copy the suite runs reads the developer's git configuration unless the copy is
+# pinned to the test's home.
+[[mutation]]
+name = "the suite's copies of the wrapper look their git's home up as shipped"
+file = "tests/ownerhome.py"
+before = '    wrapper.write_text(text.replace(GIT_HOME_LOOKED_UP, pinned), encoding="utf-8")'
+after = "    pass"
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_suites_copies_of_the_wrapper_hand_their_git_this_tests_home",
+]
+
+# `EXEMPT` excuses every `_run` in the wrapper tests; the hold on what each passes is what keeps a
+# real launch through it with this checkout's root from being excused.
+[[mutation]]
+name = "a wrapper test runs this checkout's stayfixed for more than --version"
+file = "tests/hooks/test_wrapper.py"
+before = "        \"closed\",\n        \"--version\",\n        plugin_root=ROOT,"
+after = "        \"closed\",\n        \"memory\",\n        plugin_root=ROOT,"
+reddens = ["tests/test_owner_home_seam.py::test_every_wrapper_run_uses_a_root_that_reads_no_home"]
+
+# A name a scope binds hides the builtin of that name there and in the scopes it encloses, never
+# beyond: a parameter named `exec` in one function left every `exec(...)` in the file unread.
+[[mutation]]
+name = "the name rule hides a builtin across the whole file again"
+file = "tests/boundaries/test_delivery.py"
+before = '                and not astscan.shadowed(child.id, chain)'
+after = """                and not any(
+                    child.id in astscan.scope_bindings(scope)[0]
+                    for scope in [tree, *(n for n in ast.walk(tree) if isinstance(n, astscan.SCOPES))]
+                )"""
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
+
+# A module or a class body is looked up at run time, so a binding there can be unrun, deleted or
+# the builtin itself (`exec = exec`); only an import hides the builtin there.
+[[mutation]]
+name = "a module or a class body hides a builtin by any binding again"
+file = "tests/boundaries/astscan.py"
+before = '    hiding = imported if isinstance(node, RUN_TIME_SCOPES) else bound | imported'
+after = '    hiding = bound | imported'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# A binding of a builtin that runs text, made in a module or a class body, is a row to pin or
+# rename; unread, `exec = exec` at module level reaches the builtin with no row.
+[[mutation]]
+name = "a binding of a text runner in a module or a class body is no row"
+file = "tests/boundaries/test_delivery.py"
+before = '            and astscan.binds_at_run_time(binding, chain, walrus=id(child) in walrus)'
+after = '            and False'
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
+
+# A function's store under `global` binds the module's name, which is looked up at run time.
+[[mutation]]
+name = "a function's store of a text runner under global is no row"
+file = "tests/boundaries/astscan.py"
+before = '    return isinstance(node, RUN_TIME_SCOPES) or name in declared_global'
+after = '    return isinstance(node, RUN_TIME_SCOPES)'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_binding_lands_where_python_looks_it_up_at_run_time_or_in_its_function",
+]
+
+# A walrus target in a comprehension binds in the scope around it, not in the comprehension.
+[[mutation]]
+name = "a walrus in a comprehension binds in the comprehension"
+file = "tests/boundaries/astscan.py"
+before = '            if not isinstance(node, COMPREHENSIONS):'
+after = '            if isinstance(node, COMPREHENSIONS):'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# A walrus in a module-level comprehension binds the module's name, which is a row.
+[[mutation]]
+name = "a walrus target is taken to land in its comprehension"
+file = "tests/boundaries/astscan.py"
+before = '    while walrus and isinstance(chain[depth][0], COMPREHENSIONS):'
+after = '    while False:'
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_binding_lands_where_python_looks_it_up_at_run_time_or_in_its_function",
+]
+
+# `import builtins as exec` binds the module of builtins under the name, not something of the
+# file's own.
+[[mutation]]
+name = "import builtins under a text runner's name hides the builtin"
+file = "tests/boundaries/astscan.py"
+before = '                if alias.name != "builtins"'
+after = "                if alias.name"
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# A method does not see its class body, so a text runner the body imports under another name is
+# still the builtin when a method calls it; seen, the delivery rule drops that row. A
+# comprehension's first iterable is read around it, where its own variable does not hide; read
+# inside, a runner it calls under that variable's name is no row either.
+[[mutation]]
+name = "a nested scope sees an enclosing class body"
+file = "tests/boundaries/astscan.py"
+before = "        if depth and isinstance(node, ast.ClassDef):"
+after = "        if False:"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+[[mutation]]
+name = "a comprehension's first iterable is read inside it"
+file = "tests/boundaries/astscan.py"
+before = "        return [first.iter], [first.target, *first.ifs, *rest, *results]"
+after = "        return [], [first.iter, first.target, *first.ifs, *rest, *results]"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# An `except ... as` name and the first part of a dotted `import` are bindings of the function
+# they are made in; missed, the name reads as the builtin, and the rule reports a row for it.
+[[mutation]]
+name = "an except clause's name binds nothing"
+file = "tests/boundaries/astscan.py"
+before = "    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):"
+after = "    if isinstance(node, (ast.MatchAs, ast.MatchStar)):"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+[[mutation]]
+name = "import a.b binds the dotted name rather than its first part"
+file = "tests/boundaries/astscan.py"
+before = '''                alias.asname or alias.name.split(".")[0]'''
+after = "                alias.asname or alias.name"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# A `nonlocal` name binds nothing of its own scope: it is the enclosing function's, and where that
+# took the name `from builtins` it is still the builtin. Counted as a binding, it hides it.
+[[mutation]]
+name = "a nonlocal name hides a builtin the enclosing function took from builtins"
+file = "tests/boundaries/astscan.py"
+before = "    return hiding - declared_global - declared_nonlocal, declared_global, declared_nonlocal"
+after = "    return hiding - declared_global, declared_global, declared_nonlocal"
+reddens = [
+  "tests/boundaries/test_astscan.py::test_a_name_resolves_by_pythons_scoping_to_the_files_binding_or_the_builtin",
+]
+
+# Type parameters are evaluated around their `def` or `class`; unread, `def f[T: exec(...)]()` is
+# no row. The case is parsed on 3.12 and later, which the oracle runs on.
+[[mutation]]
+name = "a function's type parameters are not read"
+file = "tests/boundaries/astscan.py"
+before = '        outer += [*node.decorator_list, *getattr(node, "type_params", [])]'
+after = "        outer += [*node.decorator_list]"
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_type_parameters_are_read_around_their_def_or_class",
+]
+
+[[mutation]]
+name = "a class's type parameters are not read"
+file = "tests/boundaries/astscan.py"
+before = '        outer = [*node.decorator_list, *getattr(node, "type_params", [])]'
+after = "        outer = [*node.decorator_list]"
+reddens = [
+  "tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling",
+  "tests/boundaries/test_astscan.py::test_type_parameters_are_read_around_their_def_or_class",
+]
+
+# Every module carries `__builtins__`, so `json.__builtins__` hands over `__import__` by a computed
+# name as the bare name does.
+[[mutation]]
+name = "__builtins__ read off another module is no row"
+file = "tests/boundaries/test_delivery.py"
+before = '            child.attr in DYNAMIC_IMPORTS or child.attr == "__builtins__"'
+after = "            child.attr in DYNAMIC_IMPORTS"
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
+
+# `from json import __builtins__ as b` binds the builtins under any name; the `from` and the name
+# are rows whatever module it is taken out of.
+[[mutation]]
+name = "a from of __builtins__ out of another module is no row"
+file = "tests/boundaries/test_delivery.py"
+before = '            return [alias for alias in node.names if alias.name == "__builtins__"]'
+after = "            return []"
+reddens = ["tests/boundaries/test_delivery.py::test_the_string_import_rules_read_every_spelling"]
+
+# The shape check's bound on a pass that is one repeat of one character alone. Python 3.11.4 counts
+# an item it matches ignoring case through a class one character at a time, moving the pass's
+# position as it goes, so such a repeat that needs two and finds one fails one past the pass's
+# start, and a possessive group goes on from there: `(?i)(?:[a-z]{2,}|-)*+(.*)` leaves `1` of `-a1`
+# to the tail, where 3.14 leaves `a1`. A letter with a second case fold is read through such a
+# class, so `(?i)(?:s{2,}|-)*+` is the same shape. Without the bound the check admits both again.
+[[mutation]]
+name = "a lone repeat of one character may need two again"
+file = "tests/test_patterns.py"
+before = "        return bool(alternative[0][1][0] <= 1)"
+after = "        return True"
+reddens = [
+  "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:[a-z]{2,}|-)*+]",
+  "tests/test_patterns.py::test_the_shape_check_tells_what_python_3_11_4_misreads[(?i)(?:s{2,}|-)*+]",
+]
+
+# The shape check reads more than the patterns a module holds at its top level: a pattern built
+# inside a function from text the source spells, and every shipped profile's `match`. Each entry
+# narrows that reading back the way a walk regresses, and a planted case goes unseen or misread.
+[[mutation]]
+name = "the pattern scan stops at a function's body"
+file = "tests/test_patterns.py"
+before = "        yield from _calls(child, (*chain, child) if isinstance(child, _SCOPES) else chain)"
+after = """        if not isinstance(child, _FUNCTIONS):
+            yield from _calls(child, (*chain, child) if isinstance(child, _SCOPES) else chain)"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a literal inside a function]",
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a method's literal]",
+]
+
+[[mutation]]
+name = "the pattern scan stops reading a name its function assigns once"
+file = "tests/test_patterns.py"
+before = """        if len(assigned) == 1 and len(plain) == 1 and not bound:
+            return _spellings(plain[0], scope)
+"""
+after = ""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name the function binds once]",
+]
+
+[[mutation]]
+name = "the pattern scan reads every call's flags as none"
+file = "tests/test_patterns.py"
+before = "    bits = 0 if flags is None else _flags(flags, scope)"
+after = "    bits = 0"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[flags that make it read alike]",
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[flags by keyword]",
+]
+
+[[mutation]]
+name = "the pattern scan reads re.escape as nothing"
+file = "tests/test_patterns.py"
+before = '_ESCAPED = ("", "x", "xy")'
+after = '_ESCAPED = ("",)'
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[an f-string around re.escape]",
+]
+
+[[mutation]]
+name = "the pattern scan passes over text it cannot spell"
+file = "tests/test_patterns.py"
+before = """        except _Unspelled:
+            unspelled.append(where)
+            continue"""
+after = """        except _Unspelled:
+            continue"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[text handed to the function]",
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
+# `re.escape`'s text inside a choice a possessive group repeats can share a prefix with a sibling
+# alternative, which the parser takes out ahead of the choice and no stand-in shows; the place is
+# named rather than judged by the stand-ins.
+[[mutation]]
+name = "the pattern scan judges re.escape in a possessive group's choice by its stand-ins"
+file = "tests/test_patterns.py"
+before = "            _compiles(text, flags) and _in_a_repeated_choice(_PARSER.parse(text, flags))"
+after = "            False"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[re.escape in a choice a possessive group repeats]",
+]
+
+# A closure reads a name its enclosing function binds, and a class body reads its own, before the
+# module's same-named string.
+[[mutation]]
+name = "the pattern scan reads a closure's name from the module"
+file = "tests/test_patterns.py"
+before = "    if any(isinstance(node, _FUNCTIONS) and _binds(node, name) for node in enclosing):"
+after = "    if False:"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name a closure reads from its function]",
+]
+
+[[mutation]]
+name = "the pattern scan reads a class body's name from the module"
+file = "tests/test_patterns.py"
+before = "    if any(_binds(node, name) for node in scope.chain[at + 1 :]):"
+after = "    if False:"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a name a class body binds]",
+]
+
+# Handed text is counted per call, so a second call in a place named once is a finding.
+[[mutation]]
+name = "the pattern scan names a function once however many calls it cannot spell"
+file = "tests/test_patterns.py"
+before = "    return spelled, unspelled"
+after = "    return spelled, list(dict.fromkeys(unspelled))"
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[two calls of handed text in one function]",
+]
+
+[[mutation]]
+name = "the pattern walk leaves the shipped profiles' locators out"
+file = "tests/test_patterns.py"
+before = "    for name in profiles.shipped(source=source):"
+after = "    for name in ():"
+reddens = [
+  "tests/test_patterns.py::test_the_walk_reads_the_match_of_every_shipped_profiles_locators",
+]
+
+[[mutation]]
+name = "the pattern scan misses re under another name"
+file = "tests/test_patterns.py"
+before = """                if alias.name == "re" and alias.asname not in (None, "re"):"""
+after = """                if False:"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[re under another name]",
+]
+
+[[mutation]]
+name = "the pattern scan misses a function taken out of re"
+file = "tests/test_patterns.py"
+before = """        if isinstance(node, ast.ImportFrom) and node.module == "re":"""
+after = """        if False:"""
+reddens = [
+  "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
+]
+

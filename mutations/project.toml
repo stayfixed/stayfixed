@@ -34,8 +34,8 @@ reddens = [
 # Each mutates a file no type checker reads and no import reaches: a YAML workflow, a
 # permissions table, a `.gitignore`. That is exactly why they are here. `hooks/run-hook.sh` has
 # entries on the same argument -- CONTRIBUTING's rule is that a genuinely load-bearing guard goes
-# into `mutations/` "instead of only describing it", and a `# Mutation: ...` comment in a test body
-# is a description.
+# into `mutations/` rather than only being described, and a `# Mutation: ...` comment in a test
+# body is a description.
 
 # The overlay's first secret scan, and the revision decides whose code runs on the owner's
 # machine at every commit. The assertion this entry belongs to used to be `"rev:" in config`,
@@ -353,7 +353,7 @@ reddens = [
 [[mutation]]
 name = "init runs again over a repository whose manifest says it is already initialised"
 file = "src/stayfixed/project/init.py"
-before = "    if (root / MANIFEST_PATH).is_file():"
+before = "    if Manifest.present(root):"
 after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
@@ -729,8 +729,8 @@ reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_
 [[mutation]]
 name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
 file = "src/stayfixed/project/rewrite.py"
-before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
-after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n"
+before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written ({said(exc)})\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written ({said(exc)})\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=stayfixed.__version__)\n        manifest.with_record(stamped).write(root)\n"
 reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
 
 # The record is re-stamped before the write, so a write that fails must put it back: left naming
@@ -849,7 +849,7 @@ reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if (root / ATTACH_LEDGER).is_file():"
+before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
 
@@ -1259,8 +1259,8 @@ reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_s
 [[mutation]]
 name = "a footprint command imports the planner past the seam"
 file = "src/stayfixed/project/init.py"
-before = "from stayfixed.scaffold import MANIFEST_PATH, Plan, apply"
-after = "from stayfixed.scaffold import MANIFEST_PATH, Plan, apply, plan"
+before = "from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply"
+after = "from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply, plan"
 reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]
 
 # `replan` asks no guard, so it plans only on a `Passes` whose `predict` already asked the ignore
@@ -1304,7 +1304,7 @@ reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anc
 [[mutation]]
 name = "the questions are asked over a stayfixed.toml that already answers them"
 file = "src/stayfixed/project/init.py"
-before = "    if answering and contained(root, CONFIG_FILE).is_file():"
+before = "    if answering and fsops.is_file(contained(root, CONFIG_FILE)):"
 after = "    if False:"
 reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
 
@@ -1578,8 +1578,8 @@ reddens = [
 [[mutation]]
 name = "init's answer-sheet check takes a symlinked stayfixed.toml by what it points at"
 file = "src/stayfixed/project/init.py"
-before = "    if answering and contained(root, CONFIG_FILE).is_file():"
-after = "    if answering and (root / CONFIG_FILE).is_file():"
+before = "    if answering and fsops.is_file(contained(root, CONFIG_FILE)):"
+after = "    if answering and fsops.is_file(root / CONFIG_FILE):"
 reddens = [
   "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_stayfixed_toml_whatever_it_points_at[init-questions-regular-file]",
   "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_stayfixed_toml_whatever_it_points_at[init-questions-/dev/zero]",
@@ -1854,43 +1854,31 @@ file = "src/stayfixed/profiles/hints.py"
 before = '        hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'
 after = '''        importlib.util.find_spec("stayfixed.memory.store")
         hint: RedRunHint = importlib.import_module(f"{__package__}.{name}.hygiene").HINT'''
-reddens = ["tests/test_areas.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
+reddens = ["tests/boundaries/test_delivery.py::test_no_core_module_reaches_the_import_machinery_but_where_pinned"]
 
-# Only a regular `.pyc` is read, and it is judged by the descriptor that reads it. Following a
-# symlinked one reads a file outside every code root, opening a named pipe without `O_NONBLOCK`
-# waits for a writer for good (a link to `/dev/stdin` hung `test hygiene` in a terminal), and a
-# pipe whose writer has written a header reads like bytecode. The source is not held to it: the
-# interpreter follows a symlinked source too.
+# A profile reads configuration files a repository commits, each to `_TEXT_CAP`: one at the cap is
+# read, and one past it reads as no file.
 [[mutation]]
-name = "a symlinked .pyc is followed"
-file = "src/stayfixed/profiles/python/hygiene.py"
-before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
-after = "_PYC_OPEN = os.O_RDONLY | os.O_NONBLOCK"
-reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
+name = "a profile reads a configuration file past its cap"
+file = "src/stayfixed/profiles/evaluate.py"
+before = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP)"
+after = "        return read_regular_text(contained(root, relative))"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
 
 [[mutation]]
-name = "a .pyc that is a named pipe is opened waiting for a writer"
-file = "src/stayfixed/profiles/python/hygiene.py"
-before = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK"
-after = "_PYC_OPEN = os.O_RDONLY | os.O_NOFOLLOW"
-reddens = [
-  "tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_never_blocks_the_walk",
-]
+name = "a profile refuses a configuration file at its cap"
+file = "src/stayfixed/profiles/evaluate.py"
+before = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP)"
+after = "        return read_regular_text(contained(root, relative), limit=_TEXT_CAP - 1)"
+reddens = ["tests/profiles/test_evaluate.py::test_a_file_at_the_text_cap_is_read_and_one_past_it_is_not"]
 
-[[mutation]]
-name = "a .pyc that is not a regular file is read"
-file = "src/stayfixed/profiles/python/hygiene.py"
-before = """        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            return None
-"""
-after = ""
-reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_named_pipe_is_never_read"]
-
+# The source is not held to the rule a `.pyc` is (`mutations/`'s "a symlinked .pyc is followed",
+# declared in the core group, where the reader is): the interpreter follows a symlinked source too.
 [[mutation]]
 name = "a source that is a symlink is not compared"
 file = "src/stayfixed/profiles/python/hygiene.py"
-before = "                if not source.is_file():"
-after = "                if not source.is_file() or source.is_symlink():"
+before = "                if not fsops.is_file(source):"
+after = "                if not fsops.is_file(source) or fsops.is_symlink(source):"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_is_not_followed"]
 
 # The walk for `.pyc` files stops at its named cap and then says it could not tell: unbounded, a
@@ -1898,7 +1886,7 @@ reddens = ["tests/profiles/python/test_hygiene.py::test_a_pyc_that_is_a_symlink_
 [[mutation]]
 name = "the stale-bytecode walk ignores its cap"
 file = "src/stayfixed/profiles/python/hygiene.py"
-before = "                        if visited > BYTECODE_WALK_ENTRIES:"
+before = "                        if visited > fsops.WALK_ENTRIES:"
 after = "                        if False:"
 reddens = ["tests/profiles/python/test_hygiene.py::test_a_walk_cut_short_by_its_cap_could_not_tell"]
 
@@ -2003,8 +1991,8 @@ reddens = ["tests/profiles/test_hints.py::test_a_note_is_handed_counts_and_nothi
 [[mutation]]
 name = "test hygiene prints a report as the hint returned it"
 file = "src/stayfixed/profiles/hints.py"
-before = "    report = counts(hint, root, config)"
-after = "    report = dict(hint.report(root, config))"
+before = "    report = counts(hint, roots)"
+after = "    report = dict(hint.report(roots))"
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
 ]
@@ -2061,4 +2049,72 @@ after = """
 reddens = [
   "tests/profiles/test_evaluate.py::test_a_file_that_does_not_parse_resolves_to_nothing[hex-past-str]",
   "tests/assess/test_command.py::test_a_pyproject_number_past_the_conversion_limit_is_one_the_profile_cannot_read",
+]
+
+# A stack's red-run hint is handed the contained code roots by the guard that asks it, so the
+# profiles never import the session guard, which imports the profiles' hint machinery: the two
+# packages imported one another at module level.
+[[mutation]]
+name = "the Python profile's hint imports the session guard again"
+file = "src/stayfixed/profiles/python/hygiene.py"
+before = "from stayfixed.fsops import open_directory, read_bounded"
+after = """from stayfixed.fsops import open_directory, read_bounded
+from stayfixed.guards.api import contained_roots"""
+reddens = [
+  "tests/boundaries/test_layering.py::test_the_packages_import_one_another_without_a_cycle_at_module_level",
+]
+
+# A file stayfixed's own command cannot remove or write is named by its root-relative path and the
+# reason in words (`fsops.said`): the error's own text quoted the leaf or the temporary file the
+# write went through, `[Errno 13] Permission denied: 'manifest.json'`.
+[[mutation]]
+name = "a ledger file that cannot be removed is reported with the error's own text"
+file = "src/stayfixed/project/uninstall.py"
+before = '            raise Refusal(f"{target} cannot be removed ({said(exc)})") from exc'
+after = '            raise Refusal(f"{target} cannot be removed ({exc})") from exc'
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_words[.stayfixed/manifest.json]"]
+
+[[mutation]]
+name = "the local ledger that cannot be removed is reported with the error's own text"
+file = "src/stayfixed/project/uninstall.py"
+before = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({said(exc)})") from exc'
+after = '            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed ({exc})") from exc'
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_file_that_cannot_be_removed_is_refused_with_the_reason_in_words[.stayfixed/local/artifacts.json]"]
+
+[[mutation]]
+name = "a stayfixed.toml that cannot be written is reported with the error's own text"
+file = "src/stayfixed/project/rewrite.py"
+before = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({said(exc)})")'
+after = '        failure = Refusal(f"{CONFIG_FILE} cannot be written ({exc})")'
+reddens = ["tests/project/test_rewrite.py::test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure"]
+
+# A committed link into a directory nobody may search makes every path through it a fault to ask
+# about. Each question about stayfixed's own ledger goes through `contained`, which names the link,
+# or asks whether the place is a link before it follows it; a bare existence check through the link
+# met the fault, an internal error that printed the absolute path.
+[[mutation]]
+name = "uninstall asks for attach's ledger past contained"
+file = "src/stayfixed/project/uninstall.py"
+before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
+after = "    if fsops.is_file(root / ATTACH_LEDGER):"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_refuses_a_local_directory_linked_where_nobody_may_search_by_name",
+]
+
+[[mutation]]
+name = "uninstall follows a link where its ledger belongs to ask whether it is a directory"
+file = "src/stayfixed/project/uninstall.py"
+before = "        if not fsops.is_symlink(path) and fsops.is_dir(path):\n            continue"
+after = "        if fsops.is_dir(path) and not fsops.is_symlink(path):\n            continue"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link[.stayfixed/assessment.json]",
+]
+
+[[mutation]]
+name = "uninstall follows a link where its digest record belongs to ask whether it is a directory"
+file = "src/stayfixed/project/uninstall.py"
+before = "    if not fsops.is_symlink(path) and fsops.is_dir(path):\n        with contextlib.suppress(OSError):"
+after = "    if fsops.is_dir(path) and not fsops.is_symlink(path):\n        with contextlib.suppress(OSError):"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_uninstall_removes_a_ledger_file_linked_where_nobody_may_search_as_a_link[.stayfixed/local/artifacts.json]",
 ]

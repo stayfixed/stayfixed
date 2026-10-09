@@ -46,7 +46,7 @@ def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
     # The path the `init` skill sends a new user down: a repository with no origin, where `plan`
     # and `commit` could not run, each with a remedy about plans and commit messages. `adopt
     # promote` explained the missing base in a note, `assess` did not. Mutation (oracle):
-    # "assess never explains a base the checkout lacks" -> the note is gone.
+    # `mutations/`'s "assess never explains a base the checkout lacks" -> the note is gone.
     root = repository(tmp_path, origin=None)
     git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
     answered = init(
@@ -307,8 +307,8 @@ def test_a_pyproject_number_past_the_conversion_limit_is_one_the_profile_cannot_
     # A hex literal of any length parses, and the Python profile's locator read its text with
     # `str()`, which raises past 4,300 digits: `stayfixed assess` ended in an internal error, exit
     # 2. The value resolves to nothing, as a `pyproject.toml` that does not parse does, and
-    # `requires-python` reads as absent. Mutation (declared): "a profile locator stringifies a
-    # number past the conversion limit".
+    # `requires-python` reads as absent. Mutation (declared): `mutations/`'s "a profile locator
+    # stringifies a number past the conversion limit".
     root = smoke_repo(tmp_path)
     config = root / CONFIG_FILE
     config.write_text(

@@ -80,8 +80,8 @@ def test_a_ref_named_like_the_remote_branch_never_reaches_the_base_branch(
     # git shortens a ref only as far as it stays unambiguous, so with a tag or a local branch
     # named `origin/develop`, `symbolic-ref --short` answered `remotes/origin/develop`, which
     # passed the grammar and was written as the base branch: a workflow that never ran and a
-    # base no command could resolve. The clone carries the tag. Mutation (oracle): "origin/HEAD
-    # is read in its short form" -> both cases come back `remotes/origin/develop`.
+    # base no command could resolve. The clone carries the tag. Mutation (oracle): `mutations/`'s
+    # "origin/HEAD is read in its short form" -> both cases come back `remotes/origin/develop`.
     root = _clone_on_develop(tmp_path)
     if shadow == "tag":
         git(root, "tag", "origin/develop")
@@ -98,8 +98,8 @@ def test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default
 ) -> None:
     # `origin/HEAD` pointed by hand at a local branch: `refs/heads/develop` passes the branch
     # grammar whole, so only the exact `refs/remotes/origin/` prefix decides. Mutation (oracle):
-    # "a remote head outside refs/remotes/origin/ is read whole" -> `refs/heads/develop` comes
-    # back as the base branch.
+    # `mutations/`'s "a remote head outside refs/remotes/origin/ is read whole" ->
+    # `refs/heads/develop` comes back as the base branch.
     root = _clone_on_develop(tmp_path)
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/heads/develop")
     found = detect(root)
@@ -110,8 +110,9 @@ def test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default
 @needs_git
 def test_with_no_remote_head_the_base_branch_is_the_branch_checked_out(tmp_path: Path) -> None:
     # A repository nobody cloned has no `origin/HEAD`, and one on `develop` had `main` written as
-    # its base and a workflow that never ran for its own pull requests. Mutation (oracle): "no
-    # remote head leaves the default whatever is checked out" -> `main`, `default`.
+    # its base and a workflow that never ran for its own pull requests. Mutation (oracle):
+    # `mutations/`'s "no remote head leaves the default whatever is checked out" -> `main`,
+    # `default`.
     root = repository(tmp_path, origin=None)
     git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
     found = detect(root)
@@ -165,9 +166,9 @@ def test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all(
     # with itself. The same holds for a repository whose only remote is `upstream`, pushed or
     # cloned with `-o upstream`: a remote is there, and only `origin/HEAD` is read. With any
     # remote the default stands and is flagged for the note; with none, the branch checked out
-    # is all there is to go on. Mutations (oracle): "a remote with no origin/HEAD takes the
-    # branch checked out" -> all three remote shapes come back as the feature branch; "only an
-    # origin remote keeps the default" -> the two `upstream` shapes do.
+    # is all there is to go on. Mutations (oracle): `mutations/`'s "a remote with no origin/HEAD
+    # takes the branch checked out" -> all three remote shapes come back as the feature branch;
+    # "only an origin remote keeps the default" -> the two `upstream` shapes do.
     found = detect(_adopting(tmp_path, shape))
     base_branch, source, unrecorded = expected
     assert (found.base_branch, found.sources["base_branch"]) == (base_branch, source)
@@ -181,8 +182,8 @@ def test_a_repository_whose_remotes_git_cannot_list_keeps_the_default(
 ) -> None:
     # Whether there is a remote is the whole question the checked-out branch hangs on, so a `git
     # remote` that gave no answer is not "no remote": the default stands, flagged for a note of
-    # its own. Mutation (oracle): "remotes git cannot list read as none" -> the feature branch
-    # comes back.
+    # its own. Mutation (oracle): `mutations/`'s "remotes git cannot list read as none" -> the
+    # feature branch comes back.
     from stayfixed.gitenv import git_run as real
 
     root = _adopting(tmp_path, "unpushed")
@@ -203,7 +204,8 @@ def test_a_checked_out_branch_nothing_can_name_leaves_the_default(
 ) -> None:
     # A detached `HEAD` answers no branch, and `a+b` is a branch git accepts and the grammar
     # does not: both leave the default, and neither is a remote head to report as refused.
-    # Mutation (oracle): "the checked-out branch skips the grammar" -> `a+b` comes back.
+    # Mutation (oracle): `mutations/`'s "the checked-out branch skips the grammar" -> `a+b` comes
+    # back.
     root = repository(tmp_path, origin=None)
     git(root, "commit", "-q", "--allow-empty", "-m", "one")
     if head == "detached":

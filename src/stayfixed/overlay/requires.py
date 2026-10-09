@@ -12,9 +12,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from stayfixed.jsonobject import json_object
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
-from stayfixed.semver import COMPONENT, VERSION
+from stayfixed.overlay.naming import manifest
+from stayfixed.semver import COMPONENT, VERSION, pre_release
 
 # A floor is built from `semver`'s component, so a declared floor and a running version bound each
 # component alike; `semver.COMPONENT` says why the bound is what it is.
@@ -28,9 +28,10 @@ def requires_of(root: Path) -> str | None:
     every one of those is "nothing declared", and none of them is this reader's business to
     tell apart.
     """
-    path = root / PLUGIN_MANIFEST
     try:
-        raw = json_object(path.read_text(encoding="utf-8"), PLUGIN_MANIFEST, error=ValueError)
+        # `naming.manifest`, the one reader of an overlay's manifests: a regular file only, so a
+        # FIFO there cannot block the SessionStart hook this is asked on.
+        raw = manifest(root, PLUGIN_MANIFEST)
     except (OSError, ValueError):  # bytes that are not UTF-8 are a `ValueError` too
         return None
     head = raw.get("stayfixed")
@@ -39,7 +40,13 @@ def requires_of(root: Path) -> str | None:
 
 
 def satisfies(spec: str, version: str) -> bool | None:
-    """`True`/`False` for `>=X.Y.Z` against an `X.Y.Z[...]` version, compared as integer tuples.
+    """`True`/`False` for `>=X.Y.Z` against an `X.Y.Z[...]` version: met by a later triple, and by
+    the floor's own unless the version is a pre-release of it (`semver.pre_release`).
+
+    So a pre-release of the floor (`1.0.0rc1`, `1.0.0rc1.post2`, `1.0.0.dev3+g1234abc` against
+    `>=1.0.0`) does not meet it, as `semver.later` orders the release after the first, and any
+    other suffix on the floor's triple (`.post1`, `+local`) meets it, which is the answer such a
+    build always had.
 
     `None` for any other spec shape or a version this reader cannot parse — a caller that gets
     `None` back has an unreadable declaration, not a false one.
@@ -57,6 +64,6 @@ def satisfies(spec: str, version: str) -> bool | None:
     running = VERSION.match(version)
     if floor is None or running is None:
         return None
-    return tuple(int(part) for part in running.groups()) >= tuple(
-        int(part) for part in floor.groups()
-    )
+    ours = tuple(int(part) for part in running.groups())
+    wanted = tuple(int(part) for part in floor.groups())
+    return ours > wanted or (ours == wanted and not pre_release(version))

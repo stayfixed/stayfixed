@@ -7,7 +7,8 @@ can account for them and a reader can find them. The project's documents stay at
 A local run's default base is derived here too (`local_base`), because the three areas that
 default one cannot import each other, and so is the `.gitignore` block both `init` and `attach`
 write, with the attach ledger's path under it: the paths are the core's to name, and the core
-may not import `attach`; the crossings still pinned are listed in `tests/test_areas.py`.
+may not import `attach`; the crossings still pinned are listed in
+`tests/boundaries/test_delivery.py`.
 """
 
 from __future__ import annotations

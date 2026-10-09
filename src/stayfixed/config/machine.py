@@ -1,32 +1,44 @@
 """Where the machine-level configuration lives; the file is optional.
 
-**Both variables that can name this file are gated, and for one reason.** A committed
+**Neither variable that could name this file is read, and for one reason.** A committed
 `.claude/settings.json` may carry an `env` block, which applies without a trust prompt in a
-non-interactive session, so a repository able to redirect this path would declare its own
-overlay root and its own pre-recorded trust hash — the two anchors that locating the note store
-and trusting in-repo notes by hash rest on.
+non-interactive session and can set `STAYFIXED_CONFIG`; Claude Code ignores `XDG_CONFIG_HOME`
+there (below), but direnv, mise or a devcontainer can set it from a file the repository commits.
+So a repository able to redirect this path would declare its own overlay root and its own
+pre-recorded trust hash — the two anchors that locating the note store and trusting in-repo
+notes by hash rest on.
 
-`STAYFIXED_CONFIG` was gated and `XDG_CONFIG_HOME` was not, which left the gate worth nothing:
+`STAYFIXED_CONFIG` was once gated and `XDG_CONFIG_HOME` was not, which left the gate worth nothing:
 the two variables reach the same file, and the second one costs a repository exactly one extra
 path segment (`<dir>/stayfixed/config.toml` rather than the file itself). Gating one of a pair
 of equivalent inputs is not a partial defence, it is a redirect with a longer name, so the
-rule is now the variable-independent one: **in a non-interactive session this file is
-`~/.config/stayfixed/config.toml` and nothing else.**
+rule is the variable-independent one: **this file is `~/.config/stayfixed/config.toml` and
+nothing else**, for every command and from a terminal too, so the file a person writes is the
+file a hook reads; `--machine` names another, a path a person typed.
 
 That is the XDG specification's own answer for an unset `XDG_CONFIG_HOME`, so a machine owner
-who sets one really does lose it on the hook path rather than getting a wrong answer quietly —
-`stayfixed doctor` is where that belongs once it exists. The cost is bounded and the exposure it
+who sets one really does lose it rather than getting a wrong answer quietly, and
+`stayfixed doctor`'s `ignored-env` row says so. The cost is bounded and the exposure it
 replaces was not: `permitted_roots`, `trust.json` and the overlay anchor were all selectable by
 a file the clone ships.
 
-A caller that knows it is a hook, the MCP server or a `stayfixed gate` run says
-`interactive=False` rather than relying on the terminal check — `config.loader.load` takes the
-same keyword for exactly that reason.
+**`HOME` is a third such variable.** Claude Code never applies
+`HOME`, or any `XDG_*` variable, from a project's `env` block (its settings reference, "Variables
+Claude Code ignores in `env`"; measured on 2.1.293), but a direnv, mise or devcontainer environment
+can set it for a checkout, and `run-hook.sh` enters the project root before Python starts, so
+`HOME=fakehome` names a directory inside the clone: a `trust.json` committed there approved the
+clone's own notes with no word from the owner. So off a terminal the home directory is the password
+database's entry for this process's user (`owner_home`), which no variable moves, and this file is
+under that entry's directory for every reader and writer, `setup` and `memory trust` included. A
+container or home-manager setup whose `HOME` differs from that entry therefore keeps this file and
+`trust.json` under the entry's directory, and `stayfixed doctor`'s `ignored-env` row says so. A
+user the database does not list has no such file: none is read, rather than one `HOME` chose.
 """
 
 from __future__ import annotations
 
 import os
+import pwd
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -43,15 +55,101 @@ def override_is_honoured(interactive: bool | None = None) -> bool:
         return False
 
 
-def machine_config_path(
-    env: Mapping[str, str] | None = None, *, interactive: bool | None = None
-) -> Path:
+def passwd_home() -> Path | None:
+    """This process's user's home directory as the password database records it.
+
+    `None` for a user the database does not list — a container run under a bare uid — and for an
+    entry whose directory is not an absolute path, which would otherwise be read against
+    whatever directory the process happens to be in.
+    """
+    try:
+        recorded = pwd.getpwuid(os.getuid()).pw_dir
+    except KeyError:
+        return None
+    return Path(recorded) if os.path.isabs(recorded) else None
+
+
+def owner_home(interactive: bool | None = None) -> Path | None:
+    """The machine owner's home directory: `HOME` from a terminal, the database's everywhere else.
+
+    Off a terminal `HOME` may be a directory the clone ships (the module docstring), so it is
+    honoured only where `override_is_honoured` finds a person. `None` for a user `passwd_home`
+    finds no directory for, off a terminal, and at one where `HOME` is unset too, where
+    `Path.home` raises. `None` at a terminal where `HOME` is empty as well, a value that names no
+    home (`homes_agree`), where `Path.home` answers `/`: a command that needs a home then says
+    that `HOME` names none, rather than writing under the root directory.
+    """
+    if override_is_honoured(interactive):
+        if home_is_empty():
+            return None
+        try:
+            return Path.home()
+        except RuntimeError:
+            return None
+    return passwd_home()
+
+
+def anchor_home(interactive: bool | None = None) -> Path | None:
+    """`owner_home`, as a root a containment walk opens: the database's answer resolved once.
+
+    `fsops.open_within` opens its root with `O_NOFOLLOW`, so an entry whose directory is itself
+    a symlink (`/Users/me` linking to a volume) is refused there, while the release before read
+    `HOME`, often the real directory, and made the link. The entry is the anchor this module
+    trusts and its symlinks are the machine's, so resolving them changes nothing about whom the
+    root belongs to. `HOME` from a terminal is used as typed, as it always was, unless it is empty.
+    """
+    home = owner_home(interactive)
+    if home is None or override_is_honoured(interactive):
+        return home
+    return home.resolve()
+
+
+def homes_agree(env: Mapping[str, str] | None = None) -> bool:
+    """Whether `HOME` names the home the password database records, or is not set at all.
+
+    Where they agree, the home stayfixed trusts off a terminal is also the one every other program
+    finds through `HOME` — the harness locating its memory directory among them. An unset `HOME`
+    agrees, because a program with no `HOME` asks the database too; a user the database lists
+    no home for never agrees, since there is nothing to agree with. **An empty `HOME` is a value,
+    not an unset one, and names no home:** the shells' `~`, git and Node's `os.homedir` (libuv)
+    read it as `""` and Python's `Path.home` as `/`, and none of them asks the database, so it never
+    agrees, even in a directory that is the database's home.
+    """
     env = os.environ if env is None else env
-    honoured = override_is_honoured(interactive)
-    explicit = env.get("STAYFIXED_CONFIG") if honoured else None
-    if explicit:
-        return Path(explicit)
-    base = (env.get("XDG_CONFIG_HOME") if honoured else None) or str(
-        Path.home() / DEFAULT_CONFIG_DIR
-    )
-    return Path(base) / "stayfixed" / "config.toml"
+    recorded = passwd_home()
+    if recorded is None:
+        return False
+    chosen = env.get("HOME")
+    if chosen is None:
+        return True
+    return chosen != "" and Path(chosen).resolve() == recorded.resolve()
+
+
+def home_is_empty(env: Mapping[str, str] | None = None) -> bool:
+    """Whether `HOME` is set and empty, which names no home (`homes_agree` says why), so that a
+    command refusing for want of a home can say it is `HOME` that names none."""
+    env = os.environ if env is None else env
+    return env.get("HOME") == ""
+
+
+def in_owner_home(value: str) -> Path | None:
+    """`value` with a leading `~` read as the machine owner's home directory, never as `HOME`.
+
+    For a path the machine file records, which every command reads under the database's home:
+    `~` there means the home that file lives under. `None` when `value` begins with `~` and there
+    is no such home, rather than a `~` left to be read as a directory name. `~user` is the
+    database's entry for that user already, which is what `expanduser` asks for it.
+    """
+    if value == "~" or value.startswith("~/"):
+        home = passwd_home()
+        return None if home is None else home / value[2:]
+    return Path(value).expanduser()
+
+
+def machine_config_path() -> Path | None:
+    """The machine configuration file under the password database's home, which no variable moves
+    (the module docstring says why), or `None` for a user the database lists no home for."""
+    home = passwd_home()
+    if home is None:
+        return None
+    return home / DEFAULT_CONFIG_DIR / "stayfixed" / "config.toml"

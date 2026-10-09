@@ -39,6 +39,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "harness_anchor",
         "harness_link_needed",
         "harness_memory_path",
+        "MakeUnder",  # the home `link` makes the harness link under, which attach hands it
+        "Withhold",  # the other half of what `link`'s `harness` takes: no harness link
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
         "linked_names",  # every name the tree holds, which attach hides from git

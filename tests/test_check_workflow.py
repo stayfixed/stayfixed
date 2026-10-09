@@ -29,9 +29,9 @@ from tests import scriptload
 from tests.assess.baserepo import clone, commit
 from tests.floor import floor_env
 from tests.gitfixture import git, needs_git
+from tests.ownerhome import checkout_with_owner_home
 from tests.test_fixtures import (
     CHECK_WORKFLOW,
-    ROOT,
     needs_bash,
     needs_workflow,
     step_script,
@@ -324,7 +324,9 @@ def _judge(
     }
     checkout = workspace / "stayfixed"
     if not checkout.exists():
-        checkout.symlink_to(ROOT, target_is_directory=True)
+        # This checkout, with the password database answering the workspace as `HOME` does: the
+        # gate reads the machine file under the database's home, never the developer's.
+        checkout_with_owner_home(checkout, workspace)
     summary = workspace / "step-summary.md"
     summary.unlink(missing_ok=True)
     done = subprocess.run(
@@ -471,7 +473,8 @@ def test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_ent
     # of the counts written by hand stays behind when an entry is added or removed — the job then
     # fails on every pull request while the script and the suite agree. So the line is derived
     # from the script's constants; `tests/scripts/test_smoke_scripts.py` holds that a run prints
-    # it. Mutation (declared, "the smoke job demands a hook summary the script no longer prints").
+    # it. Mutation (declared, `mutations/`'s "the smoke job demands a hook summary the script no
+    # longer prints").
     smoke = scriptload.load(scriptload.SCRIPTS / "smoke_hooks.py", "smoke_hooks")
     expected = f"{smoke.EXPECTED_ENTRIES} entries, {smoke.EXPECTED_ROWS} row(s), 0 failure(s)"
     step = "Every hook entry, fed its sample event through the installed wrapper"
@@ -482,8 +485,8 @@ def test_the_smoke_job_demands_the_summary_the_hook_script_prints_over_every_ent
 def test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row() -> (
     None
 ):
-    # The same derivation for the other script. Mutation (declared, "the smoke job demands an
-    # exfiltration summary the scenario no longer prints").
+    # The same derivation for the other script. Mutation (declared, `mutations/`'s "the smoke job
+    # demands an exfiltration summary the scenario no longer prints").
     exfil = scriptload.load(scriptload.SCRIPTS / "smoke_exfiltration.py", "smoke_exfiltration")
     expected = f"{exfil.EXPECTED_ROWS} row(s), 0 failure(s)"
     assert _demanded_summary("The clone-to-exfiltration scenario", "hostile.out") == expected

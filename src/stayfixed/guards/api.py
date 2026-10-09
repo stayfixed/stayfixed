@@ -3,15 +3,16 @@
 A module and not the package's `__init__`, for the same measured reason `stayfixed.memory.api`
 gives: `stayfixed.hooks.registry` imports `stayfixed.guards.hooks`, which imports the package
 first, so a re-export list in `__init__.py` would pull this whole area into every `discover()`
-call and reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
-characters and keeps discovery cheap.
+call and reddens `tests/boundaries/test_discovery.py`. Keeping the surface one level down costs a
+consumer six characters and keeps discovery cheap.
 
 The list is what consumers outside this area actually reach for: the git hook, one shared rule
 and one gate:
 
 - `setup` offers and undoes the git hook (`install`, `uninstall`, `HOOK_NAME`), and `Installed`
   and `Removed` come with the two verbs, because a return type absent from this list is a value
-  `setup` can hold and cannot declare.
+  `setup` can hold and cannot declare; so does `Found`, what `uninstall` found, which its report
+  says.
 - `attach`, `doctor` and `setup`'s own tests ask where an overlay's hooks really live rather
   than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
   or one that is a worktree or a submodule, keeps them somewhere else, and both areas had the
@@ -19,9 +20,9 @@ and one gate:
 - `attach` and `detach` resolve the repository's `info/exclude` through the same resolver
   (`git_path`), so the block they keep there is the one file every worktree shares, found the
   way `setup --git-hooks` finds its hooks directory rather than by a second spelling.
-- `ledger.scan`, `memory.refs`, `assess`'s probes and the Python profile's red-run hint
-  (`profiles/python/hygiene.py`) all ask which roots a configuration's paths may reach
-  (`contained_roots`), and two spellings of that would be two answers.
+- `ledger.scan`, `memory.refs` and `assess`'s probes all ask which roots a configuration's paths
+  may reach (`contained_roots`), and two spellings of that would be two answers. A profile's
+  red-run hint walks the same roots, handed to it by this area's guard rather than imported.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
 
@@ -40,6 +41,7 @@ from stayfixed.guards.commit import commit_gate
 from stayfixed.guards.githooks import (
     HOOK_MARKER,
     HOOK_NAME,
+    Found,
     Installed,
     Removed,
     git_path,
@@ -52,6 +54,7 @@ from stayfixed.guards.roots import contained_roots
 __all__ = [
     "HOOK_MARKER",
     "HOOK_NAME",
+    "Found",
     "Installed",
     "Removed",
     "commit_gate",

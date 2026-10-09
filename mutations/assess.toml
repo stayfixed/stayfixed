@@ -187,6 +187,26 @@ reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-empty-team]",
 ]
 
+# An owner's domain labels are possessive, so `re` keeps no record per label: greedy, an owner of a
+# million labels took 124 MiB more to read.
+[[mutation]]
+name = "an owner's domain labels are given back"
+file = "src/stayfixed/assess/probes.py"
+before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-][A-Za-z0-9-]*+)++"'
+after = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"'
+reddens = ["tests/assess/test_probes.py::test_a_long_owner_is_read_in_memory_linear_in_its_length"]
+
+# Read alike by every supported Python: Python 3.11.0 to 3.11.4 went on past a failed pass of
+# a possessive group from where the pass stopped, and this shape is the one it misread.
+[[mutation]]
+name = "an owner's labels open on their possessive run"
+file = "src/stayfixed/assess/probes.py"
+before = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-][A-Za-z0-9-]*+)++"'
+after = '    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]++)++"'
+reddens = [
+  "tests/test_patterns.py::test_no_pattern_repeats_a_group_in_a_shape_python_3_11_4_misreads",
+]
+
 # The base a change is judged against. A base with no `stayfixed.toml` at the project's path is the
 # bootstrap, where the change decides its own configuration, so each way of reaching it by
 # accident — a tag answering for the base, git failing and read as "no copy", a root the base
@@ -465,7 +485,7 @@ reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_re
 name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
 file = "src/stayfixed/assess/commands.py"
 before = "    context = GateContext(root, verdict.config, base)"
-after = "    context = GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base)"
+after = "    context = GateContext(root, loads(tree_text, root, machine=machine), base)"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces",
   "tests/assess/test_gate_command.py::test_a_refused_change_is_checked_at_the_base_s_paths",
@@ -501,7 +521,7 @@ reddens = [
 name = "gate --builtin reads which gates are custom off the tree, not the verdict's configuration"
 file = "src/stayfixed/assess/commands.py"
 before = "    custom = verdict.config.gates.custom"
-after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
+after = "    custom = loads(tree_text, root, machine=machine).gates.custom"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
 
 # A configuration the rule refused fails every run that judged it, and a run judges it when `--only`
@@ -592,7 +612,7 @@ reddens = [
 name = "gate reads the names to run off the tree, so the custom step skips a gate the base keeps"
 file = "src/stayfixed/assess/commands.py"
 before = "    configured = verdict.config.gate_names"
-after = "    configured = loads(tree_text, root, machine=machine, interactive=False).gate_names"
+after = "    configured = loads(tree_text, root, machine=machine).gate_names"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
   "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
@@ -968,12 +988,22 @@ reddens = [
 [[mutation]]
 name = "the code-owners file is read with universal newlines"
 file = "src/stayfixed/assess/probes.py"
-before = '            return relative, path.read_bytes().decode("utf-8")'
-after = '            return relative, path.read_text(encoding="utf-8")'
+before = '            return relative, content.decode("utf-8")'
+after = '''            return relative, content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")'''
 reddens = [
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return]",
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return-in-a-crlf-file]",
 ]
+
+# GitHub does not load a code-owners file of `CODEOWNERS_MAX_BYTES` or more, so the read stops one
+# byte under it and a file that has that byte owns nothing. That the read is bounded at all has no
+# entry: a whole read and the bounded one give the same answer at every size a test can write.
+[[mutation]]
+name = "a code-owners file of exactly the size GitHub refuses is loaded"
+file = "src/stayfixed/assess/probes.py"
+before = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 1)"
+after = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES)"
+reddens = ["tests/assess/test_probes.py::test_a_codeowners_file_github_does_not_load_owns_nothing"]
 
 [[mutation]]
 name = "a CRLF line keeps its carriage return"
@@ -1325,7 +1355,7 @@ reddens = [
 [[mutation]]
 name = "a symlinked link target is judged by the link alone"
 file = "src/stayfixed/assess/tracked.py"
-before = "        if not link.is_symlink():"
+before = "        if not fsops.is_symlink(link):"
 after = "        if True:"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
@@ -1337,8 +1367,8 @@ reddens = [
 [[mutation]]
 name = "only the last component of a path is asked whether it is a symlink"
 file = "src/stayfixed/assess/tracked.py"
-before = "        if not link.is_symlink():"
-after = "        if not link.is_symlink() or todo:"
+before = "        if not fsops.is_symlink(link):"
+after = "        if not fsops.is_symlink(link) or todo:"
 reddens = [
   "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
   "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-an-ignored-directory]",
@@ -1663,6 +1693,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the foreign-hook probe reads a settings file with no bound"
+file = "src/stayfixed/assess/probes.py"
+before = '            text = read_regular_text(path) if fsops.is_file(path) else ""'
+after = '            text = path.read_text(encoding="utf-8") if fsops.is_file(path) else ""'
+reddens = [
+  "tests/assess/test_probes.py::test_a_settings_file_past_the_read_cap_is_one_the_probe_could_not_look_at",
+]
+
+[[mutation]]
 name = "the foreign-hook probe says nothing of a file it could only partly read"
 file = "src/stayfixed/assess/probes.py"
 before = """
@@ -1685,4 +1724,31 @@ after = "            walked = judged_entries(text, lenient=True)"
 reddens = [
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[byte-order-mark]",
   "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[scalar-event]",
+]
+
+# stayfixed writes no hook entry into a committed settings file, and the probe has no grant to
+# compare one with, so an entry there claiming stayfixed's marker is the repository's word alone:
+# read as stayfixed's, any entry of any `type` with any id passed unlisted.
+[[mutation]]
+name = "the foreign-hook probe takes a committed entry's word that it is stayfixed's"
+file = "src/stayfixed/assess/probes.py"
+before = """        if walked.entries:
+            found.append(relative)"""
+after = """        from stayfixed.scaffold import marker_id
+
+        if any(marker_id(placed.command) is None for _, placed in walked.entries):
+            found.append(relative)"""
+reddens = [
+  "tests/assess/test_probes.py::test_a_hook_entry_claiming_stayfixed_s_marker_in_a_committed_file_is_still_foreign",
+]
+
+[[mutation]]
+name = "the foreign-hook probe lists every settings file it reads"
+file = "src/stayfixed/assess/probes.py"
+before = """        if walked.entries:
+            found.append(relative)"""
+after = """        if True:
+            found.append(relative)"""
+reddens = [
+  "tests/assess/test_probes.py::test_a_settings_file_with_no_hook_entry_lists_nothing",
 ]

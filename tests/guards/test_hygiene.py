@@ -79,7 +79,7 @@ def test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked(
     hygiene counts and the citation roots with nothing saying so. They are folded before the
     question now.
 
-    Oracle: `mutations/`, "a code root spelled with a slash is dropped again".
+    Oracle: `mutations/`'s "a code root spelled with a slash is dropped again".
     """
     root = repo(tmp_path)
     (root / "tests").mkdir()

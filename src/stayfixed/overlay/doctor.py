@@ -79,15 +79,16 @@ def _pre_commit(context: Context) -> Row:
     machine clones that overlay and never runs `init` again, so the machine that thinks it is
     set up is exactly the one whose commit-time scan is not.
     """
+    from stayfixed import fsops
     from stayfixed.doctor.api import OK, WARN, Row
     from stayfixed.errors import Refusal
     from stayfixed.guards.api import hooks_dir
     from stayfixed.overlay.layout import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 
     overlay = context.overlay_root
-    if overlay is None or not overlay.is_dir():
+    if overlay is None or not fsops.is_dir(overlay):
         return _overlay_absent(overlay)
-    if not (overlay / PRE_COMMIT_CONFIG).is_file():
+    if not fsops.is_file(overlay / PRE_COMMIT_CONFIG):
         return Row(
             WARN,
             f"the overlay has no {PRE_COMMIT_CONFIG}, so there is no commit-time secret scan "
@@ -106,7 +107,7 @@ def _pre_commit(context: Context) -> Row:
             "secret scan is installed cannot be answered here",
             f"run `git -C {overlay} rev-parse --git-path hooks` and read what it says",
         )
-    if not (hooks / PRE_COMMIT_HOOK).exists():
+    if not fsops.exists(hooks / PRE_COMMIT_HOOK):
         return Row(
             WARN,
             "the overlay's commit-time secret scan is configured and not installed on this "
@@ -127,13 +128,14 @@ def _overlay_requires(context: Context) -> Row:
     normalised it.
     """
     import stayfixed
-    from stayfixed import REPOSITORY_URL
+    from stayfixed import REPOSITORY_URL, fsops
+    from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
     from stayfixed.overlay.layout import PLUGIN_MANIFEST
     from stayfixed.overlay.requires import requires_of, satisfies
 
     overlay = context.overlay_root
-    if overlay is None or not overlay.is_dir():
+    if overlay is None or not fsops.is_dir(overlay):
         return _overlay_absent(overlay)
     spec = requires_of(overlay)
     if spec is None:
@@ -154,9 +156,8 @@ def _overlay_requires(context: Context) -> Row:
         # notes in the overlay, and red is a statement that *this installation* is wrong -- it
         # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
         # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
-        # exactly as the `attached` row compares it; the literal is that comparison's second
-        # site and not a new vocabulary.
-        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
+        # exactly as the `attached` row compares it.
+        unmet: Status = RED if context.config.memory.mode == OVERLAY_MODE else WARN
         return Row(
             unmet,
             f"the overlay requires stayfixed {spec} and {running} does not satisfy it",

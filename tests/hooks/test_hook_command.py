@@ -6,7 +6,6 @@ import asyncio
 import io
 import json
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -15,10 +14,12 @@ import pytest
 
 from stayfixed.guards.hygiene import LEAD
 from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
-from stayfixed.hooks.commands import LINKED, _output_cap, run_hook
+from stayfixed.hooks.commands import LINKED, UNASKED_PATH, _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
+from tests.ownerhome import stayfixed_argv
 from tests.parserlimits import LONG_NUMBER
+from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -71,12 +72,13 @@ def hook(
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
-    if home is not None:
-        # A hook reads the machine file at `$HOME/.config/stayfixed/config.toml` and nowhere a
-        # repository can name, so a case about that file gives the hook a home of its own.
-        env["HOME"] = str(home)
+    # A hook reads the machine file under the home the password database records, and nowhere a
+    # repository can name, so every case gives the hook a home of its own there: one with no
+    # machine file unless the case is about that file. `HOME` says the same, as on most machines.
+    owner = home if home is not None else cwd / "no-home"
+    env["HOME"] = str(owner)
     return subprocess.run(
-        [sys.executable, "-m", "stayfixed", "hook", event, *args],
+        [*stayfixed_argv(owner), "hook", event, *args],
         input=stdin,
         capture_output=True,
         text=True,
@@ -320,8 +322,8 @@ def test_an_unloadable_config_refuses_a_tool_call_in_its_own_words(
     # now names the kind of fault in stayfixed's words and the command that prints the detail,
     # with the verdict an internal error gets on this event: refused, never permission.
     #
-    # Mutation: `mutations/`'s "the hook reports an unloadable config as an internal error"
-    # (the path case) and "the hook prints a refused value's own text as an internal error".
+    # Mutations: `mutations/`'s "the hook reports an unloadable config as an internal error" -> the
+    # path case reddens; "the hook prints a refused value's own text as an internal error".
     project = build(tmp_path)
     completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
     assert completed.returncode == 2
@@ -332,6 +334,31 @@ def test_an_unloadable_config_refuses_a_tool_call_in_its_own_words(
     )
     assert CHOSEN not in completed.stderr
     assert "internal error" not in completed.stderr
+
+
+@ROOT_SEARCHES_EVERYTHING
+def test_a_path_that_cannot_be_checked_for_a_symlink_refuses_a_tool_call_in_those_words(
+    tmp_path: Path,
+) -> None:
+    # A real directory on a `[paths]` value that nobody may search: no link is on the way and the
+    # value stays inside the project, so "a path that leaves the project or passes through a
+    # symlink" named two causes it did not have. Refused all the same: no path is contained until
+    # every directory on it has been asked.
+    #
+    # Mutation (oracle): `mutations/`'s "the hook words a path it cannot check as an escape".
+    project = tmp_path / "project"
+    (project / CHOSEN).mkdir(parents=True)
+    (project / "stayfixed.toml").write_text(
+        CONFIG + f'\n[paths]\nagents_md = "{CHOSEN}/AGENTS.md"\n', encoding="utf-8"
+    )
+    with unsearchable(project / CHOSEN):
+        completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
+    assert completed.returncode == 2
+    assert completed.stderr == (
+        f"stayfixed: stayfixed.toml does not load ({UNASKED_PATH}); refused — run "
+        "`stayfixed docs check` for the detail\n"
+    )
+    assert CHOSEN not in completed.stderr
 
 
 @pytest.mark.parametrize(("build", "cause"), UNLOADABLE_CASES)

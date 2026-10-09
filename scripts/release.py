@@ -43,12 +43,14 @@ from stayfixed.command import CHECK_HELP, ROOT_HELP
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.gitenv import git_run
+from stayfixed.jsonobject import json_object
 from stayfixed.printed import quoted
 from stayfixed.release.api import (
     FORMAT,
     HASHED_FILES,
     PACKAGE,
     RECORD,
+    UnreadableRecord,
     digests,
     read_record,
     tag_for,
@@ -93,11 +95,16 @@ class MalformedSource(Failure):
 
 
 def _object(name: str, text: str) -> dict[str, Any]:
-    """A JSON source's top level, which is read with `.get` and so must be an object."""
-    document = json.loads(text)
-    if not isinstance(document, dict):
-        raise MalformedSource(f"{name} is valid JSON but its top level is not an object")
-    return document
+    """A JSON source's top level, which is read with `.get` and so must be an object.
+
+    Read through `jsonobject.json_object`, the product's own reader, so every way the parse can
+    fail is refused by the source's name, and a document nested past `jsonobject.DEPTH_CAP` is
+    refused at that depth on every interpreter and platform. `json` itself stops short of it up to
+    Python 3.13 and on 3.14 follows as deep as the C stack allows, which differs by platform: a
+    manifest 100,000 levels deep was a parse error on macOS and parsed on Linux, and what parsed
+    went on to `str()` and the version comparison.
+    """
+    return json_object(text, name, error=MalformedSource)
 
 
 def _parse(name: str, text: str) -> str | None:
@@ -140,13 +147,12 @@ def _read(root: Path, name: str) -> str | None:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{name} is not UTF-8 text") from None
-    # `json` answers nesting past its depth with `RecursionError` too, so the arm that catches it
-    # names the language by the source: a deep `plugin.json` was reported as "not valid TOML".
-    language = "JSON" if name.endswith(".json") else "TOML"
+    # A JSON source refuses in `_object`'s words, so what reaches this arm is TOML's: a deep
+    # `plugin.json` once reached it, and was reported as "not valid TOML".
     try:
         return _parse(name, text)
-    except (json.JSONDecodeError, *UNPARSEABLE) as exc:
-        raise MalformedSource(f"{name} is not valid {language}: {exc}") from None
+    except UNPARSEABLE as exc:
+        raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
 
 
 def collect(root: Path) -> dict[str, str | None]:
@@ -218,10 +224,7 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
         text = marketplace.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{MARKETPLACE} is not UTF-8 text") from None
-    try:
-        entries = _object(MARKETPLACE, text).get("plugins", [])
-    except (json.JSONDecodeError, RecursionError) as exc:
-        raise MalformedSource(f"{MARKETPLACE} is not valid JSON: {exc}") from None
+    entries = _object(MARKETPLACE, text).get("plugins", [])
     # A string entry was read with `in`, a substring test, and a string `plugins` as a list of
     # its characters, so the rule passed over both in silence.
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
@@ -229,6 +232,35 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
             f"{MARKETPLACE} is valid JSON but its plugins is not a list of objects"
         )
     return entries
+
+
+# The words `check` reports each kind of problem under. A record problem is no version
+# disagreeing, and is spelled as `hashes --check` spells it, so one state reads one way whichever
+# command found it; the folder count is a third kind, found only at a tag.
+VERSION_DRIFT = "version drift"
+RECORD_DRIFT = "release record drift"
+FOLDER_COUNT = "plugin folder count"
+# A `--root` that is no repository root is none of them, and is said with no word in front of it.
+NOT_A_ROOT = ""
+
+
+def _unusable_root(root: Path) -> str | None:
+    """Why `root` is not a repository root `check` can read, or `None`.
+
+    Four different conditions used to share one wrong message, so a user who typoed --root, or
+    ran the command in their own project (--root defaults to "."), was told their pyproject.toml
+    lacked a version key. A path that exists but is not a directory needs its own line rather
+    than the missing-path one: `--root ./pyproject.toml` was told the file does not exist, and a
+    gate that exists to stop asserting untrue things about the user's tree must not assert one
+    itself.
+    """
+    if not root.exists():
+        return f"{root} does not exist; --root must name a repository root"
+    if not root.is_dir():
+        return f"{root} is not a directory; --root must name a repository root"
+    if not (root / PYPROJECT).is_file():
+        return f"{root} has no {PYPROJECT}; --root must name a repository root"
+    return None
 
 
 def check(root: Path, *, tag: str | None = None) -> list[str]:
@@ -239,22 +271,22 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
 def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str, str | None]]:
     """`check`'s problems, and the version each source carried as it read them, so a caller that
     reports both reads the tree once."""
-    # Four different conditions used to share one wrong message, so a user who typoed --root,
-    # or ran the command in their own project (--root defaults to "."), was told their
-    # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
-    # own line rather than the missing-path one: `--root ./pyproject.toml` was told the file
-    # does not exist, and a gate that exists to stop asserting untrue things about the user's
-    # tree must not assert one itself.
+    kinds, found = checked_by_kind(root, tag=tag)
+    return [problem for problems in kinds.values() for problem in problems], found
+
+
+def checked_by_kind(
+    root: Path, *, tag: str | None = None
+) -> tuple[dict[str, list[str]], dict[str, str | None]]:
+    """`checked`'s problems under the word each kind is reported under, in the order `checked`
+    lists them: the versions', the record's, then the folder count's."""
     found = collect(root)
-    if not root.exists():
-        return [f"{root} does not exist; --root must name a repository root"], found
-    if not root.is_dir():
-        return [f"{root} is not a directory; --root must name a repository root"], found
-    if not (root / PYPROJECT).is_file():
-        return [f"{root} has no {PYPROJECT}; --root must name a repository root"], found
+    unusable = _unusable_root(root)
+    if unusable is not None:
+        return {NOT_A_ROOT: [unusable]}, found
     canonical = found[PYPROJECT]
     if canonical is None:
-        return [f"{PYPROJECT} has no [project].version"], found
+        return {VERSION_DRIFT: [f"{PYPROJECT} has no [project].version"]}, found
     pending = fragments(root)
     problems: list[str] = []
     if tag is not None:
@@ -298,13 +330,14 @@ def checked(root: Path, *, tag: str | None = None) -> tuple[list[str], dict[str,
     # spelling of this actually tested. Either the record is here, or every file it would name
     # is: the first keeps a tree whose wrapper was deleted honest, the second is how a checkout
     # with no record yet is told to write one.
+    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], FOLDER_COUNT: []}
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
-        problems += drift(root)
+        kinds[RECORD_DRIFT] = drift(root)
     # At a tag and never on a pull request: a pull request may carry the tree past the count, and
     # a release is what the directory lists.
     if tag is not None:
-        problems += plugin_folder_counts(root)
-    return problems, found
+        kinds[FOLDER_COUNT] = plugin_folder_counts(root)
+    return kinds, found
 
 
 def plugin_folder_counts(root: Path) -> list[str]:
@@ -396,7 +429,13 @@ def drift(root: Path) -> list[str]:
     Both directions on purpose: a file the record names and the tree lacks is drift, and so is
     one whose bytes moved. A walk over the record alone would call a deleted file a match.
     """
-    recorded = read_record(root)
+    # A record that is there and is not one is drift too, naming the record and the command
+    # that writes it again: let out as the reader's `UnreadableRecord`, a `Failure`, it was a
+    # third spelling of a record problem, and `--json` lost the object both commands print.
+    try:
+        recorded = read_record(root)
+    except UnreadableRecord as exc:
+        return [f"{exc}; run `{COMMAND} hashes`"]
     if recorded is None:
         return [f"{RECORD} is missing; run `{COMMAND} hashes`"]
     actual = digests(root)
@@ -418,10 +457,16 @@ def drift(root: Path) -> list[str]:
 
 def run_check(args: argparse.Namespace) -> Result:
     root = Path(args.root)
-    problems, versions = checked(root, tag=args.tag)
+    kinds, versions = checked_by_kind(root, tag=args.tag)
+    problems = [problem for found in kinds.values() for problem in found]
     data = {"problems": problems, "versions": versions}
     if problems:
-        return Result("version drift: " + "; ".join(problems), data, exit_code=1)
+        summary = "; ".join(
+            (f"{kind}: " if kind else "") + "; ".join(found)
+            for kind, found in kinds.items()
+            if found
+        )
+        return Result(summary, data, exit_code=1)
     return Result(f"one version everywhere: {versions['pyproject.toml']}", data)
 
 
@@ -439,7 +484,7 @@ def run_hashes(args: argparse.Namespace) -> Result:
         problems = drift(root)
         data = {"problems": problems, "files": sorted(HASHED_FILES)}
         if problems:
-            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)
+            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)
         return Result(f"{len(HASHED_FILES)} shipped file(s) match the release record", data)
     write_record(root)
     return Result(f"recorded {len(HASHED_FILES)} shipped file(s)", {"files": sorted(HASHED_FILES)})

@@ -6,7 +6,9 @@ recorded and the entries it grants, told in the area's own `Wording`. The walk o
 files, the rules for which area vouches for an entry, and the sentences each kind of finding is
 told in are one unit that no other check reads, so they sit in a module of their own and
 `checks.py` stays the list of checks and the run. It imports nothing of the run's, so `checks.py`
-can import it without a cycle.
+can import it without a cycle. The row also names the skill, command and agent files whose
+frontmatter declares hooks, which it does not judge: `doctor.hooked` walks for them and
+`doctor.frontmatter` reads each one's frontmatter, and this module tells what they report.
 
 What it may print is held to `checks.py`'s module docstring, and this row is where that ruling is
 most tempting to break: an entry is named by its position in its file, never by the marker id it
@@ -15,45 +17,30 @@ claims, and that docstring says why.
 
 from __future__ import annotations
 
-import os
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
+from stayfixed import fsops
+from stayfixed.doctor.frontmatter import CHARACTERS_READ, LINES_READ
+from stayfixed.doctor.hooked import Seen, hooked
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
-from stayfixed.fsops import NAMES_NO_FILE, names_regular_file, read_regular_bytes
-from stayfixed.harnesses import HARNESSES, LENIENT_SETTINGS
-from stayfixed.printed import printable
+from stayfixed.fsops import names_regular_file, read_regular_bytes
+from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS
 from stayfixed.scaffold import ParserLimitError, Placed, judged_entries, marker_id
-from stayfixed.setup.api import USER_SETTINGS
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
 # committed settings files and the ones it keeps out of git, read off the harness registry, so a
 # harness added there is walked here without an edit. The two roots are the project (all of
 # them) and `home` (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny
-# rules, and which `setup` reads off `CLAUDE.settings`: the same file under another root).
+# rules: the same file under another root).
 SETTINGS_FILES = tuple(
     relative for harness in HARNESSES for relative in (*harness.settings, *harness.local_settings)
 )
-
-# Where Claude Code finds a project's skills, each one a directory holding `SKILL.md`. A skill's
-# YAML frontmatter can declare hooks, and Claude Code ran one so declared once the skill was
-# invoked (2.1.288, measured 2026-10-06), so this row names every skill whose frontmatter has a
-# top-level `hooks:` key as one it does not judge (`_skills`).
-SKILLS = ".claude/skills"
-_SKILL_FILE = "SKILL.md"
-# The line that opens a frontmatter and the next one that closes it.
-_FENCE = "---"
-# A top-level `hooks` key: at the start of its line, not indented under another key, and the whole
-# key, not the start of a longer one. Nothing else of YAML is parsed.
-_HOOKS_KEY = re.compile(r"hooks[ \t]*:(?:[ \t]|$)")
-# What a skill whose directory name is outside the path grammar is named as: the name is the
-# repository's, and this row's detail is what `--json` carries too, so there is nowhere else to
-# point.
-_UNPRINTED_SKILL = "a skill whose name this row does not print"
+# Claude Code's settings file under the home directory, read off the registry as `setup` reads it,
+# and not asked of `setup`, whose import surface loads the command that writes it.
+(USER_SETTINGS,) = CLAUDE.settings
 
 # How the machine-scope copy of `USER_SETTINGS` is named in the report. A label and not a path:
 # `home` is a directory this process was handed, and `~/.claude/settings.json` is what a reader
@@ -97,20 +84,16 @@ def _area_claims(context: Context) -> list[Claims]:
 
 
 def _grants(area: Claims, placed: Placed) -> bool:
-    """Whether `area` grants the entry `placed` is, where it is: its command, under its event, in a
-    group with its matcher.
+    """Whether `area` grants the entry `placed` is, where it is: whether `placed` is one of its
+    grants.
 
-    All three, because a granted command under another event or matcher is a hook the area never
-    put there — the harness runs it at another time, or for other tools — and vouching for it
-    would let a repository hang the owner's command anywhere it liked and read "all accounted
-    for". Told, where the area records the entry's id, as an entry its source does not grant,
-    which it does not."""
-    return any(
-        grant.command == placed.command
-        and grant.event == placed.event
-        and grant.matcher == placed.matcher
-        for grant in area.granted or ()
-    )
+    Compared as the whole `Placed` and never field by field. Every field of it decides what the
+    entry does (`Placed` says how), so a granted command under another event or matcher, or inside
+    an entry that does something else with it, is a hook the area never put there; and a
+    comparison that names its fields reopens that hole for the next field `Placed` grows. Told,
+    where the area records the entry's id, as an entry its source does not grant, which it does
+    not."""
+    return placed in (area.granted or frozenset())
 
 
 def _rebuild(words: Wording) -> str:
@@ -264,15 +247,33 @@ def _blind(areas: Sequence[Claims], wheres: list[str]) -> str:
 
 def _skill_hooks(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"{len(wheres)} project skill(s) declare hooks in their frontmatter, which this row does "
-        f"not judge: {listed(wheres)}"
+        f"{len(wheres)} skill, command or agent file(s) declare hooks in their frontmatter, which "
+        f"this row does not judge: {listed(wheres)}"
     )
 
 
 def _skill_unread(areas: Sequence[Claims], wheres: list[str]) -> str:
     return (
-        f"{len(wheres)} project skill file(s) could not be read, so this row cannot say whether "
-        f"they declare hooks: {listed(wheres)}"
+        f"{len(wheres)} skill, command or agent path(s) could not be read, so this row cannot say "
+        f"whether what they hold declares hooks: {listed(wheres)}"
+    )
+
+
+def _skill_unparsed(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"{len(wheres)} skill, command or agent file(s) hold a frontmatter this row cannot read "
+        f"whole, so it cannot say whether they declare hooks: {listed(wheres)}"
+    )
+
+
+def _linked_out(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return f"{len(wheres)} path(s) lead out of the checkout and were not followed: {listed(wheres)}"
+
+
+def _skill_untold(areas: Sequence[Claims], wheres: list[str]) -> str:
+    return (
+        f"the walk for skill, command and agent files stopped after {fsops.WALK_ENTRIES:,} "
+        f"directory entries, so this row cannot say whether the files past them declare hooks"
     )
 
 
@@ -319,23 +320,65 @@ _BLIND = _Kind(
     _blind,
     lambda areas: "check that each file named above is readable and is valid JSON",
 )
-# A project skill declaring hooks, and one whose file could not be read: warnings, never red, at
-# the lowest step, so either one softens a row with nothing else to say and never a red one. This
-# row judges settings files; a skill's hooks are named, not judged.
+# A skill, command or agent file declaring hooks, one that could not be read, and a walk for them
+# that stopped at its cap: warnings, never red, at the lowest step, so each softens a row with
+# nothing else to say and never a red one. This row judges settings files; such a file's hooks are
+# named, not judged.
 _SKILL_HOOKS = _Kind(
     WARN,
     0,
     _skill_hooks,
     lambda areas: (
-        "open each skill named above and check the hooks its frontmatter declares: Claude Code "
-        "runs them once the skill is invoked"
+        "open each file named above and check the hooks its frontmatter declares: Claude Code "
+        "runs a skill's once the skill is invoked"
     ),
 )
 _SKILL_UNREAD = _Kind(
     WARN,
     0,
     _skill_unread,
-    lambda areas: "check that each skill file named above is a readable regular file",
+    lambda areas: (
+        "check that each path named above can be read: a regular file, or a directory this user "
+        "can list"
+    ),
+)
+# A frontmatter outside the plain YAML the reader reads exactly, or past what it reads, which may
+# hold `hooks`: the file was read, so its words are its own, and the way out is to look at the
+# frontmatter, not at the file's permissions.
+_SKILL_UNPARSED = _Kind(
+    WARN,
+    0,
+    _skill_unparsed,
+    lambda areas: (
+        "open each file named above and check whether its frontmatter declares hooks: this row "
+        "reads exactly only `key: value` lines with a plain key and the value on the key's line, "
+        "block scalars, flow lists of plain or quoted scalars, their lines below the key indented "
+        "deeper than it, nested lines indented by spaces, `- ` entries at any indentation, "
+        f"comments and blank lines, in a frontmatter of at most {LINES_READ:,} lines that ends "
+        f"within its file's first {CHARACTERS_READ:,} characters; a description carried on to the "
+        "lines below its key is outside it, so write one as a `>` block"
+    ),
+)
+# A link in a place that leads out of the checkout, which the row does not follow: no defect,
+# because a dotfiles setup links these directories out on purpose, so its remedy is a way to look
+# and not a repair.
+_LINKED_OUT = _Kind(
+    WARN,
+    0,
+    _linked_out,
+    lambda areas: (
+        "if a link named above is yours, as a dotfiles setup's is, look through what it leads to "
+        "yourself, since this row reads only what the repository holds"
+    ),
+)
+_SKILL_UNTOLD = _Kind(
+    WARN,
+    0,
+    _skill_untold,
+    lambda areas: (
+        "look through the repository's .claude directories yourself for skill, command and agent "
+        "files whose frontmatter declares hooks"
+    ),
 )
 _KINDS = (
     _UNREADABLE,
@@ -350,7 +393,19 @@ _KINDS = (
     _BLIND,
     _SKILL_HOOKS,
     _SKILL_UNREAD,
+    _SKILL_UNPARSED,
+    _LINKED_OUT,
+    _SKILL_UNTOLD,
 )
+# What the walk for skill, command and agent files reports of a path, as the kind the row tells it
+# in (`doctor.hooked`).
+_SEEN = {
+    Seen.DECLARES: _SKILL_HOOKS,
+    Seen.UNREAD: _SKILL_UNREAD,
+    Seen.UNPARSED: _SKILL_UNPARSED,
+    Seen.LINKED_OUT: _LINKED_OUT,
+    Seen.STOPPED: _SKILL_UNTOLD,
+}
 
 
 @dataclass(frozen=True)
@@ -382,55 +437,6 @@ def _gathered(answers: Sequence[Claims], found: Sequence[_Found]) -> list[_Findi
                 wheres = [where for where in mine if where is not None]
                 gathered.append(_Finding(kind, areas, wheres))
     return gathered
-
-
-def _declares_hooks(text: str) -> bool:
-    """Whether `text`, a `SKILL.md`, opens with a frontmatter holding a top-level `hooks:` key.
-
-    The frontmatter is the lines between a first line of `---` and the next `---` line; without
-    the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR) and no other, and
-    a byte-order mark ahead of the first line is read past."""
-    lines = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    if lines[0].rstrip() != _FENCE:
-        return False
-    for end, line in enumerate(lines[1:], 1):
-        if line.rstrip() == _FENCE:
-            return any(_HOOKS_KEY.match(key) for key in lines[1:end])
-    return False
-
-
-def _skills(root: Path) -> list[_Found]:
-    """A finding for each project skill whose frontmatter declares hooks, and for each whose
-    `SKILL.md` could not be read, in name order.
-
-    Read through `fsops.read_regular_bytes`, as every reader of a committed file is: a link to a
-    device or a FIFO is refused unread, and a file past the cap is refused, each a skill file this
-    row could not read. A skill directory without a `SKILL.md`, and a path under `SKILLS` that is
-    not a directory, name no skill and are passed over, as a `SKILLS` that names nothing is. Each
-    skill is named by its path, through `printed.printable`, because its directory name is the
-    repository's."""
-    directory = root / SKILLS
-    try:
-        with os.scandir(directory) as listing:
-            names = sorted(entry.name for entry in listing)
-    except OSError as exc:
-        if exc.errno in NAMES_NO_FILE:
-            return []
-        return [(_SKILL_UNREAD, None, SKILLS)]
-    found: list[_Found] = []
-    for name in names:
-        label = printable(f"{SKILLS}/{name}/{_SKILL_FILE}", _UNPRINTED_SKILL)
-        try:
-            content = read_regular_bytes(directory / name / _SKILL_FILE)
-        except OSError as exc:
-            if exc.errno not in NAMES_NO_FILE:
-                found.append((_SKILL_UNREAD, None, label))
-            continue
-        # Replaced rather than refused, for the reason the settings walk replaces: the key is
-        # ASCII, so a byte that is not UTF-8 elsewhere changes no answer.
-        if _declares_hooks(content.decode("utf-8", errors="replace")):
-            found.append((_SKILL_HOOKS, None, label))
-    return found
 
 
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
@@ -472,10 +478,10 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         try:
             # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read to the
-            # regular-file reader's cap, as every reader of a committed file is, so a file that
-            # never ends, or one swapped for a device after the question above, is one this walk
-            # cannot read.
+            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read by
+            # `fsops`' one bounded reader, which every reader of a committed file goes through,
+            # here at the regular-file cap, so a file that never ends, or one swapped for a device
+            # after the question above, is one this walk cannot read.
             document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, None, label))
@@ -539,7 +545,7 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
                     # for the entry: red as surely as a refused grant, said differently, because
                     # the way out is to record one rather than to re-run what it grants.
                     found.append((_UNVOUCHED, holders[0], where))
-    found.extend(_skills(context.root))
+    found.extend((_SEEN[seen], None, where) for seen, where in hooked(context.root))
     return claimed, foreign, _gathered(answers, found)
 
 
@@ -578,9 +584,11 @@ def hook_entries(context: Context) -> Row:
     answer "all accounted for". An id is credible only beside a grant from a source the repository
     cannot choose, and only the same area's grant, so one area's record never borrows another's. The
     grant is the *marked command* and not the id, because an id that is granted with a different
-    command hung on it is the same attack one step down; and it is that command *where the area
+    command hung on it is the same attack one step down; it is that command *where the area
     puts it*, under its event and its group's matcher (`_grants`), because the granted command
-    hung under another event or matcher is the same attack one step further.
+    hung under another event or matcher is the same attack one step further; and it is the whole
+    entry the area writes, because the granted command inside an `http` entry, or beside an `args`
+    or a `shell` of the repository's choosing, is that attack in one more field.
 
     Where a source this machine records cannot be asked, the answer is the one this check gives a
     file it could not parse: report it, never absolve it. That withholds the grant comparison and
@@ -667,11 +675,15 @@ def hook_entries(context: Context) -> Row:
     interpreter converts is not refused at all: either walk reads it as its text, and the
     entries beside it are judged as they would be without it.
 
-    **A project skill's hooks are named, never judged.** Claude Code runs a hook a committed
-    skill's frontmatter declares once the skill is invoked (`SKILLS` says what was measured), and
-    this row judges settings files, so "all accounted for" beside such a skill would claim more
-    than the row looked at. Each skill whose frontmatter holds a top-level `hooks:` key, and each
-    whose `SKILL.md` could not be read, is a warning naming it (`_skills`): never red, because
-    what a skill's hooks are and whether stayfixed put them there is nothing this row reads.
+    **A skill, command or agent file's hooks are named, never judged.** Claude Code runs a hook a
+    committed skill's frontmatter declares once the skill is invoked (`harnesses.CLAUDE`'s
+    `hooked` says what was measured), and this row judges settings files, so "all accounted for"
+    beside such a file would claim more than the row looked at. The walk (`doctor.hooked`) covers
+    every place a registered harness reads such frontmatter, at the root and below it, and reports
+    each file whose frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each whose
+    frontmatter the reader cannot read whole, which may hold a top-level `hooks`, each path
+    it could not read, each link that leads out of the checkout, which it does not follow, and a
+    walk that stopped at its cap. Each is a warning naming what it saw (`_SEEN`), never red, because
+    what such a file's hooks are and whether stayfixed put them there is nothing this row reads.
     """
     return _told(*_classify(context))

@@ -38,6 +38,9 @@ PROFILES = PACKAGE / "profiles"
 # scanner's `uv run` reading (`guards/uvrun.py`) spells its wrapper as the two words `"uv"` and
 # `"run"`.
 STACK_WORDS = (
+    "python",
+    "python3",
+    "pyproject",
     "pytest",
     "pyc",
     "pycache",
@@ -80,8 +83,11 @@ STACK_NAMED = {
     # stack itself. `uv run` is a Python launcher, and it stays beside the shared scanner rather
     # than in the Python profile because more than the profiles read commands through that
     # unwrapping: the background-cleanup guard (`guards/bgcleanup.py`) judges the command
-    # `uv run` launches, as every profile's `recognises` does.
+    # `uv run` launches, as every profile's `recognises` does. Its option tables name the
+    # interpreter uv picks (`--python`, `--managed-python`, `--python-platform` …) because they
+    # are uv's own options, which the unwrap has to know to step past.
     ("src/stayfixed/guards/uvrun.py", "uv"),
+    ("src/stayfixed/guards/uvrun.py", "python"),
     # stayfixed's own installer, `uv tool install`, named in two of `doctor`'s remedies
     # (`cli-path` in the core's checks, `overlay-requires` in the overlay area's) and in `setup`'s
     # pinned install command: the tool stayfixed itself is installed with, not a stack a project
@@ -89,6 +95,9 @@ STACK_NAMED = {
     ("src/stayfixed/doctor/checks.py", "uv"),
     ("src/stayfixed/overlay/doctor.py", "uv"),
     ("src/stayfixed/setup/run.py", "uv"),
+    # The git hook stayfixed installs runs stayfixed itself, under the `python3` that can import it:
+    # stayfixed's own interpreter in its own hook, not the interpreter of a project's stack.
+    ("src/stayfixed/guards/githooks.py", "python3"),
 }
 
 
@@ -185,7 +194,7 @@ def _read_the_core(modules: list[Path]) -> None:
 
 
 def test_no_core_module_names_a_stack_it_does_not_pardon() -> None:
-    # Oracle: `mutations/`, "the core names pytest again".
+    # Oracle: `mutations/`'s "the core names pytest again".
     modules = _core_modules()
     _read_the_core(modules)
     assert stack_mentions(modules) == STACK_NAMED
@@ -246,7 +255,7 @@ def test_the_import_reader_resolves_every_spelling_of_a_stack_import(
 
 def test_no_core_module_imports_a_stack_profiles_code() -> None:
     # The core reaches a stack's code only by discovering it (`stayfixed.profiles.hints`), never
-    # by naming it in an import. Oracle: `mutations/`, "the core imports the Python profile's
+    # by naming it in an import. Oracle: `mutations/`'s "the core imports the Python profile's
     # hint".
     modules = _core_modules()
     _read_the_core(modules)

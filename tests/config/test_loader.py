@@ -28,6 +28,7 @@ from stayfixed.config.schema import (
     CustomGate,
 )
 from stayfixed.findings import LISTED_LIMIT
+from tests.ownerhome import as_owner_home
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -163,45 +164,18 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
         _build(Sample, "sample", {"ratio": 1.5})
 
 
-def test_load_can_be_told_it_is_not_interactive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `machine.py`'s docstring: "a caller that knows it is a hook, the MCP server or a
-    # `stayfixed gate` run says `interactive=False` rather than relying on the terminal check".
-    # `load` called `machine_config_path()` with no argument, so the one shipped non-interactive
-    # caller had no way to say it and fell back to the `isatty` sniff.
-    home = tmp_path / "home"
-    (home / ".config" / "stayfixed").mkdir(parents=True)
-    (home / ".config" / "stayfixed" / "config.toml").write_text(
-        '[personal]\nreply_language = "the-owners"\n', encoding="utf-8"
-    )
-    hostile = tmp_path / "hostile"
-    (hostile / "stayfixed").mkdir(parents=True)
-    (hostile / "stayfixed" / "config.toml").write_text(
-        '[personal]\nreply_language = "the-repositorys"\n', encoding="utf-8"
-    )
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(hostile))
-
-    root = tmp_path / "project"
-    root.mkdir()
-    (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
-    assert load(root, interactive=False).personal.reply_language == "the-owners"
-    assert load(root, interactive=True).personal.reply_language == "the-repositorys"
-
-
 def test_one_command_reads_one_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `load` resolved the machine file with the `isatty` sniff while `overlay_root` and
-    # `trust._trust_file` always resolved it with `interactive=False`. On an interactive run
-    # with `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
+    # `trust._trust_file` resolved it off a terminal always. On an interactive run with
+    # `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
     # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
     # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
     # configuration; run `stayfixed setup`" about the file it had just read successfully.
     #
-    # Mutation (declared): `mutations/`'s "the overlay root reads the machine file a variable
-    # names", which reddens the `overlay_root` assertion.
+    # Mutation (declared): `mutations/`'s "the machine path honours XDG_CONFIG_HOME again", which
+    # reddens the `load` assertion.
     from stayfixed.config.machine import machine_config_path
     from stayfixed.config.overlay import overlay_root
     from stayfixed.memory.trust import _trust_file
@@ -223,6 +197,7 @@ def test_one_command_reads_one_machine_file(
         '[personal]\nreply_language = "the-other-files"\n', encoding="utf-8"
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    as_owner_home(monkeypatch, home)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(elsewhere))
 
     root = tmp_path / "project"
@@ -232,7 +207,9 @@ def test_one_command_reads_one_machine_file(
     # one the two security anchors were always going to read.
     assert load(root).personal.reply_language == "the-owners"
     assert overlay_root(None) == Path("/tmp/recorded")
-    assert _trust_file(None).parent == machine_config_path(interactive=False).parent
+    trust_file, machine = _trust_file(None), machine_config_path()
+    assert trust_file is not None and machine is not None
+    assert trust_file.parent == machine.parent
 
 
 def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
@@ -252,23 +229,13 @@ def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
         encoding="utf-8",
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    as_owner_home(monkeypatch, tmp_path / "home")
     root = tmp_path / "project"
     root.mkdir()
     (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
     assert load(root, machine=mine).personal.reply_language == "mine"
     assert overlay_root(mine) == Path("/tmp/mine")
     assert _trust_file(mine) == mine.parent / "trust.json"
-
-
-def test_the_hook_path_says_it_is_not_interactive() -> None:
-    # The seam is only worth having if the shipped caller uses it. Read off the source rather
-    # than simulated, because the alternative — a hook invocation whose stdin is a tty — is not
-    # a thing a test can arrange, and the `isatty` sniff answers correctly by accident.
-    import inspect
-
-    from stayfixed.hooks import commands
-
-    assert "load(root, interactive=False)" in inspect.getsource(commands.run_hook)
 
 
 def test_loads_answers_for_a_document_that_is_not_on_disk(tmp_path: Path) -> None:
@@ -283,9 +250,8 @@ def test_loads_answers_for_a_document_that_is_not_on_disk(tmp_path: Path) -> Non
 def test_load_is_read_then_loads(tmp_path: Path) -> None:
     # The two behavioural halves below pass for a `load` that duplicates `loads`' whole body
     # instead of delegating to it, and delegation is the actual claim — `load` is a file read
-    # followed by `loads`, not merely "both raise the same error". Pinned the same way
-    # `test_load_can_be_told_it_is_not_interactive`'s sibling above pins `run_hook`'s call
-    # shape: read the source rather than simulate it.
+    # followed by `loads`, not merely "both raise the same error". Read off the source rather
+    # than simulated.
     import inspect
 
     text = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n[nope]\n'
@@ -300,8 +266,8 @@ def test_load_is_read_then_loads(tmp_path: Path) -> None:
 def test_every_name_refusal_words_the_rule_and_never_prints_the_pattern(tmp_path: Path) -> None:
     # A project name, a custom gate's name and a detected name are one grammar, and each refusal
     # printed `PROJECT_NAME.pattern`, whose `\Z` a JSON Schema client or a person reads as a
-    # literal `Z`. Mutation (oracle): "a custom gate's name refusal prints the pattern" -> this
-    # reddens.
+    # literal `Z`. Mutation (oracle): `mutations/`'s "a custom gate's name refusal prints the
+    # pattern" -> this reddens.
     from stayfixed.project.detect import NOT_A_NAME
 
     text = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n[gates.custom.Bad]\n'
@@ -730,8 +696,8 @@ def test_the_branch_grammar_is_spelled_once() -> None:
 def test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> None:
     # Custom gates are the repository's to add, so the refusal's list of the gates the project
     # runs is bounded in number by nothing: it names the first `LISTED_LIMIT` and counts the
-    # rest. Mutation (oracle): "the enforced-gate refusal names every gate the project runs" ->
-    # this reddens.
+    # rest. Mutation (oracle): `mutations/`'s "the enforced-gate refusal names every gate the
+    # project runs" -> this reddens.
     custom = [f"g{n:02}" for n in range(LISTED_LIMIT)]
     tables = "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in custom)
     with pytest.raises(ConfigError) as caught:
@@ -748,7 +714,7 @@ def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> N
     # A `stayfixed.toml` may carry any number of unknown keys, so the plain-named ones are capped
     # like every list of names on a line: the first `LISTED_LIMIT` and a count of the plain rest,
     # then the count of the ones outside the grammar as before, one count per kind. Mutation
-    # (oracle): "an unknown-key refusal names every plain key" -> this reddens.
+    # (oracle): `mutations/`'s "an unknown-key refusal names every plain key" -> this reddens.
     keys = [f"key_{chr(ord('a') + n)}" for n in range(LISTED_LIMIT + 3)]
     body = "".join(f"{key} = 1\n" for key in keys)
     write(tmp_path, MINIMAL + f'\n[paths]\n{body}"not plain" = 1\n')
@@ -777,9 +743,10 @@ def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
 ) -> None:
     # A power-of-two literal of any length converts, and so does a decimal under 4,300 digits, so
     # the loader's own bound is what keeps a number no reader can print or hold out of `Config`.
-    # The refusal names the bound and never the value. Mutations (declared): "a configuration
-    # integer is bounded only below" -> every case loads; "the schema's integer keys are taken
-    # unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" -> `budget`.
+    # The refusal names the bound and never the value. Mutations (declared): `mutations/`'s "a
+    # configuration integer is bounded only below" -> every case loads; "the schema's integer keys
+    # are taken unchecked" -> the `gates` cases; "a `[budgets]` value is taken unchecked" ->
+    # `budget`.
     with pytest.raises(ConfigError) as refused:
         _gated(tmp_path, rest=rest)
     assert str(refused.value).endswith(f"must be a positive integer below {INTEGER_LIMIT:,}")
@@ -787,7 +754,7 @@ def test_an_integer_key_at_or_past_its_bound_is_refused_without_printing_it(
 
 def test_an_integer_key_just_under_its_bound_loads(tmp_path: Path) -> None:
     # The legitimate side, and the bound's exact edge: one under it is a value like any other.
-    # Mutation (declared): "a configuration integer one under the bound is refused".
+    # Mutation (declared): `mutations/`'s "a configuration integer one under the bound is refused".
     config = _gated(tmp_path, rest=f"\n[gates]\ncustom_timeout_seconds = {INTEGER_LIMIT - 1}\n")
     assert config.gates.custom_timeout_seconds == INTEGER_LIMIT - 1
 

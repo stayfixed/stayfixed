@@ -11,6 +11,7 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.naming import owner_of
+from stayfixed.overlay.template import retired
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
 from tests.parserlimits import LONG_NUMBER, NESTED, overflowing
@@ -94,7 +95,7 @@ def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_writte
     # restated here.) Writing a workflow file into a repository the owner may then
     # commit is the concrete harm.
     #
-    # Mutation (`mutations/`, "overlay upgrade stops asking whether --root is an overlay"):
+    # Mutation (`mutations/`'s "overlay upgrade stops asking whether --root is an overlay"):
     # the `require_overlay` call is removed → the overlay's files appear and this reddens on
     # both the refusal and the tree.
     project = tmp_path / "project"
@@ -127,7 +128,7 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     # README advertises, and attributing to the owner an edit stayfixed itself made. `init` now
     # re-stamps each record with the bytes it wrote.
     #
-    # Mutation (`mutations/`, "overlay init writes the manifests behind the scaffold
+    # Mutation (`mutations/`'s "overlay init writes the manifests behind the scaffold
     # ledger"): the `with_record(replace(...))` line stops updating the digest → both manifests
     # read as hand-edited and this reddens.
     #
@@ -277,7 +278,7 @@ def test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded(
     done = init_instance(root, "acme", runner=Recorder())
     monkeypatch.undo()
     assert (
-        ".codex-plugin/plugin.json cannot be written: Permission denied; "
+        ".codex-plugin/plugin.json cannot be written (Permission denied); "
         "`stayfixed overlay init` names it once it can be"
     ) in done.notes, done.notes
     assert done.renamed == (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
@@ -326,6 +327,33 @@ def test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read(
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     with pytest.raises(Failure, match=said):
         init_instance(root, "acme", runner=Recorder())
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+def test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `overlay init` reads each manifest it renames through `naming.manifest_text`, the one reader
+    # of the overlay's manifests, so one past the read cap stops it with the tree as it was, named
+    # as the overlay names it and said in words, never by the path it was opened by. The cap is
+    # lowered so the file is small. Mutations (oracle): `mutations/`'s "overlay init reads a
+    # manifest with no bound" -> the run renames it; "overlay init's manifest refusal prints the
+    # path it opened" -> the message carries the temporary directory.
+    from stayfixed import fsops
+
+    root = _an_overlay(tmp_path)
+    # Above every other file `init` reads, the scaffold ledger among them, and under the padded one.
+    limit = max(p.stat().st_size for p in root.rglob("*") if p.is_file())
+    manifest = root / ".codex-plugin" / "plugin.json"
+    manifest.write_text(manifest.read_text(encoding="utf-8") + " " * limit, encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
+    with pytest.raises(Failure) as failed:
+        init_instance(root, "acme", runner=Recorder())
+    assert (
+        str(failed.value)
+        == ".codex-plugin/plugin.json cannot be read (larger than this reader reads)"
+    )
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
 
 
@@ -572,7 +600,7 @@ def test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on(tmp_pat
         rules.chmod(0o755)
     assert f"removed {ATTACH_SKILL}, which this release no longer ships" in done.notes
     left = [note for note in done.notes if note.startswith(f"left {RULES_README}: ")]
-    assert left == [f"left {RULES_README}: cannot be removed: Permission denied"], done.notes
+    assert left == [f"left {RULES_README}: cannot be removed (Permission denied)"], done.notes
     # `init` went on to its last step, the secret scan.
     assert any("pre-commit" in note for note in done.notes), done.notes
     assert not (root / ATTACH_SKILL).exists()
@@ -616,7 +644,7 @@ def test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on(
     monkeypatch.undo()
     assert f"removed {MEMORY_README}, which this release no longer ships" in done.notes
     assert (
-        "common/memory/_README.md cannot be written: Permission denied; "
+        "common/memory/_README.md cannot be written (Permission denied); "
         "`stayfixed overlay upgrade` writes it"
     ) in done.notes
     assert any("pre-commit" in note for note in done.notes), done.notes
@@ -664,10 +692,10 @@ def test_the_record_of_a_memory_readme_already_gone_is_dropped(
 
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
     # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
-    # and its note carries the way out. Mutation: `mutations/`'s "overlay init leaves the
-    # memory README a release shipped", which drops the note with the removal; the engine's
-    # verdict itself is "a retired overlay file with no ledger is removed whatever it holds",
-    # proven through `upgrade`.
+    # and its note carries the way out. Mutations: `mutations/`'s "overlay init leaves the
+    # memory README a release shipped" -> the note is dropped with the removal; "a retired overlay
+    # file with no ledger is removed whatever it holds" -> the engine's verdict itself, proven
+    # through `upgrade`.
     root = _an_overlay(tmp_path)
     edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
     path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
@@ -919,7 +947,7 @@ def test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped(
         assert f"removed {variant!r}, which this release no longer ships" in done.notes
         assert not copy.exists()
     else:
-        assert f"left {variant!r}: cannot be removed: Permission denied" in done.notes
+        assert f"left {variant!r}: cannot be removed (Permission denied)" in done.notes
         assert copy.is_file()
 
 
@@ -1066,10 +1094,19 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
     # names no file it removed or left. Mutation (declared): `mutations/`'s "a retired overlay
     # file that is absent is planned for removal" -> the first plan's assertion reddens. The
     # engine's removal and record-dropping paths are the set's other retirement entries.
+    #
+    # Nor does it list a retired file that is gone and unrecorded among the unchanged: every
+    # run after the one that removed them told the owner that the files the release notes say
+    # were removed are "unchanged", and counted them, and so did a fresh overlay's first run.
+    # Mutation (declared): `mutations/`'s "a retired file that is gone and unrecorded is
+    # reported unchanged" -> both `unchanged` assertions redden.
+    gone = {template.id for template in retired()}
     root = _an_overlay(tmp_path)
     for relative in (ATTACH_SKILL, RULES_README):
         assert not (root / relative).exists(), relative
-    assert upgrade(root, dry_run=True).plan.actions == ()
+    fresh = upgrade(root, dry_run=True).plan
+    assert fresh.actions == ()
+    assert gone.isdisjoint(fresh.unchanged), fresh.unchanged
     _with_a_retired_file(
         root,
         ATTACH_SKILL,
@@ -1087,7 +1124,9 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
         version="0.2.0",
     )
     upgrade(root, dry_run=False)
-    assert upgrade(root, dry_run=True).plan.actions == ()
+    again = upgrade(root, dry_run=True).plan
+    assert again.actions == ()
+    assert gone.isdisjoint(again.unchanged), again.unchanged
     done = init_instance(root, "octo", runner=Recorder())
     assert not [note for note in done.notes if note.startswith(("removed ", "left "))], done.notes
 
@@ -1113,8 +1152,8 @@ def test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Each manifest goes through the one JSON object reader and its depth bound; one past it is
-    # one the owner is not read from, and the next is asked. Mutation (declared): "the overlay's
-    # owner is read with a bare json.loads".
+    # one the owner is not read from, and the next is asked. Mutation (declared): `mutations/`'s "an
+    # overlay manifest is read with a bare json.loads".
     root = _an_overlay(tmp_path)
     init_instance(root, "acme", runner=Recorder())
     path = root / ".claude-plugin" / "plugin.json"

@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from stayfixed import fsops
 from stayfixed.committed import committed_document, repository_prefix
 from stayfixed.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from stayfixed.errors import Failure, Refusal
@@ -133,7 +134,7 @@ def uninitialised(root: Path, register: Register) -> bool:
     were deleted under a generated index that still links every one of them. Only citations
     are checked here, so the gate can be registered before the first entry."""
     directory = entry_dir(root, register)
-    return not directory.is_dir() and not is_generated_index(index_text(root, register))
+    return not fsops.is_dir(directory) and not is_generated_index(index_text(root, register))
 
 
 def _base_ledger(
@@ -242,7 +243,7 @@ def _fork_register(
     except UnicodeDecodeError:
         raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None
     try:
-        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)
+        copy = loads(decoded, root, label=FORK_COPY, personal=personal)
     except Refusal as exc:
         refused = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=exc)
         raise Refusal(refused) from None
@@ -399,7 +400,7 @@ def register_gate(
     index_name = register.index
     # First: a deleted entry is the most structural finding a ledger can have.
     found = _removed_entries(root, register, carried)
-    if not directory.is_dir():
+    if not fsops.is_dir(directory):
         missing = ENTRIES_MISSING.format(directory=register.directory, index=index_name)
         return [Finding("entries-missing", index_name, None, missing), *found]
 
@@ -499,10 +500,8 @@ def register_gate(
     # Suppressed while the index holds foreign content: regenerating is what deletes it, so
     # recommending it here would hand the operator the destructive step.
     elif current != render_index(sorted(entries, key=lambda e: e.number), register):
-        move = _half_done_move(register, entries, texts, current)
-        remedy = f"renumber {move[0]} {move[1]}" if move else "index"
-        stale = f"is stale; run: stayfixed {register.name} {remedy}"
-        found.append(Finding("stale-index", index_name, None, stale))
+        moves = _half_done_moves(register, entries, texts, current)
+        found.append(Finding("stale-index", index_name, None, _stale(register, moves)))
 
     found.extend(_dangling_mentions(root, config, register, known))
     # Wider than the scan above, and reported separately because a citation says something a
@@ -512,20 +511,40 @@ def register_gate(
     return found + _dangling_citations(root, config, register, known)
 
 
-def _half_done_move(
+def _stale(register: Register, moves: list[tuple[str, str]]) -> str:
+    """The stale index's line: the one renumber that finishes it, each of several that could,
+    or `index` when none explains it.
+
+    **Several are named and none is chosen.** Two entries that differ only in `id:`, which a
+    `bugs new` run twice files, make a move of either explain the same tree, and the one that
+    was not started voids an entry nobody moved and leaves the other live beside its new number.
+    """
+    commands = [f"stayfixed {register.name} renumber {old} {new}" for old, new in moves]
+    if len(commands) > 1:
+        return (
+            "is stale; more than one unfinished renumber explains it, and only the one that was "
+            f"started finishes it: {', or '.join(commands)}"
+        )
+    return f"is stale; run: {commands[0] if commands else f'stayfixed {register.name} index'}"
+
+
+def _half_done_moves(
     register: Register, entries: list[Entry], texts: dict[str, str], current: str
-) -> tuple[str, str] | None:
-    """The renumber, `(old, new)`, whose interruption explains the stale index `current`
-    exactly, or `None`.
+) -> list[tuple[str, str]]:
+    """Every renumber, `(old, new)`, whose interruption explains the stale index `current`
+    exactly, once each and in the order they were tried.
 
     A `renumber` writes the index last, so a run killed before it leaves the index it found:
     rendered from the ledger as it stood before the move. That state is recognised as
     `renumber` recognises it — `new` holding `old`'s text with its `id:` line rewritten, or
     `old` the void pointer the move titles toward `new` — and confirmed by the index alone: the
-    entries with `new`'s text restored to `old` render it byte for byte. Sent to `bugs index`
-    instead, the operator turned the check green over two live entries for one bug or over
-    mentions the sweep never reached. Anything else stale, a finished move's neighbour edited
-    since included, is `bugs index`'s.
+    entries with `new`'s text restored to `old` render it, every line either as it is or as the
+    sweep left it (`_swept_from`). The sweep runs before the index write and rewrites the other
+    entry files too: a void pointer an earlier move left toward `old` is retitled toward `new`,
+    and so is a live entry whose title names `old`. Sent to `bugs index` instead, the operator
+    turned the check green over two live entries for one bug or over mentions the sweep never
+    reached, which a re-run then took for a finished move's and left alone. Anything else stale,
+    a finished move's neighbour edited since included, is `bugs index`'s, and so is no answer.
     """
     by_text: defaultdict[str, list[str]] = defaultdict(list)
     for identifier, text in texts.items():
@@ -539,7 +558,8 @@ def _half_done_move(
         and len(entry.related) == 1
         and entry.title.startswith(f"renumbered to {entry.related[0]} — ")
     ]
-    for old, new in pairs:
+    explained: list[tuple[str, str]] = []
+    for old, new in dict.fromkeys(pairs):
         if new not in texts:
             continue
         restored = ID_LINE.sub(f"id: {old}", texts[new], count=1)
@@ -550,9 +570,30 @@ def _half_done_move(
         except LedgerError:
             continue
         before = [entry for entry in entries if entry.id not in (old, new)] + [moved]
-        if render_index(sorted(before, key=lambda e: e.number), register) == current:
-            return old, new
-    return None
+        rendered = render_index(sorted(before, key=lambda e: e.number), register)
+        if _swept_from(current, rendered, old=old, new=new):
+            explained.append((old, new))
+    return explained
+
+
+def _swept_from(found: str, rendered: str, *, old: str, new: str) -> bool:
+    """Whether `rendered` is the index `found` with a move's sweep applied to any of its lines.
+
+    Compared forward, line by line: each line of the entries as they stand is the line the index
+    found, or that line with `old` rewritten to `new`, which is what the sweep writes into an entry.
+    The sweep is a function and its inverse is not — a `new` the sweep wrote and one an entry
+    held before the move read alike — so reading the whole ledger back left both kinds of row at
+    once unexplained. The rows of other entries keep their places: the sweep rewrites no
+    identifier of theirs, no status and no date, so the order and the section counts are the
+    found index's.
+    """
+    was, now = found.splitlines(), rendered.splitlines()
+    if len(was) != len(now):
+        return False
+    sweep = re.compile(rf"\b{re.escape(old)}\b")
+    return all(
+        line in (before, sweep.sub(new, before)) for before, line in zip(was, now, strict=True)
+    )
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:

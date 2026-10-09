@@ -108,7 +108,8 @@ def test_check_with_a_base_answers_for_a_ledger_the_base_carries(
 ) -> None:
     # The gate's command is `bugs check --base <base>`, so the command its remedy names reports
     # the deleted ledger as the gate does; without `--base` the tree alone is judged and is
-    # inert. Mutation (oracle): "bugs check drops its --base" -> exit 0, nothing to check.
+    # inert. Mutation (oracle): `mutations/`'s "bugs check drops its --base" -> exit 0, nothing to
+    # check.
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     git(root, "init", "-q", "-b", "main")
@@ -248,7 +249,7 @@ def test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_me
     # there so that it resolves — and a re-run from shell history swept it onto the new number,
     # exit 0: "BR-009 was renumbered to BR-009". The index is the move's last write, so a fresh
     # one says the move finished, and the re-run changes nothing and says so. Mutation:
-    # `mutations/`, "a renumber that finished sweeps again when run again".
+    # `mutations/`'s "a renumber that finished sweeps again when run again".
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
@@ -261,6 +262,131 @@ def test_a_renumber_run_again_after_it_finished_says_so_and_rewrites_no_later_me
     assert data["moved"] is False
     assert history.read_text(encoding="utf-8") == (
         "BR-001 was renumbered to BR-009 to resolve a collision.\n"
+    )
+
+
+# Each write of its own a move can fail at: the sealed directory, and the file its message names.
+UNWRITABLE = {
+    "target": ("docs/bugs", "docs/bugs/BR-009.md"),
+    "pointer": ("docs/bugs", "docs/bugs/BR-001.md"),
+    "index": ("docs", "docs/bug-reports.md"),
+}
+
+
+@pytest.mark.parametrize(("sealed", "named"), UNWRITABLE.values(), ids=UNWRITABLE.keys())
+def test_a_renumber_whose_own_write_fails_names_the_re_run_that_finishes_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sealed: str, named: str
+) -> None:
+    # A failure at the index, the move's last write, leaves both endpoints and the sweep on disk;
+    # it ended in `internal error: PermissionError`, exit 2, which said nothing of the re-run that
+    # now finishes the move. Each of the move's own writes fails as the move's failure, exit 1,
+    # naming that re-run and the file by its root-relative path. `pointer` is the move killed
+    # after its first write, re-run with the old file unwritable. Mutations: `mutations/`'s "a
+    # renumber's failed target write escapes as an internal error", and the same of its pointer
+    # and its index.
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    if sealed == "docs/bugs" and named.endswith("BR-001.md"):
+        moved = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+        target = root / "docs" / "bugs" / "BR-009.md"
+        target.write_text(moved.replace("id: BR-001", "id: BR-009", 1), encoding="utf-8")
+    directory = root / sealed
+    directory.chmod(0o555)
+    try:
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 1
+    finally:
+        directory.chmod(0o755)
+    err = capsys.readouterr().err
+    assert err == (
+        f"stayfixed: failed: the move is not finished: {named} could not be written "
+        f"({DENIED}); once it can be, run `stayfixed bugs renumber BR-001 BR-009` again to "
+        "finish it\n"
+    )
+    assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
+    assert invoke(["bugs", "check", *common]) == 0
+
+
+def test_a_filing_whose_index_write_fails_names_the_entry_it_filed_and_bugs_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The entry is written before the index, so a failure there left a filed entry behind an
+    # `internal error`, exit 2, that said nothing of it; an operator who ran `bugs new` again
+    # filed the same bug twice. It is a failure, exit 1, naming the entry it filed and the
+    # command that brings the index up to date, which files nothing: after it, one entry and a
+    # clean check. Mutation: `mutations/`'s "a filing whose index write fails escapes as an
+    # internal error".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    argv = ["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common]
+    assert invoke(argv) == 0
+    capsys.readouterr()
+    docs = root / "docs"
+    docs.chmod(0o555)
+    try:
+        assert invoke(argv) == 1
+    finally:
+        docs.chmod(0o755)
+    assert capsys.readouterr().err == (
+        "stayfixed: failed: filed docs/bugs/BR-002.md, but docs/bug-reports.md could not be "
+        f"written ({DENIED}); once it can be, run `stayfixed bugs index`, not this command "
+        "again, which would file it a second time\n"
+    )
+    assert invoke(["bugs", "index", *common]) == 0
+    assert sorted(p.name for p in (docs / "bugs").iterdir()) == ["BR-001.md", "BR-002.md"]
+    assert invoke(["bugs", "check", *common]) == 0
+
+
+@needs_git
+def test_a_filing_whose_index_write_fails_keeps_the_allocators_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The allocator warns when it could not ask what other branches hold, since the number it
+    # chose may then be taken there, and a filing that stops at the index is the one whose number
+    # the operator acts on next. The failure named the entry and the index and dropped the
+    # warning. The checkout here has no `origin`, so the fetch fails. Mutation: `mutations/`'s "a
+    # filing whose index write fails drops the allocator's warning".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    git(root, "init", "-q")
+    docs = root / "docs"
+    docs.chmod(0o555)
+    try:
+        assert invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", *common]) == 1
+    finally:
+        docs.chmod(0o755)
+    err = capsys.readouterr().err
+    assert err.startswith("stayfixed: failed: filed docs/bugs/BR-001.md, but ")
+    assert err.endswith(
+        "which would file it a second time; git fetch origin failed; identifiers may collide "
+        "with branches this checkout has not fetched\n"
+    )
+
+
+def test_an_index_that_cannot_be_written_is_a_failure_naming_the_rerun(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same write, from `bugs index` itself: `internal error`, exit 2, where it is the
+    # command's failure, exit 1, with the reason in words. Mutation: `mutations/`'s "an index
+    # write that fails escapes as an internal error".
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    (root / "docs" / "bug-reports.md").unlink()
+    capsys.readouterr()
+    (root / "docs").chmod(0o555)
+    try:
+        assert invoke(["bugs", "index", *common]) == 1
+    finally:
+        (root / "docs").chmod(0o755)
+    assert capsys.readouterr().err == (
+        f"stayfixed: failed: docs/bug-reports.md could not be written ({DENIED}); once it can "
+        "be, run `stayfixed bugs index` again\n"
     )
 
 
