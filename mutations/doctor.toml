@@ -1243,8 +1243,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "            return lines[1:end], start"
-after = "            return lines[1:], start"
+before = "    return text[start : max(start, closing.start() - 1)], closing.start()"
+after = "    return text[start:], closing.start()"
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
 ]
@@ -1281,15 +1281,55 @@ reddens = [
 name = "an unterminated frontmatter is read to the end"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = """
-            return lines[1:end], start
-    return None
+    if closing is None:
+        return None
 """
 after = """
-            return lines[1:end], start
-    return lines[1:], start
+    if closing is None:
+        return text[start:], len(text)
 """
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
+]
+
+# A frontmatter is read to `LINES_READ` lines and no further, and the text is never split into lines
+# whole: a file of many short lines asked a gigabyte and more at the read cap.
+[[mutation]]
+name = "a frontmatter is read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''    readings = [body.split("\n") for body, _ in bounds if body.count("\n") < LINES_READ]'''
+after = '''    readings = [body.split("\n") for body, _ in bounds]'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-lines-read]",
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[short-lines-past-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter of exactly the lines read is not read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''body.count("\n") < LINES_READ]'''
+after = '''body.count("\n") < LINES_READ - 1]'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[at-the-lines-read]",
+]
+
+[[mutation]]
+name = "a frontmatter's line separators are read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''                if broken.count("\n") < LINES_READ:'''
+after = "                if True:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[line-separators-past-the-lines-read]",
+]
+
+[[mutation]]
+name = "a skill file is split into lines whole"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "    fenced, harness = _fenced(text), _harness_fenced(text)"
+after = '''    lines = text.split("\n")
+    fenced, harness = _fenced(text), _harness_fenced(text)'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[a-long-body]",
 ]
 
 [[mutation]]
@@ -1338,8 +1378,8 @@ reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_ho
 [[mutation]]
 name = "a reading that cannot tell is heard only where it is the only one"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return None if unsure or None in answers else False"
-after = "    return None if unsure or answers == [None] else False"
+before = "    return None if unsure or unread or None in answers else False"
+after = "    return None if unsure or unread or answers == [None] else False"
 reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line-above-an-alias]", "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-quoted-key]"]
 
 [[mutation]]
@@ -1809,7 +1849,7 @@ reddens = [
 [[mutation]]
 name = "a frontmatter is read only with Python's blanks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''            readings.append(_ODD.sub("_", joined).split("\n"))'''
+before = '''            readings.append(joined.translate(odd).split("\n"))'''
 after = "            readings.append(lines)"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[an-anchor-holding-an-ideographic-space]",
@@ -1818,8 +1858,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter is read only with YAML 1.2's line breaks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''_BREAKS.sub("\n", joined)'''
-after = "joined"
+before = "joined.translate(odd | breaks)"
+after = "joined.translate(odd)"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-key-past-a-line-separator]",
 ]

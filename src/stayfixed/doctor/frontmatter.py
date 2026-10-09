@@ -12,8 +12,17 @@ from __future__ import annotations
 import re
 import sys
 
-# The line that opens a frontmatter and the next one that closes it.
+# The line that opens a frontmatter and the next one that closes it, `---` and any blanks after it,
+# found in the text without splitting it into lines, so a body below the frontmatter costs no
+# memory however long it is.
 _FENCE = "---"
+_FENCE_LINE = re.compile(r"^---[^\S\n]*+$", re.MULTILINE)
+# The most lines of a frontmatter this reader reads, a named cap (CONTRIBUTING.md): a reading of
+# more is not read and answers "cannot tell", which names the file. Python keeps an object for each
+# line of each reading, so a file of short lines at `fsops.REGULAR_READ_LIMIT` asked a gigabyte and
+# more of one `doctor` run; ten thousand short lines ask a megabyte or two, and are far past any
+# frontmatter written by hand. No shipped file states it; `doctor.entries` names it in the remedy.
+LINES_READ = 10_000
 # The fence that opens a frontmatter as Claude Code is read to find one, and the blanks and line
 # breaks after it, taken whole so that the text is scanned once.
 _OPENING = re.compile(r"---[\s\ufeff]*+")
@@ -89,7 +98,7 @@ _COMMENT = re.compile(r"[ \t]#")
 # and a tab and its line breaks LF and CR, though YAML 1.1, which PyYAML reads, also breaks a line
 # at NEL, LS and PS (`_BREAKS`). To YAML 1.2 each is a character like a letter.
 _ODD = re.compile(r"[^\S \t\n]")
-_BREAKS = re.compile(r"[\x85\u2028\u2029]")
+_BREAKS = "\x85\u2028\u2029"
 # A line that opens with `---` and then a blank or its end, at the first column: a document marker
 # to YAML, which ends the document above it and starts another, not a key. A reader that reads it
 # as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
@@ -258,21 +267,31 @@ def declares_hooks(text: str) -> bool | None:
 
     It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
     (`_UNTOLD`) may be `hooks`, and so may a key in the document a marker line opens (`_MARKER`),
-    so where no key it reads is, the answer is `None`."""
+    so where no key it reads is, the answer is `None`; and so it is where a reading runs past
+    `LINES_READ` lines, which is not read at all."""
     text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
-    fenced, harness = _fenced(text.split("\n")), _harness_fenced(text)
-    readings = [fenced[0]] if fenced else []
+    fenced, harness = _fenced(text), _harness_fenced(text)
+    bounds = [fenced] if fenced else []
     if harness is not None and (fenced is None or harness[1] != fenced[1]):
-        readings.append(harness[0].split("\n"))
+        bounds.append(harness)
+    readings = [body.split("\n") for body, _ in bounds if body.count("\n") < LINES_READ]
+    unread = len(readings) < len(bounds)
     # Read again where a line holds a character Python takes for a blank or a line break and YAML
     # does not: as YAML 1.2 reads it, a character like a letter (`&a\u3000b {hooks: x}` is one
     # anchor ahead of a flow mapping), and as YAML 1.1 reads NEL, LS and PS, a line break.
+    # Each is one `translate` of the text, which keeps no record per character replaced.
     for lines in list(readings):
         if any(_ODD.search(line) for line in lines):
             joined = "\n".join(lines)
-            readings.append(_ODD.sub("_", joined).split("\n"))
-            if _BREAKS.search(joined):
-                readings.append(_ODD.sub("_", _BREAKS.sub("\n", joined)).split("\n"))
+            odd = {ord(found.group()): "_" for found in _ODD.finditer(joined)}
+            readings.append(joined.translate(odd).split("\n"))
+            breaks = {code: "\n" for code in odd if chr(code) in _BREAKS}
+            if breaks:
+                broken = joined.translate(odd | breaks)
+                if broken.count("\n") < LINES_READ:
+                    readings.append(broken.split("\n"))
+                else:
+                    unread = True
     unsure = False
     for lines in list(readings):
         if _tab_indents_a_key(lines):
@@ -284,20 +303,20 @@ def declares_hooks(text: str) -> bool | None:
     answers = [_holds_hooks(lines) for lines in readings]
     if True in answers:
         return True
-    return None if unsure or None in answers else False
+    return None if unsure or unread or None in answers else False
 
 
-def _fenced(lines: list[str]) -> tuple[list[str], int] | None:
-    """The frontmatter's lines between a first line of `---` and the next `---` line, and where
-    the closing line starts in the text; `None` without the closing one."""
-    if lines[0].rstrip() != _FENCE:
+def _fenced(text: str) -> tuple[str, int] | None:
+    """The frontmatter between a first line of `---` and the next `---` line, the line break ahead
+    of that line left out, and where that line starts in the text; `None` without it."""
+    opening = _FENCE_LINE.match(text)
+    if opening is None or opening.end() == len(text):
         return None
-    start = 0
-    for end, line in enumerate(lines[1:], 1):
-        start += len(lines[end - 1]) + 1
-        if line.rstrip() == _FENCE:
-            return lines[1:end], start
-    return None
+    start = opening.end() + 1
+    closing = _FENCE_LINE.search(text, start)
+    if closing is None:
+        return None
+    return text[start : max(start, closing.start() - 1)], closing.start()
 
 
 def _harness_fenced(text: str) -> tuple[str, int] | None:

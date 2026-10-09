@@ -21,6 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from stayfixed import fsops
+from stayfixed.doctor.frontmatter import LINES_READ
 from stayfixed.doctor.hooked import Seen, hooked
 from stayfixed.doctor.model import OK, RED, WARN, Claims, Context, Row, Status, Wording
 from stayfixed.errors import Refusal
@@ -351,7 +352,8 @@ _SKILL_UNPARSED = _Kind(
     lambda areas: (
         "open each file named above and check whether its frontmatter declares hooks: this row "
         "reads no alias, no merge key, no explicit key past its line, no quoted key over several "
-        "lines, no key indented by a tab and no `---` that is not a line of its own"
+        "lines, no key indented by a tab, no `---` that is not a line of its own and no "
+        f"frontmatter of more than {LINES_READ:,} lines"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,

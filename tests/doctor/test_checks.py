@@ -2007,6 +2007,9 @@ NO_HOOKS_SPELLED = {
     # scalar at any depth leaves the reader unsure" -> `a-tab-in-a-block-scalars-text`.
     "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
     "a-tab-in-a-block-scalars-text": "metadata:\n  summary: >\n   \tthe user: asks\n",
+    # A frontmatter of as many lines as the row reads is read. Mutation (oracle): `mutations/`'s "a
+    # frontmatter of exactly the lines read is not read".
+    "at-the-lines-read": "name: plain\n" + "k: v\n" * 9_999,
     # A `---` inside a line, where Claude Code may end the frontmatter: each bound is read, and
     # each says "no". Mutation (oracle): `mutations/`'s "a frontmatter whose two bounds differ
     # answers could not tell where both say no".
@@ -2078,6 +2081,10 @@ UNTOLD_SPELLED = {
     # indicators hide its opening" -> `below-a-tab-below-a-nested-block-scalar`.
     "a-tab-below-a-nested-block-scalar": "metadata:\n  summary: > # why\n  \thooks: {}\n",
     "below-a-tab-below-a-nested-block-scalar": "metadata:\n  summary: |-\n  \t\n  hooks: {}\n",
+    # A frontmatter of more lines than the row reads, which it does not read and so cannot tell
+    # of, and says so in its remedy. Mutation (oracle): `mutations/`'s "a frontmatter is read past
+    # the lines read".
+    "past-the-lines-read": "name: probe\n" + "k: v\n" * 10_000,
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "
@@ -2086,7 +2093,8 @@ SKILL_UNPARSED = (
 SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
     "no alias, no merge key, no explicit key past its line, no quoted key over several lines, no "
-    "key indented by a tab and no `---` that is not a line of its own"
+    "key indented by a tab, no `---` that is not a line of its own and no frontmatter of more than "
+    "10,000 lines"
 )
 
 
@@ -2181,7 +2189,39 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
     # "a double-quoted scalar is given back" -> `double-quoted-key`; "a single-quoted scalar is
     # given back" -> `single-quoted-key`; "a flow mapping's plain scalar is given back" ->
     # `plain-scalar-in-a-flow-mapping`.
-    head, unit, count, tail = LONG_VALUES[shape]
+    answer, grown = _read_in_a_child(*LONG_VALUES[shape])
+    assert answer == "True"
+    assert grown < _LONG_VALUE_BYTES, f"the reader grew its peak by {grown >> 20} MiB"
+
+
+# Files of many lines, which the reader held an object for each line of, each reading over: a
+# frontmatter of short lines past the lines it reads, one whose line separators the reading as
+# YAML 1.1 breaks into as many lines, and a long body below a short frontmatter, which was split
+# into lines with it. A file at the 64 MiB read cap asked a gigabyte and more; each of these is a
+# few mebibytes, which the old reader read with 30 to 85 MiB more. Past the lines read the answer
+# is "cannot tell", in the row's words; a body is no part of the answer.
+MANY_LINES = {
+    "short-lines-past-the-lines-read": ("", "k: v\n", 1 << 20, "", "None"),
+    "line-separators-past-the-lines-read": ("a: ", "x\u2028", 1 << 20, "\n", "None"),
+    "a-long-body": ("name: probe\n---\n", "xy\n", 1 << 21, "", "False"),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(MANY_LINES))
+def test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read(shape: str) -> None:
+    # Mutations (oracle): `mutations/`'s "a frontmatter is read past the lines read" ->
+    # `short-lines-past-the-lines-read`; "a frontmatter's line separators are read past the lines
+    # read" -> `line-separators-past-the-lines-read`; "a skill file is split into lines whole" ->
+    # `a-long-body`.
+    head, unit, count, tail, expected = MANY_LINES[shape]
+    answer, grown = _read_in_a_child(head, unit, count, tail)
+    assert answer == expected
+    assert grown < _LONG_VALUE_BYTES, f"the reader grew its peak by {grown >> 20} MiB"
+
+
+def _read_in_a_child(head: str, unit: str, count: int, tail: str) -> tuple[str, int]:
+    """`declares_hooks`' answer on `---`, `head`, `count` times `unit`, `tail` and `---`, read in
+    a child under a timeout, and how much the child grew its peak resident size by reading it."""
     probe = (
         "import resource, sys\n"
         "from stayfixed.doctor.frontmatter import declares_hooks\n"
@@ -2203,9 +2243,9 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
         )
     except subprocess.TimeoutExpired:
         pytest.fail(f"the frontmatter reader ran past {_LONG_LINE_SECONDS} s on one long value")
-    answer, grown = done.stdout.split()
-    assert answer == "True", done.stderr
-    assert int(grown) < _LONG_VALUE_BYTES, f"the reader grew its peak by {int(grown) >> 20} MiB"
+    answer, grown = done.stdout.split() or ("", "0")
+    assert answer, done.stderr
+    return answer, int(grown)
 
 
 def test_a_link_back_up_a_skills_tree_is_listed_once(

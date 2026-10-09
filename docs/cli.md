@@ -2843,28 +2843,28 @@ not judge them, and says so, of every file whose frontmatter Claude Code reads f
 Each such file whose frontmatter (between a first `---` line and the next) holds a top-level `hooks`
 key is named as one whose hooks the row does not judge, a `warn`, never `red`. Its top level is the
 indentation of its first line that is not blank, a comment or a lone tag or anchor. The key is found
-bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or among a flow
-mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested under another
-key, or inside a quoted or flow value on its line, is not one, though a top-level line inside one
-over lines is read as one. Claude Code may end the frontmatter at a `---` within a line and read a
-key indented by a tab (from its program, not a run), so the row reads it those ways too, naming the
-file if any holds `hooks`. Where a tab leads a key, or a block scalar's first line at its key's
-depth, a line opens with `--- `, or a top-level key cannot be read whole (an alias `*a`, a merge key
-`<<`, a `? ` key past its line, a quoted key over lines), the file is otherwise named as one it
-cannot tell about, a `warn`. Names are compared without case. Any path the row cannot read, a FIFO
-or a directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and
-a path outside the path grammar, every name in it the repository's, as a file whose path the row
-does not print.
+bare, quoted either way (escapes read), behind a tag, an anchor or `? `, or among a flow mapping's
+top-level keys (`{hooks: {...}}`), tagged or not; a `hooks` nested under another key, or inside a
+quoted or flow value on its line, is not one, though a top-level line inside one over lines is read
+as one. Claude Code may end the frontmatter at a `---` within a line and read a key indented by a
+tab (from its program, not a run); the row reads each way, naming the file if any holds `hooks`.
+Where a tab leads a key, or a block scalar's first line at its key's depth, a line opens with
+`--- `, the frontmatter runs past 10,000 lines, or a top-level key cannot be read whole (an alias
+`*a`, a merge key `<<`, a `? ` key past its line, a quoted key over lines), the file is otherwise
+named as one it cannot tell about, a `warn`. Names are compared without case. Any path the row
+cannot read, a FIFO or a directory it cannot list among them, is named as one it can say nothing of,
+also a `warn`, and a path outside the path grammar, every name in it the repository's, as a file
+whose path the row does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and
 lists a directory a link leads back to, and names a file two paths reach, once. A link whose name
 the row reads as a file, a `*.md` or a `SKILL.md`, is read when it leads to a file inside the
 checkout. A link of either kind that leads out, as a dotfiles setup links `.claude/agents`, is named
-as one that leads out of the checkout and was not followed, a `warn` that marks no fault: what it
-leads to is not the repository's, so the row leaves it to you. Only a link to a file the row would
-not read, a skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and
-a link that loops.
+as one that leads out and was not followed, a `warn` that marks no fault: what it leads to is not
+the repository's, so the row leaves it to you. Only a link to a file the row would not read, a
+skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and a link that
+loops.
 
 A `.claude/skills` below the root is found by asking git
 (`git ls-files --cached --others --exclude-standard`): the files a clone commits and the untracked
