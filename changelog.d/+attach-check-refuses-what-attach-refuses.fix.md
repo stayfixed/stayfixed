@@ -22,8 +22,9 @@ it grants, where it judged the entries against the rest of the file. Remove the 
 it `{}` or `[]`, and `stayfixed attach --check` names the clause until you do.
 
 `--check` also asks everything else the run asks before its first write, through the run's own
-code, so wherever the run fails or refuses there, `--check` ends with the same code and the same
-line, where it used to leave the file unread, report a clean diff and exit `0`:
+code, so wherever the run fails or refuses there, past the gates `--check` reports instead
+(below), `--check` ends with the same code and the same line, where it used to leave the file
+unread, report a clean diff and exit `0`:
 
 - an existing `.stayfixed/local/attach.json` that is not valid JSON, past the 64 MiB read cap or
   otherwise unreadable fails (exit `1`), and one naming what `attach` never writes, or one that is
@@ -35,13 +36,20 @@ line, where it used to leave the file unread, report a clean diff and exit `0`:
   sits in a `.git/info` you cannot write, and a `.claude` linked in from elsewhere when the overlay
   grants something to merge into it, are refused (exit `2`).
 
-A `memory.groups` entry that leaves this project's share of the overlay, which `--check` refused
-in other words, is refused in the run's. Where the run refuses before the rest, at a checkout with
-no `origin` or a memory group that never moved, `--check` still reports it and exits `1`, and of
-what the run would ask after that it reads only the names of the Codex rule files it lists. So at a
-checkout with no `origin` it no longer counts the groups that never moved, and a `memory.groups`
-entry outside `paths.memory` no longer ends it with that entry's refusal (exit `2`) where the run
-refuses for the missing `origin`; `real_directories` is `0` there until the `origin` is added.
+A `memory.groups` entry that leaves this project's share of the overlay, its
+`projects/<name>/memory` and `common/memory`, which `--check` refused in other words, is refused in
+the run's. The gates `--check` reports where the run refuses (exit `2`) end the two differently:
+
+- an allow rule or hook entry the run would add without `--yes`, and an `origin` other than the
+  remote the overlay recorded, without `--trust-remote`: `--check` reports each, the second with
+  exit `1`, and reads on as a run given the flag would;
+- a checkout with no `origin`, and a memory group that never moved, one still a real directory in
+  the repository rather than a link into the overlay: `--check` reports it and exits `1`, and of
+  what the run would ask after that it reads only the names of the Codex rule files it lists. So
+  at a checkout with no `origin` it no longer counts the groups that never moved, and a
+  `memory.groups` entry outside `paths.memory` no longer ends it with that entry's refusal (exit
+  `2`) where the run refuses for the missing `origin`; their count, `real_directories` in
+  `--json`, is `0` there until the `origin` is added.
 
 Outside overlay mode, `--check` still reports the run's refusal on its line with the rest of its
 report and exits `2`. Where the rest cannot be read, such as a settings file the run would refuse
