@@ -22,21 +22,40 @@ before = '    if relative.startswith("/"):'
 after = '    if False:'
 reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
 
-# The machine file's location takes `XDG_CONFIG_HOME` or an override only from a caller at a
-# terminal.
+# The machine file's location is moved by no variable, from a terminal or not, so every reader and
+# writer of it, `load`, the overlay root and `setup`'s default among them, asks for one file.
 [[mutation]]
-name = "the machine path honours XDG_CONFIG_HOME non-interactively again"
+name = "the machine path honours XDG_CONFIG_HOME again"
 file = "src/stayfixed/config/machine.py"
-before = '    chosen = env.get("XDG_CONFIG_HOME") if honoured else None'
-after = '    chosen = env.get("XDG_CONFIG_HOME")'
+before = '    return home / DEFAULT_CONFIG_DIR / "stayfixed" / "config.toml"'
+after = '    return Path(os.environ.get("XDG_CONFIG_HOME") or home / DEFAULT_CONFIG_DIR) / "stayfixed" / "config.toml"'
 reddens = [
-  "tests/config/test_machine.py::test_the_override_is_ignored_when_the_caller_is_not_interactive",
-  "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/config/test_machine.py::test_no_variable_moves_the_machine_file",
+  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
+  "tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads",
+]
+
+# Off a terminal and at one, the machine file is under the password database's home, never
+# `HOME`'s: every reader and writer asks for the file a hook reads, and the trust record a clone
+# ships under a `HOME` it chose is never read.
+[[mutation]]
+name = "the machine file follows HOME again"
+file = "src/stayfixed/config/machine.py"
+before = "    home = passwd_home()\n    if home is None:"
+after = "    home = Path.home()\n    if home is None:"
+reddens = [
+  "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
+  "tests/config/test_machine.py::test_home_is_honoured_from_an_interactive_shell",
+  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
+  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
+  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
 
 # Off a terminal the home directory is the password database's, never `HOME`: direnv, mise or a
 # devcontainer can set `HOME` from a file the clone commits, and relative, it names a directory
-# inside the clone a hook runs in, with a `trust.json` the clone ships.
+# inside the clone a hook runs in, where a harness link would be made. The machine file and the
+# trust record beside it are held by "the machine file follows HOME again".
 [[mutation]]
 name = "the hook path takes the home directory from HOME again"
 file = "src/stayfixed/config/machine.py"
@@ -44,11 +63,7 @@ before = '    return passwd_home()'
 after = '    return Path.home()'
 reddens = [
   "tests/config/test_machine.py::test_home_is_ignored_when_the_caller_is_not_interactive",
-  "tests/memory/test_commands.py::test_a_trust_record_under_a_home_the_environment_names_opens_nothing_off_a_terminal",
-  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
   "tests/memory/test_worktree.py::test_the_harness_link_is_anchored_on_home_only_from_a_terminal",
-  "tests/hooks/test_wrapper.py::test_a_trust_record_under_a_home_the_environment_names_is_never_read",
-  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
 
 # A home the database records as no absolute path is no home: read as one, it is a directory
@@ -103,19 +118,6 @@ file = "src/stayfixed/config/overlay.py"
 before = '    raw = None if path is None else read_machine_toml(path)'
 after = '    raw = read_machine_toml(path)'
 reddens = ["tests/memory/test_hooks.py::test_no_harness_link_is_made_where_home_is_not_the_databases[no entry]"]
-
-# Half a file behind a gate is not a gate. `load` resolved the machine file with the `isatty` sniff
-# while `overlay_root` and `_trust_file` — the two anchors store resolution and the trust record
-# rest on — always resolved it with `interactive=False`, so one command read `[personal]` out of one
-# file and `[overlay] root` out of another.
-[[mutation]]
-name = "one command reads its machine configuration from two different files again"
-file = "src/stayfixed/config/loader.py"
-before = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:'
-after = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:'
-reddens = [
-  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
-]
 
 # Every `git` this project asks a question of now goes through `git_run`, the hook path's
 # toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
@@ -2733,17 +2735,6 @@ after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
 reddens = [
   "tests/test_semver.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
   "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
-]
-
-# The overlay root anchors where the note store may resolve, so with no file named it is read from
-# the one path no variable can move, even from a terminal.
-[[mutation]]
-name = "the overlay root reads the machine file a variable names"
-file = "src/stayfixed/config/overlay.py"
-before = "    path = machine_config_path(interactive=False) if machine is None else machine"
-after = "    path = machine_config_path(interactive=True) if machine is None else machine"
-reddens = [
-  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
 ]
 
 # `init` writes the `.gitignore` block as a scaffold artifact and `attach` merges it into the file;

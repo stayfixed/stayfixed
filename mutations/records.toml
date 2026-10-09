@@ -2637,8 +2637,8 @@ reddens = [
 [[mutation]]
 name = "the base's copy reads the default machine file"
 file = "src/stayfixed/ledger/check.py"
-before = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)"
-after = "        copy = loads(decoded, root, interactive=False, label=FORK_COPY)"
+before = "        copy = loads(decoded, root, label=FORK_COPY, personal=personal)"
+after = "        copy = loads(decoded, root, label=FORK_COPY)"
 reddens = [
   "tests/ledger/test_check.py::test_the_base_s_copy_reads_no_machine_file_but_the_one_the_command_was_given",
 ]
@@ -2877,18 +2877,6 @@ before = 'from stayfixed.ledger.api import bug_register'
 after = 'from stayfixed.ledger.register import bug_register'
 reddens = [
   "tests/test_areas.py::test_no_module_reaches_into_another_packages_private_module",
-]
-
-# The trust record is where every command reads it, under the password database's home, so the
-# record a person writes at a terminal is the one a hook reads. Resolved with the terminal check
-# instead, an owner whose `HOME` differs from the database's writes a record no hook reads.
-[[mutation]]
-name = "the trust record follows HOME from a terminal"
-file = "src/stayfixed/memory/trust.py"
-before = '    base = machine_config_path(interactive=False) if machine is None else machine'
-after = '    base = machine_config_path() if machine is None else machine'
-reddens = [
-  "tests/memory/test_commands.py::test_an_owner_whose_home_differs_from_the_database_trusts_from_a_terminal_unrefused",
 ]
 
 # No home in the password database is no trust record: none is read, and none is written beside

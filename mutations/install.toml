@@ -626,17 +626,6 @@ after = """        else:
             continue"""
 reddens = ["tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite"]
 
-# The write side of the rule `config.loader.load`'s docstring states for the read side ("Half a
-# file behind a gate is not a gate"). Every reader pins `~/.config/stayfixed/config.toml` with
-# `interactive=False`; this writer took the `isatty` sniff, so an owner with `XDG_CONFIG_HOME`
-# set wrote a machine file at exit 0 that every reader — and `doctor` — then reported missing.
-[[mutation]]
-name = "setup's --machine default takes the interactive sniff"
-file = "src/stayfixed/setup/commands.py"
-before = "        machine_config_path(interactive=False)"
-after = "        machine_config_path()"
-reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads"]
-
 # `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
 # written from this run's *new* keys — empty on every run after the first. An owner who edited
 # `reply_language` in the machine file, the documented way, kept `""` there for ever.
@@ -1518,7 +1507,7 @@ reddens = [
 [[mutation]]
 name = "setup tells a run that named its machine file where the file goes without --machine"
 file = "src/stayfixed/setup/machine.py"
-before = "            if path == machine_config_path(interactive=False)"
+before = "            if path == machine_config_path()"
 after = "            if True"
 reddens = [
   "tests/setup/test_commands.py::test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_running_without_it",
@@ -1527,7 +1516,7 @@ reddens = [
 [[mutation]]
 name = "setup's unwritable database home no longer says it is the only place a hook reads"
 file = "src/stayfixed/setup/machine.py"
-before = "            if path == machine_config_path(interactive=False)"
+before = "            if path == machine_config_path()"
 after = "            if False"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",

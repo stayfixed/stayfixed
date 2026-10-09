@@ -313,9 +313,8 @@ Code 2.1.288 on macOS (2026-10-05), a `.claude/settings.json` `env` block naming
 a project hook on `SessionStart` (a plugin hook on `SessionStart` was not measured) — Claude Code
 set the real project root over it, while the block's other keys were applied.
 `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a candidate only to exit `0` for a trivial
-`-I -c`, so an unguarded list picks the interpreter that
-runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
-gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
+`-I -c`, so an unguarded list picks the interpreter that runs on every tool call — and it is
+therefore honoured from an interactive terminal, as `attach` honours `--machine`, and ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
 hands its own probe `/dev/null`, so a committed `.claude/settings.json` `env` block — which
 applies without a trust prompt in a non-interactive session — cannot reach it, while a machine
@@ -2120,8 +2119,8 @@ permissions and hook entries you keep in the overlay are merged into
 **`--machine` is honoured only from an interactive shell.** This is the command that turns the
 machine configuration into capability: the overlay root comes from that file, and from the
 overlay come allow rules, hook entries and standing rules. `STAYFIXED_CONFIG` and
-`XDG_CONFIG_HOME` are already gated the same way and for the same reason — a repository can set
-an environment variable through a committed settings file, and it can just as easily tell an
+`XDG_CONFIG_HOME` are not read at all, for the same reason — a repository can set an
+environment variable through a committed settings file, and it can just as easily tell an
 agent to pass a flag. In a non-interactive session the flag is **refused** (`2`) rather than
 ignored, because silently falling back would read your real configuration while the caller
 believed it was reading the file it named. Omit it and the default file is read exactly as

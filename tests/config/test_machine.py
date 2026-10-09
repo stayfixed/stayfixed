@@ -15,39 +15,32 @@ from stayfixed.config.machine import (
 from tests.ownerhome import as_owner_home
 
 
-def test_the_override_is_ignored_when_the_caller_is_not_interactive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("terminal", [False, True], ids=["off-a-terminal", "at-a-terminal"])
+@pytest.mark.parametrize(
+    "variables",
+    [
+        {"STAYFIXED_CONFIG": "hostile.toml", "XDG_CONFIG_HOME": "hostile-dir"},
+        {"XDG_CONFIG_HOME": "hostile-dir"},
+    ],
+    ids=["both", "xdg-alone"],
+)
+def test_no_variable_moves_the_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variables: dict[str, str], terminal: bool
 ) -> None:
     # Both variables reach the same file, so the assertion is the *fallback* path and not the
     # one either variable chose. Asserting `tmp_path / "stayfixed" / "config.toml"` here — the
     # location `XDG_CONFIG_HOME` picks — is what let the gate on `STAYFIXED_CONFIG` pass while
-    # its ungated sibling three lines below honoured the repository's choice anyway.
+    # its ungated sibling three lines below honoured the repository's choice anyway. The variable
+    # on its own costs a repository a path segment and nothing else, so it is a case alone. And
+    # from a terminal too: every reader and writer asks for one file, so the file a person writes
+    # is the file a hook reads. Mutation (oracle): `mutations/`'s "the machine path honours
+    # XDG_CONFIG_HOME again".
     home = tmp_path / "home"
     as_owner_home(monkeypatch, home)
-    env = {
-        "STAYFIXED_CONFIG": str(tmp_path / "hostile.toml"),
-        "XDG_CONFIG_HOME": str(tmp_path / "hostile-dir"),
-    }
-    assert machine_config_path(env, interactive=False) == (
-        home / ".config" / "stayfixed" / "config.toml"
-    )
-
-
-def test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The variable on its own, with no `STAYFIXED_CONFIG` beside it: a repository that sets only
-    # this one costs itself a path segment and nothing else, so it must be refused alone too.
-    home = tmp_path / "home"
-    as_owner_home(monkeypatch, home)
-    assert machine_config_path({"XDG_CONFIG_HOME": str(tmp_path)}, interactive=False) == (
-        home / ".config" / "stayfixed" / "config.toml"
-    )
-
-
-def test_the_override_is_honoured_from_an_interactive_shell(tmp_path: Path) -> None:
-    env = {"STAYFIXED_CONFIG": str(tmp_path / "mine.toml"), "XDG_CONFIG_HOME": str(tmp_path)}
-    assert machine_config_path(env, interactive=True) == tmp_path / "mine.toml"
+    monkeypatch.setattr("sys.stdin.isatty", lambda: terminal)
+    for name, value in variables.items():
+        monkeypatch.setenv(name, str(tmp_path / value))
+    assert machine_config_path() == home / ".config" / "stayfixed" / "config.toml"
 
 
 def test_the_default_is_not_interactive_under_a_pipe(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,11 +57,6 @@ def test_a_stdin_that_cannot_answer_is_not_interactive(monkeypatch: pytest.Monke
     assert override_is_honoured() is False
 
 
-def test_xdg_config_home_selects_the_directory_from_an_interactive_shell(tmp_path: Path) -> None:
-    env = {"XDG_CONFIG_HOME": str(tmp_path)}
-    assert machine_config_path(env, interactive=True) == tmp_path / "stayfixed" / "config.toml"
-
-
 @pytest.mark.parametrize("spelling", ["relative", "absolute"])
 def test_home_is_ignored_when_the_caller_is_not_interactive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
@@ -76,28 +64,27 @@ def test_home_is_ignored_when_the_caller_is_not_interactive(
     # A direnv, mise or devcontainer setup can set `HOME` for a hook from a file the clone
     # commits (Claude Code's `env` block cannot), and relative, it lands inside the clone the
     # hook runs in. Off a terminal the home directory is the password database's, so the file is
-    # the owner's whatever `HOME` says.
+    # the owner's whatever `HOME` says. Mutations (oracle): `mutations/`'s "the hook path takes the
+    # home directory from HOME again" -> `owner_home`; "the machine file follows HOME again".
     owner = tmp_path / "owner"
     as_owner_home(monkeypatch, owner)
     monkeypatch.chdir(tmp_path)
     planted = "fakehome" if spelling == "relative" else str(tmp_path / "fakehome")
     monkeypatch.setenv("HOME", planted)
-    assert machine_config_path({}, interactive=False) == (
-        owner / ".config" / "stayfixed" / "config.toml"
-    )
+    assert owner_home(interactive=False) == owner
+    assert machine_config_path() == owner / ".config" / "stayfixed" / "config.toml"
 
 
 def test_home_is_honoured_from_an_interactive_shell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The other half of the same gate: a person at a terminal whose `HOME` differs from the
-    # database's entry, as in a container, keeps the `HOME` they set.
+    # database's entry, as in a container, keeps the `HOME` they set for what it decides there,
+    # and the machine file stays under the database's home, where a hook reads it.
     as_owner_home(monkeypatch, tmp_path / "owner")
     monkeypatch.setenv("HOME", str(tmp_path / "chosen"))
     assert owner_home(interactive=True) == tmp_path / "chosen"
-    assert machine_config_path({}, interactive=True) == (
-        tmp_path / "chosen" / ".config" / "stayfixed" / "config.toml"
-    )
+    assert machine_config_path() == tmp_path / "owner" / ".config" / "stayfixed" / "config.toml"
 
 
 def test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal(
@@ -109,7 +96,7 @@ def test_a_user_the_password_database_does_not_list_has_no_home_off_a_terminal(
     as_owner_home(monkeypatch, None)
     monkeypatch.setenv("HOME", str(tmp_path))
     assert owner_home(interactive=False) is None
-    assert machine_config_path({}, interactive=False) is None
+    assert machine_config_path() is None
 
 
 @pytest.mark.parametrize("recorded", ["", "relative/home"])

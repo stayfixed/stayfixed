@@ -485,7 +485,7 @@ reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_re
 name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
 file = "src/stayfixed/assess/commands.py"
 before = "    context = GateContext(root, verdict.config, base)"
-after = "    context = GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base)"
+after = "    context = GateContext(root, loads(tree_text, root, machine=machine), base)"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces",
   "tests/assess/test_gate_command.py::test_a_refused_change_is_checked_at_the_base_s_paths",
@@ -521,7 +521,7 @@ reddens = [
 name = "gate --builtin reads which gates are custom off the tree, not the verdict's configuration"
 file = "src/stayfixed/assess/commands.py"
 before = "    custom = verdict.config.gates.custom"
-after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
+after = "    custom = loads(tree_text, root, machine=machine).gates.custom"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
 
 # A configuration the rule refused fails every run that judged it, and a run judges it when `--only`
@@ -612,7 +612,7 @@ reddens = [
 name = "gate reads the names to run off the tree, so the custom step skips a gate the base keeps"
 file = "src/stayfixed/assess/commands.py"
 before = "    configured = verdict.config.gate_names"
-after = "    configured = loads(tree_text, root, machine=machine, interactive=False).gate_names"
+after = "    configured = loads(tree_text, root, machine=machine).gate_names"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
   "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",

@@ -164,7 +164,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     # The tree's configuration is read here for its default base and the branch a base the
     # checkout lacks is named by, and kept nowhere: every later decision is the verdict's, and a
     # name for the tree's copy in scope is one a later line could pick in its place.
-    tree = loads(tree_text, root, machine=machine, interactive=False)
+    tree = loads(tree_text, root, machine=machine)
     default, branch = local_base(tree), tree.project.base_branch
     del tree
     base = args.base or default

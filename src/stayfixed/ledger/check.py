@@ -243,7 +243,7 @@ def _fork_register(
     except UnicodeDecodeError:
         raise does_not_load(NOT_UTF8.format(path=FORK_COPY)) from None
     try:
-        copy = loads(decoded, root, interactive=False, label=FORK_COPY, personal=personal)
+        copy = loads(decoded, root, label=FORK_COPY, personal=personal)
     except Refusal as exc:
         refused = FORK_REFUSED.format(base=quoted(base), name=register.name, reason=exc)
         raise Refusal(refused) from None

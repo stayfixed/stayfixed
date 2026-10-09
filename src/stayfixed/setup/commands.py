@@ -103,24 +103,18 @@ def run_setup(args: argparse.Namespace) -> Result:
     from stayfixed.config.machine import homes_agree, machine_config_path
     from stayfixed.setup.run import setup
 
-    # `interactive=False`, like every *reader* of this file (`config.loader.load`,
-    # `config.overlay.overlay_root`, `memory.trust._trust_file`) — and unlike this command until
-    # now, which was the one `machine_config_path()` call in the tree taking the `isatty` sniff.
-    # With `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own shell wrote
-    # `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay root is
-    # recorded in the machine configuration; run `stayfixed setup`" — the defect
-    # `config.loader.load`'s docstring says it fixed ("Half a file behind a gate is not a
-    # gate"), reintroduced on the write side. `--machine` itself is still honoured: a path the
-    # owner typed on their own command line is not an environment variable a repository can set.
+    # The file every *reader* of it reads (`config.loader.load`, `config.overlay.overlay_root`,
+    # `memory.trust._trust_file`), which no variable moves. This command once took the `isatty`
+    # sniff there: with `XDG_CONFIG_HOME=/xdg`, an owner running `stayfixed setup` in their own
+    # shell wrote `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay
+    # root is recorded in the machine configuration; run `stayfixed setup`". `--machine` itself is
+    # still honoured: a path the owner typed on their own command line is not an environment
+    # variable a repository can set.
     #
     # Resolved here rather than in `register()`, so that `stayfixed setup --help` prints the
     # sentence and not whichever home directory the parser happened to be built under.
     home = Path.home() if args.home is None else Path(args.home).expanduser()
-    machine = (
-        machine_config_path(interactive=False)
-        if args.machine is None
-        else Path(args.machine).expanduser()
-    )
+    machine = machine_config_path() if args.machine is None else Path(args.machine).expanduser()
     if machine is None:
         # Off `--machine`, the file is under the home the password database records, and this
         # user has none there; a file put under `HOME` instead would be one no hook reads.

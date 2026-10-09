@@ -473,34 +473,16 @@ def _personal(machine: Path | None, preset: dict[str, Any]) -> Personal:
         raise MachineConfigError(f"{machine}: {exc}") from None
 
 
-def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:
+def load(root: Path, *, machine: Path | None = None) -> Config:
     """Read `stayfixed.toml` under the preset, and `[personal]` out of the machine file.
 
-    `interactive` is threaded to `machine_config_path`, because `machine.py`'s docstring says "a
-    caller that knows it is a hook, the MCP server or a `stayfixed gate` run says
-    `interactive=False` rather than relying on the terminal check", and the one shipped
-    non-interactive caller — `hooks.commands.run_hook` — needs a way to say it. Left to the
-    `isatty` sniff, a hook's gate would hold only by circumstance (its stdin is a pipe) rather
-    than by construction.
-
-    **It defaults to `False`, so that one command reads one machine file.** The overlay root's
-    reader and `trust._trust_file` — the two anchors that locating the note store and trusting
-    in-repo notes rest on — resolve that same file with `interactive=False` always. With
-    the sniff as the default, an interactive run with `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` set
-    would read `[personal]` from the owner's chosen file and `[overlay] root` and `trust.json` from
-    `~/.config/stayfixed/`, so an XDG-honouring owner who wrote one file with both tables would get
-    `[personal]` honoured and the overlay silently unrecorded — `stayfixed memory index` refusing
-    with "no overlay root is recorded in the machine configuration; run `stayfixed setup`" about a
-    file it had just read successfully.
-
-    Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a
-    pair. So the whole file follows the stricter of the two rules, and `--machine` stays the
-    supported way to name another one — honoured by all three readers, because it is a path a
-    person typed rather than one an environment chose. `stayfixed doctor` is where an ignored
-    `XDG_CONFIG_HOME` should be reported, which `machine.py`'s docstring nominates it for.
-
-    `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
-    what *would* have been honoured.
+    With no `machine`, the machine file is `config.machine.machine_config_path`'s, the one file
+    the overlay root's reader and `trust._trust_file` read too, which no variable moves: an
+    interactive run with `XDG_CONFIG_HOME` set once read `[personal]` from the file it named and
+    `[overlay] root` and `trust.json` from `~/.config/stayfixed/`, so an owner who wrote one file
+    with both tables got `[personal]` honoured and the overlay silently unrecorded. `--machine`
+    is the supported way to name another file, honoured by all three readers, because it is a
+    path a person typed rather than one an environment chose.
 
     **One reader of the file.** Through `read_document`, which goes through `contained()`: a
     `stayfixed.toml` that is a symlink is refused by every command, as `stayfixed gate` refuses
@@ -510,7 +492,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     text = read_document(root)
     if text is None:
         raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
-    return loads(text, root, machine=machine, interactive=interactive)
+    return loads(text, root, machine=machine)
 
 
 def read_document(root: Path) -> str | None:
@@ -538,7 +520,6 @@ def loads(
     root: Path,
     *,
     machine: Path | None = None,
-    interactive: bool | None = False,
     label: str | None = None,
     personal: Personal | None = None,
 ) -> Config:
@@ -599,7 +580,7 @@ def loads(
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
     if personal is None:
-        personal = _personal(machine or machine_config_path(interactive=interactive), preset)
+        personal = _personal(machine or machine_config_path(), preset)
     config = Config(
         stayfixed=stayfixed,
         project=project,

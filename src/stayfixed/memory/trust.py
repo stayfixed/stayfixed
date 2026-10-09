@@ -73,8 +73,8 @@ def wrap(text: str, nonce: str) -> str:
 def _trust_file(machine: Path | None) -> Path | None:
     """The record `may_inject` consults, beside the machine configuration file.
 
-    `machine=None` resolves it through `machine_config_path`, which gates **both** variables
-    that can name that file behind `interactive`. It gated only `STAYFIXED_CONFIG` once, and
+    `machine=None` resolves it through `machine_config_path`, which reads **neither** variable
+    that could name that file. It gated only `STAYFIXED_CONFIG` once, and
     `XDG_CONFIG_HOME` beside it chose this very file for direnv, mise or a devcontainer applying
     a file the clone commits (Claude Code's `env` block cannot set it), wherever no `--machine`
     was threaded — the gate the security record of this module rests on, bypassed by the
@@ -85,7 +85,7 @@ def _trust_file(machine: Path | None) -> Path | None:
     `None` for a machine with no such home (`config.machine.owner_home`): it holds no record,
     so nothing is trusted, and `record` refuses to invent a place for one.
     """
-    base = machine_config_path(interactive=False) if machine is None else machine
+    base = machine_config_path() if machine is None else machine
     return None if base is None else base.parent / "trust.json"
 
 

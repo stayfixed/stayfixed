@@ -116,7 +116,7 @@ def test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument(
     tmp_path: Path,
 ) -> None:
     # This is the overlay's whole trust model. The overlay is trusted BY CONSTRUCTION, and the
-    # construction is that `machine_config_path(interactive=False)` makes the machine file
+    # construction is that `machine_config_path` makes the machine file
     # unselectable by a repository — `machine.py` spends twenty lines on why gating one of a pair of
     # equivalent inputs "is not a partial defence, it is a redirect with a longer name". Deriving
     # the root from `--store`'s own parent throws all of that away: the source of every allow rule

@@ -1,8 +1,8 @@
 """Write the machine configuration file, the one both existing readers already read.
 
 **This module invents no schema.** `config.loader._personal` reads `[personal]` and
-`config.overlay.overlay_root` reads `[overlay] root`, both with `interactive=False`, and neither
-changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
+`config.overlay.overlay_root` reads `[overlay] root`, both from the file no variable moves, and
+neither changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
 can check it later — and nothing else. A caller that wants a fourth table is asking for a third
 reader of this file, which the same rule keeps out.
 
@@ -30,16 +30,15 @@ a float or a nested table round-trips rather than making every future run exit 2
 refusal left names this file, the key, and what to do about it instead of naming a serialiser
 the owner has never heard of.
 
-**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer
-`setup` uses owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
-This file has no such root: `config.machine.machine_config_path` resolves to
-`~/.config/stayfixed/config.toml` or wherever `--machine`/`STAYFIXED_CONFIG`/`XDG_CONFIG_HOME`
-sends it, and that directory is not one this process was handed as "the thing to stay inside
-of". `fsops.write_atomically`'s own docstring names exactly this caller: "for callers that
-already hold a trusted absolute path". The path is trusted because it is built out of fixed
-strings this module and `config.machine` wrote (`"stayfixed"`, `"config.toml"`) or a path the
-machine owner typed on their own command line — never a segment a repository chose, which is
-what `mkdirs_within`'s containment exists to stop.
+**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer `setup`
+uses owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`. This file
+has no such root: `config.machine.machine_config_path` resolves to
+`~/.config/stayfixed/config.toml`, or `--machine` sends it elsewhere, and that directory is not one
+this process was handed as "the thing to stay inside of". `fsops.write_atomically`'s own docstring
+names exactly this caller: "for callers that already hold a trusted absolute path". The path is
+trusted because it is built out of fixed strings this module and `config.machine` wrote
+(`"stayfixed"`, `"config.toml"`) or a path the machine owner typed on their own command line — never
+a segment a repository chose, which is what `mkdirs_within`'s containment exists to stop.
 
 Every string that reaches `tomlout.dumps` is repository-*adjacent* rather than
 repository-authored — the overlay root and the personal languages are values the machine owner
@@ -182,7 +181,7 @@ def write_machine(
         where = (
             "; without --machine it is under the home the password database records for this "
             "user, which is the only place a hook reads it"
-            if path == machine_config_path(interactive=False)
+            if path == machine_config_path()
             else ""
         )
         raise Failure(

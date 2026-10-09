@@ -72,8 +72,8 @@ def test_a_machine_file_with_no_usable_overlay_root_records_none(tmp_path: Path,
 def test_a_root_under_tilde_is_the_owners_home_and_never_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Every command reads this file with `interactive=False`, so a `~` in it is the home the
-    # file lives under: the password database's. A direnv, mise or devcontainer setup can set
+    # Every command reads this file under the password database's home, so a `~` in it is the
+    # home the file lives under: the database's. A direnv, mise or devcontainer setup can set
     # `HOME` from a file the clone commits, and relative, it is a directory inside the clone a
     # hook runs in.
     owner = tmp_path / "owner"

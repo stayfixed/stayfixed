@@ -1,10 +1,9 @@
 """Which overlay this repository is bound to, and whether the binding is really this one's.
 
-**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted
-*by construction*, and the construction is that
-`config.machine.machine_config_path(interactive=False)` makes the machine file unselectable by
-a repository — that module spends twenty lines on why gating one of a pair of equivalent
-variables "is not a partial defence, it is a redirect with a longer name". So:
+**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted *by
+construction*, and the construction is that `config.machine.machine_config_path` makes the machine
+file unselectable by a repository — that module spends twenty lines on why gating one of a pair of
+equivalent variables "is not a partial defence, it is a redirect with a longer name". So:
 
 1. the overlay root comes from `overlay_root(machine)` and never from `--store`. Deriving it
    from the store's own parent would make the source of every allow rule and every hook entry

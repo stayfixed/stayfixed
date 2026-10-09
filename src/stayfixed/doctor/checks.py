@@ -1101,11 +1101,10 @@ def run_checks(
             ),
         ]
     # The machine file, resolved once and handed to `load`, so the file the row below names when
-    # it does not load is the file that was read. `load` resolves no `--machine` with
-    # `interactive=False`, which honours neither variable that can name another file; naming it
-    # through the terminal check instead told an owner at a terminal with `STAYFIXED_CONFIG` set
-    # to fix the file the variable names, which nothing had read.
-    read = machine_config_path(interactive=False) if machine is None else machine
+    # it does not load is the file that was read: the one no variable moves. Named through the
+    # terminal check instead, it once told an owner at a terminal with `STAYFIXED_CONFIG` set to
+    # fix the file the variable names, which nothing had read.
+    read = machine_config_path() if machine is None else machine
     try:
         config = load(root, machine=read)
     except MachineConfigError:

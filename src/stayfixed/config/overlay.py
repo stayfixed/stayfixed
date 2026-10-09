@@ -27,12 +27,12 @@ def overlay_root(machine: Path | None) -> Path | None:
     record no overlay answer `None`: an absent file (the ordinary state before `setup` has run),
     no `[overlay]` table, and a table with no usable `root`.
 
-    With no file named, the file is the one no variable can move (`interactive=False`): the
+    With no file named, the file is the one no variable can move (`machine_config_path`): the
     root anchors where the note store may resolve, and a committed `.claude/settings.json` can
     set a variable in a session no person is watching. A machine with no home off a terminal
     (`config.machine.owner_home`) has no such file, and records no overlay.
     """
-    path = machine_config_path(interactive=False) if machine is None else machine
+    path = machine_config_path() if machine is None else machine
     raw = None if path is None else read_machine_toml(path)
     if raw is None:
         return None

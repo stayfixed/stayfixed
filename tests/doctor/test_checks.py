@@ -3186,19 +3186,18 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
 def test_a_machine_file_that_does_not_load_is_named_as_the_file_that_was_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `load` reads the machine file with `interactive=False`, which honours neither
-    # `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and the row named the file through the terminal
-    # check instead. So an owner at a terminal with `STAYFIXED_CONFIG` set, whose
-    # `~/.config/stayfixed/config.toml` has a stray bracket in it, was told to fix the file the
-    # variable names — which is fine, and was never read.
+    # `load` reads the machine file no variable moves, which honours neither `STAYFIXED_CONFIG` nor
+    # `XDG_CONFIG_HOME`, and the row once named the file through the terminal check instead. So an
+    # owner at a terminal with `STAYFIXED_CONFIG` set, whose `~/.config/stayfixed/config.toml` has a
+    # stray bracket in it, was told to fix the file the variable names — which is fine, and was
+    # never read.
     #
     # `run_checks` directly and not `_checks`, whose hermetic default names a file: the case is
     # the one where no `--machine` was given. `HOME` is this test's, so the file `load` reads is
     # under it, and the variable names a well-formed file beside it.
     #
-    # Mutation: `run_checks`' `machine_config_path(interactive=False)` without its argument -> the
-    # file read and named is the variable's, which loads, and the first assertion reddens. The
-    # file is resolved once for both, so no mutation can make them differ again.
+    # The file is resolved once for both, through the one path no variable moves, so no mutation
+    # of `run_checks` can make them differ again.
     root = _initialised(tmp_path)
     home = tmp_path / "owner-home"
     read = home / ".config" / "stayfixed" / "config.toml"
@@ -3250,7 +3249,7 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     )
     monkeypatch.setenv("HOME", str(home))
     expected = home / ".config" / "stayfixed" / "config.toml"
-    assert machine_config_path(interactive=False) == expected, "the planted file is not reachable"
+    assert machine_config_path() == expected, "the planted file is not reachable"
     assert overlay_root(expected) == overlay, "the planted file records no overlay"
     row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
     assert row.status == SKIP, row

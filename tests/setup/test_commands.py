@@ -71,16 +71,14 @@ def test_git_hooks_and_preset_refuse_to_combine_through_the_cli(tmp_path: Path) 
 def test_the_machine_default_is_the_file_every_reader_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `--machine`'s default was `machine_config_path()` with no argument — the only such call in the
-    # tree — so it took the `isatty` sniff that every *reader* pins with `interactive=False`. With
+    # `--machine`'s default once took the `isatty` sniff that no *reader* took. With
     # `XDG_CONFIG_HOME` set, an owner running `stayfixed setup` in their own shell wrote
     # `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay root is
     # recorded in the machine configuration; run `stayfixed setup`" — the defect
-    # `config.loader.load`'s docstring says it fixed, reintroduced on the write side.
+    # `config.loader.load`'s docstring describes, on the write side.
     #
-    # Mutation (`mutations/`, "setup's --machine default takes the interactive sniff"):
-    # `interactive=False` is dropped from the call in `run_setup` → the file lands under
-    # `XDG_CONFIG_HOME` and this reddens on both paths below.
+    # Mutation (`mutations/`, "the machine path honours XDG_CONFIG_HOME again"): the file lands
+    # under `XDG_CONFIG_HOME` and this reddens on both paths below.
     home = tmp_path / "home"
     xdg = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
