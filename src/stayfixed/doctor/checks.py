@@ -213,8 +213,9 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     `Context` carries both this and `own_root`, and the executing check takes the second.
 
     **This stayfixed's own root first, and the named variable only after it.** A plugin-root
-    variable is the same class of input `config/machine.py` gates `STAYFIXED_CONFIG` on: a
-    committed `.claude/settings.json` `env` block reaches this process without a trust prompt.
+    variable is the same class of input as `STAYFIXED_CONFIG`, which `config/machine.py` does not
+    read at all: a committed `.claude/settings.json` `env` block reaches this process without a
+    trust prompt.
     `hooks/run-hook.sh` derives its launcher from its own path for that reason, and this is the
     same rule one layer up.
 
@@ -884,10 +885,10 @@ def _diagnostics(context: Context) -> Row:
     )
 
 
-# The two variables that can name the machine configuration file, and are honoured only from an
-# interactive shell. `config/machine.py` nominates this check by name: "a machine owner who sets
-# one really does lose it on the hook path rather than getting a wrong answer quietly". `HOME` is
-# the third, and its own sentence (`_ignored_home`), because it is ignored only when it differs.
+# The two variables that could name the machine configuration file, and that no command reads.
+# `config/machine.py` nominates this check by name: a machine owner who sets one "really does lose
+# it rather than getting a wrong answer quietly". `HOME` is the third, and its own sentence
+# (`_ignored_home`), because it is ignored only when it differs.
 IGNORED_ENV = ("STAYFIXED_CONFIG", "XDG_CONFIG_HOME")
 
 

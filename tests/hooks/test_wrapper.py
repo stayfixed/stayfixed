@@ -143,8 +143,8 @@ def _run(
     same reason: a case must not read the machine it happens to run on.
 
     **`candidates` arrives over a pty, because the wrapper honours that variable only from an
-    interactive terminal.** It names the *program* the wrapper executes, so it is gated where
-    `config/machine.py` gates `STAYFIXED_CONFIG` — and a hook's stdin is the harness's JSON
+    interactive terminal.** It names the *program* the wrapper executes, so it is gated as
+    `attach` gates `--machine`, to a person at a terminal — and a hook's stdin is the harness's JSON
     payload on a pipe, never a terminal. Every case below that passes one is therefore about
     the probe itself and says nothing about what an `env` block can reach;
     `test_an_interpreter_the_environment_names_is_ignored_off_a_terminal` is that case, and it
@@ -242,7 +242,7 @@ def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path:
     # into the *command string* of `hooks/hooks.json`, so the wrapper that runs is always the
     # plugin's own, and the program it hands to Python is derived from that wrapper's path. A
     # variable of the same name arriving from anywhere else — a committed `.claude/settings.json`
-    # `env` block is the case `config/machine.py` gates `STAYFIXED_CONFIG` against — must change
+    # `env` block is the case `config/machine.py` reads no `STAYFIXED_CONFIG` for — must change
     # nothing, because this choice is made before any stayfixed guard runs.
     #
     # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,

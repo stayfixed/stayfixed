@@ -73,8 +73,8 @@ class Planted:
 def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Every subprocess here reads stdin from a pipe, which is what a hook's stdin is.
 
-    It is also the gate: `config/machine.py` honours `STAYFIXED_CONFIG` only from an
-    interactive terminal, so a pipe is the state the clone's `env` block actually meets.
+    It is also the gate: nothing stayfixed honours only from an interactive terminal, `attach`'s
+    `--machine` among it, is honoured on a pipe, the state the clone's `env` block actually meets.
     """
     return subprocess.run(  # noqa: S603
         argv,

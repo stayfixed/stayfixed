@@ -345,8 +345,8 @@ in_project() {
 # `STAYFIXED_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
 # only to exit 0 for a trivial `-I -c` — so unguarded it is a redirect with a longer name, and the
 # repository-planted interpreter was measured running `<plugin>/scripts/stayfixed hook PreToolUse`
-# on every tool call. It is therefore honoured exactly where `config/machine.py` honours
-# `STAYFIXED_CONFIG`: from an interactive terminal. A hook's stdin is the harness's JSON payload
+# on every tool call. It is therefore honoured only where a person is, as `attach`'s `--machine`
+# is: from an interactive terminal. A hook's stdin is the harness's JSON payload
 # on a pipe and `doctor` hands its own probe `/dev/null`, so neither path can be redirected by an
 # `env` block, while a machine owner debugging the probe by hand still gets their list.
 #

@@ -189,10 +189,10 @@ def test_no_command_prints_a_path_a_repository_chose(
 def test_a_non_interactive_session_may_not_name_the_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `config/machine.py` gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` behind this same
-    # question and generalises past them: "Gating one of a pair of equivalent inputs is not a
-    # partial defence, it is a redirect with a longer name." `--machine` is a third member of
-    # that class, and this is the command that turns that file into capability — the overlay
+    # `config/machine.py` reads neither `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME`, and generalises
+    # past them: "Gating one of a pair of equivalent inputs is not a partial defence, it is a
+    # redirect with a longer name". `--machine` is a third member of that class, held to a
+    # terminal, and this is the command that turns that file into capability — the overlay
     # root, and from it allow rules, hook entries and standing rules. A repository that has the
     # agent run `attach --machine ./vendored.toml --store ./vendored/projects/p/memory` supplies
     # both sides of the containment check out of its own tree.
