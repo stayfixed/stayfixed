@@ -37,23 +37,6 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported",
 ]
 
-# The half the first fix missed: catching `ManifestError` alone let a symlinked manifest's
-# `PathEscape` through, and the detach exited 2 exactly as before. `mutations/`'s "an unreadable
-# manifest blocks the detach again" now puts that narrowing back; this one does the same to the
-# reader, where bytes that are not UTF-8 left `Manifest.read` as a `UnicodeDecodeError` rather than
-# as its own refusal.
-
-[[mutation]]
-name = "the manifest reader lets undecodable bytes out as a crash again"
-file = "src/stayfixed/scaffold/manifest.py"
-before = """        except UnicodeDecodeError:
-            raise ManifestError(f"{MANIFEST_PATH} is not UTF-8 text") from None
-"""
-after = ""
-reddens = [
-  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
-]
-
 # An event is a key of a settings document a clone can commit, and the refusal naming it reaches a
 # terminal and a model: printed through `printed.clipped`, never as the document spells it.
 [[mutation]]
@@ -124,11 +107,9 @@ reddens = [
 [[mutation]]
 name = "the footprint manifest's read refusal prints the path it opened"
 file = "src/stayfixed/scaffold/manifest.py"
-before = 'raise ManifestError(f"{MANIFEST_PATH} cannot be read ({said(exc)})") from exc'
-after = 'raise ManifestError(f"{MANIFEST_PATH} cannot be read ({exc})") from exc'
-reddens = [
-  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
-]
+before = "        with fsops.reading(MANIFEST_PATH, ManifestError):"
+after = "        with fsops.reading(path, ManifestError):"
+reddens = ["tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole"]
 
 # The ledger is tracked, so a clone can commit one nested past the parser or holding an integer
 # longer than Python converts. Read through `jsonobject`, each is a refusal in the reader's own
@@ -816,16 +797,13 @@ reddens = [
 [[mutation]]
 name = "the scaffold engine names an unreadable artifact by its absolute path"
 file = "src/stayfixed/scaffold/engine.py"
-before = '        return None, f"{quoted(relative)} cannot be read ({said(exc)})"'
-after = '        return None, f"{path} cannot be read ({exc})"'
-reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[directory]", "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[too-large]"]
-
-[[mutation]]
-name = "the scaffold engine names an artifact that is not UTF-8 by its absolute path"
-file = "src/stayfixed/scaffold/engine.py"
-before = '        return None, f"{quoted(relative)} is not UTF-8 text"'
-after = '        return None, f"{path} is not UTF-8 text"'
-reddens = ["tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[not-utf8]"]
+before = "        return None, unreadable(quoted(relative), exc)"
+after = "        return None, unreadable(path, exc)"
+reddens = [
+  "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[directory]",
+  "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[too-large]",
+  "tests/scaffold/test_engine.py::test_an_unreadable_artifact_is_named_relative_to_the_project_with_the_reason_in_words[not-utf8]",
+]
 
 # Each caller names the file the reason is about: the recorded old place of a relocation and the
 # copy kept out of git, neither of them the artifact's configured target.

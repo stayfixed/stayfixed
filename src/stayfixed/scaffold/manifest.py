@@ -33,7 +33,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
-from stayfixed.fsops import UnsafePath, read_regular_text, said, write_within
+from stayfixed.fsops import UnsafePath, read_regular_text, write_within
 from stayfixed.jsonobject import json_object
 
 MANIFEST_PATH = Path(".stayfixed") / "manifest.json"
@@ -148,12 +148,8 @@ class Manifest:
         # an integer longer than it converts in words of its own: quoting those exceptions told the
         # owner of a committed ledger to raise an interpreter limit, or reported the parser's
         # stack.
-        try:
+        with fsops.reading(MANIFEST_PATH, ManifestError):
             text = read_regular_text(path)
-        except OSError as exc:
-            raise ManifestError(f"{MANIFEST_PATH} cannot be read ({said(exc)})") from exc
-        except UnicodeDecodeError:
-            raise ManifestError(f"{MANIFEST_PATH} is not UTF-8 text") from None
         raw = json_object(text, str(MANIFEST_PATH), error=ManifestError)
         version = raw.get("format", FORMAT)
         # Damage, not a newer stayfixed: `null`, `"1"`, `0` and the rest are no format any

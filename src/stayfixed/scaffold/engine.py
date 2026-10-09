@@ -45,7 +45,7 @@ from stayfixed.fsops import (
     path_key,
     read_regular_text,
     remove_within,
-    said,
+    unreadable,
     write_within,
 )
 from stayfixed.printed import quoted
@@ -213,7 +213,7 @@ def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
     """`(content, reason)`: a reason is a refusal for this one artifact, never for the plan.
 
     The reason names the file by `relative`, its path from the project root, and says why in
-    words (`fsops.said`), as every other refusal here does: the error's own text carries the
+    words (`fsops.unreadable`), as every other refusal here does: the error's own text carries the
     absolute path, this machine's layout, and `path` is a configured target a clone may choose.
 
     `newline=""` and not `read_text`: universal-newline translation turns every `\\r\\n` and
@@ -229,10 +229,8 @@ def _read(path: Path, relative: str) -> tuple[str | None, str | None]:
         return read_regular_text(path, newline=""), None
     except FileNotFoundError:
         return None, None
-    except OSError as exc:
-        return None, f"{quoted(relative)} cannot be read ({said(exc)})"
-    except UnicodeDecodeError:
-        return None, f"{quoted(relative)} is not UTF-8 text"
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, unreadable(quoted(relative), exc)
 
 
 def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, str]:

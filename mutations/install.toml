@@ -218,11 +218,9 @@ reddens = [
 [[mutation]]
 name = "overlay init's manifest refusal prints the path it opened"
 file = "src/stayfixed/overlay/create.py"
-before = 'raise Failure(f"{relative} cannot be read ({fsops.said(exc)})") from exc'
-after = 'raise Failure(f"{relative} cannot be read: {exc}") from exc'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
-]
+before = "    with fsops.reading(relative, Failure):"
+after = "    with fsops.reading(root / relative, Failure):"
+reddens = ["tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read"]
 
 # And it reads a regular file only: two of its three callers read the plugin manifest with a bare
 # `read_text`, so a FIFO there blocked the SessionStart hook (`requires_of`) and `overlay upgrade`
@@ -1532,17 +1530,6 @@ after = "    if False:\n        return False\n"
 reddens = [
   "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1.post2]",
   "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev3+g1234abc]",
-]
-
-# `setup` says why it cannot read the user settings file in words, as every reader of a file does,
-# and not with the error's text, which repeats the path.
-[[mutation]]
-name = "setup reports a settings file it cannot read with the error's own text"
-file = "src/stayfixed/setup/run.py"
-before = '        raise Failure(f"{path} cannot be read ({fsops.said(exc)})") from exc'
-after = '        raise Failure(f"{path} cannot be read: {exc}") from exc'
-reddens = [
-  "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
 ]
 
 # A settings file in a directory that cannot be searched is not a link, and the link refusal's

@@ -248,14 +248,11 @@ def _install_plugins(
 
 
 def _read_document(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}, ""
-    except OSError as exc:
-        raise Failure(f"{path} cannot be read ({fsops.said(exc)})") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{path} is not UTF-8 text") from None
+    with fsops.reading(path, Failure):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}, ""
     if not text.strip():
         return {}, text
     # The file is the owner's and this run rewrites it, so valid JSON past the parser's reach is

@@ -33,7 +33,7 @@ from typing import Any
 from stayfixed import fsops
 from stayfixed.attach.binding import Binding, cannot_exist
 from stayfixed.errors import Failure
-from stayfixed.fsops import read_regular_text, said
+from stayfixed.fsops import read_regular_text
 from stayfixed.harnesses import CLAUDE
 from stayfixed.jsonobject import WRITTEN_PAST
 from stayfixed.memory.api import PROJECTS
@@ -117,19 +117,18 @@ def _read(path: Path, *, share: Path | None = None, label: str | None = None) ->
     `attach` before it writes, and read as an empty settings file it would stop only at the write
     of that file.
     """
-    try:
-        # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a path
-        # a clone can commit, and a link there to `/dev/zero` read until memory ran out, one to a
-        # FIFO waited for a writer. Anything else is a file that cannot be read.
-        return read_regular_text(path)
-    except FileNotFoundError:
-        return ""
-    except OSError as exc:
-        if share is not None and cannot_exist(exc) and _names_no_directory(share):
+    with fsops.reading(label or path, Failure):
+        try:
+            # A regular file only (`fsops.read_regular_text`): `.claude/settings.local.json` is a
+            # path a clone can commit, and a link there to `/dev/zero` read until memory ran out,
+            # one to a FIFO waited for a writer. Anything else is a file that cannot be read.
+            return read_regular_text(path)
+        except FileNotFoundError:
             return ""
-        raise Failure(f"{label or path} cannot be read ({said(exc)})") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{label or path} is not UTF-8 text") from None
+        except OSError as exc:
+            if share is not None and cannot_exist(exc) and _names_no_directory(share):
+                return ""
+            raise
 
 
 def _names_no_directory(share: Path) -> bool:

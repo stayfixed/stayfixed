@@ -3214,6 +3214,45 @@ reddens = [
   "tests/test_fsops.py::test_a_regular_file_past_the_read_limit_is_refused_and_one_at_it_is_read",
 ]
 
+# A reader that refuses a file it could not read says why in `fsops.said`'s words, through
+# `fsops.reading`: never by the error's class name, which names stayfixed's internals and no
+# condition, and never in the error's own text, which carries the path the file was opened by.
+[[mutation]]
+name = "a read refusal says an unreadable file by its error's class name"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read ({type(error).__name__})"'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name",
+]
+
+[[mutation]]
+name = "a read refusal says an unreadable file in its error's own text"
+file = "src/stayfixed/fsops.py"
+before = '    return f"{label} cannot be read ({said(error)})"'
+after = '    return f"{label} cannot be read: {error}"'
+reddens = [
+  "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
+  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
+  "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
+  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
+]
+
+# Bytes that are not UTF-8 are the reader's refusal, never a `UnicodeDecodeError` out of it: the
+# footprint manifest's left `Manifest.read` that way, and a detach exited 2 on a committed one.
+[[mutation]]
+name = "a read refusal lets undecodable bytes out as a crash again"
+file = "src/stayfixed/fsops.py"
+before = """    except UnicodeDecodeError as exc:
+        raise refusal(unreadable(label, exc)) from None
+"""
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
+  "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
+]
+
 # A commit's copy of a document at the project's own path (`committed.py`), read one way for the
 # base's `stayfixed.toml` that governs `stayfixed gate` and for each fork point's that places the
 # ledger. A copy that reads as missing is the bootstrap, where the change decides for itself, so

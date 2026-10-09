@@ -750,8 +750,8 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
     one made the detach exit 2 exactly as `{"format": 99}` had.
 
-    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "the
-    manifest reader lets undecodable bytes out as a crash again".
+    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "a read
+    refusal lets undecodable bytes out as a crash again".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)

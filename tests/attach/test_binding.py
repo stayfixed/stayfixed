@@ -441,8 +441,8 @@ def test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_n
     # The record is read to the read cap (`fsops.read_regular_text`), and one past it stops the
     # run as any record that cannot be read does. The refusal says why in the reader's words: the
     # class name it printed before named stayfixed's internals (`TooLarge`) and no condition. The
-    # cap is lowered so the record is small. Mutation (oracle): `mutations/`'s "a binding record
-    # that cannot be read is said by its error's class name" -> `(TooLarge)`.
+    # cap is lowered so the record is small. Mutation (oracle): `mutations/`'s "a read refusal says
+    # an unreadable file by its error's class name" -> `(TooLarge)`.
     root, store = _project_and_store(tmp_path, recorded="x", origin="x")
     limit = 4 * 1024
     record = store.parent / PROJECT_RECORD

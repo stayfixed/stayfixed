@@ -2263,11 +2263,11 @@ reddens = [
 [[mutation]]
 name = "the attach ledger is read through any link"
 file = "src/stayfixed/attach/write.py"
-before = "        text = fsops.read_regular_text(path)\n    except FileNotFoundError as exc:"
-after = "        text = path.read_text(encoding=\"utf-8\")\n    except FileNotFoundError as exc:"
-reddens = [
-  "tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read",
-]
+before = """            text = fsops.read_regular_text(path)
+        except FileNotFoundError as exc:"""
+after = """            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:"""
+reddens = ["tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read"]
 
 [[mutation]]
 name = "the .gitignore refusal prints the path it opened"
@@ -2278,32 +2278,15 @@ reddens = [
   "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
 ]
 
-# The binding record is read to the read cap, and one that cannot be read is said in the reader's
-# words, never by its error's class name, which names stayfixed's internals and no condition.
-[[mutation]]
-name = "a binding record that cannot be read is said by its error's class name"
-file = "src/stayfixed/attach/binding.py"
-before = """    except OSError as exc:
-        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
-    except UnicodeDecodeError:"""
-after = """    except OSError as exc:
-        raise UnreadableRecord(f"{where} cannot be read ({type(exc).__name__})") from exc
-    except UnicodeDecodeError:"""
-reddens = [
-  "tests/attach/test_binding.py::test_a_binding_record_past_the_read_cap_is_unreadable_in_words_not_a_class_name",
-]
-
 # `detach` reads `.gitignore` as `attach` does, to the read cap, so a file past it that stops one
 # stops the other above its first withdrawal; and names it as the project does.
 [[mutation]]
 name = "detach reads .gitignore with no bound"
 file = "src/stayfixed/attach/write.py"
-before = """        text = fsops.read_regular_text(path)
-    except OSError as exc:
-        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc"""
-after = """        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc"""
+before = """    with fsops.reading(GITIGNORE, Failure):
+        text = fsops.read_regular_text(path)"""
+after = """    with fsops.reading(GITIGNORE, Failure):
+        text = path.read_text(encoding="utf-8")"""
 reddens = [
   "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
 ]
@@ -2311,8 +2294,8 @@ reddens = [
 [[mutation]]
 name = "detach's .gitignore refusal prints the path it opened"
 file = "src/stayfixed/attach/write.py"
-before = 'raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc'
-after = 'raise Failure(f"{GITIGNORE} cannot be read ({exc})") from exc'
+before = "    with fsops.reading(GITIGNORE, Failure):"
+after = "    with fsops.reading(path, Failure):"
 reddens = [
   "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
 ]
@@ -2370,8 +2353,8 @@ reddens = [
 [[mutation]]
 name = "the settings refusal of a file that is not UTF-8 prints the path it opened"
 file = "src/stayfixed/attach/permissions.py"
-before = '        raise Failure(f"{label or path} is not UTF-8 text") from None'
-after = '        raise Failure(f"{path} is not UTF-8 text") from None'
+before = "    with fsops.reading(label or path, Failure):"
+after = "    with fsops.reading(path, Failure):"
 reddens = [
   "tests/attach/test_write.py::test_a_local_settings_file_that_is_not_utf8_is_named_as_the_project_names_it",
 ]
@@ -2379,11 +2362,9 @@ reddens = [
 [[mutation]]
 name = "the ledger refusal of a file that is not UTF-8 prints the path it opened"
 file = "src/stayfixed/attach/write.py"
-before = '        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None'
-after = '        raise Failure(f"{path} is not UTF-8 text") from None'
-reddens = [
-  "tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it",
-]
+before = "    with fsops.reading(ATTACH_LEDGER, Failure):"
+after = "    with fsops.reading(path, Failure):"
+reddens = ["tests/attach/test_detach.py::test_a_ledger_that_is_not_utf8_is_named_as_the_project_names_it"]
 
 [[mutation]]
 name = "attach plans a settings write-back the next read refuses"

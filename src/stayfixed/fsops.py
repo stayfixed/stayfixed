@@ -44,7 +44,7 @@ import contextlib
 import errno
 import os
 import stat
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
@@ -98,6 +98,29 @@ def said(error: OSError) -> str:
     if isinstance(error, UnsafePath):
         return str(error)
     return error.strerror or type(error).__name__
+
+
+def unreadable(label: object, error: OSError | UnicodeDecodeError) -> str:
+    """What a reader says of a file it could not read, named as `label`: that it cannot be read,
+    and why in `said`'s words, or that it is not UTF-8 text. The one wording, so a file named by the
+    project and never by the path it was opened by is named so in every refusal of it."""
+    if isinstance(error, UnicodeDecodeError):
+        return f"{label} is not UTF-8 text"
+    return f"{label} cannot be read ({said(error)})"
+
+
+@contextmanager
+def reading(label: object, refusal: Callable[[str], Exception]) -> Iterator[None]:
+    """Raise `refusal` with `unreadable`'s sentence for a read inside it that fails, an `OSError`
+    chained to it and a decoding error not: the frame every reader of a file that answers in a
+    refusal of its own puts around its read. An arm that answers a missing file otherwise goes
+    inside it, and re-raises what it does not answer."""
+    try:
+        yield
+    except OSError as exc:
+        raise refusal(unreadable(label, exc)) from exc
+    except UnicodeDecodeError as exc:
+        raise refusal(unreadable(label, exc)) from None
 
 
 def path_key(relative: str) -> str:

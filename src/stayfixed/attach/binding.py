@@ -357,11 +357,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
     if not stat.S_ISREG(found):
         return None
     try:
-        recorded = read_binding_record(record)
-    except OSError as exc:
-        raise UnreadableRecord(f"{where} cannot be read ({said(exc)})") from exc
-    except UnicodeDecodeError:
-        raise UnreadableRecord(f"{where} is not UTF-8 text") from None
+        with fsops.reading(where, UnreadableRecord):
+            recorded = read_binding_record(record)
     except UNPARSEABLE as exc:
         # A refused value is bounded before it may print, closing the leak every other
         # `toml_position` caller closes. `tomllib` builds its message as

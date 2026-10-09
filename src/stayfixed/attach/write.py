@@ -332,20 +332,17 @@ def ledger(root: Path) -> AttachLedger:
     defence reported as a success.
     """
     path = root / ATTACH_LEDGER
-    try:
-        # A regular file only (`fsops.read_regular_text`): a clone can commit the ledger, and
-        # `detach` read it with no other check first, so a link to `/dev/zero` read until memory
-        # ran out.
-        text = fsops.read_regular_text(path)
-    except FileNotFoundError as exc:
-        raise Failure(
-            f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added to "
-            f"this repository; there is no safe way to guess it from the settings file"
-        ) from exc
-    except OSError as exc:
-        raise Failure(f"{ATTACH_LEDGER} cannot be read ({fsops.said(exc)})") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{ATTACH_LEDGER} is not UTF-8 text") from None
+    with fsops.reading(ATTACH_LEDGER, Failure):
+        try:
+            # A regular file only (`fsops.read_regular_text`): a clone can commit the ledger, and
+            # `detach` read it with no other check first, so a link to `/dev/zero` read until
+            # memory ran out.
+            text = fsops.read_regular_text(path)
+        except FileNotFoundError as exc:
+            raise Failure(
+                f"{ATTACH_LEDGER} is not there, so nothing records what `stayfixed attach` added "
+                f"to this repository; there is no safe way to guess it from the settings file"
+            ) from exc
     # Empty text fails as JSON: `attach` never writes an empty ledger, so one is no record. Valid
     # JSON past the parser's reach, which a clone can commit, is unreadable like the arms above,
     # and said in the words every other refusal of a ledger here uses: not one `attach` wrote.
@@ -1558,12 +1555,8 @@ def _ignore_region_remainder(root: Path) -> str | None:
     path = root / GITIGNORE
     if not fsops.is_file(path):
         return None
-    try:
+    with fsops.reading(GITIGNORE, Failure):
         text = fsops.read_regular_text(path)
-    except OSError as exc:
-        raise Failure(f"{GITIGNORE} cannot be read ({fsops.said(exc)})") from exc
-    except UnicodeDecodeError:
-        raise Failure(f"{GITIGNORE} is not UTF-8 text") from None
     remaining = _in_gitignore(drop, text, IGNORE_REGION, Style.HASH)
     return None if remaining == text else remaining
 

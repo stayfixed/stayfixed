@@ -202,8 +202,8 @@ def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_wor
 ) -> None:
     # The failure quoted the error whole, `[Errno 21] Is a directory: '<the path again>'`, where
     # every other reader of a file says its reason in words, in parentheses (`fsops.said`).
-    # Mutation (oracle): `mutations/`'s "setup reports a settings file it cannot read with the
-    # error's own text".
+    # Mutation (oracle): `mutations/`'s "a read refusal says an unreadable file in its error's own
+    # text".
     home = tmp_path / "home"
     (home / USER_SETTINGS).mkdir(parents=True)
     with pytest.raises(Failure) as caught:
