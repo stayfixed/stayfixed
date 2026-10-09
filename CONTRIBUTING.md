@@ -379,10 +379,14 @@ reaches its cap, three quarters of the directory's; a group that does is split b
 which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
-true. That makes a name a reference, and two things hold it to one: the oracle refuses a name
-two entries share, and `tests/scripts/test_mutation_oracle.py` resolves every such citation in a
+true. That makes a name a reference, and two things hold it to one: the oracle refuses a name two
+entries share, and `tests/scripts/test_mutation_oracle.py` resolves every such citation in a
 tracked file outside `docs/plans/` against the declared names, so renaming an entry is an edit to
-every comment that cites it.
+every comment that cites it. Further names follow the first under the same anchor, joined by a
+comma, `and` or `or`, or as an arrow list that says what each one breaks (`"a" -> …; "b" -> …`).
+That file also reads every quote of a declared name in those files and refuses one the reader does
+not read, a name after prose, in a bulleted list or in parentheses among them, and an anchor that
+reads no name, because a name nothing reads can be renamed away with every test green.
 
 A comment in a group file speaks for the entry below it and for the entries after that which carry
 no comment of their own — the file's header speaks for the file and heads no entry — and never by
