@@ -4,13 +4,17 @@
 key: `doctor.hooked` finds the files and reads them, and `doctor.entries` tells the row. This module
 answers that one question of a file's text and reads nothing else, no file and no YAML beyond the
 keys it looks for. The runtime imports only the standard library (CONTRIBUTING.md), so there is no
-YAML parser to hand the text to, and the reader below is written for the one key it finds.
+YAML parser to hand the text to, and the reader below is written for the one key it finds. It
+answers that a file declares none only where the frontmatter keeps to a plain subset of YAML that
+it reads exactly (`_plain`); of any other it says "yes" or "cannot tell", which both name the file.
 """
 
 from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Iterator
+from typing import Literal
 
 # The line that opens a frontmatter and the next one that closes it, `---` and any blanks after it,
 # found in the text without splitting it into lines, so a body below the frontmatter costs no
@@ -99,25 +103,50 @@ _COMMENT = re.compile(r"[ \t]#")
 # at NEL, LS and PS (`_BREAKS`). To YAML 1.2 each is a character like a letter.
 _ODD = re.compile(r"[^\S \t\n]")
 _BREAKS = "\x85\u2028\u2029"
-# A line that opens with `---` and then a blank or its end, at the first column: a document marker
-# to YAML, which ends the document above it and starts another, not a key. A reader that reads it
-# as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
-# for, and only to say "cannot tell".
-_MARKER = re.compile(r"---(?:[ \t]|$)")
-# A line that opens a block scalar, `|` or `>` with its indicators at the end of the line.
-_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>][1-9+-]{0,2}\Z")
+# A line's leading spaces, its blanks, and a line that holds something but a comment: each asked of
+# a line or of a position in the text without copying either.
+_SPACES = re.compile(r" *+")
+_BLANKS = re.compile(r"[ \t]*+")
+_CONTENT = re.compile(r"\s*+[^\s#]")
+# The tabs that lead a line.
+_LEADING_TABS = re.compile(r"^\t++", re.MULTILINE)
+# The plain subset of YAML a frontmatter keeps to for this reader to answer "no" (`_plain`): lines
+# holding a key with a plain name (`allowed-tools:`) and, on the same line, a plain scalar, a
+# scalar quoted either way, a flow sequence of plain scalars (`[Read, Grep]`), the opening of a
+# block scalar (`|`, `>`, with its indicators), or no value, the lines below it then nested; the
+# same lines nested, indented by spaces, and sequence entries (`- `) holding one of them or a
+# value; a block scalar's text; comments; blank lines; the first line a key's, at the first column.
+# Outside it are a tag, an anchor, an alias, a merge key, an explicit `?` key, a quoted key, a flow
+# mapping, a directive, a document marker, a value over lines, a tab in a line's indentation, a
+# lone CR and a character YAML's versions or Python read otherwise (`_UNPLAIN_CHARACTER`). Inside
+# it, the top-level keys are the keys at the first column whichever version of YAML reads it and
+# whichever of the two bounds below ends it: nothing in it can make another, and a frontmatter cut
+# short at a `---` within a line holds fewer.
+_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")
+# The sequence entries a nested line opens with (`- - x`), each a dash and blanks.
+_ENTRIES = re.compile(r"(?:-[ ][ ]*+)*+")
+_BLOCK_HEADER = re.compile(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?")
+# What ends a plain scalar inside a flow sequence otherwise than as one, a pair's colon or a
+# comment.
+_PAIR_OR_COMMENT = re.compile(r"[ \t]#|:(?:[ \t]|\Z)")
+# The characters that open a node other than a plain scalar, or end one in a flow collection.
+_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"
+# Any character but a tab, LF and the printable ones that every reading takes for themselves: not a
+# control character, nor one Python, YAML 1.1 or a JavaScript parser reads as a blank or a line
+# break (NEL, LS, PS, the Unicode spaces), nor a byte-order mark, a surrogate or a non-character.
+_UNPLAIN_CHARACTER = re.compile(
+    "[^\t\n -~\xa1-\u167f\u1681-\u180d\u180f-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e"
+    "\u2060-\u2fff\u3001-\ud7ff\ue000-\ufefe\uff00-\ufffd\U00010000-\U0010ffff]"
+)
+# What one line of the subset opens: a block scalar, whose text follows on deeper lines, or nothing
+# that lines below it must be read otherwise for.
+_Shape = Literal["line", "block"]
 
 
-class _Untold:
-    """The answer `_block_key` gives for a key it cannot read whole (`_UNTOLD`)."""
-
-
-# A key this reader cannot read whole, which may be `hooks` for all it can tell: an alias, which
-# stands for whatever its anchor named; a merge key (`<<`, plain), which a reader that honours it
-# reads as every key of the mapping it names; an explicit `? ` key that is not all on its line; and
-# a quoted key over several lines, which YAML folds into one.
-_UNTOLD = _Untold()
-_MERGE = "<<"
+def _past(pattern: re.Pattern[str], text: str, start: int = 0) -> int:
+    """Where `pattern`, which matches wherever it is asked, ends when asked at `start` in `text`."""
+    found = pattern.match(text, start)
+    return found.end() if found else start
 
 
 def _unquoted(token: str) -> str:
@@ -137,27 +166,26 @@ def _unquoted(token: str) -> str:
     return _ESCAPE.sub(escaped, body)
 
 
-def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
-    """The key a block mapping's line opens with, `None` for a line that opens none, or `_UNTOLD`
-    for a key the line does not hold whole.
+def _block_key(line: str, *, continued: bool) -> str | None:
+    """The key a block mapping's line opens with, or `None` for a line that opens none whole.
 
     Past an explicit-key `? ` and any tag (`!...`) or anchor (`&...`) ahead of the key; then a
     quoted key followed by a colon, or a plain one ending at the first colon followed by a blank or
     the end of the line. An explicit key needs no colon on its line and ends where a comment
     starts (`? hooks # why`), and is read only where no line below it is indented deeper
     (`continued`), which YAML reads as more of the key: the key itself after a `?` or a tag alone, a
-    block scalar's text, or a plain key folded over lines. An alias (`*name`), a plain merge key
-    (`<<`) and a quote that does not close on its line are not read either."""
+    block scalar's text, or a plain key folded over lines. A quote that does not close on its line
+    opens no key either."""
     explicit = line.startswith("?") and line[1:2] in ("", " ", "\t")
     rest = line[1:].lstrip(" \t") if explicit else line
     properties = _PROPERTIES.match(rest)
     rest = rest[properties.end() :] if properties else rest
-    if rest[:1] == "*" or (explicit and continued):
-        return _UNTOLD
+    if explicit and continued:
+        return None
     if rest[:1] in ('"', "'"):
         quoted = re.match(_QUOTED, rest)
         if quoted is None:
-            return _UNTOLD
+            return None
         after = rest[quoted.end() :].lstrip(" \t")
         return _unquoted(quoted.group()) if explicit or after.startswith(":") else None
     if explicit:
@@ -165,29 +193,21 @@ def _block_key(line: str, *, continued: bool) -> str | _Untold | None:
         rest = rest[: comment.start()] if comment else rest
     colon = _KEY_END.search(rest)
     if colon is not None:
-        key = rest[: colon.start()].rstrip(" \t")
-    elif explicit:
-        key = rest.rstrip(" \t")
-    else:
-        return None
-    return _UNTOLD if key == _MERGE else key
+        return rest[: colon.start()].rstrip(" \t")
+    return rest.rstrip(" \t") if explicit else None
 
 
-def _flow_keys(text: str) -> tuple[set[str], bool]:
-    """The keys of the flow mapping `text` opens with, at its top level and no deeper, and whether
-    any key there is one this reader cannot read whole.
+def _flow_keys(text: str, start: int) -> set[str]:
+    """The keys of the flow mapping that opens at `start` in `text`, at its top level and no deeper.
 
     Each is a scalar right after the mapping's `{` or a `,` at its own level, past any tag or
     anchor, and followed by a colon; quoted scalars are read whole, so a brace, a comma or `hooks:`
-    inside one is text. An alias, a plain merge key (`<<`), an explicit `?` key and a quoted key
-    over several lines are keys it cannot read (`_UNTOLD`). Reading stops where the mapping
-    closes."""
+    inside one is text. Reading stops where the mapping closes."""
     keys: set[str] = set()
     depth: list[str] = []
     candidate: str | None = None
     at_key = False
-    untold = False
-    for token in _FLOW.finditer(text):
+    for token in _FLOW.finditer(text, start):
         kind, value = token.lastgroup, token.group()
         if kind in ("blank", "comment"):
             continue
@@ -207,23 +227,17 @@ def _flow_keys(text: str) -> tuple[set[str], bool]:
         elif at_key and kind == "plain" and value[0] in "!&":
             continue
         else:
-            if at_key and len(depth) == 1:
-                untold = untold or (
-                    (kind == "plain" and (value == "?" or value[0] == "*"))
-                    or (kind == "plain" and value == _MERGE)
-                    or (kind == "quoted" and "\n" in value)
-                )
             candidate = (_unquoted(value) if kind == "quoted" else value) if at_key else None
             at_key = False
-    return keys, untold
+    return keys
 
 
-def _closes(text: str) -> int | None:
-    """Where the flow collection `text` opens with closes, just past its last bracket, or `None`
-    where it does not close. Quoted scalars and comments are read whole, as `_flow_keys` reads
-    them, so a bracket inside one closes nothing."""
+def _closes(text: str, start: int) -> int | None:
+    """Where the flow collection that opens at `start` in `text` closes, just past its last
+    bracket, or `None` where it does not close. Quoted scalars and comments are read whole, as
+    `_flow_keys` reads them, so a bracket inside one closes nothing."""
     depth = 0
-    for token in _FLOW.finditer(text):
+    for token in _FLOW.finditer(text, start):
         if token.lastgroup != "indicator" or token.group() == ",":
             continue
         depth += 1 if token.group() in "{[" else -1
@@ -232,12 +246,12 @@ def _closes(text: str) -> int | None:
     return None
 
 
-def _keyed(node: str) -> bool:
-    """Whether the flow mapping `node` opens with is a key, a colon following where it closes
-    (`{a: 1}: x`): then it is the first key of a block mapping, whose other keys are on the lines
-    below, and not the frontmatter's whole node."""
-    end = _closes(node)
-    return end is not None and node[end:].lstrip(" \t").startswith(":")
+def _keyed(text: str, start: int) -> bool:
+    """Whether the flow mapping that opens at `start` in `text` is a key, a colon following where it
+    closes (`{a: 1}: x`): then it is the first key of a block mapping, whose other keys are on the
+    lines below, and not the frontmatter's whole node."""
+    end = _closes(text, start)
+    return end is not None and text.startswith(":", _past(_BLANKS, text, end))
 
 
 def declares_hooks(text: str) -> bool | None:
@@ -246,72 +260,158 @@ def declares_hooks(text: str) -> bool | None:
 
     The frontmatter is the lines between a first line of `---` and the next `---` line; without
     the closing one there is none. Line breaks are YAML's (LF, CRLF, a lone CR), and a byte-order
-    mark ahead of the first line is read past. A frontmatter holding a character Python reads as a
-    blank or a line break and YAML does not is also read with each as YAML 1.2 reads it, and with
-    NEL, LS and PS as the line breaks YAML 1.1 reads them as. Its top level is the indentation of
-    its first line that is neither blank nor a comment: a mapping in block style has its keys
-    there, and one in flow style opens there with `{` (`_flow_keys`), behind any tag, anchor or
-    comment and any tab after the indentation, unless a colon follows where it closes, which makes
-    it a block mapping's first key. Behind a tag or an anchor alone on its line, a block mapping may
-    start on a line below at an indentation of its own, and its keys are read there too. A key is
-    `hooks` bare or quoted either way, its escapes read; nothing else of YAML is parsed.
+    mark ahead of the first line is read past.
 
-    Claude Code may read the file otherwise, by what its program text shows rather than by a
-    measured run: it may end the frontmatter at the first `---` after the opening line, wherever in
-    a line that stands (`_harness_fenced`), and read a line indented by tabs as one indented by
-    spaces (`_untabbed`). Where either reading may differ from this one, each is read: the answer is
-    "yes" if any of them holds `hooks`, "cannot tell" if any of them cannot tell or a tab leads a
-    key's line, which a repair to some other width than the one modelled may read as another key,
-    and "no" otherwise. Where only the bounds differ and every reading says "no", the answer is
-    "no", each reading being asked the same question; that is as sound as this reader's reading
-    of each bound's text as YAML, which is why it answers "cannot tell" where it knows a YAML
-    parser may read the text otherwise.
+    The answer is "no" only for a frontmatter inside the plain subset of YAML this reader reads
+    exactly (`_plain`), none of whose keys at the first column is `hooks`. Any other is "yes" where
+    a reading of it finds a top-level `hooks`, and "cannot tell" otherwise, so a frontmatter this
+    reader may misread is named either way. So is one past `LINES_READ`, which is not read.
 
-    It fails toward "cannot tell", never toward "no": a top-level key it cannot read whole
-    (`_UNTOLD`) may be `hooks`, and so may a key in the document a marker line opens (`_MARKER`)
-    or one a YAML 1.2 parser reads at the top level below a nested block scalar
-    (`_tab_below_a_block_scalar`), so where no key it reads is, the answer is `None`; and so it
-    is where a reading runs past `LINES_READ` lines, which is not read at all."""
-    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")
+    The readings: the frontmatter as bounded above, and as Claude Code may bound it, by what its
+    program text shows rather than by a measured run, at the first `---` after the opening line
+    wherever in a line that stands (`_harness_fenced`); each with every tab that leads a line read
+    as two spaces too (`_untabbed`), as Claude Code's repair is read to; and, where one holds a
+    character Python reads as a blank or a line break and YAML does not, with each read as YAML 1.2
+    reads it, a character like a letter, and with NEL, LS and PS read as the line breaks YAML 1.1
+    reads them as. In each, the top level is the indentation of the first line that is neither
+    blank nor a comment: a mapping in block style has its keys there, and one in flow style opens
+    there with `{` (`_flow_keys`), behind any tag, anchor or comment and any tab after the
+    indentation, unless a colon follows where it closes, which makes it a block mapping's first
+    key. Behind a tag or an anchor alone on its line, a block mapping may start on a line below at
+    an indentation of its own, and its keys are read there too. A key is `hooks` bare or quoted
+    either way, its escapes read; nothing else of YAML is parsed."""
+    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n")
+    lone_return = text.find("\r")
+    text = text.replace("\r", "\n")
     fenced, harness = _fenced(text), _harness_fenced(text)
-    bounds = [fenced] if fenced else []
+    ends = [bound[1] for bound in (fenced, harness) if bound is not None]
+    if not ends:
+        return False
+    bounds = []
+    if fenced is not None:
+        body = text[fenced[0] : max(fenced[0], fenced[1] - 1)]
+        if not 0 <= lone_return < fenced[1] and body.count("\n") < LINES_READ and _plain(body):
+            return _holds_hooks(body)
+        bounds.append(body)
     if harness is not None and (fenced is None or harness[1] != fenced[1]):
-        bounds.append(harness)
-    readings = [body.split("\n") for body, _ in bounds if body.count("\n") < LINES_READ]
-    unread = len(readings) < len(bounds)
-    # Read again where a line holds a character Python takes for a blank or a line break and YAML
-    # does not: as YAML 1.2 reads it, a character like a letter (`&a\u3000b {hooks: x}` is one
-    # anchor ahead of a flow mapping), and as YAML 1.1 reads NEL, LS and PS, a line break.
-    # Each is one `translate` of the text, which keeps no record per character replaced.
-    for lines in list(readings):
-        if any(_ODD.search(line) for line in lines):
-            joined = "\n".join(lines)
-            odd = {ord(found.group()): "_" for found in _ODD.finditer(joined)}
-            readings.append(joined.translate(odd).split("\n"))
+        bounds.append(text[harness[0] : harness[1]])
+    return True if any(_holds_hooks(reading) for reading in _readings(bounds)) else None
+
+
+def _plain(body: str) -> bool:
+    """Whether a frontmatter's `body` keeps to the plain subset this reader reads exactly (see
+    `_PLAIN_KEY`): every line blank, a comment, a block scalar's text below its opening, or one
+    `_plain_line` admits, the first of those a key's at the first column."""
+    first = True
+    scalar: int | None = None
+    for line in body.split("\n"):
+        rest = line.lstrip(" ")
+        indent = len(line) - len(rest)
+        if rest.startswith("\t") or _UNPLAIN_CHARACTER.search(rest):
+            return False
+        if not rest or (scalar is not None and indent > scalar):
+            continue
+        scalar = None
+        if rest.startswith("#"):
+            continue
+        shape = _plain_line(rest, first=first)
+        if shape is None or (first and indent):
+            return False
+        first = False
+        if shape == "block":
+            scalar = indent
+    return True
+
+
+def _plain_line(rest: str, *, first: bool) -> _Shape | None:
+    """What a line of the plain subset opens, `rest` being the line past its indentation, or `None`
+    for one outside it: a plain key and a value or nothing, or, on any line but the first,
+    sequence entries ahead of either or of a value alone."""
+    entries = _ENTRIES.match(rest)
+    item = rest[entries.end() :] if entries else rest
+    if first and item != rest:
+        return None
+    key = _PLAIN_KEY.match(item)
+    if key is not None:
+        value = item[key.end() :].lstrip(" \t")
+        return "line" if not value or value.startswith("#") else _plain_value(value)
+    if first or (item == rest and item != "-"):
+        return None
+    return "line" if item in ("", "-") or item.startswith("#") else _plain_value(item)
+
+
+def _plain_value(value: str) -> _Shape | None:
+    """What a value of the plain subset opens, or `None` for one outside it: a block scalar's
+    opening with its indicators, a scalar quoted either way and closed on its line, a flow sequence
+    of plain scalars closed on its line, or a plain scalar, each with nothing after it but a
+    comment."""
+    if value[0] in "|>":
+        header = _BLOCK_HEADER.match(value)
+        return "block" if header and _ends(value[header.end() :]) else None
+    if value[0] in "\"'":
+        quoted = re.match(_QUOTED, value)
+        return "line" if quoted and _ends(value[quoted.end() :]) else None
+    if value[0] == "[":
+        close = value.find("]")
+        inner = value[1:close] if close > 0 else "["
+        if any(mark in inner for mark in "[]{}\"'"):
+            return None
+        items = [item.strip(" \t") for item in inner.split(",")]
+        if any(item and not _plain_scalar(item, flow=True) for item in items):
+            return None
+        return "line" if _ends(value[close + 1 :]) else None
+    return "line" if _plain_scalar(value, flow=False) else None
+
+
+def _plain_scalar(scalar: str, *, flow: bool) -> bool:
+    """Whether `scalar` opens a plain scalar, and, in a flow sequence, is one whole: no pair's colon
+    and no comment in it."""
+    opens = scalar[0] not in _INDICATORS or (
+        scalar[0] in "-?:" and scalar[1:2] not in ("", " ", "\t")
+    )
+    return opens and not (flow and _PAIR_OR_COMMENT.search(scalar))
+
+
+def _ends(after: str) -> bool:
+    """Whether what follows a value on its line is nothing but blanks and a comment."""
+    rest = after.lstrip(" \t")
+    return not rest or (rest.startswith("#") and rest != after)
+
+
+def _readings(bounds: list[str]) -> Iterator[str]:
+    """Each reading of a frontmatter outside the plain subset (`declares_hooks`), one at a time, so
+    that no reading is held while another is read."""
+    for body in bounds:
+        if body.count("\n") >= LINES_READ:
+            continue
+        yield from _repaired(body)
+        # Read again where a line holds a character Python takes for a blank or a line break and
+        # YAML does not: as YAML 1.2 reads it, a character like a letter (`&a\u3000b {hooks: x}` is
+        # one anchor ahead of a flow mapping), and as YAML 1.1 reads NEL, LS and PS, a line break.
+        # Each is one `translate` of the text, which keeps no record per character replaced.
+        odd = {ord(found.group()): "_" for found in _ODD.finditer(body)}
+        if odd:
+            yield from _repaired(body.translate(odd))
             breaks = {code: "\n" for code in odd if chr(code) in _BREAKS}
             if breaks:
-                broken = joined.translate(odd | breaks)
+                broken = body.translate(odd | breaks)
                 if broken.count("\n") < LINES_READ:
-                    readings.append(broken.split("\n"))
-                else:
-                    unread = True
-    unsure = False
-    for lines in list(readings):
-        if _tab_indents_a_key(lines):
-            unsure = True
-        # Repaired wherever a tab leads a line, a key's or not: a tab ahead of a line holding only
-        # a tag (`\t!!map`) moves the top indentation onto the keys below it.
-        if any(line.startswith("\t") for line in lines):
-            readings.append(_untabbed(lines))
-    answers = [_holds_hooks(lines) for lines in readings]
-    if True in answers:
-        return True
-    return None if unsure or unread or None in answers else False
+                    yield from _repaired(broken)
 
 
-def _fenced(text: str) -> tuple[str, int] | None:
-    """The frontmatter between a first line of `---` and the next `---` line, the line break ahead
-    of that line left out, and where that line starts in the text; `None` without it."""
+def _repaired(body: str) -> Iterator[str]:
+    r"""`body`, and, wherever a tab leads a line, `body` repaired of its leading tabs: a tab ahead
+    of a line holding only a tag (`\t!!map`) moves the top indentation onto the keys below it, as
+    one ahead of a key does."""
+    yield body
+    if body.startswith("\t") or "\n\t" in body:
+        yield _untabbed(body)
+
+
+def _fenced(text: str) -> tuple[int, int] | None:
+    """Where the frontmatter between a first line of `---` and the next `---` line starts in the
+    text, and where that next line starts; `None` without it. The frontmatter is the text between,
+    the line break ahead of the closing line left out."""
     opening = _FENCE_LINE.match(text)
     if opening is None or opening.end() == len(text):
         return None
@@ -319,107 +419,68 @@ def _fenced(text: str) -> tuple[str, int] | None:
     closing = _FENCE_LINE.search(text, start)
     if closing is None:
         return None
-    return text[start : max(start, closing.start() - 1)], closing.start()
+    return start, closing.start()
 
 
-def _harness_fenced(text: str) -> tuple[str, int] | None:
-    """The frontmatter as Claude Code is read to bound it, and where its closing `---` starts:
-    past a `---` that opens the text and the blanks and line breaks after it, to the first `---`
-    after them, wherever in a line that stands; `None` without one. It and `_fenced` differ only
-    where a `---` stands anywhere but alone on its line."""
+def _harness_fenced(text: str) -> tuple[int, int] | None:
+    """Where the frontmatter as Claude Code is read to bound it starts and ends in the text, where
+    its closing `---` starts: past a `---` that opens the text and the blanks and line breaks after
+    it, to the first `---` after them, wherever in a line that stands; `None` without one. It and
+    `_fenced` differ only where a `---` stands anywhere but alone on its line."""
     opening = _OPENING.match(text)
     if opening is None or "\n" not in opening.group():
         return None
     start = opening.start() + opening.group().rindex("\n") + 1
     end = text.find(_FENCE, start)
-    return None if end < 0 else (text[start:end], end)
+    return None if end < 0 else (start, end)
 
 
-def _tab_indents_a_key(lines: list[str]) -> bool:
-    """Whether a line's indentation starts with a tab, which YAML does not take as indentation, and
-    the line past it opens a key, which a reader taking the tab as indentation reads. A tab after
-    spaces is one the repair leaves as it stands (`_untabbed`), so no reading differs there."""
-    for line in lines:
-        rest = line.lstrip(" \t")
-        if line.startswith("\t") and _block_key(rest, continued=False) is not None:
-            return True
-    return False
+def _untabbed(body: str) -> str:
+    """`body` with each tab that leads a line read as two spaces, as Claude Code is read to repair
+    a frontmatter that does not parse before it parses it again."""
+    return _LEADING_TABS.sub(lambda tabs: "  " * len(tabs.group()), body)
 
 
-def _untabbed(lines: list[str]) -> list[str]:
-    """`lines` with each tab that leads a line read as two spaces, as Claude Code is read to
-    repair a frontmatter that does not parse before it parses it again."""
-    return ["  " * (len(line) - len(line.lstrip("\t"))) + line.lstrip("\t") for line in lines]
+def _holds_hooks(body: str) -> bool:
+    """Whether a frontmatter's `body` holds a top-level `hooks` key, as `declares_hooks` reads one.
 
-
-def _holds_hooks(lines: list[str]) -> bool | None:
-    """Whether a frontmatter's `lines` hold a top-level `hooks` key, as `declares_hooks` reads
-    one, or `None` where a key it cannot read leaves that open."""
-    content = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
-    if not content:
+    The node is read where it stands in `body`, never in a copy of the text from there on: a
+    reading may be as long as the file, and each copy of it costs as much again."""
+    lines = body.split("\n")
+    first = next((index for index, line in enumerate(lines) if _CONTENT.match(line)), None)
+    if first is None:
         return False
-    indent = len(content[0]) - len(content[0].lstrip(" "))
-    first = lines.index(content[0])
-    opened = "\n".join(lines[first:])[indent:]
-    ahead = _AHEAD.match(opened)
-    node = opened[ahead.end() :] if ahead else opened
+    content = [line for line in lines[first:] if _CONTENT.match(line)]
+    indent = _past(_SPACES, content[0])
+    start = sum(map(len, lines[:first])) + first + indent
+    ahead = _AHEAD.match(body, start)
+    node = ahead.end() if ahead else start
     # A flow mapping is read past every property and comment ahead of it, in any order, and past a
     # tab after the first line's spaces, which YAML 1.2 reads as a blank ahead of the node and not
     # as indentation (`  \t{hooks: x}`).
-    bare = opened.lstrip(" \t")
-    past = _PROPERTY_RUN.match(bare)
-    end = past.end() if past else 0
-    flow = bare[end:] if bare.startswith("{", end) else ""
+    bare = _past(_BLANKS, body, start)
+    past = _PROPERTY_RUN.match(body, bare)
+    end = past.end() if past else bare
     keys: set[str] = set()
-    untold = False
-    if flow and not _keyed(flow):
-        keys, untold = _flow_keys(flow)
+    if body.startswith("{", end) and not _keyed(body, end):
+        keys = _flow_keys(body, end)
     # The block reading is passed over only where the node is a flow mapping behind properties and
     # then comments (`_AHEAD`). Where only the reading past a comment among the properties, or past
     # a tab, finds one, which YAML parsers do not all read alike, the block reading is kept beside
     # it, so that each reading only adds keys.
-    if not node.startswith("{") or _keyed(node):
+    if not body.startswith("{", node) or _keyed(body, node):
         # Past a tag or an anchor alone on its line (`!!map`), the mapping starts on a line below,
         # so its keys may stand at the indentation of any line of that run.
-        run = _PROPERTY_RUN.match(opened)
-        spanned = lines[first + 1 : first + 1 + opened.count("\n", 0, run.end())] if run else []
-        starts = {
-            len(line) - len(line.lstrip(" "))
-            for line in spanned
-            if line.strip() and not line.lstrip().startswith("#")
-        }
-        more, unsure = _block_keys(content, {indent} | starts)
-        keys, untold = keys | more, untold or unsure
-    if _HOOKS in keys:
-        return True
-    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
-        return None
-    return False
+        run = _PROPERTY_RUN.match(body, start)
+        spanned = lines[first + 1 : first + 1 + body.count("\n", start, run.end())] if run else []
+        starts = {_past(_SPACES, line) for line in spanned if _CONTENT.match(line)}
+        keys = keys | _block_keys(content, {indent} | starts)
+    return _HOOKS in keys
 
 
-def _tab_below_a_block_scalar(lines: list[str]) -> bool:
-    r"""Whether a block scalar's first line that is not blank is led by spaces no deeper than the
-    line that opens it and then a tab (`  summary: >`, then `  \thooks: x`).
-
-    A YAML 1.2 parser, measured, reads a key on that line or on a line below it at the top level,
-    however deep the scalar stood and with no error, where this reader reads it at the depth its
-    spaces give it. So where one stands, the answer is "cannot tell"."""
-    opening: int | None = None
-    for line in lines:
-        if not line.strip(" "):
-            continue
-        spaces = len(line) - len(line.lstrip(" "))
-        if opening is not None and spaces <= opening and line[spaces:].startswith("\t"):
-            return True
-        comment = _COMMENT.search(line)
-        scalar = _BLOCK_SCALAR.search((line[: comment.start()] if comment else line).rstrip(" \t"))
-        opening = spaces if scalar else None
-    return False
-
-
-def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:
+def _block_keys(content: list[str], indents: set[int]) -> set[str]:
     """The keys of a block mapping whose keys stand at one of `indents` among a frontmatter's
-    `content` lines, and whether any is one this reader cannot read whole (`_block_key`).
+    `content` lines (`_block_key`).
 
     Every line at such an indentation is read for a key, a line inside a quoted scalar or a flow
     collection over lines included: `description: "a` and then `hooks: x"` names the file. Telling
@@ -427,7 +488,6 @@ def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:
     reader that guesses wrong there skips a real `hooks` key below, so this one reads the line and
     errs toward naming the file."""
     keys: set[str] = set()
-    untold = False
     for index, line in enumerate(content):
         indent = len(line) - len(line.lstrip(" "))
         if indent not in indents:
@@ -435,7 +495,6 @@ def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:
         below = content[index + 1 : index + 2]
         continued = any(len(deeper) - len(deeper.lstrip(" ")) > indent for deeper in below)
         key = _block_key(line[indent:], continued=continued)
-        if isinstance(key, str):
+        if key is not None:
             keys.add(key)
-        untold = untold or key is _UNTOLD
-    return keys, untold
+    return keys

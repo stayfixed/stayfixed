@@ -342,18 +342,18 @@ _SKILL_UNREAD = _Kind(
         "can list"
     ),
 )
-# A frontmatter the reader cannot read whole, a key or where it ends, which may hold `hooks`: the
-# file was read, so its words are its own, and the way out is to look at the frontmatter, not at the
-# file's permissions.
+# A frontmatter outside the plain YAML the reader reads exactly, or past what it reads, which may
+# hold `hooks`: the file was read, so its words are its own, and the way out is to look at the
+# frontmatter, not at the file's permissions.
 _SKILL_UNPARSED = _Kind(
     WARN,
     0,
     _skill_unparsed,
     lambda areas: (
         "open each file named above and check whether its frontmatter declares hooks: this row "
-        "reads no alias, no merge key, no explicit key past its line, no quoted key over several "
-        "lines, no key indented by a tab, no `---` that is not a line of its own and no "
-        f"frontmatter of more than {LINES_READ:,} lines"
+        "reads exactly only `key: value` lines with plain keys, values on their own line, block "
+        "scalars, flow lists of plain scalars, nested lines indented by spaces and comments, in a "
+        f"frontmatter of at most {LINES_READ:,} lines"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,

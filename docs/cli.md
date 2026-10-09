@@ -2841,17 +2841,16 @@ not judge them, and says so, of every file whose frontmatter Claude Code reads f
   carry hooks, though none ran in the measurement above.
 
 Each such file whose frontmatter (between a first `---` line and the next) holds a top-level `hooks`
-key is named as one whose hooks the row does not judge, a `warn`, never `red`. Its top level is the
-indentation of its first line that is not blank, a comment or a lone tag or anchor. The key is found
+key is named as one whose hooks the row does not judge, a `warn`, never `red`. The key is found
 bare, quoted either way (escapes read), behind a tag, an anchor or `? `, or among a flow mapping's
-top-level keys (`{hooks: {...}}`), tagged or not; a `hooks` nested under another key, or inside a
-quoted or flow value on its line, is not one, though a top-level line inside one over lines is read
-as one. Claude Code may end the frontmatter at a `---` within a line and read a key indented by a
-tab (from its program, not a run); the row reads each way, naming the file if any holds `hooks`.
-Where a tab leads a key, or a block scalar's first line at its key's depth, a line opens with
-`--- `, the frontmatter runs past 10,000 lines, or a top-level key cannot be read whole (an alias
-`*a`, a merge key `<<`, a `? ` key past its line, a quoted key over lines), the file is otherwise
-named as one it cannot tell about, a `warn`. Names are compared without case. Any path the row
+top-level keys (`{hooks: {...}}`); a `hooks` nested under another key is not one. Claude Code may
+end the frontmatter at a `---` within a line and read a key indented by a tab (from its program, not
+a run); the row reads each way. It says a file declares none only for plain YAML it reads exactly:
+`key: value` lines with plain keys and values on their line, block scalars, flow lists of plain
+scalars, nested lines indented by spaces, comments, in at most 10,000 lines. Any other frontmatter
+where it finds no `hooks` (a tag, an anchor, an alias, a merge key, a `?` key, a flow mapping, a tab
+in an indentation, a value over lines, a directive, a `---` or `...` line, NEL, LS, a Unicode blank)
+is named as one it cannot tell about, a `warn`. Names are compared without case. Any path the row
 cannot read, a FIFO or a directory it cannot list among them, is named as one it can say nothing of,
 also a `warn`, and a path outside the path grammar, every name in it the repository's, as a file
 whose path the row does not print.

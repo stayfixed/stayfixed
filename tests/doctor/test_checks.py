@@ -1875,9 +1875,10 @@ def test_plain_command_and_agent_files_leave_the_row_as_it_was(tmp_path: Path) -
 # read as no mapping" -> the flow cases; "a frontmatter's top level is its first column" ->
 # `indented-mapping`; "a frontmatter key's tag or anchor hides it" -> `tagged` and `anchored`; "a
 # flow mapping's tag or anchor hides it" -> `flow-tagged`, `flow-anchored` and
-# `flow-tagged-above`; "a key the reader cannot read outranks a hooks key it can" ->
-# `beside-an-alias`; "a flow mapping a colon follows is read as the whole frontmatter" -> the two
-# `below-a-flow-mapping-key` cases.
+# `flow-tagged-above`; "a frontmatter outside the plain subset is never read for hooks" ->
+# `beside-an-alias` and `below-a-document-marker-line`, each outside the subset the row reads
+# exactly and holding a `hooks` key all the same; "a flow mapping a colon follows is read as the
+# whole frontmatter" -> the two `below-a-flow-mapping-key` cases.
 HOOKS_SPELLED = {
     "double-quoted": '"hooks":\n  UserPromptSubmit: []\n',
     "single-quoted": "'hooks':\n  UserPromptSubmit: []\n",
@@ -1932,8 +1933,8 @@ HOOKS_SPELLED = {
     # (oracle): `mutations/`'s "a comment ends the properties ahead of a frontmatter's node".
     "tagged-below-an-anchor-and-a-comment": "&top\n# a comment\n!!map\n  name: probe\n  hooks: x\n",
     # A tag alone on a line a tab leads, which opens no key: repaired, it stands at the mapping's
-    # indentation, and the keys below it are the top level. Mutation (oracle): `mutations/`'s "a
-    # frontmatter is repaired of its tabs only where a tab leads a key".
+    # indentation, and the keys below it are the top level, on the first line as below it. Mutation
+    # (oracle): `mutations/`'s "a frontmatter is repaired of a tab only below its first line".
     "a-tab-indented-tag-above-the-mapping": "\t!!map\n  name: probe\n  hooks: {}\n",
     # A flow mapping behind properties a comment splits, on the comment's line or a line of its
     # own, which YAML reads past to the mapping; and one past a tab after the indentation, which
@@ -1949,7 +1950,7 @@ HOOKS_SPELLED = {
     ),
     "a-flow-mapping-past-a-tab-after-the-indentation": "  \t{name: probe, hooks: {}}\n",
     # A key the reader finds below a line it cannot read past, a document marker, still declares
-    # hooks. Mutation (oracle): `mutations/`'s "a document marker line outranks a hooks key".
+    # hooks.
     "below-a-document-marker-line": "--- a second document\nhooks: {}\n",
     # Characters Python reads as blanks or line breaks and YAML does not: an ideographic space,
     # which YAML 1.2 reads inside an anchor's name like a letter, and a line separator, at which
@@ -1974,45 +1975,44 @@ def test_every_spelling_of_a_top_level_hooks_key_is_read(tmp_path: Path, spellin
     )
 
 
-# Flow-style and quoted frontmatter that holds no top-level `hooks` key: one nested under another
-# key or inside a sequence, `hooks:` inside a quoted value or after a comment, and a longer quoted
-# key, and a quoted `<<`, which is a key of that name and no merge. The vacuity guards for the
-# spellings above. Mutations (oracle): `mutations/`'s "a flow mapping's keys are read at every
-# depth" -> `flow-nested`; "a flow mapping's quoted scalars are read as tokens" ->
-# `flow-in-a-quoted-value`; "a quoted merge key is read as a merge key" -> `a-quoted-merge-key`.
+# Frontmatters inside the plain subset of YAML the row reads exactly, so the only ones it answers
+# "no" for: the shapes real skills write, each the vacuity guard of the part of the subset it
+# exercises, `hooks` among the nested keys, the text and the list items. Mutations (oracle):
+# `mutations/`'s "the plain subset admits no plain value" -> `plain-values`; "the plain subset
+# admits no quoted value" and "the plain subset admits no comment after a value" ->
+# `quoted-values`;
+# "the plain subset admits no block scalar", "a block scalar's text is read as lines of the
+# subset" and "a block scalar's indicators are read as text after its opening" ->
+# `block-scalars`; "the plain subset admits no flow sequence" -> `a-flow-sequence`; "the plain
+# subset admits no sequence entry" and "the plain subset admits no nested line" ->
+# `nested-mappings-and-sequences`; "the plain subset admits no comment line" ->
+# `comments-and-blank-lines`.
 NO_HOOKS_SPELLED = {
-    "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
-    "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
-    "flow-in-a-quoted-value": '{name: plain, description: "a, hooks: x"}\n',
-    "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
-    "a-longer-quoted-key": '"hooksmith": x\n',
-    "a-quoted-merge-key": '"<<": {hooks: x}\n',
-    # A flow mapping is read for its own keys alone: not as a block mapping too, whose reading
-    # takes a nested key's line for a key, and not where it is a key itself. Mutations (oracle):
-    # `mutations/`'s "a flow mapping's lines are read as a block mapping's too" and "a flow
-    # mapping's lines behind its tag are read as a block mapping's too" ->
-    # `flow-tagged-nested-over-lines`; "a flow mapping a colon follows is read for its keys" ->
-    # `a-flow-mapping-as-a-key`.
-    "flow-tagged-nested-over-lines": "!!map {name: plain, metadata: {a: 1,\nhooks: x}}\n",
-    "a-flow-mapping-as-a-key": "{hooks: x}: y\n",
-    # A tab inside a value, on a line that opens no key, leaves the reading as it was. Mutation
-    # (oracle): `mutations/`'s "any tab-indented line leaves the reader unsure".
-    "a-tab-inside-a-value": 'description: "a\n\tb"\n',
-    # A tab after spaces, which the repair of leading tabs leaves as it stands, so no reading
-    # differs. Mutation (oracle): `mutations/`'s "a tab after spaces leaves the reader unsure".
-    "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
-    # The same below a nested block scalar, past its first line, and on its first line deeper than
-    # its key: text to YAML. Mutations (oracle): `mutations/`'s "every line below a block scalar's
-    # opening is looked at for a tab" -> `a-tab-below-a-block-scalars-text`; "a tab below a block
-    # scalar at any depth leaves the reader unsure" -> `a-tab-in-a-block-scalars-text`.
-    "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
-    "a-tab-in-a-block-scalars-text": "metadata:\n  summary: >\n   \tthe user: asks\n",
+    "plain-values": (
+        "name: probe\ndescription: Reviews code: use before merging # why\nlicense: MIT\n"
+        "version: 1.0\n"
+    ),
+    "quoted-values": (
+        "name: \"probe\"\ndescription: 'it''s a probe, hooks: x' # c\nargument-hint: \"[file]\"\n"
+    ),
+    "block-scalars": (
+        "description: >-\n  Use when\n  hooks: x\n\n  the user asks\nlicense: |2\n  - text\n"
+        "    # not a comment\nsummary: > # why\n  more\n"
+    ),
+    "a-flow-sequence": "allowed-tools: [Read, Grep, Bash(git add:*), hooks] # tools\n",
+    "nested-mappings-and-sequences": (
+        "metadata:\n  hooks: x\n  tags:\n    - a\n    - b: c\n      d: e\n    -\n    - - f\n"
+        "allowed-tools:\n- Read\n- Bash(git status:*)\n"
+    ),
+    "comments-and-blank-lines": (
+        "# a comment\nname: probe\n\n  # an indented comment\n\ndescription: x\n"
+    ),
     # A frontmatter of as many lines as the row reads is read. Mutation (oracle): `mutations/`'s "a
     # frontmatter of exactly the lines read is not read".
     "at-the-lines-read": "name: plain\n" + "k: v\n" * 9_999,
-    # A `---` inside a line, where Claude Code may end the frontmatter: each bound is read, and
-    # each says "no". Mutation (oracle): `mutations/`'s "a frontmatter whose two bounds differ
-    # answers could not tell where both say no".
+    # A `---` inside a line, where Claude Code may end the frontmatter: one cut short there holds
+    # fewer keys, and none the whole one does not. Mutation (oracle): `mutations/`'s "a frontmatter
+    # whose two bounds differ answers could not tell where both say no".
     "a-fence-within-a-value": "description: Reviews code --- use before merging\n",
     "a-fence-within-a-link": "description: See https://example.com/a---b\n",
     "a-fence-within-a-quoted-value": 'description: "--- "\n',
@@ -2030,19 +2030,15 @@ def test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_ove
     assert row == Check("hook-entries", OK, f"{NO_SKILL_ENTRIES}; all accounted for", "")
 
 
-# Keys the row cannot read whole, so it cannot say whether the frontmatter declares hooks: an alias
-# (`*k`, which `&k` may have set to `hooks`), a merge key (`<<`, which a reader that honours it
-# reads as every key of the mapping it names), an explicit `? ` key whose key is not all on its
-# line, and a quoted key over several lines, which YAML folds into one, in block style and in a
-# flow mapping. Each was passed over as declaring nothing. Mutations (oracle): `mutations/`'s "an
-# alias key is read as no key" -> `alias-key`; "a frontmatter's merge key is read as a plain key"
-# -> the two block merge cases; "an explicit key past its line is read as no key" -> the explicit
-# cases; "a quoted key over several lines is read as no key" -> the two quoted cases; "a flow
-# mapping reads an alias key as no key", "a flow mapping reads a merge key as no key", "a flow
-# mapping reads an explicit key as no key" and "a flow mapping reads a quoted key over several
-# lines as no key" -> the flow cases; "a single-quoted scalar whose quotes never pair is read as
-# none" -> `flow-quoted-over-lines-unpaired`, a quoted key over lines that ends in an odd `''`,
-# which only a scalar ended at its last pair reads as one.
+# Frontmatters outside the plain subset of YAML the row reads exactly, in which no reading finds a
+# `hooks` key, so the row cannot say whether they declare hooks. Each was passed over as declaring
+# nothing, or could have been: a key the row cannot read whole, and YAML it may misread, which it
+# used to read as best it could and answer "no" for.
+#
+# Keys it cannot read whole: an alias (`*k`, which `&k` may have set to `hooks`), a merge key (`<<`,
+# or any key tagged `!!merge`, which a reader that honours it reads as every key of the mapping it
+# names), an explicit `? ` key whose key is not all on its line, a quoted key over several lines,
+# which YAML folds into one, a bare key of a flow mapping, and a key that is a flow collection.
 UNTOLD_SPELLED = {
     "alias-key": "name: &k hooks\n*k : {}\n",
     "merge-key": "base: &b\n  hooks: {Stop: []}\n<<: *b\n",
@@ -2058,32 +2054,99 @@ UNTOLD_SPELLED = {
     "flow-explicit-key": "{? hooks : {}}\n",
     "flow-quoted-over-lines": '{"hoo\\\n  ks": {}}\n',
     "flow-quoted-over-lines-unpaired": "{'hoo\n  ks'': {}}\n",
-    # An alias key in a mapping below a tag alone on its line. Mutation (oracle): `mutations/`'s
-    # "an alias key is read as no key".
     "alias-key-below-a-tag-alone": "!!map\n  name: probe\n  *k : {}\n",
-    # Where Claude Code's reading may differ from the row's: a key indented by a tab, which it may
-    # read once the tab is spaces, however many; and a `---` inside a line, where it may end the
-    # frontmatter, with a key one of the two bounds cannot read whole, the alias below it or the
-    # quoted key it cuts. Mutations (oracle): `mutations/`'s "a tab-indented key leaves the reader
-    # sure" -> the tab case; "a reading that cannot tell is heard only where it is the only one"
-    # -> the two fence cases.
-    "a-tab-indented-key": "name: probe\n\thooks: {}\n",
+    "a-merge-tag-on-a-key": "!!merge x:\n  hooks:\n    Stop: []\n",
+    "an-explicit-merge-tag": "name: probe\n? !!merge x\n:\n  hooks:\n    Stop: []\n",
+    "a-flow-merge-tag": "{!!merge a: {hooks: {}}}\n",
+    "a-merge-key-over-nested-lines": "<<:\n  hooks:\n    Stop: []\n",
+    "a-quoted-merge-key-over-nested-lines": '"<<":\n  hooks:\n    Stop: []\n',
+    "a-bare-flow-key": "{name: probe, hooks}\n",
+    "a-flow-sequence-as-a-key": "[hooks]:\n  Stop: []\n",
+    "a-flow-mapping-as-a-key": "{hooks: x}: y\n",
+    # An explicit key that opens with `hooks` and goes on below its line, which YAML reads as one
+    # key over both lines. Mutation (oracle): `mutations/`'s "an explicit key past its line is read
+    # as no key" -> the row reads the key as `hooks`.
+    "explicit-key-over-lines-opening-with-hooks": "? hooks\n  more\n: {}\n",
+    # YAML the row may misread: a `hooks` key nested in a flow mapping, in a sequence or a quoted
+    # value inside one, or after a comment in one; a quoted key, a quoted `<<`; a flow mapping over
+    # lines; a tag, an anchor or an alias on a value; a flow mapping or a flow sequence holding more
+    # than plain scalars as a value; a value over lines; a tab after a block scalar's indentation in
+    # its text; a directive or a document end; a character that YAML 1.1, YAML 1.2 and Python read
+    # otherwise; a lone CR; a first line indented; a sequence at the top. Mutations (oracle):
+    # `mutations/`'s "the plain subset admits a line of any shape" -> the cases whose line holds
+    # neither a plain key nor an entry; "the plain subset admits a key behind a tag or an anchor" ->
+    # `a-merge-tag-on-a-key`; "the plain subset admits a merge key" ->
+    # `a-merge-key-over-nested-lines`; "the plain subset admits a quoted key" ->
+    # `a-quoted-merge-key-over-nested-lines` and `a-longer-quoted-key`; "the plain subset admits a
+    # value behind a tag", "the plain subset admits a value behind an anchor", "the plain subset
+    # admits an alias for a value" and "the plain subset admits a flow mapping for a value" -> the
+    # value cases; "the plain subset admits a brace in a flow sequence" and "the plain subset admits
+    # a pair in a flow sequence" -> the two flow-sequence values; "the plain subset admits a value
+    # over lines" -> the two cases of a plain value and `a-document-end-line`; "the plain subset
+    # admits a tab in an indentation" -> the two tab cases; "the plain subset admits a next-line
+    # character", "the plain subset admits a line or paragraph separator", "the plain subset admits
+    # a no-break space", "the plain subset admits an ideographic space" and "the plain subset admits
+    # a byte-order mark inside" -> the character cases; "the plain subset admits a lone carriage
+    # return" -> `a-lone-carriage-return`; "the plain subset admits an indented first line" ->
+    # `an-indented-mapping`; "the plain subset admits a sequence at the top" ->
+    # `a-sequence-at-the-top`; and, where a case reads a key the mutation gives, `mutations/`'s "a
+    # flow mapping's keys are read at every depth" -> `flow-nested`, "a flow mapping's quoted
+    # scalars are read as tokens" -> `flow-in-a-quoted-value`, "a flow mapping's lines are read as a
+    # block mapping's too" and "a flow mapping's lines behind its tag are read as a block mapping's
+    # too" -> `flow-tagged-nested-over-lines`, "a flow mapping a colon follows is read for its keys"
+    # -> `a-flow-mapping-as-a-key`.
+    "flow-nested": "{name: plain, metadata: {hooks: x}}\n",
+    "flow-in-a-sequence": "{name: plain, tags: [hooks: x]}\n",
+    "flow-in-a-quoted-value": '{name: plain, description: "a, hooks: x"}\n',
+    "flow-after-a-comment": "{name: plain # , hooks: x\n}\n",
+    "a-longer-quoted-key": '"hooksmith": x\n',
+    "a-quoted-merge-key": '"<<": {hooks: x}\n',
+    "flow-tagged-nested-over-lines": "!!map {name: plain, metadata: {a: 1,\nhooks: x}}\n",
+    "a-tagged-value": "name: !!str probe\n",
+    "an-anchored-value": "name: &a probe\n",
+    "an-alias-value": "name: probe\nother: *a\n",
+    "a-flow-mapping-as-a-value": "metadata: {owner: me, hooks: x}\n",
+    "a-brace-in-a-flow-sequence": "allowed-tools: [Read, a{b}]\n",
+    "a-flow-sequence-of-pairs": "allowed-tools: [hooks: x]\n",
+    "a-plain-value-over-lines": "description: Use when\nthe user asks\n",
+    "a-plain-value-continued-below": "description: Use when\n  the user asks\n",
+    "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
+    "a-tab-in-a-block-scalars-text": "metadata:\n  summary: >\n   \tthe user: asks\n",
+    "a-directive": "%YAML 1.2\nname: probe\n",
+    "a-document-end-line": "name: probe\n...\nother: x\n",
+    "a-next-line-character": "name: a\x85b\n",
+    "a-line-separator": "name: a\u2028b\n",
+    "a-paragraph-separator": "name: a\u2029b\n",
+    "a-no-break-space": "name: a\xa0b\n",
+    "an-ideographic-space": "name: a\u3000b\n",
+    "a-byte-order-mark-inside": "name: a\ufeffb\n",
+    "a-lone-carriage-return": "name: probe\rdescription: x\n",
+    "an-indented-mapping": "  name: probe\n  description: x\n",
+    "a-sequence-at-the-top": "- name: probe\n- other: x\n",
+    # Where Claude Code's reading may differ from the row's: a `---` inside a line, where it may end
+    # the frontmatter, beside a key one of the two bounds cannot read whole, the alias below it or
+    # the quoted key it cuts; and a line opening with `---` and a blank, which YAML reads as a
+    # document marker and the row as the start of a key: what follows it is a document of its own,
+    # here a flow mapping holding `hooks`. Mutation (oracle): `mutations/`'s "the plain subset
+    # admits a line of any shape".
     "a-fence-within-a-line-above-an-alias": "name: a---b\n*k : {}\n",
     "a-fence-within-a-quoted-key": '"a---b": x\n',
-    # A line opening with `---` and a blank, which YAML reads as a document marker and the row as
-    # the start of a key: what follows it is a document of its own, here a flow mapping holding
-    # `hooks`. Mutation (oracle): `mutations/`'s "a document marker line is read as a key".
     "a-document-marker-line": "--- {name: probe, hooks: {}}\n",
-    # A nested block scalar whose first line is led by its key's spaces and then a tab: a YAML 1.2
-    # parser reads a key on that line, or on a line below it, at the top level. Mutations (oracle):
-    # `mutations/`'s "a tab below a nested block scalar leaves the reader sure" -> both; "a comment
-    # hides a block scalar's opening" -> `a-tab-below-a-nested-block-scalar`; "a block scalar's
-    # indicators hide its opening" -> `below-a-tab-below-a-nested-block-scalar`.
+    # A tab that leads a line, which YAML does not take as indentation: a key indented by a tab,
+    # which Claude Code may read once the tab is spaces, however many; the second line of a value
+    # over lines; a line below a nested block scalar's text that its key's spaces and a tab lead,
+    # and the first line of a nested block scalar led so, where a YAML 1.2 parser reads a key on
+    # that line, or on a line below it, at the top level. Each is outside the subset on two counts
+    # at once, a tab in its indentation and a line that holds no plain key or leaves a value open,
+    # so no one mutation of the subset's rules reddens it; each count has cases of its own above.
+    "a-tab-indented-key": "name: probe\n\thooks: {}\n",
+    "a-tab-inside-a-value": 'description: "a\n\tb"\n',
+    "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
     "a-tab-below-a-nested-block-scalar": "metadata:\n  summary: > # why\n  \thooks: {}\n",
     "below-a-tab-below-a-nested-block-scalar": "metadata:\n  summary: |-\n  \t\n  hooks: {}\n",
     # A frontmatter of more lines than the row reads, which it does not read and so cannot tell
-    # of, and says so in its remedy. Mutation (oracle): `mutations/`'s "a frontmatter is read past
-    # the lines read".
+    # of, and says so in its remedy. Mutation (oracle): `mutations/`'s "the plain subset is read
+    # past the lines read".
     "past-the-lines-read": "name: probe\n" + "k: v\n" * 10_000,
 }
 SKILL_UNPARSED = (
@@ -2092,9 +2155,9 @@ SKILL_UNPARSED = (
 )
 SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
-    "no alias, no merge key, no explicit key past its line, no quoted key over several lines, no "
-    "key indented by a tab, no `---` that is not a line of its own and no frontmatter of more than "
-    "10,000 lines"
+    "exactly only `key: value` lines with plain keys, values on their own line, block scalars, "
+    "flow lists of plain scalars, nested lines indented by spaces and comments, in a frontmatter "
+    "of at most 10,000 lines"
 )
 
 
@@ -2196,13 +2259,14 @@ def test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length(shape: 
 
 # Files of many lines, which the reader held an object for each line of, each reading over: a
 # frontmatter of short lines past the lines it reads, one whose line separators the reading as
-# YAML 1.1 breaks into as many lines, and a long body below a short frontmatter, which was split
+# YAML 1.1 breaks into as many lines (of two characters each, which Python does not keep one copy
+# of as it keeps a single character), and a long body below a short frontmatter, which was split
 # into lines with it. A file at the 64 MiB read cap asked a gigabyte and more; each of these is a
 # few mebibytes, which the old reader read with 30 to 85 MiB more. Past the lines read the answer
 # is "cannot tell", in the row's words; a body is no part of the answer.
 MANY_LINES = {
     "short-lines-past-the-lines-read": ("", "k: v\n", 1 << 20, "", "None"),
-    "line-separators-past-the-lines-read": ("a: ", "x\u2028", 1 << 20, "\n", "None"),
+    "line-separators-past-the-lines-read": ("a: ", "xy\u2028", 1 << 20, "\n", "None"),
     "a-long-body": ("name: probe\n---\n", "xy\n", 1 << 21, "", "False"),
 }
 

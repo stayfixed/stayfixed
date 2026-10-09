@@ -1243,8 +1243,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter runs past its closing fence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return text[start : max(start, closing.start() - 1)], closing.start()"
-after = "    return text[start:], closing.start()"
+before = '        body = text[fenced[0] : max(fenced[0], fenced[1] - 1)]'
+after = '        body = text[fenced[0] :]'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[in-the-body]",
 ]
@@ -1271,8 +1271,8 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter reads any key opening with hooks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        key = rest[: colon.start()].rstrip(" \t")'
-after = '        key = rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)]'
+before = '        return rest[: colon.start()].rstrip(" \t")'
+after = '        return rest[: colon.start()].rstrip(" \t")[: len(_HOOKS)]'
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[a-longer-key]",
 ]
@@ -1280,14 +1280,14 @@ reddens = [
 [[mutation]]
 name = "an unterminated frontmatter is read to the end"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = """
+before = '''
     if closing is None:
         return None
-"""
-after = """
+'''
+after = '''
     if closing is None:
-        return text[start:], len(text)
-"""
+        return start, len(text)
+'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_declaring_no_hooks_leaves_the_row_as_it_was[unterminated]",
 ]
@@ -1297,18 +1297,23 @@ reddens = [
 [[mutation]]
 name = "a frontmatter is read past the lines read"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''    readings = [body.split("\n") for body, _ in bounds if body.count("\n") < LINES_READ]'''
-after = '''    readings = [body.split("\n") for body, _ in bounds]'''
+before = '''
+        if body.count("\n") >= LINES_READ:
+            continue
+'''
+after = '''
+        if False:
+            continue
+'''
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-lines-read]",
   "tests/doctor/test_checks.py::test_a_file_of_many_lines_is_read_in_memory_bounded_by_the_lines_read[short-lines-past-the-lines-read]",
 ]
 
 [[mutation]]
 name = "a frontmatter of exactly the lines read is not read"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''body.count("\n") < LINES_READ]'''
-after = '''body.count("\n") < LINES_READ - 1]'''
+before = 'body.count("\n") < LINES_READ and _plain(body)'
+after = 'body.count("\n") < LINES_READ - 1 and _plain(body)'
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[at-the-lines-read]",
 ]
@@ -1344,15 +1349,348 @@ reddens = [
 [[mutation]]
 name = "a skill's frontmatter splits on LF alone"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").replace("\r", "\n")'
-after = '    text = text.removeprefix(chr(0xFEFF))'
+before = '''
+    text = text.removeprefix(chr(0xFEFF)).replace("\r\n", "\n")
+    lone_return = text.find("\r")
+    text = text.replace("\r", "\n")
+'''
+after = '''
+    text = text.removeprefix(chr(0xFEFF))
+    lone_return = -1
+'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
 ]
 
+# A frontmatter is answered "no" only where it keeps to the plain subset of YAML the reader reads
+# exactly; outside it, the readings are asked for `hooks`, and the answer is "yes" or "cannot
+# tell", which both name the file. Each part of the subset is admitted, and each shape outside it
+# refused, by a rule a case holds.
+[[mutation]]
+name = "a frontmatter inside the plain subset is answered without reading it"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            return _holds_hooks(body)'
+after = '            return False'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_project_skill_declaring_hooks_is_a_warning_naming_it",
+  "tests/doctor/test_checks.py::test_a_skill_with_crlf_lines_and_a_byte_order_mark_is_read",
+]
+
+[[mutation]]
+name = "the plain subset admits no plain value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return "line" if _plain_scalar(value, flow=False) else None'
+after = '    return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[plain-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no quoted value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "line" if quoted and _ends(value[quoted.end() :]) else None'
+after = '        return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[quoted-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no comment after a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return not rest or (rest.startswith("#") and rest != after)'
+after = '    return not rest'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[quoted-values]",
+]
+
+[[mutation]]
+name = "the plain subset admits no block scalar"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "block" if header and _ends(value[header.end() :]) else None'
+after = '        return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "a block scalar's indicators are read as text after its opening"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_BLOCK_HEADER = re.compile(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?")'
+after = '_BLOCK_HEADER = re.compile(r"[|>]")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "a block scalar's text is read as lines of the subset"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if not rest or (scalar is not None and indent > scalar):'
+after = '        if not rest:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[block-scalars]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "line" if _ends(value[close + 1 :]) else None'
+after = '        return None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits no sequence entry"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_ENTRIES = re.compile(r"(?:-[ ][ ]*+)*+")'
+after = '_ENTRIES = re.compile(r"(?!)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[nested-mappings-and-sequences]",
+]
+
+[[mutation]]
+name = "the plain subset admits no nested line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if shape is None or indent:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[nested-mappings-and-sequences]",
+]
+
+[[mutation]]
+name = "the plain subset admits no comment line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+        if rest.startswith("#"):
+            continue
+'''
+after = '''
+        if False:
+            continue
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[comments-and-blank-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line of any shape"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if first and indent:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-below]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[double-quoted-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-merge-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-merge-tag]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-explicit-merge-tag]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-bare-flow-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-as-a-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-directive]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-marker-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line-above-an-alias]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-quoted-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a key behind a tag or an anchor"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:[!&][^ \t]*+[ \t][ \t]*+)?[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-merge-tag-on-a-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a merge key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:<<|[A-Za-z0-9_][A-Za-z0-9_.-]*+):(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-merge-key-over-nested-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits a quoted key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '_PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")'
+after = '_PLAIN_KEY = re.compile(r"(?:\"[^\"]*+\"|[A-Za-z0-9_][A-Za-z0-9_.-]*+):(?=[ \t]|\Z)")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-merge-key-over-nested-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-longer-quoted-key]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value behind a tag"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#&*|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tagged-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value behind an anchor"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#*!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-anchored-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits an alias for a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]{}#&!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-alias-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow mapping for a value"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_INDICATORS = "-?:,[]{}#&*!|>'\"%@`"'''
+after = '''_INDICATORS = "-?:,[]#&*!|>'\"%@`"'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-mapping-as-a-value]",
+]
+
+[[mutation]]
+name = "the plain subset admits a brace in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''        if any(mark in inner for mark in "[]{}\"'"):'''
+after = '''        if any(mark in inner for mark in "[]\"'"):'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-brace-in-a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits a pair in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return opens and not (flow and _PAIR_OR_COMMENT.search(scalar))'
+after = '    return opens'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-of-pairs]",
+]
+
+[[mutation]]
+name = "the plain subset admits a value over lines"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if first or (item == rest and item != "-"):
+        return None
+'''
+after = '''
+    if first:
+        return None
+'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-plain-value-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-plain-value-continued-below]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-end-line]",
+]
+
+[[mutation]]
+name = "the plain subset admits a tab in an indentation"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if rest.startswith("\t") or _UNPLAIN_CHARACTER.search(rest):'
+after = '        if _UNPLAIN_CHARACTER.search(rest):'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-after-spaces]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-in-a-block-scalars-text]",
+]
+
+[[mutation]]
+name = "the plain subset admits a next-line character"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '"[^\t\n -~\xa1-\u167f'
+after = '"[^\t\n -~\x85\xa1-\u167f'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-next-line-character]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line or paragraph separator"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\u200b-\u2027\u202a-\u202e'
+after = '\u200b-\u202e'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-line-separator]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-paragraph-separator]",
+]
+
+[[mutation]]
+name = "the plain subset admits a no-break space"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = ' -~\xa1-'
+after = ' -~\xa0-'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-no-break-space]",
+]
+
+[[mutation]]
+name = "the plain subset admits an ideographic space"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\u2060-\u2fff\u3001-\ud7ff'
+after = '\u2060-\ud7ff'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-ideographic-space]",
+]
+
+[[mutation]]
+name = "the plain subset admits a byte-order mark inside"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '\ue000-\ufefe\uff00-\ufffd'
+after = '\ue000-\ufffd'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-byte-order-mark-inside]",
+]
+
+[[mutation]]
+name = "the plain subset admits a lone carriage return"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'not 0 <= lone_return < fenced[1] and '
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-lone-carriage-return]",
+]
+
+[[mutation]]
+name = "the plain subset admits an indented first line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        if shape is None or (first and indent):'
+after = '        if shape is None:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-indented-mapping]",
+]
+
+[[mutation]]
+name = "the plain subset admits a sequence at the top"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+    if first and item != rest:
+        return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-sequence-at-the-top]",
+]
+
+[[mutation]]
+name = "the plain subset is read past the lines read"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'body.count("\n") < LINES_READ and _plain(body)'
+after = '_plain(body)'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[past-the-lines-read]",
+]
+
 # Claude Code may end a frontmatter at a `---` within a line and read a key indented by a tab: the
-# row reads the frontmatter each way it may be read, says "declares hooks" where any reading holds
-# `hooks`, and "cannot tell" where the readings may differ and none does.
+# row reads the frontmatter each way it may be read and says "declares hooks" where any reading
+# holds `hooks`. Inside the plain subset, a frontmatter cut short at a `---` within a line holds no
+# key the whole one does not, so there the bound of `---` lines alone is read.
 [[mutation]]
 name = "a frontmatter Claude Code may end within a line is read only to a line of its own"
 file = "src/stayfixed/doctor/frontmatter.py"
@@ -1363,61 +1701,32 @@ reddens = ["tests/doctor/test_checks.py::test_hooks_before_a_fence_within_a_line
 [[mutation]]
 name = "a frontmatter whose two bounds differ answers could not tell where both say no"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = """
-    unsure = False
-    for lines in list(readings):
-        if _tab_indents_a_key(lines):
-"""
-after = """
-    unsure = harness is not None and (fenced is None or harness[1] != fenced[1])
-    for lines in list(readings):
-        if _tab_indents_a_key(lines):
-"""
-reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-quoted-value]", "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-inside-a-literal-block]"]
-
-[[mutation]]
-name = "a reading that cannot tell is heard only where it is the only one"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return None if unsure or unread or None in answers else False"
-after = "    return None if unsure or unread or answers == [None] else False"
-reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-line-above-an-alias]", "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-within-a-quoted-key]"]
+before = '        if not 0 <= lone_return < fenced[1] and body.count'
+after = '        if harness is not None and harness[1] == fenced[1] and not 0 <= lone_return < fenced[1] and body.count'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-value]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-link]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-within-a-quoted-value]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-fence-inside-a-literal-block]",
+]
 
 [[mutation]]
 name = "a tab-indented frontmatter is read only as it stands"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "            readings.append(_untabbed(lines))"
-after = "            readings.append(lines)"
-reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-mapping]"]
-
-[[mutation]]
-name = "a frontmatter is repaired of its tabs only where a tab leads a key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if any(line.startswith("\t") for line in lines):'
-after = "        if _tab_indents_a_key(lines):"
-reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-tag-above-the-mapping]"]
-
-[[mutation]]
-name = "a tab-indented key leaves the reader sure"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "            unsure = True"
-after = "            unsure = unsure"
-reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-indented-key]"]
-
-[[mutation]]
-name = "any tab-indented line leaves the reader unsure"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = 'line.startswith("\t") and _block_key(rest, continued=False) is not None:'
-after = 'line.startswith("\t"):'
+before = '        yield _untabbed(body)'
+after = '        yield body'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-inside-a-value]",
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-mapping]",
 ]
 
 [[mutation]]
-name = "a tab after spaces leaves the reader unsure"
+name = "a frontmatter is repaired of a tab only below its first line"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        if line.startswith("\t") and _block_key(rest, continued=False) is not None:'
-after = '        if "\t" in line[: len(line) - len(rest)] and _block_key(rest, continued=False) is not None:'
-reddens = ["tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-after-spaces]"]
+before = '    if body.startswith("\t") or "\n\t" in body:'
+after = '    if "\n\t" in body:'
+reddens = [
+  "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-tab-indented-tag-above-the-mapping]",
+]
 
 [[mutation]]
 name = "a skill file that names no file is unreadable"
@@ -1525,8 +1834,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter in flow style is read as no mapping"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    if flow and not _keyed(flow):"
-after = "    if False:"
+before = '    if body.startswith("{", end) and not _keyed(body, end):'
+after = '    if False:'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-as-json]",
@@ -1536,8 +1845,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter's top level is its first column"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    indent = len(content[0]) - len(content[0].lstrip(" "))'
-after = "    indent = 0"
+before = '    indent = _past(_SPACES, content[0])'
+after = '    indent = 0'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[indented-mapping]",
 ]
@@ -1580,8 +1889,7 @@ reddens = [
 ]
 
 # A repetition a long value reaches gives nothing back, so the reader keeps no record per character
-# of it; and the one single-quoted scalar that giving back used to end at its last `''` still ends
-# there.
+# of it.
 [[mutation]]
 name = "a frontmatter key's tags are given back"
 file = "src/stayfixed/doctor/frontmatter.py"
@@ -1627,15 +1935,6 @@ after = '''_SINGLE_QUOTED = r"'(?:[^']|'')*'"'''
 reddens = ["tests/doctor/test_checks.py::test_a_long_frontmatter_value_is_read_in_memory_linear_in_its_length[single-quoted-key]"]
 
 [[mutation]]
-name = "a single-quoted scalar whose quotes never pair is read as none"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'|'[\s\S]*'(?=')"'''
-after = '''_SINGLE_QUOTED = r"'[^']*+(?:''[^']*+)*+'"'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-quoted-over-lines-unpaired]",
-]
-
-[[mutation]]
 name = "a flow mapping's plain scalar is given back"
 file = "src/stayfixed/doctor/frontmatter.py"
 before = '''[^\s{}\[\],]*?(?=[\s{}\[\],]|:(?:[\s{}\[\],]|\Z)|\Z))'''
@@ -1676,10 +1975,10 @@ reddens = ["tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hook
 [[mutation]]
 name = "a flow mapping's keys are read at every depth"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "            if candidate is not None and len(depth) == 1:"
-after = "            if candidate is not None:"
+before = '            if candidate is not None and len(depth) == 1:'
+after = '            if candidate is not None:'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-nested]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-nested]",
 ]
 
 [[mutation]]
@@ -1688,26 +1987,16 @@ file = "src/stayfixed/doctor/frontmatter.py"
 before = 'rf"(?P<quoted>{_QUOTED})|'
 after = 'rf"(?P<quoted>(?!))|'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-in-a-quoted-value]",
-]
-
-[[mutation]]
-name = "a quoted merge key is read as a merge key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '        return _unquoted(quoted.group()) if explicit or after.startswith(":") else None'
-after = '        return _UNTOLD if _unquoted(quoted.group()) == _MERGE else None'
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-quoted-merge-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-in-a-quoted-value]",
 ]
 
 # A flow mapping behind a tag or an anchor, on its line or the line above, is still one; and a
-# top-level key the reader cannot read whole fails toward "cannot tell", never toward "no", while a
-# `hooks` key it can read still declares hooks.
+# frontmatter outside the plain subset is read for a `hooks` key all the same.
 [[mutation]]
 name = "a flow mapping's tag or anchor hides it"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    end = past.end() if past else 0"
-after = "    end = 0"
+before = '    end = past.end() if past else bare'
+after = '    end = bare'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-tagged]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[flow-anchored]",
@@ -1717,8 +2006,8 @@ reddens = [
 [[mutation]]
 name = "a flow mapping a colon follows is read as the whole frontmatter"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if not node.startswith("{") or _keyed(node):'
-after = '    if not node.startswith("{"):'
+before = '    if not body.startswith("{", node) or _keyed(body, node):'
+after = '    if not body.startswith("{", node):'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-flow-mapping-key-tagged]",
@@ -1727,10 +2016,10 @@ reddens = [
 [[mutation]]
 name = "a flow mapping a colon follows is read for its keys"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    if flow and not _keyed(flow):"
-after = "    if flow:"
+before = '    if body.startswith("{", end) and not _keyed(body, end):'
+after = '    if body.startswith("{", end):'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-mapping-as-a-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-mapping-as-a-key]",
 ]
 
 # A flow mapping is read past a comment among its properties and past a tab after the first line's
@@ -1739,8 +2028,8 @@ reddens = [
 [[mutation]]
 name = "the flow reading stops at a comment that properties follow"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    past = _PROPERTY_RUN.match(bare)"
-after = "    past = _AHEAD.match(bare)"
+before = '    past = _PROPERTY_RUN.match(body, bare)'
+after = '    past = _AHEAD.match(body, bare)'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-properties-a-comment-splits]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-below-a-comment-on-a-property-line]",
@@ -1749,8 +2038,8 @@ reddens = [
 [[mutation]]
 name = "a tab after a frontmatter's indentation hides the flow mapping behind it"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''    bare = opened.lstrip(" \t")'''
-after = "    bare = opened"
+before = '    bare = _past(_BLANKS, body, start)'
+after = '    bare = start'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-flow-mapping-past-a-tab-after-the-indentation]",
 ]
@@ -1758,81 +2047,38 @@ reddens = [
 [[mutation]]
 name = "a flow mapping's lines are read as a block mapping's too"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if not node.startswith("{") or _keyed(node):'
-after = "    if True:"
+before = '    if not body.startswith("{", node) or _keyed(body, node):'
+after = '    if True:'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-tagged-nested-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-tagged-nested-over-lines]",
 ]
 
 [[mutation]]
 name = "a flow mapping's lines behind its tag are read as a block mapping's too"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    node = opened[ahead.end() :] if ahead else opened"
-after = "    node = opened"
+before = '    node = ahead.end() if ahead else start'
+after = '    node = start'
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[flow-tagged-nested-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-tagged-nested-over-lines]",
 ]
 
 [[mutation]]
 name = "a mapping below a tag or an anchor alone on its line is read at the tag's indentation"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "        more, unsure = _block_keys(content, {indent} | starts)"
-after = "        more, unsure = _block_keys(content, {indent})"
+before = '        keys = keys | _block_keys(content, {indent} | starts)'
+after = '        keys = keys | _block_keys(content, {indent})'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[tagged-above-an-indented-mapping]",
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[anchored-above-an-indented-mapping]",
 ]
 
 [[mutation]]
-name = "a key the reader cannot read outranks a hooks key it can"
+name = "a frontmatter outside the plain subset is never read for hooks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = """
-    if _HOOKS in keys:
-        return True
-    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
-        return None
-    return False
-"""
-after = """
-    if untold:
-        return None
-    return _HOOKS in keys
-"""
+before = '    return True if any(_holds_hooks(reading) for reading in _readings(bounds)) else None'
+after = '    return None'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[beside-an-alias]",
-]
-
-# A line that opens with `---` and a blank is a document marker, which the reader cannot read past:
-# it says "cannot tell" where no key it reads is `hooks`, and never outranks one that is.
-[[mutation]]
-name = "a document marker line is read as a key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):"
-after = "    if untold or _tab_below_a_block_scalar(lines):"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-marker-line]",
-]
-
-[[mutation]]
-name = "a document marker line outranks a hooks key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = """
-    if _HOOKS in keys:
-        return True
-    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
-        return None
-    return False
-"""
-after = """
-    if any(_MARKER.match(line) for line in content):
-        return None
-    if _HOOKS in keys:
-        return True
-    if untold or _tab_below_a_block_scalar(lines):
-        return None
-    return False
-"""
-reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-document-marker-line]",
 ]
 
@@ -1849,8 +2095,8 @@ reddens = [
 [[mutation]]
 name = "a frontmatter is read only with Python's blanks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''            readings.append(joined.translate(odd).split("\n"))'''
-after = "            readings.append(lines)"
+before = '            yield from _repaired(body.translate(odd))'
+after = '            yield from _repaired(body)'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[an-anchor-holding-an-ideographic-space]",
 ]
@@ -1858,142 +2104,27 @@ reddens = [
 [[mutation]]
 name = "a frontmatter is read only with YAML 1.2's line breaks"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "joined.translate(odd | breaks)"
-after = "joined.translate(odd)"
+before = 'body.translate(odd | breaks)'
+after = 'body.translate(odd)'
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-key-past-a-line-separator]",
 ]
 
-# A YAML 1.2 parser reads the keys below a nested block scalar whose first line is led by a tab
-# after its key's spaces at the top level: the reader cannot tell there.
-[[mutation]]
-name = "a tab below a nested block scalar leaves the reader sure"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '''        if opening is not None and spaces <= opening and line[spaces:].startswith("\t"):'''
-after = "        if False:"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-below-a-nested-block-scalar]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[below-a-tab-below-a-nested-block-scalar]",
-]
-
-[[mutation]]
-name = "a comment hides a block scalar's opening"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "_BLOCK_SCALAR.search((line[: comment.start()] if comment else line).rstrip("
-after = "_BLOCK_SCALAR.search(line.rstrip("
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-below-a-nested-block-scalar]",
-]
-
-[[mutation]]
-name = "a block scalar's indicators hide its opening"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '''_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>][1-9+-]{0,2}\Z")'''
-after = '''_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>]\Z")'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[below-a-tab-below-a-nested-block-scalar]",
-]
-
-[[mutation]]
-name = "every line below a block scalar's opening is looked at for a tab"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "        opening = spaces if scalar else None"
-after = "        opening = spaces if scalar else opening"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-below-a-block-scalars-text]",
-]
-
-[[mutation]]
-name = "a tab below a block scalar at any depth leaves the reader unsure"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "opening is not None and spaces <= opening and line"
-after = "opening is not None and line"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-in-a-block-scalars-text]",
-]
-
-[[mutation]]
-name = "an alias key is read as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if rest[:1] == "*" or (explicit and continued):'
-after = "    if explicit and continued:"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[alias-key-below-a-tag-alone]",
-]
-
-[[mutation]]
-name = "a frontmatter's merge key is read as a plain key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return _UNTOLD if key == _MERGE else key"
-after = "    return key"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[merge-key-inline]",
-]
-
+# An explicit key that goes on below its line is one key over both lines to YAML: the reader reads
+# no key there rather than the part on the first line.
 [[mutation]]
 name = "an explicit key past its line is read as no key"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '    if rest[:1] == "*" or (explicit and continued):'
-after = '    if rest[:1] == "*":'
+before = '''
+    if explicit and continued:
+        return None
+'''
+after = '''
+    if False:
+        return None
+'''
 reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-below]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-continued]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-block-scalar]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-tag-alone]",
-]
-
-[[mutation]]
-name = "a quoted key over several lines is read as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = """
-        if quoted is None:
-            return _UNTOLD
-"""
-after = """
-        if quoted is None:
-            return None
-"""
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[double-quoted-over-lines]",
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[single-quoted-over-lines]",
-]
-
-[[mutation]]
-name = "a flow mapping reads an alias key as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '(kind == "plain" and (value == "?" or value[0] == "*"))'
-after = '(kind == "plain" and value == "?")'
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-alias-key]",
-]
-
-[[mutation]]
-name = "a flow mapping reads a merge key as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '                    or (kind == "plain" and value == _MERGE)'
-after = "                    or False"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-merge-key]",
-]
-
-[[mutation]]
-name = "a flow mapping reads an explicit key as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '(kind == "plain" and (value == "?" or value[0] == "*"))'
-after = '(kind == "plain" and value[0] == "*")'
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-explicit-key]",
-]
-
-[[mutation]]
-name = "a flow mapping reads a quoted key over several lines as no key"
-file = "src/stayfixed/doctor/frontmatter.py"
-before = '                    or (kind == "quoted" and "\n" in value)'
-after = "                    or False"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[flow-quoted-over-lines]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[explicit-key-over-lines-opening-with-hooks]",
 ]
 
 # A line at the top indentation inside a quoted or flow value over lines is read as a key. A reader

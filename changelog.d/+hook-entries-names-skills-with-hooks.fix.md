@@ -12,13 +12,14 @@ reads settings files alone, so it used to answer "all accounted for" beside such
 
 A file is named when the frontmatter between its two `---` lines holds a top-level `hooks` key,
 spelled bare, quoted either way, behind a tag or an anchor, or as a key of a flow mapping such as
-`{name: x, hooks: {...}}`, tagged or not; nothing else of the YAML is parsed. Claude Code may end a
-frontmatter at a `---` within a line and read a key indented by a tab, so the row reads it those
-ways too. A file whose frontmatter has a top-level key the row cannot read whole, such as an alias
-(`*name`) or a merge key (`<<`), or a key led by a tab or a line opening with `--- `, and holds no
-`hooks` key in any reading, is named as one it cannot tell about, and so is one whose frontmatter
-runs past 10,000 lines, which the row does not read. A file or directory the row cannot read, a FIFO
-among them, is named as one it cannot say anything about.
+`{name: x, hooks: {...}}`, tagged or not. Claude Code may end a frontmatter at a `---` within a line
+and read a key indented by a tab, so the row reads it those ways too. It says a file declares no
+hooks only where its frontmatter keeps to plain YAML that it reads exactly: `key: value` lines with
+plain keys and values on their own line, block scalars, flow lists of plain scalars, nested lines
+indented by spaces, and comments. Any other frontmatter in which it finds no `hooks` key, one with a
+tag, an anchor, an alias, a merge key or a flow mapping among others, is named as one it cannot tell
+about, and so is one of more than 10,000 lines, which the row does not read. A file or directory the
+row cannot read, a FIFO among them, is named as one it cannot say anything about.
 A link inside those directories, or a nested `.claude` that is one, is read where it leads inside
 the checkout, to a directory or to a `*.md` or `SKILL.md` file. One that leads out of the
 checkout, as a dotfiles setup's does, is not followed and is named as one that leads out, which
