@@ -1116,9 +1116,11 @@ def test_every_cited_entry_name_is_declared() -> None:
 def test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads() -> None:
     # A citation through a comma rather than `'s` read as one to a person and as nothing to
     # `cited_names`, and four of the tree's 138 named no entry: three shortened with an ellipsis,
-    # one renamed away. Mutations (declared): `mutations/`'s "the citation spelling rule lets a
-    # comma or a colon through" -> no line is told; "the citation spelling rule reads no further
-    # than the set's own line" -> the third is not.
+    # one renamed away; a quote straight after a lead, singular or plural, names no set. Mutations
+    # (declared): `mutations/`'s "the citation spelling rule lets a comma or a colon through" -> no
+    # line is told; "the citation spelling rule reads no further than the set's own line" -> the
+    # third is not; "the citation spelling rule misses a quote straight after a plural lead" -> the
+    # last is not.
     set_name = ANCHOR.removesuffix("'s")
     quote = '"'  # so that no line of this file is the shape the rule refuses
     text = (
@@ -1128,8 +1130,9 @@ def test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_re
         '#   "three".\n'
         f'# Mutation: {ANCHOR} "four"; {set_name} holds the rest.\n'
         f"# Mutation (oracle): {quote}five{quote}, and (by hand) the lead alone.\n"
+        f"# Mutations (oracle): {quote}six{quote} and {quote}seven{quote}.\n"
     )
-    assert unread_citations(text) == [1, 2, 3, 6]
+    assert unread_citations(text) == [1, 2, 3, 6, 7]
 
 
 def test_a_quoted_entry_name_the_citation_reader_does_not_read_is_told() -> None:

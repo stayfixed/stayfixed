@@ -1975,6 +1975,15 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
 ]
 
+[[mutation]]
+name = "the citation spelling rule misses a quote straight after a plural lead"
+file = "tests/declarations.py"
+before = "|Mutations?(?: "
+after = "|Mutation(?: "
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_spelled_another_way_is_told_apart_from_the_one_the_reader_reads",
+]
+
 # A quote of a declared name is a citation, and one the reader does not read is a name nothing
 # checks: 292 were, in lists the reader stopped in and in comments with no anchor at all. The walk
 # takes an entry's own `name` line for the declaration it is, and an anchor that reads no name
