@@ -332,15 +332,21 @@ def open_regular(path: Path) -> BinaryIO:
     return os.fdopen(descriptor, "rb")
 
 
-# The open `read_bounded` makes of the last component under a root: `_REGULAR_OPEN`'s, and a link
-# there is refused as every component above it is.
+# The open `read_bounded_within` makes of the last component under a root: `_REGULAR_OPEN`'s, and a
+# link there is refused as every component above it is.
 _WITHIN_OPEN = _REGULAR_OPEN | getattr(os, "O_NOFOLLOW", 0)
 
 
-def open_directory(path: Path) -> int:
-    """A descriptor for the directory `path`, its last component not followed if it is a link: the
-    `root` `read_bounded` reads several files under with one open. The caller closes it."""
-    return os.open(path, _DIR_FLAGS)
+@contextmanager
+def open_directory(path: Path) -> Iterator[int]:
+    """A descriptor for the directory `path`, its last component not followed if it is a link,
+    closed when the block ends: the `root` `read_bounded_within` reads several files under with
+    one open."""
+    descriptor = os.open(path, _DIR_FLAGS)
+    try:
+        yield descriptor
+    finally:
+        os.close(descriptor)
 
 
 def _opened_within(root: Path | int, relative: str) -> int:
@@ -378,37 +384,43 @@ def _read_upto(descriptor: int, size: int) -> bytes:
     return b"".join(chunks)
 
 
-def read_bounded(
-    path: Path | str, limit: int, *, root: Path | int | None = None
-) -> tuple[bytes, bool]:
-    """At most `limit` bytes of a regular file, and whether it holds more than that.
-
-    The one reader of a file held to a bound, whatever the bound is. Without `root`, `path` is
-    opened by `open_regular`'s rules: followed through symbolic links, and a regular file only.
-    With `root`, `path` is relative to it and reached as `open_within` reaches a file: no component
-    is followed if it is a symbolic link, the file included, and the descriptor opened is asked
-    whether it is a regular file. `root` may be a directory `open_directory` opened, and `path` then
-    one name in it, so a reader of many files in one directory opens it once. Either way the open
-    never waits on a FIFO, anything but a regular file is `NotRegularFile`, and one byte past
-    `limit` is asked for and no more, so a file that reads on for as long as anyone asks costs
-    `limit + 1` bytes and is over.
-    """
-    if root is None:
-        with open_regular(Path(path)) as stream:
-            content = stream.read(limit + 1)
-    else:
-        descriptor = _opened_within(root, str(path))
-        try:
-            content = _read_upto(descriptor, limit + 1)
-        finally:
-            os.close(descriptor)
+def _bounded(content: bytes, limit: int) -> tuple[bytes, bool]:
+    """`content`, read to one byte past `limit`, cut to `limit`, and whether it ran past it."""
     return content[:limit], len(content) > limit
 
 
+def read_bounded(path: Path, limit: int) -> tuple[bytes, bool]:
+    """At most `limit` bytes of a regular file, and whether it holds more than that.
+
+    The one reader of a file held to a bound, whatever the bound is, and `read_bounded_within` the
+    one under a root. `path` is opened by `open_regular`'s rules: followed through symbolic links,
+    and a regular file only. The open never waits on a FIFO, anything but a regular file is
+    `NotRegularFile`, and one byte past `limit` is asked for and no more, so a file that reads on
+    for as long as anyone asks costs `limit + 1` bytes and is over.
+    """
+    with open_regular(path) as stream:
+        return _bounded(stream.read(limit + 1), limit)
+
+
+def read_bounded_within(root: Path | int, relative: str, limit: int) -> tuple[bytes, bool]:
+    """`read_bounded` of `relative` under `root`, reached as `open_within` reaches a file.
+
+    No component is followed if it is a symbolic link, the file included, and the descriptor
+    opened is asked whether it is a regular file, so the open never waits on a FIFO either. `root`
+    may be a directory `open_directory` opened, and `relative` then one name in it, so a reader of
+    many files in one directory opens it once.
+    """
+    descriptor = _opened_within(root, relative)
+    try:
+        return _bounded(_read_upto(descriptor, limit + 1), limit)
+    finally:
+        os.close(descriptor)
+
+
 def read_regular_bytes(path: Path, *, limit: int | None = None) -> bytes:
-    """The bytes of a regular file, reached as `read_bounded` reaches it without a root, and
-    `TooLarge` for one longer than `limit`, or than `REGULAR_READ_LIMIT` where a reader holds its
-    files to no cap of its own."""
+    """The bytes of a regular file, reached as `read_bounded` reaches it, and `TooLarge` for one
+    longer than `limit`, or than `REGULAR_READ_LIMIT` where a reader holds its files to no cap of
+    its own."""
     content, over = read_bounded(path, REGULAR_READ_LIMIT if limit is None else limit)
     if over:
         raise TooLarge(errno.EFBIG, "larger than this reader reads", str(path))

@@ -864,12 +864,15 @@ def test_a_bounded_read_returns_what_fits_and_says_whether_more_is_there(tmp_pat
     # reader refuses a file at its limit" -> the file at the bound is.
     (tmp_path / "at.md").write_bytes(b"abcd")
     (tmp_path / "past.md").write_bytes(b"abcde")
-    for root, at, past in (
-        (None, tmp_path / "at.md", tmp_path / "past.md"),
-        (tmp_path, "at.md", "past.md"),
+    for at, past in (
+        (fsops.read_bounded(tmp_path / "at.md", 4), fsops.read_bounded(tmp_path / "past.md", 4)),
+        (
+            fsops.read_bounded_within(tmp_path, "at.md", 4),
+            fsops.read_bounded_within(tmp_path, "past.md", 4),
+        ),
     ):
-        assert fsops.read_bounded(at, 4, root=root) == (b"abcd", False)
-        assert fsops.read_bounded(past, 4, root=root) == (b"abcd", True)
+        assert at == (b"abcd", False)
+        assert past == (b"abcd", True)
 
 
 def test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_file(
@@ -883,15 +886,15 @@ def test_a_bounded_read_under_a_root_follows_no_link_and_reads_only_a_regular_fi
     (tmp_path / "real" / "file.md").write_bytes(b"x")
     (tmp_path / "real" / "link.md").symlink_to(tmp_path / "real" / "file.md")
     (tmp_path / "linked").symlink_to(tmp_path / "real", target_is_directory=True)
-    assert fsops.read_bounded("real/file.md", 4, root=tmp_path) == (b"x", False)
+    assert fsops.read_bounded_within(tmp_path, "real/file.md", 4) == (b"x", False)
     assert fsops.read_bounded(tmp_path / "real" / "link.md", 4) == (b"x", False)
     with pytest.raises(OSError) as refused:
-        fsops.read_bounded("real/link.md", 4, root=tmp_path)
+        fsops.read_bounded_within(tmp_path, "real/link.md", 4)
     assert refused.value.errno == errno.ELOOP
     with pytest.raises(UnsafePath):
-        fsops.read_bounded("linked/file.md", 4, root=tmp_path)
+        fsops.read_bounded_within(tmp_path, "linked/file.md", 4)
     with pytest.raises(NotRegularFile):
-        fsops.read_bounded("real", 4, root=tmp_path)
+        fsops.read_bounded_within(tmp_path, "real", 4)
 
 
 def test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
@@ -906,7 +909,7 @@ def test_a_fifo_under_a_root_is_refused_without_waiting_for_a_writer(tmp_path: P
         "from pathlib import Path\n"
         "from stayfixed import fsops\n"
         "try:\n"
-        "    print(fsops.read_bounded('pipe.md', 4, root=Path(sys.argv[1])))\n"
+        "    print(fsops.read_bounded_within(Path(sys.argv[1]), 'pipe.md', 4))\n"
         "except fsops.NotRegularFile:\n"
         "    print('refused')\n"
     )
@@ -934,16 +937,13 @@ def test_a_bounded_read_under_an_open_directory_takes_one_name_and_follows_no_li
     (tmp_path / "link.md").symlink_to(tmp_path / "file.md")
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "file.md").write_bytes(b"x")
-    directory = fsops.open_directory(tmp_path)
-    try:
-        assert fsops.read_bounded("file.md", 4, root=directory) == (b"abcd", True)
-        assert fsops.read_bounded("file.md", 5, root=directory) == (b"abcde", False)
+    with fsops.open_directory(tmp_path) as directory:
+        assert fsops.read_bounded_within(directory, "file.md", 4) == (b"abcd", True)
+        assert fsops.read_bounded_within(directory, "file.md", 5) == (b"abcde", False)
         with pytest.raises(OSError) as refused:
-            fsops.read_bounded("link.md", 4, root=directory)
+            fsops.read_bounded_within(directory, "link.md", 4)
         assert refused.value.errno == errno.ELOOP
         with pytest.raises(UnsafePath):
-            fsops.read_bounded("sub/file.md", 4, root=directory)
+            fsops.read_bounded_within(directory, "sub/file.md", 4)
         with pytest.raises(NotRegularFile):
-            fsops.read_bounded("sub", 4, root=directory)
-    finally:
-        os.close(directory)
+            fsops.read_bounded_within(directory, "sub", 4)

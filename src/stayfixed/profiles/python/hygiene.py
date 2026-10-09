@@ -22,12 +22,13 @@ import importlib.util
 import os
 import struct
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed import fsops
-from stayfixed.fsops import open_directory, read_bounded
+from stayfixed.fsops import open_directory, read_bounded_within
 
 if TYPE_CHECKING:
     from stayfixed.profiles.hints import RedRunHint
@@ -125,13 +126,13 @@ def _recorded_source_mtime(cache: int, name: str) -> int | None:
     Bytecode the interpreter wrote is a regular file. A `.pyc` that is a symlink or a named pipe
     was put there by whoever wrote the tree, and opening it reads what it names, or waits on a
     pipe's writer for good (a link to `/dev/stdin` hung a terminal). So it is read under its
-    `__pycache__`, opened once for all its files (`fsops.read_bounded` with a directory
+    `__pycache__`, opened once for all its files (`fsops.read_bounded_within` a directory
     descriptor), which refuses a symlink, returns at once from a pipe, and judges what it opened by
     its descriptor, which nothing can swap between the check and the read. The source is not held
     to this: the interpreter follows a symlinked source too.
     """
     try:
-        header, _ = read_bounded(name, _PYC_HEADER, root=cache)
+        header, _ = read_bounded_within(cache, name, _PYC_HEADER)
     except OSError:
         return None
     if len(header) < _PYC_HEADER:
@@ -194,11 +195,11 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
     for cache, names in walked:
         # Each `__pycache__` is opened once for every file read in it. One that cannot be opened
         # has no file this walk can read, and its files still count towards the cap.
-        try:
-            directory: int | None = open_directory(cache)
-        except OSError:
-            directory = None
-        try:
+        with ExitStack() as opened:
+            try:
+                directory: int | None = opened.enter_context(open_directory(cache))
+            except OSError:
+                directory = None
             for name in names:
                 read += 1
                 if read > BYTECODE_READ_FILES:
@@ -216,9 +217,6 @@ def _stale_bytecode(roots: Iterable[Path]) -> int | None:
                         stale += 1
                 except OSError:
                     continue
-        finally:
-            if directory is not None:
-                os.close(directory)
     return stale
 
 

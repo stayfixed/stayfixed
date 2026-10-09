@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from stayfixed.errors import Refusal
-from stayfixed.fsops import read_bounded, remove_within, write_within
+from stayfixed.fsops import read_bounded_within, remove_within, write_within
 from stayfixed.jsonobject import json_object
 from stayfixed.printed import PATH_VALUE
 
@@ -67,12 +67,12 @@ def _read_bounded(root: Path) -> bytes | None:
     """The bytes of a regular file at `LOCAL_DIGESTS`, or `None` for one past `MAX_BYTES` and for
     anything else there.
 
-    Under `root` (`fsops.read_bounded`), so no component, the file included, is followed if it is
-    a symlink, and a FIFO planted there cannot hang the run; anything but a regular file is
+    Under `root` (`fsops.read_bounded_within`), so no component, the file included, is followed if
+    it is a symlink, and a FIFO planted there cannot hang the run; anything but a regular file is
     absent.
     """
     try:
-        raw, over = read_bounded(LOCAL_DIGESTS, MAX_BYTES, root=root)
+        raw, over = read_bounded_within(root, LOCAL_DIGESTS, MAX_BYTES)
     except OSError:
         return None
     return None if over else raw
