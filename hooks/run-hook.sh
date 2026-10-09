@@ -129,7 +129,9 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 #
 # The same list, in the same order, is `stayfixed.gitenv.GIT_CANDIDATES`, where every `git` a hook
 # asks inside stayfixed comes from (the launcher's marker, below); `tests/test_git_run.py` holds
-# the two equal.
+# the two equal. Two spellings held equal, and kept so: exporting the `git` chosen here for
+# stayfixed to take would hand it a variable that names a program, which nothing inherited may
+# do on this path, and checking that value would be a second rule for the same choice.
 # The machine owner's own installs come before `/usr/bin/git`, so the macOS shim answers only where
 # nothing else is installed. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
 # environment-chosen too, so that would be the same hole one directory along.
@@ -142,7 +144,10 @@ launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
 #
 # `/usr/bin/env -i` with a *fixed* PATH, and the password database's home as HOME —
 # `gitenv.GIT_ENV_KEEP` minus the locale names this query has no use for, and minus the inherited
-# `PATH`, which no longer chooses the binary and has no further business here. `HOME` chooses git's
+# `PATH`, which no longer chooses the binary and has no further business here. The fixed `PATH` is
+# `stayfixed.gitenv.trusted_path()`'s, each candidate's directory and then the system's, the one
+# every `git` stayfixed runs below is handed, so a helper git runs by name is found where that
+# git is; both queries here are git's own built-ins and ran nothing under either. `HOME` chooses git's
 # global configuration, which names programs git runs, and direnv, mise or a devcontainer can set
 # it to a directory the clone commits, so it is the home `stayfixed.gitenv.hook_home` hands every
 # `git` stayfixed runs below: the database's entry for this user, asked through the shell's own
@@ -190,6 +195,7 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
   fi
 done
 test -n "$git_bin" || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
+git_path=/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin
 git_home=
 git_user=
 for i in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do
@@ -205,7 +211,7 @@ case $git_user in
   *) git_home=$(eval "unset -v $git_user && h=~$git_user" 2>/dev/null && printf '%s' "$h") || git_home= ;;
 esac
 case $git_home in /*) ;; *) git_home= ;; esac
-git_root=$(/usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
+git_root=$(/usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
 # answer; what it no longer does is decide it alone for the containment.
@@ -253,7 +259,7 @@ test -z "$git_root" || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pw
 # A function and not a bare substitution: a `case` inside `$( )` is a parse error on the
 # `/bin/sh` macOS ships (bash 3.2), which this file has to run under.
 list_checkouts() {
-  /usr/bin/env -i PATH=/usr/bin:/bin ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
+  /usr/bin/env -i PATH="$git_path" ${git_home:+"HOME=$git_home"} "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
     while IFS= read -r line; do
       case "$line" in
         "worktree "*)

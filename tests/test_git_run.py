@@ -237,6 +237,13 @@ def test_the_hook_wrapper_and_git_run_take_git_from_one_list() -> None:
     loops = re.findall(r"^for g in ((?:[^;\n\\]|\\\n)*); do$", text, re.MULTILINE)
     assert len(loops) == 1
     assert tuple(loops[0].replace("\\\n", " ").split()) == gitenv.GIT_CANDIDATES
+    # And one `PATH` for the `git` both choose, so a helper git runs by name is found in the same
+    # directories whichever of the two ran it; the wrapper's two calls hand it, and nothing else.
+    # Mutations (oracle): `mutations/`'s "the wrapper hands its git a PATH of its own" and "the
+    # wrapper's worktree query is handed the old fixed PATH".
+    assert re.findall(r"^git_path=(.*)$", text, re.MULTILINE) == [gitenv.trusted_path()]
+    assert text.count('/usr/bin/env -i PATH="$git_path" ') == 2
+    assert len(re.findall(r"env -i PATH=", text)) == 2
 
 
 @needs_git
