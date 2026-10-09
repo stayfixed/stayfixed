@@ -698,7 +698,7 @@ def test_the_packages_import_one_another_without_a_cycle_at_module_level() -> No
     # not edges.
     #
     # Mutations (declared): `mutations/`'s "the Python profile's hint imports the session guard
-    # again" and "printed reads the configuration's schema again".
+    # again" and "the path grammar reads the configuration's schema again".
     source = ROOT / "src" / "stayfixed"
     packages = frozenset(
         path.name.removesuffix(".py")

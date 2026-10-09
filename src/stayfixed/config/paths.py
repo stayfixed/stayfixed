@@ -40,7 +40,7 @@ from stayfixed.fsops import (
     names_control_directory,
     said,
 )
-from stayfixed.printed import PATH_VALUE
+from stayfixed.grammar import PATH_VALUE
 
 
 class PathEscape(Refusal):

@@ -17,7 +17,7 @@ bounded, here, so no caller of this renderer can forget to.
 
 from __future__ import annotations
 
-from stayfixed.printed import PATH_VALUE
+from stayfixed.grammar import PATH_VALUE
 from stayfixed.scaffold.model import WRITING, Action, Plan, Refused, Verb
 
 

@@ -207,7 +207,7 @@ The packages under `src/stayfixed/` import one another without a cycle
 (`test_the_packages_import_one_another_without_a_cycle_at_module_level`), counting each import that
 runs when its module is imported. An import inside a function, which defers a load until a command
 asks for it, and one under `if TYPE_CHECKING:`, which never runs, are not counted. A leaf that two
-packages share, such as the path grammar in `printed.py`, lives where neither has to import the
+packages share, such as the path grammar in `grammar.py`, lives where neither has to import the
 other for it. The modules import one another without a cycle too, and there an import inside a
 function counts (`test_the_modules_import_one_another_without_a_cycle_even_inside_functions`):
 deferring a load keeps a module from being left half-initialised, and does not make two modules that

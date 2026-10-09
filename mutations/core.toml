@@ -1335,7 +1335,7 @@ reddens = [
 # and `./docs` all match the grammar again. The entries after it take one rule out each.
 [[mutation]]
 name = "the [paths] grammar admits a spelling the write refuses again"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '''    r"^(?![/-])"
     r"(?!.*//)(?!.*/\Z)"
     r"(?!(?:.*/)?\.\.?(?:/|\Z))"
@@ -1347,7 +1347,7 @@ reddens = [
 
 [[mutation]]
 name = "the [paths] grammar admits an empty segment"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '    r"(?!.*//)(?!.*/\Z)"'
 after = '    r"(?!.*/\Z)"'
 reddens = [
@@ -1356,7 +1356,7 @@ reddens = [
 
 [[mutation]]
 name = "the [paths] grammar admits a trailing slash"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '    r"(?!.*//)(?!.*/\Z)"'
 after = '    r"(?!.*//)"'
 reddens = [
@@ -1365,7 +1365,7 @@ reddens = [
 
 [[mutation]]
 name = "the [paths] grammar admits a segment of one or two dots"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '    r"(?!(?:.*/)?\.\.?(?:/|\Z))"'
 after = '    r"(?!\.\.?(?:/|\Z))"'
 reddens = [
@@ -1374,7 +1374,7 @@ reddens = [
 
 [[mutation]]
 name = "the [paths] grammar admits an absolute path"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '    r"^(?![/-])"'
 after = '    r"^(?!-)"'
 reddens = [
@@ -1383,7 +1383,7 @@ reddens = [
 
 [[mutation]]
 name = "the [paths] grammar admits a value that opens on a dash"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '    r"^(?![/-])"'
 after = '    r"^(?!/)"'
 reddens = [
@@ -1394,7 +1394,7 @@ reddens = [
 # the segment, a name of a million segments took 124 MiB more to judge.
 [[mutation]]
 name = "a path's segments are given back"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '''    r"^(?![/-])"
     r"(?!.*//)(?!.*/\Z)"
     r"(?!(?:.*/)?\.\.?(?:/|\Z))"
@@ -1406,7 +1406,7 @@ reddens = ["tests/test_printed.py::test_a_long_name_is_judged_in_memory_linear_i
 # a possessive group from where the pass stopped, and this shape is the one it misread.
 [[mutation]]
 name = "the path grammar repeats its segments possessively"
-file = "src/stayfixed/printed.py"
+file = "src/stayfixed/grammar.py"
 before = '''    r"^(?![/-])"
     r"(?!.*//)(?!.*/\Z)"
     r"(?!(?:.*/)?\.\.?(?:/|\Z))"
@@ -2676,14 +2676,14 @@ after = '''                area_modules("api")
                 raise UnknownHookEvent('''
 reddens = ["tests/test_areas.py::test_discovery_is_asked_only_for_the_submodules_it_names"]
 
-# The path grammar lives in `printed`, which imports nothing from the package, because the
-# configuration loader prints through `findings`, which prints through `printed`: with the grammar
-# read from `config.schema` again, the three import one another.
+# The path grammar is a leaf that imports nothing from the package, because the configuration
+# reads it and prints through `findings`, which prints through `printed`, which reads it too: with
+# the grammar reading `config.schema` again, the configuration and the grammar import each other.
 [[mutation]]
-name = "printed reads the configuration's schema again"
-file = "src/stayfixed/printed.py"
-before = "from typing import Protocol"
-after = """from typing import Protocol
+name = "the path grammar reads the configuration's schema again"
+file = "src/stayfixed/grammar.py"
+before = "import re"
+after = """import re
 
 from stayfixed.config.schema import Config"""
 reddens = [

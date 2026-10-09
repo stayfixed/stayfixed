@@ -17,7 +17,7 @@ from stayfixed.config.paths import (
 )
 from stayfixed.config.schema import Config, Paths
 from stayfixed.fsops import UnsafePath, checked_components, write_within
-from stayfixed.printed import PATH_VALUE
+from stayfixed.grammar import PATH_VALUE
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.pathfaults import LSTAT_FAULT, lstat_fault, shaped, unlock, unmet_here
 

@@ -38,8 +38,8 @@ from pathlib import Path
 
 from stayfixed.errors import Refusal
 from stayfixed.fsops import read_bounded_within, remove_within, write_within
+from stayfixed.grammar import PATH_VALUE
 from stayfixed.jsonobject import json_object
-from stayfixed.printed import PATH_VALUE
 
 LOCAL_ROOT = ".stayfixed/local"
 # `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry

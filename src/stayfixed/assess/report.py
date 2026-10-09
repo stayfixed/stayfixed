@@ -35,7 +35,7 @@ from stayfixed.assess.gates import ALREADY_FAILED, GateResult
 from stayfixed.assess.rule import ConfigVerdict, Verdict
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.findings import listed
-from stayfixed.printed import PATH_VALUE
+from stayfixed.grammar import PATH_VALUE
 
 ANNOTATION_CAP = 10
 

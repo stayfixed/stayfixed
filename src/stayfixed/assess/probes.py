@@ -41,8 +41,8 @@ from stayfixed.config.schema import IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
+from stayfixed.grammar import PATH_VALUE
 from stayfixed.guards.api import contained_roots
-from stayfixed.printed import PATH_VALUE
 from stayfixed.scaffold import EntriesError, judged_entries
 
 if TYPE_CHECKING:
