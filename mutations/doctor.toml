@@ -1749,7 +1749,9 @@ file = "src/stayfixed/doctor/frontmatter.py"
 before = """
     if _HOOKS in keys:
         return True
-    return None if untold or any(_MARKER.match(line) for line in content) else False
+    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
+        return None
+    return False
 """
 after = """
     if untold:
@@ -1765,8 +1767,8 @@ reddens = [
 [[mutation]]
 name = "a document marker line is read as a key"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = "    return None if untold or any(_MARKER.match(line) for line in content) else False"
-after = "    return None if untold else False"
+before = "    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):"
+after = "    if untold or _tab_below_a_block_scalar(lines):"
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-document-marker-line]",
 ]
@@ -1777,14 +1779,18 @@ file = "src/stayfixed/doctor/frontmatter.py"
 before = """
     if _HOOKS in keys:
         return True
-    return None if untold or any(_MARKER.match(line) for line in content) else False
+    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
+        return None
+    return False
 """
 after = """
     if any(_MARKER.match(line) for line in content):
         return None
     if _HOOKS in keys:
         return True
-    return None if untold else False
+    if untold or _tab_below_a_block_scalar(lines):
+        return None
+    return False
 """
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[below-a-document-marker-line]",
@@ -1816,6 +1822,54 @@ before = '''_BREAKS.sub("\n", joined)'''
 after = "joined"
 reddens = [
   "tests/doctor/test_checks.py::test_every_spelling_of_a_top_level_hooks_key_is_read[a-key-past-a-line-separator]",
+]
+
+# A YAML 1.2 parser reads the keys below a nested block scalar whose first line is led by a tab
+# after its key's spaces at the top level: the reader cannot tell there.
+[[mutation]]
+name = "a tab below a nested block scalar leaves the reader sure"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''        if opening is not None and spaces <= opening and line[spaces:].startswith("\t"):'''
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-below-a-nested-block-scalar]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[below-a-tab-below-a-nested-block-scalar]",
+]
+
+[[mutation]]
+name = "a comment hides a block scalar's opening"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "_BLOCK_SCALAR.search((line[: comment.start()] if comment else line).rstrip("
+after = "_BLOCK_SCALAR.search(line.rstrip("
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-tab-below-a-nested-block-scalar]",
+]
+
+[[mutation]]
+name = "a block scalar's indicators hide its opening"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>][1-9+-]{0,2}\Z")'''
+after = '''_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>]\Z")'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[below-a-tab-below-a-nested-block-scalar]",
+]
+
+[[mutation]]
+name = "every line below a block scalar's opening is looked at for a tab"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "        opening = spaces if scalar else None"
+after = "        opening = spaces if scalar else opening"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-below-a-block-scalars-text]",
+]
+
+[[mutation]]
+name = "a tab below a block scalar at any depth leaves the reader unsure"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = "opening is not None and spaces <= opening and line"
+after = "opening is not None and line"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-tab-in-a-block-scalars-text]",
 ]
 
 [[mutation]]

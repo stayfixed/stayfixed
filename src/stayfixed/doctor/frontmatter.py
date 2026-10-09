@@ -95,6 +95,8 @@ _BREAKS = re.compile(r"[\x85\u2028\u2029]")
 # as the start of a key cannot tell what follows it, so it is heard after the `hooks` key is looked
 # for, and only to say "cannot tell".
 _MARKER = re.compile(r"---(?:[ \t]|$)")
+# A line that opens a block scalar, `|` or `>` with its indicators at the end of the line.
+_BLOCK_SCALAR = re.compile(r"(?:\A|[ \t])[|>][1-9+-]{0,2}\Z")
 
 
 class _Untold:
@@ -368,7 +370,29 @@ def _holds_hooks(lines: list[str]) -> bool | None:
         keys, untold = keys | more, untold or unsure
     if _HOOKS in keys:
         return True
-    return None if untold or any(_MARKER.match(line) for line in content) else False
+    if untold or any(_MARKER.match(line) for line in content) or _tab_below_a_block_scalar(lines):
+        return None
+    return False
+
+
+def _tab_below_a_block_scalar(lines: list[str]) -> bool:
+    r"""Whether a block scalar's first line that is not blank is led by spaces no deeper than the
+    line that opens it and then a tab (`  summary: >`, then `  \thooks: x`).
+
+    A YAML 1.2 parser, measured, reads a key on that line or on a line below it at the top level,
+    however deep the scalar stood and with no error, where this reader reads it at the depth its
+    spaces give it. So where one stands, the answer is "cannot tell"."""
+    opening: int | None = None
+    for line in lines:
+        if not line.strip(" "):
+            continue
+        spaces = len(line) - len(line.lstrip(" "))
+        if opening is not None and spaces <= opening and line[spaces:].startswith("\t"):
+            return True
+        comment = _COMMENT.search(line)
+        scalar = _BLOCK_SCALAR.search((line[: comment.start()] if comment else line).rstrip(" \t"))
+        opening = spaces if scalar else None
+    return False
 
 
 def _block_keys(content: list[str], indents: set[int]) -> tuple[set[str], bool]:

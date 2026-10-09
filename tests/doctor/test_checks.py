@@ -2001,6 +2001,12 @@ NO_HOOKS_SPELLED = {
     # A tab after spaces, which the repair of leading tabs leaves as it stands, so no reading
     # differs. Mutation (oracle): `mutations/`'s "a tab after spaces leaves the reader unsure".
     "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
+    # The same below a nested block scalar, past its first line, and on its first line deeper than
+    # its key: text to YAML. Mutations (oracle): `mutations/`'s "every line below a block scalar's
+    # opening is looked at for a tab" -> `a-tab-below-a-block-scalars-text`; "a tab below a block
+    # scalar at any depth leaves the reader unsure" -> `a-tab-in-a-block-scalars-text`.
+    "a-tab-below-a-block-scalars-text": "metadata:\n  summary: >\n    Use when\n  \thooks: x\n",
+    "a-tab-in-a-block-scalars-text": "metadata:\n  summary: >\n   \tthe user: asks\n",
     # A `---` inside a line, where Claude Code may end the frontmatter: each bound is read, and
     # each says "no". Mutation (oracle): `mutations/`'s "a frontmatter whose two bounds differ
     # answers could not tell where both say no".
@@ -2065,6 +2071,13 @@ UNTOLD_SPELLED = {
     # the start of a key: what follows it is a document of its own, here a flow mapping holding
     # `hooks`. Mutation (oracle): `mutations/`'s "a document marker line is read as a key".
     "a-document-marker-line": "--- {name: probe, hooks: {}}\n",
+    # A nested block scalar whose first line is led by its key's spaces and then a tab: a YAML 1.2
+    # parser reads a key on that line, or on a line below it, at the top level. Mutations (oracle):
+    # `mutations/`'s "a tab below a nested block scalar leaves the reader sure" -> both; "a comment
+    # hides a block scalar's opening" -> `a-tab-below-a-nested-block-scalar`; "a block scalar's
+    # indicators hide its opening" -> `below-a-tab-below-a-nested-block-scalar`.
+    "a-tab-below-a-nested-block-scalar": "metadata:\n  summary: > # why\n  \thooks: {}\n",
+    "below-a-tab-below-a-nested-block-scalar": "metadata:\n  summary: |-\n  \t\n  hooks: {}\n",
 }
 SKILL_UNPARSED = (
     "skill, command or agent file(s) hold a frontmatter this row cannot read whole, so it cannot "

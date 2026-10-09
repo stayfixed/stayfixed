@@ -2847,14 +2847,14 @@ bare, quoted either way (its escapes read), behind a tag, an anchor or `? `, or 
 mapping's top-level keys (`{name: x, hooks: {...}}`), tagged or not; a `hooks` nested under another
 key, or inside a quoted or flow value on its line, is not one, though a top-level line inside one
 over lines is read as one. Claude Code may end the frontmatter at a `---` within a line and read a
-key indented by a tab (read from its program, not run), so the row reads it those ways too, naming
-the file if any holds `hooks`. Where a tab leads a key, a line opens with `--- `, or a top-level key
-cannot be read whole (an alias `*name`, a merge key `<<`, a `? ` key past its line, a quoted key
-over several lines), the file is otherwise named as one the row cannot tell about, a `warn`. Names
-are compared without case (`skill.md`, `.Claude/Skills`). Any path the row cannot read, a FIFO or a
-directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and a
-path outside the path grammar, every name in it the repository's, as a file whose path the row does
-not print.
+key indented by a tab (from its program, not a run), so the row reads it those ways too, naming the
+file if any holds `hooks`. Where a tab leads a key, or a block scalar's first line at its key's
+depth, a line opens with `--- `, or a top-level key cannot be read whole (an alias `*a`, a merge key
+`<<`, a `? ` key past its line, a quoted key over lines), the file is otherwise named as one it
+cannot tell about, a `warn`. Names are compared without case. Any path the row cannot read, a FIFO
+or a directory it cannot list among them, is named as one it can say nothing of, also a `warn`, and
+a path outside the path grammar, every name in it the repository's, as a file whose path the row
+does not print.
 
 The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
 The read follows a link inside them while it leads to a directory still inside the checkout, and
