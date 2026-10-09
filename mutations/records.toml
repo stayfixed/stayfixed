@@ -86,6 +86,7 @@ before = '        return fsops.unlink_within(root, relative, pointing_at=source)
 after = '        return fsops.unlink_within(root, relative)'
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]
 
 # Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
@@ -3156,4 +3157,15 @@ before = "    except PathUnasked as exc:\n        raise Refusal("
 after = "    except OSError as exc:\n        raise Refusal("
 reddens = [
   "tests/memory/test_worktree.py::test_a_claude_directory_nobody_may_search_is_refused_for_that",
+]
+
+# `detach` withdraws the harness link under the other home a harness may read it under too, only
+# where it points at this store, and the `<slug>` directory it sat in with it.
+[[mutation]]
+name = "detach leaves the directory the other home's harness link sat in"
+file = "src/stayfixed/memory/worktree.py"
+before = "        with contextlib.suppress(OSError):\n            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
 ]

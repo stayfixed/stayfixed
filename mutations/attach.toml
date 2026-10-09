@@ -301,8 +301,8 @@ reddens = [
 [[mutation]]
 name = "detach applies the owning-checkout withdrawal to --root"
 file = "src/stayfixed/attach/write.py"
-before = "    for tree in checkouts:\n        revoked += detach_main(tree, config, machine=machine, home=home).revoked"
-after = "    for tree in [root]:\n        revoked += detach_main(tree, config, machine=machine, home=home).revoked"
+before = "    for tree in checkouts:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
+after = "    for tree in [root]:\n        revoked += detach_main(\n            tree, config, machine=machine, home=home, elsewhere=elsewhere\n        ).revoked"
 reddens = [
   "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
 ]
@@ -360,8 +360,8 @@ file = "src/stayfixed/attach/write.py"
 # The block this moves runs from the anchor loop through the manifest's answer to the region read.
 # What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
 # strand a half-detached repository.
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    settings = _planned_settings(root, recorded)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The other home a harness may read a link under, asked here too, and best-effort: a home its\n    # anchor refuses is passed over with a note rather than refused, since `detach` is the one\n    # command that takes back what `attach` made under either.\n    other = _other_harness_home() if home is None else None\n    elsewhere: Path | None = None\n    notes: tuple[str, ...] = ()\n    if other is not None:\n        elsewhere, where = other\n        try:\n            for tree in checkouts:\n                harness_anchor(tree, elsewhere)\n        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -2786,4 +2786,55 @@ before = "    unread = unread_home() if context.home is None else None"
 after = "    unread = unread_home()"
 reddens = [
   "tests/attach/test_doctor.py::test_the_attached_row_judges_the_link_where_home_is_the_one_it_goes_under[--home]",
+]
+
+# `attach` puts the harness memory link under `HOME` at a terminal and under the database's home
+# off one, so where they differ `detach` withdraws under both, the second best-effort: only a link
+# to this store goes there, a home whose walk refuses is passed over and named, and an unset, an
+# agreeing, an empty or a relative `HOME` names no second home.
+[[mutation]]
+name = "detach withdraws under one home where HOME is not the database's"
+file = "src/stayfixed/attach/write.py"
+before = "    other = _other_harness_home() if home is None else None"
+after = "    other = None"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-home]",
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[off-a-terminal-under-both]",
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
+]
+
+[[mutation]]
+name = "detach looks under HOME for the other home at a terminal"
+file = "src/stayfixed/attach/write.py"
+before = '        return None if recorded is None else (recorded, "the home the password database records")'
+after = '        return None'
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases[at-a-terminal-under-both]",
+]
+
+[[mutation]]
+name = "detach looks under a relative HOME"
+file = "src/stayfixed/attach/write.py"
+before = "    if not chosen or not os.path.isabs(chosen):\n        return None\n    return Path(chosen), \"HOME\""
+after = "    if not chosen:\n        return None\n    return Path(chosen), \"HOME\""
+reddens = [
+  "tests/attach/test_commands.py::test_detach_withdraws_under_the_one_home_where_there_is_no_other[relative]",
+]
+
+[[mutation]]
+name = "detach refuses where the other home cannot be walked"
+file = "src/stayfixed/attach/write.py"
+before = "        except Refusal:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
+after = "        except LookupError:\n            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)"
+reddens = [
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
+]
+
+[[mutation]]
+name = "detach's line says nothing of a home it did not look under"
+file = "src/stayfixed/attach/commands.py"
+before = '        + "".join(f"; {note}" for note in removed.notes),'
+after = '        + "",'
+reddens = [
+  "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]

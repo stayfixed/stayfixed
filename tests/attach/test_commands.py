@@ -1386,6 +1386,137 @@ def test_attach_links_where_the_harness_reads_its_home_and_names_a_home_the_data
     )
 
 
+def _attached_with_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, under: tuple[str, ...]
+) -> tuple[Path, Path, Path]:
+    """An attached checkout whose store is approved, with the harness memory link under each home
+    `under` names: `database`, made off a terminal with `HOME` that home, and `HOME`, made at a
+    terminal whose `HOME` is `elsewhere/`, as `attach` makes each. Returns `(root, owner,
+    elsewhere)`, left off a terminal with `HOME` unset."""
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    owner, elsewhere = _owner_with_machine_file(tmp_path, monkeypatch, store, home="owner")
+    argv = ["attach", "--root", str(root), "--store", str(store), "--yes"]
+    assert invoke(argv) == 0
+    _approve(root)
+    if "database" in under:
+        assert invoke(argv) == 0
+    if "HOME" in under:
+        monkeypatch.setattr(Path, "home", _REAL_HOME)
+        monkeypatch.setenv("HOME", str(elsewhere))
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        assert invoke(argv) == 0
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.delenv("HOME")
+    for home in (owner, elsewhere):
+        link = _harness_link(home, root)
+        assert fsops.is_symlink(link) == (("database" if home == owner else "HOME") in under)
+    return root, owner, elsewhere
+
+
+def _detached(links: int, *notes: str) -> str:
+    """`detach`'s line for the fixture above, with `links` withdrawn and `notes` after it."""
+    said = "".join(f"; {note}" for note in notes)
+    return (
+        f"detached: 0 allow rule(s), 0 hook entr(ies), 0 Codex rule file(s), {links} link(s), "
+        f"4 directory(ies); the binding record was left in place{said}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "under"),
+    [
+        pytest.param("off a terminal", ("HOME",), id="off-a-terminal-under-home"),
+        pytest.param("off a terminal", ("database", "HOME"), id="off-a-terminal-under-both"),
+        pytest.param("at a terminal", ("database", "HOME"), id="at-a-terminal-under-both"),
+    ],
+)
+def test_detach_withdraws_the_harness_link_under_both_homes_where_home_is_not_the_databases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    under: tuple[str, ...],
+) -> None:
+    # `attach` puts the harness memory link under `HOME` at a terminal and under the password
+    # database's home off one, so where the two differ a link can stand under either, and a
+    # harness started with the other `HOME` reads it there. `detach` withdrew under one: off a
+    # terminal the link under `HOME` stayed, dangling once the tree it pointed into went, and at a
+    # terminal the one under the database's home did, and the line said nothing. It now withdraws
+    # under both, each only where the link points at this store, counted in its line, with the
+    # directory each sat in. Mutations (oracle): `mutations/`'s "detach withdraws under one home
+    # where HOME is not the database's" -> each case leaves a link; "detach looks under HOME for
+    # the other home at a terminal" -> the terminal case leaves the database's.
+    root, owner, elsewhere = _attached_with_links(tmp_path, monkeypatch, under)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    if case == "at a terminal":
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (
+        0,
+        _detached(3 + len(under)),
+        "",
+    )
+    for home in (owner, elsewhere):
+        assert not os.path.lexists(_harness_link(home, root).parent)
+
+
+@pytest.mark.parametrize("home", ["unset", "owner", "empty", "relative"])
+def test_detach_withdraws_under_the_one_home_where_there_is_no_other(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    home: str,
+) -> None:
+    # The vacuity guard for the case above: an unset `HOME` and one that agrees name no other home,
+    # and an empty or relative one names none a harness link can be under, so `detach` withdraws
+    # under the database's home alone, as before, and says nothing of another. Mutation (oracle):
+    # `mutations/`'s "detach looks under a relative HOME" -> the relative case's line names a home
+    # it did not look under.
+    root, owner, _ = _attached_with_links(tmp_path, monkeypatch, ("database",))
+    if home != "unset":
+        monkeypatch.setenv("HOME", {"owner": str(owner), "empty": "", "relative": "rel"}[home])
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (0, _detached(4), "")
+    assert not os.path.lexists(_harness_link(owner, root))
+
+
+def test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Under the other home, which off a terminal is a `HOME` the clone may have chosen, only a
+    # link to this store goes: one to anything else is left standing. And a home whose walk
+    # refuses, a `.claude` there that is a symlink, is passed over and named, never refused: by
+    # then nothing has been withdrawn, but a refusal over a home `attach` never wrote under would
+    # leave no command that takes back what it did write. Mutations (oracle): `mutations/`'s "the
+    # withdrawal stops checking what the link it removes points at" -> the other link goes;
+    # "detach refuses where the other home cannot be walked" -> exit 2; "detach's line says
+    # nothing of a home it did not look under" -> the note is missing.
+    root, owner, elsewhere = _attached_with_links(tmp_path, monkeypatch, ("database",))
+    foreign = _harness_link(elsewhere, root)
+    foreign.parent.mkdir(parents=True)
+    foreign.symlink_to(tmp_path / "another-store", target_is_directory=True)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (0, _detached(4), "")
+    assert fsops.is_symlink(foreign)
+    root, owner, elsewhere = _attached_with_links(tmp_path / "again", monkeypatch, ("database",))
+    (tmp_path / "dotfiles").mkdir()
+    (elsewhere / ".claude").symlink_to(tmp_path / "dotfiles", target_is_directory=True)
+    monkeypatch.setenv("HOME", str(elsewhere))
+    capsys.readouterr()
+    assert (invoke(["detach", "--root", str(root)]), *capsys.readouterr()) == (
+        0,
+        _detached(
+            4,
+            "the harness memory link under HOME was not looked for, because a directory on the way "
+            "to it is missing, a symlink or unreadable",
+        ),
+        "",
+    )
+    assert not os.path.lexists(_harness_link(owner, root))
+
+
 def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

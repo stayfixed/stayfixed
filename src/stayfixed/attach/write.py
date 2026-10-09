@@ -1603,6 +1603,8 @@ class Detached:
     # The block was left in place because another checkout of this repository still holds a
     # ledger: the exclude file is shared, and that checkout's files still need hiding.
     exclude_block_kept: bool = False
+    # Fixed sentences about what was left, for the command's line.
+    notes: tuple[str, ...] = ()
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1969,6 +1971,36 @@ def _another_attached(root: Path, checkouts: list[Path]) -> bool:
     return False
 
 
+# Said where the other home's anchor refuses, so `detach` withdrew nothing under it.
+_LEFT_UNDER = (
+    "the harness memory link under {where} was not looked for, because a directory on the way to "
+    "it is missing, a symlink or unreadable"
+)
+
+
+def _other_harness_home() -> tuple[Path, str] | None:
+    """The home besides `anchor_home`'s that a harness may read this checkout's memory link under,
+    with how a note names it, or `None` where there is no other.
+
+    `attach` puts the link under `HOME` at a terminal and under the password database's home off
+    one, so where the two differ a link can stand under either, and a harness started with the
+    other `HOME` reads it there. At a terminal the other is the database's home. Off one it is
+    `HOME`, read as a hook reads it for a lapsed link (`memory.hooks._lapsed_link_home`): set,
+    not empty and absolute, since a relative one names a directory inside the clone. Under it
+    nothing is made or judged; only a link that points at this store is removed
+    (`worktree.detach_main`), which a `HOME` the clone chose gains nothing from.
+    """
+    if homes_agree():
+        return None
+    if override_is_honoured():
+        recorded = anchor_home(interactive=False)
+        return None if recorded is None else (recorded, "the home the password database records")
+    chosen = os.environ.get("HOME")
+    if not chosen or not os.path.isabs(chosen):
+        return None
+    return Path(chosen), "HOME"
+
+
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
@@ -2022,6 +2054,19 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
+    # The other home a harness may read a link under, asked here too, and best-effort: a home its
+    # anchor refuses is passed over with a note rather than refused, since `detach` is the one
+    # command that takes back what `attach` made under either.
+    other = _other_harness_home() if home is None else None
+    elsewhere: Path | None = None
+    notes: tuple[str, ...] = ()
+    if other is not None:
+        elsewhere, where = other
+        try:
+            for tree in checkouts:
+                harness_anchor(tree, elsewhere)
+        except Refusal:
+            elsewhere, notes = None, (_LEFT_UNDER.format(where=where),)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
     # names the file and a region opened twice refuses, and both are knowable now. It is shared
@@ -2045,7 +2090,9 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # checkout, owner first, each exactly once" that both halves now read.
     revoked: list[Path] = []
     for tree in checkouts:
-        revoked += detach_main(tree, config, machine=machine, home=home).revoked
+        revoked += detach_main(
+            tree, config, machine=machine, home=home, elsewhere=elsewhere
+        ).revoked
     region = _withdraw_ignore_region(root, ignore_remainder)
     if hidden is not None:
         exclude.write(hidden)
@@ -2063,4 +2110,5 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         directories + memory,
         hidden is not None,
         kept,
+        notes,
     )

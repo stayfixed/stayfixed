@@ -586,7 +586,7 @@ def _harness_half(
 
 def _withdraw_lapsed(where: Path, source: Path, home: Path) -> list[Path]:
     """Remove the harness link under `home` that points at `source`, the store's directory, for a
-    store not approved.
+    store not approved, or for `detach_main` under the home it does not withdraw from first.
 
     `home` is one this module makes nothing under, so the narrowest withdrawal there is: only a
     symlink whose own target is this store goes (`_unlink`), a link to anything else is left
@@ -735,7 +735,12 @@ def _detach_source(config: Config, machine: Path | None, name: str) -> Path | No
 
 
 def detach_main(
-    root: Path, config: Config, *, machine: Path | None = None, home: Path | None = None
+    root: Path,
+    config: Config,
+    *,
+    machine: Path | None = None,
+    home: Path | None = None,
+    elsewhere: Path | None = None,
 ) -> Links:
     """Withdraw the link tree a checkout holds, and the harness link with it.
 
@@ -761,6 +766,10 @@ def detach_main(
 
     The harness link goes first, because it is the one hop that leaves this area's gate, and it
     is compared against the store directory rather than against what it happens to point at.
+    `elsewhere` is a second home a harness may read it under, where the caller found one: the link
+    there goes too, only where it points at the store (`_withdraw_lapsed`), and a home the walk
+    refuses is passed over, since a refusal after the first withdrawal strands a half-detached
+    checkout. Its `<slug>` directory is removed only when the link in it was.
 
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
     longer resolve — that is half of what detaching means — so the tree is found where the
@@ -798,6 +807,10 @@ def detach_main(
     # one. `OSError` covers "not empty", "not there" and a component the walk refuses.
     with contextlib.suppress(OSError):
         fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
+    if elsewhere is not None and (gone := _withdraw_lapsed(root, base.resolve(), elsewhere)):
+        revoked += gone
+        with contextlib.suppress(OSError):
+            fsops.rmdir_within(elsewhere, str(PurePosixPath(harness_relative).parent))
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
         if not fsops.is_symlink(target):

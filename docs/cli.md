@@ -2394,15 +2394,16 @@ deleted your whole `permissions` block, deny rules included.
 
 **Run it from the checkout you attached from.** `.stayfixed/local/` is untracked and per-checkout,
 so a sibling worktree does not carry the ledger of the checkout the attach was run from and
-`detach --root <that worktree>` answers "no ledger" — there is nothing there to reverse. Once it
-starts it reaches every checkout of the repository, including the one that owns the store; it is
-only the *starting* point that has to be the one holding the record.
+`detach --root <that worktree>` answers "no ledger". Once it starts it reaches every checkout of
+the repository, including the one that owns the store; only the *starting* point has to hold the
+record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with the harness memory link, removes the
+this checkout and every worktree together with the harness memory link (under both homes where
+`HOME` is not the database's, only a link to this store), removes the
 `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
 deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
 than left empty — for the exclude file, only when `attach` created it, which the block records, so
@@ -2414,10 +2415,10 @@ exclude file that is a symlink is left alone, because `attach` never writes thro
 exclude block stays while another checkout is attached.** The exclude file is shared by every
 worktree of the repository, while the ledger, the settings file and the `.codex/rules/` copies are
 each checkout's own; so when another checkout still holds a ledger, the block is kept for its files,
-the line ends by saying so, and `--json` reports `exclude_block_kept: true`. The detach of the last
-attached checkout takes it. Only a ledger an attach wrote counts: one git does not track (a clone
-that committed the file has it in every worktree) and that reads as a ledger. A `git` that cannot
-say whether the file is tracked counts it, and the block stays.
+the line ends by saying so, and `--json` reports `exclude_block_kept: true`. Only a ledger an
+attach wrote counts: one git does not track (a clone that committed the file has it in every
+worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
+it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
 ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
