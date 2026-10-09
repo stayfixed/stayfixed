@@ -3,8 +3,9 @@
 `upgrade` refuses to move a project backward, `doctor`'s `versions` row points by direction, and
 `stayfixed gate` admits an upgrade only where `upgrade` would move to it: one comparison, so the
 three cannot disagree about which way a recorded version lies. The overlay's `requires` reader
-reads a floor through the same component grammar and decides it through `later` wherever `later`
-answers, so a pre-release does not meet the floor of the release it comes before.
+reads a floor through the same component grammar and decides the floor's own triple by
+`pre_release`, the reading `later` orders a release after, so a pre-release does not meet the
+floor of the release it comes before.
 
 A leaf module: it imports nothing from `stayfixed`.
 """
@@ -58,19 +59,25 @@ _DEV_SEGMENT = re.compile(_SEGMENT.format("dev"), re.IGNORECASE)
 
 
 def pre_release(version: str) -> bool:
-    """Whether `version` orders before the release its leading `X.Y.Z` names, by its suffix.
+    """Whether `version` orders before the release its leading `X.Y.Z` names, by its suffix: the
+    one reading of a pre-release here.
 
-    PEP 440's order: a pre-release segment anywhere in the public part makes one, so
-    `1.0.0rc1.post2` comes before `1.0.0` as `1.0.0rc1` does; so does a `dev` segment with no
-    post-release before it (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2` is a development
-    release of a post-release, which comes after. The local label after `+` is no segment of the
-    version's (`1.0.0+local.rc1` is not one), nor is a version with no leading `X.Y.Z`, which is no
-    version this module reads.
+    A suffix that is a pre-release and nothing else (`_PRE_RELEASE`: `rc1`, `-rc.1`, `.dev0`,
+    `rcdev`) is one, and it is the form `later` orders against the bare release. So, in PEP 440's
+    order, is a suffix with a pre-release segment anywhere in its public part, so `1.0.0rc1.post2`
+    comes before `1.0.0` as `1.0.0rc1` does, and one with a `dev` segment with no post-release
+    before it (`1.0.0.dev3+g1234abc`), while `1.0.0.post1.dev2` is a development release of a
+    post-release, which comes after. The local label after `+` is no segment of the version's
+    (`1.0.0+local.rc1` is not one), nor is a version with no leading `X.Y.Z`, which is no version
+    this module reads.
     """
     found = VERSION.match(version)
     if found is None:
         return False
-    public = version[found.end() :].split("+", 1)[0]
+    suffix = version[found.end() :]
+    if _PRE_RELEASE.match(suffix) is not None:
+        return True
+    public = suffix.split("+", 1)[0]
     if _PRE_SEGMENT.search(public) is not None:
         return True
     dev = _DEV_SEGMENT.search(public)

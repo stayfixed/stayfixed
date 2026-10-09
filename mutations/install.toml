@@ -950,19 +950,22 @@ reddens = [
 [[mutation]]
 name = "the declared floor stops being met by the version that equals it"
 file = "src/stayfixed/overlay/requires.py"
-before = "    return tuple(int(part) for part in running.groups()) >= tuple("
-after = "    return tuple(int(part) for part in running.groups()) > tuple("
+before = "    return ours > wanted or (ours == wanted and not pre_release(version))"
+after = "    return ours > wanted"
 reddens = [
   "tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple",
+  "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0-True]",
 ]
 
-# The floor is decided by `semver.later` wherever it answers, so the two orders of a version agree:
-# by the triple alone a `1.0.0rc1` build met `>=1.0.0`, which `later` orders after it.
+# The floor's own triple is met only by a version that is no pre-release of it, in the one reading
+# of a pre-release `semver.later` orders by: by the triple alone a `1.0.0rc1` build met `>=1.0.0`,
+# which `later` orders after it.
 [[mutation]]
 name = "the declared floor is met by a pre-release of it"
 file = "src/stayfixed/overlay/requires.py"
-before = "    if after is not None:\n        return not after\n"
-after = "    if False:\n        return not after\n"
+before = "    return ours > wanted or (ours == wanted and not pre_release(version))"
+after = "    return ours >= wanted"
 reddens = [
   "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1]",
   "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev0]",
@@ -973,8 +976,8 @@ reddens = [
 [[mutation]]
 name = "the declared floor is not met by the version equal to it"
 file = "src/stayfixed/overlay/requires.py"
-before = '    after = later(".".join(floor.groups()), version)'
-after = '    after = not later(version, ".".join(floor.groups()))'
+before = "    return ours > wanted or (ours == wanted and not pre_release(version))"
+after = "    return ours > wanted or (ours == wanted and pre_release(version))"
 reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
@@ -1518,18 +1521,6 @@ before = "            if path == machine_config_path()"
 after = "            if False"
 reddens = [
   "tests/setup/test_commands.py::test_setup_where_the_database_home_cannot_be_written_fails_naming_the_directory",
-]
-
-# Where `later` declines a compound suffix on the floor's own triple, a pre-release segment in it
-# still keeps the floor unmet: by the triple alone `1.0.0rc1.post2` met `>=1.0.0`.
-[[mutation]]
-name = "the declared floor is met by a compound pre-release of it"
-file = "src/stayfixed/overlay/requires.py"
-before = "    if pre_release(version):\n        return False\n"
-after = "    if False:\n        return False\n"
-reddens = [
-  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1.post2]",
-  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0.dev3+g1234abc]",
 ]
 
 # A settings file in a directory that cannot be searched is not a link, and the link refusal's

@@ -137,12 +137,54 @@ def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
 def test_a_pre_release_of_the_floor_does_not_meet_it(version: str) -> None:
     # `semver.later` orders a release after its own pre-release, and the floor compared the
     # leading triple alone, so a `1.0.0rc1` build met an overlay's `>=1.0.0` that `later` says
-    # it comes before: the session line and the `overlay-requires` row read it as met. The
-    # floor is decided by `later` wherever `later` answers, and a compound suffix carrying a
-    # pre-release segment does not meet it either. Mutations: `mutations/`, "the declared floor
-    # is met by a pre-release of it" and "… by a compound pre-release of it".
+    # it comes before: the session line and the `overlay-requires` row read it as met. A
+    # compound suffix carrying a pre-release segment does not meet it either. Mutations:
+    # `mutations/`, "the declared floor is met by a pre-release of it" and "… by a compound
+    # pre-release of it".
     assert satisfies(">=1.0.0", version) is False
     assert satisfies(">=0.9.9", version) is True
+
+
+# What the floor `>=1.0.0` answers, one row a shape: met by a later triple whatever follows it, by
+# its own triple unless a pre-release of it follows, never by an earlier one. `satisfies` was a
+# chain of `semver.later`, `semver.pre_release` and a tuple comparison, and these are the chain's
+# answers, kept by the one comparison that replaced it; a differential over ten million floors and
+# versions found no other difference. `1.0.0rcdev` and `1.0.0adev1` are a pre-release word run into
+# its `dev`, which only `later`'s reading of a whole suffix read as a pre-release: the reduced form
+# over the segment reading alone met the floor with them. Mutations (oracle): `mutations/`'s "a
+# pre-release word run into its dev segment reads as no pre-release" -> those two; "the declared
+# floor is met by a pre-release of it", "… stops being met by the version that equals it" and "…
+# is not met by the version equal to it" -> the rows of the floor's own triple.
+FLOOR_ANSWERS = [
+    ("1.0.0", True),
+    ("1.0.1", True),
+    ("1.0.1rc1", True),
+    ("2.0.0.dev1", True),
+    ("0.9.9", False),
+    ("0.9.9.post1", False),
+    ("1.0.0rc1", False),
+    ("1.0.0-rc.1", False),
+    ("1.0.0.dev0", False),
+    ("1.0.0rcdev", False),
+    ("1.0.0adev1", False),
+    ("1.0.0rc1.post2", False),
+    ("1.0.0rc1+local", False),
+    ("1.0.0.dev3+g1234abc", False),
+    ("1.0.0.post1", True),
+    ("1.0.0-1", True),
+    ("1.0.0+local", True),
+    ("1.0.0+local.rc1", True),
+    ("1.0.0.post1.dev2", True),
+    ("1.0.0x", True),
+    ("v1.0.0", None),
+]
+
+
+@pytest.mark.parametrize(("version", "met"), FLOOR_ANSWERS)
+def test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it(
+    version: str, met: bool | None
+) -> None:
+    assert satisfies(">=1.0.0", version) is met
 
 
 def test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple() -> None:

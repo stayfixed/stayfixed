@@ -3478,8 +3478,8 @@ reddens = [
 [[mutation]]
 name = "a local label is read as a segment of the version"
 file = "src/stayfixed/semver.py"
-before = '    public = version[found.end() :].split("+", 1)[0]'
-after = "    public = version[found.end() :]"
+before = '    public = suffix.split("+", 1)[0]'
+after = "    public = suffix"
 reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
 
 [[mutation]]
@@ -3488,4 +3488,27 @@ file = "src/stayfixed/semver.py"
 before = "    return dev is not None and (post is None or dev.start() < post.start())"
 after = "    return dev is not None"
 reddens = ["tests/overlay/test_requires.py::test_a_suffix_later_leaves_unordered_still_meets_the_floor_by_its_triple"]
+
+# A pre-release segment anywhere in the public part keeps the floor's own triple unmet, where the
+# suffix is more than a pre-release: by the triple alone `1.0.0rc1.post2` met `>=1.0.0`.
+[[mutation]]
+name = "the declared floor is met by a compound pre-release of it"
+file = "src/stayfixed/semver.py"
+before = "    if _PRE_SEGMENT.search(public) is not None:"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_pre_release_of_the_floor_does_not_meet_it[1.0.0rc1.post2]",
+]
+
+# A suffix `later` reads as a pre-release is one to every reader: a pre-release word run into its
+# `dev` (`1.0.0rcdev`) is one, which no segment of it reads as on its own.
+[[mutation]]
+name = "a pre-release word run into its dev segment reads as no pre-release"
+file = "src/stayfixed/semver.py"
+before = "    if _PRE_RELEASE.match(suffix) is not None:"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0rcdev-False]",
+  "tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0adev1-False]",
+]
 
