@@ -118,16 +118,17 @@ _CONTENT = re.compile(r"\s*+[^\s#]")
 _LEADING_TABS = re.compile(r"^\t++", re.MULTILINE)
 # The plain subset of YAML a frontmatter keeps to for this reader to answer "no" (`_plain`): lines
 # holding a key with a plain name (`allowed-tools:`) and, on the same line, a plain scalar, a
-# scalar quoted either way, a flow sequence of plain scalars (`[Read, Grep]`), the opening of a
-# block scalar (`|`, `>`, with its indicators), or no value, the lines below it then nested; the
-# same lines nested, indented by spaces, and sequence entries (`- `) holding one of them or a
-# value; a block scalar's text; comments; blank lines; the first line a key's, at the first column.
-# Outside it are a tag, an anchor, an alias, a merge key, an explicit `?` key, a quoted key, a flow
-# mapping, a directive, a document marker, a value over lines, a tab in a line's indentation, a
-# lone CR and a character YAML's versions or Python read otherwise (`_UNPLAIN_CHARACTER`). Inside
-# it, the top-level keys are the keys at the first column whichever version of YAML reads it and
-# whichever of the two bounds below ends it: nothing in it can make another, and a frontmatter cut
-# short at a `---` within a line holds fewer.
+# scalar quoted either way, a flow sequence of such scalars (`["Read", Grep]`, `_items`), the
+# opening of a block scalar (`|`, `>`, with its indicators), or no value, the lines below it then
+# nested; the same lines nested, indented by spaces, and sequence entries (`- `) holding one of them
+# or a value; a block scalar's text; a key's flow sequence over lines, opened on its line or the
+# next, every line below it indented deeper than the key; comments; blank lines; the first line a
+# key's, at the first column. Outside it are a tag, an anchor, an alias, a merge key, an explicit
+# `?` key, a quoted key, a flow mapping, a directive, a document marker, any other value over
+# lines, a tab in a line's indentation, a lone CR and a character YAML's versions or Python read
+# otherwise (`_UNPLAIN_CHARACTER`). Inside it, the top-level keys are the keys at the first column
+# whichever version of YAML reads it and whichever of the two bounds below ends it: nothing in it
+# can make another, and a frontmatter cut short at a `---` within a line holds fewer.
 _PLAIN_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*+:(?=[ \t]|\Z)")
 # The sequence entries a nested line opens with (`- - x`), each a dash and blanks.
 _ENTRIES = re.compile(r"(?:-[ ][ ]*+)*+")
@@ -135,6 +136,10 @@ _BLOCK_HEADER = re.compile(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?")
 # What ends a plain scalar inside a flow sequence otherwise than as one, a pair's colon or a
 # comment.
 _PAIR_OR_COMMENT = re.compile(r"[ \t]#|:(?:[ \t]|\Z)")
+# An item of a flow sequence: a scalar quoted either way, or the run of a plain one, its blanks
+# after it included, up to the first mark that ends it or opens something else.
+_QUOTED_ITEM = re.compile(_QUOTED)
+_PLAIN_ITEM = re.compile(r"[^,\[\]{}\"']*+")
 # The characters that open a node other than a plain scalar, or end one in a flow collection.
 _INDICATORS = "-?:,[]{}#&*!|>'\"%@`"
 # Any character but a tab, LF and the printable ones that every reading takes for themselves: not a
@@ -144,9 +149,13 @@ _UNPLAIN_CHARACTER = re.compile(
     "[^\t\n -~\xa1-\u167f\u1681-\u180d\u180f-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e"
     "\u2060-\u2fff\u3001-\ud7ff\ue000-\ufefe\uff00-\ufffd\U00010000-\U0010ffff]"
 )
-# What one line of the subset opens: a block scalar, whose text follows on deeper lines, or nothing
-# that lines below it must be read otherwise for.
-_Shape = Literal["line", "block"]
+# Where a flow sequence of the subset stands at the end of a line (`_items`): closed by its `]`, or
+# still open, an item last or a `[` or `,` last.
+_Flow = Literal["]", "item", ","]
+# What one line of the subset opens: a block scalar, whose text follows on deeper lines; a key with
+# no value, whose flow sequence may open on the line below; a flow sequence left open, as it stands;
+# or nothing that lines below it must be read otherwise for.
+_Shape = Literal["line", "block", "key", "item", ","]
 
 
 def _past(pattern: re.Pattern[str], text: str, start: int = 0) -> int:
@@ -313,29 +322,53 @@ def _plain(body: str) -> bool:
     `_plain_line` admits, the first of those a key's at the first column."""
     first = True
     scalar: int | None = None
+    # The column of the key on the line before, where that key has no value, and that of the key
+    # whose flow sequence is open, with where the sequence stands.
+    keyed: int | None = None
+    sequence: tuple[int, _Flow] | None = None
     for line in body.split("\n"):
         rest = line.lstrip(" ")
         indent = len(line) - len(rest)
         if rest.startswith("\t") or _UNPLAIN_CHARACTER.search(rest):
             return False
+        opener, keyed = keyed, None
+        if sequence is not None:
+            if not rest or indent <= sequence[0]:
+                return False
+            flow = _items(line, indent, sequence[1])
+            if flow is None:
+                return False
+            sequence = None if flow == "]" else (sequence[0], flow)
+            continue
         if not rest or (scalar is not None and indent > scalar):
             continue
         scalar = None
         if rest.startswith("#"):
             continue
+        if opener is not None and indent > opener and rest.startswith("["):
+            flow = _items(line, indent + 1, ",")
+            if flow is None:
+                return False
+            sequence = None if flow == "]" else (opener, flow)
+            continue
         shape = _plain_line(rest, first=first)
         if shape is None or (first and indent):
             return False
         first = False
+        column = indent + _past(_ENTRIES, rest)
         if shape == "block":
             scalar = indent
-    return True
+        elif shape == "key":
+            keyed = column
+        elif shape == "item" or shape == ",":
+            sequence = (column, shape)
+    return sequence is None
 
 
 def _plain_line(rest: str, *, first: bool) -> _Shape | None:
     """What a line of the plain subset opens, `rest` being the line past its indentation, or `None`
     for one outside it: a plain key and a value or nothing, or, on any line but the first,
-    sequence entries ahead of either or of a value alone."""
+    sequence entries ahead of either or of a value alone, which leaves no flow sequence open."""
     entries = _ENTRIES.match(rest)
     item = rest[entries.end() :] if entries else rest
     if first and item != rest:
@@ -343,17 +376,19 @@ def _plain_line(rest: str, *, first: bool) -> _Shape | None:
     key = _PLAIN_KEY.match(item)
     if key is not None:
         value = item[key.end() :].lstrip(" \t")
-        return "line" if not value or value.startswith("#") else _plain_value(value)
+        return "key" if not value or value.startswith("#") else _plain_value(value)
     if first or (item == rest and item != "-"):
         return None
-    return "line" if item in ("", "-") or item.startswith("#") else _plain_value(item)
+    if item in ("", "-") or item.startswith("#"):
+        return "line"
+    shape = _plain_value(item)
+    return shape if shape in ("line", "block") else None
 
 
 def _plain_value(value: str) -> _Shape | None:
     """What a value of the plain subset opens, or `None` for one outside it: a block scalar's
     opening with its indicators, a scalar quoted either way and closed on its line, a flow sequence
-    of plain scalars closed on its line, or a plain scalar, each with nothing after it but a
-    comment."""
+    (`_items`), or a plain scalar, each with nothing after it but a comment."""
     if value[0] in "|>":
         header = _BLOCK_HEADER.match(value)
         return "block" if header and _ends(value[header.end() :]) else None
@@ -361,15 +396,40 @@ def _plain_value(value: str) -> _Shape | None:
         quoted = re.match(_QUOTED, value)
         return "line" if quoted and _ends(value[quoted.end() :]) else None
     if value[0] == "[":
-        close = value.find("]")
-        inner = value[1:close] if close > 0 else "["
-        if any(mark in inner for mark in "[]{}\"'"):
-            return None
-        items = [item.strip(" \t") for item in inner.split(",")]
-        if any(item and not _plain_scalar(item, flow=True) for item in items):
-            return None
-        return "line" if _ends(value[close + 1 :]) else None
+        flow = _items(value, 1, ",")
+        return "line" if flow == "]" else flow
     return "line" if _plain_scalar(value, flow=False) else None
+
+
+def _items(line: str, start: int, last: _Flow) -> _Flow | None:
+    """Where a flow sequence of the subset stands at the end of `line`, read from `start` with
+    `last` last in it before; `None` where the line holds anything else.
+
+    Its items are scalars quoted either way and closed on their line, and plain scalars with no
+    pair's colon or comment in them, so nothing in it is nested; an item is followed by a `,` or
+    the `]`, here or on a line below, and the `]` by nothing but a comment."""
+    position = _past(_BLANKS, line, start)
+    while position < len(line):
+        mark = line[position]
+        if mark == "]":
+            return "]" if _ends(line[position + 1 :]) else None
+        if mark == ",":
+            last, position = ",", position + 1
+        elif last == "item":
+            return None
+        elif mark in "\"'":
+            quoted = _QUOTED_ITEM.match(line, position)
+            if quoted is None:
+                return None
+            last, position = "item", quoted.end()
+        else:
+            plain = _PLAIN_ITEM.match(line, position)
+            scalar = plain.group().rstrip(" \t") if plain else ""
+            if not scalar or not _plain_scalar(scalar, flow=True):
+                return None
+            last, position = "item", position + len(scalar)
+        position = _past(_BLANKS, line, position)
+    return last
 
 
 def _plain_scalar(scalar: str, *, flow: bool) -> bool:

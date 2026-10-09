@@ -351,10 +351,12 @@ _SKILL_UNPARSED = _Kind(
     _skill_unparsed,
     lambda areas: (
         "open each file named above and check whether its frontmatter declares hooks: this row "
-        "reads exactly only `key: value` lines with plain keys, values on their own line, block "
-        "scalars, flow lists of plain scalars, nested lines indented by spaces and comments, in a "
-        f"frontmatter of at most {LINES_READ:,} lines that ends within {CHARACTERS_READ:,} "
-        "characters"
+        "reads exactly only `key: value` lines with a plain key and the value on the key's line, "
+        "block scalars, flow lists of plain or quoted scalars, their lines below the key indented "
+        "deeper than it, nested lines indented by spaces, `- ` entries at any indentation, "
+        f"comments and blank lines, in a frontmatter of at most {LINES_READ:,} lines that ends "
+        f"within {CHARACTERS_READ:,} characters; a description carried on to the lines below its "
+        "key is outside it, so write one as a `>` block"
     ),
 )
 # A link in a place that leads out of the checkout, which the row does not follow: no defect,

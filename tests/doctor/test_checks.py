@@ -2000,6 +2000,26 @@ NO_HOOKS_SPELLED = {
         "    # not a comment\nsummary: > # why\n  more\n"
     ),
     "a-flow-sequence": "allowed-tools: [Read, Grep, Bash(git add:*), hooks] # tools\n",
+    # A flow sequence of quoted scalars, on its key's line or over lines below it, as plugins
+    # write `allowed-tools` and `globs`: nothing in one can reach the top level, and Claude Code
+    # 2.1.293 registers no hook from any of these. Mutations (oracle): `mutations/`'s "the plain
+    # subset admits no quoted scalar in a flow sequence" -> the two quoted cases and
+    # `a-flow-sequence-opened-on-its-keys-line`; "the plain subset admits no flow sequence left
+    # open on its key's line" -> that case and `a-plain-item-shaped-like-a-key-over-lines`; "the
+    # plain subset admits no flow sequence opening on the line below its key" -> the two cases
+    # below their key.
+    "a-flow-sequence-of-quoted-scalars": (
+        'allowed-tools: ["Read", \'it\'\'s\', "a, b]", "hooks: x", Bash(git add:*)] # tools\n'
+    ),
+    "a-flow-sequence-of-a-quoted-fence": 'version: ["--- "] # c\n',
+    "a-flow-sequence-opened-on-its-keys-line": (
+        "allowed-tools: [\"Read\",\n  'Grep', hooks]\nkeywords: [\n    static analysis,\n  ]\n"
+    ),
+    "a-plain-item-shaped-like-a-key-over-lines": "name: [hooks:x,\n      ]\n",
+    "a-flow-sequence-opened-below-its-key": (
+        'globs:\n  [\n    "**/*.py",\n    "**/*.js",\n  ]\ntags:\n  [database, sql]\n'
+    ),
+    "a-flow-sequence-of-hooks-below-its-key": "description:\n [hooks]\n",
     "nested-mappings-and-sequences": (
         "metadata:\n  hooks: x\n  tags:\n    - a\n    - b: c\n      d: e\n    -\n    - - f\n"
         "allowed-tools:\n- Read\n- Bash(git status:*)\n"
@@ -2108,6 +2128,40 @@ UNTOLD_SPELLED = {
     "a-flow-mapping-as-a-value": "metadata: {owner: me, hooks: x}\n",
     "a-brace-in-a-flow-sequence": "allowed-tools: [Read, a{b}]\n",
     "a-flow-sequence-of-pairs": "allowed-tools: [hooks: x]\n",
+    # A flow sequence past the narrow shapes the subset admits: an item followed by anything but a
+    # `,` or the `]` (a YAML 1.2 reader takes `"hooks":x` for a pair), a line at its key's column or
+    # one that never closes (Claude Code 2.1.293 fails to parse each), one opening at its key's
+    # column or past the line below its key, one over lines as a sequence entry, a blank line
+    # inside, or text after the `]`. Mutations (oracle): `mutations/`'s "the plain subset admits
+    # anything after an item of a flow sequence" -> the two `a-quoted-item-...` cases; "the plain
+    # subset admits a line of a flow sequence at its key's column" -> the three cases at the key's
+    # column that open on or below the key's line; "the plain subset admits a flow sequence that
+    # never closes" -> the two open ones; "the plain subset admits a flow sequence opening at its
+    # key's column" -> the two `...-opening-at-its-keys-column...` cases; "the plain subset admits
+    # a flow sequence opening past the line below its key" -> the two `...-opening-below-a-...`
+    # cases; "the plain subset admits a flow sequence over lines as a sequence entry" -> the two
+    # entry cases; "the plain subset admits a blank line inside a flow sequence" -> the two blank
+    # line cases; "the plain subset admits text after the close of a flow sequence" -> the two
+    # cases with text after it.
+    "a-quoted-item-a-colon-follows": 'allowed-tools: ["hooks":x]\n',
+    "a-quoted-item-text-follows": 'argument-hint: ["--- "a, b]\n',
+    "a-flow-sequence-closing-at-its-keys-column": "globs:\n  [a,\n]\n",
+    "an-item-at-its-keys-column": "globs: [a,\nb]\n",
+    "an-empty-flow-sequence-closing-at-its-keys-column": "description: [\n]\n",
+    "a-flow-sequence-that-never-closes": "globs: [a,\n  b\n",
+    "a-flow-sequence-open-at-the-closing-fence": "model: [a, b]\nname: [\n",
+    "a-flow-sequence-opening-at-its-keys-column": "globs:\n[a,\n  b]\n",
+    "a-flow-sequence-opening-at-its-keys-column-below-a-comment": (
+        "argument-hint: # c\n[\n  Read,]\n"
+    ),
+    "a-flow-sequence-opening-below-a-blank-line": "globs:\n\n  [a]\n",
+    "a-flow-sequence-opening-below-a-comment": "name: # c\n  # c\n      [\n  Read,]\n",
+    "a-flow-sequence-over-lines-as-a-sequence-entry": "tools:\n- [a,\n    b]\n",
+    "a-flow-sequence-over-lines-as-an-indented-entry": 'description: # c\n - ["a\\"]"\n    ]\n',
+    "a-blank-line-inside-a-flow-sequence": "globs: [a,\n\n  b]\n",
+    "a-blank-line-inside-an-empty-flow-sequence": "when_to_use: [\n\n    ]\n",
+    "text-after-a-flow-sequence": "tools: [a] b\n",
+    "a-fence-after-a-flow-sequence": "model: [a, b]---\n",
     "a-plain-value-over-lines": "description: Use when\nthe user asks\n",
     "a-plain-value-continued-below": "description: Use when\n  the user asks\n",
     "a-tab-after-spaces": "description: >\n  Use when\n  \tthe user: asks\n",
@@ -2157,9 +2211,11 @@ SKILL_UNPARSED = (
 )
 SKILL_UNPARSED_REMEDY = (
     "open each file named above and check whether its frontmatter declares hooks: this row reads "
-    "exactly only `key: value` lines with plain keys, values on their own line, block scalars, "
-    "flow lists of plain scalars, nested lines indented by spaces and comments, in a frontmatter "
-    "of at most 10,000 lines that ends within 8,388,608 characters"
+    "exactly only `key: value` lines with a plain key and the value on the key's line, block "
+    "scalars, flow lists of plain or quoted scalars, their lines below the key indented deeper "
+    "than it, nested lines indented by spaces, `- ` entries at any indentation, comments and blank "
+    "lines, in a frontmatter of at most 10,000 lines that ends within 8,388,608 characters; a "
+    "description carried on to the lines below its key is outside it, so write one as a `>` block"
 )
 
 

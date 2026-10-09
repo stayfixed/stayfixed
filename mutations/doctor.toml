@@ -1447,10 +1447,41 @@ reddens = [
 [[mutation]]
 name = "the plain subset admits no flow sequence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '        return "line" if _ends(value[close + 1 :]) else None'
-after = '        return None'
+before = '        flow = _items(value, 1, ",")'
+after = '        flow = None'
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits no quoted scalar in a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            quoted = _QUOTED_ITEM.match(line, position)'
+after = '            quoted = None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-quoted-scalars]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-a-quoted-fence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-on-its-keys-line]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence left open on its key's line"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        return "line" if flow == "]" else flow'
+after = '        return "line" if flow == "]" else None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-on-its-keys-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-plain-item-shaped-like-a-key-over-lines]",
+]
+
+[[mutation]]
+name = "the plain subset admits no flow sequence opening on the line below its key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            keyed = column'
+after = '            keyed = None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-opened-below-its-key]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_with_no_top_level_hooks_key_in_any_spelling_is_passed_over[a-flow-sequence-of-hooks-below-its-key]",
 ]
 
 [[mutation]]
@@ -1574,10 +1605,94 @@ reddens = [
 [[mutation]]
 name = "the plain subset admits a brace in a flow sequence"
 file = "src/stayfixed/doctor/frontmatter.py"
-before = '''        if any(mark in inner for mark in "[]{}\"'"):'''
-after = '''        if any(mark in inner for mark in "[]\"'"):'''
+before = '''_PLAIN_ITEM = re.compile(r"[^,\[\]{}\"']*+")'''
+after = '''_PLAIN_ITEM = re.compile(r"[^,\[\]\"']*+")'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-brace-in-a-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits anything after an item of a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '''
+        elif last == "item":
+            return None
+'''
+after = ''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-item-a-colon-follows]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-quoted-item-text-follows]",
+]
+
+[[mutation]]
+name = "the plain subset admits a line of a flow sequence at its key's column"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            if not rest or indent <= sequence[0]:'
+after = '            if not rest:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-closing-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-item-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[an-empty-flow-sequence-closing-at-its-keys-column]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence that never closes"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return sequence is None'
+after = '    return True'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-that-never-closes]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-open-at-the-closing-fence]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence opening at its key's column"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = 'indent > opener and rest.startswith("[")'
+after = 'indent >= opener and rest.startswith("[")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-at-its-keys-column]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-at-its-keys-column-below-a-comment]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence opening past the line below its key"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '        opener, keyed = keyed, None'
+after = '        opener = keyed'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-below-a-blank-line]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-opening-below-a-comment]",
+]
+
+[[mutation]]
+name = "the plain subset admits a flow sequence over lines as a sequence entry"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '    return shape if shape in ("line", "block") else None'
+after = '    return shape'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-over-lines-as-a-sequence-entry]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-flow-sequence-over-lines-as-an-indented-entry]",
+]
+
+[[mutation]]
+name = "the plain subset admits a blank line inside a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            if not rest or indent <= sequence[0]:'
+after = '            if rest and indent <= sequence[0]:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-blank-line-inside-a-flow-sequence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-blank-line-inside-an-empty-flow-sequence]",
+]
+
+[[mutation]]
+name = "the plain subset admits text after the close of a flow sequence"
+file = "src/stayfixed/doctor/frontmatter.py"
+before = '            return "]" if _ends(line[position + 1 :]) else None'
+after = '            return "]"'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[text-after-a-flow-sequence]",
+  "tests/doctor/test_checks.py::test_a_frontmatter_key_the_row_cannot_read_whole_is_named_as_untold[a-fence-after-a-flow-sequence]",
 ]
 
 [[mutation]]
