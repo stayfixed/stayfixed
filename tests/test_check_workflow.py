@@ -955,14 +955,20 @@ def _install_id() -> str:
 @needs_smoke_workflow
 def test_the_smoke_installs_the_rendered_tree_and_never_the_checkout() -> None:
     # The install is the smoke's subject: every later step runs hooks, `doctor` and the
-    # exfiltration scenario from what it installed. Adding the checkout as the marketplace
-    # installs this repository's root, which ships nowhere. An allowlist rather than a list of
-    # bad spellings: `"$PWD"`, `${PWD}`, `$(pwd)`, `.`, `./` and `$GITHUB_WORKSPACE` each name
-    # the checkout, and only a directory under the runner's temporary directory, which the job
-    # writes from the render, passes. Mutation (oracle): `mutations/`'s "the smoke installs the
-    # checkout again" puts back `claude plugin marketplace add "$PWD"`.
+    # exfiltration scenario from what it installed. This repository's catalog names the plugin
+    # repository by a `url` source, so adding the checkout as the marketplace fetches the
+    # published tag over the network, or fails while there is none: either way the smoke judges
+    # no tree this change wrote. This keeps it off the network and off any tree published before.
+    # An allowlist rather than a list of bad spellings: `"$PWD"`, `${PWD}`, `$(pwd)`, `.`, `./`
+    # and `$GITHUB_WORKSPACE` each name the checkout, and only a directory under the runner's
+    # temporary directory, which the job writes from the render, passes. Mutation (oracle):
+    # `mutations/`'s "the smoke installs the checkout again" puts back
+    # `claude plugin marketplace add "$PWD"`.
     _, render = _render_step(SMOKE_WORKFLOW, "installed-plugin")
+    # Mutation (oracle): `mutations/`'s "the smoke installs a render of another commit" renders
+    # `HEAD^`.
     assert render["--rev"] == "HEAD", render
+    # Mutation (declared): `--out "$PWD/plugin-repo"` renders into the checkout and reddens here.
     assert render["--out"].startswith("$RUNNER_TEMP/"), render
     text = "\n".join(_run(step) for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin"))
     added = re.findall(r"claude plugin marketplace add\s+(\S+)", text)
@@ -998,7 +1004,9 @@ def test_the_smoke_holds_the_install_to_the_render() -> None:
     # against the installed root, by the install's own output. Mutation (oracle): `mutations/`'s
     # "the smoke stops holding the install to the render" deletes the step.
     _, render = _render_step(SMOKE_WORKFLOW, "installed-plugin")
-    wanted = f'diff -r -x .git "{render["--out"]}" "$INSTALLED"'
+    # Each exclusion by name: `.git` is the render's repository, `.in_use` the harness's marker
+    # (measured; the step's comment carries it). A pattern here would hide a plugin file.
+    wanted = f'diff -r -x .git -x .in_use "{render["--out"]}" "$INSTALLED"'
     holding = [
         step
         for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
@@ -1007,6 +1015,8 @@ def test_the_smoke_holds_the_install_to_the_render() -> None:
     assert len(holding) == 1, wanted
     env = holding[0].get("env")
     assert isinstance(env, dict), holding[0]
+    # Mutation (declared): `INSTALLED: ${{ runner.temp }}/plugin-repo` compares the render with
+    # itself, always equal, and reddens here.
     assert env.get("INSTALLED") == "${{ steps." + _install_id() + ".outputs.root }}", env
 
 
@@ -1019,6 +1029,8 @@ def test_the_validator_reads_the_rendered_manifests() -> None:
     # `mutations/`'s "the validator reads the checkout's manifest again" validates
     # `.claude-plugin/plugin.json`.
     _, render = _render_step(CI_WORKFLOW, "plugin")
+    # Mutation (oracle): `mutations/`'s "the validator reads a render of another commit" renders
+    # `HEAD^`.
     assert render["--rev"] == "HEAD", render
     validated: list[str] = []
     for step in _steps_of(CI_WORKFLOW, "plugin"):
@@ -1029,6 +1041,8 @@ def test_the_validator_reads_the_rendered_manifests() -> None:
     manifests = sorted(path for path in validated if path.endswith("plugin.json"))
     out = render["--out"]
     assert manifests == [f"{out}/.claude-plugin/plugin.json", f"{out}/.codex-plugin/plugin.json"]
+    # Mutation (oracle): `mutations/`'s "the validator stops reading this repository's catalog"
+    # drops its line.
     assert ".claude-plugin/marketplace.json" in validated, validated
 
 
@@ -1062,13 +1076,21 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
         for step in steps
         if _uses(step) == "actions/upload-artifact" and _with(step, "name") == "plugin-tree"
     ]
+    # Mutation (declared): the upload's path names the tree, `${{ runner.temp }}/plugin`, and
+    # not its manifest, and reddens here.
     assert [_with(step, "path") for step in uploads] == [written], uploads
+    # The action only warns when its path matches nothing, and the release then stops at
+    # `github-release`, behind the approval. Mutation (oracle): `mutations/`'s "a missing plugin
+    # manifest uploads as a warning".
+    assert [_with(step, "if-no-files-found") for step in uploads] == ["error"], uploads
     released = _steps_of(RELEASE_WORKFLOW, "github-release")
     downloads = [
         _with(step, "path")
         for step in released
         if _uses(step) == "actions/download-artifact" and _with(step, "name") == "plugin-tree"
     ]
+    # Mutation (declared): drop the `plugin-tree` download, and the Release would attach a file
+    # nothing fetched; reddens here.
     assert len(downloads) == 1, downloads
     creates = [
         shlex.split(line)

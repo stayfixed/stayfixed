@@ -85,6 +85,9 @@ jobs:
         with:
           name: plugin-tree
           path: ${{ runner.temp }}/plugin-tree.txt
+          # The action's default is a warning, and a missing manifest must stop the release here
+          # rather than at `github-release`, behind the approval.
+          if-no-files-found: error
 
   # The one gate on this file's two irreversible acts that is not prose. GitHub **auto-creates**
   # an environment a job names and the repository does not have, with no protection rules on it,

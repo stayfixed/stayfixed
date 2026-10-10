@@ -225,8 +225,11 @@ reddens = [
 
 # The plugin is published from a repository of its own whose root is the tree
 # `scripts/plugin_tree.py render` writes, so the workflows that judge the plugin judge a render.
-# Each of these points one of them back at this checkout, or drops the step that ties the render
-# to what is installed or attested; every one leaves the workflow running and green.
+# Each of these points one of them at something other than this commit's render, or drops the step
+# that ties the render to what is validated, installed or attested. The smoke's are what keep it
+# off the network and off any tree published before: this repository's catalog names the plugin
+# repository by a `url` source, so a smoke that adds the checkout as its marketplace fetches the
+# published tag, or fails while there is none, and judges nothing this change wrote.
 [[mutation]]
 name = "the smoke installs the checkout again"
 file = ".github/workflows/smoke.yml"
@@ -248,18 +251,37 @@ reddens = [
 [[mutation]]
 name = "the smoke stops holding the install to the render"
 file = ".github/workflows/smoke.yml"
-before = '''      - name: The installed tree is the rendered one, file for file
-        # The harness copies what the source names into its cache, and only a comparison says it
-        # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
-        # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
-        # job. `.git` is the rendered repository's own, not a file of the plugin's.
-        env:
-          INSTALLED: ${{ steps.install.outputs.root }}
-        run: diff -r -x .git "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
-'''
-after = ''
+before = '        run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"'
+after = '        run: "true"'
 reddens = [
   "tests/test_check_workflow.py::test_the_smoke_holds_the_install_to_the_render",
+]
+
+[[mutation]]
+name = "the smoke installs a render of another commit"
+file = ".github/workflows/smoke.yml"
+before = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD \'
+after = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD^ \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_the_rendered_tree_and_never_the_checkout",
+]
+
+[[mutation]]
+name = "the validator reads a render of another commit"
+file = ".github/workflows/ci.yml"
+before = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD \'
+after = '          uv run python scripts/plugin_tree.py render --root . --rev HEAD^ \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
+]
+
+[[mutation]]
+name = "the validator stops reading this repository's catalog"
+file = ".github/workflows/ci.yml"
+before = "\n          claude plugin validate .claude-plugin/marketplace.json --strict"
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
 ]
 
 [[mutation]]
@@ -281,6 +303,15 @@ before = '''      - uses: actions/attest-build-provenance@4d101475d8b20a2381f784
           subject-path: ${{ runner.temp }}/plugin-tree.txt
 '''
 after = ''
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
+name = "a missing plugin manifest uploads as a warning"
+file = ".github/workflows/release.yml"
+before = '          if-no-files-found: error'
+after = '          if-no-files-found: warn'
 reddens = [
   "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
 ]

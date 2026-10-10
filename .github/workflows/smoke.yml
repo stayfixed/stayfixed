@@ -80,7 +80,10 @@ jobs:
           version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$manifest")"
           test -n "$version"
           git -C "$RUNNER_TEMP/plugin-repo" init -q -b main
-          git -C "$RUNNER_TEMP/plugin-repo" add -A
+          # `--force`: `publish_plugin.py` builds the plugin repository's commit with plumbing and
+          # reads no ignore rules, and the tree carries a `.gitignore` of its own (the overlay
+          # template's), so a member it matches is in that commit and must be in this one.
+          git -C "$RUNNER_TEMP/plugin-repo" add -A --force
           git -C "$RUNNER_TEMP/plugin-repo" -c user.email=a@b.c -c user.name=a commit -qm "stayfixed $version"
           git -C "$RUNNER_TEMP/plugin-repo" tag "v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -125,10 +128,13 @@ jobs:
         # The harness copies what the source names into its cache, and only a comparison says it
         # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
         # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
-        # job. `.git` is the rendered repository's own, not a file of the plugin's.
+        # job. `.git` is the rendered repository's own, not a file of the plugin's. `.in_use` is
+        # the harness's: claude 2.1.261 writes it into the installed root on both runner OSes,
+        # measured on this job's first run over the rendered tree, 2026-10-10, where it was the
+        # only difference. Each exclusion is a name, never a pattern.
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
-        run: diff -r -x .git "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
+        run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
       - name: Every hook entry, fed its sample event through the installed wrapper
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
