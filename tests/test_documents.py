@@ -636,6 +636,57 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     assert "docs/cli.md" in text
 
 
+# The paths `scripts/plugin_tree.py` renders into the plugin repository, spelled here rather than
+# read from `PLUGIN_PATHS`: an expectation read from the subject would follow it anywhere.
+PLUGIN_TREE_PATHS = (
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    "hooks",
+    "scripts/stayfixed",
+    "src/stayfixed",
+    "skills",
+    "agents",
+    "README.md",
+    "LICENSE",
+)
+# A link to a file of this repository as `main` holds it, which moves only at a release.
+_THIS_REPOSITORY_MAIN = re.compile(r"^https://github\.com/stayfixed/stayfixed/blob/main/([^#]+)")
+
+
+def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
+    """The README is published three times — here, on PyPI as the long description, and at the
+    root of the plugin repository, which holds only the plugin's paths. A relative link to
+    `docs/cli.md` resolves here and in nothing else, so a link to a file outside the plugin is
+    absolute, to this repository's `main`, and one inside it stays relative.
+
+    `test_every_relative_link_resolves` holds that a relative link names a file here; this holds
+    that the file is one the plugin repository has too, and that every absolute link to `main`
+    names a tracked file, which the link walk skips as a URL.
+
+    Mutations (declared): the reference link made relative again, `](docs/cli.md)` -> `outside`
+    reddens; the outbound walk's link naming a file that is not there -> `missing` reddens.
+    """
+    relative = links_in(README)
+    # Floors: a README whose links all vanished, or a regex that stopped matching, would make
+    # both walks vacuously true. `skills/README.md` and `LICENSE` stay relative today.
+    assert len(relative) >= 2, relative
+    outside = [
+        target
+        for target in relative
+        if not any(target == path or target.startswith(path + "/") for path in PLUGIN_TREE_PATHS)
+    ]
+    assert outside == [], outside
+    absolute = [
+        match.group(1)
+        for target in _LINK.findall(prose(README))
+        if (match := _THIS_REPOSITORY_MAIN.match(target))
+    ]
+    assert absolute, "README.md links nothing of this repository's main"
+    tracked = set(tracked_files())
+    missing = [path for path in absolute if ROOT / path not in tracked]
+    assert missing == [], missing
+
+
 CLI_REFERENCE = ROOT / "docs" / "cli.md"
 # The `## Shared flags` section of `docs/cli.md`. Everything between its heading and the next `## `
 # heading, so a table moved out of it stops being checked loudly rather than quietly.

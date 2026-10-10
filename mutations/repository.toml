@@ -1533,6 +1533,29 @@ reddens = [
   "tests/test_documents.py::test_the_readme_installs_the_release_the_tree_carries",
 ]
 
+# The README is also the plugin repository's, whose root holds only the plugin's paths, so a
+# relative link to `docs/cli.md` resolves here and nowhere it is read there. The link walk still
+# passes on the mutated line, because the file exists in this checkout.
+[[mutation]]
+name = "the README links the reference relatively again"
+file = "README.md"
+before = "](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference"
+after = "](docs/cli.md) is the reference"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
+# An absolute link is a URL to the link walk, which skips it, so the same test holds every link
+# to this repository's `main` to a tracked file.
+[[mutation]]
+name = "the README links a file of main that is not there"
+file = "README.md"
+before = "blob/main/tests/outbound/walk.py)"
+after = "blob/main/tests/outbound/walks.py)"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
 # `doctor` warns whenever `[stayfixed] version` is not the running version, so an example block
 # that kept the last release's number makes a copy-pasted project warn from its first run. Neither
 # document's block is one of the release check's seven sources. The `before` stops short of the number

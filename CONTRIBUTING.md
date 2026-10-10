@@ -307,6 +307,15 @@ in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` 
 area that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
 ships a command deletes its `NOT_YET_SHIPPED` entry.
 
+**The payload guard judges the generated tree.** `tests/test_payload.py` holds the plugin tree to
+the directory's file rules on every pull request — the 256 KiB size, the 512-file count, symlinks,
+binaries, names — and reads it from the commit, as `scripts/plugin_tree.py` does; a file outside
+the plugin's paths is not judged, because it does not ship. `scripts/release.py check --tag` holds
+the count again on the commit a release is cut from. A file the runtime needs outside
+`PLUGIN_PATHS` is added there, in the same change, or the plugin repository never holds it and an
+install breaks; the install smoke runs every hook entry from the installed tree, so CI finds an
+omission before a user does ([RELEASING.md](RELEASING.md), section 2, says where the tree goes).
+
 ## Tests
 
 **Every new assertion ships with the mutation that reddens it, or a sentence saying why none
@@ -365,15 +374,14 @@ reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 The set is one file per group of the tree, and an entry goes in the group file its `file` routes to:
 `GROUP_OF` in `scripts/mutation_oracle.py` maps path prefixes to groups, the longest matching prefix
 winning and the empty prefix's group taking anything no other prefix matches. The groups are coarse
-on purpose. The plugin directory holds the version for a reviewer when a file reaches 256 KiB and
-when the plugin passes 512 files, and the plugin folder is this repository's root, so every tracked
-file counts: one file per area would need no table, and would spend about twenty of those 512 where
-eleven do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry"
-under "Areas". The size is checked on every pull request (`tests/test_payload.py`) and the count
-only at a release, where `scripts/release.py check --tag` refuses a plugin folder holding more than
-512 files: this repository is more than the plugin, so a pull request may carry it past the count,
-and a release past it publishes the plugin from a repository of its own whose root is the plugin
-([RELEASING.md](RELEASING.md), section 2, says why not from a subfolder of this one).
+because they were sized while this repository's root was the plugin, when every tracked file
+counted against the 512 files past which the plugin directory holds the version for a reviewer:
+one file per area would need no table, and would have spent about twenty of those 512 where eleven
+do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
+"Areas". The plugin is now published from a repository of its own, whose root is the tree
+`scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
+among them; the table stays as it is until a follow-up decides whether its coarse grouping still
+earns it.
 `tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
 reaches its cap, three quarters of the directory's; a group that does is split by its largest area,
 which is an edit to `GROUP_OF`.
@@ -493,9 +501,10 @@ everyone reads would carry a file-name slug that means nothing to them. Write th
 release note someone outside the project can read — not as a note to yourself about the change.
 
 `uv run python scripts/release.py check` cross-checks the version across `pyproject.toml`,
-`uv.lock`, the package, and both plugin manifests. It runs in CI; run it before you push. It is
-this repository's own tooling and not a command stayfixed ships, as are its `notes` and `hashes`
-beside it ([RELEASING.md](RELEASING.md) says when each runs).
+`uv.lock`, the package, both plugin manifests, `CHANGELOG.md` and the marketplace entry's `ref`.
+It runs in CI; run it before you push. It is this repository's own tooling and not a command
+stayfixed ships, as are its `notes` and `hashes` beside it ([RELEASING.md](RELEASING.md) says
+when each runs).
 
 ## Plans
 

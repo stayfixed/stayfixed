@@ -1,18 +1,22 @@
 # Releasing stayfixed
 
-Version discipline itself is enforced — `scripts/release.py check` cross-checks six sources, a
+Version discipline itself is enforced — `scripts/release.py check` cross-checks seven sources, a
 tag and the record of the shipped files, and runs in CI. What was undocumented is everything
 around it: how to cut a release at all. This file is that, so the bus factor of the release
 process is not one.
 
 The sequence, once, before the detail: `scripts/release.py check` → towncrier assembles
 `CHANGELOG.md` from the `changelog.d/` fragments → `claude plugin tag` and the `vX.Y.Z` tag,
-pushed without `main` → the PyPI upload and the GitHub Release, attached to `vX.Y.Z` only and
-never to the floating `v1`, which immutable releases would freeze → `main` moves to the release
-commit → `stayfixed overlay publish-template`, which renders `templates/overlay/` and pushes it to
-the template repository from your own authenticated checkout, so the public repository's CI
-holds no credential that can write a second repository → from `1.0.0` on, the `v1` alias moves
-→ the cross-repository smoke runs at the new tag.
+pushed without `main` → the release workflow's `build` checks the tag, tests, builds and attests
+the packages and the plugin tree → `scripts/publish_plugin.py` pushes that attested tree to
+`stayfixed/stayfixed-plugin`, the repository the plugin is installed from, from your own
+authenticated checkout → the `pypi` approval, which releases the PyPI upload and the GitHub
+Release, attached to `vX.Y.Z` only and never to the floating `v1`, which immutable releases would
+freeze → `main` moves to the release commit → `stayfixed overlay publish-template`, which renders
+`templates/overlay/` and pushes it to the template repository from your own authenticated
+checkout → from `1.0.0` on, the `v1` alias moves → the cross-repository smoke runs at the new tag.
+Both pushes to a second repository are yours, so the public repository's CI holds no credential
+that can write one.
 
 ## 1. The sources
 
@@ -26,15 +30,18 @@ holds no credential that can write a second repository → from `1.0.0` on, the 
 | `.claude-plugin/plugin.json` | `version` |
 | `.codex-plugin/plugin.json` | `version` |
 | `CHANGELOG.md` | the first `## <version>` heading after the towncrier marker |
+| `.claude-plugin/marketplace.json` | the plugin entry's `ref`, `vX.Y.Z`: the tag of `stayfixed/stayfixed-plugin` the marketplace fetches the plugin at |
 | `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `scripts/release.py check` fails while it is stale and `scripts/release.py hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
 
-`.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
-rather than for a number.
+The marketplace entry is held to one shape besides its `ref`: exactly one entry named
+`stayfixed`, a `url` source naming `https://github.com/stayfixed/stayfixed-plugin.git`, pinned by
+`ref` alone — no `sha`, which the release commit cannot know, since it names the plugin
+repository's tag before step 7 pushes the commit that tag will name — and no `version` of its own.
 
 `scripts/release.py check --tag vX.Y.Z` adds the tag as a further source, tightens one rule and
 adds one: a fragment still pending in `changelog.d/` is a finding rather than a licence for
-`CHANGELOG.md` to lag, and a plugin folder holding more than 512 files is refused (section 2
-says why and what to do instead). That is the form `release.yml` runs. Section 6 is the script's
+`CHANGELOG.md` to lag, and a plugin tree holding more than 512 files is refused (section 2 says
+where that tree comes from). That is the form `release.yml` runs. Section 6 is the scripts'
 own reference.
 
 ## 2. Cutting a release
@@ -47,19 +54,21 @@ unapproved and fails on Trusted Publishing for want of a pending publisher, and
 `github-release` runs unapproved and creates a public GitHub Release. Section 3 is what makes
 step 7's sentence true.
 
-**If the tree holds more than 512 files, publish the plugin from a repository of its own first.**
-The Claude plugin directory holds a plugin of more than 512 files for a reviewer ("Keep the
+**The plugin is published from a repository of its own.** The marketplace entry here fetches it
+from `stayfixed/stayfixed-plugin`, a `url` source pinned to the release's tag by `ref`, and that
+repository's root is the tree `scripts/plugin_tree.py` generates from a commit of this one: the
+nine paths the plugin's runtime reads — the two plugin manifests, `hooks/`, `scripts/stayfixed`,
+`src/stayfixed/`, `skills/`, `agents/`, `README.md` and `LICENSE` — and nothing else. Its only
+tags are the `vX.Y.Z` step 7 pushes there; it carries no `stayfixed--vX.Y.Z`, which nothing there
+reads. The Claude plugin directory holds a plugin of more than 512 files for a reviewer ("Keep the
 plugin to 512 files or fewer", in its
 [pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)), and the
-plugin folder is this repository's root — the marketplace entry's `source` is `./` — so every
-tracked file counts. A pull request may carry the tree past 512; a release may not:
-`scripts/release.py check --tag` refuses one while the folder the marketplace entry's `source`
-names holds more files than that in `HEAD`'s tree, and `release.yml` runs that check before it
-builds. A subfolder of this repository is not the way under the count: the same page holds every
-version of a plugin in a subfolder whose hook runs a non-shell file or a shell script that calls
-other files, and `hooks/run-hook.sh` runs the Python launcher. Its own remedy is the one to take:
-a repository whose root is the plugin, which the marketplace entry then names. Settle that before
-step 1, because every step after it releases from the tree it names.
+count is the generated tree's: `tests/test_payload.py` holds it on every pull request, and
+`scripts/release.py check --tag` again on the commit a release is cut from, before `release.yml`
+builds. Not a subfolder of this repository: the same page holds every version of a plugin in a
+subfolder whose hook runs a non-shell file or a shell script that calls other files, and
+`hooks/run-hook.sh` runs the Python launcher. A file the runtime needs outside those nine paths
+is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository never holds it.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything
    not merged is not in the release.
@@ -76,7 +85,7 @@ step 1, because every step after it releases from the tree it names.
    claude plugin tag --dry-run .
    ```
 
-   **And read back the three settings a tag relies on**, because none of them lives in the
+   **And read back the four settings a tag relies on**, because none of them lives in the
    tree and a repository transfer carries each one over as it was rather than as section 3
    says it should be:
 
@@ -87,6 +96,12 @@ step 1, because every step after it releases from the tree it names.
      --jq '[.target, .enforcement, (.conditions.ref_name.include | sort),
             ([.rules[].type] | sort), (.bypass_actors | length)]'
    # ["tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],0]
+   gh api repos/stayfixed/stayfixed-plugin/rulesets --jq '.[].id' |
+     xargs -I{} gh api repos/stayfixed/stayfixed-plugin/rulesets/{} \
+     --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
+            ([.rules[].type] | sort), (.bypass_actors | length)]'
+   # ["release tags","tag","active",["refs/tags/v*.*.*"],["deletion","update"],0]
+   # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],0]
    gh api repos/stayfixed/stayfixed/private-vulnerability-reporting --jq .enabled
    # true
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/stayfixed/json
@@ -95,9 +110,11 @@ step 1, because every step after it releases from the tree it names.
    ```
 
    Any other answer stops the release here. A ruleset that lists other patterns leaves the
-   tag step 6 pushes movable; reporting that is off sends every reporter `SECURITY.md` directs
-   to the advisory form back to a public issue; and a PyPI project somebody else owns is one
-   step 5's README would tell every reader to install.
+   tag step 6 pushes movable; a plugin repository whose tags can move, or where a branch can
+   take a tag's name, lets the marketplace's `ref` name a tree nobody attested, and a third
+   ruleset there is a line this listing does not expect; reporting that is off sends every
+   reporter `SECURITY.md` directs to the advisory form back to a public issue; and a PyPI
+   project somebody else owns is one step 5's README would tell every reader to install.
 
 2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
    an alpha, and the tree already says so, with "Development Status :: 3 - Alpha". Every
@@ -105,16 +122,17 @@ step 1, because every step after it releases from the tree it names.
    the sources rather than to a number it knows — except the alias, which is the major and
    exists from `1.0.0` on (step 9).
 
-3. **Set it in the four places you edit by hand**, then let the lockfile follow:
-   `pyproject.toml`, `src/stayfixed/__init__.py`, and both plugin manifests.
+3. **Set it in the five places you edit by hand**, then let the lockfile follow:
+   `pyproject.toml`, `src/stayfixed/__init__.py`, both plugin manifests, and the `ref` of the
+   plugin entry in `.claude-plugin/marketplace.json`, `vX.Y.Z`.
 
    ```bash
    uv sync
    uv run python scripts/release.py check   # names every source that still disagrees
    ```
 
-   That is four of the six sources; `uv.lock` is the fifth and `uv sync` above writes it.
-   `CHANGELOG.md` is the sixth and is still behind here; a pending fragment is what lets it
+   That is five of the seven sources; `uv.lock` is the sixth and `uv sync` above writes it.
+   `CHANGELOG.md` is the seventh and is still behind here; a pending fragment is what lets it
    lag, and step 4 catches it up.
 
    **And the release smoke's tag, which a test holds.** `.github/workflows/smoke-release.yml`
@@ -210,7 +228,7 @@ step 1, because every step after it releases from the tree it names.
 
    **No prerelease tags.** `scripts/release.py check --tag` compares the tag to
    `pyproject.toml`'s literal version string, and `uv.lock` normalises a PEP 440 prerelease
-   (`0.1.0-rc1` becomes `0.1.0rc1`), so the six-source rule cannot be satisfied by an `rc` today.
+   (`0.1.0-rc1` becomes `0.1.0rc1`), so the seven-source rule cannot be satisfied by an `rc` today.
    `release.yml` triggers on finals only, deliberately.
 
    **Push the tags, not `main`.** A pending publisher does not reserve the PyPI name: until a
@@ -227,19 +245,47 @@ step 1, because every step after it releases from the tree it names.
    git push origin vX.Y.Z stayfixed--vX.Y.Z
    ```
 
-7. **Watch the workflow.**
+7. **Watch `build`, publish the plugin, then approve.** Watch `build`, not the whole run: the
+   run goes on waiting for the `pypi` approval, and the plugin goes out before it.
 
    ```bash
    gh run list --workflow release --limit 1
-   gh run watch <id> --exit-status
+   gh run view <id> --json jobs --jq '.jobs[] | select(.name == "build") | .conclusion'
+   # success, once build has finished; empty while it runs
    ```
 
-   `build` runs the gate against the tag, tests, builds and attests. **Once section 3's `pypi`
-   environment exists with a required reviewer**, `publish` and `github-release` both wait for
-   it. An approval is given per environment, not per job, so one approval starts both and one
-   rejection stops both; `github-release` does not depend on `publish`, so a failed upload still
-   leaves you a Release. Without that environment both jobs run straight
-   through the name GitHub invents for them, and nothing on this tag waits for a human.
+   `build` runs the gate against the tag, tests, builds, renders the plugin tree from the tag's
+   commit and attests both the packages and the tree's manifest. Once it is green that
+   attestation exists, and before you approve anything, push the plugin, from this checkout,
+   with an authenticated `gh`, an SSH key GitHub knows and a git identity for the commit:
+
+   ```bash
+   uv run python scripts/publish_plugin.py --tag vX.Y.Z          # verify, build, read back, plan
+   uv run python scripts/publish_plugin.py --tag vX.Y.Z --yes    # push main and the tag
+   ```
+
+   The plugin goes first because the release commit's marketplace names `ref: vX.Y.Z` in
+   `stayfixed/stayfixed-plugin`, a tag that exists only once this has run, and the approval is
+   what makes the PyPI page and the GitHub Release public. Until then nothing public points at
+   the tag, and somebody who finds it early gets an install error, not a wrong plugin. A second
+   run after a success says the tag is already published and pushes nothing.
+
+   **A refusal stops the release.** It means the tree is not one this run attested for this tag
+   at this commit, or that `gh` could not check, and the message quotes what `gh` or `git` said.
+   Do not work around it — no hand-made push, no other checkout, no other remote. If `gh` could
+   not ask (not logged in, offline), fix that and run the command again; the approval waits. For
+   anything else, reject the `pypi` approval: the tags are spent and nothing else is (section 5).
+
+   Then approve `pypi`. **Once section 3's `pypi` environment exists with a required reviewer**,
+   `publish` and `github-release` both wait for it. An approval is given per environment, not
+   per job, so one approval starts both and one rejection stops both; `github-release` does not
+   depend on `publish`, so a failed upload still leaves you a Release. Without that environment
+   both jobs run straight through the name GitHub invents for them, and nothing on this tag
+   waits for a human — not even for the plugin. Watch the rest of the run:
+
+   ```bash
+   gh run watch <id> --exit-status
+   ```
 
    When `publish` is green and `https://pypi.org/project/stayfixed/` lists you as owner, move
    `main` to the release commit:
@@ -345,6 +391,43 @@ else
 fi
 ```
 
+**The plugin repository.** Before the first `scripts/publish_plugin.py --yes`, create
+`stayfixed/stayfixed-plugin`, public and empty — no README, licence or `.gitignore`, because its
+first commit is the one `publish_plugin.py` builds — and protect its tags. A ruleset applies
+every rule it carries to every ref it matches and has one target, tags or branches, so two
+rulesets: `release tags`, with `deletion` and `update` rules over `refs/tags/v*.*.*`, so a
+published tag never moves; and `no tag-shaped branches`, with a `creation` rule over
+`refs/heads/v*`, so no branch can take a tag's name and shadow it. The same create-or-replace
+as above, with the repository name changed:
+
+```bash
+gh repo create stayfixed/stayfixed-plugin --public \
+  --description "The stayfixed plugin, generated from stayfixed/stayfixed at each release"
+cat > "${TMPDIR:-/tmp}/plugin-release-tags.json" <<'JSON'
+{"name": "release tags", "target": "tag", "enforcement": "active",
+ "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*"], "exclude": []}},
+ "rules": [{"type": "deletion"}, {"type": "update"}]}
+JSON
+cat > "${TMPDIR:-/tmp}/plugin-tag-shaped-branches.json" <<'JSON'
+{"name": "no tag-shaped branches", "target": "branch", "enforcement": "active",
+ "conditions": {"ref_name": {"include": ["refs/heads/v*"], "exclude": []}},
+ "rules": [{"type": "creation"}]}
+JSON
+ruleset() {  # $1 the ruleset's name, $2 its body: replace the one of that name, or create it
+  id=$(gh api repos/stayfixed/stayfixed-plugin/rulesets --jq ".[] | select(.name == \"$1\") | .id")
+  if [ -n "$id" ]; then
+    gh api -X PUT "repos/stayfixed/stayfixed-plugin/rulesets/$id" --input "$2"
+  else
+    gh api -X POST repos/stayfixed/stayfixed-plugin/rulesets --input "$2"
+  fi
+}
+ruleset "release tags" "${TMPDIR:-/tmp}/plugin-release-tags.json"
+ruleset "no tag-shaped branches" "${TMPDIR:-/tmp}/plugin-tag-shaped-branches.json"
+```
+
+Then read both back with section 2's step 1, whose listing names each of them on a line of its
+own; any other answer is a repository to fix before anything is pushed to it.
+
 **Private vulnerability reporting.** `SECURITY.md`, `CODE_OF_CONDUCT.md` and both issue-template
 files send reporters to the advisory form, which exists only while the repository setting is on:
 
@@ -396,6 +479,15 @@ projects only.
   `main` has not moved, so nothing else needs undoing. Fix the release commit locally and cut
   X.Y.(Z+1) from step 3, the `CHANGELOG.md` heading included. If a Release was created for the
   spent version, delete it, as step 7 says for a taken name.
+- **The plugin push was refused or failed.** `scripts/publish_plugin.py` pushes `main` and the
+  tag together, atomically, and only after the attestation and the read-back held, so a refusal
+  or a failed push leaves the plugin repository as it was, and this repository's `main` and the
+  `pypi` approval where they were. Step 7 says when to run it again and when to reject the
+  approval. A plugin tag that was pushed is spent like this repository's: its ruleset refuses to
+  move or delete it, and the next release is X.Y.(Z+1). A push that went through for a release
+  that then stopped — a rejected approval, a failed upload — stays, beside the spent tag of this
+  repository that names it: `main` here still installs the previous release, and the next
+  release's push builds on it.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`scripts/release.py check` fails in the workflow but passed locally.** Almost always
@@ -405,7 +497,7 @@ projects only.
 - **`publish-template` pushed the wrong tree.** The next `publish-template` fixes it: it
   replaces the tree whole rather than merging into it.
 
-## 6. The release script
+## 6. The release scripts
 
 `scripts/release.py` is this repository's own tooling, not a command stayfixed ships: it only
 ever checked the stayfixed repository itself. It runs through the same frame as the CLI, so
@@ -418,17 +510,18 @@ uv run python scripts/release.py notes --version X.Y.Z [--draft]  # assemble CHA
 uv run python scripts/release.py hashes [--check]                 # the record of the shipped files
 ```
 
-**`check`** cross-checks the six sources of section 1 and exits `1` naming every one that
+**`check`** cross-checks the seven sources of section 1 and exits `1` naming every one that
 disagrees. Its `--json` object carries `summary`, `versions` (every source and what it says) and
 `problems` (empty on a clean run), and it carries all three whether or not there is drift — the
 drift is in `problems`, not in the shape. A source it cannot parse at all is still a failure and
 prints `error` instead. `--tag` accepts both tag shapes, `vX.Y.Z` and `stayfixed--vX.Y.Z`,
-because either may be the ref a run was created from. Under `--tag` it also counts the files in
-`HEAD`'s tree under each folder the marketplace entries' `source` names, and refuses one past the
-512 the plugin directory lists unheld (section 2); plain `check`, which CI runs on every pull
-request, never counts. It writes nothing; it reads the sources, the fragments pending in
-`changelog.d/`, `hooks/hashes.json` beside the three files it records, and under `--tag` the
-committed tree.
+because either may be the ref a run was created from. Under `--tag` it also counts the plugin
+tree at `HEAD`, by running `scripts/plugin_tree.py manifest`, and refuses one past the 512 the
+plugin directory lists unheld (section 2), or one that script could not read, quoting what it
+said; plain `check`, which CI runs on every pull request, never counts, because
+`tests/test_payload.py` holds the same count there. It writes nothing; it reads the sources, the
+fragments pending in `changelog.d/`, `hooks/hashes.json` beside the three files it records, and
+under `--tag` the committed tree.
 
 **`notes`** is a wrapper around towncrier, which does the rendering while `[tool.towncrier]` in
 `pyproject.toml` owns the format. A `--version` that is not the project's is refused (`2`) before
@@ -451,3 +544,30 @@ commit, which is what makes it a record somebody has watched fail. `stayfixed do
 row reads the installed record against the installed files. Under `--check` it writes nothing,
 exits `1` on drift, and its `--json` object carries `summary`, `files` and `problems` in both
 outcomes.
+
+**`scripts/plugin_tree.py`** names the plugin's paths once, in `PLUGIN_PATHS`, and reads them
+from a commit, never from the disk, so a file edited, deleted or only staged here is not in what
+it reports, and a path that is not a regular file, not UTF-8 or holds a control character is
+refused. `manifest --root DIR --rev REV` counts that tree and, with `--manifest-file`, writes the
+text a release attests: one line naming the format, then one line per file with its git mode,
+the sha256 of its bytes and its path; `render --root DIR --rev REV --out DIR --manifest-file FILE`
+writes the tree into an absent or empty directory with exactly the permissions its modes name,
+and the manifest last, outside it.
+
+```bash
+uv run python scripts/plugin_tree.py manifest --root . --rev HEAD [--exact] [--manifest-file FILE]
+uv run python scripts/plugin_tree.py render --root . --rev HEAD --out DIR --manifest-file FILE
+```
+
+**`scripts/publish_plugin.py`** is step 7's command: it resolves the tag to one commit, renders
+the tree from it, has `gh attestation verify` confirm that this repository's `release.yml`
+attested exactly that manifest for that tag at that commit, builds the plugin repository's next
+commit with git plumbing — no working tree, no index, no filters, no hooks — and reads it back
+whole against the same manifest. Only with `--yes` does it push that commit as `main` and as the
+tag, atomically, to `--remote` (the plugin repository by default); a re-run that finds both
+already there says so, exits `0` and pushes nothing, and any other tree under that tag is a
+refusal.
+
+```bash
+uv run python scripts/publish_plugin.py --tag vX.Y.Z [--remote URL] [--yes]
+```
