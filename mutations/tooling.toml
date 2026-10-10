@@ -2020,3 +2020,168 @@ reddens = [
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[none]",
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
 ]
+
+# `scripts/publish_plugin.py` pushes to the plugin repository only a tree the release attested, at
+# the tag's own commit, built without the owner's filters or hooks, read back whole first, and only
+# as one atomic push of `main` and the tag. Each of these drops one of those conditions.
+[[mutation]]
+name = "the publisher admits a tag with a suffix"
+file = "scripts/publish_plugin.py"
+before = "    if not re.fullmatch(TAG_PATTERN, tag):"
+after = "    if not re.match(TAG_PATTERN, tag):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_that_is_not_a_plain_version_is_refused[v1.2.3-rc1]",
+]
+
+[[mutation]]
+name = "the publisher admits a tag spelled with digits that are not ASCII"
+file = "scripts/publish_plugin.py"
+before = 'TAG_PATTERN = r"v[0-9]+\.[0-9]+\.[0-9]+"'
+after = 'TAG_PATTERN = r"v\d+\.\d+\.\d+"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_that_is_not_a_plain_version_is_refused[v\\u0661.2.3]",
+]
+
+[[mutation]]
+name = "the publisher lets a branch stand in for an absent tag"
+file = "scripts/publish_plugin.py"
+before = '"--end-of-options", f"refs/tags/{tag}^{{commit}}"'
+after = '"--end-of-options", f"{tag}^{{commit}}"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_an_unknown_tag_is_refused_before_anything_runs"]
+
+[[mutation]]
+name = "the publisher stops holding the tag to the version it releases"
+file = "scripts/publish_plugin.py"
+before = "    if tag_for(version)[0] != tag:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_refused"]
+
+[[mutation]]
+name = "the publisher goes on past a refused attestation"
+file = "scripts/publish_plugin.py"
+before = "    if verified.code != 0:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_refused_attestation_stops_before_anything_is_fetched",
+]
+
+[[mutation]]
+name = "the publisher stops binding the attestation to the tag's ref"
+file = "scripts/publish_plugin.py"
+before = '''        "--source-ref",
+        f"refs/tags/{tag}",
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+]
+
+[[mutation]]
+name = "the publisher stops binding the attestation to the tag's commit"
+file = "scripts/publish_plugin.py"
+before = '''        "--source-digest",
+        sha,
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+]
+
+[[mutation]]
+name = "the publisher accepts an attestation made on a self-hosted runner"
+file = "scripts/publish_plugin.py"
+before = '''        "--deny-self-hosted-runners",
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+]
+
+[[mutation]]
+name = "the publisher accepts an attestation signed by any workflow"
+file = "scripts/publish_plugin.py"
+before = '''        "--signer-workflow",
+        SIGNER_WORKFLOW,
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+]
+
+[[mutation]]
+name = "the publisher takes a remote tag holding paths beside the plugin as published"
+file = "scripts/publish_plugin.py"
+before = '    exact = ("manifest", "--exact", "--root", str(git_dir), "--rev", tagged)'
+after = '    exact = ("manifest", "--root", str(git_dir), "--rev", tagged)'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_remote_commit_holding_a_path_outside_the_plugin_is_not_already_published",
+]
+
+[[mutation]]
+name = "the publisher treats a tag already on the remote as absent"
+file = "scripts/publish_plugin.py"
+before = "    if tagged is not None:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_with_another_tree_is_refused"]
+
+[[mutation]]
+name = "the publisher calls a tag published whatever main names"
+file = "scripts/publish_plugin.py"
+before = "    if held.get(MAIN) != commit:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_whose_main_is_elsewhere_is_refused",
+]
+
+[[mutation]]
+name = "the publisher builds every file without its executable bit"
+file = "scripts/publish_plugin.py"
+before = 'directories.setdefault(directory, []).append((mode, "blob", blob, name))'
+after = 'directories.setdefault(directory, []).append(("100644", "blob", blob, name))'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verified_tree_is_pushed_with_its_tag_and_reads_back_whole",
+]
+
+[[mutation]]
+name = "the publisher lets the owner's filters convert what it writes"
+file = "scripts/publish_plugin.py"
+before = '"hash-object", "-w", "--no-filters",'
+after = '"hash-object", "-w",'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_commit_ignores_the_owners_line_ending_and_hook_configuration",
+]
+
+[[mutation]]
+name = "the publisher lets the owner's hooks run on its push"
+file = "scripts/publish_plugin.py"
+before = '''            "-c",
+            "core.hooksPath=/dev/null",
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_commit_ignores_the_owners_line_ending_and_hook_configuration",
+]
+
+[[mutation]]
+name = "the publisher pushes without reading its commit back"
+file = "scripts/publish_plugin.py"
+before = "    if readback.read_bytes() != expected:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_rendered_file_changed_after_the_attestation_is_refused_by_the_read_back",
+]
+
+[[mutation]]
+name = "the publisher pushes without --yes"
+file = "scripts/publish_plugin.py"
+before = "    if yes:"
+after = "    if True:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged"]
+
+[[mutation]]
+name = "the publisher's push is not atomic"
+file = "scripts/publish_plugin.py"
+before = '''            "--atomic",
+'''
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]

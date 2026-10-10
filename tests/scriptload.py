@@ -6,7 +6,8 @@ smoke scripts and the artifact checker all go through it, so a change to how a s
 made once. `release` is the release script, loaded once for every module that reads it — its own
 tests, the repository's manifest test, and the two walks over every reader of a document that may
 not parse. `plugin_tree` is the reader of the plugin's paths, loaded once in the same way: the
-scripts run it as a program, and only the tests import it.
+scripts run it as a program, and only the tests import it. `publish_plugin` is the publisher of
+that tree to the plugin's own repository, loaded once for its tests.
 """
 
 from __future__ import annotations
@@ -51,3 +52,9 @@ def release() -> ModuleType:
 def plugin_tree() -> ModuleType:
     """`scripts/plugin_tree.py` as a module, loaded once."""
     return load(SCRIPTS / "plugin_tree.py", "plugin_tree_script_under_test")
+
+
+@functools.cache
+def publish_plugin() -> ModuleType:
+    """`scripts/publish_plugin.py` as a module, loaded once."""
+    return load(SCRIPTS / "publish_plugin.py", "publish_plugin_script_under_test")
