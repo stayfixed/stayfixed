@@ -1928,3 +1928,64 @@ file = "scripts/plugin_tree.py"
 before = "    if written.resolve().is_relative_to(out.resolve()):"
 after = "    if False:"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_refuses_a_manifest_file_inside_the_tree"]
+
+# The CLI reads the commit `--rev` names and reports that commit: asked of `HEAD`, it would render
+# and count one tree while `Result.data` named another.
+[[mutation]]
+name = "the plugin render reads HEAD instead of the rev it is given"
+file = "scripts/plugin_tree.py"
+before = "    found = members(root, sha)\n    render(found, out)"
+after = "    found = members(root, \"HEAD\")\n    render(found, out)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
+
+[[mutation]]
+name = "the plugin manifest reads HEAD instead of the rev it is given"
+file = "scripts/plugin_tree.py"
+before = "    found = members(root, sha, exact=args.exact)"
+after = "    found = members(root, \"HEAD\", exact=args.exact)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
+
+[[mutation]]
+name = "the plugin manifest command drops --exact"
+file = "scripts/plugin_tree.py"
+before = "    found = members(root, sha, exact=args.exact)"
+after = "    found = members(root, sha)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_manifest_writes_its_file_and_honours_exact"]
+
+[[mutation]]
+name = "the plugin render command writes no manifest file"
+file = "scripts/plugin_tree.py"
+before = "    _write_manifest(written, manifest(found))"
+after = "    pass"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_writes_the_manifest_file_and_renders"]
+
+[[mutation]]
+name = "the plugin tree lists HEAD instead of the commit it resolved"
+file = "scripts/plugin_tree.py"
+before = "    for mode, obj, raw in _listing(root, sha, exact=exact):"
+after = "    for mode, obj, raw in _listing(root, \"HEAD\", exact=exact):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_members_at_an_older_commit_are_that_commits"]
+
+[[mutation]]
+name = "the plugin tree refuses every path under exact"
+file = "scripts/plugin_tree.py"
+before = "        if not any(_under(path, entry) for entry in PLUGIN_PATHS):"
+after = "        if exact or not any(_under(path, entry) for entry in PLUGIN_PATHS):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_exact_lists_a_tree_that_is_only_the_plugin"]
+
+[[mutation]]
+name = "the plugin render refuses an empty directory"
+file = "scripts/plugin_tree.py"
+before = "    return fsops.is_dir(out) and not fsops.is_symlink(out) and not any(out.iterdir())"
+after = "    return False"
+reddens = ["tests/scripts/test_plugin_tree.py::test_render_writes_into_an_empty_directory"]
+
+[[mutation]]
+name = "release check passes a marketplace with no one plugin entry"
+file = "scripts/release.py"
+before = "    if entry is None:\n        named = sum("
+after = "    if entry is None:\n        return []\n    if False:\n        named = sum("
+reddens = [
+  "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[none]",
+  "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
+]

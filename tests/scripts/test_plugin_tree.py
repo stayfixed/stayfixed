@@ -133,6 +133,8 @@ def test_members_read_the_commit_and_not_the_disk(tmp_path: Path) -> None:
 
 
 def test_members_at_an_older_commit_are_that_commits(tmp_path: Path) -> None:
+    # Mutation (declared): the listing asked of `HEAD` instead of the resolved commit -> the second
+    # commit's README is read at the first.
     root = plugin_repository(tmp_path)
     first = git(root, "rev-parse", "HEAD").strip()
     write(root, {"README.md": (b"# second\n", "100644"), "skills/new/SKILL.md": (b"n\n", "100644")})
@@ -215,6 +217,7 @@ def test_exact_refuses_a_path_outside_the_plugin(tmp_path: Path, outside: str) -
 
 
 def test_exact_lists_a_tree_that_is_only_the_plugin(tmp_path: Path) -> None:
+    # Mutation (declared): `exact` refuses every path -> a tree that is only the plugin is refused.
     root = plugin_repository(tmp_path)
     assert listed(root, exact=True) == PLUGIN_FILES
 
@@ -229,7 +232,9 @@ def test_a_missing_plugin_path_is_refused_by_name(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("rev", ["no-such-rev", "HEAD^{tree}", "--all"])
 def test_an_unresolvable_rev_is_refused_by_name(tmp_path: Path, rev: str) -> None:
-    # A tree is not a commit, and an option is not a rev: `--end-of-options` keeps `--all` a name.
+    # A tree is not a commit, and an option is not a rev. `--all` is refused because the
+    # `^{commit}` suffix makes `--all^{commit}` no option git knows, with or without the
+    # `--end-of-options` that stands behind it; no rev shows that flag alone.
     root = plugin_repository(tmp_path)
     with pytest.raises(Refusal) as refused:
         plugin_tree.members(root, rev)
@@ -322,6 +327,7 @@ def test_render_refuses_a_destination_that_is_not_empty(tmp_path: Path, occupied
 
 
 def test_render_writes_into_an_empty_directory(tmp_path: Path) -> None:
+    # Mutation (declared): an existing directory refused even when empty -> this reddens.
     out = tmp_path / "out"
     out.mkdir()
     plugin_tree.render([Member("LICENSE", "100644", b"MIT\n")], out)
@@ -343,6 +349,7 @@ def test_render_twice_writes_the_same_tree_and_manifest(tmp_path: Path) -> None:
 def test_the_cli_writes_the_manifest_file_and_renders(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # Mutation (declared): `render` writes no manifest file -> this reddens.
     root = plugin_repository(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
     out, written = tmp_path / "out", tmp_path / "manifest.txt"
@@ -366,6 +373,7 @@ def test_the_cli_writes_the_manifest_file_and_renders(
 def test_the_cli_manifest_writes_its_file_and_honours_exact(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # Mutation (declared): `manifest` drops `--exact` -> the `.mcp.json` tree is listed, exit 0.
     root = plugin_repository(tmp_path, {".mcp.json": (b"{}\n", "100644")})
     written = tmp_path / "manifest.txt"
     argv = ["manifest", "--root", str(root), "--rev", "HEAD", "--manifest-file", str(written)]
@@ -389,3 +397,29 @@ def test_the_cli_refuses_a_manifest_file_inside_the_tree(
     assert plugin_tree.main([*argv, "--manifest-file", str(out / "MANIFEST")]) == 2
     assert "--manifest-file" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_the_cli_reads_the_rev_it_is_given(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Both commands render and count the commit `--rev` names, not `HEAD`, and report that
+    # commit. Mutations (declared): `members` asked of `HEAD` in `render`, and in `manifest`
+    # -> the second commit's README is written and this reddens.
+    root = plugin_repository(tmp_path)
+    first = git(root, "rev-parse", "HEAD").strip()
+    write(root, {"README.md": (b"# second\n", "100644")})
+    commit(root, "the second")
+    out, rendered, counted = tmp_path / "out", tmp_path / "rendered.txt", tmp_path / "counted.txt"
+    argv = ["--root", str(root), "--rev", first]
+    rendering = ["render", *argv, "--out", str(out), "--manifest-file", str(rendered)]
+    assert plugin_tree.main(rendering) == 0
+    capsys.readouterr()
+    assert plugin_tree.main(["manifest", *argv, "--manifest-file", str(counted), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["rev"] == first
+    on_disk = tree_on_disk(out)
+    assert {path: content for path, (content, _) in on_disk.items()} == {
+        path: content for path, (content, _) in PLUGIN_FILES.items()
+    }
+    expected = plugin_tree.manifest(plugin_tree.members(root, first)).encode("utf-8")
+    assert rendered.read_bytes() == expected
+    assert counted.read_bytes() == expected

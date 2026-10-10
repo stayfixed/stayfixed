@@ -362,6 +362,7 @@ def test_an_entry_naming_another_repository_or_no_ref_is_refused(
 @pytest.mark.parametrize("named", [0, 2], ids=["none", "two"])
 def test_a_marketplace_without_the_plugin_entry_is_named(tmp_path: Path, named: int) -> None:
     # Mutation (declared): the first of several entries taken for the one -> `two` reddens.
+    # Mutation (declared): a marketplace with no one entry passes -> both cases redden.
     entries: list[dict[str, object]] = [{"name": "stayfixed", "source": _url()}] * named
     root = _with_entry(tmp_path, {"name": "another", "source": _url()}, *entries)
     assert release.check(root) == [
@@ -669,7 +670,7 @@ def _over(count: int) -> str:
 @needs_git
 def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     # The release workflow used to compare the tag to the package in shell; the gate that
-    # exists to say "one version everywhere" now takes the tag as a seventh source. Both
+    # exists to say "one version everywhere" now holds the tag against its seven sources. Both
     # tag shapes are accepted — `vX.Y.Z` (the workflow's trigger) and the platform's
     # `stayfixed--vX.Y.Z` — because either may be the one the run was created from.
     # Mutation (declared): accept any tag -> the first assertion reddens.

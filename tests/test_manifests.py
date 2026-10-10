@@ -35,7 +35,8 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
 
 def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
     # The entry fetches the plugin from its own repository, pinned to this release's tag by `ref`
-    # alone. Mutation (declared): the `ref` one release ahead of `plugin.json` -> this reddens.
+    # alone. Mutation (declared): the `ref` made `v0.0.1-<version>`, which is no tag of this
+    # release -> this reddens.
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert marketplace["name"] == "stayfixed-marketplace"
     assert marketplace["description"]

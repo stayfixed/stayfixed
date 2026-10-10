@@ -1535,7 +1535,7 @@ reddens = [
 
 # `doctor` warns whenever `[stayfixed] version` is not the running version, so an example block
 # that kept the last release's number makes a copy-pasted project warn from its first run. Neither
-# document's block is one of the release check's six sources. The `before` stops short of the number
+# document's block is one of the release check's seven sources. The `before` stops short of the number
 # on purpose: an entry that quoted `"0.2.0"` would go stale at the next release, and a mutation
 # that fails to apply is an error rather than a caught regression.
 [[mutation]]

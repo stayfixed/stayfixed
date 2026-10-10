@@ -609,7 +609,7 @@ def test_the_example_configurations_carry_the_running_version(document: Path) ->
     """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
     kept the last release's number is a copy-paste that makes a brand-new project warn.
 
-    `scripts/release.py check` reads six sources and none of them is an example in a document, so
+    `scripts/release.py check` reads seven sources and none of them is an example in a document, so
     `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
     the release. This holds them, the way the Install section is held above.
 
