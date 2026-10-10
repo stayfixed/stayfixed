@@ -1650,3 +1650,141 @@ before = "        return {NOT_A_ROOT: [unusable]}, found"
 after = "        return {VERSION_DRIFT: [unusable]}, found"
 reddens = ["tests/scripts/test_release.py::test_a_root_the_check_cannot_read_is_said_without_a_label_it_is_not"]
 
+
+# The plugin's tree is read from a commit, under nine paths named once in `scripts/plugin_tree.py`,
+# and every reader of the plugin runs that script: a path dropped, a look-alike taken for a plugin
+# path or a byte read off the disk is a tree the directory, the attestation and the plugin
+# repository would all see wrongly at once.
+[[mutation]]
+name = "the plugin tree drops a path the runtime reads"
+file = "scripts/plugin_tree.py"
+before = """    "skills",
+    "agents",
+    "README.md","""
+after = """    "skills",
+    "README.md","""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_members_lists_every_plugin_path_with_its_mode_and_nothing_else",
+]
+
+[[mutation]]
+name = "the plugin tree takes a look-alike neighbour for a plugin path"
+file = "scripts/plugin_tree.py"
+before = '    return path == entry or path.startswith(entry + "/")'
+after = "    return path == entry or path.startswith(entry)"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-file-beside]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-directory-beside]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-package-beside]",
+]
+
+[[mutation]]
+name = "the plugin tree reads its members' bytes off the disk"
+file = "scripts/plugin_tree.py"
+before = "    return sorted((Member(path, mode, blobs[obj]) for path, mode, obj in rows), key=_by_path)"
+after = "    return sorted((Member(path, mode, (root / path).read_bytes()) for path, mode, obj in rows), key=_by_path)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_members_read_the_commit_and_not_the_disk"]
+
+[[mutation]]
+name = "the plugin tree peels no commit from the rev it is given"
+file = "scripts/plugin_tree.py"
+before = '"--end-of-options", f"{rev}^{{commit}}"'
+after = '"--end-of-options", rev'
+reddens = ["tests/scripts/test_plugin_tree.py::test_an_unresolvable_rev_is_refused_by_name[HEAD^{tree}]"]
+
+[[mutation]]
+name = "the plugin tree lists a path holding a control character"
+file = "scripts/plugin_tree.py"
+before = "        if _control(path):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_path_with_a_control_character_is_refused"]
+
+[[mutation]]
+name = "the plugin tree reads a path that is not UTF-8 without refusing it"
+file = "scripts/plugin_tree.py"
+before = "        if not fsops.utf_8_name(raw):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_path_that_is_not_utf_8_is_refused"]
+
+[[mutation]]
+name = "the plugin tree lists a symlink or a submodule as a member"
+file = "scripts/plugin_tree.py"
+before = "        if mode not in REGULAR_MODES:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_symlink_or_submodule_among_the_members_is_refused[symlink]",
+  "tests/scripts/test_plugin_tree.py::test_a_symlink_or_submodule_among_the_members_is_refused[submodule]",
+]
+
+[[mutation]]
+name = "the plugin tree ignores exact and lists only the plugin's paths"
+file = "scripts/plugin_tree.py"
+before = '    pathspec = () if exact else ("--", *PLUGIN_PATHS)'
+after = '    pathspec = ("--", *PLUGIN_PATHS)'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[mcp-json]",
+  "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-script-beside]",
+]
+
+[[mutation]]
+name = "the plugin tree lists a tree missing one of its paths"
+file = "scripts/plugin_tree.py"
+before = "        if not any(_under(path, entry) for path, _, _ in rows):"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_missing_plugin_path_is_refused_by_name"]
+
+# The manifest is the one comparison a publish makes, so each half of a line must move it.
+[[mutation]]
+name = "the plugin manifest drops the mode from a line"
+file = "scripts/plugin_tree.py"
+before = '        lines.append(f"{member.mode} {hashlib.sha256(member.content).hexdigest()} {member.path}")'
+after = '        lines.append(f"{hashlib.sha256(member.content).hexdigest()} {member.path}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_manifest_changes_with_one_byte_and_with_one_mode[one-mode]",
+]
+
+[[mutation]]
+name = "the plugin manifest hashes the path instead of the content"
+file = "scripts/plugin_tree.py"
+before = '        lines.append(f"{member.mode} {hashlib.sha256(member.content).hexdigest()} {member.path}")'
+after = '        lines.append(f"{member.mode} {hashlib.sha256(member.path.encode()).hexdigest()} {member.path}")'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_manifest_changes_with_one_byte_and_with_one_mode[one-byte]",
+]
+
+# A render is the tree byte for byte with each file's mode exactly: a text write loses a byte that
+# is not UTF-8, and without the `fchmod` the umask decides the permissions.
+[[mutation]]
+name = "the plugin render writes members as text"
+file = "scripts/plugin_tree.py"
+before = "                    handle.write(member.content)"
+after = '                    handle.write(member.content.decode(errors="replace").encode())'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-022]",
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-077]",
+]
+
+[[mutation]]
+name = "the plugin render lets the umask decide a file's permissions"
+file = "scripts/plugin_tree.py"
+before = "                    os.fchmod(handle.fileno(), permissions)"
+after = "                    pass"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_writes_bytes_and_the_executable_bit[umask-077]",
+]
+
+[[mutation]]
+name = "the plugin render writes into a destination that is not empty"
+file = "scripts/plugin_tree.py"
+before = "    if not _empty_or_absent(out):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_render_refuses_a_destination_that_is_not_empty[a-file-inside]",
+]
+
+[[mutation]]
+name = "the plugin render writes its manifest file inside the tree"
+file = "scripts/plugin_tree.py"
+before = "    if written.resolve().is_relative_to(out.resolve()):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_refuses_a_manifest_file_inside_the_tree"]
