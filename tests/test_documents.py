@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import io
+import posixpath
 import re
 import shlex
 from contextlib import redirect_stderr
@@ -664,15 +665,20 @@ def test_the_readme_links_only_inside_the_plugin_or_absolutely() -> None:
     names a tracked file, which the link walk skips as a URL.
 
     Mutations (declared): the reference link made relative again, `](docs/cli.md)` -> `outside`
-    reddens; the outbound walk's link naming a file that is not there -> `missing` reddens.
+    reddens; the same link spelled through a plugin path, `](src/stayfixed/../../docs/cli.md)`,
+    which only the normalisation tells from one inside it -> `outside` reddens; the outbound
+    walk's link naming a file that is not there -> `missing` reddens.
     """
     relative = links_in(README)
     # Floors: a README whose links all vanished, or a regex that stopped matching, would make
     # both walks vacuously true. `skills/README.md` and `LICENSE` stay relative today.
     assert len(relative) >= 2, relative
+    # Normalised first: `src/stayfixed/../../docs/cli.md` starts with a plugin path and names a
+    # file outside every one of them.
+    normal = [posixpath.normpath(target) for target in relative]
     outside = [
         target
-        for target in relative
+        for target in normal
         if not any(target == path or target.startswith(path + "/") for path in PLUGIN_TREE_PATHS)
     ]
     assert outside == [], outside

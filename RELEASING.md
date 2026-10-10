@@ -218,13 +218,13 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    git commit -am "chore(release): X.Y.Z"
    ```
 
-6. **Tag, twice, and check the tag.** `claude plugin tag` creates `stayfixed--vX.Y.Z`, the
-   per-plugin shape the plugin tooling writes so a marketplace can resolve *this plugin's*
-   version independently of the repository's; `vX.Y.Z` is the shape everything else expects
-   and the one `release.yml` triggers on. Both name the same commit, which is why
-   `README.md`'s install paragraph can hand a reader `…@vX.Y.Z` — `/plugin marketplace add`
-   takes any git ref — while the `stayfixed--` tag is the one the tooling itself looks for.
-   Neither is a substitute for the other; make both.
+6. **Tag, twice, and check the tag.** `claude plugin tag` is the platform's own tool: it reads
+   the version from `plugin.json` and creates `stayfixed--vX.Y.Z` here. `vX.Y.Z` is the tag
+   `release.yml` triggers on, the one `README.md`'s install paragraph hands a reader
+   (`/plugin marketplace add` takes any git ref), and the one the marketplace entry's `ref` pins
+   in the plugin repository. Both name the same commit. Nothing in the install path reads the
+   `stayfixed--` tag; it is what the platform's tool makes, and making it keeps that tool's
+   view of this repository's releases whole.
 
    **No prerelease tags.** `scripts/release.py check --tag` compares the tag to
    `pyproject.toml`'s literal version string, and `uv.lock` normalises a PEP 440 prerelease
@@ -257,7 +257,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    `build` runs the gate against the tag, tests, builds, renders the plugin tree from the tag's
    commit and attests both the packages and the tree's manifest. Once it is green that
    attestation exists, and before you approve anything, push the plugin, from this checkout,
-   with an authenticated `gh`, an SSH key GitHub knows and a git identity for the commit:
+   with an authenticated `gh`, an SSH key GitHub knows, and `user.name` and `user.email` in your
+   global git configuration, which is the only identity the script's own git sees:
 
    ```bash
    uv run python scripts/publish_plugin.py --tag vX.Y.Z          # verify, build, read back, plan
@@ -270,11 +271,21 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    the tag, and somebody who finds it early gets an install error, not a wrong plugin. A second
    run after a success says the tag is already published and pushes nothing.
 
-   **A refusal stops the release.** It means the tree is not one this run attested for this tag
-   at this commit, or that `gh` could not check, and the message quotes what `gh` or `git` said.
-   Do not work around it — no hand-made push, no other checkout, no other remote. If `gh` could
-   not ask (not logged in, offline), fix that and run the command again; the approval waits. For
-   anything else, reject the `pypi` approval: the tags are spent and nothing else is (section 5).
+   **A refusal stops the release until you have read what it says**, and it is never worked
+   around — no hand-made push, no other checkout, no other remote. Running the command again is
+   safe: nothing is pushed before its one atomic push, and a failed atomic push moves no ref. So
+   classify the refusal by what it says:
+
+   - **Fix it and run again; the `pypi` approval waits.** A local precondition: `gh` is not
+     logged in, or is offline; SSH or the network failed `git ls-remote`, `fetch` or `push`; no
+     git identity in your global git configuration (the refusal from `git commit-tree` names
+     that as the likely cause); the plugin repository's `main` moved while the command ran; or
+     the remote rejected the push, which, being atomic, moved nothing.
+   - **Reject the `pypi` approval.** `gh` found no attestation vouching for this tree at this
+     tag and commit; the plugin repository already holds another tree under the tag, or its
+     `main` names another commit than the tag; or the commit built for it read back as another
+     tree. Each says the tree is not the one this run attested, and the tags are spent while
+     nothing else is (section 5).
 
    Then approve `pypi`. **Once section 3's `pypi` environment exists with a required reviewer**,
    `publish` and `github-release` both wait for it. An approval is given per environment, not
@@ -486,8 +497,9 @@ projects only.
   approval. A plugin tag that was pushed is spent like this repository's: its ruleset refuses to
   move or delete it, and the next release is X.Y.(Z+1). A push that went through for a release
   that then stopped — a rejected approval, a failed upload — stays, beside the spent tag of this
-  repository that names it: `main` here still installs the previous release, and the next
-  release's push builds on it.
+  repository that names it: `main` here still installs the previous release, but the spent
+  `stayfixed/stayfixed@vX.Y.Z` still installs that plugin, because its marketplace's `ref`
+  resolves. The next release's push builds on it.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`scripts/release.py check` fails in the workflow but passed locally.** Almost always

@@ -1545,6 +1545,18 @@ reddens = [
   "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
 ]
 
+# A relative link that climbs out through `..` starts with a plugin path and still names a file the
+# plugin repository does not hold; the test normalises a target before it matches one, and the
+# link walk passes on the mutated line, because the file exists in this checkout.
+[[mutation]]
+name = "the README links the reference through a plugin path and back out"
+file = "README.md"
+before = "](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference"
+after = "](src/stayfixed/../../docs/cli.md) is the reference"
+reddens = [
+  "tests/test_documents.py::test_the_readme_links_only_inside_the_plugin_or_absolutely",
+]
+
 # An absolute link is a URL to the link walk, which skips it, so the same test holds every link
 # to this repository's `main` to a tracked file.
 [[mutation]]

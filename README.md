@@ -129,9 +129,10 @@ As a Claude Code plugin:
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
-The marketplace here fetches the plugin from
+The marketplace in `stayfixed/stayfixed` fetches the plugin from
 [`stayfixed/stayfixed-plugin`](https://github.com/stayfixed/stayfixed-plugin) at the release's
-tag: a repository holding only what the plugin runs, generated from this one at each release.
+tag: a repository holding only what the plugin runs, generated from `stayfixed/stayfixed` at each
+release.
 
 As a command-line tool:
 

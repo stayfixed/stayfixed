@@ -18,7 +18,7 @@ on:
     # `v0.1.0-rc1` while `gh release create` below carries no `--prerelease`, so an rc would
     # have become the repository's "Latest" Release; and it could not have got that far anyway,
     # because `scripts/release.py check --tag` compares the tag to `pyproject.toml`'s literal
-    # version and `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the six-source rule then
+    # version and `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the seven-source rule then
     # reads as two different versions. A trigger for a release this project cannot cut is a
     # trigger that only fires by accident. RELEASING.md section 2, step 6, says the same thing to
     # the person tagging.
