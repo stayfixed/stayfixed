@@ -274,6 +274,9 @@ def test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit(
 
 
 def test_a_second_publish_of_the_same_tag_pushes_nothing(tmp_path: Path) -> None:
+    # Mutations (declared): a tag already on the remote treated as absent -> the second run builds
+    # again and its push is refused by the remote, whose tag exists; the attestation asked after
+    # the remote is listed -> the ordering below.
     source, remote = source_repository(tmp_path), bare_remote(tmp_path)
     first, _ = publish(source, remote, tmp_path / "first")
     before = refs(remote)
@@ -337,7 +340,24 @@ def test_a_missing_git_identity_is_refused_before_anything_is_pushed(tmp_path: P
     with pytest.raises(Refusal, match="git commit-tree exited") as refused:
         publish(source, remote, tmp_path / "scratch")
     assert "user.name" in str(refused.value)
+    assert "global git configuration" in str(refused.value)
     assert refs(remote) == {}
+
+
+def test_a_main_that_moved_before_the_fetch_is_refused_as_a_race(tmp_path: Path) -> None:
+    # Mutation (declared): the parent's presence not checked after the fetch -> `commit-tree -p`
+    # names an object the scratch repository lacks, exits non-zero, and the refusal blames the
+    # identity instead. The listing names a `main` the remote no longer has, which is what a
+    # `main` force-moved between `ls-remote` and the fetch leaves behind.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    before = seed(tmp_path, remote, PLUGIN_FILES, tag=None)
+    gone = "1" * 40
+    runner = _Listing(listing=f"{gone}\trefs/heads/main\n")
+    with pytest.raises(Refusal, match="main moved on the remote") as refused:
+        publish(source, remote, tmp_path / "scratch", runner=runner)
+    assert gone in str(refused.value)
+    assert "run the command again" in str(refused.value)
+    assert refs(remote) == before
 
 
 # --- Refusals before anything runs ------------------------------------------------------------
@@ -402,6 +422,28 @@ def test_a_refused_attestation_stops_before_anything_is_fetched(tmp_path: Path) 
         assert ran(runner, word) == [], word
     assert not (scratch / "plugin.git").exists()
     assert refs(remote) == {}
+
+
+@pytest.mark.parametrize(
+    "written",
+    [b"stayfixed-plugin-tree 1\ngarbage\n", b"stayfixed-plugin-tree 1\n100644 ab \xff\n"],
+    ids=["a-line-of-one-field", "not-utf-8"],
+)
+def test_a_manifest_that_cannot_be_read_is_refused(tmp_path: Path, written: bytes) -> None:
+    # Mutation: the two catches removed -> a `ValueError` or `UnicodeDecodeError` leaves
+    # `publish` instead of a `Refusal`, which the CLI frame reports as an internal error. No
+    # entry: the manifest is `plugin_tree.py`'s own output, so only an edit after the render
+    # reaches either, and the exit code is 2 both ways.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    scratch = tmp_path / "scratch"
+
+    def rewrite(argv: list[str], cwd: Path) -> None:
+        (scratch / "plugin-tree.txt").write_bytes(written)
+
+    runner = Composite(gh=Recorder(on_call=rewrite))
+    with pytest.raises(Refusal, match="stayfixed-plugin-tree 1"):
+        publish(source, remote, scratch, runner=runner)
+    assert ran(runner, "ls-remote") == []
 
 
 def test_a_rendered_file_changed_after_the_attestation_is_refused_by_the_read_back(
@@ -532,6 +574,11 @@ def test_a_rejected_push_moves_no_ref(tmp_path: Path) -> None:
 def test_the_cli_refuses_a_tag_that_is_not_a_plain_version(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    # No mutation: the refusal is the CLI frame's (`stayfixed.cli.run`), whose own tests hold how
+    # a `Refusal` prints under `--json`, and the pattern's two entries redden
+    # `test_a_tag_that_is_not_a_plain_version_is_refused`. What this holds is that the script's
+    # `main` goes through that frame, and no one line of the script can stop it without also
+    # breaking the dry-run case below.
     assert publish_plugin.main(["--tag", "v1.2", "--json"]) == 2
     out = capsys.readouterr().out
     assert '"error": "refused"' in out
@@ -541,6 +588,8 @@ def test_the_cli_refuses_a_tag_that_is_not_a_plain_version(
 def test_the_cli_says_what_a_dry_run_would_push(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # Mutation (declared): the push's `if yes:` -> `if True:` -> the dry run pushes, and says
+    # "pushed" rather than "would push".
     source, remote = source_repository(tmp_path), bare_remote(tmp_path)
     monkeypatch.setattr(publish_plugin, "ROOT", source)
     monkeypatch.setattr(publish_plugin, "subprocess_runner", Composite)
@@ -550,3 +599,38 @@ def test_the_cli_says_what_a_dry_run_would_push(
     assert f"to {remote}: main and {TAG}" in said
     assert "--yes" in said
     assert refs(remote) == {}
+
+
+def test_a_relative_remote_is_the_one_beside_the_owner_and_not_the_scratch_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Mutation: `remote_argument` returning its argument unchanged -> git, run with `-C` in the
+    # scratch repository, looks for `remote.git` there, and the listing is refused.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    monkeypatch.setattr(publish_plugin, "ROOT", source)
+    monkeypatch.setattr(publish_plugin, "subprocess_runner", Composite)
+    monkeypatch.chdir(tmp_path)
+    assert publish_plugin.main(["--tag", TAG, "--remote", "remote.git"]) == 0
+    said = capsys.readouterr().out
+    assert f"to {remote.resolve()}: main and {TAG}" in said
+    assert refs(remote) == {}
+
+
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "git@github.com:stayfixed/stayfixed-plugin.git",
+        "https://github.com/stayfixed/stayfixed-plugin.git",
+        "file:///srv/plugin.git",
+        "host:remote.git",
+        "absent.git",
+    ],
+)
+def test_a_url_an_scp_like_remote_or_an_absent_path_is_given_as_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: str
+) -> None:
+    # Mutation: the scp-like rule dropped -> `host:remote.git`, which exists here as a directory,
+    # is made absolute, and git would read a local path where the owner named a host.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "host:remote.git").mkdir()
+    assert publish_plugin.remote_argument(remote) == remote

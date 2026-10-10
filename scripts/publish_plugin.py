@@ -163,12 +163,25 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
 
 def _manifest_rows(text: bytes) -> list[tuple[str, str]]:
     """`(mode, path)` for every file the attested manifest names, in its order."""
-    lines = text.decode("utf-8").split("\n")
+    try:
+        lines = text.decode("utf-8").split("\n")
+    except UnicodeDecodeError:
+        raise Refusal(f"the rendered manifest is not UTF-8, as {MANIFEST_FORMAT!r} is") from None
     if not lines or lines[0] != MANIFEST_FORMAT or lines[-1] != "":
         raise Refusal(f"the rendered manifest does not open with {MANIFEST_FORMAT!r}")
     rows = []
-    for line in lines[1:-1]:
-        mode, _digest, path = line.split(" ", 2)
+    for number, line in enumerate(lines[1:-1], start=2):
+        fields = line.split(" ", 2)
+        if len(fields) != 3:
+            raise Refusal(
+                f"the rendered manifest's line {number} is not a file's, as {MANIFEST_FORMAT!r} "
+                f"writes one: {clipped(line)}"
+            )
+        mode, _digest, path = fields
+        # No test reddens on this check alone: `plugin_tree.py` writes no other mode, and a mode
+        # edited into the file after the render is built as written and then refused by the
+        # read-back, whose `members` takes only a regular file's. It keeps that edit from
+        # reaching `mktree` at all.
         if mode not in FILE_MODES:
             raise Refusal(f"the rendered manifest names mode {quoted(mode)} for {quoted(path)}")
         rows.append((mode, path))
@@ -246,6 +259,30 @@ def _already(
     return commit
 
 
+def _scratch_repository(scratch: Path) -> Path:
+    """An empty bare repository under `scratch`, for the commit to be built in."""
+    git_dir = scratch / "plugin.git"
+    # No template: the owner's `init.templateDir` could otherwise hand this repository hooks,
+    # attributes or configuration of its own. No test reddens on its removal alone: a template's
+    # attributes reach nothing past `hash-object --no-filters`, and its hooks nothing past the
+    # push's `core.hooksPath`, which are the two lines the template would otherwise act through.
+    code, _ = git_run(scratch, "init", "--bare", "--quiet", "--template=", str(git_dir))
+    if code != 0:
+        raise Refusal(f"git init --bare exited {code} in {scratch}")
+    return git_dir
+
+
+def _parent(git_dir: Path, remote: str, parent: str) -> None:
+    """Refuse a `main` the fetch did not bring: one moved on the remote after it was listed."""
+    code, _ = git_run(git_dir, "rev-parse", "--verify", "--end-of-options", f"{parent}^{{commit}}")
+    if code != 0:
+        raise Refusal(
+            f"{remote}'s main was {parent} when it was listed, and the fetch that followed did "
+            "not bring that commit: main moved on the remote in between. Nothing was pushed; "
+            "run the command again"
+        )
+
+
 def _mktree(git_dir: Path, entries: list[tuple[str, str, str, str]]) -> str:
     """One tree object from `(mode, kind, object, name)` entries; `mktree` sorts them itself."""
     # Each name goes to git as the UTF-8 bytes the manifest holds, whatever the filesystem's
@@ -296,12 +333,15 @@ def _build(
     code, answer = git_run(git_dir, "commit-tree", root_tree, *lineage, *message)
     commit = answer.removesuffix("\n")
     if code != 0 or not commit:
-        # `git_run` keeps git's stderr to itself, so git's own sentence is not here to quote;
-        # the cause it most often gives is the one this names.
+        # `git_run` keeps git's stderr to itself, so git's own sentence is not here to quote.
+        # The parent is known to be present (`_parent`), so the cause left is the identity, and
+        # `git_run` hands git neither the environment's `GIT_AUTHOR_*` nor a scratch repository
+        # any `includeIf "gitdir:…"` matches: only the global configuration's identity reaches it.
         raise Refusal(
             f"git commit-tree exited {code} in {git_dir} and wrote no commit; the commit is "
-            "authored by your own git identity, so check that your git configuration names "
-            "user.name and user.email (`git var GIT_AUTHOR_IDENT` prints git's own sentence)"
+            "authored by the identity in your global git configuration, so set user.name and "
+            "user.email there (git config --global): an identity from GIT_AUTHOR_* variables "
+            'or from an includeIf "gitdir:…" section does not reach this script\'s git'
         )
     return commit
 
@@ -325,13 +365,7 @@ def publish(
     _verify(runner, root, attested, tag, sha)
     expected = attested.read_bytes()
     rows = _manifest_rows(expected)
-
-    git_dir = scratch / "plugin.git"
-    # No template: the owner's `init.templateDir` could otherwise hand this repository hooks,
-    # attributes or configuration of its own.
-    code, _ = git_run(scratch, "init", "--bare", "--quiet", "--template=", str(git_dir))
-    if code != 0:
-        raise Refusal(f"git init --bare exited {code} in {scratch}")
+    git_dir = _scratch_repository(scratch)
     held = _remote_refs(runner, git_dir, remote, tag)
     tagged = held.get(f"refs/tags/{tag}")
     if tagged is not None:
@@ -340,6 +374,7 @@ def publish(
     parent = held.get(MAIN)
     if parent is not None:
         _fetch(runner, git_dir, remote, MAIN)
+        _parent(git_dir, remote, parent)
 
     paragraphs = (
         f"stayfixed {version}",
@@ -380,18 +415,30 @@ def publish(
 # --- The command --------------------------------------------------------------------------------
 
 
+def remote_argument(remote: str) -> str:
+    """`remote` as git should be given it from the scratch repository, which is where every git
+    that reaches it runs (`git -C`): a relative path to a local repository made absolute against
+    the directory the command was run in, and anything else — a URL, an scp-like `host:path` —
+    as it was given. git reads a colon before the first slash as scp-like, so this does too."""
+    if "://" in remote or ":" in remote.split("/", 1)[0]:
+        return remote
+    path = Path(remote)
+    return str(path.resolve()) if path.exists() and not path.is_absolute() else remote
+
+
 def run_publish(args: argparse.Namespace) -> Result:
+    remote = remote_argument(args.remote)
     with tempfile.TemporaryDirectory(prefix="stayfixed-publish-") as scratch:
         done = publish(
             ROOT,
             args.tag,
-            remote=args.remote,
+            remote=remote,
             yes=args.yes,
             runner=subprocess_runner(),
             scratch=Path(scratch),
         )
-    data = {**asdict(done), "remote": args.remote}
-    where = f"{done.files} files as {done.commit} to {args.remote}: main and {done.tag}"
+    data = {**asdict(done), "remote": remote}
+    where = f"{done.files} files as {done.commit} to {remote}: main and {done.tag}"
     if done.already:
         return Result(f"already published: {where}; nothing was pushed", data)
     if done.pushed:

@@ -2122,7 +2122,36 @@ name = "the publisher treats a tag already on the remote as absent"
 file = "scripts/publish_plugin.py"
 before = "    if tagged is not None:"
 after = "    if False:"
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_with_another_tree_is_refused"]
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_with_another_tree_is_refused",
+  "tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing",
+]
+
+[[mutation]]
+name = "the publisher asks for the attestation after listing the remote"
+file = "scripts/publish_plugin.py"
+before = """    _verify(runner, root, attested, tag, sha)
+    expected = attested.read_bytes()
+    rows = _manifest_rows(expected)
+    git_dir = _scratch_repository(scratch)
+    held = _remote_refs(runner, git_dir, remote, tag)
+"""
+after = """    expected = attested.read_bytes()
+    rows = _manifest_rows(expected)
+    git_dir = _scratch_repository(scratch)
+    held = _remote_refs(runner, git_dir, remote, tag)
+    _verify(runner, root, attested, tag, sha)
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing"]
+
+[[mutation]]
+name = "the publisher builds on a main the fetch did not bring"
+file = "scripts/publish_plugin.py"
+before = "        _parent(git_dir, remote, parent)\n"
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_moved_before_the_fetch_is_refused_as_a_race",
+]
 
 [[mutation]]
 name = "the publisher calls a tag published whatever main names"
@@ -2176,7 +2205,10 @@ name = "the publisher pushes without --yes"
 file = "scripts/publish_plugin.py"
 before = "    if yes:"
 after = "    if True:"
-reddens = ["tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged"]
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+  "tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push",
+]
 
 [[mutation]]
 name = "the publisher's push is not atomic"
