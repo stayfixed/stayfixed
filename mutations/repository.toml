@@ -2041,29 +2041,8 @@ before = "    if len(listed) > FILES_MAX:"
 after = "    if len(listed) >= FILES_MAX:"
 reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
 
-# The tree's test drops the count's finding, which a release checks instead, and nothing else; a
-# filter that drops more passes a tree the directory would hold.
-[[mutation]]
-name = "the tree's rule drops every payload finding with the count's"
-file = "tests/test_payload.py"
-before = "    return [finding for finding in findings if finding != count]"
-after = "    return []"
-reddens = ["tests/test_payload.py::test_the_tree_rule_excludes_the_count_and_nothing_else"]
-
-# Dropped by its spelling, the count's finding must still be there to drop over the limit and absent
-# at it, or the exclusion hides a count rule gone quiet.
-[[mutation]]
-name = "the tree's rule stops asking whether the count's finding is the right one"
-file = "tests/test_payload.py"
-before = "    if (count in findings) != (len(entries) > FILES_MAX):"
-after = "    if False:"
-reddens = [
-  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[silent-over-the-limit]",
-  "tests/test_payload.py::test_a_count_rule_that_answers_wrongly_is_refused_rather_than_excluded[speaking-at-the-limit]",
-]
-
-# A tracked symlink blocks the listing wherever the plugin loads it, and every path of a plugin at
-# the repository root is one it may load, so the payload guard must name one.
+# A tracked symlink blocks the listing wherever the plugin loads it, and every path of the plugin's
+# tree is one it may load, so the payload guard must name one.
 [[mutation]]
 name = "a tracked symlink stops being a payload finding"
 file = "tests/test_payload.py"
@@ -3193,3 +3172,22 @@ reddens = [
   "tests/test_patterns.py::test_the_scan_reads_a_pattern_wherever_the_source_spells_it[a function taken out of re]",
 ]
 
+
+# The payload is the plugin's generated tree, which the directory scans, and not the repository
+# beside it: a walk of the whole root judges files that never ship and misses nothing that does.
+[[mutation]]
+name = "the payload guard walks the whole repository instead of the plugin tree"
+file = "tests/test_payload.py"
+before = '    members = plugin_tree().members(root, "HEAD")'
+after = '    members = [plugin_tree().Member(p, "100644", b"") for p in git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD").split("\0") if p]'
+reddens = ["tests/test_payload.py::test_the_payload_is_the_generated_plugin_tree"]
+
+# The marketplace pins the plugin repository's tag for this release. The `before` stops short of the
+# number on purpose, as the README's example configuration's entry does: an entry that quoted
+# `v0.2.0` would go stale at the next release.
+[[mutation]]
+name = "the marketplace pins a plugin tag that is not this release's"
+file = ".claude-plugin/marketplace.json"
+before = '"ref": "v'
+after = '"ref": "v0.0.1-'
+reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]

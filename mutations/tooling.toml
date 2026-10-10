@@ -1348,67 +1348,136 @@ reddens = [
   "tests/scripts/test_release.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
 ]
 
-# At a tag the plugin folder the marketplace names may hold no more files than the plugin directory
-# lists unheld: a pull request may carry the tree past them, and a release is what it lists.
+# At a tag the plugin tree may hold no more files than the plugin directory lists unheld; the tree
+# is the plugin's paths at HEAD, which `scripts/plugin_tree.py` reads, and nothing beside them.
 [[mutation]]
-name = "release check stops refusing a plugin folder over the directory's count"
+name = "release check stops refusing a plugin tree over the directory's count"
 file = "scripts/release.py"
-before = "        if count > PLUGIN_FILES_MAX:"
-after = "        if False:"
+before = "    if count > PLUGIN_FILES_MAX:"
+after = "    if False:"
 reddens = [
-  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count",
-  "tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names",
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
 ]
 
 [[mutation]]
-name = "release check refuses a plugin folder at the directory's count"
+name = "release check refuses a plugin tree at the directory's count"
 file = "scripts/release.py"
-before = "        if count > PLUGIN_FILES_MAX:"
-after = "        if count >= PLUGIN_FILES_MAX:"
+before = "    if count > PLUGIN_FILES_MAX:"
+after = "    if count >= PLUGIN_FILES_MAX:"
 reddens = [
-  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
+]
+
+# The tree is read from a commit: listed from the index, a file only staged under a plugin path
+# is counted, and the count is not the one the directory reads.
+[[mutation]]
+name = "release check counts the plugin tree in the index instead of HEAD"
+file = "scripts/plugin_tree.py"
+before = '"ls-tree", "-r", "-z", "--full-tree", sha, *pathspec'
+after = '"ls-files", "--format=%(objectmode) blob %(objectname)%x09%(path)", "-z", *pathspec'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
 ]
 
 [[mutation]]
-name = "release check counts the plugin folder in the index instead of HEAD"
+name = "release check counts the whole repository instead of the plugin tree"
 file = "scripts/release.py"
-before = '"ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder'
-after = '"ls-files", "-z", "--", folder'
+before = "    count = _files_counted(done)"
+after = '    count = len(subprocess_runner().launch(["git", "ls-tree", "-r", "--name-only", "HEAD"], root).stdout.splitlines())'
 reddens = [
-  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_folder_at_the_count_whatever_the_disk_holds",
+  "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
 ]
 
 [[mutation]]
-name = "release check counts the plugin folder without a tag"
+name = "release check counts the plugin tree without a tag"
 file = "scripts/release.py"
-before = "    if tag is not None:\n        kinds[FOLDER_COUNT] = plugin_folder_counts(root)"
-after = "    if True:\n        kinds[FOLDER_COUNT] = plugin_folder_counts(root)"
-reddens = ["tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_folder_over_the_directory_count"]
-
-[[mutation]]
-name = "release check counts the repository root whatever the marketplace source names"
-file = "scripts/release.py"
-before = "        folder = str(PurePosixPath(source))"
-after = '        folder = "."'
-reddens = ["tests/scripts/test_release.py::test_the_count_reads_the_folder_the_marketplace_source_names"]
-
-[[mutation]]
-name = "release check counts a plugin the marketplace fetches from elsewhere"
-file = "scripts/release.py"
-before = "        if not isinstance(source, str):\n            continue"
-after = "        if False:\n            continue"
+before = "    if tag is not None:\n        kinds[FOLDER_COUNT] = plugin_tree_count(root)"
+after = "    if True:\n        kinds[FOLDER_COUNT] = plugin_tree_count(root)"
 reddens = [
-  "tests/scripts/test_release.py::test_a_plugin_the_marketplace_fetches_from_elsewhere_is_not_counted",
+  "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
+  "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
 ]
 
-# A gate that cannot count does not pass: read as an empty listing, a git that failed is nought files.
+# A gate that cannot count does not pass: read as nought files, a tree `plugin_tree.py` refused, or
+# no checkout at all, passes the count.
 [[mutation]]
-name = "release check reads a plugin folder git could not list as empty"
+name = "release check reads a plugin tree it could not count as empty"
 file = "scripts/release.py"
-before = "        if code != 0:"
-after = "        if False:"
+before = "    count = _files_counted(done)\n    if count is None:"
+after = "    count = _files_counted(done) or 0\n    if False:"
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+]
+
+# The marketplace's plugin entry is the plugin repository, pinned to the release's tag: its `ref`
+# is a version source, and the entry's shape is held so that a release commit cannot name another
+# repository, a branch, a commit id it cannot know, or a version of its own.
+[[mutation]]
+name = "release check leaves the marketplace out of the version sources"
+file = "scripts/release.py"
+before = """    "CHANGELOG.md",
+    MARKETPLACE,
+)"""
+after = """    "CHANGELOG.md",
+)"""
+reddens = [
+  "tests/scripts/test_release.py::test_the_marketplace_ref_is_a_version_source",
+  "tests/scripts/test_release.py::test_collect_reads_every_source_value",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry fetching any url"
+file = "scripts/release.py"
+before = '        or source.get("url") != PLUGIN_URL'
+after = '        or not source.get("url")'
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[another-url]",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry pinned to no release tag"
+file = "scripts/release.py"
+before = "    if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[no-ref]",
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-branch-ref]",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry pinning a sha"
+file = "scripts/release.py"
+before = '    if "sha" in source:'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-sha]",
+]
+
+[[mutation]]
+name = "release check accepts a marketplace entry carrying a version"
+file = "scripts/release.py"
+before = '    if "version" in entry:'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-version-on-the-entry]",
+]
+
+[[mutation]]
+name = "release check takes the first of several plugin entries for the one"
+file = "scripts/release.py"
+before = "    return named[0] if len(named) == 1 else None"
+after = "    return named[0] if named else None"
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]"]
+
+[[mutation]]
+name = "release check says a marketplace pinning no tag twice, once as version drift"
+file = "scripts/release.py"
+before = "        if name == MARKETPLACE and value is None:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_path_source_is_refused_as_the_plugin_folder_it_used_to_be",
 ]
 
 # A record problem is spelled one way by both commands: `check` said "version drift" of a record no

@@ -69,11 +69,12 @@ DECLARATIONS = ROOT / "mutations"
 # **A hand-kept table, and a deliberate exception to CONTRIBUTING's "areas are discovered by
 # name — there is no shared registry to edit".** One file per area would need no table, and it
 # would be about twenty files, not eleven. The plugin directory holds the version for a
-# reviewer past 512 files as well as at a file of 256 KiB, and with the repository root as the
-# plugin folder every tracked file counts against the 512 (`tests/test_payload.py` holds the tree
-# to the size, and `scripts/release.py check --tag` a release to the count), so the groups are as
-# coarse as the size limit lets them be. A group that outgrows its file is split by its largest
-# area, which is an edit to this table.
+# reviewer past 512 files as well as at a file of 256 KiB, and the groups were sized while the
+# repository root was the plugin folder, when every tracked file counted against the 512, so they
+# are as coarse as the size limit let them be. The plugin's tree (`scripts/plugin_tree.py`) no
+# longer holds `mutations/`, so neither limit reaches these files now; the table stays, unchanged,
+# until a follow-up decides whether its coarse grouping still earns it. A group that outgrows its
+# file is split by its largest area, which is an edit to this table.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),

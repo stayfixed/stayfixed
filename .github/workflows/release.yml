@@ -47,11 +47,11 @@ jobs:
       - name: Install
         run: uv sync --locked
       - name: Version discipline, against the tag
-        # The tag is the claim; the six sources, the changelog and the hash record are what
+        # The tag is the claim; the seven sources, the changelog and the hash record are what
         # the claim has to agree with, and `scripts/release.py check --tag` holds all of them. A
         # tag that names a version no source carries is the one release mistake PyPI will not let
-        # you undo. It also refuses a plugin folder over the plugin directory's file count, which
-        # no pull request is held to (RELEASING.md, section 2).
+        # you undo. It also refuses a plugin tree over the plugin directory's file count, which
+        # `tests/test_payload.py` holds on every pull request as well.
         run: uv run python scripts/release.py check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q

@@ -34,7 +34,7 @@ import json
 import re
 import sys
 import tomllib
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops
@@ -42,9 +42,7 @@ from stayfixed.cli import JSON_EPILOG, run
 from stayfixed.command import CHECK_HELP, ROOT_HELP
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import git_run
 from stayfixed.jsonobject import json_object
-from stayfixed.printed import quoted
 from stayfixed.release.api import (
     FORMAT,
     HASHED_FILES,
@@ -56,13 +54,14 @@ from stayfixed.release.api import (
     tag_for,
 )
 from stayfixed.result import Result
-from stayfixed.runner import NOT_FOUND, Runner, subprocess_runner
+from stayfixed.runner import NOT_FOUND, Completed, Runner, subprocess_runner
 
 # How a message tells the reader to run one of these commands again.
 COMMAND = "uv run python scripts/release.py"
 
 PYPROJECT = "pyproject.toml"
 LOCKFILE = "uv.lock"
+MARKETPLACE = ".claude-plugin/marketplace.json"
 SOURCES = (
     PYPROJECT,
     LOCKFILE,
@@ -70,10 +69,20 @@ SOURCES = (
     ".claude-plugin/plugin.json",
     ".codex-plugin/plugin.json",
     "CHANGELOG.md",
+    MARKETPLACE,
 )
-MARKETPLACE = ".claude-plugin/marketplace.json"
-# The most files a plugin folder holds without the Claude plugin directory holding the listing for
-# a reviewer: "Keep the plugin to 512 files or fewer", its pre-submission checklist says
+# Where the marketplace fetches the plugin from: a repository of its own, whose root is the tree
+# `scripts/plugin_tree.py` generates from this one. The marketplace entry is a `url` source pinned
+# to the release's tag by `ref`, and that `ref` is a version source (`_released_ref`): the release
+# commit names the tag it releases, which is the only marketplace a user reads, since `README.md`
+# installs `stayfixed/stayfixed@vX.Y.Z` and `main` moves only at a release.
+PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
+# A release's tag, as the marketplace entry's `ref` names it.
+_RELEASE_REF = re.compile(r"v(\d+\.\d+\.\d+)")
+# The script that names the plugin's paths, run as a program and never imported.
+PLUGIN_TREE = Path(__file__).resolve().with_name("plugin_tree.py")
+# The most files a plugin holds without the Claude plugin directory holding the listing for a
+# reviewer: "Keep the plugin to 512 files or fewer", its pre-submission checklist says
 # (https://claude.com/docs/plugins/pre-submission-checklist, read 2026-10-05). The number is the
 # page's and no file's here; `tests/test_payload.py` reads it as its `FILES_MAX`.
 PLUGIN_FILES_MAX = 512
@@ -82,8 +91,8 @@ _INIT = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 _HEADING = re.compile(r"^## (\S+)", re.MULTILINE)
 
 TAG_HELP = (
-    "the tag this run was created from; the six sources and the changelog must agree with it, "
-    "and the plugin folder must hold no more files than the plugin directory lists unheld"
+    "the tag this run was created from; the seven sources and the changelog must agree with it, "
+    "and the plugin tree must hold no more files than the plugin directory lists unheld"
 )
 
 
@@ -131,6 +140,10 @@ def _parse(name: str, text: str) -> str | None:
     if name.endswith("__init__.py"):
         match = _INIT.search(text)
         return match.group(1) if match else None
+    # Ahead of the `.json` rule below: the marketplace carries no `version`, and its version is the
+    # tag its plugin entry pins.
+    if name == MARKETPLACE:
+        return _released_ref(_plugin_entries(text))
     if name.endswith(".json"):
         version = _object(name, text).get("version")
         return str(version) if version is not None else None
@@ -224,6 +237,11 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
         text = marketplace.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{MARKETPLACE} is not UTF-8 text") from None
+    return _plugin_entries(text)
+
+
+def _plugin_entries(text: str) -> list[dict[str, Any]]:
+    """The `plugins` entries of the marketplace's text, each an object."""
     entries = _object(MARKETPLACE, text).get("plugins", [])
     # A string entry was read with `in`, a substring test, and a string `plugins` as a list of
     # its characters, so the rule passed over both in silence.
@@ -234,12 +252,69 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _the_plugin_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The one entry named for the package, or `None` when there is not exactly one."""
+    named = [entry for entry in entries if entry.get("name") == PACKAGE]
+    return named[0] if len(named) == 1 else None
+
+
+def _released_ref(entries: list[dict[str, Any]]) -> str | None:
+    """The version the plugin entry's `ref` pins, `X.Y.Z` of a `vX.Y.Z` tag, or `None` when the
+    entry pins none of that shape: `marketplace_problems` says why, in its own words."""
+    entry = _the_plugin_entry(entries)
+    source = entry.get("source") if entry is not None else None
+    ref = source.get("ref") if isinstance(source, dict) else None
+    match = _RELEASE_REF.fullmatch(ref) if isinstance(ref, str) else None
+    return match.group(1) if match else None
+
+
+def marketplace_problems(root: Path) -> list[str]:
+    """Every way the marketplace's plugin entry is not the one a release publishes: exactly one
+    entry named for the package, fetching the plugin repository as a `url` source pinned to a
+    `vX.Y.Z` tag by `ref` alone, and carrying no `version` of its own.
+
+    No `sha`: the release commit names the tag before the plugin repository holds the commit it
+    will name, so no commit id can be known when it is written.
+    """
+    entries = _marketplace_entries(root)
+    entry = _the_plugin_entry(entries)
+    if entry is None:
+        named = sum(1 for each in entries if each.get("name") == PACKAGE)
+        return [
+            f"{MARKETPLACE} has {named} entries named {PACKAGE!r}; it must have exactly one, "
+            f"fetching the plugin from {PLUGIN_URL}"
+        ]
+    said = f"{MARKETPLACE} entry {PACKAGE!r}"
+    problems = []
+    if "version" in entry:
+        problems.append(f"{said} carries a version; plugin.json is the only source")
+    source = entry.get("source")
+    if (
+        not isinstance(source, dict)
+        or source.get("source") != "url"
+        or source.get("url") != PLUGIN_URL
+    ):
+        problems.append(
+            f"{said} does not fetch the plugin from {PLUGIN_URL}; the plugin is published from "
+            "stayfixed/stayfixed-plugin, as a url source pinned to the release's tag"
+        )
+        return problems
+    ref = source.get("ref")
+    if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:
+        problems.append(f"{said} pins ref {ref!r}, which is no release tag vX.Y.Z")
+    if "sha" in source:
+        problems.append(
+            f"{said} pins a sha, which the release commit cannot know; pin the tag by ref alone"
+        )
+    return problems
+
+
 # The words `check` reports each kind of problem under. A record problem is no version
 # disagreeing, and is spelled as `hashes --check` spells it, so one state reads one way whichever
-# command found it; the folder count is a third kind, found only at a tag.
+# command found it; the plugin tree's count is a third kind, found only at a tag.
 VERSION_DRIFT = "version drift"
 RECORD_DRIFT = "release record drift"
-FOLDER_COUNT = "plugin folder count"
+FOLDER_COUNT = "plugin tree count"
 # A `--root` that is no repository root is none of them, and is said with no word in front of it.
 NOT_A_ROOT = ""
 
@@ -313,14 +388,13 @@ def checked_by_kind(
     for name, value in found.items():
         if name == "CHANGELOG.md" and tag is None and pending:
             continue
+        # A marketplace that pins no release tag has no version to compare, and
+        # `marketplace_problems` names what it pins instead.
+        if name == MARKETPLACE and value is None:
+            continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
-    for entry in _marketplace_entries(root):
-        if "version" in entry:
-            problems.append(
-                f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
-                "plugin.json is the only source"
-            )
+    problems += marketplace_problems(root)
     # The record of the shipped files is held current here and not only at a tag, so a
     # wrapper edited without `hashes` fails the gate the same commit.
     #
@@ -333,43 +407,63 @@ def checked_by_kind(
     kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], FOLDER_COUNT: []}
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         kinds[RECORD_DRIFT] = drift(root)
-    # At a tag and never on a pull request: a pull request may carry the tree past the count, and
-    # a release is what the directory lists.
+    # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
+    # pull request, and this holds it again where the release is cut.
     if tag is not None:
-        kinds[FOLDER_COUNT] = plugin_folder_counts(root)
+        kinds[FOLDER_COUNT] = plugin_tree_count(root)
     return kinds, found
 
 
-def plugin_folder_counts(root: Path) -> list[str]:
-    """Each plugin folder the marketplace names in this tree that holds more files than the
-    plugin directory lists without holding the listing for a reviewer.
+def plugin_tree_count(root: Path) -> list[str]:
+    """The plugin tree at `HEAD`, if it holds more files than the plugin directory lists without
+    holding the listing for a reviewer.
 
-    Counted in `HEAD`'s tree, as the directory reads a commit: a file on disk or only staged is
-    not in what it scans. A `source` that is not a path fetches the plugin from elsewhere, so this
-    tree holds none of it. A folder git cannot list is a problem rather than nought files: the
-    gate that cannot count does not pass.
+    Counted by running `scripts/plugin_tree.py`, which names the plugin's paths and reads them
+    from the commit, as the directory and the plugin repository see it: a file on disk or only
+    staged is not in it. A tree that script cannot read — no checkout, a missing plugin path, a
+    symlink, a name holding a control character — is a problem quoting what it said, and never
+    nought files or an exception out of `check`: the gate that cannot count does not pass.
     """
-    problems = []
-    for entry in _marketplace_entries(root):
-        source = entry.get("source")
-        if not isinstance(source, str):
-            continue
-        folder = str(PurePosixPath(source))
-        code, listing = git_run(root, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder)
-        if code != 0:
-            problems.append(
-                f"the plugin folder {quoted(source)} could not be counted in HEAD's tree "
-                f"(git exited {code}); run the check in the git checkout the tag names"
-            )
-            continue
-        count = listing.count("\0")
-        if count > PLUGIN_FILES_MAX:
-            problems.append(
-                f"the plugin folder {quoted(source)} holds {count} files, over the "
-                f"{PLUGIN_FILES_MAX} the plugin directory lists unheld; publish the plugin "
-                "from its own repository first (RELEASING.md, section 2)"
-            )
-    return problems
+    argv = [sys.executable, str(PLUGIN_TREE), "manifest", "--root", str(root.resolve())]
+    done = subprocess_runner().launch([*argv, "--rev", "HEAD", "--json"], root)
+    count = _files_counted(done)
+    if count is None:
+        return [
+            f"the plugin tree could not be counted: {_said(done)}; "
+            "run the check in the git checkout the tag names"
+        ]
+    if count > PLUGIN_FILES_MAX:
+        return [
+            f"the plugin tree (scripts/plugin_tree.py) holds {count} files, over the "
+            f"{PLUGIN_FILES_MAX} the plugin directory lists unheld"
+        ]
+    return []
+
+
+def _files_counted(done: Completed) -> int | None:
+    """The `files` a successful `plugin_tree.py manifest --json` reported, or `None`."""
+    if done.code != 0:
+        return None
+    try:
+        report = json.loads(done.stdout)
+    except ValueError:
+        return None
+    files = report.get("files") if isinstance(report, dict) else None
+    return files if isinstance(files, int) and not isinstance(files, bool) else None
+
+
+def _said(done: Completed) -> str:
+    """What `plugin_tree.py` said as it failed: under `--json` the frame prints a refusal's
+    sentence as the object's `summary` on stdout, and anything that dies before the frame speaks
+    leaves its last word on stderr."""
+    try:
+        report = json.loads(done.stdout)
+    except ValueError:
+        report = None
+    if isinstance(report, dict) and isinstance(report.get("summary"), str):
+        return str(report["summary"])
+    lines = [line for line in done.stderr.splitlines() if line.strip()]
+    return lines[-1] if lines else f"it exited {done.code} and said nothing"
 
 
 # --- The changelog ------------------------------------------------------------------------------
@@ -386,7 +480,7 @@ def build(root: Path, *, version: str, draft: bool, runner: Runner) -> str:
     if version != current:
         raise Refusal(
             f"--version {version} is not the project's ({current!r}); set the version "
-            f"everywhere first — `{COMMAND} check` names the six places — and then "
+            f"everywhere first — `{COMMAND} check` names the seven places — and then "
             "assemble the changelog under it"
         )
     argv = ["towncrier", "build", "--version", version, "--yes"] + (["--draft"] if draft else [])
