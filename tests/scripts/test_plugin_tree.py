@@ -289,15 +289,17 @@ def test_render_writes_bytes_and_the_executable_bit(tmp_path: Path, mask: int) -
     # Mutation (declared): written as `content.decode(errors="replace")` text -> `\xff` is
     # replaced. Mutation (declared): the `fchmod` dropped -> under 077 the umask decides.
     awkward = b"line\r\n\x00nul\xff\n"
+    # Not the hook wrapper's path: `tests/test_owner_home_seam.py` reads a list headed by it as a
+    # launch of stayfixed.
     entries = [
-        Member("hooks/run-hook.sh", "100755", b"#!/bin/sh\r\n" + awkward),
+        Member("bin/run", "100755", b"#!/bin/sh\r\n" + awkward),
         Member("skills/data/blob", "100644", awkward),
     ]
     out = tmp_path / "out"
     with umask(mask):
         plugin_tree.render(entries, out)
     assert tree_on_disk(out) == {
-        "hooks/run-hook.sh": (b"#!/bin/sh\r\n" + awkward, 0o755),
+        "bin/run": (b"#!/bin/sh\r\n" + awkward, 0o755),
         "skills/data/blob": (awkward, 0o644),
     }
 
