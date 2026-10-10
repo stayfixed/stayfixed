@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -32,7 +34,11 @@ from tests.gitfixture import git, needs_git
 from tests.ownerhome import checkout_with_owner_home
 from tests.test_fixtures import (
     CHECK_WORKFLOW,
+    CI_WORKFLOW,
+    RELEASE_WORKFLOW,
     needs_bash,
+    needs_ci_workflow,
+    needs_release_workflow,
     needs_workflow,
     step_script,
 )
@@ -849,3 +855,226 @@ def test_the_custom_step_runs_only_the_custom_gates_only_names(tmp_path: Path) -
     code, printed, _ = _judge(workspace, base_sha, "tests", step=CUSTOM)
     assert code == 0, printed
     assert marker.exists(), printed
+
+
+# --- The plugin tree the workflows validate, install and attest -------------------------------
+#
+# The directory reads the plugin repository's commit, and that commit's root is the tree
+# `scripts/plugin_tree.py render` writes, not this checkout, whose root also holds the tests, the
+# plans and the tooling. So every job that judges the plugin judges a render: `ci.yml`'s
+# validator, `smoke.yml`'s install and `release.yml`'s attestation. A job pointed back at the
+# checkout stays green over a tree no user installs, so each case below is about where a job reads
+# from, not whether it runs.
+
+RENDER = "uv run python scripts/plugin_tree.py render"
+needs_smoke_workflow = pytest.mark.skipif(
+    not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist"
+)
+
+
+def _steps_of(workflow: Path, job: str) -> list[dict[str, Node]]:
+    """The named job's steps, as the strict reader reads the workflow."""
+    document = load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), workflow
+    jobs = document.get("jobs")
+    assert isinstance(jobs, dict), workflow
+    found = jobs[job]
+    assert isinstance(found, dict), (workflow, job)
+    steps = found.get("steps")
+    assert isinstance(steps, list), (workflow, job)
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def _run(step: dict[str, Node]) -> str:
+    script = step.get("run")
+    return script if isinstance(script, str) else ""
+
+
+def _lines(script: str) -> list[str]:
+    """The script's commands as bash reads them: a line continued with `\\` joined to the next,
+    and blank lines and comment lines dropped."""
+    lines: list[str] = []
+    pending = ""
+    for raw in script.splitlines():
+        line = f"{pending} {raw.strip()}" if pending else raw.strip()
+        pending = ""
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+        elif line and not line.startswith("#"):
+            lines.append(line)
+    if pending:
+        lines.append(pending)
+    return lines
+
+
+def _options(line: str) -> dict[str, str]:
+    """Each `--option value` on a command line, its value unquoted as the shell would and its
+    variables left as written."""
+    return {word: value for word, value in pairwise(shlex.split(line)) if word.startswith("--")}
+
+
+def _uses(step: dict[str, Node]) -> str:
+    uses = step.get("uses")
+    return uses.split("@")[0] if isinstance(uses, str) else ""
+
+
+def _with(step: dict[str, Node], key: str) -> str:
+    """An action input, with `${{ runner.temp }}` read as the `$RUNNER_TEMP` a script names."""
+    given = step.get("with")
+    assert isinstance(given, dict) and isinstance(given.get(key), str), step
+    return str(given[key]).replace("${{ runner.temp }}", "$RUNNER_TEMP")
+
+
+def _render_step(workflow: Path, job: str) -> tuple[int, dict[str, str]]:
+    """The one step of `job` that renders the plugin tree: its index and its options."""
+    found = [
+        (index, line)
+        for index, step in enumerate(_steps_of(workflow, job))
+        for line in _lines(_run(step))
+        if RENDER in line
+    ]
+    assert len(found) == 1, (workflow.name, job, found)
+    index, line = found[0]
+    assert line.startswith(RENDER), line
+    return index, _options(line)
+
+
+def _install_id() -> str:
+    """The id of the smoke step that installs the plugin, whose `root` output names the tree."""
+    install = [
+        step
+        for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
+        if "claude plugin install" in _run(step)
+    ]
+    assert len(install) == 1, install
+    ident = install[0].get("id")
+    assert isinstance(ident, str) and "root=$root" in _run(install[0]), install[0]
+    return ident
+
+
+@needs_smoke_workflow
+def test_the_smoke_installs_the_rendered_tree_and_never_the_checkout() -> None:
+    # The install is the smoke's subject: every later step runs hooks, `doctor` and the
+    # exfiltration scenario from what it installed. Adding the checkout as the marketplace
+    # installs this repository's root, which ships nowhere. An allowlist rather than a list of
+    # bad spellings: `"$PWD"`, `${PWD}`, `$(pwd)`, `.`, `./` and `$GITHUB_WORKSPACE` each name
+    # the checkout, and only a directory under the runner's temporary directory, which the job
+    # writes from the render, passes. Mutation (oracle): `mutations/`'s "the smoke installs the
+    # checkout again" puts back `claude plugin marketplace add "$PWD"`.
+    _, render = _render_step(SMOKE_WORKFLOW, "installed-plugin")
+    assert render["--rev"] == "HEAD", render
+    assert render["--out"].startswith("$RUNNER_TEMP/"), render
+    text = "\n".join(_run(step) for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin"))
+    added = re.findall(r"claude plugin marketplace add\s+(\S+)", text)
+    # The walk first: no `marketplace add` at all would satisfy the loop below by having nothing.
+    assert added, text
+    for argument in added:
+        assert argument.startswith('"$RUNNER_TEMP/'), added
+
+
+@needs_smoke_workflow
+def test_the_smoke_runs_doctor_from_the_installed_tree() -> None:
+    # `doctor` judges the checkout it was imported from (`_own_root`), and `PYTHONPATH: src`
+    # imports it from this checkout, so the step reported on the repository and not on the
+    # install: a runtime path the render omits would pass it. Mutation (oracle): `mutations/`'s
+    # "the smoke's doctor imports the checkout again" puts back `PYTHONPATH: src`.
+    doctor = [
+        step
+        for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
+        if "-m stayfixed doctor" in _run(step)
+    ]
+    assert len(doctor) == 1, doctor
+    env = doctor[0].get("env")
+    assert isinstance(env, dict), doctor[0]
+    assert env.get("PYTHONPATH") == "${{ steps." + _install_id() + ".outputs.root }}/src", env
+
+
+@needs_smoke_workflow
+def test_the_smoke_holds_the_install_to_the_render() -> None:
+    # The harness copies what the marketplace's source names into its cache, and only a
+    # comparison can say it copied all of it and added nothing: the hooks, `doctor` and the
+    # scenario read some of the tree, and the skills, the agents, `README.md` and `LICENSE` have
+    # no reader in this job. The step compares the render, by the `--out` it was written to,
+    # against the installed root, by the install's own output. Mutation (oracle): `mutations/`'s
+    # "the smoke stops holding the install to the render" deletes the step.
+    _, render = _render_step(SMOKE_WORKFLOW, "installed-plugin")
+    wanted = f'diff -r -x .git "{render["--out"]}" "$INSTALLED"'
+    holding = [
+        step
+        for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
+        if wanted in _lines(_run(step))
+    ]
+    assert len(holding) == 1, wanted
+    env = holding[0].get("env")
+    assert isinstance(env, dict), holding[0]
+    assert env.get("INSTALLED") == "${{ steps." + _install_id() + ".outputs.root }}", env
+
+
+@needs_ci_workflow
+def test_the_validator_reads_the_rendered_manifests() -> None:
+    # The validator judges the two manifests the plugin repository's root will hold, so it reads
+    # them out of the render; the marketplace is this repository's catalog and is read where it
+    # is, which validation does without fetching the source it names. An equality and not a
+    # prefix test, so a manifest dropped from the step reddens as well. Mutation (oracle):
+    # `mutations/`'s "the validator reads the checkout's manifest again" validates
+    # `.claude-plugin/plugin.json`.
+    _, render = _render_step(CI_WORKFLOW, "plugin")
+    assert render["--rev"] == "HEAD", render
+    validated: list[str] = []
+    for step in _steps_of(CI_WORKFLOW, "plugin"):
+        for line in _lines(_run(step)):
+            words = shlex.split(line)
+            if words[:3] == ["claude", "plugin", "validate"]:
+                validated.extend(word for word in words[3:] if not word.startswith("--"))
+    manifests = sorted(path for path in validated if path.endswith("plugin.json"))
+    out = render["--out"]
+    assert manifests == [f"{out}/.claude-plugin/plugin.json", f"{out}/.codex-plugin/plugin.json"]
+    assert ".claude-plugin/marketplace.json" in validated, validated
+
+
+@needs_release_workflow
+def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> None:
+    # `publish_plugin.py` pushes a tree only when its manifest is one this job attested, so the
+    # job renders the commit it runs on and attests the manifest the render wrote, at the same
+    # pinned action as `dist/*`. Mutation (oracle): `mutations/`'s "the release stops attesting
+    # the plugin tree" drops that attestation step.
+    #
+    # `--rev "$GITHUB_SHA"` is a text pin with no behavioural mutation: on a tag push `HEAD` is
+    # that commit, so a render of `HEAD` writes the same tree and no run can tell them apart. It
+    # is pinned because `GITHUB_SHA` is the attestation's source digest, and the render, that
+    # digest and the commit `publish_plugin.py` checks are then one value by construction.
+    index, render = _render_step(RELEASE_WORKFLOW, "build")
+    assert render["--rev"] == "$GITHUB_SHA", render
+    written = render["--manifest-file"]
+    steps = _steps_of(RELEASE_WORKFLOW, "build")
+    attests = [step for step in steps if _uses(step) == "actions/attest-build-provenance"]
+    subjects = {_with(step, "subject-path"): steps.index(step) for step in attests}
+    # The manifest is attested after it is written; `dist/*` keeps its own step, at the same pin
+    # (dropping it, or moving one pin, reddens the two lines below: they are this case's walk).
+    assert subjects.get(written, -1) > index, (written, subjects)
+    assert "dist/*" in subjects, subjects
+    assert len({step.get("uses") for step in attests}) == 1, attests
+    # Handed to `github-release` as the artifact `plugin-tree`, which attaches it beside
+    # `dist/*`. Mutation (oracle): `mutations/`'s "the Release stops carrying the plugin's
+    # manifest" drops it from `gh release create`.
+    uploads = [
+        step
+        for step in steps
+        if _uses(step) == "actions/upload-artifact" and _with(step, "name") == "plugin-tree"
+    ]
+    assert [_with(step, "path") for step in uploads] == [written], uploads
+    released = _steps_of(RELEASE_WORKFLOW, "github-release")
+    downloads = [
+        _with(step, "path")
+        for step in released
+        if _uses(step) == "actions/download-artifact" and _with(step, "name") == "plugin-tree"
+    ]
+    assert len(downloads) == 1, downloads
+    creates = [
+        shlex.split(line)
+        for step in released
+        for line in _lines(_run(step))
+        if line.startswith("gh release create ")
+    ]
+    assert len(creates) == 1, creates
+    assert f"{downloads[0]}/{Path(written).name}" in creates[0], creates[0]

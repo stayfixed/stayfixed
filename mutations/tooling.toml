@@ -223,6 +223,77 @@ reddens = [
   "tests/test_check_workflow.py::test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over_every_row",
 ]
 
+# The plugin is published from a repository of its own whose root is the tree
+# `scripts/plugin_tree.py render` writes, so the workflows that judge the plugin judge a render.
+# Each of these points one of them back at this checkout, or drops the step that ties the render
+# to what is installed or attested; every one leaves the workflow running and green.
+[[mutation]]
+name = "the smoke installs the checkout again"
+file = ".github/workflows/smoke.yml"
+before = '          claude plugin marketplace add "$RUNNER_TEMP/market"'
+after = '          claude plugin marketplace add "$PWD"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_the_rendered_tree_and_never_the_checkout",
+]
+
+[[mutation]]
+name = "the smoke's doctor imports the checkout again"
+file = ".github/workflows/smoke.yml"
+before = '          PYTHONPATH: ${{ steps.install.outputs.root }}/src'
+after = '          PYTHONPATH: src'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_doctor_from_the_installed_tree",
+]
+
+[[mutation]]
+name = "the smoke stops holding the install to the render"
+file = ".github/workflows/smoke.yml"
+before = '''      - name: The installed tree is the rendered one, file for file
+        # The harness copies what the source names into its cache, and only a comparison says it
+        # copied all of it and added nothing: the hooks, `doctor` and the scenario below read part
+        # of the tree, and the skills, the agents, `README.md` and `LICENSE` have no reader in this
+        # job. `.git` is the rendered repository's own, not a file of the plugin's.
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+        run: diff -r -x .git "$RUNNER_TEMP/plugin-repo" "$INSTALLED"
+'''
+after = ''
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_holds_the_install_to_the_render",
+]
+
+[[mutation]]
+name = "the validator reads the checkout's manifest again"
+file = ".github/workflows/ci.yml"
+before = '          claude plugin validate "$RUNNER_TEMP/plugin/.claude-plugin/plugin.json" --strict'
+after = '          claude plugin validate .claude-plugin/plugin.json --strict'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_the_rendered_manifests",
+]
+
+[[mutation]]
+name = "the release stops attesting the plugin tree"
+file = ".github/workflows/release.yml"
+before = '''      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
+        # sha256 and its path, which is the only thing `publish_plugin.py` compares.
+        with:
+          subject-path: ${{ runner.temp }}/plugin-tree.txt
+'''
+after = ''
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
+name = "the Release stops carrying the plugin's manifest"
+file = ".github/workflows/release.yml"
+before = ' dist/* "$RUNNER_TEMP/plugin-tree/plugin-tree.txt"'
+after = ' dist/*'
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
 # `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
 # is `base_sha`, the commit whose configuration governs the gates. Disable the character check

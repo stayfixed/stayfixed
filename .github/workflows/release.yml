@@ -57,16 +57,34 @@ jobs:
         run: uv run pytest -q
       - name: Build
         run: uv build
+      - name: The plugin tree, rendered from the commit this run builds
+        # The plugin is published from a repository of its own, whose root is this tree, and the
+        # owner pushes it there with `scripts/publish_plugin.py`, which refuses a tree whose
+        # manifest this job did not attest. `GITHUB_SHA` and not `HEAD`: it is the attestation's
+        # source digest, so the commit rendered, the digest attested and the commit
+        # `publish_plugin.py` checks are one value.
+        run: |
+          uv run python scripts/plugin_tree.py render --root . --rev "$GITHUB_SHA" \
+            --out "$RUNNER_TEMP/plugin" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         # Attested here rather than in `publish`, because this is the job that produced
         # `dist/*`: the artefacts a GitHub Release carries say where they came from whether or
         # not PyPI is in the picture, and a declined PyPI no longer costs the provenance.
         with:
           subject-path: "dist/*"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        # The plugin tree's manifest, attested on its own: one line per file, its mode, its
+        # sha256 and its path, which is the only thing `publish_plugin.py` compares.
+        with:
+          subject-path: ${{ runner.temp }}/plugin-tree.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plugin-tree
+          path: ${{ runner.temp }}/plugin-tree.txt
 
   # The one gate on this file's two irreversible acts that is not prose. GitHub **auto-creates**
   # an environment a job names and the repository does not have, with no protection rules on it,
@@ -156,6 +174,10 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plugin-tree
+          path: ${{ runner.temp }}/plugin-tree
       - name: The release's own changelog section
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -169,7 +191,9 @@ jobs:
           PY
       - name: The GitHub Release, attached to this tag only
         # Never attached to the floating `v1`: GitHub's immutable releases would freeze the
-        # alias at whatever it pointed to, and the alias exists to move.
+        # alias at whatever it pointed to, and the alias exists to move. The plugin tree's
+        # manifest rides beside `dist/*`, so anyone can compare the plugin repository's tag
+        # against the file this run attested.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "stayfixed ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/*
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "stayfixed ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/* "$RUNNER_TEMP/plugin-tree/plugin-tree.txt"

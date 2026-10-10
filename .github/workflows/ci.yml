@@ -203,22 +203,45 @@ jobs:
       - name: The mutation oracle
         run: uv run python scripts/mutation_oracle.py
 
+  # The plugin as the directory reads it. The directory reads the plugin repository's commit, and
+  # that commit's root is the tree `scripts/plugin_tree.py render` writes from this one — not this
+  # checkout, whose root also holds the tests, the plans and the tooling. So the two manifests are
+  # validated where the render put them, as the plugin repository will hold them.
   plugin:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # For the render: `plugin_tree.py` runs on the project's interpreter, as every script does.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
       - name: Install Claude Code for the plugin validator
         run: npm install -g @anthropic-ai/claude-code@2.1.261
-      - name: Validate each manifest path
+      - name: Install
+        run: uv sync --locked
+      - name: The plugin tree, rendered from this commit
+        # Read from the commit and not from the disk, as the release renders it; the manifest
+        # file is written beside the tree because the command asks for one, and nothing here
+        # reads it.
         run: |
-          claude plugin validate .claude-plugin/plugin.json --strict
+          uv run python scripts/plugin_tree.py render --root . --rev HEAD \
+            --out "$RUNNER_TEMP/plugin" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
+      - name: Validate the rendered manifests and this repository's catalog
+        # The catalog stays here and names the plugin repository by a `url` source; validation
+        # reads it without fetching that source, so it is validated where it is.
+        run: |
+          claude plugin validate "$RUNNER_TEMP/plugin/.claude-plugin/plugin.json" --strict
+          claude plugin validate "$RUNNER_TEMP/plugin/.codex-plugin/plugin.json"
           claude plugin validate .claude-plugin/marketplace.json --strict
-          claude plugin validate .codex-plugin/plugin.json
       - name: The platform's own tag tool agrees with the manifests
-        # `claude plugin tag --dry-run` checks the manifest side of "one version"; the
-        # six-source gate above checks the rest. A dry run creates nothing.
+        # `claude plugin tag --dry-run` compares `plugin.json`'s version with each marketplace
+        # entry that carries a version of its own, and this repository's entry carries none: its
+        # `ref` names the release instead, and the `checks` job's version discipline holds that
+        # `ref` equal to the other sources. So this is the tool `RELEASING.md` runs at the tag,
+        # run on every change beside a `url` entry. A dry run creates nothing.
         run: claude plugin tag --dry-run .
