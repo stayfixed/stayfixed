@@ -1041,3 +1041,53 @@ Follow-ups, to file when the pull request closes:
 - Whether `GROUP_OF`'s hand-kept table and `GROUP_FILE_MAX_BYTES` still earn their keep now that
   the plugin tree holds no `mutations/` file.
 - Codex's install path for a `url` source is unmeasured.
+- How an install made from the marketplace on GitHub (`stayfixed/stayfixed`, `@vX.Y.Z` or the
+  default branch) moves to the plugin repository: the rehearsal below measured directory
+  marketplaces, because `claude plugin marketplace add` takes no `file://` git URL.
+- The `gh` commands `RELEASING.md` gives for the plugin repository's creation, its rulesets and
+  their read-back have not been run; the first release runs them.
+
+### The release's shape, rehearsed with the real CLI (2026-10-11)
+
+Run by the controller under scratch directories, with the installed `claude` 2.1.296 and the
+pinned 2.1.261 (through `npx`); every step gave the same result on both. Nothing was pushed
+anywhere; `gh attestation verify` read GitHub's API once.
+
+- **The rendered tree validates.** `plugin_tree.py render --rev 7b18007` wrote 218 files.
+  `claude plugin validate .claude-plugin/plugin.json --strict` passed; the Codex manifest passed
+  with one warning, "Unknown field 'interface'. Claude Code ignores it at load time."
+- **An install from a tagged plugin repository is the rendered tree.** A `url` source over
+  `file://`, pinned by `ref: v0.2.0`, installed under a temporary `CLAUDE_CONFIG_DIR`. The installed
+  root differs from the render by one file, `.in_use`, which the harness writes there (the first CI
+  run of this pull request measured the same on `macos-latest` and `ubuntu-latest`, and the smoke
+  now excludes it by name). From the installed root: `smoke_hooks.py` printed "9 entries, 10 row(s),
+  0 failure(s)"; `doctor` with `PYTHONPATH` at the installed `src` reported 17 rows, none red;
+  `smoke_exfiltration.py` printed "9 row(s), 0 failure(s)".
+- **Both upgrade populations move.** A scratch plugin repository at `0.2.1` (the rendered tree with
+  both manifests bumped, committed, tagged `v0.2.1`), and marketplaces holding `v0.2.0`'s tree.
+  `claude plugin marketplace add` takes `owner/repo`, an `https://` URL or a path — not a `file://`
+  git URL — so the marketplaces were directories, and the GitHub transport of the marketplace
+  itself is not reproduced here.
+  - *Following the default branch:* `v0.2.0` installed from `./`; the marketplace's entry replaced in
+    place by the `url` source at `v0.2.1`; `claude plugin marketplace update stayfixed-marketplace`
+    then `claude plugin update stayfixed@stayfixed-marketplace` printed "Plugin "stayfixed" updated
+    from 0.2.0 to 0.2.1". `installed_plugins.json` named `…/stayfixed/0.2.1` as `installPath`, its
+    manifest said `0.2.1`, and the hooks ran from it (9 entries, 10 rows, 0 failures).
+  - *Added at a release tag:* `marketplace update` and `plugin update` alone stay at `0.2.0` ("already
+    at the latest version"). Adding the new release's marketplace over the registered one printed
+    "was already added from … and now points at …. Plugins already installed from it now update
+    from the new source", and `plugin update` then moved to `0.2.1`. `claude plugin marketplace
+    remove` instead uninstalls the plugin and "deletes their saved options, secrets and data where
+    it can"; after re-adding, `plugin update` refuses ("is not installed") until `plugin install`.
+  - The `upgrading` fragment says both paths, and that removing is not needed.
+  - The `0.2.0` trees were judged by `v0.2.0`'s own `smoke_hooks.py` (13 entries, 14 rows, 0
+    failures); the current script does not apply to an older tree.
+- **`publish_plugin.py` refuses a tree no release attested.** `gh` 2.101.0 lists `--source-digest`
+  ("Enforce that the digest associated with the source repository matches the provided value").
+  `publish_plugin.py --tag v0.2.0 --remote <bare>` without `--yes` rendered `v0.2.0` (all nine paths
+  are present there) and refused at the attestation: "gh attestation verify exited 1: 'Error: HTTP
+  404: Not Found (…/attestations/sha256:ec6f2c5…)'. Either no release of v0.2.0 at efd4b6d… attested
+  this tree, or gh could not check; nothing was fetched or pushed"; exit 2, and the bare remote held
+  no ref afterwards.
+- **`claude plugin tag --dry-run .` beside the `url` entry** (CI, 2.1.261): "Version: 0.2.0 (from
+  plugin.json)", the entry found as `plugins[0]`, "would create tag stayfixed--v0.2.0 at HEAD".
