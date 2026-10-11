@@ -1075,6 +1075,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the publisher reads a pushed tag listed at another commit as one GitHub has not listed yet"
+file = "scripts/publish_plugin.py"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
+after = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) is None:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-pushed-tag-listed-at-another-commit]",
+]
+
+[[mutation]]
 name = "the publisher says every pushed tag GitHub does not list went elsewhere"
 file = "scripts/publish_plugin.py"
 before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"

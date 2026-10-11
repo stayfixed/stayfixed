@@ -64,15 +64,24 @@ def publish_plugin() -> ModuleType:
     return load(SCRIPTS / "publish_plugin.py", "publish_plugin_script_under_test")
 
 
-def without_stayfixed(name: str, where: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def without_stayfixed(
+    name: str, where: Path, *args: str, missing: tuple[str, ...] = ()
+) -> subprocess.CompletedProcess[str]:
     """The script `name` run as an owner runs it without `uv run`, where no `stayfixed` can be
     imported: a copy in `where`, outside this repository, under `-I -S`. `-I` alone would still
     find this checkout's package through the environment's `site-packages`, where `uv sync`
-    installs it; `-S` leaves only the standard library."""
+    installs it; `-S` leaves only the standard library. `missing` names standard modules this
+    interpreter is to lack as an older one does (`tomllib` before 3.11): each is set to `None` in
+    `sys.modules` before the script runs, which makes importing it raise `ImportError`."""
     copy = where / name
     shutil.copyfile(SCRIPTS / name, copy)
+    boot = (
+        "import runpy, sys; sys.modules.update(dict.fromkeys(sys.argv[1].split(',')) if "
+        "sys.argv[1] else {}); sys.argv[:] = sys.argv[2:]; runpy.run_path(sys.argv[0], "
+        "run_name='__main__')"
+    )
     return subprocess.run(
-        [sys.executable, "-I", "-S", str(copy), *args],
+        [sys.executable, "-I", "-S", "-c", boot, ",".join(missing), str(copy), *args],
         cwd=where,
         capture_output=True,
         text=True,

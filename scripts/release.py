@@ -42,13 +42,15 @@ import json
 import re
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
 from typing import Any
 
-# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`
-# would otherwise end in a traceback and exit `1`, which `check` gives its findings.
+# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`,
+# or older than the 3.11 that brought `tomllib`, would otherwise end in a traceback and exit `1`,
+# which `check` gives its findings.
 try:
+    import tomllib
+
     from stayfixed import fsops
     from stayfixed.cli import JSON_EPILOG, run
     from stayfixed.command import CHECK_HELP, ROOT_HELP
@@ -71,7 +73,7 @@ try:
 except ImportError as exc:
     sys.stderr.write(
         f"scripts/release.py: refused: {exc}; run it with `uv run python scripts/release.py`, "
-        "which puts this repository's stayfixed on the path\n"
+        "which runs it on the project's Python with this repository's stayfixed on the path\n"
     )
     sys.exit(2)
 

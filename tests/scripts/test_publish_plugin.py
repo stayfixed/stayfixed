@@ -1838,6 +1838,24 @@ def _pushed_tag_not_listed(source: Path, remote: Path, monkeypatch: pytest.Monke
     return redirected_runner(source, remote, NOT_FOUND), TAG, publish_plugin.PLUGIN_REMOTE
 
 
+def _pushed_tag_listed_at_another_commit(
+    source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch
+) -> Arranged:
+    """GitHub's API lists no tag after the push, and `ls-remote` lists it at another commit than
+    the one pushed: moved there by someone else at once, or a push that went elsewhere."""
+    runner, tag, given = _pushed_tag_not_listed(source, remote, monkeypatch)
+    hidden = runner.after
+
+    def moved(argv: list[str]) -> None:
+        hidden(argv)
+        if argv[:1] == ["git"] and "push" in argv:
+            other = remote_commit(remote, "another commit under the tag")
+            git(remote, "update-ref", f"refs/tags/{TAG}", other)
+
+    runner.after = moved
+    return runner, tag, given
+
+
 def _pushed_elsewhere(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     elsewhere = remote.parent / "elsewhere.git"
     git(remote.parent, "init", "-q", "--bare", str(elsewhere))
@@ -1972,6 +1990,16 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
             _pushed_tag_not_listed, 2, "does not list", id="a-pushed-tag-github-does-not-list"
         ),
         pytest.param(_pushed_elsewhere, 2, "the push went elsewhere", id="a-push-sent-elsewhere"),
+        # Not "does not list it yet": the listing names the tag, but at another commit. Mutation
+        # (declared): `mutations/`'s "the publisher reads a pushed tag listed at another commit as
+        # one GitHub has not listed yet".
+        pytest.param(
+            _pushed_tag_listed_at_another_commit,
+            2,
+            f"nor git ls-remote {publish_plugin.PLUGIN_REMOTE} lists {TAG} at it: the push went "
+            "elsewhere",
+            id="a-pushed-tag-listed-at-another-commit",
+        ),
     ],
 )
 def test_every_rejection_exits_1_and_every_refusal_exits_2(

@@ -3207,6 +3207,17 @@ reddens = [
   "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
 ]
 
+# `tomllib` came with Python 3.11, so an older `python3` fails on it as one without `stayfixed`
+# does, and the same guard says so.
+[[mutation]]
+name = "release.py imports tomllib outside its guarded imports"
+file = "scripts/release.py"
+before = "try:\n    import tomllib\n\n    from stayfixed import fsops"
+after = "import tomllib\n\ntry:\n    from stayfixed import fsops"
+reddens = [
+  "tests/scripts/test_release.py::test_run_on_a_python_without_tomllib_it_refuses_with_exit_2",
+]
+
 [[mutation]]
 name = "release.py refuses a missing package without saying to run it through uv"
 file = "scripts/release.py"

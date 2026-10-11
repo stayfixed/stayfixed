@@ -1524,3 +1524,15 @@ def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_p
     assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
     assert "uv run python scripts/release.py" in done.stderr, done.stderr
     assert "Traceback" not in done.stderr, done.stderr
+
+
+def test_run_on_a_python_without_tomllib_it_refuses_with_exit_2(tmp_path: Path) -> None:
+    # `tomllib` is new in Python 3.11, and a `python3` older than that fails on it before the CLI
+    # frame exists, as one without `stayfixed` does: exit `1`, `check`'s findings, unless the
+    # import is guarded with the package's. Mutation (declared): `mutations/`'s "release.py imports
+    # tomllib outside its guarded imports".
+    done = without_stayfixed("release.py", tmp_path, "check", missing=("tomllib",))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "refused: import of tomllib halted" in done.stderr, done.stderr
+    assert "uv run python scripts/release.py" in done.stderr, done.stderr
+    assert "Traceback" not in done.stderr, done.stderr
