@@ -54,6 +54,11 @@ unapproved and fails on Trusted Publishing for want of a pending publisher, and
 `github-release` runs unapproved and creates a public GitHub Release. Section 3 is what makes
 step 7's sentence true.
 
+**If this is the first release published from the plugin repository, do section 3's "The plugin
+repository" first.** That is `0.3.0`, not only the first release ever: until
+`stayfixed/stayfixed-plugin` exists with its two rulesets, step 1's read-back of them answers
+`404` and step 7's push has nowhere to go.
+
 **The plugin is published from a repository of its own.** The marketplace entry here fetches it
 from `stayfixed/stayfixed-plugin`, a `url` source pinned to the release's tag by `ref`, and that
 repository's root is the tree `scripts/plugin_tree.py` generates from a commit of this one: the
@@ -109,12 +114,14 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    # https://pypi.org/project/stayfixed/
    ```
 
-   Any other answer stops the release here. A ruleset that lists other patterns leaves the
-   tag step 6 pushes movable; a plugin repository whose tags can move, or where a branch can
-   take a tag's name, lets the marketplace's `ref` name a tree nobody attested, and a third
-   ruleset there is a line this listing does not expect; reporting that is off sends every
-   reporter `SECURITY.md` directs to the advisory form back to a public issue; and a PyPI
-   project somebody else owns is one step 5's README would tell every reader to install.
+   Any other answer stops the release here. A `404` from `stayfixed/stayfixed-plugin` means
+   section 3's "The plugin repository" has not been done: do it, then read back again. A
+   ruleset that lists other patterns leaves the tag step 6 pushes movable; a plugin repository
+   whose tags can move, or where a branch can take a tag's name, lets the marketplace's `ref`
+   name a tree nobody attested, and a third ruleset there is a line this listing does not
+   expect; reporting that is off sends every reporter `SECURITY.md` directs to the advisory form
+   back to a public issue; and a PyPI project somebody else owns is one step 5's README would
+   tell every reader to install.
 
 2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
    an alpha, and the tree already says so, with "Development Status :: 3 - Alpha". Every
@@ -223,8 +230,7 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    `release.yml` triggers on, the one `README.md`'s install paragraph hands a reader
    (`/plugin marketplace add` takes any git ref), and the one the marketplace entry's `ref` pins
    in the plugin repository. Both name the same commit. Nothing in the install path reads the
-   `stayfixed--` tag; it is what the platform's tool makes, and making it keeps that tool's
-   view of this repository's releases whole.
+   `stayfixed--` tag; it is what the platform's tool makes.
 
    **No prerelease tags.** `scripts/release.py check --tag` compares the tag to
    `pyproject.toml`'s literal version string, and `uv.lock` normalises a PEP 440 prerelease
@@ -258,7 +264,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    commit and attests both the packages and the tree's manifest. Once it is green that
    attestation exists, and before you approve anything, push the plugin, from this checkout,
    with an authenticated `gh`, an SSH key GitHub knows, and `user.name` and `user.email` in your
-   global git configuration, which is the only identity the script's own git sees:
+   global or system git configuration: the script's own git reads no `GIT_AUTHOR_*` variable and
+   no `includeIf "gitdir:…"` section, so an identity set only there does not reach it:
 
    ```bash
    uv run python scripts/publish_plugin.py --tag vX.Y.Z          # verify, build, read back, plan
@@ -269,7 +276,9 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    `stayfixed/stayfixed-plugin`, a tag that exists only once this has run, and the approval is
    what makes the PyPI page and the GitHub Release public. Until then nothing public points at
    the tag, and somebody who finds it early gets an install error, not a wrong plugin. A second
-   run after a success says the tag is already published and pushes nothing.
+   run after a success says the tag is already published and pushes nothing. The dry run names
+   the tree the push carries and a commit of its own: the `--yes` run builds another commit of
+   that same tree, since a commit records when it was made.
 
    **A refusal stops the release until you have read what it says**, and it is never worked
    around — no hand-made push, no other checkout, no other remote. Running the command again is
@@ -278,8 +287,9 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
 
    - **Fix it and run again; the `pypi` approval waits.** A local precondition: `gh` is not
      logged in, or is offline; SSH or the network failed `git ls-remote`, `fetch` or `push`; no
-     git identity in your global git configuration (the refusal from `git commit-tree` names
-     that as the likely cause); the plugin repository's `main` moved while the command ran; or
+     git identity in your global or system git configuration (the refusal from
+     `git commit-tree` names that as the likely cause), or a `git commit-tree` that gave no
+     answer; the plugin repository's `main` moved while the command ran; or
      the remote rejected the push, which, being atomic, moved nothing.
    - **Wait for `build`, then run again.** `gh` found no attestation, on a run made before
      `build` was green: the attestation is written by `build`, so that refusal says only that it

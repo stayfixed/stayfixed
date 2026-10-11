@@ -95,7 +95,7 @@ jobs:
         # does. Measured 2026-09-19 on a laptop against 2.1.263 for the path source this replaced:
         # both commands exit 0 with no authentication and no network, and the installed wrapper
         # carries its executable bit, which the wrapper needs to run at all. The `url` source
-        # over `file://` has no measurement before this job's first run.
+        # over `file://` was measured by this job itself, on both legs, at 956d2d0.
         env:
           VERSION: ${{ steps.plugin-repo.outputs.version }}
         run: |
