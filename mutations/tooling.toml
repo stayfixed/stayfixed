@@ -2928,7 +2928,7 @@ before = "        if status is not None and status.group(1) in ABSENT:"
 after = "        if True:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[a-server-error]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]",
 ]
 
 [[mutation]]
@@ -3051,7 +3051,7 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_an
 [[mutation]]
 name = "the publisher runs any gh"
 file = "scripts/publish_plugin.py"
-before = "    if tuple(int(part) for part in found.groups()) < GH_FLOOR:"
+before = "    if tuple(int(part) for part in numbers) < GH_FLOOR:"
 after = "    if False:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]",
@@ -3062,8 +3062,8 @@ reddens = [
 [[mutation]]
 name = "the publisher compares gh's version as text"
 file = "scripts/publish_plugin.py"
-before = "    if tuple(int(part) for part in found.groups()) < GH_FLOOR:"
-after = '    if ".".join(found.groups()) < floor:'
+before = "    if tuple(int(part) for part in numbers) < GH_FLOOR:"
+after = '    if ".".join(numbers) < floor:'
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.99.0]", "tests/scripts/test_publish_plugin.py::test_a_gh_at_or_past_the_one_measured_goes_on[10.0.0]"]
 
 [[mutation]]
@@ -3087,10 +3087,23 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_m
 [[mutation]]
 name = "the publisher reads a pre-release's version as the release's"
 file = "scripts/publish_plugin.py"
-before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
-after = '    found = GH_VERSION.match(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+before = "    if pre is not None:"
+after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-pre-release]"]
 
+[[mutation]]
+name = "the publisher refuses a pre-release gh without saying what to install"
+file = "scripts/publish_plugin.py"
+before = """            f"gh {'.'.join(numbers)}{pre} is a pre-release; install a released gh at {floor} or \""""
+after = """            f"gh {'.'.join(numbers)}{pre} is a pre-release; \""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-pre-release]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from a line's prefix"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = '    found = GH_VERSION.match(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[four-parts]"]
 [[mutation]]
 name = "the publisher reads gh's version from its whole answer"
 file = "scripts/publish_plugin.py"
@@ -3175,17 +3188,21 @@ reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
 ]
 
+# A failed verify is refused whatever GitHub lists, and GitHub's listing only chooses the advice.
+# No test reddens on the classification test's "exactly one verify ran": no code path asks gh to
+# verify twice, so no one-line mutation adds a second verify; the assertion holds the weaker verify
+# a previous design ran gone.
 [[mutation]]
 name = "the publisher goes on past a refused attestation"
 file = "scripts/publish_plugin.py"
 before = "    if verified.code != 0:"
 after = "    if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-none]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-no-list]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-no-list]",
 ]
 
 [[mutation]]
@@ -3281,30 +3298,37 @@ file = "scripts/publish_plugin.py"
 before = "        if _attested(runner, root, digest, said):"
 after = "        if not _attested(runner, root, digest, said):"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
 ]
 
 [[mutation]]
-name = "the publisher refuses an attestation that exists and does not verify"
+name = "the publisher asks for a rejection on a failed verify"
 file = "scripts/publish_plugin.py"
-before = """            raise Rejected(
-                f"{said}; GitHub holds an attestation"""
-after = """            raise Refusal(
-                f"{said}; GitHub holds an attestation"""
+before = """        if _attested(runner, root, digest, said):
+            raise Refusal("""
+after = """        if _attested(runner, root, digest, said):
+            raise Rejected("""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
   "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[the-attestation-does-not-verify]",
 ]
 
+[[mutation]]
+name = "the publisher stops saying when a release whose attestation does not verify is rejected"
+file = "scripts/publish_plugin.py"
+before = """                "same with a working gh and network once the release's build and attest jobs are "
+                "green, reject the release's approval\""""
+after = """                "same\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]"]
 [[mutation]]
 name = "the publisher asks about another digest than the manifest's"
 file = "scripts/publish_plugin.py"
 before = "            digest = hashlib.sha256(attested.read_bytes()).hexdigest()"
 after = "            digest = hashlib.sha256(str(attested).encode()).hexdigest()"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
 ]
 
 [[mutation]]
@@ -3312,60 +3336,22 @@ name = "the publisher classifies a failed verify without its words"
 file = "scripts/publish_plugin.py"
 before = '''        said = f"gh attestation verify exited {verified.code}: {_said(verified)}"'''
 after = '''        said = f"gh attestation verify exited {verified.code}"'''
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]"]
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]", "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]"]
 
 [[mutation]]
 name = "the publisher stops saying when a release with no attestation is rejected"
 file = "scripts/publish_plugin.py"
-before = """            "again once they finish; once the release's build and attest jobs are green, reject "
-            "the release's approval\""""
-after = """            "again once they finish\""""
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]"]
-
-# gh exits 1 alike for an attestation that fails the release's constraints and for a machine that
-# cannot verify at all; a second verify with none of them tells the two apart.
-[[mutation]]
-name = "the publisher rejects without asking whether this machine can verify"
-file = "scripts/publish_plugin.py"
-before = "            if here.code != 0:"
-after = "            if False:"
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]",
-  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-machine-that-cannot-verify]",
-]
-
-[[mutation]]
-name = "the publisher reads this machine's verify the wrong way round"
-file = "scripts/publish_plugin.py"
-before = "            if here.code != 0:"
-after = "            if here.code == 0:"
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
-
-[[mutation]]
-name = "the publisher refuses an unverifiable machine without gh's words"
-file = "scripts/publish_plugin.py"
-before = '                    f"constraints: gh attestation verify exited {here.code}: {_said(here)}. "'
-after = '                    f"constraints: gh attestation verify exited {here.code}. "'
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
-
-[[mutation]]
-name = "the publisher refuses an unverifiable machine without saying what to fix"
-file = "scripts/publish_plugin.py"
-before = '                    "Nothing was fetched or pushed; fix gh or the network and run again"'
-after = '                    "Nothing was fetched or pushed"'
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
-
+before = """            "again; if it says the same then, reject the release's approval\""""
+after = """            "again\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]"]
 [[mutation]]
 name = "the publisher verifies the attestation in any repository"
 file = "scripts/publish_plugin.py"
 before = """        "--repo",
         SOURCE_REPOSITORY,
-    ]
 """
-after = """    ]
-"""
-reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]"]
-
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity"]
 [[mutation]]
 name = "the publisher asks gh to verify no file"
 file = "scripts/publish_plugin.py"
@@ -3381,7 +3367,7 @@ name = "the publisher takes an answer with no attestations key for one"
 file = "scripts/publish_plugin.py"
 before = '    listed = answer.get("attestations")'
 after = '    listed = answer.get("attestations", [{}])'
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-no-listing]"]
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-no-listing]"]
 
 [[mutation]]
 name = "the publisher hashes the manifest without catching a failed read"
@@ -3405,7 +3391,7 @@ before = """    if answer is None:
 """
 after = ""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
 ]
 
 [[mutation]]
@@ -3414,7 +3400,7 @@ file = "scripts/publish_plugin.py"
 before = "    if not isinstance(listed, list) or not listed:"
 after = "    if not isinstance(listed, list):"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-none]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]",
 ]
 
 [[mutation]]
@@ -3423,7 +3409,7 @@ file = "scripts/publish_plugin.py"
 before = "    if not isinstance(listed, list) or not listed:"
 after = "    if not listed:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-no-list]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-no-list]",
 ]
 
 [[mutation]]
@@ -3432,14 +3418,27 @@ file = "scripts/publish_plugin.py"
 before = """    try:
         answer = _api(runner, root, path)
     except Refusal as exc:
-        raise Refusal(f"{said}; and whether GitHub holds an attestation of it: {exc}") from None
+        raise Refusal(
+            f"{said}; and whether GitHub holds an attestation of it: {exc}; run again"
+        ) from None
 """
 after = """    answer = _api(runner, root, path)
 """
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
-]
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]"]
 
+[[mutation]]
+name = "the publisher refuses an unanswered attestation query without saying to run again"
+file = "scripts/publish_plugin.py"
+before = '            f"{said}; and whether GitHub holds an attestation of it: {exc}; run again"'
+after = '            f"{said}; and whether GitHub holds an attestation of it: {exc}"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]"]
+
+[[mutation]]
+name = "the publisher refuses an attestation listing it cannot read without saying to run again"
+file = "scripts/publish_plugin.py"
+before = """            f"{_shown(listed) if listed is not None else 'no attestations'}; run again\""""
+after = """            f"{_shown(listed) if listed is not None else 'no attestations'}\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]"]
 [[mutation]]
 name = "the publisher pushes without reading its commit back"
 file = "scripts/publish_plugin.py"

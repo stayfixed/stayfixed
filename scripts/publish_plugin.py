@@ -22,19 +22,17 @@ attestation binds the same commit afterwards.
 
 **What it trusts, and why.** Every answer it trusts is GitHub's, asked of `github.com` by name, so
 `gh auth status --hostname github.com --active` must pass before the first is asked, and before it
-`gh --version` must be at least 2.101.0, the gh every flag below and its exact identity match were
-measured on: an older gh lacking a flag fails the verify the way a wrong attestation does. The
+`gh --version` must be a release at least 2.101.0, the gh every flag below and its exact identity
+match were measured on, so an older gh is told so rather than left to fail the verify. The
 attestation says which manifest a release vouches for: `gh attestation verify` binds the manifest's
 bytes to the certificate identity of this repository's `release.yml` run for this tag
 (`--cert-identity`, matched exactly, where `--signer-workflow` matched a prefix), for this tag's
 ref (`--source-ref`) at this commit (`--source-digest`), on a GitHub-hosted runner
-(`--deny-self-hosted-runners`). When it does not verify, GitHub is asked whether it holds any
-attestation of the manifest's digest at all: none yet is a release whose `attest` job has not run.
-When one exists, `gh` verifies the manifest again with none of the release's constraints, because
-gh exits 1 alike for an attestation that fails them and for a machine that cannot verify at all (a
-network that blocks Sigstore, a trust root it cannot fetch; a gh lacking a flag is refused before
-any of this): passing, the attestation fails only the release's
-constraints, a release to reject; failing, this machine is to fix. The commit is read back whole
+(`--deny-self-hosted-runners`). A verify that fails is a fact of this machine as much as of the
+release, and the publisher never asks for a rejection on it alone: it refuses, and GitHub's listing
+of attestations of the manifest's digest only chooses the advice — none yet, run again once the
+release's `build` and `attest` jobs are green; one that does not verify here, run again with a
+working gh and network; the same answer then is the owner's to reject. The commit is read back whole
 and its manifest compared with that one byte for byte before anything leaves the machine. The plugin
 repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
 as well as `ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*`
@@ -50,12 +48,11 @@ be the commit's parent — both absent for the first release — because `main` 
 fast-forward: a release cut on the wrong base, or a patch release of an older line, is refused.
 
 **Two exit codes after `0`.** `1` rejects the release's approval: the tag's pin is not the commit
-its tree makes; its `plugin.json` names another version; an attestation of this manifest exists and
-does not verify against this workflow, tag and commit; the commit reads back as another tree;
+its tree makes; its `plugin.json` names another version; the commit reads back as another tree;
 GitHub's plugin repository holds another commit under the tag, or a `main` that is not the commit's
-parent. `2` says fix something and run again: anything else — a `gh` not logged in, no attestation
-of the manifest yet, a pushed tag GitHub does not list or lists elsewhere, the tag's own code
-refusing, since CI ran the same code on the same commit.
+parent. `2` says fix something and run again: anything else — a gh too old or not logged in, a
+failed attestation verify whatever GitHub lists, a pushed tag GitHub does not list or lists
+elsewhere, the tag's own code refusing, since CI ran the same code on the same commit.
 
 The command goes through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
 the line, and `Rejected` is the frame's `Failure`, exit `1`.
@@ -100,7 +97,7 @@ GITHUB = "github.com"
 # The gh every flag handed to `gh attestation verify`, and its exact `--cert-identity` match, were
 # measured on; an older one is refused, and `gh --version`'s first line is read for it.
 GH_FLOOR = (2, 101, 0)
-GH_VERSION = re.compile(r"gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?: .*)?")
+GH_VERSION = re.compile(r"gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(-[^ ]*)?(?: .*)?")
 # The repository this script lives in: the one whose tag is published.
 ROOT = Path(__file__).resolve().parents[1]
 # A release's tag: `v` and three dot-separated runs of ASCII digits, and nothing after them.
@@ -264,8 +261,8 @@ def _github_ref(runner: Runner, root: Path, repository: str, ref: str) -> str | 
 
 
 def _gh_recent(runner: Runner, root: Path) -> None:
-    """Refuse a gh older than `GH_FLOOR`, or one whose version cannot be read: a gh lacking one of
-    the flags `_verify` hands it fails the verify as a wrong attestation does."""
+    """Refuse a gh older than `GH_FLOOR`, a pre-release, or one whose version cannot be read: each
+    may lack a flag `_verify` hands it, and its failed verify would not say so plainly."""
     done = runner.launch(["gh", "--version"], root)
     found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None
     if found is None:
@@ -274,9 +271,15 @@ def _gh_recent(runner: Runner, root: Path) -> None:
             "again; nothing was run"
         )
     floor = ".".join(str(part) for part in GH_FLOOR)
-    if tuple(int(part) for part in found.groups()) < GH_FLOOR:
+    numbers, pre = found.groups()[:3], found.group(4)
+    if pre is not None:
         raise Refusal(
-            f"gh {'.'.join(found.groups())} is older than {floor}, the version this publisher's "
+            f"gh {'.'.join(numbers)}{pre} is a pre-release; install a released gh at {floor} or "
+            "later and run again; nothing was run"
+        )
+    if tuple(int(part) for part in numbers) < GH_FLOOR:
+        raise Refusal(
+            f"gh {'.'.join(numbers)} is older than {floor}, the version this publisher's "
             "attestation flags were measured on; upgrade gh and run again; nothing was run"
         )
 
@@ -511,13 +514,10 @@ def _read_back(
 
 def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> None:
     """Ask `gh` whether this repository's release workflow, run for this tag, attested exactly this
-    manifest, for this tag at this commit, on a GitHub-hosted runner. When it did not: refuse when
-    GitHub holds no attestation of the manifest yet; when it holds one, reject the release if gh
-    verifies the manifest with none of the release's constraints, and refuse if gh cannot verify
-    it on this machine even so. Of the machine's two ways to fail the verify, a gh lacking a flag
-    was refused by `_gh_recent` before this ran; the unconstrained verify closes the other, a
-    Sigstore or network failure."""
-    unconstrained = [
+    manifest, for this tag at this commit, on a GitHub-hosted runner. A verify that fails is a fact
+    of this machine as much as of the release, so it is never a rejection on its own: it is
+    refused, with the advice GitHub's listing of attestations of the manifest chooses."""
+    argv = [
         "gh",
         "attestation",
         "verify",
@@ -526,9 +526,6 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
         GITHUB,
         "--repo",
         SOURCE_REPOSITORY,
-    ]
-    argv = [
-        *unconstrained,
         "--cert-identity",
         CERT_IDENTITY.format(tag=tag),
         "--source-ref",
@@ -540,33 +537,24 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
     verified = runner.launch(argv, root)
     if verified.code != 0:
         # gh exits non-zero both for "no attestation vouches for this" and for "I could not
-        # ask"; which one it was is GitHub's answer about the manifest's digest, and then whether
-        # gh verifies the manifest here at all.
+        # verify here"; GitHub's listing of the manifest's digest says which advice fits.
         said = f"gh attestation verify exited {verified.code}: {_said(verified)}"
         try:
             digest = hashlib.sha256(attested.read_bytes()).hexdigest()
         except OSError as exc:
             raise Refusal(f"{said}; and {attested} cannot be read: {fsops.said(exc)}") from None
         if _attested(runner, root, digest, said):
-            here = runner.launch(unconstrained, root)
-            if here.code != 0:
-                raise Refusal(
-                    f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), and "
-                    "gh could not verify it on this machine even without the release's "
-                    f"constraints: gh attestation verify exited {here.code}: {_said(here)}. "
-                    "Nothing was fetched or pushed; fix gh or the network and run again"
-                )
-            raise Rejected(
-                f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), which "
-                "gh verifies on this machine without the release's constraints, and which does "
-                f"not verify against {SOURCE_REPOSITORY}'s release.yml at {tag} ({sha}). Nothing "
-                "was fetched or pushed. Reject the release's approval"
+            raise Refusal(
+                f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}) that "
+                f"does not verify on this machine against {SOURCE_REPOSITORY}'s release.yml at "
+                f"{tag} ({sha}). Nothing was fetched or pushed; run again, and if it says the "
+                "same with a working gh and network once the release's build and attest jobs are "
+                "green, reject the release's approval"
             )
         raise Refusal(
             f"{said}; GitHub holds no attestation of this manifest yet (sha256:{digest}). Nothing "
-            "was fetched or pushed. If the release's build and attest jobs are still running, run "
-            "again once they finish; once the release's build and attest jobs are green, reject "
-            "the release's approval"
+            "was fetched or pushed; once the release's build and attest jobs are green, run "
+            "again; if it says the same then, reject the release's approval"
         )
 
 
@@ -579,14 +567,16 @@ def _attested(runner: Runner, root: Path, digest: str, said: str) -> bool:
     try:
         answer = _api(runner, root, path)
     except Refusal as exc:
-        raise Refusal(f"{said}; and whether GitHub holds an attestation of it: {exc}") from None
+        raise Refusal(
+            f"{said}; and whether GitHub holds an attestation of it: {exc}; run again"
+        ) from None
     if answer is None:
         return False
     listed = answer.get("attestations")
     if not isinstance(listed, list) or not listed:
         raise Refusal(
             f"{said}; and gh api {path} answered, but lists no attestation: "
-            f"{_shown(listed) if listed is not None else 'no attestations'}"
+            f"{_shown(listed) if listed is not None else 'no attestations'}; run again"
         )
     return True
 
