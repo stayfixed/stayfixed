@@ -1094,6 +1094,39 @@ cherry-picked onto this branch. Rulings that change this plan's text:
   as `GROUP_OF`'s rule asks: `scripts/publish_plugin.py`'s entries are `mutations/publish.toml`'s,
   and the Global Constraint routing `scripts/*.py` to `tooling.toml` excepts the publisher.
 
-Follow-ups, to file when the pull request closes:
+Follow-ups, to file when the pull request closes (Minors the task and final reviews deferred;
+none changes a release decision):
 
-- (none yet)
+- **Measurements.** GitHub's answer for an empty `stayfixed/stayfixed-plugin` (`409` or `404`;
+  the repository did not exist on 2026-10-11) — `RELEASING.md` step 1 now reads it before the
+  tags. After the merge, amend the private design's §5.9 and §15.7 (Task 8 Step 4).
+- **`scripts/publish_plugin.py`.** A stale API right after a landed push reads as "the push went
+  elsewhere" (one `ls-remote` of the tag would tell lag from a push-only rewrite). `_verify` and
+  `_attested` could become one `_advice` and one raise. Only two exact spellings count as the
+  default remote. `--require-pin`'s exit 1 is read before the attestation is consulted (plan
+  Ruling 8). `CLICOLOR_FORCE`/`GH_FORCE_TTY` make every `gh api` answer unreadable (a permanent
+  `2`, unnamed). A failed post-fetch `rev-parse` is reported as "main moved". The login refusal
+  always advises logging in. A `gh` dev build reads as a pre-release. Source reads pass
+  `--no-replace-objects` alone, not `plugin_tree.GIT_OPTIONS`. The exit-table setup copies two
+  closures. `"no src/stayfixed"` has no mutation of its own.
+- **`scripts/plugin_tree.py`.** `peel`'s docstring says "the one place" while `_first_parent`
+  resolves with `cat-file -e`, and `pinned_sha` re-peels resolved ids. `peel`, `_listing` and
+  `_blobs` say "exited -1" rather than `NO_ANSWER`'s words. `commit --manifest-file` is checked by
+  its first line only. "from a url source" where an object is meant. A malformed `sha` at the tag
+  is refused by the tag's own tool (exit `2`) and reported twice by `check --tag`, once under the
+  tree count with the wrong remedy.
+- **`scripts/release.py`.** `_pinned` mixes count and shape in one message (zero or two entries
+  untested); `_is_sha` re-spelled; `ensure_ascii=False` unheld by a test.
+- **Workflows and their tests.** `attest`'s "installs nothing" check is a denylist (an allowlist
+  of its steps would hold the property). `github-release` keeps a persisted token under
+  `contents: write`. Job readers not fully consolidated (`_release_jobs`); one entry's `after`
+  holds a literal `\n`; the scripts half of `test_one_commit_id_shape_everywhere` has no named
+  mutation and compares patterns without flags; `_code`'s backslash branch is held by no case.
+  `OBJECT_NAME` is copied in two scripts with no equality test.
+- **Tests.** `tests/test_payload.py`'s `Entry` still carries a mode nothing reads; `listed()` and
+  the bare-remote builders are duplicated across test modules.
+- **Documents.** `RELEASING.md`: after amending a spent release commit, `CHANGELOG.md` carries the
+  spent version's heading with no command to retitle it; the restore commit of section 5 is red
+  under plain `check`; a persistent `404` is explained only as "attest has not written it".
+  Ragged wraps in `mutations/`, a stale count in a `ci.yml` comment, one unwrapped line in
+  `CONTRIBUTING.md`.
