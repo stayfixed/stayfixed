@@ -125,11 +125,13 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
 
    ```bash
    gh api repos/stayfixed/stayfixed/rulesets \
-     --jq '.[] | select(.name == "release tags") | .id' |
+     --jq '.[] | select(.name == "release tags" or .name == "release tag creation") | .id' |
      xargs -I{} gh api repos/stayfixed/stayfixed/rulesets/{} \
-     --jq '[.target, .enforcement, (.conditions.ref_name.include | sort),
-            ([.rules[].type] | sort), (.bypass_actors | length)]'
-   # ["tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],0]
+     --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
+            ([.rules[].type] | sort),
+            [(.bypass_actors // [])[] | "\(.actor_type) \(.actor_id) \(.bypass_mode)"]]'
+   # ["release tags","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],[]]
+   # ["release tag creation","tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["creation"],["RepositoryRole 5 always"]]
    gh api repos/stayfixed/stayfixed-plugin/rulesets --jq '.[].id' |
      xargs -I{} gh api repos/stayfixed/stayfixed-plugin/rulesets/{} \
      --jq '[.name, .target, .enforcement, (.conditions.ref_name.include | sort),
@@ -153,14 +155,16 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    3's "The plugin repository" has not been done: do it, then read back again. Once it is done, `gh
    api …/git/ref/heads/main` answers `(HTTP 409)` for the empty repository before `0.3.0`, or
    `404`, and the publisher reads either as no `main`; any other failure there stops the release
-   too. A ruleset that lists other patterns leaves the tag step 6 pushes movable; a plugin
-   repository whose tags can move, or where a branch can take a tag's name, lets the marketplace's
-   `ref` name a tree nobody attested, one whose `main` can be deleted or rewound loses the parent
-   the next plugin commit names, and a fourth ruleset there is a line this listing does not expect;
-   a plugin repository whose `main` is not the commit this `main`'s marketplace pins is one the
-   next release cannot follow (section 5); reporting that is off sends every reporter `SECURITY.md`
-   directs to the advisory form back to a public issue; and a PyPI project somebody else owns is
-   one step 5's README would tell every reader to install.
+   too. A ruleset that lists other patterns leaves the tag step 6 pushes movable; a `release tags`
+   that anyone bypasses lets that one move it; a `release tag creation` with no `creation` rule, or
+   with another bypass than the admin role, lets somebody else create the tag whose code step 7
+   runs on your machine; a plugin repository whose tags can move, or where a branch can take a
+   tag's name, lets the marketplace's `ref` name a tree nobody attested, one whose `main` can be
+   deleted or rewound loses the parent the next plugin commit names, and a fourth ruleset there is
+   a line this listing does not expect; a plugin repository whose `main` is not the commit this
+   `main`'s marketplace pins is one the next release cannot follow (section 5); reporting that is
+   off sends every reporter `SECURITY.md` directs to the advisory form back to a public issue; and
+   a PyPI project somebody else owns is one step 5's README would tell every reader to install.
 
    **After a stopped release whose plugin was pushed**, the plugin repository's `main` is that
    release's plugin commit, which only the spent release commit pins, so the `grep` above names
@@ -370,21 +374,25 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    - **`2`: fix it and run again; the `pypi` approval waits.** Anything that is not a fact of the
      release: a tag that is not `vX.Y.Z`, or not in this checkout; a `gh` older than 2.101.0, a
      `gh` pre-release, or one whose version cannot be read; `gh` not logged in to `github.com`, or
-     offline; a local tag that is not GitHub's (`git fetch --tags --force` when GitHub's names
-     another commit, which a plain `git fetch --tags` refuses as clobbering your tag; push the
-     tags, step 6, when GitHub holds none); SSH or the network failing `git ls-remote`, `fetch` or
-     `push`; a GitHub answer that could not be had or read; an attestation that does not verify,
-     below; `git ls-remote` disagreeing with GitHub's API, which names a redirect — a
-     `url.*.insteadOf` or a `GIT_CONFIG_*` variable — or a `main` that moved while it ran; a push
-     the remote refused, which moved nothing, being atomic; a pushed tag GitHub does not list yet,
-     which a run once GitHub lists it reports as already published, while a run before that meets
-     `git ls-remote` disagreeing with GitHub's API and exits `2` again; a pushed tag GitHub does
-     not list beside a `main` GitHub still holds at the plugin commit's parent, a push that went
-     elsewhere through a `url.*.pushInsteadOf` or a `remote.<url>.pushurl`, which moves a push and
-     not a listing, so remove it before you run again; a pushed tag GitHub lists under another
-     commit, a redirect again, of the listing or of the push alone; and a refusal or a crash of the
-     tag's own `scripts/plugin_tree.py`, because CI ran the same code on the same commit green, so
-     a cause on this machine is the likely one.
+     offline; a local tag that is not GitHub's (push the tags, step 6, when GitHub holds none; when
+     GitHub's names another commit, none of its code has run yet, and that tag is investigated
+     before anything is fetched or run, because one you did not push is somebody else's, which
+     section 3's `release tag creation` exists to refuse; fetch GitHub's over yours with
+     `git fetch --tags --force`, which a plain `git fetch --tags` refuses as clobbering your tag,
+     only when yours is the stale one: GitHub's names the commit you pushed, and your local tag was
+     made again since); SSH or the network failing `git ls-remote`, `fetch` or `push`; a GitHub
+     answer that could not be had or read; an attestation that does not verify, below;
+     `git ls-remote` disagreeing with GitHub's API, which names a redirect — a `url.*.insteadOf` or
+     a `GIT_CONFIG_*` variable — or a `main` that moved while it ran; a push the remote refused,
+     which moved nothing, being atomic; a pushed tag GitHub does not list yet, which a run once
+     GitHub lists it reports as already published, while a run before that meets `git ls-remote`
+     disagreeing with GitHub's API and exits `2` again; a pushed tag GitHub does not list beside a
+     `main` GitHub still holds at the plugin commit's parent, a push that went elsewhere through a
+     `url.*.pushInsteadOf` or a `remote.<url>.pushurl`, which moves a push and not a listing, so
+     remove it before you run again; a pushed tag GitHub lists under another commit, a redirect
+     again, of the listing or of the push alone; and a refusal or a crash of the tag's own
+     `scripts/plugin_tree.py`, because CI ran the same code on the same commit green, so a cause on
+     this machine is the likely one.
 
      **A failed `gh attestation verify` is always `2`**, never `1`, and what to do next depends
      on what GitHub's attestation listing answers for the manifest's digest:
@@ -516,11 +524,22 @@ to me" is a repository variable, **Settings → Secrets and variables → Action
 reads back with zero rules fails whatever the variable says. Set it only after the environment
 and its reviewer exist.
 
-**Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/stayfixed--v*`
-with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias, once a
-`1.x` release creates it — it matches neither pattern — can still move. The same body creates
-the ruleset or, when one named `release tags` already exists, replaces it in place; a second
-`POST` beside an existing one would leave two rulesets and fix neither:
+**Tag protection.** Two repository rulesets over `refs/tags/v*.*.*` and
+`refs/tags/stayfixed--v*`, both leaving the `v1` alias, once a `1.x` release creates it — it
+matches neither pattern — free to move:
+
+- `release tags`, with `deletion` and `update` rules and no bypass, so a semver tag is
+  immutable for everyone, you included.
+- `release tag creation`, with a `creation` rule that the repository's admin role bypasses, so
+  nobody else can create such a tag. Step 7's publisher runs the code of the tag it is given once
+  GitHub names the same commit under it as your checkout does, so a tag somebody else created first
+  is one whose code a fetch over yours would have it run. The bypass is the body's `bypass_actors`,
+  where `RepositoryRole` `5` is the admin role.
+
+Two rulesets, not one, because a ruleset's bypass applies to every rule it carries: a bypass on
+`release tags` would let an admin move or delete a published tag. The same body creates each
+ruleset or, when one of that name already exists, replaces it in place; a second `POST` beside an
+existing one would leave two rulesets and fix neither:
 
 ```bash
 cat > "${TMPDIR:-/tmp}/release-tags.json" <<'JSON'
@@ -528,13 +547,25 @@ cat > "${TMPDIR:-/tmp}/release-tags.json" <<'JSON'
  "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*", "refs/tags/stayfixed--v*"], "exclude": []}},
  "rules": [{"type": "deletion"}, {"type": "update"}]}
 JSON
-id=$(gh api repos/stayfixed/stayfixed/rulesets --jq '.[] | select(.name == "release tags") | .id')
-if [ -n "$id" ]; then
-  gh api -X PUT "repos/stayfixed/stayfixed/rulesets/$id" --input "${TMPDIR:-/tmp}/release-tags.json"
-else
-  gh api -X POST repos/stayfixed/stayfixed/rulesets --input "${TMPDIR:-/tmp}/release-tags.json"
-fi
+cat > "${TMPDIR:-/tmp}/release-tag-creation.json" <<'JSON'
+{"name": "release tag creation", "target": "tag", "enforcement": "active",
+ "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*", "refs/tags/stayfixed--v*"], "exclude": []}},
+ "rules": [{"type": "creation"}],
+ "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]}
+JSON
+release_ruleset() {  # $1 a ruleset's name, $2 its body: replace the one of that name, or create it
+  id=$(gh api repos/stayfixed/stayfixed/rulesets --jq ".[] | select(.name == \"$1\") | .id")
+  if [ -n "$id" ]; then
+    gh api -X PUT "repos/stayfixed/stayfixed/rulesets/$id" --input "$2"
+  else
+    gh api -X POST repos/stayfixed/stayfixed/rulesets --input "$2"
+  fi
+}
+release_ruleset "release tags" "${TMPDIR:-/tmp}/release-tags.json"
+release_ruleset "release tag creation" "${TMPDIR:-/tmp}/release-tag-creation.json"
 ```
+
+Then read the two back with section 2's step 1, one line each.
 
 **The plugin repository.** Before the first `scripts/publish_plugin.py --yes`, create
 `stayfixed/stayfixed-plugin`, public and empty — no README, licence or `.gitignore`, because its
