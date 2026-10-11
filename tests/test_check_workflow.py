@@ -1167,17 +1167,22 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
     # The manifest is attested after it is written; `dist/*` keeps its own step, at the same pin
     # (dropping it, or moving one pin, reddens the two lines below: they are this case's walk).
     assert subjects.get(written, -1) > index, (written, subjects)
-    assert "dist/*" in subjects, subjects
+    packages = "$RUNNER_TEMP/dist/*"
+    assert packages in subjects, subjects
     assert len({step.get("uses") for step in attests}) == 1, attests
-    # And `dist/*` is the one `build` uploaded, fetched before it is attested. Mutation
-    # (declared): the `dist` download dropped, and the attestation names no file; reddens here.
+    # And `dist/*` is the one `build` uploaded, fetched before it is attested, and fetched outside
+    # the checkout: `build` ran the suite and the lock's dependencies, and this job runs the
+    # checkout's script with its `src` on the path and can sign. Mutation (declared): the `dist`
+    # download dropped, and the attestation names no file; reddens here. Mutation (declared):
+    # `mutations/`'s "the attest job downloads build's packages into its checkout" -> the
+    # download's path is `dist/` again.
     fetched = [
         index
         for index, step in enumerate(steps)
         if _uses(step) == "actions/download-artifact" and _with(step, "name") == "dist"
     ]
-    assert len(fetched) == 1 and fetched[0] < subjects["dist/*"], (fetched, subjects)
-    assert _with(steps[fetched[0]], "path") == "dist/", steps[fetched[0]]
+    assert len(fetched) == 1 and fetched[0] < subjects[packages], (fetched, subjects)
+    assert _with(steps[fetched[0]], "path") == "$RUNNER_TEMP/dist", steps[fetched[0]]
     # Handed to `github-release` as the artifact `plugin-tree`, which attaches it beside
     # `dist/*`. Mutation (oracle): `mutations/`'s "the Release stops carrying the plugin's
     # manifest" drops it from `gh release create`.

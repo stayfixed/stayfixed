@@ -572,6 +572,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the attest job downloads build's packages into its checkout"
+file = ".github/workflows/release.yml"
+before = "          name: dist\n          path: ${{ runner.temp }}/dist\n"
+after = "          name: dist\n          path: dist/\n"
+reddens = [
+  "tests/test_check_workflow.py::test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit",
+]
+
+[[mutation]]
 name = "the attest job can write the repository"
 file = ".github/workflows/release.yml"
 before = "      attestations: write\n      contents: read\n    outputs:"

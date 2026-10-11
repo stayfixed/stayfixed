@@ -94,9 +94,12 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        # Outside the checkout: `build` ran the suite and every dependency the lock installs, so
+        # what it uploaded is not written where the next step runs `scripts/plugin_tree.py` with
+        # the checkout's `src` on its path, in the job that can sign.
         with:
           name: dist
-          path: dist/
+          path: ${{ runner.temp }}/dist
       - name: The plugin commit of the commit this run builds
         id: plugin-commit
         env:
@@ -117,7 +120,7 @@ jobs:
         # The artefacts a GitHub Release carries say where they came from whether or not PyPI is
         # in the picture, so a declined PyPI does not cost the provenance.
         with:
-          subject-path: "dist/*"
+          subject-path: ${{ runner.temp }}/dist/*
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         # The plugin tree's manifest, attested on its own: one line per file, its mode, its
         # sha256 and its path, the tree of the commit handed on above.
