@@ -2740,6 +2740,13 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the publisher refuses a gh that is not logged in without gh's words"
+file = "scripts/publish_plugin.py"
+before = """            f"{' '.join(argv)} exited {done.code}: {_said(done)}. Every answer this trusts is \""""
+after = """            f"{' '.join(argv)} exited {done.code}. Every answer this trusts is \""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify"]
+
+[[mutation]]
 name = "the publisher matches the signer by its workflow's prefix"
 file = "scripts/publish_plugin.py"
 before = """        "--cert-identity",
@@ -2850,6 +2857,21 @@ reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
   "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
 ]
+
+[[mutation]]
+name = "the publisher classifies a failed verify without its words"
+file = "scripts/publish_plugin.py"
+before = '''        said = f"gh attestation verify exited {verified.code}: {_said(verified)}"'''
+after = '''        said = f"gh attestation verify exited {verified.code}"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]"]
+
+[[mutation]]
+name = "the publisher stops saying when a release with no attestation is rejected"
+file = "scripts/publish_plugin.py"
+before = """            "again once they finish; once the release's build and attest jobs are green, reject "
+            "the release's approval\""""
+after = """            "again once they finish\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]"]
 
 [[mutation]]
 name = "the publisher hashes the manifest without catching a failed read"
@@ -3350,6 +3372,14 @@ after = """    if False:
         raise Refusal(
             f"{pushed}, and GitHub's"""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming the redirect"
+file = "scripts/publish_plugin.py"
+before = """            "elsewhere, through a url.*.insteadOf in your git configuration or a GIT_CONFIG_* "
+            "variable; fix it and run again\""""
+after = """            "elsewhere; fix it and run again\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
 
 [[mutation]]
 name = "the publisher takes any pushed tag GitHub lists for its own"

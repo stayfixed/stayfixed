@@ -971,7 +971,9 @@ def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
     # answers swapped) -> 200 refused and 404 rejected; `mutations/`'s "the publisher takes an
     # empty attestation list for one" and `mutations/`'s "the publisher takes an attestation answer
     # that is no list for one" -> rejected; `mutations/`'s "the publisher reads any failed API call
-    # as absent" -> the 500 reads as no attestation yet.
+    # as absent" -> the 500 reads as no attestation yet; `mutations/`'s "the publisher classifies a
+    # failed verify without its words" and `mutations/`'s "the publisher stops saying when a
+    # release with no attestation is rejected" -> the summary loses gh's words, or the advice.
     remote = bare_remote(tmp_path)
     answers = {"gh auth status": Completed(0, "", ""), "gh attestation verify": UNVERIFIED}
     runner = runner_for(source, answers=answers, attestation=attestation)
@@ -998,8 +1000,10 @@ def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
 
 
 def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_path: Path) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher goes on with a gh that is not logged in"
-    # -> GitHub's API is asked, the tag's code runs and the attestation is asked for.
+    # Mutations (declared): `mutations/`'s "the publisher goes on with a gh that is not logged in"
+    # -> GitHub's API is asked, the tag's code runs and the attestation is asked for;
+    # `mutations/`'s "the publisher refuses a gh that is not logged in without gh's words" -> the
+    # refusal no longer says why.
     said = "You are not logged into any GitHub hosts. To log in, run: gh auth login"
     runner = runner_for(source, answers={"gh auth status": Completed(1, "", f"{said}\n")})
     scratch = tmp_path / "scratch"
@@ -1184,7 +1188,8 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
     # the 404 and another id both report "pushed"; `mutations/`'s "the publisher takes a pushed
     # tag GitHub does not list for one elsewhere" -> the 404 is worded as a redirect;
     # `mutations/`'s "the publisher takes any pushed tag GitHub lists for its own" -> another id
-    # reports "pushed".
+    # reports "pushed"; `mutations/`'s "the publisher says a pushed tag went elsewhere without
+    # naming the redirect" -> the refusal names no cause to remove.
     bare = bare_remote(tmp_path)
     _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
