@@ -24,7 +24,7 @@ import pytest
 from stayfixed import gitenv
 from stayfixed.errors import Refusal
 from tests.gitfixture import git, git_bytes, needs_git, plant_path
-from tests.plugintree import NINE, PLUGIN_FILES, commit, plugin_source, write
+from tests.plugintree import NINE, PLUGIN_FILES, commit, hashed, literal, plugin_source, write
 from tests.scriptload import plugin_tree as _script
 
 plugin_tree = _script()
@@ -610,27 +610,6 @@ def pinning(root: Path, sha: object, message: str = "pin") -> str:
     return commit(root, message)
 
 
-def literal(tree: str, parent: str | None) -> str:
-    """The plugin commit's text for version 1.2.3, spelled out."""
-    lineage = f"parent {parent}\n" if parent is not None else ""
-    return (
-        f"tree {tree}\n"
-        f"{lineage}"
-        "author stayfixed <release@stayfixed.invalid> 0 +0000\n"
-        "committer stayfixed <release@stayfixed.invalid> 0 +0000\n"
-        "\n"
-        "stayfixed 1.2.3\n"
-        "\n"
-        "The plugin tree of stayfixed/stayfixed at v1.2.3.\n"
-    )
-
-
-def hashed(where: Path, text: str) -> str:
-    """The id git gives `text` as a commit object, computed by git and written nowhere."""
-    answer = git_bytes(where, "hash-object", "-t", "commit", "--stdin", stdin=text.encode())
-    return answer.decode().strip()
-
-
 def written(git_dir: Path, commit_id: str) -> dict[str, tuple[bytes, str]]:
     """Every file of `commit_id`'s tree in `git_dir`, read by git: its bytes and its mode."""
     files = {}
@@ -753,25 +732,82 @@ def test_a_source_whose_first_parent_is_not_in_the_clone_is_refused(tmp_path: Pa
         plugin_tree.plugin_commit(shallow, "HEAD", tmp_path / "plugin.git")
 
 
+def document(plugins: object) -> tuple[bytes, str]:
+    """A marketplace file whose `plugins` is `plugins`, as it is given."""
+    text = json.dumps({"name": "stayfixed-marketplace", "plugins": plugins}) + "\n"
+    return text.encode("utf-8"), "100644"
+
+
+# A plugin entry whose source is a url pinning `c`*40, which a reader that skips what stands before
+# it in `plugins` would read as the pin.
+PINNED_ENTRY = {
+    "name": "stayfixed",
+    "source": {"source": "url", "url": PLUGIN_URL, "ref": "v1.2.3", "sha": "c" * 40},
+}
+NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
+
+
 @pytest.mark.parametrize(
-    "file",
+    ("file", "wording", "whole"),
     [
-        pytest.param(marketplace("C" * 40), id="upper-case"),
-        pytest.param(marketplace("c" * 39), id="39-characters"),
-        pytest.param(marketplace("c" * 64), id="64-characters"),
-        pytest.param(marketplace(1), id="a-number"),
-        pytest.param(marketplace("c" * 40, entries=2), id="two-entries"),
-        pytest.param((b'{"plugins": [\n', "100644"), id="not-json"),
+        pytest.param(
+            marketplace("C" * 40), f" pins sha {'C' * 40}{NO_COMMIT_ID}", True, id="upper-case"
+        ),
+        pytest.param(
+            marketplace("c" * 39), f" pins sha {'c' * 39}{NO_COMMIT_ID}", True, id="39-characters"
+        ),
+        pytest.param(
+            marketplace("c" * 64), f" pins sha {'c' * 64}{NO_COMMIT_ID}", True, id="64-characters"
+        ),
+        pytest.param(marketplace(1), f" pins sha a int{NO_COMMIT_ID}", True, id="a-number"),
+        pytest.param(
+            marketplace("c" * 40, entries=2),
+            " has 2 entries named 'stayfixed'; the pin is read from exactly one",
+            True,
+            id="two-entries",
+        ),
+        pytest.param(
+            document([{"name": "stayfixed", "source": "./"}]),
+            " gives the entry 'stayfixed' a source that is no object; the pin is read from a url "
+            "source",
+            True,
+            id="a-string-source",
+        ),
+        pytest.param(
+            document(["another", PINNED_ENTRY]),
+            " is valid JSON but its plugins is not a list of objects",
+            True,
+            id="an-entry-that-is-no-object",
+        ),
+        pytest.param(
+            document("stayfixed"),
+            " is valid JSON but its plugins is not a list of objects",
+            True,
+            id="plugins-a-string",
+        ),
+        pytest.param((b'{"plugins": [\n', "100644"), " is not valid JSON: ", False, id="not-json"),
     ],
 )
-def test_a_malformed_pinned_sha_is_refused(tmp_path: Path, file: tuple[bytes, str]) -> None:
+def test_a_malformed_pinned_sha_is_refused(
+    tmp_path: Path, file: tuple[bytes, str], wording: str, whole: bool
+) -> None:
     # At the source commit itself, which has no parent, so no `hash-object` of a commit naming the
-    # pin as its parent can refuse it first. Mutation (declared): `mutations/`'s "the plugin
-    # commit reads a pin that is no SHA-1 commit id" -> the three strings are read as pins.
+    # pin as its parent can refuse it first. Each case is refused in its own words, naming the
+    # marketplace at the commit; the shapes refused are the ones `scripts/release.py` refuses of the
+    # same entry. `not-json` is held to its start only: the rest is `json`'s own sentence.
+    # Mutations (declared): `mutations/`'s "the plugin commit reads a pin that is no SHA-1 commit
+    # id" -> the three strings are read as pins; "the plugin commit reads the pin from the first of
+    # several entries" -> `two-entries` reads `c`*40; "the plugin commit reads a pin from a source
+    # that is no object" -> `a-string-source` reads no pin; "the plugin commit skips plugins
+    # entries that are no object" -> `an-entry-that-is-no-object` reads `c`*40.
     root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: file})
+    head = git(root, "rev-parse", "HEAD").strip()
     with pytest.raises(Refusal) as refused:
         plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plugin.git")
-    assert MARKETPLACE in str(refused.value)
+    said = f"{MARKETPLACE} at {head} in {root}{wording}"
+    assert str(refused.value) == said if whole else str(refused.value).startswith(said), str(
+        refused.value
+    )
 
 
 def test_the_owner_s_object_format_does_not_reach_the_git_dir(tmp_path: Path) -> None:

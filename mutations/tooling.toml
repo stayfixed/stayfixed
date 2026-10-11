@@ -2260,6 +2260,32 @@ reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[64-characters]",
 ]
 
+# The pin is read from the entry `scripts/release.py` reads, refused where it refuses: the first of
+# two entries is no more the one than the second, and an entry that is no object is not skipped
+# over to the one behind it, which is how the reader once found a pin the release check refused.
+[[mutation]]
+name = "the plugin commit reads the pin from the first of several entries"
+file = "scripts/plugin_tree.py"
+before = "    if len(named) != 1:"
+after = "    if not named:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[two-entries]"]
+
+[[mutation]]
+name = "the plugin commit reads a pin from a source that is no object"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(source, dict):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-string-source]"]
+
+[[mutation]]
+name = "the plugin commit skips plugins entries that are no object"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(plugins, list) or not all(isinstance(entry, dict) for entry in plugins):"
+after = "    plugins = [e for e in plugins if isinstance(e, dict)] if isinstance(plugins, list) else plugins\n    if not isinstance(plugins, list):"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[an-entry-that-is-no-object]",
+]
+
 [[mutation]]
 name = "the plugin commit's git dir takes the owner's object format"
 file = "scripts/plugin_tree.py"

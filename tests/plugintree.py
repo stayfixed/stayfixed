@@ -11,13 +11,18 @@ The nine paths and the files under them are spelled out here and never read from
 `git` goes through `tests.gitfixture.git`, the sealed runner, so the developer's configuration
 never shapes a fixture; a test that means the owner's configuration writes it into the test
 `HOME`'s `.gitconfig`, which only the code under test reads.
+
+The plugin commit a test expects is computed the same way in both modules that expect one: its
+text spelled out (`literal`), its tree and its id computed by git (`plugin_tree_id`, `hashed`),
+and never by the script's `plugin_commit`.
 """
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-from tests.gitfixture import git
+from tests.gitfixture import git, git_bytes
 
 # The nine paths the runtime reads, as the plugin's tree must hold them.
 NINE = (
@@ -72,3 +77,34 @@ def plugin_source(tmp_path: Path, files: dict[str, tuple[bytes, str]] | None = N
     write(root, files or PLUGIN_FILES)
     commit(root)
     return root
+
+
+def plugin_tree_id(root: Path, rev: str = "HEAD") -> str:
+    """The tree git writes for the nine paths at `rev` and nothing else, through an index of its
+    own: the tree a plugin commit of `rev` names, computed without the script."""
+    with tempfile.TemporaryDirectory() as scratch:
+        index = str(Path(scratch) / "index")
+        git(root, "read-tree", "--empty", GIT_INDEX_FILE=index)
+        git(root, "reset", "-q", rev, "--", *NINE, GIT_INDEX_FILE=index)
+        return git(root, "write-tree", GIT_INDEX_FILE=index).strip()
+
+
+def literal(tree: str, parent: str | None, version: str = "1.2.3") -> str:
+    """The plugin commit's text for `version`, spelled out."""
+    lineage = f"parent {parent}\n" if parent is not None else ""
+    return (
+        f"tree {tree}\n"
+        f"{lineage}"
+        "author stayfixed <release@stayfixed.invalid> 0 +0000\n"
+        "committer stayfixed <release@stayfixed.invalid> 0 +0000\n"
+        "\n"
+        f"stayfixed {version}\n"
+        "\n"
+        f"The plugin tree of stayfixed/stayfixed at v{version}.\n"
+    )
+
+
+def hashed(where: Path, text: str) -> str:
+    """The id git gives `text` as a commit object, computed by git and written nowhere."""
+    answer = git_bytes(where, "hash-object", "-t", "commit", "--stdin", stdin=text.encode())
+    return answer.decode().strip()

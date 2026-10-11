@@ -332,9 +332,11 @@ def pinned_sha(root: Path, rev: str) -> str | None:
     """The `sha` the marketplace's plugin entry pins at the commit `rev` names, or `None` when
     the commit holds no marketplace or its entry pins no `sha`.
 
-    Read as `scripts/release.py` reads the entry: exactly one entry named `stayfixed`, whose
-    `source` is an object. Refused: a marketplace that is not JSON, that has not that one entry,
-    or whose `sha` is not 40 lowercase hex characters, naming the commit and the marketplace.
+    Read as `scripts/release.py` reads the entry: `plugins` a list of objects, exactly one of them
+    named `stayfixed`, and its `source` an object. Refused, each in its own words naming the commit
+    and the marketplace: a marketplace that is not JSON, a `plugins` that is not a list of
+    objects, not that one entry, a `source` that is no object, or a `sha` that is not 40 lowercase
+    hex characters.
     """
     sha = peel(root, rev, "commit")
     said = f"{MARKETPLACE} at {sha} in {root}"
@@ -349,18 +351,22 @@ def pinned_sha(root: Path, rev: str) -> str | None:
     if kind != "blob" or mode not in REGULAR_MODES:
         raise Refusal(f"{said} has mode {mode}, not a regular file's")
     data = _json_file(root, sha, MARKETPLACE, _blobs(root, [obj])[obj])
-    plugins = data.get("plugins")
-    named = (
-        [entry for entry in plugins if isinstance(entry, dict) and entry.get("name") == PACKAGE]
-        if isinstance(plugins, list)
-        else []
-    )
-    if len(named) != 1 or not isinstance(named[0].get("source"), dict):
+    # As `scripts/release.py` reads `plugins`: an absent one is no entries, and one that is not a
+    # list of objects is refused, never skipped over to an entry behind it.
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list) or not all(isinstance(entry, dict) for entry in plugins):
+        raise Refusal(f"{said} is valid JSON but its plugins is not a list of objects")
+    named = [entry for entry in plugins if entry.get("name") == PACKAGE]
+    if len(named) != 1:
         raise Refusal(
-            f"{said} has {len(named)} entries named {PACKAGE!r}; the pin is read from exactly "
-            "one, whose source is an object"
+            f"{said} has {len(named)} entries named {PACKAGE!r}; the pin is read from exactly one"
         )
-    source = named[0]["source"]
+    source = named[0].get("source")
+    if not isinstance(source, dict):
+        raise Refusal(
+            f"{said} gives the entry {PACKAGE!r} a source that is no object; the pin is read from "
+            "a url source"
+        )
     if "sha" not in source:
         return None
     pin = source["sha"]
