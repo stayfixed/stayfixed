@@ -3280,3 +3280,24 @@ file = "tests/test_check_workflow.py"
 before = 'for name in re.findall(r"\brepos/([a-z0-9._-]+/[a-z0-9._-]+)/", releasing)'
 after = 'for name in re.findall(r"\brepos:/([a-z0-9._-]+/[a-z0-9._-]+)/", releasing)'
 reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+# Step 7 names the oldest `gh` the publisher accepts, and `GH_FLOOR` is the one the publisher
+# enforces; one test holds every floor the document names to that constant, and finds at least one
+# first, or it would hold the document to nothing.
+[[mutation]]
+name = "RELEASING names an older gh floor than the publisher"
+file = "RELEASING.md"
+before = "with `gh` 2.101.0 or later logged in"
+after = "with `gh` 2.100.0 or later logged in"
+reddens = [
+  "tests/test_documents.py::test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below",
+]
+
+[[mutation]]
+name = "the gh floor test reads no version from RELEASING"
+file = "tests/test_documents.py"
+before = '_GH_FLOOR_NAMED = re.compile(r"`gh`(?:\s+older\s+than)?\s+(\d+(?:\.\d+)+)")'
+after = '_GH_FLOOR_NAMED = re.compile(r"`gh`(?:\s+older\s+than)?\s+v(\d+(?:\.\d+)+)")'
+reddens = [
+  "tests/test_documents.py::test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below",
+]

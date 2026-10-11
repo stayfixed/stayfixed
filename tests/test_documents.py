@@ -31,7 +31,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from tests.cli import subparsers
-from tests.scriptload import plugin_tree
+from tests.scriptload import plugin_tree, publish_plugin
 from tests.test_neutral import tracked_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -527,6 +527,27 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
     ):
         assert stale not in section, stale
     assert "set both to the new version" in RELEASING.read_text(encoding="utf-8")
+
+
+# A `gh` version `RELEASING.md` names as the floor: "`gh` 2.101.0 or later", "a `gh` older than
+# 2.101.0", either wrapped across a line.
+_GH_FLOOR_NAMED = re.compile(r"`gh`(?:\s+older\s+than)?\s+(\d+(?:\.\d+)+)")
+
+
+def test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below() -> None:
+    """Step 7 names the oldest `gh` the publisher accepts three times, and `GH_FLOOR` is the one
+    the publisher enforces; a floor raised in the script and not in the document sends the owner
+    to install a `gh` the publisher then refuses.
+
+    Mutation (oracle): `mutations/`'s "RELEASING names an older gh floor than the publisher"
+    -> reddens naming it. The set is held non-empty first, so a pattern that found none would
+    hold the document to nothing: `mutations/`'s "the gh floor test reads no version from
+    RELEASING" -> reddens.
+    """
+    floor = ".".join(str(part) for part in publish_plugin().GH_FLOOR)
+    named = _GH_FLOOR_NAMED.findall(RELEASING.read_text(encoding="utf-8"))
+    assert named, "RELEASING.md names no gh floor"
+    assert set(named) == {floor}, (named, floor)
 
 
 # `README.md`'s `## What each agent enforces` section: everything to the next `## ` heading.
