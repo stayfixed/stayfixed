@@ -132,8 +132,10 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    # ["no tag-shaped branches","branch","active",["refs/heads/v*"],["creation"],0]
    # ["main","branch","active",["refs/heads/main"],["deletion","non_fast_forward"],0]
    git ls-remote https://github.com/stayfixed/stayfixed-plugin.git refs/heads/main
+   gh api repos/stayfixed/stayfixed-plugin/git/ref/heads/main --jq .object.sha
    grep '"sha"' .claude-plugin/marketplace.json
-   # one commit on both lines, the plugin repository's main; before 0.3.0, neither prints
+   # one commit on all three lines, the plugin repository's main; before 0.3.0 the first and the
+   # last print nothing, and gh api answers "gh: Git Repository is empty. (HTTP 409)", or 404
    gh api repos/stayfixed/stayfixed/private-vulnerability-reporting --jq .enabled
    # true
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/stayfixed/json
@@ -141,16 +143,27 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    # https://pypi.org/project/stayfixed/
    ```
 
-   Any other answer stops the release here. A `404` from `stayfixed/stayfixed-plugin` means
-   section 3's "The plugin repository" has not been done: do it, then read back again. A
-   ruleset that lists other patterns leaves the tag step 6 pushes movable; a plugin repository
-   whose tags can move, or where a branch can take a tag's name, lets the marketplace's `ref`
-   name a tree nobody attested, one whose `main` can be deleted or rewound loses the parent the
-   next plugin commit names, and a fourth ruleset there is a line this listing does not expect;
+   Any other answer stops the release here. A `404` from `stayfixed/stayfixed-plugin` means section
+   3's "The plugin repository" has not been done: do it, then read back again. Once it is done, `gh
+   api …/git/ref/heads/main` answers `(HTTP 409)` for the empty repository before `0.3.0`, or
+   `404`, and the publisher reads either as no `main`; any other failure there stops the release
+   too. A ruleset that lists other patterns leaves the tag step 6 pushes movable; a plugin
+   repository whose tags can move, or where a branch can take a tag's name, lets the marketplace's
+   `ref` name a tree nobody attested, one whose `main` can be deleted or rewound loses the parent
+   the next plugin commit names, and a fourth ruleset there is a line this listing does not expect;
    a plugin repository whose `main` is not the commit this `main`'s marketplace pins is one the
-   next release cannot follow (section 5); reporting that is off sends every reporter
-   `SECURITY.md` directs to the advisory form back to a public issue; and a PyPI project
-   somebody else owns is one step 5's README would tell every reader to install.
+   next release cannot follow (section 5); reporting that is off sends every reporter `SECURITY.md`
+   directs to the advisory form back to a public issue; and a PyPI project somebody else owns is
+   one step 5's README would tell every reader to install.
+
+   **After a stopped release whose plugin was not pushed**, your `main` is the spent release
+   commit, whose `sha` names a plugin commit nobody pushed, so the `grep` above names another
+   commit than the plugin repository's `main`. Read the commit the spent one was cut on instead,
+   which must name that `main` (section 5, "Which commit a release is cut on"):
+
+   ```bash
+   git show 'HEAD^:.claude-plugin/marketplace.json' | grep '"sha"'
+   ```
 
 2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
    an alpha, and the tree already says so, with "Development Status :: 3 - Alpha". Every
@@ -263,12 +276,22 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    git add .claude-plugin/marketplace.json && git commit --amend --no-edit
    ```
 
-   `pin` writes nothing unless `stayfixed/stayfixed-plugin`'s `main` is the plugin commit's
-   parent — absent for `0.3.0`, the previous release's plugin commit after it — because that
-   `main` moves only by fast-forward. Its refusal names both commits; section 5 says what each
-   means. It lists `main` with `git ls-remote` through your own git, which a `url.*.insteadOf` or
-   a `GIT_CONFIG_*` variable can point elsewhere, so its check is the early catch, before any tag
-   is pushed; the publisher's in step 7, which asks GitHub's API, is the one that decides.
+   **After a stopped release whose plugin was not pushed**, `main` here is the spent release
+   commit, and a new commit on it would make the unpushed plugin commit the next one's parent,
+   which `pin` refuses. Replace the first command with an amend, which keeps the spent commit's
+   first parent, then run `pin` and the second amend as written:
+
+   ```bash
+   git commit --amend -a -m "chore(release): X.Y.Z"
+   ```
+
+   `pin` writes nothing unless the plugin commit's parent is `stayfixed/stayfixed-plugin`'s `main`
+   — both absent for `0.3.0`, and after it whatever plugin commit was pushed last, a spent
+   release's included — because that `main` moves only by fast-forward. Its refusal names both
+   commits; section 5 says what each means. It lists `main` with `git ls-remote` through your own
+   git, which a `url.*.insteadOf` or a `GIT_CONFIG_*` variable can point elsewhere, so its check is
+   the early catch, before any tag is pushed; the publisher's in step 7, which asks GitHub's API,
+   is the one that decides.
 
 6. **Tag, twice, and check the tag.** `claude plugin tag` is the platform's own tool: it reads
    the version from `plugin.json` and creates `stayfixed--vX.Y.Z` here. `vX.Y.Z` is the tag
@@ -344,19 +367,24 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      `--yes`. `pushed …`, or `already published …; nothing was pushed` from a run that finds the
      plugin repository's tag naming the pinned commit, wherever its `main` has moved since:
      approve.
-   - **`2`: fix it and run again; the `pypi` approval waits.** Anything that is not a fact of
-     the release: a tag that is not `vX.Y.Z`, or not in this checkout; a `gh` older than
-     2.101.0, a `gh` pre-release, or one whose version cannot be read; `gh` not logged in to
-     `github.com`, or offline; a local tag that is not GitHub's (`git fetch --tags`); SSH or the
-     network failing `git ls-remote`, `fetch` or `push`; a GitHub answer that could not be had or
-     read; an attestation that does not verify, below; `git ls-remote` disagreeing with GitHub's
-     API, which names a redirect — a `url.*.insteadOf` or a `GIT_CONFIG_*` variable — or a `main`
-     that moved while it ran; a push the remote refused, which moved nothing, being atomic; a
-     pushed tag GitHub does not list yet, which a run once GitHub lists it reports as already
-     published, while a run before that meets `git ls-remote` disagreeing with GitHub's API and
-     exits `2` again; a pushed tag GitHub lists under another commit, a redirect again; and a
-     refusal or a crash of the tag's own `scripts/plugin_tree.py`, because CI ran the same code on
-     the same commit green, so a cause on this machine is the likely one.
+   - **`2`: fix it and run again; the `pypi` approval waits.** Anything that is not a fact of the
+     release: a tag that is not `vX.Y.Z`, or not in this checkout; a `gh` older than 2.101.0, a
+     `gh` pre-release, or one whose version cannot be read; `gh` not logged in to `github.com`, or
+     offline; a local tag that is not GitHub's (`git fetch --tags --force` when GitHub's names
+     another commit, which a plain `git fetch --tags` refuses as clobbering your tag; push the
+     tags, step 6, when GitHub holds none); SSH or the network failing `git ls-remote`, `fetch` or
+     `push`; a GitHub answer that could not be had or read; an attestation that does not verify,
+     below; `git ls-remote` disagreeing with GitHub's API, which names a redirect — a
+     `url.*.insteadOf` or a `GIT_CONFIG_*` variable — or a `main` that moved while it ran; a push
+     the remote refused, which moved nothing, being atomic; a pushed tag GitHub does not list yet,
+     which a run once GitHub lists it reports as already published, while a run before that meets
+     `git ls-remote` disagreeing with GitHub's API and exits `2` again; a pushed tag GitHub does
+     not list beside a `main` GitHub still holds at the plugin commit's parent, a push that went
+     elsewhere through a `url.*.pushInsteadOf` or a `remote.<url>.pushurl`, which moves a push and
+     not a listing, so remove it before you run again; a pushed tag GitHub lists under another
+     commit, a redirect again, of the listing or of the push alone; and a refusal or a crash of the
+     tag's own `scripts/plugin_tree.py`, because CI ran the same code on the same commit green, so
+     a cause on this machine is the likely one.
 
      **A failed `gh attestation verify` is always `2`**, never `1`, and what to do next depends
      on what GitHub's attestation listing answers for the manifest's digest:
@@ -383,8 +411,8 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      (section 5).
 
    A run against another `--remote` than the default (a scratch repository, a rehearsal) is
-   classified from `git ls-remote` alone, reads nothing back after its push, and its summary says
-   `not confirmed through GitHub's API`. The default is
+   classified from `git ls-remote` alone, reads nothing back after its push, and its summary, like
+   a rejection resting on that listing, says `not confirmed through GitHub's API`. The default is
    `git@github.com:stayfixed/stayfixed-plugin.git`, and
    `https://github.com/stayfixed/stayfixed-plugin.git`, spelled exactly, counts as it too.
 
@@ -600,6 +628,9 @@ projects only.
 - **Anything goes wrong after the tags are pushed.** The ruleset refuses to delete or move a
   pushed `vX.Y.Z` or `stayfixed--vX.Y.Z`, for everyone, so that version is spent whether or not
   anything was published: a wrong tag, a red `build`, a rejected approval or a failed upload.
+  A red `attest` that failed for a transient Sigstore or attestation-service error is not one:
+  re-run that job (`gh run rerun <id> --failed`), which computes the same plugin commit of the
+  same tag and attests the same files.
   `main` has not moved, so nothing else needs undoing. Cut X.Y.(Z+1) from step 3, the
   `CHANGELOG.md` heading included, on the commit "Which commit a release is cut on", below,
   names. If a Release was created for the spent version, delete it, as step 7 says for a taken
@@ -615,7 +646,9 @@ projects only.
     `sha` of the plugin commit pushed last ("How a release returns to `dev`", below).
   - **After a stopped release whose plugin was not pushed**, on `main`, as the stopped one was:
     the plugin repository's `main` has not moved, so fix the spent release commit in place, an
-    amend keeping its first parent.
+    amend keeping its first parent: step 5's first command becomes
+    `git commit --amend -a -m "chore(release): X.Y.Z"`, and `pin` and the second amend follow as
+    written.
   - **After a stopped release whose plugin was pushed**, on the spent release commit, as a new
     commit on top of it: the plugin repository's `main` is now the spent release's plugin commit,
     which only that commit's marketplace pins; a merge of `dev` into it, if `dev` moved, keeps it
