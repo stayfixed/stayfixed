@@ -653,8 +653,10 @@ def test_commit_text_is_exactly_the_documented_bytes() -> None:
 
 
 def test_the_plugin_commit_is_what_git_computes(tmp_path: Path) -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit is dated a second after the epoch"
-    # -> the object git holds is not the literal text, and its id is not the one git computes.
+    # Mutations (declared): `mutations/`'s "the plugin commit is dated a second after the epoch"
+    # -> the object git holds is not the literal text, and its id is not the one git computes;
+    # "the plugin commit builds every file without its executable bit" -> the wrapper and the
+    # launcher are written `100644`.
     root = plugin_source(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
     git_dir = tmp_path / "plugin.git"

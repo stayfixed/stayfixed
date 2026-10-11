@@ -1,44 +1,50 @@
 #!/usr/bin/env python3
-"""Push the plugin tree a release attested to the plugin's own repository, and nothing else.
+"""Push the plugin commit a release pinned to the plugin's own repository, and nothing else.
 
     uv run python scripts/publish_plugin.py --tag vX.Y.Z [--remote URL] [--yes]
 
-The plugin is published from `stayfixed/stayfixed-plugin`, a repository whose root is the tree
-`scripts/plugin_tree.py` renders from a commit of this one. CI renders that tree at the release's
-tag and attests its manifest; this is the owner's one command that takes the same tree to the
-plugin repository. Without `--yes` it does everything but the push, and says which tree it would
-push and the commit this run built for it; with `--yes` it pushes its own commit as `main` and as
-the tag, atomically. The tree is the same from run to run; the commit is not, since `commit-tree`
-stamps the time it ran, so a dry run's commit id is that run's and no later one's.
+The plugin is published from `stayfixed/stayfixed-plugin`, a repository whose root is the plugin's
+tree at a commit of this one. Its commit is a function of the release commit: the tree, a fixed
+author, committer and date, a message naming the version, and as its parent the commit the
+marketplace pinned at the release commit's first parent. So the release commit pins it
+(`.claude-plugin/marketplace.json`'s `sha`), and this, the owner's one command after the release's
+tags, builds that commit again and pushes it as `main` and as the tag, atomically. Without `--yes`
+it does everything but the push and says which commit it would push; the commit is the same from
+run to run, so a dry run names the commit a later run pushes.
 
-**What it trusts, and why.** The attestation, and only the attestation, says which tree may be
-published: `gh attestation verify` binds the manifest's bytes to this repository's `release.yml`
+**The tag's own code builds the commit.** `scripts/plugin_tree.py` and `src/stayfixed` are read out
+of the tag's objects — `ls-tree` and `cat-file`, regular files only, never `git archive`, which
+applies the owner's attributes and line endings — written into the scratch directory, and run as
+`python -I`, the tag's `src` first on `sys.path`: the checkout's copy of either may be another
+release's. Before any of it runs, the local tag's commit is compared with the one GitHub's
+`stayfixed/stayfixed` holds under that tag, so the code run is the release's own, and the
+attestation binds the same commit afterwards.
+
+**What it trusts, and why.** The attestation says which manifest a release vouches for: `gh
+attestation verify` binds the manifest's bytes to this repository's `release.yml`
 (`--signer-workflow`), run for this tag (`--source-ref`) at this commit (`--source-digest`), on a
-GitHub-hosted runner (`--deny-self-hosted-runners`). The owner's checkout only renders, builds and
-compares: the tag is resolved once to a commit and every later step names that commit, so a
-branch of the tag's name, a local edit or a staged file is not what is rendered; and what is
-pushed is read back whole and compared with the attested manifest byte for byte before anything
-leaves the machine. The commit is built from the attested modes and the rendered bytes with git
-plumbing in a scratch bare repository — made without a template, no working tree, no index,
-`hash-object --no-filters`, and every git there run with `core.hooksPath` pointed at nothing — so
-the owner's init template, line-ending conversion, attributes, excludes and hooks never touch it.
-CI holds no credential to the plugin repository: the owner's own git pushes, with the owner's own
-key.
+GitHub-hosted runner (`--deny-self-hosted-runners`). The commit is read back whole and its manifest
+compared with that one byte for byte before anything leaves the machine. The plugin repository's
+state is GitHub's: on the default remote, `main` and the tag are read through `gh api` as well as
+`ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*` variable)
+refused rather than classified; another `--remote` (a test, a rehearsal) is read from `ls-remote`
+alone, and the summary says so. CI holds no credential to the plugin repository: the owner's own
+git pushes, with the owner's own key.
 
-**Two ways to run git, on purpose.** What reaches the remote (`ls-remote`, `fetch`, `push`), `gh`
-and `plugin_tree.py` run through the `Runner`, which keeps the owner's environment — the SSH agent
-the push needs, the token `gh` reads. Every local object write (`init`, `hash-object`, `mktree`,
-`commit-tree`) runs through `gitenv.git_run` in the scratch repository: the `Runner` closes stdin,
-which `mktree` reads, and `git_run` hands git a fixed few variables, so nothing in the
-environment points it at another repository or index.
+**Commit ids are compared, never manifests.** A remote whose tag already names the pinned commit is
+"already published": exit `0`, nothing fetched or pushed, wherever its `main` has moved since. A
+tag naming another commit is a fact of the release no re-run changes. Without the tag, `main` must
+be the commit's parent — both absent for the first release — because `main` moves only by
+fast-forward: a release cut on the wrong base, or a patch release of an older line, is refused.
 
-**A re-run is safe.** A remote whose tag already names a commit holding exactly the attested
-manifest — no path beside the plugin's — and whose `main` names that same commit is "already
-published": exit `0`, nothing pushed. Anything else under that tag is a refusal, and the push is
-`--atomic`, so `main` never moves without its tag.
+**Two exit codes after `0`.** `1` rejects the release's approval: the tag's pin is not the commit
+its tree makes; its `plugin.json` names another version; the attestation does not vouch for this
+manifest; the commit reads back as another tree; GitHub's plugin repository holds another commit
+under the tag, or a `main` that is not the commit's parent. `2` says fix something and run again:
+anything else, the tag's own code refusing included, since CI ran the same code on the same commit.
 
 The command goes through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
-the line, exit `0`, and `2` for a refusal.
+the line, and `Rejected` is the frame's `Failure`, exit `1`.
 """
 
 from __future__ import annotations
@@ -51,56 +57,100 @@ import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
+from stayfixed import fsops
 from stayfixed.cli import JSON_EPILOG, run
-from stayfixed.errors import Refusal
-from stayfixed.gitenv import (
-    GIT_TIMEOUT_SECONDS,
-    QUERY_TIMEOUT_SECONDS,
-    answer_bytes,
-    answer_lines,
-    git_run,
-)
+from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, git_run
 from stayfixed.printed import clipped, quoted
 from stayfixed.release.api import tag_for
 from stayfixed.result import Result
 from stayfixed.runner import Completed, Runner, subprocess_runner
 
-# The plugin's own repository, as the owner's git reaches it to push.
+# The plugin's own repository: as the owner's git reaches it to push, as the marketplace fetches
+# it, and as GitHub's API names it.
 PLUGIN_REMOTE = "git@github.com:stayfixed/stayfixed-plugin.git"
-# The workflow whose run attests the tree, and the repository it runs in: `gh attestation verify`
-# matches `--signer-workflow` exactly, so this is the workflow's path with its repository.
+PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
+PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"
+# The workflow whose run attests the manifest, and the repository it runs in: `gh attestation
+# verify` matches `--signer-workflow` against the workflow's path with its repository.
 SIGNER_WORKFLOW = "stayfixed/stayfixed/.github/workflows/release.yml"
 SOURCE_REPOSITORY = "stayfixed/stayfixed"
+# The host every `gh` call names, so a second host the owner is logged in to answers none.
+GITHUB = "github.com"
 # The repository this script lives in: the one whose tag is published.
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_TREE = Path(__file__).resolve().with_name("plugin_tree.py")
-# The manifest's first line as `plugin_tree.py` writes it. A manifest that opens with another is
-# one this script does not know how to read, and it refuses rather than guess at its lines.
-MANIFEST_FORMAT = "stayfixed-plugin-tree 1"
-# The only modes the manifest may name, and the only ones the plugin repository's tree holds.
-FILE_MODES = frozenset({"100644", "100755"})
 # A release's tag: `v` and three dot-separated runs of ASCII digits, and nothing after them.
 TAG_PATTERN = r"v[0-9]+\.[0-9]+\.[0-9]+"
 MAIN = "refs/heads/main"
+# Where the fetched `main` is kept in the scratch repository, beside nothing else.
+FETCHED = "refs/stayfixed/main"
+# A commit id of either repository: 40 lowercase hex characters.
+SHA1 = r"[0-9a-f]{40}"
 # A full object name, SHA-1's or SHA-256's, as `ls-remote` prints one.
 OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"
+# The first line of the manifest `plugin_tree.py` writes, and the `format` its `commit` answers.
+FORMAT = "stayfixed-plugin-tree 1"
+# What the tag carries beside the plugin and this script runs: its own reader of the plugin's tree
+# and the package that reader imports.
+TOOL = "scripts/plugin_tree.py"
+TOOL_PACKAGE = "src/stayfixed"
+# The only modes a file of the tag's code may have: a symlink or a submodule is refused, not
+# skipped, since the code would run without it.
+TOOL_MODES = frozenset({"100644", "100755"})
+_CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | os.O_CLOEXEC
+# How the tag's `plugin_tree.py` is run: `python -I -c BOOT <src> <script> <args>`. `-I` keeps the
+# owner's `PYTHONPATH` and user site out; the tag's `src` goes first on `sys.path`, so it is read
+# before the venv's path to this checkout's; and the script runs as `__main__` with its own
+# arguments, as `python <script> <args>` would run it.
+BOOT = (
+    "import runpy, sys; src = sys.argv[1]; sys.argv[:] = sys.argv[2:]; "
+    "sys.path.insert(0, src); runpy.run_path(sys.argv[0], run_name='__main__')"
+)
+# How many annotated tags GitHub's answer for a ref is peeled through before it is refused.
+PEELS = 8
+# The answers `gh api` gives for a ref a repository does not hold (404), and for any ref of an
+# empty repository (409): "absent", where every other failure is a refusal.
+ABSENT = frozenset({"404", "409"})
+HTTP_STATUS = re.compile(r"\(HTTP ([0-9]{3})\)")
 # How many of a program's stderr lines a refusal quotes.
 QUOTED_LINES = 6
-# On every git that runs in the scratch repository, `init` included: none of the owner's hooks
-# runs there. A global `core.hooksPath` holding a `reference-transaction` hook would otherwise run
-# it as early as the `init`, and a `pre-push` one on the push.
+# On every git that runs in the scratch repository: none of the owner's hooks runs there, a
+# `pre-push` above all.
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
+
+
+class Rejected(Failure):
+    """A fact of this release that no re-run changes: exit `1`, reject the `pypi` approval."""
 
 
 @dataclass(frozen=True)
 class Published:
     tag: str
     files: int
-    tree: str  # the commit's root tree: the same for every run over one attested manifest
-    commit: str  # this run's new commit, or the one already tagged
-    pushed: bool
-    already: bool  # the remote's tag and main already name a commit holding exactly this manifest
+    tree: str  # the commit's root tree
+    commit: str  # the plugin commit the tag pins
+    outcome: Literal["would-push", "pushed", "already"]
+    confirmed: bool  # the remote's state was read through GitHub's API
+
+
+@dataclass(frozen=True)
+class Built:
+    """What the tag's `plugin_tree.py commit` answered, checked for its shape."""
+
+    version: str
+    files: int
+    tree: str
+    parent: str | None
+    commit: str
+
+
+@dataclass(frozen=True)
+class RemoteState:
+    main: str | None
+    tag: str | None  # the commit the remote's tag names, peeled
+    confirmed: bool
 
 
 def _said(done: Completed) -> str:
@@ -115,24 +165,20 @@ def _said(done: Completed) -> str:
     return " / ".join(clipped(line.strip()) for line in lines[:QUOTED_LINES])
 
 
-def _plugin_tree(runner: Runner, root: Path, *args: str) -> None:
-    """Run `scripts/plugin_tree.py` with `args`; a non-zero exit is a refusal quoting it."""
-    done = runner.launch([sys.executable, str(PLUGIN_TREE), *args], root)
-    if done.code != 0:
-        raise Refusal(f"scripts/plugin_tree.py {args[0]} refused: {_said(done)}")
+def _shown(value: object) -> str:
+    return clipped(value) if isinstance(value, str) else f"a {type(value).__name__}"
 
 
-def _tag_commit(root: Path, tag: str) -> tuple[str, str]:
-    """The commit `refs/tags/<tag>` names, and the version its `plugin.json` says, which must be
-    the one the tag is spelled from."""
+# --- The tag ----------------------------------------------------------------------------------
+
+
+def _tag_commit(root: Path, tag: str) -> str:
+    """The commit `refs/tags/<tag>` names in `root`, peeled."""
     if not re.fullmatch(TAG_PATTERN, tag):
         raise Refusal(f"{quoted(tag)} is not a plain version tag, vX.Y.Z")
-    # `--no-replace-objects` on both reads, as `plugin_tree.py` reads the tree: a `refs/replace/`
-    # ref must not make the commit or the version checked here another than the tag's own. When
-    # the tag is annotated, its peel reads the tag object, so a replacement of that object makes
-    # the `rev-parse` answer the replacement's commit, and that commit would be attested,
-    # rendered and pushed; a lightweight tag names its commit directly, which a replacement does
-    # not move. A test holds each read's flag.
+    # `--no-replace-objects`, as every read of the tag here: when the tag is annotated, its peel
+    # reads the tag object, and a replacement of that object would make the answer another
+    # commit; a lightweight tag names its commit directly, which a replacement does not move.
     code, answer = git_run(
         root,
         "--no-replace-objects",
@@ -142,20 +188,273 @@ def _tag_commit(root: Path, tag: str) -> tuple[str, str]:
         f"refs/tags/{tag}^{{commit}}",
     )
     sha = answer.removesuffix("\n")
-    if code != 0 or len(sha) != 40:
+    if code != 0 or not re.fullmatch(SHA1, sha):
         raise Refusal(f"no tag {tag} names a commit in {root} (git rev-parse exited {code})")
-    plugin_json = f"{sha}:.claude-plugin/plugin.json"
-    code, answer = git_run(root, "--no-replace-objects", "cat-file", "blob", plugin_json)
+    return sha
+
+
+# --- GitHub's API -------------------------------------------------------------------------------
+
+
+def _api(runner: Runner, root: Path, path: str) -> dict[str, object] | None:
+    """`gh api --hostname github.com <path>`'s JSON object, or `None` when GitHub answers that it
+    holds no such object (404, or 409 for an empty repository); any other answer is a refusal."""
+    done = runner.launch(["gh", "api", "--hostname", GITHUB, path], root)
+    if done.code != 0:
+        status = HTTP_STATUS.search(done.stderr)
+        if status is not None and status.group(1) in ABSENT:
+            return None
+        raise Refusal(f"gh api {path} exited {done.code}: {_said(done)}")
     try:
-        manifest = json.loads(answer_bytes(answer).decode("utf-8")) if code == 0 else None
+        answer = json.loads(done.stdout)
     except ValueError:
-        manifest = None
-    version = manifest.get("version") if isinstance(manifest, dict) else None
+        answer = None
+    if not isinstance(answer, dict):
+        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
+    return answer
+
+
+def _github_ref(runner: Runner, root: Path, repository: str, ref: str) -> str | None:
+    """The commit `ref` names in GitHub's `repository`, peeled through annotated tags, or `None`
+    when GitHub holds no such ref."""
+    answer = _api(runner, root, f"repos/{repository}/git/ref/{ref.removeprefix('refs/')}")
+    for _ in range(PEELS):
+        if answer is None:
+            return None
+        target = answer.get("object")
+        sha = target.get("sha") if isinstance(target, dict) else None
+        kind = target.get("type") if isinstance(target, dict) else None
+        if not isinstance(sha, str) or not re.fullmatch(SHA1, sha):
+            raise Refusal(f"GitHub answered {_shown(sha)} for {ref} in {repository}")
+        if kind == "commit":
+            return sha
+        if kind != "tag":
+            raise Refusal(f"GitHub's {repository} names a {_shown(kind)} under {ref}, at {sha}")
+        answer = _api(runner, root, f"repos/{repository}/git/tags/{sha}")
+        if answer is None:
+            raise Refusal(
+                f"GitHub's {repository} names the tag object {sha} under {ref}, and "
+                "then holds no such tag"
+            )
+    raise Refusal(f"GitHub's {repository} names {ref} through more than {PEELS} tags")
+
+
+def _source_anchor(runner: Runner, root: Path, tag: str, sha: str) -> None:
+    """Refuse a local tag that is not GitHub's: its code is about to run."""
+    found = _github_ref(runner, root, SOURCE_REPOSITORY, f"refs/tags/{tag}")
+    if found != sha:
+        held = f"names {found}" if found is not None else "holds no such tag"
+        raise Refusal(
+            f"your local {tag} names {sha}, and GitHub's {SOURCE_REPOSITORY} {held}: your local "
+            f"{tag} is not GitHub's. Fetch the tags (git fetch --tags) and run again; nothing "
+            "was run"
+        )
+
+
+# --- The tag's own code -------------------------------------------------------------------------
+
+
+def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
+    """Each object's bytes, from one `git cat-file --batch`."""
+    given = "".join(obj + "\n" for obj in objects)
+    code, answer = git_run(
+        root,
+        "--no-replace-objects",
+        "cat-file",
+        "--batch",
+        stdin=given,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    if code != 0:
+        raise Refusal(f"git cat-file --batch exited {code} in {root}")
+    out, at, blobs = answer_bytes(answer), 0, {}
+    for obj in objects:
+        # `<object> <type> <size>\n<content>\n`, once per object asked, in the order asked.
+        header_end = out.find(b"\n", at)
+        header = out[at:header_end].split() if header_end != -1 else []
+        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
+            raise Refusal(f"git cat-file did not answer {obj} as a blob in {root}")
+        content = out[header_end + 1 : header_end + 1 + int(header[2])]
+        if len(content) != int(header[2]):
+            raise Refusal(f"git cat-file's answer in {root} ended inside {obj}")
+        blobs[obj] = content
+        at = header_end + 1 + len(content) + 1
+    return blobs
+
+
+def _tool(root: Path, tag: str, sha: str, scratch: Path) -> Path:
+    """The tag's `scripts/plugin_tree.py` and `src/stayfixed`, read out of its objects and
+    written under `scratch / "tool"`: the directory to run them from."""
+    code, answer = git_run(
+        root,
+        "--no-replace-objects",
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        sha,
+        "--",
+        TOOL,
+        TOOL_PACKAGE,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    if code != 0:
+        raise Refusal(f"git ls-tree of {sha} exited {code} in {root}")
+    rows = []
+    for record in answer.split("\0"):
+        if not record:
+            continue
+        meta, path = record.split("\t", 1)
+        mode, _kind, obj = meta.split()
+        if mode not in TOOL_MODES:
+            raise Refusal(
+                f"{quoted(path)} at {tag} ({sha}) has mode {mode}, not a regular file's; the "
+                "tag's code is run from regular files only"
+            )
+        rows.append((path, obj))
+    paths = [path for path, _ in rows]
+    if TOOL not in paths or not any(path.startswith(f"{TOOL_PACKAGE}/") for path in paths):
+        raise Refusal(
+            f"{tag} ({sha}) holds no {TOOL} or no {TOOL_PACKAGE}: {tag} predates the plugin "
+            "repository, and is not published to it"
+        )
+    blobs = _blobs(root, [obj for _, obj in rows])
+    tool = scratch / "tool"
+    try:
+        tool.mkdir()
+    except OSError as exc:
+        raise Refusal(f"{tool} cannot be made: {fsops.said(exc)}") from None
+    for path, obj in rows:
+        try:
+            fsops.mkdirs_within(tool, path)
+            with fsops.open_within(tool, path) as (dir_fd, name):
+                descriptor = os.open(name, _CREATE, 0o644, dir_fd=dir_fd)
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(blobs[obj])
+        except OSError as exc:
+            raise Refusal(
+                f"{quoted(path)} cannot be written into {tool}: {fsops.said(exc)}"
+            ) from None
+    return tool
+
+
+def _run_tool(runner: Runner, tool: Path, root: Path, *args: str) -> tuple[int, dict[str, object]]:
+    """The tag's `plugin_tree.py <args> --json`: its exit code and the JSON object it printed,
+    which the CLI frame prints whatever the outcome; a run that printed none is a refusal."""
+    script = tool / "scripts" / "plugin_tree.py"
+    argv = [sys.executable, "-I", "-c", BOOT, str(tool / "src"), str(script), *args, "--json"]
+    done = runner.launch(argv, root)
+    try:
+        answer = json.loads(done.stdout)
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict):
+        raise Refusal(
+            f"the tag's {TOOL} {args[0]} exited {done.code} and printed no JSON object: "
+            f"{_said(done)}"
+        )
+    return done.code, answer
+
+
+def _built(answer: dict[str, object]) -> Built:
+    """`answer` as a `Built`, or a refusal naming the first field that is not what `commit`
+    answers."""
+    said = f"the tag's {TOOL} commit answered"
+    if answer.get("format") != FORMAT:
+        raise Refusal(f"{said} in format {_shown(answer.get('format'))}, not {FORMAT!r}")
+    for name in ("commit", "tree"):
+        value = answer.get(name)
+        if not isinstance(value, str) or not re.fullmatch(SHA1, value):
+            raise Refusal(f"{said} {_shown(value)} for {name}, which is no commit id")
+    for name in ("parent", "pinned"):
+        value = answer.get(name)
+        if value is not None and (not isinstance(value, str) or not re.fullmatch(SHA1, value)):
+            raise Refusal(f"{said} {_shown(value)} for {name}, which is neither null nor an id")
+    files, version = answer.get("files"), answer.get("version")
+    if not isinstance(files, int) or isinstance(files, bool):
+        raise Refusal(f"{said} a {type(files).__name__} for files, which is no count")
     if not isinstance(version, str):
-        raise Refusal(f".claude-plugin/plugin.json at {tag} ({sha}) names no version")
-    if tag_for(version)[0] != tag:
-        raise Refusal(f"{tag} names {sha}, whose .claude-plugin/plugin.json says {quoted(version)}")
-    return sha, version
+        raise Refusal(f"{said} {_shown(version)} for version, which is no version")
+    parent = answer["parent"]
+    return Built(
+        version=version,
+        files=files,
+        tree=str(answer["tree"]),
+        parent=parent if isinstance(parent, str) else None,
+        commit=str(answer["commit"]),
+    )
+
+
+def _build(runner: Runner, tool: Path, root: Path, tag: str, sha: str, scratch: Path) -> Built:
+    """The plugin commit of `sha`, written by the tag's own code into `scratch / "plugin.git"`,
+    its manifest into `scratch / "plugin-tree.txt"`; rejected when the tag's pin is not it or its
+    version is not the tag's."""
+    code, answer = _run_tool(
+        runner,
+        tool,
+        root,
+        "commit",
+        "--root",
+        str(root),
+        "--rev",
+        sha,
+        "--git-dir",
+        str(scratch / "plugin.git"),
+        "--manifest-file",
+        str(scratch / "plugin-tree.txt"),
+        "--require-pin",
+    )
+    summary = quoted(str(answer.get("summary")))
+    # Exit 1 with the frame's `failed` object is `--require-pin`'s, and only that: a traceback
+    # exits 1 too, and printed no object.
+    if code == 1 and answer.get("error") == "failed":
+        raise Rejected(
+            f"{tag}'s marketplace does not pin the plugin commit its own tree makes, so no "
+            f"publish of {tag} matches its pin: {summary}. Reject the release's approval"
+        )
+    if code != 0:
+        raise Refusal(f"the tag's {TOOL} commit exited {code}: {summary}")
+    built = _built(answer)
+    if tag_for(built.version)[0] != tag:
+        raise Rejected(
+            f"{tag} names {sha}, whose .claude-plugin/plugin.json says {quoted(built.version)}. "
+            "Reject the release's approval"
+        )
+    return built
+
+
+def _first_difference(want: bytes, found: bytes) -> str:
+    """Where `found` parts from `want`, as the first differing line of the two manifests."""
+    expected = want.decode("utf-8", "replace").split("\n")
+    seen = found.decode("utf-8", "replace").split("\n")
+    for number in range(max(len(expected), len(seen))):
+        line = expected[number] if number < len(expected) else "<no line>"
+        other = seen[number] if number < len(seen) else "<no line>"
+        if line != other:
+            return f"line {number + 1} is {clipped(other)} where the attested has {clipped(line)}"
+    return "the two manifests are the same"  # never reached: the callers compare first
+
+
+def _read_back(
+    runner: Runner, tool: Path, root: Path, tag: str, commit: str, scratch: Path
+) -> None:
+    """Reject a commit whose tree, read back whole, is not the attested manifest's."""
+    git_dir, readback = scratch / "plugin.git", scratch / "readback.txt"
+    exact = ("manifest", "--exact", "--root", str(git_dir), "--rev", commit)
+    code, answer = _run_tool(runner, tool, root, *exact, "--manifest-file", str(readback))
+    if code != 0:
+        said = quoted(str(answer.get("summary")))
+        raise Refusal(f"the tag's {TOOL} could not read {commit} back: exit {code}, {said}")
+    try:
+        expected, found = (scratch / "plugin-tree.txt").read_bytes(), readback.read_bytes()
+    except OSError as exc:
+        raise Refusal(f"the manifests in {scratch} cannot be read: {fsops.said(exc)}") from None
+    if found != expected:
+        raise Rejected(
+            f"the commit built for {tag} reads back as another tree: "
+            f"{_first_difference(expected, found)}; nothing was pushed. Reject the release's "
+            "approval"
+        )
 
 
 def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> None:
@@ -180,50 +479,14 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
     if verified.code != 0:
         # gh exits non-zero both for "no attestation vouches for this" and for "I could not
         # ask" (unauthenticated, offline); which one it was is in what it said, not here.
-        raise Refusal(
+        raise Rejected(
             f"gh attestation verify exited {verified.code}: {_said(verified)}. Either no release "
             f"of {tag} at {sha} attested this tree, or gh could not check; nothing was fetched "
             "or pushed"
         )
 
 
-def _manifest_rows(text: bytes) -> list[tuple[str, str]]:
-    """`(mode, path)` for every file the attested manifest names, in its order."""
-    try:
-        lines = text.decode("utf-8").split("\n")
-    except UnicodeDecodeError:
-        raise Refusal(f"the rendered manifest is not UTF-8, as {MANIFEST_FORMAT!r} is") from None
-    if not lines or lines[0] != MANIFEST_FORMAT or lines[-1] != "":
-        raise Refusal(f"the rendered manifest does not open with {MANIFEST_FORMAT!r}")
-    rows = []
-    for number, line in enumerate(lines[1:-1], start=2):
-        fields = line.split(" ", 2)
-        if len(fields) != 3:
-            raise Refusal(
-                f"the rendered manifest's line {number} is not a file's, as {MANIFEST_FORMAT!r} "
-                f"writes one: {clipped(line)}"
-            )
-        mode, _digest, path = fields
-        # No test reddens on this check alone: `plugin_tree.py` writes no other mode, and a mode
-        # edited into the file after the render is built as written and then refused by the
-        # read-back, whose `members` takes only a regular file's. It keeps that edit from
-        # reaching `mktree` at all.
-        if mode not in FILE_MODES:
-            raise Refusal(f"the rendered manifest names mode {quoted(mode)} for {quoted(path)}")
-        rows.append((mode, path))
-    return rows
-
-
-def _first_difference(want: bytes, found: bytes) -> str:
-    """Where `found` parts from `want`, as the first differing line of the two manifests."""
-    expected = want.decode("utf-8", "replace").split("\n")
-    seen = found.decode("utf-8", "replace").split("\n")
-    for number in range(max(len(expected), len(seen))):
-        line = expected[number] if number < len(expected) else "<no line>"
-        other = seen[number] if number < len(seen) else "<no line>"
-        if line != other:
-            return f"line {number + 1} is {clipped(other)} where the attested has {clipped(line)}"
-    return "the two manifests are the same"  # never reached: the callers compare first
+# --- The plugin repository ------------------------------------------------------------------------
 
 
 def _network(runner: Runner, git_dir: Path, *args: str) -> Completed:
@@ -234,19 +497,11 @@ def _network(runner: Runner, git_dir: Path, *args: str) -> Completed:
     return runner.launch(argv, git_dir)
 
 
-def _scratch_git(
-    git_dir: Path, *args: str, stdin: str | None = None, timeout: float = GIT_TIMEOUT_SECONDS
-) -> tuple[int, str]:
-    """`git <args>` in the scratch repository through `git_run`: named by `--git-dir` and without
-    hooks, for `_network`'s reasons. No test reddens on `NO_HOOKS` here alone: none of
-    `rev-parse`, `hash-object`, `mktree` or `commit-tree` updates a ref or runs a hook."""
-    return git_run(git_dir, f"--git-dir={git_dir}", *NO_HOOKS, *args, stdin=stdin, timeout=timeout)
-
-
-def _remote_refs(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[str, str]:
-    """`main` and the tag on the remote, by their exact names: `ls-remote` matches a pattern
-    against a ref's tail, so a `refs/heads/x/refs/heads/main` would answer it too."""
-    wanted = (MAIN, f"refs/tags/{tag}")
+def _listed(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[str, str]:
+    """`main`, the tag and the tag's peel on the remote, by their exact names: `ls-remote`
+    matches a pattern against a ref's tail, so a `refs/heads/x/refs/heads/main` would answer it
+    too."""
+    wanted = (MAIN, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
     listed = _network(runner, git_dir, "ls-remote", "--end-of-options", remote, *wanted)
     if listed.code != 0:
         raise Refusal(f"git ls-remote {remote} exited {listed.code}: {_said(listed)}")
@@ -255,220 +510,121 @@ def _remote_refs(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[s
         sha, _, ref = line.partition("\t")
         if ref not in wanted:
             continue
-        # An object name and nothing else: it is handed on to `fetch`, `plugin_tree.py` and
-        # `commit-tree -p`, and the remote chose it.
+        # An object name and nothing else: it is handed on to `fetch` and compared, and the
+        # remote chose it.
         if not re.fullmatch(OBJECT_NAME, sha):
             raise Refusal(f"git ls-remote {remote} answered {clipped(sha)} for {ref}")
         found[ref] = sha
     return found
 
 
-def _fetch(runner: Runner, git_dir: Path, remote: str, ref: str) -> None:
-    """Fetch `ref`'s objects into the scratch repository, and no other ref or tag."""
-    args = ("fetch", "--quiet", "--no-tags", "--end-of-options", remote, ref)
-    fetched = _network(runner, git_dir, *args)
+def _remote_state(runner: Runner, root: Path, git_dir: Path, remote: str, tag: str) -> RemoteState:
+    """The remote's `main` and the commit its tag names: from `ls-remote`, and on the default
+    remote from GitHub's API as well, which must agree."""
+    listed = _listed(runner, git_dir, remote, tag)
+    # An annotated tag lists its object, then its peel; the lightweight tag this pushes, one line.
+    peeled = listed.get(f"refs/tags/{tag}^{{}}")
+    tagged = peeled if peeled is not None else listed.get(f"refs/tags/{tag}")
+    main = listed.get(MAIN)
+    if remote not in (PLUGIN_REMOTE, PLUGIN_URL):
+        return RemoteState(main, tagged, confirmed=False)
+    github_main = _github_ref(runner, root, PLUGIN_REPOSITORY, MAIN)
+    github_tag = _github_ref(runner, root, PLUGIN_REPOSITORY, f"refs/tags/{tag}")
+    if (github_main, github_tag) != (main, tagged):
+        raise Refusal(
+            f"git ls-remote {remote} answers main {main or 'absent'} and {tag} "
+            f"{tagged or 'absent'}, where GitHub's {PLUGIN_REPOSITORY} has main "
+            f"{github_main or 'absent'} and {tag} {github_tag or 'absent'}: your git reaches "
+            "another repository, through a redirect (a url.*.insteadOf in your git "
+            "configuration, or a GIT_CONFIG_* variable). Remove it and run again"
+        )
+    return RemoteState(main, tagged, confirmed=True)
+
+
+def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, main: str | None) -> None:
+    """Reject a commit `main` does not fast-forward to; then fetch `main`, the commit's parent,
+    and refuse a `main` that moved since it was listed."""
+    if main != built.parent:
+        follows = f"parent {built.parent}" if built.parent is not None else "no parent"
+        holds = f"main at {main}" if main is not None else "no main"
+        raise Rejected(
+            f"the plugin commit {built.commit} has {follows}, and {remote} has {holds}; the "
+            "plugin repository's main moves only by fast-forward. Reject the release's approval"
+        )
+    if main is None:
+        return
+    refspec = f"+{MAIN}:{FETCHED}"
+    fetched = _network(
+        runner, git_dir, "fetch", "--quiet", "--no-tags", "--end-of-options", remote, refspec
+    )
     if fetched.code != 0:
-        raise Refusal(f"git fetch {remote} {ref} exited {fetched.code}: {_said(fetched)}")
-
-
-def _already(
-    runner: Runner, root: Path, scratch: Path, remote: str, tag: str, held: dict[str, str]
-) -> tuple[str, str]:
-    """The commit the remote's tag names, and its root tree, if it holds exactly the attested
-    tree and `main` names it too; any other state of the remote under this tag is a refusal."""
-    git_dir, tagged = scratch / "plugin.git", held[f"refs/tags/{tag}"]
-    _fetch(runner, git_dir, remote, f"refs/tags/{tag}")
-    remote_tree = scratch / "remote-tree.txt"
-    # `--exact`: a path beside the plugin's in that commit is not the attested tree either.
-    exact = ("manifest", "--exact", "--root", str(git_dir), "--rev", tagged)
-    _plugin_tree(runner, root, *exact, "--manifest-file", str(remote_tree))
-    attested = (scratch / "plugin-tree.txt").read_bytes()
-    if remote_tree.read_bytes() != attested:
-        found = _first_difference(attested, remote_tree.read_bytes())
-        raise Refusal(f"{remote} already has {tag}, holding another tree: {found}")
-    code, answer = _scratch_git(
-        git_dir, "rev-parse", "--verify", "--end-of-options", f"{tagged}^{{commit}}"
+        raise Refusal(f"git fetch {remote} {MAIN} exited {fetched.code}: {_said(fetched)}")
+    code, answer = git_run(
+        git_dir,
+        f"--git-dir={git_dir}",
+        *NO_HOOKS,
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        FETCHED,
     )
-    commit = answer.removesuffix("\n")
-    if code != 0 or not commit:
-        raise Refusal(f"{remote}'s {tag} ({tagged}) names no commit")
-    if held.get(MAIN) != commit:
-        at = held.get(MAIN, "absent")
-        raise Refusal(f"{remote}'s {tag} holds this tree at {commit}, but main is at {at}")
-    return _root_tree(git_dir, commit), commit
-
-
-def _root_tree(git_dir: Path, commit: str) -> str:
-    code, answer = _scratch_git(
-        git_dir, "rev-parse", "--verify", "--end-of-options", f"{commit}^{{tree}}"
-    )
-    tree = answer.removesuffix("\n")
-    if code != 0 or not tree:
-        raise Refusal(f"{commit} names no tree in {git_dir} (git rev-parse exited {code})")
-    return tree
-
-
-def _scratch_repository(scratch: Path) -> Path:
-    """An empty bare repository under `scratch`, for the commit to be built in."""
-    git_dir = scratch / "plugin.git"
-    # No template: `git init` copies the owner's `init.templateDir` into the new repository, and
-    # with it the template's `config`, which every later git here reads as this repository's own:
-    # a `user.name` there would author the commit, and a `url.<base>.insteadOf` would rewrite the
-    # remote under the `ls-remote`, the fetch and the push, all of which run in this repository.
-    # Its `info/attributes` and `hooks/` would come along too, which `hash-object --no-filters`
-    # and `core.hooksPath` keep out on their own.
-    code, _ = git_run(scratch, *NO_HOOKS, "init", "--bare", "--quiet", "--template=", str(git_dir))
-    if code != 0:
-        raise Refusal(f"git init --bare exited {code} in {scratch}")
-    return git_dir
-
-
-def _parent(git_dir: Path, remote: str, parent: str) -> None:
-    """Refuse a `main` the fetch did not bring: one moved on the remote after it was listed."""
-    code, _ = _scratch_git(
-        git_dir, "rev-parse", "--verify", "--end-of-options", f"{parent}^{{commit}}"
-    )
-    if code != 0:
+    if code != 0 or answer.removesuffix("\n") != main:
         raise Refusal(
-            f"{remote}'s main was {parent} when it was listed, and the fetch that followed did "
-            "not bring that commit: main moved on the remote in between. Nothing was pushed; "
-            "run the command again"
+            f"{remote}'s main was {main} when it was listed, and the fetch that followed brought "
+            "another: main moved while this ran. Nothing was pushed; run again"
         )
-
-
-def _mktree(git_dir: Path, entries: list[tuple[str, str, str, str]]) -> str:
-    """One tree object from `(mode, kind, object, name)` entries; `mktree` sorts them itself."""
-    # Each name goes to git as the UTF-8 bytes the manifest holds, whatever the filesystem's
-    # codec: `git_run` encodes `stdin` with that codec and `surrogateescape`, which `fsdecode`
-    # undoes exactly.
-    given = "".join(
-        f"{mode} {kind} {obj}\t{os.fsdecode(name.encode('utf-8'))}\0"
-        for mode, kind, obj, name in entries
-    )
-    code, answer = _scratch_git(git_dir, "mktree", "-z", stdin=given, timeout=QUERY_TIMEOUT_SECONDS)
-    tree = answer.removesuffix("\n")
-    if code != 0 or not tree:
-        raise Refusal(f"git mktree exited {code} in {git_dir}")
-    return tree
-
-
-def _build(
-    git_dir: Path,
-    rendered: Path,
-    rows: list[tuple[str, str]],
-    parent: str | None,
-    paragraphs: tuple[str, ...],
-) -> tuple[str, str]:
-    """The root tree holding each rendered file at its manifest mode, and nothing else, and the
-    commit of it this run made."""
-    files = [str(rendered / path) for _, path in rows]
-    code, answer = _scratch_git(
-        git_dir, "hash-object", "-w", "--no-filters", "--", *files, timeout=QUERY_TIMEOUT_SECONDS
-    )
-    blobs = answer_lines(answer)
-    if code != 0 or len(blobs) != len(rows):
-        raise Refusal(f"git hash-object exited {code} in {git_dir} over the rendered tree")
-    directories: dict[str, list[tuple[str, str, str, str]]] = {"": []}
-    for (mode, path), blob in zip(rows, blobs, strict=True):
-        directory, _, name = path.rpartition("/")
-        directories.setdefault(directory, []).append((mode, "blob", blob, name))
-        while directory:
-            directory = directory.rpartition("/")[0]
-            directories.setdefault(directory, [])
-    # Deepest first, so each directory's own tree exists before its parent's names it.
-    for directory in sorted(directories, key=lambda d: d.count("/") + bool(d), reverse=True):
-        if directory:
-            above, _, name = directory.rpartition("/")
-            tree = _mktree(git_dir, directories[directory])
-            directories[above].append(("040000", "tree", tree, name))
-    root_tree = _mktree(git_dir, directories[""])
-    lineage = ("-p", parent) if parent is not None else ()
-    message = [arg for paragraph in paragraphs for arg in ("-m", paragraph)]
-    code, answer = _scratch_git(git_dir, "commit-tree", root_tree, *lineage, *message)
-    commit = answer.removesuffix("\n")
-    if code == -1:
-        raise Refusal(
-            f"git commit-tree gave no answer in {git_dir}: it ran past its time limit or could "
-            "not be started, and no commit was written"
-        )
-    if code != 0 or not commit:
-        # `git_run` keeps git's stderr to itself, so git's own sentence is not here to quote.
-        # The parent is known to be present (`_parent`), so the likeliest cause left is the
-        # identity, and `git_run` hands git neither the environment's `GIT_AUTHOR_*` nor a
-        # scratch repository any `includeIf "gitdir:…"` matches: only an identity in the global
-        # or the system configuration reaches it.
-        raise Refusal(
-            f"git commit-tree exited {code} in {git_dir} and wrote no commit, most likely for "
-            "want of an identity: set user.name and user.email in your global or system git "
-            "configuration (~/.gitconfig, ~/.config/git/config or /etc/gitconfig; "
-            "git config --global writes the first). An identity from GIT_AUTHOR_* variables or "
-            'from an includeIf "gitdir:…" section does not reach this script\'s git'
-        )
-    return root_tree, commit
 
 
 def publish(
     root: Path, tag: str, *, remote: str, yes: bool, runner: Runner, scratch: Path
 ) -> Published:
-    """Publish the plugin tree `tag` names in `root` to `remote`'s `main` and `tag`, under `yes`.
+    """Publish the plugin commit `tag` pins in `root` to `remote`'s `main` and `tag`, under `yes`.
 
-    Each step refuses before the next runs, and everything before the push is local to
-    `scratch`: the tag resolved to one commit; the tree rendered from it; the attestation
-    verified; the remote's `main` and tag read (already published, or a refusal, when the tag is
-    there); the commit built on `main` with plumbing; that commit read back whole and compared
-    with the attested manifest; and only then, with `yes`, the atomic push.
+    Each step refuses or rejects before the next runs, and everything before the push is local to
+    `scratch`: the tag resolved to one commit and held to GitHub's; the tag's own code read out of
+    it; the commit built with that code and held to the pin and the version; the attestation
+    verified; the commit read back; the remote's state read (already published, or rejected, when
+    the tag is there); `main` held to the commit's parent and fetched; and only then, with `yes`,
+    the atomic push.
     """
-    sha, version = _tag_commit(root, tag)
-    rendered, attested = scratch / "tree", scratch / "plugin-tree.txt"
-    source = str(root.resolve())
-    render = ("render", "--root", source, "--rev", sha, "--out", str(rendered))
-    _plugin_tree(runner, root, *render, "--manifest-file", str(attested))
-    _verify(runner, root, attested, tag, sha)
-    expected = attested.read_bytes()
-    rows = _manifest_rows(expected)
-    git_dir = _scratch_repository(scratch)
-    held = _remote_refs(runner, git_dir, remote, tag)
-    tagged = held.get(f"refs/tags/{tag}")
-    if tagged is not None:
-        tree, commit = _already(runner, root, scratch, remote, tag, held)
-        return Published(tag, len(rows), tree, commit, pushed=False, already=True)
-    parent = held.get(MAIN)
-    if parent is not None:
-        _fetch(runner, git_dir, remote, MAIN)
-        _parent(git_dir, remote, parent)
-
-    paragraphs = (
-        f"stayfixed {version}",
-        f"Generated from {SOURCE_REPOSITORY} at {sha} ({tag}) by scripts/publish_plugin.py.",
-    )
-    tree, commit = _build(git_dir, rendered, rows, parent, paragraphs)
-    readback = scratch / "readback.txt"
-    built = ("manifest", "--exact", "--root", str(git_dir), "--rev", commit)
-    _plugin_tree(runner, root, *built, "--manifest-file", str(readback))
-    if readback.read_bytes() != expected:
-        found = _first_difference(expected, readback.read_bytes())
-        raise Refusal(
-            f"the commit built for {remote} reads back as another tree: {found}; nothing was pushed"
-        )
-
-    if yes:
-        pushed = _network(
-            runner,
-            git_dir,
-            "push",
-            "--atomic",
-            "--quiet",
-            "--end-of-options",
-            remote,
-            f"{commit}:{MAIN}",
-            f"{commit}:refs/tags/{tag}",
-        )
-        if pushed.code != 0:
-            raise Refusal(
-                f"git push to {remote} exited {pushed.code}, and the push is atomic, so neither "
-                f"main nor {tag} moved: {_said(pushed)}"
+    sha = _tag_commit(root, tag)
+    _source_anchor(runner, root, tag, sha)
+    tool = _tool(root, tag, sha, scratch)
+    built = _build(runner, tool, root, tag, sha, scratch)
+    _verify(runner, root, scratch / "plugin-tree.txt", tag, sha)
+    _read_back(runner, tool, root, tag, built.commit, scratch)
+    git_dir = scratch / "plugin.git"
+    state = _remote_state(runner, root, git_dir, remote, tag)
+    outcome: Literal["would-push", "pushed", "already"]
+    if state.tag is not None:
+        if state.tag != built.commit:
+            raise Rejected(
+                f"{remote} holds {tag} at {state.tag}, and the plugin commit {tag} pins is "
+                f"{built.commit}: a tag is not moved. Reject the release's approval"
             )
-    return Published(tag, len(rows), tree, commit, pushed=yes, already=False)
+        outcome = "already"
+    else:
+        _follows(runner, git_dir, remote, built, state.main)
+        outcome = "would-push"
+        if yes:
+            pushed = _network(
+                runner,
+                git_dir,
+                "push",
+                "--atomic",
+                "--quiet",
+                "--end-of-options",
+                remote,
+                f"{built.commit}:{MAIN}",
+                f"{built.commit}:refs/tags/{tag}",
+            )
+            if pushed.code != 0:
+                raise Refusal(
+                    f"git push to {remote} exited {pushed.code}, and the push is atomic, so "
+                    f"neither main nor {tag} moved: {_said(pushed)}"
+                )
+            outcome = "pushed"
+    return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)
 
 
 # --- The command --------------------------------------------------------------------------------
@@ -497,24 +653,23 @@ def run_publish(args: argparse.Namespace) -> Result:
             scratch=Path(scratch),
         )
     data = {**asdict(done), "remote": remote}
-    held = f"tree {done.tree}, commit {done.commit}"
-    where = f"{done.files} files as {held}, to {remote}: main and {done.tag}"
-    if done.already:
-        return Result(f"already published: {where}; nothing was pushed", data)
-    if done.pushed:
-        return Result(f"pushed {where}", data)
-    return Result(
-        f"would push {where}; run again with --yes to push. The tree is the one that run pushes; "
-        "the commit is this run's, and that run makes its own, since a commit records when it "
-        "was made",
-        data,
+    where = (
+        f"{done.files} files as tree {done.tree}, commit {done.commit}, to {remote}: main and "
+        f"{done.tag}"
     )
+    if not done.confirmed:
+        where += " (not confirmed through GitHub's API)"
+    if done.outcome == "already":
+        return Result(f"already published: {where}; nothing was pushed", data)
+    if done.outcome == "pushed":
+        return Result(f"pushed {where}", data)
+    return Result(f"would push {where}; run again with --yes to push", data)
 
 
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(
         prog="scripts/publish_plugin.py",
-        description="Push the plugin tree a release attested to the plugin's own repository.",
+        description="Push the plugin commit a release pinned to the plugin's own repository.",
         epilog=JSON_EPILOG,
     )
     top.add_argument("--tag", required=True, help="the release's tag, vX.Y.Z")

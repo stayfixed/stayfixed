@@ -2038,6 +2038,7 @@ after = 'GIT_OPTIONS = ("-c", "safe.bareRepository=all")'
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_replace_ref_does_not_change_what_is_read",
   "tests/scripts/test_plugin_tree.py::test_a_replaced_annotated_tag_peels_to_its_own_commit",
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_stand_in_for_the_tags_version",
 ]
 
 [[mutation]]
@@ -2333,6 +2334,19 @@ reddens = [
   "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
 ]
 
+# The executable bit is the member's mode, which the tree is written with: the wrapper and the
+# launcher run only with it. The publisher builds with the tag's copy of this script, so its pushed
+# commit stops being the pin as well.
+[[mutation]]
+name = "the plugin commit builds every file without its executable bit"
+file = "scripts/plugin_tree.py"
+before = 'directories.setdefault(directory, []).append((member.mode, "blob", blob, name))'
+after = 'directories.setdefault(directory, []).append(("100644", "blob", blob, name))'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+  "tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one",
+]
+
 [[mutation]]
 name = "the plugin commit takes its parent from the source commit's own pin"
 file = "scripts/plugin_tree.py"
@@ -2474,9 +2488,20 @@ reddens = [
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
 ]
 
-# `scripts/publish_plugin.py` pushes to the plugin repository only a tree the release attested, at
-# the tag's own commit, built without the owner's filters or hooks, read back whole first, and only
-# as one atomic push of `main` and the tag. Each of these drops one of those conditions.
+# `scripts/publish_plugin.py` pushes to the plugin repository only the commit the release's tag
+# pins, built with the tag's own `scripts/plugin_tree.py` and `src/stayfixed`, attested, read back
+# whole, compared by id with what GitHub holds, and only as one atomic fast-forward of `main` with
+# the tag. It rejects (exit 1) a fact of the release no re-run changes and refuses (exit 2)
+# anything else. Each of these drops one of those conditions.
+#
+# What the publisher no longer does has no entry here. The commit's objects, its git dir's
+# template, hooks and object format, and a git that gave no answer are `scripts/plugin_tree.py`'s,
+# held by `mutations/`'s "the plugin commit's git dir is made from the owner's init template",
+# "the plugin commit runs the owner's hooks in its git dir" and "the plugin commit says a git that
+# gave no answer exited". No file is hashed, so no filter converts one. The tag's version and tree
+# are read by the tag's own code, held by `mutations/`'s "the plugin tree reads an object through
+# a replace ref". A published tag is a comparison of ids, so no manifest of the remote's commit is
+# read, and `main` is not compared once the tag names the commit.
 [[mutation]]
 name = "the publisher admits a tag with a suffix"
 file = "scripts/publish_plugin.py"
@@ -2503,11 +2528,138 @@ after = '        f"{tag}^{{commit}}",'
 reddens = ["tests/scripts/test_publish_plugin.py::test_an_unknown_tag_is_refused_before_anything_runs"]
 
 [[mutation]]
+name = "the publisher peels the tag through a replace ref"
+file = "scripts/publish_plugin.py"
+before = '''        root,
+        "--no-replace-objects",
+        "rev-parse",
+'''
+after = '''        root,
+        "rev-parse",
+'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_on_the_tag_object_does_not_move_the_tags_commit",
+]
+
+# The tag's code runs only when GitHub's `stayfixed/stayfixed` holds the same commit under the tag,
+# and only the tag's code: its `plugin_tree.py`, its `src` first on `sys.path`, regular files only.
+[[mutation]]
+name = "the publisher runs a tag GitHub does not hold"
+file = "scripts/publish_plugin.py"
+before = "    if found != sha:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]",
+  "tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[no-such-tag]",
+]
+
+[[mutation]]
+name = "the publisher reads any failed API call as absent"
+file = "scripts/publish_plugin.py"
+before = "        if status is not None and status.group(1) in ABSENT:"
+after = "        if True:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[a-server-error]",
+]
+
+[[mutation]]
+name = "the publisher takes GitHub's answer that is no object name"
+file = "scripts/publish_plugin.py"
+before = "        if not isinstance(sha, str) or not re.fullmatch(SHA1, sha):"
+after = "        if not isinstance(sha, str):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[no-object-name]",
+]
+
+[[mutation]]
+name = "the publisher runs a tag that predates it"
+file = "scripts/publish_plugin.py"
+before = '    if TOOL not in paths or not any(path.startswith(f"{TOOL_PACKAGE}/") for path in paths):'
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_without_the_plugin_tree_script_is_refused"]
+
+[[mutation]]
+name = "the publisher runs the tag's code from a file that is not regular"
+file = "scripts/publish_plugin.py"
+before = "        if mode not in TOOL_MODES:"
+after = "        if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_file_that_is_not_regular_is_refused"]
+
+[[mutation]]
+name = "the publisher runs the checkout's plugin_tree.py"
+file = "scripts/publish_plugin.py"
+before = '    script = tool / "scripts" / "plugin_tree.py"'
+after = '    script = Path(__file__).resolve().with_name("plugin_tree.py")'
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_tag_s_own_plugin_tree_builds_the_commit"]
+
+[[mutation]]
+name = "the publisher puts the tag's src after the checkout's"
+file = "scripts/publish_plugin.py"
+before = '"sys.path.insert(0, src); runpy'
+after = '"sys.path.append(src); runpy'
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_tag_s_tool_imports_the_tag_s_stayfixed"]
+
+# What the tag's code answers is read as `commit` answers, field by field, before any of it is
+# compared, fetched or pushed.
+[[mutation]]
+name = "the publisher reads a tool answer in another format"
+file = "scripts/publish_plugin.py"
+before = '    if answer.get("format") != FORMAT:'
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_answering_in_another_format_is_refused"]
+
+[[mutation]]
+name = "the publisher takes a tool's commit that is no object name"
+file = "scripts/publish_plugin.py"
+before = '    for name in ("commit", "tree"):'
+after = '    for name in ("tree",):'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[commit]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's tree that is no object name"
+file = "scripts/publish_plugin.py"
+before = '    for name in ("commit", "tree"):'
+after = '    for name in ("commit",):'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[tree]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's parent that is no object name"
+file = "scripts/publish_plugin.py"
+before = '    for name in ("parent", "pinned"):'
+after = '    for name in ("pinned",):'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[parent]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's file count that is no integer"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(files, int) or isinstance(files, bool):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[files]",
+]
+
+# Exit 1 rejects the release's approval, for a fact of the release no re-run changes.
+[[mutation]]
+name = "the publisher refuses a pin it should reject"
+file = "scripts/publish_plugin.py"
+before = '''        raise Rejected(
+            f"{tag}'s marketplace does not pin'''
+after = '''        raise Refusal(
+            f"{tag}'s marketplace does not pin'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_pin_other_than_the_commit_is_rejected"]
+
+[[mutation]]
 name = "the publisher stops holding the tag to the version it releases"
 file = "scripts/publish_plugin.py"
-before = "    if tag_for(version)[0] != tag:"
+before = "    if tag_for(built.version)[0] != tag:"
 after = "    if False:"
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_refused"]
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_rejected"]
 
 [[mutation]]
 name = "the publisher goes on past a refused attestation"
@@ -2562,75 +2714,83 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the publisher takes a remote tag holding paths beside the plugin as published"
+name = "the publisher pushes without reading its commit back"
 file = "scripts/publish_plugin.py"
-before = '    exact = ("manifest", "--exact", "--root", str(git_dir), "--rev", tagged)'
-after = '    exact = ("manifest", "--root", str(git_dir), "--rev", tagged)'
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_remote_commit_holding_a_path_outside_the_plugin_is_not_already_published",
-]
-
-[[mutation]]
-name = "the publisher treats a tag already on the remote as absent"
-file = "scripts/publish_plugin.py"
-before = "    if tagged is not None:"
+before = "    if found != expected:"
 after = "    if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_with_another_tree_is_refused",
-  "tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing",
+  "tests/scripts/test_publish_plugin.py::test_a_manifest_changed_after_the_commit_is_rejected_by_the_read_back",
 ]
 
 [[mutation]]
 name = "the publisher asks for the attestation after listing the remote"
 file = "scripts/publish_plugin.py"
-before = """    _verify(runner, root, attested, tag, sha)
-    expected = attested.read_bytes()
-    rows = _manifest_rows(expected)
-    git_dir = _scratch_repository(scratch)
-    held = _remote_refs(runner, git_dir, remote, tag)
+before = """    _verify(runner, root, scratch / "plugin-tree.txt", tag, sha)
+    _read_back(runner, tool, root, tag, built.commit, scratch)
+    git_dir = scratch / "plugin.git"
+    state = _remote_state(runner, root, git_dir, remote, tag)
 """
-after = """    expected = attested.read_bytes()
-    rows = _manifest_rows(expected)
-    git_dir = _scratch_repository(scratch)
-    held = _remote_refs(runner, git_dir, remote, tag)
-    _verify(runner, root, attested, tag, sha)
+after = """    _read_back(runner, tool, root, tag, built.commit, scratch)
+    git_dir = scratch / "plugin.git"
+    state = _remote_state(runner, root, git_dir, remote, tag)
+    _verify(runner, root, scratch / "plugin-tree.txt", tag, sha)
 """
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing"]
 
 [[mutation]]
-name = "the publisher builds on a main the fetch did not bring"
+name = "the publisher treats a tag already on the remote as absent"
 file = "scripts/publish_plugin.py"
-before = "        _parent(git_dir, remote, parent)\n"
-after = ""
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_main_that_moved_before_the_fetch_is_refused_as_a_race",
-]
-
-[[mutation]]
-name = "the publisher calls a tag published whatever main names"
-file = "scripts/publish_plugin.py"
-before = "    if held.get(MAIN) != commit:"
+before = "    if state.tag is not None:"
 after = "    if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_tag_on_the_remote_whose_main_is_elsewhere_is_refused",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[lightweight]",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[annotated]",
+  "tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing",
 ]
 
 [[mutation]]
-name = "the publisher builds every file without its executable bit"
+name = "the publisher compares the tag object where the remote lists its peel"
 file = "scripts/publish_plugin.py"
-before = 'directories.setdefault(directory, []).append((mode, "blob", blob, name))'
-after = 'directories.setdefault(directory, []).append(("100644", "blob", blob, name))'
+before = '    tagged = peeled if peeled is not None else listed.get(f"refs/tags/{tag}")'
+after = '    tagged = listed.get(f"refs/tags/{tag}")'
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_verified_tree_is_pushed_with_its_tag_and_reads_back_whole",
+  "tests/scripts/test_publish_plugin.py::test_an_annotated_tag_peeling_to_the_pin_is_already_published",
 ]
 
 [[mutation]]
-name = "the publisher lets the owner's filters convert what it writes"
+name = "the publisher builds on a main that is not the parent"
 file = "scripts/publish_plugin.py"
-before = '"hash-object", "-w", "--no-filters",'
-after = '"hash-object", "-w",'
+before = "    if main != built.parent:"
+after = "    if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_commit_ignores_the_owners_line_ending_and_hook_configuration",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-main]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-parent]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[another-main]",
+]
+
+# Exit 2 says fix something and run again: the remote's state as GitHub holds it, a `main` that
+# moved while this ran, a push the remote refused.
+[[mutation]]
+name = "the publisher classifies the default remote from ls-remote alone"
+file = "scripts/publish_plugin.py"
+before = "    if (github_main, github_tag) != (main, tagged):"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_api_decides_on_the_default_remote"]
+
+[[mutation]]
+name = "the publisher confirms another remote through GitHub's API"
+file = "scripts/publish_plugin.py"
+before = "    if remote not in (PLUGIN_REMOTE, PLUGIN_URL):"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_another_remote_is_not_confirmed"]
+
+[[mutation]]
+name = "the publisher builds on a main the fetch did not bring"
+file = "scripts/publish_plugin.py"
+before = '    if code != 0 or answer.removesuffix("\n") != main:'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_moves_between_list_and_fetch_is_refused",
 ]
 
 [[mutation]]
@@ -2639,25 +2799,7 @@ file = "scripts/publish_plugin.py"
 before = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]'
 after = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *args]'
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_commit_ignores_the_owners_line_ending_and_hook_configuration",
-]
-
-[[mutation]]
-name = "the publisher lets the owner's hooks run at its scratch repository's init"
-file = "scripts/publish_plugin.py"
-before = 'git_run(scratch, *NO_HOOKS, "init",'
-after = 'git_run(scratch, "init",'
-reddens = [
   "tests/scripts/test_publish_plugin.py::test_the_owners_hooks_do_not_run_in_the_scratch_repository",
-]
-
-[[mutation]]
-name = "the publisher finds its scratch repository from -C in its local git"
-file = "scripts/publish_plugin.py"
-before = 'return git_run(git_dir, f"--git-dir={git_dir}", *NO_HOOKS, *args,'
-after = 'return git_run(git_dir, *NO_HOOKS, *args,'
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
 ]
 
 [[mutation]]
@@ -2670,65 +2812,60 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the publisher reads the tag's version through a replace ref"
+name = "the publisher finds its scratch repository from -C in its local git"
 file = "scripts/publish_plugin.py"
-before = 'git_run(root, "--no-replace-objects", "cat-file", "blob", plugin_json)'
-after = 'git_run(root, "cat-file", "blob", plugin_json)'
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_stand_in_for_the_tags_version",
-]
-
-[[mutation]]
-name = "the publisher peels the tag through a replace ref"
-file = "scripts/publish_plugin.py"
-before = '''        root,
-        "--no-replace-objects",
+before = '''        git_dir,
+        f"--git-dir={git_dir}",
+        *NO_HOOKS,
         "rev-parse",
 '''
-after = '''        root,
+after = '''        git_dir,
+        *NO_HOOKS,
         "rev-parse",
 '''
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_on_the_tag_object_does_not_move_the_tags_commit",
+  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
 ]
 
 [[mutation]]
 name = "the publisher forces main over a commit pushed after its fetch"
 file = "scripts/publish_plugin.py"
-before = '            f"{commit}:{MAIN}",'
-after = '            f"+{commit}:{MAIN}",'
+before = '                f"{built.commit}:{MAIN}",'
+after = '                f"+{built.commit}:{MAIN}",'
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_main_that_moved_before_the_push_is_not_overwritten",
 ]
 
 [[mutation]]
-name = "the publisher's scratch repository takes the owner's init template"
+name = "the publisher pushes without --yes"
 file = "scripts/publish_plugin.py"
-before = '"--quiet", "--template=", str(git_dir)'
-after = '"--quiet", str(git_dir)'
+before = "        if yes:"
+after = "        if True:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_owners_init_template_does_not_reach_the_scratch_repository",
+  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+  "tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push",
 ]
+
+[[mutation]]
+name = "the publisher's push is not atomic"
+file = "scripts/publish_plugin.py"
+before = '''                "--atomic",
+'''
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]
 
 [[mutation]]
 name = "the publisher reports its commit's id as the tree it pushes"
 file = "scripts/publish_plugin.py"
-before = "    return root_tree, commit\n"
-after = "    return commit, commit\n"
+before = "    return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)"
+after = "    return Published(tag, built.files, built.commit, built.commit, outcome, state.confirmed)"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_tree_a_dry_run_names_is_the_one_a_later_run_pushes",
   "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+  "tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one",
 ]
 
-[[mutation]]
-name = "the publisher blames the identity for a commit-tree that gave no answer"
-file = "scripts/publish_plugin.py"
-before = "    if code == -1:"
-after = "    if False:"
-reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_commit_tree_that_gave_no_answer_is_not_blamed_on_the_identity",
-]
-
+# The plugin repository, spelled three ways the scripts must agree on: the owner's git pushes over
+# SSH, the marketplace fetches over HTTPS, and GitHub's API names it.
 [[mutation]]
 name = "the publisher pushes to another repository than the marketplace fetches from"
 file = "scripts/publish_plugin.py"
@@ -2739,28 +2876,19 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the publisher pushes without reading its commit back"
+name = "the publisher confirms through another repository than the marketplace fetches from"
 file = "scripts/publish_plugin.py"
-before = "    if readback.read_bytes() != expected:"
-after = "    if False:"
+before = 'PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"'
+after = 'PLUGIN_URL = "https://github.com/stayfixed/plugin.git"'
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_rendered_file_changed_after_the_attestation_is_refused_by_the_read_back",
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
 ]
 
 [[mutation]]
-name = "the publisher pushes without --yes"
+name = "the publisher asks GitHub about another plugin repository"
 file = "scripts/publish_plugin.py"
-before = "    if yes:"
-after = "    if True:"
+before = 'PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"'
+after = 'PLUGIN_REPOSITORY = "stayfixed/plugin"'
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
-  "tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push",
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
 ]
-
-[[mutation]]
-name = "the publisher's push is not atomic"
-file = "scripts/publish_plugin.py"
-before = '''            "--atomic",
-'''
-after = ""
-reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]
