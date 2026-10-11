@@ -322,14 +322,13 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    ```
 
    The script reads `gh --version` before any other `gh` call and refuses a `gh` older than
-   2.101.0, the version its attestation flags were measured on, since an older one lacking a flag
-   would fail the verify as a wrong attestation does: upgrade `gh` and run again. It then asks
-   `gh auth status --hostname github.com --active`, and checks that GitHub's
-   `stayfixed/stayfixed` names the same commit under the tag as this checkout does before it runs
-   any of the tag's code; it builds the plugin commit with the tag's
-   own `scripts/plugin_tree.py`, read out of the tag's objects, never this checkout's copy. The
-   commit is the same on every run, so the dry run names the commit the `--yes` run pushes, and
-   it is the `sha` the release commit pins.
+   2.101.0, the version its attestation flags were measured on (upgrade `gh`), and a `gh`
+   pre-release (install a released `gh`). It then asks
+   `gh auth status --hostname github.com --active`, and checks that GitHub's `stayfixed/stayfixed`
+   names the same commit under the tag as this checkout does before it runs any of the tag's code;
+   it builds the plugin commit with the tag's own `scripts/plugin_tree.py`, read out of the tag's
+   objects, never this checkout's copy. The commit is the same on every run, so the dry run names
+   the commit the `--yes` run pushes, and it is the `sha` the release commit pins.
 
    The plugin goes first because the release commit's marketplace names `ref: vX.Y.Z` and its
    `sha` in `stayfixed/stayfixed-plugin`, a tag and a commit that exist there only once this has
@@ -347,34 +346,41 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      approve.
    - **`2`: fix it and run again; the `pypi` approval waits.** Anything that is not a fact of
      the release: a tag that is not `vX.Y.Z`, or not in this checkout; a `gh` older than
-     2.101.0, or one whose version cannot be read; `gh` not logged in to `github.com`, or
-     offline; a local tag that is not GitHub's (`git fetch --tags`); SSH or the network failing
-     `git ls-remote`, `fetch` or `push`; a GitHub or Sigstore answer that could not be had or
-     read, an attestation listing that answers with none in it among them; an attestation GitHub
-     holds that `gh` cannot verify on this machine even without the release's constraints — a
-     network that blocks Sigstore, a trust root `gh` cannot fetch — so fix `gh` or the network;
-     `git ls-remote` disagreeing with GitHub's API, which names a redirect — a `url.*.insteadOf`
-     or a `GIT_CONFIG_*` variable — or a `main` that moved while it ran; a push the remote
-     refused, which moved nothing, being atomic; a pushed tag GitHub does not list yet, which a
-     run once GitHub lists it reports as already published, while a run before that meets
-     `git ls-remote` disagreeing with GitHub's API and exits `2` again; a pushed tag GitHub lists
-     under another commit, a redirect again; and a refusal or a crash of the tag's own
-     `scripts/plugin_tree.py`, because CI ran the same code on the same commit green, so a cause
-     on this machine is the likely one. **One of them can
-     turn into a rejection:** `GitHub holds no attestation of this manifest yet` says only that
-     `attest` has not written it. Wait for `build` and `attest` to go green and run again; if it
-     says the same once both are green, reject the `pypi` approval. That refusal's own words end
-     on the same condition, `reject the release's approval`, in lower case; its exit code, `2`,
-     is what classifies it, and this rule is what turns it into a rejection.
+     2.101.0, a `gh` pre-release, or one whose version cannot be read; `gh` not logged in to
+     `github.com`, or offline; a local tag that is not GitHub's (`git fetch --tags`); SSH or the
+     network failing `git ls-remote`, `fetch` or `push`; a GitHub answer that could not be had or
+     read; an attestation that does not verify, below; `git ls-remote` disagreeing with GitHub's
+     API, which names a redirect — a `url.*.insteadOf` or a `GIT_CONFIG_*` variable — or a `main`
+     that moved while it ran; a push the remote refused, which moved nothing, being atomic; a
+     pushed tag GitHub does not list yet, which a run once GitHub lists it reports as already
+     published, while a run before that meets `git ls-remote` disagreeing with GitHub's API and
+     exits `2` again; a pushed tag GitHub lists under another commit, a redirect again; and a
+     refusal or a crash of the tag's own `scripts/plugin_tree.py`, because CI ran the same code on
+     the same commit green, so a cause on this machine is the likely one.
+
+     **A failed `gh attestation verify` is always `2`**, never `1`, and what to do next depends
+     on what GitHub's attestation listing answers for the manifest's digest:
+
+     - **`404` or `409`: no attestation of this manifest yet**, so `attest` has not written it.
+       Once `build` and `attest` are green, run again; if it says the same then, reject the
+       `pypi` approval.
+     - **`200` listing an attestation:** GitHub holds one that does not verify on this machine
+       against `stayfixed/stayfixed`'s `release.yml` at this tag and commit, which a wrong
+       attestation and a `gh` or network that cannot verify here both look like. Run again; if it
+       says the same with a working `gh` and network, once `build` and `attest` are green, reject
+       the `pypi` approval.
+     - **Any other answer:** run again.
+
+     A rejection after a repeat is your decision on a repeated `2`, not an exit `1`: the
+     refusal's own words may end `reject the release's approval`, conditionally and in lower
+     case, and the exit code is what classifies it.
    - **`1`: reject the `pypi` approval.** A fact of the release that no re-run changes, said in a
      refusal that ends `Reject the release's approval`: the tag's marketplace does not pin the
      plugin commit its own tree makes; the tag's `.claude-plugin/plugin.json` names another
-     version; an attestation of this manifest exists that `gh` verifies on this machine as
-     `stayfixed/stayfixed`'s, and it does not verify against this repository's `release.yml`,
-     run for this tag at this commit, on a GitHub-hosted runner; the commit built for the tag
-     reads back as another tree; GitHub's plugin repository holds another commit under the tag;
-     or its `main` is not the plugin commit's parent, a release commit cut on the wrong base
-     (section 5). The tags are spent while nothing else is (section 5).
+     version; the commit built for the tag reads back as another tree; GitHub's plugin repository
+     holds another commit under the tag; or its `main` is not the plugin commit's parent, a
+     release commit cut on the wrong base (section 5). The tags are spent while nothing else is
+     (section 5).
 
    A run against another `--remote` than the default (a scratch repository, a rehearsal) is
    classified from `git ls-remote` alone, reads nothing back after its push, and its summary says
@@ -646,14 +652,14 @@ projects only.
 - **The plugin push was refused or failed.** `scripts/publish_plugin.py` pushes `main` and the
   tag together, atomically, and only after the attestation and the read-back held, so a refusal
   or a failed push leaves the plugin repository as it was, and this repository's `main` and the
-  `pypi` approval where they were. Step 7 says, by its exit code, when to run it again and when
-  to reject the approval. A plugin tag that was pushed is spent like this repository's: its
-  ruleset refuses to move or delete it, and the next release is X.Y.(Z+1). A push that went
-  through for a release that then stopped — a rejected approval, a failed upload — stays, beside
-  the spent tag of this repository that names it: `main` here still installs the previous
-  release, but the spent `stayfixed/stayfixed@vX.Y.Z` still installs that plugin, because its
-  marketplace's `ref` and `sha` resolve. The next release is cut on the spent release commit, so
-  its plugin commit follows that one.
+  `pypi` approval where they were. Step 7 says, by its exit code and its words, when to run it
+  again and when to reject the approval. A plugin tag that was pushed is spent like this
+  repository's: its ruleset refuses to move or delete it, and the next release is X.Y.(Z+1). A
+  push that went through for a release that then stopped — a rejected approval, a failed upload —
+  stays, beside the spent tag of this repository that names it: `main` here still installs the
+  previous release, but the spent `stayfixed/stayfixed@vX.Y.Z` still installs that plugin, because
+  its marketplace's `ref` and `sha` resolve. The next release is cut on the spent release commit,
+  so its plugin commit follows that one.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`scripts/release.py check` fails in the workflow but passed locally.** Almost always
