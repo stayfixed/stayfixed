@@ -3301,3 +3301,30 @@ after = '_GH_FLOOR_NAMED = re.compile(r"`gh`(?:\s+older\s+than)?\s+v(\d+(?:\.\d+
 reddens = [
   "tests/test_documents.py::test_every_gh_floor_releasing_names_is_the_one_the_publisher_refuses_below",
 ]
+
+# Step 1 cuts every release on `origin/main`: a `git pull` exits 128 once the local `main` holds a
+# stopped release's commit and a fix has reached `origin/main`.
+[[mutation]]
+name = "the release pulls main again"
+file = "RELEASING.md"
+before = """   git fetch origin
+   git log --oneline --decorate origin/main..main   # nothing, or a spent release commit
+   git switch -C main origin/main
+"""
+after = """   git switch main && git pull
+"""
+reddens = [
+  "tests/test_fixtures.py::test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds",
+]
+
+[[mutation]]
+name = "the release pulls after it cuts on origin/main"
+file = "RELEASING.md"
+before = """   git switch -C main origin/main
+"""
+after = """   git switch -C main origin/main
+   git pull
+"""
+reddens = [
+  "tests/test_fixtures.py::test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds",
+]
