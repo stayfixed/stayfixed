@@ -1041,9 +1041,22 @@ Follow-ups, to file when the pull request closes:
 - Whether `GROUP_OF`'s hand-kept table and `GROUP_FILE_MAX_BYTES` still earn their keep now that
   the plugin tree holds no `mutations/` file.
 - Codex's install path for a `url` source is unmeasured.
-- How an install made from the marketplace on GitHub (`stayfixed/stayfixed`, `@vX.Y.Z` or the
-  default branch) moves to the plugin repository: the rehearsal below measured directory
-  marketplaces, because `claude plugin marketplace add` takes no `file://` git URL.
+- How an install made from the marketplace on GitHub's default branch moves to the plugin
+  repository: only the tag-pinned path was measured over GitHub (below).
+- `RELEASING.md` step 7: narrow the local bucket to the render, and have `_already` in
+  `scripts/publish_plugin.py` say a `manifest` refusal of the remote's tagged commit as "already has
+  the tag, holding another tree", so the owner rejects instead of re-running.
+- Three assertions in `tests/scripts/test_publish_plugin.py` carry neither a mutation nor a reason (the
+  re-run's tree equals the first run's; the dry run's "the commit is this run's"; the plugin
+  repository's name derived once); the module docstring's "every git there" overstates (the
+  read-back's read-only gits run hooks-free without the option); `RELEASING.md`'s identity paragraph
+  says the script's git "reads no" `includeIf "gitdir:…"` section (it reads it; it never matches the
+  scratch path), and names `/etc/gitconfig`, which is not a Homebrew git's system file.
+- Nothing holds "no script imports another": `tests/boundaries/test_api_surface.py` judges only
+  `stayfixed` imports, and `scripts/smoke_exfiltration.py` already imports `smoke_hooks`.
+- Runtime docstrings this change made false, for when the runtime unfreezes:
+  `src/stayfixed/release/hashes.py` ("the pinned SHA") and `src/stayfixed/release/api.py` (`tag_for`
+  "published for the release script"; `scripts/publish_plugin.py` imports it too).
 - The `gh` commands `RELEASING.md` gives for the plugin repository's creation, its rulesets and
   their read-back have not been run; the first release runs them.
 
@@ -1074,12 +1087,12 @@ anywhere; `gh attestation verify` read GitHub's API once.
     from 0.2.0 to 0.2.1". `installed_plugins.json` named `…/stayfixed/0.2.1` as `installPath`, its
     manifest said `0.2.1`, and the hooks ran from it (9 entries, 10 rows, 0 failures).
   - *Added at a release tag:* `marketplace update` and `plugin update` alone stay at `0.2.0` ("already
-    at the latest version"). Adding the new release's marketplace over the registered one printed
-    "was already added from … and now points at …. Plugins already installed from it now update
-    from the new source", and `plugin update` then moved to `0.2.1`. `claude plugin marketplace
-    remove` instead uninstalls the plugin and "deletes their saved options, secrets and data where
-    it can"; after re-adding, `plugin update` refuses ("is not installed") until `plugin install`.
-  - The `upgrading` fragment says both paths, and that removing is not needed.
+    at the latest version"). With a directory marketplace, adding the new release's marketplace over
+    the registered one re-pointed it, and `plugin update` then moved to `0.2.1` (both versions; the
+    outcome is in `installed_plugins.json`, the CLI's words were not kept). `claude plugin marketplace
+    remove` instead uninstalls the plugin (2.1.296 adds that it "deletes their saved options,
+    secrets and data where it can"); after re-adding, `plugin update` refuses ("is not installed")
+    until `plugin install`. The re-point does not carry over to GitHub sources (below).
   - The `0.2.0` trees were judged by `v0.2.0`'s own `smoke_hooks.py` (13 entries, 14 rows, 0
     failures); the current script does not apply to an older tree.
 - **`publish_plugin.py` refuses a tree no release attested.** `gh` 2.101.0 lists `--source-digest`
@@ -1091,3 +1104,43 @@ anywhere; `gh attestation verify` read GitHub's API once.
   no ref afterwards.
 - **`claude plugin tag --dry-run .` beside the `url` entry** (CI, 2.1.261): "Version: 0.2.0 (from
   plugin.json)", the entry found as `plugins[0]`, "would create tag stayfixed--v0.2.0 at HEAD".
+
+- **Over GitHub, a tag-pinned marketplace cannot be re-pointed.** Owner-authorised, 2026-10-11, both
+  versions, under a scratch `CLAUDE_CONFIG_DIR`: `claude plugin marketplace add
+  stayfixed/stayfixed@v0.1.1` and `plugin install` gave `0.1.1`; `marketplace update` and `plugin
+  update` answered "already at the latest version (0.1.1)"; `claude plugin marketplace add
+  stayfixed/stayfixed@v0.2.0` over it was refused — 2.1.296: "its source doesn't match its
+  extraKnownMarketplaces entry in user or managed settings; add it from the source that entry lists,
+  or change the entry"; 2.1.261: "its network source differs from the one declared for it in
+  settings". Changing the settings entry's `ref` by hand left the marketplace unknown to the CLI
+  ("Marketplace 'stayfixed-marketplace' not found", 2.1.296). What moved the install to `0.2.0`:
+  `marketplace remove`, `marketplace add stayfixed/stayfixed@v0.2.0`, `plugin install`. The
+  `upgrading` fragment says that path, and that the plugin's saved options must be set again. An
+  install that follows the default branch over GitHub was not measured: `main` cannot be moved for a
+  rehearsal.
+- **The publisher's flag set verifies a real release.** Owner-authorised, 2026-10-11: the `v0.2.0`
+  Release's `stayfixed-0.2.0-py3-none-any.whl` (654,738 bytes, sha256 `ad85c75b…`), checked with `gh
+  attestation verify --repo stayfixed/stayfixed --signer-workflow
+  stayfixed/stayfixed/.github/workflows/release.yml --source-ref refs/tags/v0.2.0 --source-digest
+  efd4b6d6143bdcc56d58389152fa024f12991125 --deny-self-hosted-runners`, exited `0`. Two controls
+  exited `1`: another commit as `--source-digest` ("expected SourceRepositoryDigest to be …, got
+  efd4b6d…") and another tag as `--source-ref` ("expected SourceRepositoryRef to be
+  refs/tags/v0.1.1, got refs/tags/v0.2.0"). The plugin manifest's own attestation is first seen at
+  `0.3.0`.
+
+### Final review (2026-10-11)
+
+Four read-only seats — correctness, architecture, security, lifecycle — reviewed `21bdbcb..14fe714`.
+Architecture and security judged it ready to merge; correctness and lifecycle did not, for three
+findings, all taken: the `--template=` guard was load-bearing (a template's `config` sets the commit's
+author and can rewrite the remote through `url.insteadOf`) and no test held it; the upgrading fragment
+claimed a re-point that GitHub sources refuse (measured above); and no run had seen the flag set verify
+anything (measured above). Every Minor was taken in the same fix wave, among them: the publisher's git
+runs with no hooks, an explicit git dir and no replace objects; a test holds the non-forcing push;
+`RELEASING.md` step 7 treats "the tag already holds this tree" as published, a missing attestation as
+timing until `build` is green, and any other refusal as local; the dry run reports the tree id. The
+fix wave's scoped re-review found 19 of its 20 items addressed. One residual stays open: step 7's
+local bucket also takes "a manifest `scripts/plugin_tree.py` refused", but the publisher's read of the
+remote's tagged commit with `--exact` refuses through that very message when the tag holds a path
+beside the plugin — another tree under the tag, which should be a rejection. No wrong tree can be
+pushed that way (every re-run refuses again); the owner's time is what it costs.
