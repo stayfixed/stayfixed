@@ -422,9 +422,11 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    depend on `publish`, so a failed upload still leaves you a Release. **An approval given early
    uploads nothing:** each of the two jobs first lists the plugin repository's tag and fails,
    before it downloads or uploads anything, unless the tag names the plugin commit `attest`
-   computed; publish the plugin, then re-run the two (`gh run rerun <id> --failed`). Without
-   that environment both jobs run straight through the name GitHub invents for them, and nothing
-   on this tag waits for a human. Watch the rest of the run:
+   computed; publish the plugin, then re-run the two (`gh run rerun <id> --failed`), and approve
+   `pypi` again if GitHub asks: both name that protected environment, and a re-run job may wait
+   for its approval as the first run did, so read the run's page rather than assume either way.
+   Without that environment both jobs run straight through the name GitHub invents for them, and
+   nothing on this tag waits for a human. Watch the rest of the run:
 
    ```bash
    gh run watch <id> --exit-status
