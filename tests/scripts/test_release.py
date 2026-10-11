@@ -31,6 +31,7 @@ from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND
 from tests.cli import subparsers
 from tests.gitfixture import git, needs_git
+from tests.plugintree import NINE, PLUGIN_FILES, commit, write
 from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
@@ -617,27 +618,19 @@ def _at(tmp_path: Path, version: str) -> Path:
     )
 
 
-# The plugin's nine paths, spelled out rather than read from `scripts/plugin_tree.py`, and a file
-# under each that `repo` does not already write: the two manifests and `src/stayfixed/__init__.py`
-# are version sources it writes. Not `hooks/run-hook.sh`, whose presence beside the other two
-# recorded files would ask the fixture for a release record.
-NINE = (
-    ".claude-plugin/plugin.json",
-    ".codex-plugin/plugin.json",
-    "hooks",
-    "scripts/stayfixed",
-    "src/stayfixed",
-    "skills",
-    "agents",
-    "README.md",
-    "LICENSE",
-)
+# A file under each of the plugin's nine paths (`tests/plugintree.py`'s `NINE`) that `repo` does
+# not already write: the two manifests and `src/stayfixed/__init__.py` are version sources it
+# writes. Not `hooks/run-hook.sh`, whose presence beside the other two recorded files would ask the
+# fixture for a release record.
 BESIDE_THE_SOURCES = {
-    "hooks/hooks.json": "{}\n",
-    "scripts/stayfixed": "#!/bin/sh\n",
-    "agents/navigator.md": "# navigator\n",
-    "README.md": "# stayfixed\n",
-    "LICENSE": "MIT\n",
+    path: PLUGIN_FILES[path]
+    for path in (
+        "hooks/hooks.json",
+        "scripts/stayfixed",
+        "agents/navigator.md",
+        "README.md",
+        "LICENSE",
+    )
 }
 # How many of the plugin tree's files `_with_plugin_paths` writes outside `skills/`: the three
 # sources under the plugin's paths and the five files above.
@@ -651,17 +644,12 @@ def _with_plugin_paths(root: Path, *, skills: int = 1) -> Path:
     `check --tag` counts the plugin tree at `HEAD`, which `scripts/plugin_tree.py` refuses to
     read without each of its paths, so a tag test that expects nothing wrong builds on this.
     """
-    for relative, text in BESIDE_THE_SOURCES.items():
-        (root / relative).parent.mkdir(parents=True, exist_ok=True)
-        (root / relative).write_text(text, encoding="utf-8")
-    for index in range(skills):
-        (root / "skills" / f"s{index}").mkdir(parents=True)
-        (root / "skills" / f"s{index}" / "SKILL.md").write_text("x\n", encoding="utf-8")
+    write(root, BESIDE_THE_SOURCES)
+    write(root, {f"skills/s{index}/SKILL.md": (b"x\n", "100644") for index in range(skills)})
     assert all((root / path).exists() for path in NINE)
     if not (root / ".git").exists():
         git(root, "init", "-q", "-b", "main")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "tree")
+    commit(root, "tree")
     return root
 
 

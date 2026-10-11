@@ -4,7 +4,7 @@
     uv run python scripts/plugin_tree.py manifest --root DIR --rev REV [--exact]
                                          [--manifest-file FILE]
     uv run python scripts/plugin_tree.py render --root DIR --rev REV --out DIR
-                                       --manifest-file FILE
+                                       [--manifest-file FILE]
 
 This repository is more than the plugin: its tests, documents, plans and tooling ship nowhere. The
 plugin is published from a repository of its own whose root is the tree this script generates, and
@@ -20,11 +20,8 @@ working tree touches it.
 **The manifest is the text a release attests.** One line naming its format, then one line per
 file: its git mode, the sha256 of its bytes and its path. `publish_plugin.py` compares two of them
 and nothing else, which is why a path holding a control character, or one that is not UTF-8, is
-refused rather than written: a `\\n` in a name would forge a line.
-
-**The order needs no mutation.** `members` sorts by path as a `str`, by code point; for valid
-UTF-8, code-point order, UTF-8 byte order and git's own full-path order coincide, and `members`
-refuses every path that is not valid UTF-8, so no other order can be told apart from this one.
+refused rather than written: a `\\n` in a name would forge a line, and a C1 control or a Unicode
+line separator breaks the line a terminal or an editor shows.
 
 The commands go through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
 the line, exit `0`, and `2` for a refusal.
@@ -34,7 +31,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import operator
 import os
+import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -76,6 +75,11 @@ _CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | 
 # `safe.bareRepository=explicit` would otherwise refuse, since `git -C` finds it rather than is
 # given it.
 GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")
+# A full object name as git prints one: SHA-1's 40 hex characters or SHA-256's 64, lower case.
+OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+# The two Unicode line breaks that are neither a C0 nor a C1 control: an editor or a terminal
+# ends a line at each.
+_LINE_SEPARATORS = frozenset({"\u2028", "\u2029"})
 
 
 @dataclass(frozen=True)
@@ -85,13 +89,27 @@ class Member:
     content: bytes
 
 
+@dataclass(frozen=True)
+class Tree:
+    commit: str  # the full object name of the commit the tree was read at
+    members: tuple[Member, ...]  # sorted by path
+
+
 def _under(path: str, entry: str) -> bool:
     """Whether `path` is the plugin path `entry` or inside it: `hooksx` is not under `hooks`."""
     return path == entry or path.startswith(entry + "/")
 
 
+def is_plugin_path(path: str) -> bool:
+    """Whether `path` is one of `PLUGIN_PATHS` or inside one."""
+    return any(_under(path, entry) for entry in PLUGIN_PATHS)
+
+
 def _control(path: str) -> bool:
-    return any(ord(char) < 0x20 or ord(char) == 0x7F for char in path)
+    """Whether `path` holds a C0 control, DEL, a C1 control or a Unicode line separator."""
+    return any(
+        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char in _LINE_SEPARATORS for char in path
+    )
 
 
 def _git(
@@ -100,13 +118,16 @@ def _git(
     return git_run(root, *GIT_OPTIONS, *args, stdin=stdin, timeout=timeout)
 
 
-def commit(root: Path, rev: str) -> str:
-    """The commit `rev` names in `root`, as git's full object name, or a refusal naming `rev`."""
-    code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}")
-    sha = answer.removesuffix("\n")
-    if code != 0 or not sha:
-        raise Refusal(f"{quoted(rev)} names no commit in {root} (git rev-parse exited {code})")
-    return sha
+def peel(root: Path, rev: str, kind: str) -> str:
+    """The `kind` (`commit` or `tree`) `rev` peels to in `root`, as git's full object name, or a
+    refusal naming `rev`: the one place this script resolves a rev."""
+    code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{{kind}}}")
+    name = answer.removesuffix("\n")
+    if code != 0:
+        raise Refusal(f"{quoted(rev)} names no {kind} in {root} (git rev-parse exited {code})")
+    if not OBJECT_NAME.fullmatch(name):
+        raise Refusal(f"git rev-parse answered {quoted(name)} for {quoted(rev)} in {root}")
+    return name
 
 
 def _listing(root: Path, sha: str, *, exact: bool) -> list[tuple[str, str, str]]:
@@ -152,14 +173,15 @@ def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
     return blobs
 
 
-def members(root: Path, rev: str, *, exact: bool = False) -> list[Member]:
-    """Every file under the plugin's paths at the commit `rev` names, sorted by path.
+def read(root: Path, rev: str, *, exact: bool = False) -> Tree:
+    """The commit `rev` names, resolved once, and every file under the plugin's paths at it,
+    sorted by path.
 
     Refused: a rev that names no commit; a plugin path the commit does not hold; a member that is
     not a regular file, by its path and mode; a path that is not UTF-8 or that holds a control
     character; and, with `exact`, any path at the commit outside every plugin path.
     """
-    sha = commit(root, rev)
+    sha = peel(root, rev, "commit")
     rows = []
     for mode, obj, raw in _listing(root, sha, exact=exact):
         if not fsops.utf_8_name(raw):
@@ -169,7 +191,7 @@ def members(root: Path, rev: str, *, exact: bool = False) -> list[Member]:
         path = os.fsencode(raw).decode("utf-8")
         if _control(path):
             raise Refusal(f"{quoted(path)} at {sha} holds a control character")
-        if not any(_under(path, entry) for entry in PLUGIN_PATHS):
+        if not is_plugin_path(path):
             raise Refusal(f"{quoted(path)} at {sha} is outside every plugin path")
         if mode not in REGULAR_MODES:
             raise Refusal(f"{quoted(path)} at {sha} has mode {mode}, not a regular file's")
@@ -178,17 +200,20 @@ def members(root: Path, rev: str, *, exact: bool = False) -> list[Member]:
         if not any(_under(path, entry) for path, _, _ in rows):
             raise Refusal(f"{entry} is missing at {sha}; the plugin cannot be built without it")
     blobs = _blobs(root, sorted({obj for _, _, obj in rows}))
-    return sorted((Member(path, mode, blobs[obj]) for path, mode, obj in rows), key=_by_path)
+    found = (Member(path, mode, blobs[obj]) for path, mode, obj in rows)
+    return Tree(sha, tuple(sorted(found, key=operator.attrgetter("path"))))
 
 
-def _by_path(member: Member) -> str:
-    return member.path
+def members(root: Path, rev: str, *, exact: bool = False) -> list[Member]:
+    """`read`'s members: every file under the plugin's paths at the commit `rev` names."""
+    return list(read(root, rev, exact=exact).members)
 
 
 def manifest(entries: Iterable[Member]) -> str:
-    """`FORMAT` on the first line, then `<mode> <sha256> <path>` for each member, sorted by path."""
+    """`FORMAT` on the first line, then `<mode> <sha256> <path>` for each member, in the order
+    given: `read` gives them sorted by path."""
     lines = [FORMAT]
-    for member in sorted(entries, key=_by_path):
+    for member in entries:
         lines.append(f"{member.mode} {hashlib.sha256(member.content).hexdigest()} {member.path}")
     return "".join(line + "\n" for line in lines)
 
@@ -236,28 +261,30 @@ def _write_manifest(path: Path, text: str) -> None:
 
 
 def run_manifest(args: argparse.Namespace) -> Result:
-    root = Path(args.root)
-    sha = commit(root, args.rev)
-    found = members(root, sha, exact=args.exact)
+    tree = read(Path(args.root), args.rev, exact=args.exact)
     if args.manifest_file is not None:
-        _write_manifest(Path(args.manifest_file), manifest(found))
+        _write_manifest(Path(args.manifest_file), manifest(tree.members))
+    files = len(tree.members)
     return Result(
-        f"the plugin tree at {sha} holds {len(found)} files", {"rev": sha, "files": len(found)}
+        f"the plugin tree at {tree.commit} holds {files} files",
+        {"rev": tree.commit, "files": files},
     )
 
 
 def run_render(args: argparse.Namespace) -> Result:
-    root, out, written = Path(args.root), Path(args.out), Path(args.manifest_file)
-    if written.resolve().is_relative_to(out.resolve()):
+    root, out = Path(args.root), Path(args.out)
+    written = None if args.manifest_file is None else Path(args.manifest_file)
+    if written is not None and written.resolve().is_relative_to(out.resolve()):
         raise Refusal(f"--manifest-file {written} is inside --out {out}; it describes the tree")
-    sha = commit(root, args.rev)
-    found = members(root, sha)
-    render(found, out)
+    tree = read(root, args.rev)
+    render(tree.members, out)
     # Last, after every member: a manifest on disk says its tree was written whole.
-    _write_manifest(written, manifest(found))
+    if written is not None:
+        _write_manifest(written, manifest(tree.members))
+    files = len(tree.members)
     return Result(
-        f"rendered the plugin tree at {sha} into {out}: {len(found)} files",
-        {"rev": sha, "files": len(found)},
+        f"rendered the plugin tree at {tree.commit} into {out}: {files} files",
+        {"rev": tree.commit, "files": files},
     )
 
 
@@ -284,7 +311,7 @@ def parser() -> argparse.ArgumentParser:
     rendering = command("render", "write the plugin tree at a commit into an empty directory")
     rendering.add_argument("--out", required=True, help="an absent or empty directory")
     rendering.add_argument(
-        "--manifest-file", required=True, help="where to write the manifest, outside --out"
+        "--manifest-file", default=None, help="where to write the manifest, outside --out"
     )
     rendering.set_defaults(func=run_render)
     return top

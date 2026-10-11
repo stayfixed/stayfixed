@@ -1892,6 +1892,10 @@ reddens = ["tests/scripts/test_release.py::test_a_root_the_check_cannot_read_is_
 # and every reader of the plugin runs that script: a path dropped, a look-alike taken for a plugin
 # path or a byte read off the disk is a tree the directory, the attestation and the plugin
 # repository would all see wrongly at once.
+#
+# The order of the members needs no entry. `read` sorts by path as a `str`, by code point; for
+# valid UTF-8, code-point order, UTF-8 byte order and git's own full-path order coincide, and
+# `read` refuses every path that is not valid UTF-8, so no other order can be told apart from it.
 [[mutation]]
 name = "the plugin tree drops a path the runtime reads"
 file = "scripts/plugin_tree.py"
@@ -1909,7 +1913,10 @@ name = "the plugin tree reads an object through a replace ref"
 file = "scripts/plugin_tree.py"
 before = 'GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")'
 after = 'GIT_OPTIONS = ("-c", "safe.bareRepository=all")'
-reddens = ["tests/scripts/test_plugin_tree.py::test_a_replace_ref_does_not_change_what_is_read"]
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_replace_ref_does_not_change_what_is_read",
+  "tests/scripts/test_plugin_tree.py::test_a_replaced_annotated_tag_peels_to_its_own_commit",
+]
 
 [[mutation]]
 name = "the plugin tree lets an explicit safe.bareRepository refuse the bare root it is named"
@@ -1929,21 +1936,46 @@ reddens = [
   "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-file-beside]",
   "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-directory-beside]",
   "tests/scripts/test_plugin_tree.py::test_exact_refuses_a_path_outside_the_plugin[a-package-beside]",
+  "tests/scripts/test_plugin_tree.py::test_is_plugin_path",
 ]
 
 [[mutation]]
 name = "the plugin tree reads its members' bytes off the disk"
 file = "scripts/plugin_tree.py"
-before = "    return sorted((Member(path, mode, blobs[obj]) for path, mode, obj in rows), key=_by_path)"
-after = "    return sorted((Member(path, mode, (root / path).read_bytes()) for path, mode, obj in rows), key=_by_path)"
+before = "    found = (Member(path, mode, blobs[obj]) for path, mode, obj in rows)"
+after = "    found = (Member(path, mode, (root / path).read_bytes()) for path, mode, obj in rows)"
 reddens = ["tests/scripts/test_plugin_tree.py::test_members_read_the_commit_and_not_the_disk"]
 
 [[mutation]]
 name = "the plugin tree peels no commit from the rev it is given"
 file = "scripts/plugin_tree.py"
-before = '"--end-of-options", f"{rev}^{{commit}}"'
+before = '"--end-of-options", f"{rev}^{{{kind}}}"'
 after = '"--end-of-options", rev'
 reddens = ["tests/scripts/test_plugin_tree.py::test_an_unresolvable_rev_is_refused_by_name[HEAD^{tree}]"]
+
+[[mutation]]
+name = "the plugin tree takes no 64-character object name for one"
+file = "scripts/plugin_tree.py"
+before = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")'
+after = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}")'
+reddens = ["tests/scripts/test_plugin_tree.py::test_peel_names_a_sha256_repository_s_commit"]
+
+[[mutation]]
+name = "the plugin tree takes any answer of rev-parse for an object name"
+file = "scripts/plugin_tree.py"
+before = "    if not OBJECT_NAME.fullmatch(name):"
+after = "    if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_peel_refuses_an_answer_that_is_not_an_object_name"]
+
+# The CLI resolves its rev once, in `read`: a second resolution of a ref that moved in between
+# would count, render or attest one commit and report another.
+[[mutation]]
+name = "the plugin manifest resolves its rev before reading"
+file = "scripts/plugin_tree.py"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)"
+after = """    peel(Path(args.root), args.rev, "commit")
+    tree = read(Path(args.root), args.rev, exact=args.exact)"""
+reddens = ["tests/scripts/test_plugin_tree.py::test_read_resolves_the_rev_once"]
 
 [[mutation]]
 name = "the plugin tree lists a path holding a control character"
@@ -1951,6 +1983,28 @@ file = "scripts/plugin_tree.py"
 before = "        if _control(path):"
 after = "        if False:"
 reddens = ["tests/scripts/test_plugin_tree.py::test_a_path_with_a_control_character_is_refused"]
+
+# A C1 control and a Unicode line separator are valid UTF-8, so the UTF-8 rule passes both, and a
+# terminal or an editor reading the manifest breaks its line at them.
+[[mutation]]
+name = "the plugin tree lists a path holding a C1 control"
+file = "scripts/plugin_tree.py"
+before = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char in _LINE_SEPARATORS for char in path"
+after = "        ord(char) < 0x20 or ord(char) == 0x7F or char in _LINE_SEPARATORS for char in path"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[next-line]",
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[control-sequence-introducer]",
+]
+
+[[mutation]]
+name = "the plugin tree lists a path holding a Unicode line separator"
+file = "scripts/plugin_tree.py"
+before = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char in _LINE_SEPARATORS for char in path"
+after = "        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F for char in path"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[line-separator]",
+  "tests/scripts/test_plugin_tree.py::test_a_c1_or_line_separator_in_a_path_is_refused[paragraph-separator]",
+]
 
 [[mutation]]
 name = "the plugin tree reads a path that is not UTF-8 without refusing it"
@@ -2038,8 +2092,8 @@ reddens = [
 [[mutation]]
 name = "the plugin render writes its manifest file before the tree"
 file = "scripts/plugin_tree.py"
-before = "    render(found, out)\n    # Last, after every member: a manifest on disk says its tree was written whole.\n    _write_manifest(written, manifest(found))"
-after = "    _write_manifest(written, manifest(found))\n    render(found, out)"
+before = "    render(tree.members, out)\n    # Last, after every member: a manifest on disk says its tree was written whole.\n    if written is not None:\n        _write_manifest(written, manifest(tree.members))"
+after = "    if written is not None:\n        _write_manifest(written, manifest(tree.members))\n    render(tree.members, out)"
 reddens = ["tests/scripts/test_plugin_tree.py::test_a_render_that_fails_part_way_leaves_no_manifest_file"]
 
 [[mutation]]
@@ -2084,7 +2138,7 @@ reddens = ["tests/scripts/test_plugin_tree.py::test_a_cat_file_answer_cut_short_
 [[mutation]]
 name = "the plugin render writes its manifest file inside the tree"
 file = "scripts/plugin_tree.py"
-before = "    if written.resolve().is_relative_to(out.resolve()):"
+before = "    if written is not None and written.resolve().is_relative_to(out.resolve()):"
 after = "    if False:"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_refuses_a_manifest_file_inside_the_tree"]
 
@@ -2093,29 +2147,29 @@ reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_refuses_a_manifest_f
 [[mutation]]
 name = "the plugin render reads HEAD instead of the rev it is given"
 file = "scripts/plugin_tree.py"
-before = "    found = members(root, sha)\n    render(found, out)"
-after = "    found = members(root, \"HEAD\")\n    render(found, out)"
+before = "    tree = read(root, args.rev)\n    render(tree.members, out)"
+after = "    tree = read(root, \"HEAD\")\n    render(tree.members, out)"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
 
 [[mutation]]
 name = "the plugin manifest reads HEAD instead of the rev it is given"
 file = "scripts/plugin_tree.py"
-before = "    found = members(root, sha, exact=args.exact)"
-after = "    found = members(root, \"HEAD\", exact=args.exact)"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)\n    if args.manifest_file"
+after = "    tree = read(Path(args.root), \"HEAD\", exact=args.exact)\n    if args.manifest_file"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_reads_the_rev_it_is_given"]
 
 [[mutation]]
 name = "the plugin manifest command drops --exact"
 file = "scripts/plugin_tree.py"
-before = "    found = members(root, sha, exact=args.exact)"
-after = "    found = members(root, sha)"
+before = "    tree = read(Path(args.root), args.rev, exact=args.exact)\n    if args.manifest_file"
+after = "    tree = read(Path(args.root), args.rev)\n    if args.manifest_file"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_manifest_writes_its_file_and_honours_exact"]
 
 [[mutation]]
 name = "the plugin render command writes no manifest file"
 file = "scripts/plugin_tree.py"
-before = "    _write_manifest(written, manifest(found))"
-after = "    pass"
+before = "        _write_manifest(written, manifest(tree.members))"
+after = "        pass"
 reddens = ["tests/scripts/test_plugin_tree.py::test_the_cli_writes_the_manifest_file_and_renders"]
 
 [[mutation]]
@@ -2128,8 +2182,8 @@ reddens = ["tests/scripts/test_plugin_tree.py::test_members_at_an_older_commit_a
 [[mutation]]
 name = "the plugin tree refuses every path under exact"
 file = "scripts/plugin_tree.py"
-before = "        if not any(_under(path, entry) for entry in PLUGIN_PATHS):"
-after = "        if exact or not any(_under(path, entry) for entry in PLUGIN_PATHS):"
+before = "        if not is_plugin_path(path):"
+after = "        if exact or not is_plugin_path(path):"
 reddens = ["tests/scripts/test_plugin_tree.py::test_exact_lists_a_tree_that_is_only_the_plugin"]
 
 [[mutation]]

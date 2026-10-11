@@ -2076,26 +2076,10 @@ before = "    if len(listed) > FILES_MAX:"
 after = "    if len(listed) >= FILES_MAX:"
 reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
 
-# A tracked symlink blocks the listing wherever the plugin loads it, and every path of the plugin's
-# tree is one it may load, so the payload guard must name one.
-[[mutation]]
-name = "a tracked symlink stops being a payload finding"
-file = "tests/test_payload.py"
-before = "        if mode == SYMLINK_MODE:"
-after = "        if mode != SYMLINK_MODE:"
-reddens = ["tests/test_payload.py::test_a_symlink_is_a_finding"]
-
-# A Git submodule is the symlink's sibling on the directory's checklist, and a gitlink row is how
-# the tree carries one.
-[[mutation]]
-name = "a submodule stops being a payload finding"
-file = "tests/test_payload.py"
-before = "        if mode == GITLINK_MODE:"
-after = "        if mode != GITLINK_MODE:"
-reddens = ["tests/test_payload.py::test_a_submodule_is_a_finding"]
-
-# A Git LFS pointer is the symlink's other sibling there, and it is text: the binary rule passes it,
-# and what the plugin would load in the file's place is three lines of metadata.
+# A Git LFS pointer is a sibling of the symlink and the submodule on the directory's checklist, and
+# the one that reaches this walk: the other two are `scripts/plugin_tree.py`'s refusals of a member
+# that is not a regular file. It is text, so the binary rule passes it, and what the plugin would
+# load in the file's place is three lines of metadata.
 [[mutation]]
 name = "a Git LFS pointer stops being a payload finding"
 file = "tests/test_payload.py"

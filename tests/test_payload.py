@@ -25,8 +25,8 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from tests.gitfixture import git, needs_git
+from tests.plugintree import NINE, PLUGIN_FILES, plugin_source
 from tests.scriptload import plugin_tree, release
-from tests.scripts.test_plugin_tree import PLUGIN_FILES, plugin_repository
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -74,10 +74,8 @@ HELD_SUFFIXES = (".ico", ".pdf", ".zip")
 BINARY_PROBE_BYTES = 8000
 # Blocks where loaded, Warning elsewhere: a symbolic link, a Git submodule (a gitlink entry) and a
 # Git LFS pointer file. Any path here is one the plugin may load, so each is a finding wherever it
-# is.
-SYMLINK_MODE = "120000"
-GITLINK_MODE = "160000"
-REGULAR_MODES = frozenset({"100644", "100755"})
+# is. The first two never reach this walk: `scripts/plugin_tree.py`'s `members` refuses a member
+# that is not a regular file, and its tests hold that refusal. The third is text in a regular file.
 LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
 # Blocks, "This is a macOS or Windows system file", at any depth and in any capitalization: both
 # systems' default file systems fold case, so `thumbs.db` is the file Explorer writes. Held folded.
@@ -124,18 +122,12 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
     listed = list(entries)
     findings = []
     if len(listed) > FILES_MAX:
-        findings.append(count_finding(len(listed)))
+        findings.append(f"{len(listed)} files, over the {FILES_MAX} the directory lists unheld")
     findings.extend(_name_findings([path for path, _, _ in listed]))
-    for path, size, mode in listed:
+    for path, size, _mode in listed:
         components = path.split("/")
-        if mode == SYMLINK_MODE:
-            findings.append(f"{path}: a tracked symlink")
-        if mode == GITLINK_MODE:
-            findings.append(f"{path}: a submodule")
         if SYSTEM_FILES.intersection(_folded(component) for component in components):
             findings.append(f"{path}: a macOS or Windows system file")
-        if mode not in REGULAR_MODES:
-            continue
         content = read(path)
         suffix = PurePosixPath(path).suffix.lower()
         binary = b"\0" in content[:BINARY_PROBE_BYTES]
@@ -160,11 +152,6 @@ def payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes]) 
                 if attribute in REFUSED_ATTRIBUTES
             )
     return findings
-
-
-def count_finding(files: int) -> str:
-    """The one finding the file count makes."""
-    return f"{files} files, over the {FILES_MAX} the directory lists unheld"
 
 
 def _attributes(line: str) -> list[str]:
@@ -210,8 +197,7 @@ def tracked_payload(root: Path = ROOT) -> tuple[list[Entry], dict[str, bytes]]:
     """Every file of the plugin tree at `root`'s `HEAD` and its bytes: what the directory reads.
 
     Read through `scripts/plugin_tree.py`'s `members`, the one reader of the plugin's paths, which
-    refuses a symlink or a submodule among them outright: `payload_findings`' own rules for both
-    keep their unit tests below for the tree's other readers.
+    refuses a symlink or a submodule among them outright.
     """
     members = plugin_tree().members(root, "HEAD")
     entries = [(member.path, len(member.content), member.mode) for member in members]
@@ -353,26 +339,6 @@ def test_one_file_past_the_count_is_a_finding() -> None:
     entries = [(f"f{i}", 1, "100644") for i in range(FILES_MAX + 1)]
     assert any("files" in f for f in payload_findings(entries, read=_text))
     assert payload_findings(entries[:FILES_MAX], read=_text) == []
-
-
-def test_a_symlink_is_a_finding() -> None:
-    # Mutation (declared): the mode comparison becomes `!=` -> the symlink passes, and this
-    # reddens; so does every other case here, each built of regular files.
-    assert payload_findings([("link", 10, SYMLINK_MODE)], read=_text) != []
-    assert payload_findings([("file", 10, "100644")], read=_text) == []
-
-
-def test_a_submodule_is_a_finding() -> None:
-    # A gitlink has no blob to read, so the content checks must pass over it rather than ask.
-    # Mutation (declared): the gitlink comparison becomes `!=` -> the submodule passes, and this
-    # reddens. Mutation: the `REGULAR_MODES` test dropped -> `read` is asked for the gitlink and
-    # raises here.
-    def unreadable(path: str) -> bytes:
-        raise AssertionError(f"{path} has no blob")
-
-    assert payload_findings([("vendor/lib", 0, GITLINK_MODE)], read=unreadable) == [
-        "vendor/lib: a submodule"
-    ]
 
 
 @pytest.mark.parametrize(
@@ -555,20 +521,6 @@ def test_a_gitattributes_line_carrying_no_refused_attribute_is_not_a_finding(lin
     assert payload_findings([(".gitattributes", len(text), "100644")], read=lambda _: text) == []
 
 
-# The plugin's nine paths, spelled out rather than read from `scripts/plugin_tree.py`.
-NINE = (
-    ".claude-plugin/plugin.json",
-    ".codex-plugin/plugin.json",
-    "hooks",
-    "scripts/stayfixed",
-    "src/stayfixed",
-    "skills",
-    "agents",
-    "README.md",
-    "LICENSE",
-)
-
-
 @needs_git
 @pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
 def test_the_payload_is_the_generated_plugin_tree() -> None:
@@ -599,7 +551,7 @@ def test_the_walk_reads_the_committed_tree_and_not_the_disk(tmp_path: Path) -> N
     # `(root / path).lstat()` instead of the commit's bytes -> the edited file's row reddens. A
     # symlink and a submodule are `members`' refusals (`tests/scripts/test_plugin_tree.py`), so
     # they are not planted here.
-    root = plugin_repository(tmp_path)
+    root = plugin_source(tmp_path)
     (root / "README.md").write_text("an edit nobody committed\n", encoding="utf-8")
     (root / "LICENSE").unlink()
     (root / "skills" / "staged.md").write_text("staged\n", encoding="utf-8")
