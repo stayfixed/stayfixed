@@ -262,10 +262,12 @@ def _already(
 def _scratch_repository(scratch: Path) -> Path:
     """An empty bare repository under `scratch`, for the commit to be built in."""
     git_dir = scratch / "plugin.git"
-    # No template: the owner's `init.templateDir` could otherwise hand this repository hooks,
-    # attributes or configuration of its own. No test reddens on its removal alone: a template's
-    # attributes reach nothing past `hash-object --no-filters`, and its hooks nothing past the
-    # push's `core.hooksPath`, which are the two lines the template would otherwise act through.
+    # No template: `git init` copies the owner's `init.templateDir` into the new repository, and
+    # with it the template's `config`, which every later git here reads as this repository's own:
+    # a `user.name` there would author the commit, and a `url.<base>.insteadOf` would rewrite the
+    # remote under the `ls-remote`, the fetch and the push, all of which run in this repository.
+    # Its `info/attributes` and `hooks/` would come along too, which `hash-object --no-filters`
+    # and `core.hooksPath` keep out on their own.
     code, _ = git_run(scratch, "init", "--bare", "--quiet", "--template=", str(git_dir))
     if code != 0:
         raise Refusal(f"git init --bare exited {code} in {scratch}")

@@ -2192,6 +2192,15 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the publisher's scratch repository takes the owner's init template"
+file = "scripts/publish_plugin.py"
+before = '"--quiet", "--template=", str(git_dir)'
+after = '"--quiet", str(git_dir)'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_owners_init_template_does_not_reach_the_scratch_repository",
+]
+
+[[mutation]]
 name = "the publisher pushes without reading its commit back"
 file = "scripts/publish_plugin.py"
 before = "    if readback.read_bytes() != expected:"

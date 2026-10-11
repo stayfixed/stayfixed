@@ -329,6 +329,25 @@ def test_the_commit_ignores_the_owners_line_ending_and_hook_configuration(tmp_pa
     assert listed(remote, TAG, exact=True) == {**PLUGIN_FILES, **crlf}
 
 
+def test_the_owners_init_template_does_not_reach_the_scratch_repository(tmp_path: Path) -> None:
+    # Mutation (declared): `--template=` dropped from the scratch repository's `init` -> the
+    # template's `config` becomes the scratch repository's: its `insteadOf` sends the listing to a
+    # remote that does not exist, and the run is refused before anything is built; were the
+    # rewrite absent, its `user.name` would author the commit, which the last assertion holds.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    template = _home() / "template"
+    template.mkdir()
+    (template / "config").write_text(
+        "[user]\n\tname = Template\n\temail = template@example.com\n"
+        f'[url "file:///nowhere/"]\n\tinsteadOf = {remote}\n',
+        encoding="utf-8",
+    )
+    _global_config(f"[init]\n\ttemplateDir = {template}\n")
+    done, _ = publish(source, remote, tmp_path / "scratch")
+    assert refs(remote) == {"refs/heads/main": done.commit, f"refs/tags/{TAG}": done.commit}
+    assert git(remote, "log", "-1", "--format=%an <%ae>", done.commit).strip() == OWNER
+
+
 def test_a_missing_git_identity_is_refused_before_anything_is_pushed(tmp_path: Path) -> None:
     # Mutation: none of its own. Without an identity `git commit-tree` writes no commit and exits
     # non-zero, so there is nothing later to push; what this holds is the sentence, and that the
