@@ -16,6 +16,7 @@ comes from the test `HOME`'s `.gitconfig`, which `_an_owner_identity` writes for
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,9 +30,11 @@ from tests.gitfixture import MAINTENANCE_OFF, git, gitconfig, needs_git
 from tests.runners import Recorder
 from tests.scriptload import plugin_tree as _tree_script
 from tests.scriptload import publish_plugin as _script
+from tests.scriptload import release as _release_script
 
 publish_plugin = _script()
 plugin_tree = _tree_script()
+release_script = _release_script()
 
 pytestmark = needs_git
 
@@ -701,6 +704,18 @@ def test_a_main_that_moved_before_the_push_is_not_overwritten(tmp_path: Path) ->
 
 
 # --- The command line -----------------------------------------------------------------------------
+
+
+def test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from() -> None:
+    # Mutation (declared): the publisher's default remote names another repository -> it no
+    # longer agrees with `scripts/release.py`'s `PLUGIN_URL`, which the marketplace entry is held
+    # to. Two spellings of one repository, one for the owner's git to push over SSH and one for
+    # the harness to fetch over HTTPS; this is what keeps them one repository.
+    remote = re.fullmatch(r"git@github\.com:([^/]+/[^/]+)\.git", publish_plugin.PLUGIN_REMOTE)
+    url = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)\.git", release_script.PLUGIN_URL)
+    assert remote is not None and url is not None
+    assert remote.group(1) == url.group(1) == "stayfixed/stayfixed-plugin"
+    assert release_script.PLUGIN_REPOSITORY == "stayfixed/stayfixed-plugin"
 
 
 def test_the_cli_refuses_a_tag_that_is_not_a_plain_version(

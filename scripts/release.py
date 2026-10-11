@@ -77,6 +77,8 @@ SOURCES = (
 # commit names the tag it releases, which is the only marketplace a user reads, since `README.md`
 # installs `stayfixed/stayfixed@vX.Y.Z` and `main` moves only at a release.
 PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
+# The same repository as `owner/name`, as a refusal names it.
+PLUGIN_REPOSITORY = PLUGIN_URL.removeprefix("https://github.com/").removesuffix(".git")
 # A release's tag, as the marketplace entry's `ref` names it.
 _RELEASE_REF = re.compile(r"v(\d+\.\d+\.\d+)")
 # The script that names the plugin's paths, run as a program and never imported.
@@ -296,7 +298,7 @@ def marketplace_problems(root: Path) -> list[str]:
     ):
         problems.append(
             f"{said} does not fetch the plugin from {PLUGIN_URL}; the plugin is published from "
-            "stayfixed/stayfixed-plugin, as a url source pinned to the release's tag"
+            f"{PLUGIN_REPOSITORY}, as a url source pinned to the release's tag"
         )
         return problems
     ref = source.get("ref")
@@ -314,7 +316,7 @@ def marketplace_problems(root: Path) -> list[str]:
 # command found it; the plugin tree's count is a third kind, found only at a tag.
 VERSION_DRIFT = "version drift"
 RECORD_DRIFT = "release record drift"
-FOLDER_COUNT = "plugin tree count"
+TREE_COUNT = "plugin tree count"
 # A `--root` that is no repository root is none of them, and is said with no word in front of it.
 NOT_A_ROOT = ""
 
@@ -354,7 +356,7 @@ def checked_by_kind(
     root: Path, *, tag: str | None = None
 ) -> tuple[dict[str, list[str]], dict[str, str | None]]:
     """`checked`'s problems under the word each kind is reported under, in the order `checked`
-    lists them: the versions', the record's, then the folder count's."""
+    lists them: the versions', the record's, then the tree count's."""
     found = collect(root)
     unusable = _unusable_root(root)
     if unusable is not None:
@@ -404,13 +406,13 @@ def checked_by_kind(
     # spelling of this actually tested. Either the record is here, or every file it would name
     # is: the first keeps a tree whose wrapper was deleted honest, the second is how a checkout
     # with no record yet is told to write one.
-    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], FOLDER_COUNT: []}
+    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], TREE_COUNT: []}
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         kinds[RECORD_DRIFT] = drift(root)
     # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
     # pull request, and this holds it again where the release is cut.
     if tag is not None:
-        kinds[FOLDER_COUNT] = plugin_tree_count(root)
+        kinds[TREE_COUNT] = plugin_tree_count(root)
     return kinds, found
 
 

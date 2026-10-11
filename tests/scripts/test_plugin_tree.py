@@ -16,6 +16,7 @@ import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -267,6 +268,29 @@ def test_an_unresolvable_rev_is_refused_by_name(tmp_path: Path, rev: str) -> Non
     assert rev in str(refused.value)
 
 
+@pytest.mark.parametrize("cut", ["inside-a-header", "inside-a-blob"])
+def test_a_cat_file_answer_cut_short_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut: str
+) -> None:
+    # Mutations (declared): the header's search back to `index` with no check -> a header cut off
+    # before its newline escapes as a `ValueError`; the blob's length not compared -> a blob cut
+    # off is read as the shorter bytes, and the listing goes through.
+    root = plugin_repository(tmp_path)
+    real = plugin_tree.git_run
+
+    def cut_short(where: Path, *args: str, **options: Any) -> tuple[int, str]:
+        code, answer = real(where, *args, **options)
+        if "cat-file" not in args:
+            return code, answer
+        if cut == "inside-a-header":
+            return code, answer[: answer.index("\n") - 1]
+        return code, answer[:-3]
+
+    monkeypatch.setattr(plugin_tree, "git_run", cut_short)
+    with pytest.raises(Refusal, match="cat-file"):
+        plugin_tree.members(root, "HEAD")
+
+
 def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
@@ -380,6 +404,32 @@ def test_a_render_that_fails_part_way_leaves_no_manifest_file(
     assert plugin_tree.main([*argv, "--manifest-file", str(written)]) == 2
     assert len(calls) == len(PLUGIN_FILES)
     assert not written.exists()
+
+
+def test_a_member_the_disk_will_not_take_is_refused_by_its_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Mutation (declared): the `OSError` catch dropped -> a full disk escapes `render` as an
+    # internal error naming no member, rather than a refusal naming the one it stopped at.
+    members = plugin_tree.members(plugin_repository(tmp_path), "HEAD")
+
+    def full_disk(descriptor: int, mode: int) -> None:
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    monkeypatch.setattr(plugin_tree.os, "fchmod", full_disk)
+    with pytest.raises(Refusal, match="could not be written into") as refused:
+        plugin_tree.render(members, tmp_path / "tree")
+    assert members[0].path in str(refused.value)
+    assert os.strerror(errno.ENOSPC) in str(refused.value)
+
+
+def test_a_destination_that_cannot_be_made_is_refused(tmp_path: Path) -> None:
+    # Mutation (declared): the `OSError` catch around making the destination dropped -> a
+    # destination under a regular file escapes as an internal error.
+    members = plugin_tree.members(plugin_repository(tmp_path), "HEAD")
+    (tmp_path / "a-file").write_bytes(b"")
+    with pytest.raises(Refusal, match="cannot be made"):
+        plugin_tree.render(members, tmp_path / "a-file" / "tree")
 
 
 def test_render_twice_writes_the_same_tree_and_manifest(tmp_path: Path) -> None:

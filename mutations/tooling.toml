@@ -224,12 +224,12 @@ reddens = [
 ]
 
 # The plugin is published from a repository of its own whose root is the tree
-# `scripts/plugin_tree.py render` writes, so the workflows that judge the plugin judge a render.
-# Each of these points one of them at something other than this commit's render, or drops the step
-# that ties the render to what is validated, installed or attested. The smoke's are what keep it
-# off the network and off any tree published before: this repository's catalog names the plugin
-# repository by a `url` source, so a smoke that adds the checkout as its marketplace fetches the
-# published tag, or fails while there is none, and judges nothing this change wrote.
+# `scripts/plugin_tree.py render` writes, so the workflows that judge the plugin judge a render of
+# this commit, and this repository's catalog where it is. Each of these weakens one of those
+# judgements: it points a step at something other than this commit's render (the checkout, or
+# another commit), drops or empties a step that ties the render to what is validated, installed,
+# attested or released, stops validating the catalog, or lets the release go on without the
+# plugin's manifest.
 [[mutation]]
 name = "the smoke installs the checkout again"
 file = ".github/workflows/smoke.yml"
@@ -1493,8 +1493,8 @@ reddens = [
 [[mutation]]
 name = "release check counts the plugin tree without a tag"
 file = "scripts/release.py"
-before = "    if tag is not None:\n        kinds[FOLDER_COUNT] = plugin_tree_count(root)"
-after = "    if True:\n        kinds[FOLDER_COUNT] = plugin_tree_count(root)"
+before = "    if tag is not None:\n        kinds[TREE_COUNT] = plugin_tree_count(root)"
+after = "    if True:\n        kinds[TREE_COUNT] = plugin_tree_count(root)"
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
@@ -1977,6 +1977,45 @@ after = "    _write_manifest(written, manifest(found))\n    render(found, out)"
 reddens = ["tests/scripts/test_plugin_tree.py::test_a_render_that_fails_part_way_leaves_no_manifest_file"]
 
 [[mutation]]
+name = "the plugin render lets a write the disk refuses escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = """        except OSError as exc:
+            # A full disk, a quota, a permission: said as the refusal it is, with the path it
+            # stopped at, rather than escaping as an internal error.
+            raise Refusal(
+                f"{quoted(member.path)} could not be written into {out}: {exc.strerror or exc}"
+            ) from None
+"""
+after = ""
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_member_the_disk_will_not_take_is_refused_by_its_path"]
+
+[[mutation]]
+name = "the plugin render lets a destination it cannot make escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = """    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise Refusal(f"{out} cannot be made: {exc.strerror or exc}") from None
+"""
+after = """    out.mkdir(parents=True, exist_ok=True)
+"""
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_destination_that_cannot_be_made_is_refused"]
+
+[[mutation]]
+name = "the plugin tree lets a cat-file answer cut inside a header escape as an internal error"
+file = "scripts/plugin_tree.py"
+before = '        header_end = out.find(b"\n", at)'
+after = '        header_end = out.index(b"\n", at)'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_cat_file_answer_cut_short_is_refused[inside-a-header]"]
+
+[[mutation]]
+name = "the plugin tree reads a blob cut short as the shorter bytes"
+file = "scripts/plugin_tree.py"
+before = "        if len(content) != size:"
+after = "        if False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_cat_file_answer_cut_short_is_refused[inside-a-blob]"]
+
+[[mutation]]
 name = "the plugin render writes its manifest file inside the tree"
 file = "scripts/plugin_tree.py"
 before = "    if written.resolve().is_relative_to(out.resolve()):"
@@ -2283,6 +2322,15 @@ before = "    if code == -1:"
 after = "    if False:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_a_commit_tree_that_gave_no_answer_is_not_blamed_on_the_identity",
+]
+
+[[mutation]]
+name = "the publisher pushes to another repository than the marketplace fetches from"
+file = "scripts/publish_plugin.py"
+before = 'PLUGIN_REMOTE = "git@github.com:stayfixed/stayfixed-plugin.git"'
+after = 'PLUGIN_REMOTE = "git@github.com:stayfixed/plugin.git"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
 ]
 
 [[mutation]]

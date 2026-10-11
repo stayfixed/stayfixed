@@ -137,12 +137,17 @@ def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
     out, at, blobs = answer_bytes(answer), 0, {}
     for obj in objects:
         # `<object> <type> <size>\n<content>\n`, once per object asked, in the order asked.
-        header_end = out.index(b"\n", at)
-        header = out[at:header_end].split()
-        if len(header) != 3 or header[1] != b"blob":
+        header_end = out.find(b"\n", at)
+        header = out[at:header_end].split() if header_end != -1 else []
+        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
             raise Refusal(f"git cat-file did not answer {obj} as a blob in {root}")
         size = int(header[2])
-        blobs[obj] = out[header_end + 1 : header_end + 1 + size]
+        content = out[header_end + 1 : header_end + 1 + size]
+        # A slice past the end is short, not an error: an answer cut off inside a blob would
+        # otherwise be read as that blob's bytes.
+        if len(content) != size:
+            raise Refusal(f"git cat-file's answer in {root} ended inside {obj}")
+        blobs[obj] = content
         at = header_end + 1 + size + 1
     return blobs
 
@@ -199,7 +204,10 @@ def render(entries: Iterable[Member], out: Path) -> None:
     they are, and exactly the permissions its git mode names. Nothing else is written."""
     if not _empty_or_absent(out):
         raise Refusal(f"{out} is not an empty directory; the plugin tree is rendered into one")
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise Refusal(f"{out} cannot be made: {exc.strerror or exc}") from None
     for member in entries:
         try:
             fsops.mkdirs_within(out, member.path)
@@ -212,6 +220,12 @@ def render(entries: Iterable[Member], out: Path) -> None:
                     os.fchmod(handle.fileno(), permissions)
         except fsops.UnsafePath as exc:
             raise Refusal(f"{quoted(member.path)} cannot be rendered: {exc}") from None
+        except OSError as exc:
+            # A full disk, a quota, a permission: said as the refusal it is, with the path it
+            # stopped at, rather than escaping as an internal error.
+            raise Refusal(
+                f"{quoted(member.path)} could not be written into {out}: {exc.strerror or exc}"
+            ) from None
 
 
 # --- The commands -------------------------------------------------------------------------------
