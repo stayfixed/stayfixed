@@ -377,7 +377,7 @@ winning and the empty prefix's group taking anything no other prefix matches. Th
 because they were sized while this repository's root was the plugin, when every tracked file
 counted against the 512 files past which the plugin directory holds the version for a reviewer:
 one file per area would need no table, and would have spent about twenty of those 512 where eleven
-do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
+did; `publish` was split from `tooling` by its largest area later, the way the cap below asks. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
 "Areas". The plugin is now published from a repository of its own, whose root is the tree
 `scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
 among them.
