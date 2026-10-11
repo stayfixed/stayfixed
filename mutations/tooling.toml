@@ -2560,6 +2560,7 @@ before = "        if status is not None and status.group(1) in ABSENT:"
 after = "        if True:"
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[a-server-error]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
 ]
 
 [[mutation]]
@@ -2661,13 +2662,113 @@ before = "    if tag_for(built.version)[0] != tag:"
 after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_rejected"]
 
+# `gh` must be logged in to github.com before the first question is asked of GitHub, and is asked
+# exactly that, whole: the auth check, the source anchor and the attestation.
+[[mutation]]
+name = "the publisher goes on with a gh that is not logged in"
+file = "scripts/publish_plugin.py"
+before = """    if done.code != 0:
+        raise Refusal(
+            f"{' '.join(argv)} exited"""
+after = """    if False:
+        raise Refusal(
+            f"{' '.join(argv)} exited"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-gh-that-is-not-logged-in]",
+]
+
+[[mutation]]
+name = "the publisher asks whether gh is logged in to any host"
+file = "scripts/publish_plugin.py"
+before = '    argv = ["gh", "auth", "status", "--hostname", GITHUB, "--active"]'
+after = '    argv = ["gh", "auth", "status", "--active"]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+[[mutation]]
+name = "the publisher asks whether any of gh's accounts is logged in"
+file = "scripts/publish_plugin.py"
+before = '    argv = ["gh", "auth", "status", "--hostname", GITHUB, "--active"]'
+after = '    argv = ["gh", "auth", "status", "--hostname", GITHUB]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+[[mutation]]
+name = "the publisher asks GitHub about the tag before asking whether gh is logged in"
+file = "scripts/publish_plugin.py"
+before = """    _logged_in(runner, root)
+    _source_anchor(runner, root, tag, sha)
+"""
+after = """    _source_anchor(runner, root, tag, sha)
+    _logged_in(runner, root)
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
 [[mutation]]
 name = "the publisher goes on past a refused attestation"
 file = "scripts/publish_plugin.py"
 before = "    if verified.code != 0:"
 after = "    if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_refused_attestation_stops_before_anything_is_fetched",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-none]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-no-list]",
+]
+
+[[mutation]]
+name = "the publisher matches the signer by its workflow's prefix"
+file = "scripts/publish_plugin.py"
+before = """        "--cert-identity",
+        CERT_IDENTITY.format(tag=tag),
+"""
+after = """        "--signer-workflow",
+        "stayfixed/stayfixed/.github/workflows/release.yml",
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher accepts an attestation signed by any workflow"
+file = "scripts/publish_plugin.py"
+before = """        "--cert-identity",
+        CERT_IDENTITY.format(tag=tag),
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher accepts the release workflow run for any ref"
+file = "scripts/publish_plugin.py"
+before = '    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{tag}"'
+after = '    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher verifies the attestation on gh's default host"
+file = "scripts/publish_plugin.py"
+before = """        str(attested),
+        "--hostname",
+        GITHUB,
+"""
+after = """        str(attested),
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
 ]
 
 [[mutation]]
@@ -2678,7 +2779,7 @@ before = '''        "--source-ref",
 '''
 after = ""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
 ]
 
 [[mutation]]
@@ -2689,7 +2790,7 @@ before = '''        "--source-digest",
 '''
 after = ""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
 ]
 
 [[mutation]]
@@ -2699,18 +2800,98 @@ before = '''        "--deny-self-hosted-runners",
 '''
 after = ""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+# An attestation that does not verify is a release to reject only when GitHub holds one of the
+# manifest's digest: none yet, or no answer, is a run to repeat.
+[[mutation]]
+name = "the publisher reads a missing attestation as a wrong one"
+file = "scripts/publish_plugin.py"
+before = "        if _attested(runner, root, digest, said):"
+after = "        if not _attested(runner, root, digest, said):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
 ]
 
 [[mutation]]
-name = "the publisher accepts an attestation signed by any workflow"
+name = "the publisher refuses an attestation that exists and does not verify"
 file = "scripts/publish_plugin.py"
-before = '''        "--signer-workflow",
-        SIGNER_WORKFLOW,
-'''
+before = """            raise Rejected(
+                f"{said}; GitHub holds an attestation"""
+after = """            raise Refusal(
+                f"{said}; GitHub holds an attestation"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[the-attestation-does-not-verify]",
+]
+
+[[mutation]]
+name = "the publisher asks about another digest than the manifest's"
+file = "scripts/publish_plugin.py"
+before = "            digest = hashlib.sha256(attested.read_bytes()).hexdigest()"
+after = "            digest = hashlib.sha256(str(attested).encode()).hexdigest()"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+]
+
+[[mutation]]
+name = "the publisher hashes the manifest without catching a failed read"
+file = "scripts/publish_plugin.py"
+before = """        try:
+            digest = hashlib.sha256(attested.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise Refusal(f"{said}; and {attested} cannot be read: {fsops.said(exc)}") from None
+"""
+after = """        digest = hashlib.sha256(attested.read_bytes()).hexdigest()
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_manifest_that_cannot_be_read_after_a_failed_verify_is_refused",
+]
+
+[[mutation]]
+name = "the publisher reads no attestation as an answer listing some"
+file = "scripts/publish_plugin.py"
+before = """    if answer is None:
+        return False
+"""
 after = ""
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit",
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]",
+]
+
+[[mutation]]
+name = "the publisher takes an empty attestation list for one"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(listed, list) or not listed:"
+after = "    if not isinstance(listed, list):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-none]",
+]
+
+[[mutation]]
+name = "the publisher takes an attestation answer that is no list for one"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(listed, list) or not listed:"
+after = "    if not listed:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-listing-no-list]",
+]
+
+[[mutation]]
+name = "the publisher refuses an unanswered attestation query without the verify's words"
+file = "scripts/publish_plugin.py"
+before = """    try:
+        answer = _api(runner, root, path)
+    except Refusal as exc:
+        raise Refusal(f"{said}; and whether GitHub holds an attestation of it: {exc}") from None
+"""
+after = """    answer = _api(runner, root, path)
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[500]",
 ]
 
 [[mutation]]
@@ -3111,6 +3292,48 @@ file = "scripts/publish_plugin.py"
 before = "            if pushed.code != 0:"
 after = "            if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]
+
+# On the default remote, the pushed tag is read back through GitHub's API and must name the commit:
+# a push GitHub does not show is a run to repeat or a redirect to remove, never "pushed".
+[[mutation]]
+name = "the publisher does not read the pushed tag back"
+file = "scripts/publish_plugin.py"
+before = """            if state.confirmed:
+                _landed("""
+after = """            if False:
+                _landed("""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]",
+  "tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-pushed-tag-github-does-not-list]",
+]
+
+[[mutation]]
+name = "the publisher reads a pushed tag back from GitHub on another remote"
+file = "scripts/publish_plugin.py"
+before = """            if state.confirmed:
+                _landed("""
+after = """            if True:
+                _landed("""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one"]
+
+[[mutation]]
+name = "the publisher takes a pushed tag GitHub does not list for one elsewhere"
+file = "scripts/publish_plugin.py"
+before = """    if found is None:
+        raise Refusal(
+            f"{pushed}, and GitHub's"""
+after = """    if False:
+        raise Refusal(
+            f"{pushed}, and GitHub's"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher takes any pushed tag GitHub lists for its own"
+file = "scripts/publish_plugin.py"
+before = "    if found != commit:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
 
 [[mutation]]
 name = "the publisher says a remote it read only through ls-remote is confirmed"

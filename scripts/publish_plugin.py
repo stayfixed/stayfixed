@@ -20,16 +20,22 @@ release's. Before any of it runs, the local tag's commit is compared with the on
 `stayfixed/stayfixed` holds under that tag, so the code run is the release's own, and the
 attestation binds the same commit afterwards.
 
-**What it trusts, and why.** The attestation says which manifest a release vouches for: `gh
-attestation verify` binds the manifest's bytes to this repository's `release.yml`
-(`--signer-workflow`), run for this tag (`--source-ref`) at this commit (`--source-digest`), on a
-GitHub-hosted runner (`--deny-self-hosted-runners`). The commit is read back whole and its manifest
-compared with that one byte for byte before anything leaves the machine. The plugin repository's
-state is GitHub's: on the default remote, `main` and the tag are read through `gh api` as well as
-`ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*` variable)
-refused rather than classified; another `--remote` (a test, a rehearsal) is read from `ls-remote`
-alone, and the summary says so. CI holds no credential to the plugin repository: the owner's own
-git pushes, with the owner's own key.
+**What it trusts, and why.** Every answer it trusts is GitHub's, asked of `github.com` by name, so
+`gh auth status --hostname github.com --active` must pass before the first is asked. The
+attestation says which manifest a release vouches for: `gh attestation verify` binds the manifest's
+bytes to the certificate identity of this repository's `release.yml` run for this tag
+(`--cert-identity`, matched exactly, where `--signer-workflow` matched a prefix), for this tag's
+ref (`--source-ref`) at this commit (`--source-digest`), on a GitHub-hosted runner
+(`--deny-self-hosted-runners`). When it does not verify, GitHub is asked whether it holds any
+attestation of the manifest's digest at all: one that exists and does not verify is a release to
+reject, none yet is a release whose `attest` job has not run. The commit is read back whole and its
+manifest compared with that one byte for byte before anything leaves the machine. The plugin
+repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
+as well as `ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*`
+variable) refused rather than classified, and after a push the tag is read back through the API,
+which must name the commit pushed; another `--remote` (a test, a rehearsal) is read from
+`ls-remote` alone, and the summary says so. CI holds no credential to the plugin repository: the
+owner's own git pushes, with the owner's own key.
 
 **Commit ids are compared, never manifests.** A remote whose tag already names the pinned commit is
 "already published": exit `0`, nothing fetched or pushed, wherever its `main` has moved since. A
@@ -38,10 +44,12 @@ be the commit's parent — both absent for the first release — because `main` 
 fast-forward: a release cut on the wrong base, or a patch release of an older line, is refused.
 
 **Two exit codes after `0`.** `1` rejects the release's approval: the tag's pin is not the commit
-its tree makes; its `plugin.json` names another version; the attestation does not vouch for this
-manifest; the commit reads back as another tree; GitHub's plugin repository holds another commit
-under the tag, or a `main` that is not the commit's parent. `2` says fix something and run again:
-anything else, the tag's own code refusing included, since CI ran the same code on the same commit.
+its tree makes; its `plugin.json` names another version; an attestation of this manifest exists and
+does not verify against this workflow, tag and commit; the commit reads back as another tree;
+GitHub's plugin repository holds another commit under the tag, or a `main` that is not the commit's
+parent. `2` says fix something and run again: anything else — a `gh` not logged in, no attestation
+of the manifest yet, a pushed tag GitHub does not list or lists elsewhere, the tag's own code
+refusing, since CI ran the same code on the same commit.
 
 The command goes through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
 the line, and `Rejected` is the frame's `Failure`, exit `1`.
@@ -50,6 +58,7 @@ the line, and `Rejected` is the frame's `Failure`, exit `1`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -73,10 +82,13 @@ from stayfixed.runner import Completed, Runner, subprocess_runner
 PLUGIN_REMOTE = "git@github.com:stayfixed/stayfixed-plugin.git"
 PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"
-# The workflow whose run attests the manifest, and the repository it runs in: `gh attestation
-# verify` matches `--signer-workflow` against the workflow's path with its repository.
-SIGNER_WORKFLOW = "stayfixed/stayfixed/.github/workflows/release.yml"
+# The repository whose tag is published, and the certificate identity of the run that attests its
+# manifest: `release.yml` run for the tag, as the certificate's SubjectAlternativeName spells it
+# (measured for `v0.2.0`), which `gh attestation verify --cert-identity` matches exactly.
 SOURCE_REPOSITORY = "stayfixed/stayfixed"
+CERT_IDENTITY = (
+    "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{tag}"
+)
 # The host every `gh` call names, so a second host the owner is logged in to answers none.
 GITHUB = "github.com"
 # The repository this script lives in: the one whose tag is published.
@@ -239,6 +251,17 @@ def _github_ref(runner: Runner, root: Path, repository: str, ref: str) -> str | 
                 "then holds no such tag"
             )
     raise Refusal(f"GitHub's {repository} names {ref} through more than {PEELS} tags")
+
+
+def _logged_in(runner: Runner, root: Path) -> None:
+    """Refuse a `gh` that is not logged in to github.com: every answer after this is GitHub's."""
+    argv = ["gh", "auth", "status", "--hostname", GITHUB, "--active"]
+    done = runner.launch(argv, root)
+    if done.code != 0:
+        raise Refusal(
+            f"{' '.join(argv)} exited {done.code}: {_said(done)}. Every answer this trusts is "
+            f"GitHub's: log in (gh auth login --hostname {GITHUB}) and run again; nothing was run"
+        )
 
 
 def _source_anchor(runner: Runner, root: Path, tag: str, sha: str) -> None:
@@ -459,17 +482,20 @@ def _read_back(
 
 
 def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> None:
-    """Ask `gh` whether this repository's release workflow attested exactly this manifest, for
-    this tag at this commit, on a GitHub-hosted runner."""
+    """Ask `gh` whether this repository's release workflow, run for this tag, attested exactly this
+    manifest, for this tag at this commit, on a GitHub-hosted runner; when it did not, reject the
+    release if GitHub holds an attestation of the manifest, and refuse when it holds none yet."""
     argv = [
         "gh",
         "attestation",
         "verify",
         str(attested),
+        "--hostname",
+        GITHUB,
         "--repo",
         SOURCE_REPOSITORY,
-        "--signer-workflow",
-        SIGNER_WORKFLOW,
+        "--cert-identity",
+        CERT_IDENTITY.format(tag=tag),
         "--source-ref",
         f"refs/tags/{tag}",
         "--source-digest",
@@ -479,12 +505,45 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
     verified = runner.launch(argv, root)
     if verified.code != 0:
         # gh exits non-zero both for "no attestation vouches for this" and for "I could not
-        # ask" (unauthenticated, offline); which one it was is in what it said, not here.
-        raise Rejected(
-            f"gh attestation verify exited {verified.code}: {_said(verified)}. Either no release "
-            f"of {tag} at {sha} attested this tree, or gh could not check; nothing was fetched "
-            "or pushed"
+        # ask"; which one it was is GitHub's answer about the manifest's digest.
+        said = f"gh attestation verify exited {verified.code}: {_said(verified)}"
+        try:
+            digest = hashlib.sha256(attested.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise Refusal(f"{said}; and {attested} cannot be read: {fsops.said(exc)}") from None
+        if _attested(runner, root, digest, said):
+            raise Rejected(
+                f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), and it "
+                f"does not verify against {SOURCE_REPOSITORY}'s release.yml at {tag} ({sha}). "
+                "Nothing was fetched or pushed. Reject the release's approval"
+            )
+        raise Refusal(
+            f"{said}; GitHub holds no attestation of this manifest yet (sha256:{digest}). Nothing "
+            "was fetched or pushed. If the release's build and attest jobs are still running, run "
+            "again once they finish; once the release's build and attest jobs are green, reject "
+            "the release's approval"
         )
+
+
+def _attested(runner: Runner, root: Path, digest: str, said: str) -> bool:
+    """Whether GitHub holds an attestation of the manifest whose sha256 is `digest`: `200` listing
+    one is yes, and an answer of no such object (`_api`'s `404`, or `409`, which a repository that
+    holds releases does not answer) is no; any other answer is a refusal, since nothing tells a
+    wrong attestation from a GitHub that could not be asked."""
+    path = f"repos/{SOURCE_REPOSITORY}/attestations/sha256:{digest}"
+    try:
+        answer = _api(runner, root, path)
+    except Refusal as exc:
+        raise Refusal(f"{said}; and whether GitHub holds an attestation of it: {exc}") from None
+    if answer is None:
+        return False
+    listed = answer.get("attestations")
+    if not isinstance(listed, list) or not listed:
+        raise Refusal(
+            f"{said}; and gh api {path} answered, but lists no attestation: "
+            f"{_shown(listed) if listed is not None else 'no attestations'}"
+        )
+    return True
 
 
 # --- The plugin repository ------------------------------------------------------------------------
@@ -577,19 +636,39 @@ def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, main: str
         )
 
 
+def _landed(runner: Runner, root: Path, remote: str, tag: str, commit: str) -> None:
+    """Refuse a push GitHub's API does not show: its plugin repository's tag, read back, must name
+    the commit pushed."""
+    found = _github_ref(runner, root, PLUGIN_REPOSITORY, f"refs/tags/{tag}")
+    pushed = f"git pushed {commit} to {remote} as main and {tag}"
+    if found is None:
+        raise Refusal(
+            f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} does not list {tag} yet; run again, "
+            "which says already published once GitHub lists it"
+        )
+    if found != commit:
+        raise Refusal(
+            f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} names {found} under {tag}: the push went "
+            "elsewhere, through a url.*.insteadOf in your git configuration or a GIT_CONFIG_* "
+            "variable; fix it and run again"
+        )
+
+
 def publish(
     root: Path, tag: str, *, remote: str, yes: bool, runner: Runner, scratch: Path
 ) -> Published:
     """Publish the plugin commit `tag` pins in `root` to `remote`'s `main` and `tag`, under `yes`.
 
     Each step refuses or rejects before the next runs, and everything before the push is local to
-    `scratch`: the tag resolved to one commit and held to GitHub's; the tag's own code read out of
-    it; the commit built with that code and held to the pin and the version; the attestation
-    verified; the commit read back; the remote's state read (already published, or rejected, when
-    the tag is there); `main` held to the commit's parent and fetched; and only then, with `yes`,
-    the atomic push.
+    `scratch`: the tag resolved to one commit, `gh` held to be logged in, and the tag held to
+    GitHub's; the tag's own code read out of it; the commit built with that code and held to the
+    pin and the version; the attestation verified; the commit read back; the remote's state read
+    (already published, or rejected, when the tag is there); `main` held to the commit's parent
+    and fetched; and only then, with `yes`, the atomic push, and on the default remote the pushed
+    tag read back through GitHub's API.
     """
     sha = _tag_commit(root, tag)
+    _logged_in(runner, root)
     _source_anchor(runner, root, tag, sha)
     tool = _tool(root, tag, sha, scratch)
     built = _build(runner, tool, root, tag, sha, scratch)
@@ -625,6 +704,8 @@ def publish(
                     f"git push to {remote} exited {pushed.code}, and the push is atomic, so "
                     f"neither main nor {tag} moved: {_said(pushed)}"
                 )
+            if state.confirmed:
+                _landed(runner, root, remote, tag, built.commit)
             outcome = "pushed"
     return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)
 

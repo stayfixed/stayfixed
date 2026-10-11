@@ -9,8 +9,10 @@ clone, or builds its own when the pin has to change with it. A bare repository i
 for the plugin repository.
 
 `gh` is never run. The runner is a composite that records every argv it is handed, answers `gh`
-from `GitHub` — `gh api` read from the local repositories standing for GitHub's, everything else
-from a script — and runs the rest for real: `git`'s network half and the tag's `plugin_tree.py`.
+from `GitHub` — `gh api` read from the local repositories standing for GitHub's, its attestations
+from one scripted answer, everything else (`gh auth status` and `gh attestation verify` exit `0`
+unless a case says otherwise) from a script — and runs the rest for real: `git`'s network half and
+the tag's `plugin_tree.py`.
 Every commit id a case expects is computed by git from a literal text (`tests/plugintree.py`), never
 by the script. Which exit each outcome is — `1` to reject the release's approval, `2` to fix
 something and run again — is held in one place, the table at the end, through the command's `main`.
@@ -82,12 +84,15 @@ EMPTY = Completed(
 @dataclass(kw_only=True)
 class GitHub(Recorder):
     """`gh`: `gh api … git/ref/<ref>` and `… git/tags/<id>` answered from the repository that
-    `repositories` names for the API's, as GitHub answers them, and any other call, or one
-    `answers` scripts, as the `Recorder` answers it. Read with `--no-replace-objects`: GitHub
-    holds no replace refs. A private double rather than a `Recorder` alone because what it
-    answers is a repository's state, which a case changes as it runs."""
+    `repositories` names for the API's, as GitHub answers them; `… attestations/sha256:<digest>`
+    of `stayfixed/stayfixed` answered `attestation`, whatever the digest, which a case asserts
+    from the argv; and any other call, or one `answers` scripts, as the `Recorder` answers it.
+    Read with `--no-replace-objects`: GitHub holds no replace refs. A private double rather than a
+    `Recorder` alone because what it answers is a repository's state, which a case changes as it
+    runs."""
 
     repositories: dict[str, Path] = field(default_factory=dict)
+    attestation: Completed = NOT_FOUND
 
     def launch(self, argv: list[str], cwd: Path) -> Completed:
         answer = super().launch(argv, cwd)
@@ -98,6 +103,9 @@ class GitHub(Recorder):
 
     def _api(self, argv: list[str]) -> Completed:
         assert argv[2:4] == ["--hostname", "github.com"], argv
+        attested = re.fullmatch(r"repos/([^/]+/[^/]+)/attestations/sha256:[0-9a-f]{64}", argv[4])
+        if attested is not None and len(argv) == 5:
+            return self.attestation if attested.group(1) == SOURCE_REPOSITORY else NOT_FOUND
         found = re.fullmatch(r"repos/([^/]+/[^/]+)/git/(ref|tags)/(.+)", argv[4])
         assert found is not None and len(argv) == 5, argv
         name, kind, rest = found.groups()
@@ -150,15 +158,16 @@ def runner_for(
     plugin: Path | None = None,
     *,
     answers: dict[str, Completed] | None = None,
+    attestation: Completed = NOT_FOUND,
     before: Callable[[list[str]], None] = lambda argv: None,
     after: Callable[[list[str]], None] = lambda argv: None,
 ) -> Composite:
     """A composite whose GitHub holds `source` as `stayfixed/stayfixed` and, when given, `plugin`
-    as the plugin repository."""
+    as the plugin repository, and answers `attestation` for any attestation it is asked about."""
     repositories = {SOURCE_REPOSITORY: source}
     if plugin is not None:
         repositories[PLUGIN_REPOSITORY] = plugin
-    gh = GitHub(repositories=repositories, answers=dict(answers or {}))
+    gh = GitHub(repositories=repositories, answers=dict(answers or {}), attestation=attestation)
     return Composite(gh=gh, before=before, after=after)
 
 
@@ -237,6 +246,19 @@ def patched(old: bytes, new: bytes) -> bytes:
     """This branch's `scripts/plugin_tree.py` with `old`, which it holds once, made `new`."""
     assert SCRIPT.count(old) == 1, old
     return SCRIPT.replace(old, new)
+
+
+def manifest_of(root: Path, tag: str = TAG, paths: tuple[str, ...] = NINE) -> str:
+    """The manifest of `paths` at `tag`, computed by the test from git's own listing and blobs:
+    the format line, then `<mode> <sha256> <path>` per file, by path."""
+    rows = []
+    for record in git(root, "ls-tree", "-r", "-z", "--full-tree", tag, "--", *paths).split("\0"):
+        if record:
+            meta, path = record.split("\t", 1)
+            mode, _kind, obj = meta.split()
+            digest = hashlib.sha256(git_bytes(root, "cat-file", "blob", obj)).hexdigest()
+            rows.append((path, f"{mode} {digest} {path}\n"))
+    return "stayfixed-plugin-tree 1\n" + "".join(line for _, line in sorted(rows))
 
 
 def publish(
@@ -363,31 +385,57 @@ def test_a_branch_named_like_the_tag_does_not_stand_in_for_it(source: Path, tmp_
     assert listed(remote, TAG, exact=True)["README.md"] == PLUGIN_FILES["README.md"]
 
 
-def test_the_attestation_is_asked_for_this_workflow_this_tag_and_this_commit(
-    source: Path, tmp_path: Path
-) -> None:
-    # Mutations (declared), one entry each: `--source-ref` dropped; `--source-digest` dropped;
-    # `--deny-self-hosted-runners` dropped; `--signer-workflow` dropped.
-    _, runner = publish(source, bare_remote(tmp_path), tmp_path / "scratch", yes=False)
-    asked = gh_asked(runner, "gh", "attestation", "verify")
-    assert len(asked) == 1, runner.gh.calls
-    argv = asked[0]
+# The certificate identity a release's attestation carries, spelled as the pre-flight measured it
+# for `v0.2.0`: the workflow's URL at the tag's ref, which `--cert-identity` matches exactly.
+CERT_IDENTITY = (
+    f"https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{TAG}"
+)
+GH_AUTH = ["gh", "auth", "status", "--hostname", "github.com", "--active"]
 
-    def value(option: str) -> str:
-        assert argv.count(option) == 1, argv
-        return argv[argv.index(option) + 1]
 
+def test_the_attestation_is_asked_with_an_exact_identity(source: Path, tmp_path: Path) -> None:
+    # Every `gh` call of a dry run to another remote, whole and in order. Mutations (declared),
+    # one entry each: `--cert-identity` -> `--signer-workflow` with the old value; the identity
+    # without its `@refs/tags/<tag>`; `--cert-identity` dropped; `--source-ref` dropped;
+    # `--source-digest` dropped; `--deny-self-hosted-runners` dropped; the verify's `--hostname`
+    # dropped; `gh auth status` without `--hostname`; `gh auth status` without `--active`.
+    scratch = tmp_path / "scratch"
+    _, runner = publish(source, bare_remote(tmp_path), scratch, yes=False)
     sha = tag_commit(source)
-    assert len(sha) == 40
-    assert value("--repo") == "stayfixed/stayfixed"
-    assert value("--signer-workflow") == "stayfixed/stayfixed/.github/workflows/release.yml"
-    assert value("--source-ref") == f"refs/tags/{TAG}"
-    assert value("--source-digest") == sha
-    assert "--deny-self-hosted-runners" in argv
+    tag_object = git(source, "rev-parse", f"refs/tags/{TAG}").strip()
+    assert len(sha) == 40 and tag_object != sha
+    manifest = scratch / "plugin-tree.txt"
+    assert runner.gh.calls == [
+        GH_AUTH,
+        ["gh", "api", "--hostname", "github.com", f"repos/stayfixed/stayfixed/git/ref/tags/{TAG}"],
+        [
+            "gh",
+            "api",
+            "--hostname",
+            "github.com",
+            f"repos/stayfixed/stayfixed/git/tags/{tag_object}",
+        ],
+        [
+            "gh",
+            "attestation",
+            "verify",
+            str(manifest),
+            "--hostname",
+            "github.com",
+            "--repo",
+            "stayfixed/stayfixed",
+            "--cert-identity",
+            "https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/v1.2.3",
+            "--source-ref",
+            "refs/tags/v1.2.3",
+            "--source-digest",
+            sha,
+            "--deny-self-hosted-runners",
+        ],
+    ]
     # The file it is asked about is the manifest of the plugin's files at the tag.
-    expected = plugin_tree.manifest(plugin_tree.members(source, sha)).encode("utf-8")
-    assert Path(argv[3]).read_bytes() == expected
-    assert expected.startswith(b"stayfixed-plugin-tree 1\n")
+    assert manifest.read_text(encoding="utf-8") == manifest_of(source)
+    assert manifest_of(source).startswith("stayfixed-plugin-tree 1\n")
 
 
 def test_a_second_publish_of_the_same_tag_pushes_nothing(source: Path, tmp_path: Path) -> None:
@@ -645,18 +693,11 @@ def test_the_tag_s_own_plugin_tree_builds_the_commit(tmp_path: Path) -> None:
     scratch = tmp_path / "scratch"
     done, _ = publish(source, bare_remote(tmp_path), scratch, yes=False)
     assert (done.outcome, done.commit) == ("would-push", pinned_at(source, TAG))
-    rows = []
-    for record in git(source, "ls-tree", "-r", "-z", "--full-tree", TAG, "--", *ten).split("\0"):
-        if record:
-            meta, path = record.split("\t", 1)
-            mode, _kind, obj = meta.split()
-            digest = hashlib.sha256(git_bytes(source, "cat-file", "blob", obj)).hexdigest()
-            rows.append((path, f"{mode} {digest} {path}\n"))
-    expected = "stayfixed-plugin-tree 1\n" + "".join(line for _, line in sorted(rows))
+    expected = manifest_of(source, TAG, ten)
     assert (scratch / "plugin-tree.txt").read_text(encoding="utf-8") == expected
     line = "100644 dcf4a2ae11e48a937801393a5a5521068b50366476f099740f5576f081a659a2 commands/a.md\n"
     assert line in expected
-    assert done.files == len(rows)
+    assert done.files == expected.count("\n") - 1
 
 
 def test_the_tag_s_tool_imports_the_tag_s_stayfixed(
@@ -878,22 +919,95 @@ def test_a_manifest_changed_after_the_commit_is_rejected_by_the_read_back(
     assert ran(runner, "push") == []
 
 
-def test_a_refused_attestation_stops_before_anything_is_fetched(
-    source: Path, tmp_path: Path
+# `gh attestation verify` failing as the pre-flight measured it for an identity that did not match.
+UNVERIFIED = Completed(1, "", 'Error: verifying with issuer "sigstore.dev"\n')
+# What GitHub answers about the manifest's digest: an attestation exists (200, a list holding one),
+# a 200 that lists none, and a 200 whose list is no list.
+ATTESTED = Completed(
+    0, json.dumps({"attestations": [{"bundle": {}, "repository_id": 1, "bundle_url": None}]}), ""
+)
+NONE_LISTED = Completed(0, json.dumps({"attestations": []}), "")
+NO_LIST = Completed(0, json.dumps({"attestations": "one"}), "")
+
+
+@pytest.mark.parametrize(
+    ("attestation", "rejected", "said"),
+    [
+        pytest.param(ATTESTED, True, "holds an attestation of this manifest", id="200"),
+        pytest.param(NOT_FOUND, False, "no attestation of this manifest yet", id="404"),
+        pytest.param(SERVER_ERROR, False, "Server Error (HTTP 500)", id="500"),
+        pytest.param(NONE_LISTED, False, "lists no attestation", id="200-listing-none"),
+        pytest.param(NO_LIST, False, "lists no attestation", id="200-listing-no-list"),
+    ],
+)
+def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
+    source: Path, tmp_path: Path, attestation: Completed, rejected: bool, said: str
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher goes on past a refused attestation" ->
-    # the remote is listed, and pushed to.
+    # `gh auth status` answers 0 and only `gh attestation verify` answers 1: whether GitHub holds
+    # an attestation of this manifest decides between a release to reject (1) and one whose
+    # `attest` job has not run yet, or a GitHub that could not be asked (2). Mutations (declared):
+    # `mutations/`'s "the publisher goes on past a refused attestation" -> the run lists the
+    # remote; `mutations/`'s "the publisher reads a missing attestation as a wrong one" (the two
+    # answers swapped) -> 200 refused and 404 rejected; `mutations/`'s "the publisher takes an
+    # empty attestation list for one" and `mutations/`'s "the publisher takes an attestation answer
+    # that is no list for one" -> rejected; `mutations/`'s "the publisher reads any failed API call
+    # as absent" -> the 500 reads as no attestation yet.
     remote = bare_remote(tmp_path)
-    said = "no attestations found for the subject"
-    verify = Completed(1, "", f"{said}\nsecond line\n")
-    runner = runner_for(source, answers={"gh attestation verify": verify})
-    with pytest.raises(Rejected) as rejected:
+    answers = {"gh auth status": Completed(0, "", ""), "gh attestation verify": UNVERIFIED}
+    runner = runner_for(source, answers=answers, attestation=attestation)
+    with pytest.raises((Rejected, Refusal)) as stopped:
         publish(source, remote, tmp_path / "scratch", runner=runner)
-    assert said in str(rejected.value)
-    assert "could not check" in str(rejected.value)
+    assert type(stopped.value) is (Rejected if rejected else Refusal), stopped.value
+    message = str(stopped.value)
+    assert said in message, message
+    assert "verifying with issuer" in message, message
+    digest = hashlib.sha256(manifest_of(source).encode("utf-8")).hexdigest()
+    assert digest in message, message
+    assert gh_asked(runner, "gh", "api")[-1] == [
+        "gh",
+        "api",
+        "--hostname",
+        "github.com",
+        f"repos/stayfixed/stayfixed/attestations/sha256:{digest}",
+    ]
+    if not rejected and attestation is NOT_FOUND:
+        assert "once the release's build and attest jobs are green" in message, message
     for word in ("ls-remote", "fetch", "push"):
         assert ran(runner, word) == [], word
     assert refs(remote) == {}
+
+
+def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_path: Path) -> None:
+    # Mutation (declared): `mutations/`'s "the publisher goes on with a gh that is not logged in"
+    # -> GitHub's API is asked, the tag's code runs and the attestation is asked for.
+    said = "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+    runner = runner_for(source, answers={"gh auth status": Completed(1, "", f"{said}\n")})
+    scratch = tmp_path / "scratch"
+    with pytest.raises(Refusal) as refused:
+        publish(source, bare_remote(tmp_path), scratch, runner=runner)
+    assert "gh auth status --hostname github.com --active exited 1" in str(refused.value)
+    assert said in str(refused.value)
+    assert runner.gh.calls == [GH_AUTH]
+    assert gh_asked(runner, "gh", "api") == gh_asked(runner, "gh", "attestation") == []
+    assert tool_runs(runner) == []
+    assert not (scratch / "tool").exists()
+
+
+def test_a_manifest_that_cannot_be_read_after_a_failed_verify_is_refused(
+    source: Path, tmp_path: Path
+) -> None:
+    # Mutation (declared): `mutations/`'s "the publisher hashes the manifest without catching a
+    # failed read" -> the missing file escapes as an internal error.
+    def remove(argv: list[str]) -> None:
+        if argv[:3] == ["gh", "attestation", "verify"]:
+            Path(argv[3]).unlink()
+
+    runner = runner_for(
+        source, answers={"gh attestation verify": UNVERIFIED}, attestation=ATTESTED, after=remove
+    )
+    with pytest.raises(Refusal, match="cannot be read"):
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    assert [argv for argv in gh_asked(runner, "gh", "api") if "attestations" in argv[-1]] == []
 
 
 # --- Refusals: run again once the cause is fixed --------------------------------------------------
@@ -1009,6 +1123,69 @@ def test_the_api_decides_on_the_default_remote(
     assert "insteadOf" in str(refused.value)
     assert "or main moved while this ran" in str(refused.value)
     assert ran(hidden, "push") == []
+
+
+TAG_API = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/tags/{TAG}"
+
+
+def redirected_runner(source: Path, bare: Path, after_push: Completed | None) -> Composite:
+    """A composite whose GitHub holds `bare` as the plugin repository and, once a `git push` has
+    run, answers `after_push` for the tag when given: GitHub's view parting from the remote's."""
+    runner = runner_for(source, bare)
+
+    def pushed(argv: list[str]) -> None:
+        if after_push is not None and argv[:1] == ["git"] and "push" in argv:
+            runner.gh.answers[TAG_API] = after_push
+
+    runner.after = pushed
+    return runner
+
+
+@pytest.mark.parametrize(
+    ("after_push", "said"),
+    [
+        pytest.param(None, None, id="the-commit"),
+        pytest.param(NOT_FOUND, f"does not list {TAG} yet", id="404"),
+        pytest.param(
+            ANOTHER_ID, f"names {OTHER} under {TAG}: the push went elsewhere", id="another-id"
+        ),
+    ],
+)
+def test_the_pushed_tag_is_read_back_on_the_default_remote(
+    source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    after_push: Completed | None,
+    said: str | None,
+) -> None:
+    # The default remote redirected to a bare repository, as in the case above, so ls-remote and
+    # GitHub agree before the push; after it, GitHub's tag is read back through the API.
+    # Mutations (declared): `mutations/`'s "the publisher does not read the pushed tag back" ->
+    # the 404 and another id both report "pushed"; `mutations/`'s "the publisher takes a pushed
+    # tag GitHub does not list for one elsewhere" -> the 404 is worded as a redirect;
+    # `mutations/`'s "the publisher takes any pushed tag GitHub lists for its own" -> another id
+    # reports "pushed".
+    bare = bare_remote(tmp_path)
+    _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    runner = redirected_runner(source, bare, after_push)
+    pin = pinned_at(source, TAG)
+    default = publish_plugin.PLUGIN_REMOTE
+    if said is None:
+        done, _ = publish(source, default, tmp_path / "scratch", runner=runner)
+        assert (done.outcome, done.commit, done.confirmed) == ("pushed", pin, True)
+    else:
+        with pytest.raises(Refusal) as refused:
+            publish(source, default, tmp_path / "scratch", runner=runner)
+        message = str(refused.value)
+        assert said in message, message
+        assert "run again" in message, message
+        if after_push is ANOTHER_ID:
+            assert "url.*.insteadOf" in message and "GIT_CONFIG_*" in message, message
+    # The push landed where the owner's git sent it, either way.
+    assert refs(bare) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
+    push = next(i for i, argv in enumerate(runner.calls) if argv[:1] == ["git"] and "push" in argv)
+    assert [argv for argv in runner.calls[push + 1 :] if argv[:1] == ["gh"]] == [TAG_API.split(" ")]
 
 
 def test_another_remote_is_not_confirmed(source: Path, tmp_path: Path) -> None:
@@ -1352,9 +1529,27 @@ def _main_not_the_parent(source: Path, remote: Path, monkeypatch: pytest.MonkeyP
     return runner_for(source), TAG, str(remote)
 
 
-def _attestation_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
-    verify = Completed(1, "", "no attestations found for the subject\n")
-    return runner_for(source, answers={"gh attestation verify": verify}), TAG, str(remote)
+def _attestation_does_not_verify(
+    source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch
+) -> Arranged:
+    answers = {"gh attestation verify": UNVERIFIED}
+    return runner_for(source, answers=answers, attestation=ATTESTED), TAG, str(remote)
+
+
+def _no_attestation_yet(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    answers = {"gh attestation verify": UNVERIFIED}
+    return runner_for(source, answers=answers, attestation=NOT_FOUND), TAG, str(remote)
+
+
+def _not_logged_in(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    answers = {"gh auth status": Completed(1, "", "You are not logged into any GitHub hosts.\n")}
+    return runner_for(source, answers=answers), TAG, str(remote)
+
+
+def _pushed_tag_not_listed(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    _global_config(f'[url "{remote}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    return redirected_runner(source, remote, NOT_FOUND), TAG, publish_plugin.PLUGIN_REMOTE
 
 
 def _read_back_differs(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
@@ -1443,9 +1638,9 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
             _main_not_the_parent, 1, "moves only by fast-forward", id="main-is-not-the-parent"
         ),
         pytest.param(
-            _attestation_refused,
+            _attestation_does_not_verify,
             1,
-            "gh attestation verify exited 1",
+            "holds an attestation of this manifest",
             id="the-attestation-does-not-verify",
         ),
         pytest.param(
@@ -1455,6 +1650,13 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
             id="the-commit-reads-back-as-another-tree",
         ),
         pytest.param(_not_plain, 2, "plain version", id="a-tag-that-is-not-plain"),
+        pytest.param(_not_logged_in, 2, "gh auth status", id="a-gh-that-is-not-logged-in"),
+        pytest.param(
+            _no_attestation_yet,
+            2,
+            "no attestation of this manifest yet",
+            id="no-attestation-of-the-manifest-yet",
+        ),
         pytest.param(_not_github_s, 2, "is not GitHub's", id="a-local-tag-github-does-not-hold"),
         pytest.param(_predates, 2, "predates", id="a-tag-that-predates-the-publisher"),
         pytest.param(
@@ -1469,6 +1671,9 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
         ),
         pytest.param(_redirected, 2, "through a redirect", id="a-redirected-default-remote"),
         pytest.param(_push_refused, 2, "git push to", id="a-refused-push"),
+        pytest.param(
+            _pushed_tag_not_listed, 2, "does not list", id="a-pushed-tag-github-does-not-list"
+        ),
     ],
 )
 def test_every_rejection_exits_1_and_every_refusal_exits_2(
