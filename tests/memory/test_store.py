@@ -8,7 +8,7 @@ import pytest
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
-from stayfixed.gitenv import GitUnavailable
+from stayfixed.gitenv import ASKED_IN_A_GONE_DIRECTORY, GitUnavailable
 from stayfixed.memory.store import (
     Store,
     inside_project,
@@ -648,3 +648,22 @@ def test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout(
     monkeypatch.setattr("stayfixed.gitenv.subprocess.run", broken)
     with pytest.raises(GitUnavailable):
         main_checkout(root)
+
+
+def test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git(
+    tmp_path: Path,
+) -> None:
+    # `git -C <gone> --version` exits 128 before it reads `--version`, so the discriminator that
+    # tells a broken `git` from one that declined read a removed worktree as a broken `git`, and
+    # the refusal sent the owner to check a `git` that worked. The cause is the directory, and
+    # it is named, so a caller walking every worktree can skip the one that went away.
+    root = tmp_path / "project"
+    a_repo(root)
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    shutil.rmtree(side)
+    with pytest.raises(GitUnavailable) as excinfo:
+        main_checkout(side)
+    assert excinfo.value.cause == ASKED_IN_A_GONE_DIRECTORY
+    assert str(side) in str(excinfo.value)
+    assert "check that `git` runs here" not in str(excinfo.value)

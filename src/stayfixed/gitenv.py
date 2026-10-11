@@ -420,7 +420,32 @@ class GitUnavailable(Failure):
     `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when
     `/usr/bin/git` is the Xcode shim with an unaccepted licence, since `GIT_ENV_KEEP` scrubs
     `DEVELOPER_DIR`.
+
+    `cause` is the `GitAnswer.cause` the refusal was built from, so a caller walking several
+    checkouts can tell a directory that went away (`ASKED_IN_A_GONE_DIRECTORY`) from a fault it
+    has to report.
     """
+
+    def __init__(self, message: str, cause: str | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
+
+
+# Why `git_answer` has no answer, each ending in what to do about it. A refusal built from one
+# says the cause it found rather than "check that `git` runs here" for every one of them: on a
+# machine at a load average of 140, one `rev-parse` among 65 worktrees outlived its five seconds,
+# and the owner was sent to check a `git` that worked, with no checkout named.
+RAN_OUT_OF_TIME = (
+    "`git` runs here, but gave this question no answer within its time limit, which a heavily "
+    "loaded machine causes; run the command again"
+)
+ASKED_IN_A_GONE_DIRECTORY = (
+    "the directory it was asked in no longer exists, which a worktree removed while the command "
+    "ran causes"
+)
+CANNOT_RUN = (
+    "`git` cannot be run here, or did not answer even `git --version`; check that `git` runs here"
+)
 
 
 def git_is_usable(root: Path) -> bool:
@@ -449,21 +474,27 @@ class GitAnswer:
     """git's one-line answer to one question, in three values: an answer, no answer, or could
     not ask.
 
-    `value` is the answer when there is one. `ran` is False only when `git` could not be run, or
-    exited non-zero and `git_is_usable` says it cannot speak at all — an empty stdout from a
-    successful run, and a refusal from a `git` that works, are "no answer", which is a fact about
-    the repository rather than about the machine.
+    `value` is the answer when there is one. `cause` is set only when `git` could not be asked,
+    and says why, in one of the three sentences above: the question ran out of time while `git`
+    itself works, the directory it was asked in is gone, or `git` cannot speak at all. An empty
+    stdout from a successful run, and a refusal from a `git` that works, are "no answer", which
+    is a fact about the repository rather than about the machine, and carry no cause.
     """
 
     value: str | None
-    ran: bool = True
+    cause: str | None = None
+
+    @property
+    def ran(self) -> bool:
+        """Whether `git` was asked: everything but a `cause`."""
+        return self.cause is None
 
     def require(self, refusal: str) -> str | None:
-        """The answer, raising `GitUnavailable(refusal)` rather than answering `None` when `git`
-        could not be asked. The words are the caller's, because only the caller knows what went
-        unanswered and what that stops."""
-        if not self.ran:
-            raise GitUnavailable(refusal)
+        """The answer, raising `GitUnavailable` rather than answering `None` when `git` could not
+        be asked. `refusal` is the caller's, because only the caller knows what went unanswered
+        and what that stops; what follows it is the cause, which says what to do."""
+        if self.cause is not None:
+            raise GitUnavailable(f"{refusal}: {self.cause}", self.cause)
         return self.value
 
 
@@ -474,15 +505,23 @@ def git_answer(root: Path, *args: str) -> GitAnswer:
     that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
     answer is what git printed, a path as the filesystem spells it, less its line ending
     alone — never `strip()`, for `answer_lines`'s reason.
+
+    **When there is no answer, why.** `git_run` does not say which of its causes a `-1` was, and
+    a non-zero exit is either "git declined" or "git is broken", so both are followed by the
+    questions that tell them apart, asked only once the first has failed. A `root` that is no
+    longer a directory comes first: `git -C <gone>` exits 128 for `--version` too, so without it a
+    worktree removed mid-walk read as a broken `git`. Then `git_is_usable`: a `git` that answers
+    `--version` here and gave the question no answer ran out of time — it was launched and it
+    works — and one that declined the question said no.
     """
     code, out = git_run(root, *args)
-    if code == -1:
-        return GitAnswer(None, ran=False)
-    if code != 0:
-        # `git` ran and declined, *or* `git` is broken. `git_is_usable` is what tells them
-        # apart; without it every reader would take the second for the first.
-        return GitAnswer(None, ran=git_is_usable(root))
-    return GitAnswer(out.removesuffix("\n") or None)
+    if code == 0:
+        return GitAnswer(out.removesuffix("\n") or None)
+    if not fsops.is_dir(root):
+        return GitAnswer(None, ASKED_IN_A_GONE_DIRECTORY)
+    if not git_is_usable(root):
+        return GitAnswer(None, CANNOT_RUN)
+    return GitAnswer(None, RAN_OUT_OF_TIME if code == -1 else None)
 
 
 def origin_remote(root: Path) -> str | None:
@@ -511,7 +550,7 @@ def origin_remote(root: Path) -> str | None:
     """
     return git_answer(root, "remote", "get-url", "origin").require(
         "`git` could not read this repository's origin remote — the fault is on this "
-        "machine rather than in the repository; check that `git` runs here"
+        "machine rather than in the repository"
     )
 
 

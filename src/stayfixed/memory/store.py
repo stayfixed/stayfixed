@@ -136,8 +136,8 @@ def main_checkout(root: Path) -> Path:
     to do" answer while every memory bundle is empty and nothing reports a failure.
     """
     common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir").require(
-        "`git` could not answer which checkout owns this worktree in this checkout; stayfixed "
-        "cannot tell where the store is without it — check that `git` runs here"
+        f"`git` could not answer which checkout {quoted(str(root))} belongs to, so stayfixed "
+        "cannot tell where the store is"
     )
     return Path(common).parent if common else root
 
@@ -174,11 +174,12 @@ def _registered_worktree(root: Path) -> Path | None:
     """
     common = git_answer(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     private = git_answer(root, "rev-parse", "--path-format=absolute", "--git-dir")
-    if not (common.ran and private.ran):
+    unasked = common.cause or private.cause
+    if unasked is not None:
         raise GitUnavailable(
-            "`git` could not answer whether this is a registered worktree; stayfixed cannot "
-            "fall back to the checkout that owns the store without it — check that `git` "
-            "runs here"
+            f"`git` could not answer whether {quoted(str(root))} is a registered worktree, so "
+            f"stayfixed cannot fall back to the checkout that owns the store: {unasked}",
+            unasked,
         )
     if common.value is None or private.value is None:
         return None

@@ -13,7 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -1666,6 +1666,74 @@ def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: 
     assert made.created
     assert _exclude(root).read_bytes() == before
     assert _status(side) == []
+
+
+def _ask_in(
+    side: Path,
+    answer: Callable[[list[str], Any], subprocess.CompletedProcess[bytes]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Have `answer(args, kwargs)` stand in for git when `main_checkout` asks it in `side`, and
+    the real `git` answer every other question. Patched below `git_run`, so its own handling of
+    a call that runs out is the code under test."""
+    real = subprocess.run
+
+    def asked(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if str(side) in args and "--git-common-dir" in args:
+            return answer(args, kwargs)
+        return real(args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.gitenv.subprocess.run", asked)
+
+
+def test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On a machine at a load average of 140, one `rev-parse` in one of 65 worktrees outlived
+    # `git_run`'s five seconds and `attach` failed with "check that `git` runs here" — about a
+    # `git` that worked, naming no worktree, so the owner checked every one by hand and found
+    # nothing. The refusal now says which checkout went unanswered and that the question ran out
+    # of time, which running again can cure.
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+
+    def runs_out(args: list[str], kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(args, kwargs.get("timeout") or 0)
+
+    _ask_in(side, runs_out, monkeypatch)
+    with pytest.raises(Failure) as failed:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    message = str(failed.value)
+    assert str(side) in message
+    assert "time limit" in message
+    assert "again" in message
+    assert "check that `git` runs here" not in message
+
+
+def test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git worktree list` named the worktree; by the time `main_checkout` asked in it, it was
+    # gone. `git -C <gone> --version` exits 128 like a broken `git`, so the run failed with
+    # "check that `git` runs here". A directory that no longer exists is no checkout to link:
+    # it is skipped, as a `prunable` one already is, and the run completes.
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    real = subprocess.run
+
+    def removed_first(args: list[str], kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        shutil.rmtree(side)
+        return real(args, **kwargs)
+
+    _ask_in(side, removed_first, monkeypatch)
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert not side.exists()
+    # Non-vacuous: the owning checkout's tree was built in the same run.
+    assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
 
 
 def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path: Path) -> None:

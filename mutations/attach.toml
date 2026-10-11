@@ -2868,3 +2868,15 @@ after = '        + "",'
 reddens = [
   "tests/attach/test_commands.py::test_detach_leaves_under_the_other_home_what_is_not_its_own_and_says_where_it_could_not_look",
 ]
+
+# A worktree `git worktree list` named and that was removed before `link` asked in it is no
+# checkout to link, as a `prunable` one is not; failing the whole run for it left every later
+# worktree unlinked.
+[[mutation]]
+name = "a worktree removed mid-walk fails the whole attach"
+file = "src/stayfixed/attach/write.py"
+before = "            if unasked.cause != ASKED_IN_A_GONE_DIRECTORY:"
+after = "            if True:"
+reddens = [
+  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
+]

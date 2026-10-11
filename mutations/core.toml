@@ -2756,8 +2756,8 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/gitenv.py"
-before = "        return GitAnswer(None, ran=git_is_usable(root))"
-after = "        return GitAnswer(None)"
+before = "    if not git_is_usable(root):"
+after = "    if False:"
 reddens = [
   "tests/test_git_answers.py::test_a_git_that_fails_everything_is_not_a_repository_without_an_origin",
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_cannot_name_the_main_checkout",
@@ -3540,3 +3540,25 @@ after = """    if parts is None:
         return True"""
 reddens = ["tests/overlay/test_requires.py::test_the_floor_is_met_by_a_later_triple_or_its_own_and_never_a_pre_release_of_it[1.0.0x-True]"]
 
+# Why git gave no answer is the refusal's remedy, so each cause is its own sentence. A question
+# that ran out of time in a `git` that answers `--version` is load, cured by running again; one
+# asked in a directory that is gone is a removed worktree, which a walk skips. Read as a broken
+# `git`, each sent the owner to check a `git` that worked.
+[[mutation]]
+name = "a question that ran out of time reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    return GitAnswer(None, RAN_OUT_OF_TIME if code == -1 else None)"
+after = "    return GitAnswer(None, CANNOT_RUN if code == -1 else None)"
+reddens = [
+  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+]
+
+[[mutation]]
+name = "a question asked in a removed worktree reads as a broken git"
+file = "src/stayfixed/gitenv.py"
+before = "    if not fsops.is_dir(root):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
+  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
+]
