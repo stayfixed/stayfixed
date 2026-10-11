@@ -283,7 +283,7 @@ parent rule, the exact certificate identity, the API as the remote's anchor, the
 | `release.py pin` (Task 3) | `test_pin_twice_writes_the_same_file` | `test_pin_refuses_when_the_plugin_main_is_not_the_parent` | `test_pin_refuses_an_unreachable_remote` | — (one write, after every check) |
 | `release.py check --tag` (Task 3) | `test_a_tag_whose_pin_is_the_plugin_commit_passes` (run twice) | — | `test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding` | — |
 | `publish_plugin.py` (Tasks 4–5) | `test_a_second_publish_of_the_same_tag_pushes_nothing` | `test_a_main_that_is_not_the_parent_is_rejected` | `test_a_tag_without_the_plugin_tree_script_is_refused` | `test_a_rejected_push_moves_no_ref`, `test_a_main_that_moves_between_list_and_fetch_is_refused` |
-| CI `attest`, gated steps, smoke (Task 6) | — | Task 8 Step 2 | `test_the_gated_step_compares_the_peeled_id` | `RELEASING.md` step 7 |
+| CI `attest`, gated steps, smoke (Task 6) | — | — (CI is a function of the tag's commit, and `fetch-depth: 2` holds its first parent) | `test_the_gated_step_compares_the_peeled_id` | `RELEASING.md` step 7 |
 
 The lifecycle seat resolves every name here against the branch; a task that renames a test renames
 its cell in the same commit.
@@ -1088,6 +1088,11 @@ cherry-picked onto this branch. Rulings that change this plan's text:
 - **`release.py pin`** reads the plugin repository's `main` through `ls-remote`, which the owner's
   git configuration can redirect; it is the early check, and the publisher's read through
   GitHub's API after the tags is the authoritative one.
+
+- **The publisher's entries have a group of their own.** The final review's fix wave took
+  `mutations/tooling.toml` past the oracle's group-file cap, so it was split by its largest area,
+  as `GROUP_OF`'s rule asks: `scripts/publish_plugin.py`'s entries are `mutations/publish.toml`'s,
+  and the Global Constraint routing `scripts/*.py` to `tooling.toml` excepts the publisher.
 
 Follow-ups, to file when the pull request closes:
 
