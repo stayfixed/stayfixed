@@ -46,6 +46,11 @@ own reference.
 
 ## 2. Cutting a release
 
+**No release is cut until the marketplace entry also pins a commit.** The entry pins the plugin
+repository by its tag alone, so a tag moved in `stayfixed/stayfixed-plugin` would change what a
+user installs, with nothing changing here. Until the entry also names, by `sha`, the commit that
+holds the tree the release attests, the steps below are not run for a release.
+
 **If this is the first release, do section 3 first.** The `pypi` environment is the only human
 gate this process has, and it is a gate only once it exists: GitHub **auto-creates** an
 environment that a job names and the repository does not have, with no protection rules on it.
@@ -310,12 +315,23 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      this tree at this tag and commit; the plugin repository already holds another tree under
      the tag; or the commit built for it read back as another tree. Each says the tree is not
      the one this run attested, and the tags are spent while nothing else is (section 5).
+     Another tree under the tag is said in one of two ways: `… already has vX.Y.Z, holding
+     another tree:` with the first line where the two differ, or a refusal that opens
+     `scripts/plugin_tree.py manifest refused:` — `manifest`, the read of a commit, not
+     `render` — and names the commit the plugin repository's tag holds: a path there that `is
+     outside every plugin path`, a plugin path that `is missing at` it, or a path that `has
+     mode …, not a regular file's`; or names the object that tag points at, which `names no
+     commit in` the script's scratch copy of the plugin repository, `plugin.git`.
+     `git ls-remote git@github.com:stayfixed/stayfixed-plugin.git refs/tags/vX.Y.Z` prints the
+     object the tag names, to set beside the refusal's.
    - **Any other refusal is local: fix it and run again.** A tag that is not `vX.Y.Z`, no such
-     tag in this checkout, a tag whose `plugin.json` names another version, a render or a
-     manifest `scripts/plugin_tree.py` refused, a manifest in a format this script does not
-     read, a `git ls-remote` answer that is not an object name, or a step of the scratch
-     repository's own git (`git hash-object exited 128`, say). Running it again is safe for the
-     reason above: nothing is pushed before the one atomic push.
+     tag in this checkout, a tag whose `plugin.json` names another version, a render of this
+     repository's tag that `scripts/plugin_tree.py` refused (`scripts/plugin_tree.py render
+     refused:`), a git that failed under either read (`git ls-tree of … exited …` or
+     `git cat-file --batch exited …`), a manifest in a format this script does not read, a
+     `git ls-remote` answer that is not an object name, or a step of the scratch repository's
+     own git (`git hash-object exited 128`, say). Running it again is safe for the reason above:
+     nothing is pushed before the one atomic push.
 
    Then approve `pypi`. **Once section 3's `pypi` environment exists with a required reviewer**,
    `publish` and `github-release` both wait for it. An approval is given per environment, not
