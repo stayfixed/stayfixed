@@ -1596,7 +1596,11 @@ def test_one_plugin_repository_everywhere() -> None:
         named[f"release.yml {job}"] = _github_repository(listed[0])
     # The document's commands, each read where the owner copies it from: every `git ls-remote` of
     # a GitHub repository, every `gh api repos/<it>/…` but this repository's own and the
-    # `OWNER/REPO` placeholder of a sentence (lower case only), and the one `gh repo create`.
+    # `OWNER/REPO` placeholder of a sentence (lower case only), and the one `gh repo create`. Each
+    # must be found, or the set below holds nothing of the document's. Mutations (oracle):
+    # `mutations/`'s "RELEASING no longer creates the plugin repository" -> `created` is empty;
+    # "the plugin repository test reads no git ls-remote from RELEASING" -> `listed` is; "the
+    # plugin repository test reads no gh api path from RELEASING" -> `asked` is.
     releasing = RELEASING.read_text(encoding="utf-8")
     listed = re.findall(
         r"\bgit ls-remote\s+((?:https://github\.com/|git@github\.com:)\S+)", releasing

@@ -3255,3 +3255,28 @@ file = "RELEASING.md"
 before = "gh repo create stayfixed/stayfixed-plugin --public"
 after = "gh repo create stayfixed/stayfixed-plugins --public"
 reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+# The same test finds each of the document's three commands before it compares them: a set that
+# read none of them would hold the document to nothing.
+[[mutation]]
+name = "RELEASING no longer creates the plugin repository"
+file = "RELEASING.md"
+before = '''gh repo create stayfixed/stayfixed-plugin --public \
+  --description "The stayfixed plugin, generated from stayfixed/stayfixed at each release"
+'''
+after = ""
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+[[mutation]]
+name = "the plugin repository test reads no git ls-remote from RELEASING"
+file = "tests/test_check_workflow.py"
+before = 'r"\bgit ls-remote\s+((?:https://github\.com/|git@github\.com:)\S+)", releasing'
+after = 'r"\bgit ls-remotes\s+((?:https://github\.com/|git@github\.com:)\S+)", releasing'
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+[[mutation]]
+name = "the plugin repository test reads no gh api path from RELEASING"
+file = "tests/test_check_workflow.py"
+before = 'for name in re.findall(r"\brepos/([a-z0-9._-]+/[a-z0-9._-]+)/", releasing)'
+after = 'for name in re.findall(r"\brepos:/([a-z0-9._-]+/[a-z0-9._-]+)/", releasing)'
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
