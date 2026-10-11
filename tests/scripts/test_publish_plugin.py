@@ -415,6 +415,28 @@ def test_a_replace_ref_does_not_stand_in_for_the_tags_version(tmp_path: Path) ->
     assert runner.calls == []
 
 
+def test_a_replace_ref_on_the_tag_object_does_not_move_the_tags_commit(tmp_path: Path) -> None:
+    # Mutation (declared): `--no-replace-objects` dropped from the tag's `rev-parse` -> the
+    # annotated tag's object is read as its replacement, which points at another commit with the
+    # same version, and that commit is attested, rendered and pushed.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    tagged = tag_commit(source)
+    write(source, {"README.md": (b"# another tree under the same version\n", "100644")})
+    other = commit(source, "another commit")
+    git(source, "tag", "-a", "elsewhere", "-m", "elsewhere", other)
+    tag_object = git(source, "rev-parse", f"refs/tags/{TAG}").strip()
+    elsewhere = git(source, "rev-parse", "refs/tags/elsewhere").strip()
+    git(source, "replace", "-f", tag_object, elsewhere)
+    # The premise: through the replacement, the tag peels to the other commit.
+    assert git(source, "rev-parse", f"refs/tags/{TAG}^{{commit}}").strip() == other
+    done, runner = publish(source, remote, tmp_path / "scratch")
+    asked = [argv for argv in runner.gh.calls if argv[:3] == ["gh", "attestation", "verify"]]
+    assert len(asked) == 1, runner.gh.calls
+    assert asked[0][asked[0].index("--source-digest") + 1] == tagged
+    assert done.pushed
+    assert listed(remote, TAG, exact=True) == PLUGIN_FILES
+
+
 def test_a_missing_git_identity_is_refused_before_anything_is_pushed(tmp_path: Path) -> None:
     # Mutation: none of its own. Without an identity `git commit-tree` writes no commit and exits
     # non-zero, so there is nothing later to push; what this holds is the sentence, and that the

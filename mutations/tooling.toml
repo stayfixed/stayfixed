@@ -2288,6 +2288,20 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the publisher peels the tag through a replace ref"
+file = "scripts/publish_plugin.py"
+before = '''        root,
+        "--no-replace-objects",
+        "rev-parse",
+'''
+after = '''        root,
+        "rev-parse",
+'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_on_the_tag_object_does_not_move_the_tags_commit",
+]
+
+[[mutation]]
 name = "the publisher forces main over a commit pushed after its fetch"
 file = "scripts/publish_plugin.py"
 before = '            f"{commit}:{MAIN}",'
