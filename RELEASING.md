@@ -587,7 +587,8 @@ uv run python scripts/plugin_tree.py render --root . --rev HEAD --out DIR --mani
 **`scripts/publish_plugin.py`** is step 7's command: it resolves the tag to one commit, renders
 the tree from it, has `gh attestation verify` confirm that this repository's `release.yml`
 attested exactly that manifest for that tag at that commit, builds the plugin repository's next
-commit with git plumbing — no working tree, no index, no filters, no hooks — and reads it back
+commit with git plumbing — no template, no working tree, no index, no filters, no hooks — and
+reads it back
 whole against the same manifest. Only with `--yes` does it push that commit as `main` and as the
 tag, atomically, to `--remote` (the plugin repository by default); a re-run that finds both
 already there says so, exits `0` and pushes nothing, and any other tree under that tag is a

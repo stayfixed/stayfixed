@@ -1839,6 +1839,22 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the plugin tree reads an object through a replace ref"
+file = "scripts/plugin_tree.py"
+before = 'GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")'
+after = 'GIT_OPTIONS = ("-c", "safe.bareRepository=all")'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_replace_ref_does_not_change_what_is_read"]
+
+[[mutation]]
+name = "the plugin tree lets an explicit safe.bareRepository refuse the bare root it is named"
+file = "scripts/plugin_tree.py"
+before = 'GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")'
+after = 'GIT_OPTIONS = ("--no-replace-objects",)'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_bare_repository_is_read_under_an_explicit_safe_bare_repository",
+]
+
+[[mutation]]
 name = "the plugin tree takes a look-alike neighbour for a plugin path"
 file = "scripts/plugin_tree.py"
 before = '    return path == entry or path.startswith(entry + "/")'
@@ -2045,8 +2061,8 @@ reddens = [
 [[mutation]]
 name = "the publisher lets a branch stand in for an absent tag"
 file = "scripts/publish_plugin.py"
-before = '"--end-of-options", f"refs/tags/{tag}^{{commit}}"'
-after = '"--end-of-options", f"{tag}^{{commit}}"'
+before = '        f"refs/tags/{tag}^{{commit}}",'
+after = '        f"{tag}^{{commit}}",'
 reddens = ["tests/scripts/test_publish_plugin.py::test_an_unknown_tag_is_refused_before_anything_runs"]
 
 [[mutation]]
@@ -2183,12 +2199,55 @@ reddens = [
 [[mutation]]
 name = "the publisher lets the owner's hooks run on its push"
 file = "scripts/publish_plugin.py"
-before = '''            "-c",
-            "core.hooksPath=/dev/null",
-'''
-after = ""
+before = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]'
+after = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *args]'
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_the_commit_ignores_the_owners_line_ending_and_hook_configuration",
+]
+
+[[mutation]]
+name = "the publisher lets the owner's hooks run at its scratch repository's init"
+file = "scripts/publish_plugin.py"
+before = 'git_run(scratch, *NO_HOOKS, "init",'
+after = 'git_run(scratch, "init",'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_owners_hooks_do_not_run_in_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher finds its scratch repository from -C in its local git"
+file = "scripts/publish_plugin.py"
+before = 'return git_run(git_dir, f"--git-dir={git_dir}", *NO_HOOKS, *args,'
+after = 'return git_run(git_dir, *NO_HOOKS, *args,'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher finds its scratch repository from -C in its network git"
+file = "scripts/publish_plugin.py"
+before = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]'
+after = 'argv = ["git", "-C", str(git_dir), *NO_HOOKS, *args]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher reads the tag's version through a replace ref"
+file = "scripts/publish_plugin.py"
+before = 'git_run(root, "--no-replace-objects", "cat-file", "blob", plugin_json)'
+after = 'git_run(root, "cat-file", "blob", plugin_json)'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_stand_in_for_the_tags_version",
+]
+
+[[mutation]]
+name = "the publisher forces main over a commit pushed after its fetch"
+file = "scripts/publish_plugin.py"
+before = '            f"{commit}:{MAIN}",'
+after = '            f"+{commit}:{MAIN}",'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_moved_before_the_push_is_not_overwritten",
 ]
 
 [[mutation]]

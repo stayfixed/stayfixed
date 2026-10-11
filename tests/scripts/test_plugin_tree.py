@@ -132,6 +132,31 @@ def test_members_read_the_commit_and_not_the_disk(tmp_path: Path) -> None:
     assert listed(root) == PLUGIN_FILES
 
 
+def test_a_replace_ref_does_not_change_what_is_read(tmp_path: Path) -> None:
+    # Mutation (declared): `--no-replace-objects` dropped from the script's git options -> the
+    # README's blob is read as the one `refs/replace/` names in its place.
+    root = plugin_repository(tmp_path)
+    readme = git(root, "rev-parse", "HEAD:README.md").strip()
+    write(root, {"elsewhere.md": (b"# a replacement\n", "100644")})
+    replacement = git(root, "hash-object", "-w", "elsewhere.md").strip()
+    git(root, "replace", readme, replacement)
+    assert listed(root) == PLUGIN_FILES
+
+
+def test_a_bare_repository_is_read_under_an_explicit_safe_bare_repository(tmp_path: Path) -> None:
+    # Mutation (declared): `safe.bareRepository=all` dropped from the script's git options -> the
+    # owner's `explicit` refuses the bare repository `--root` names, as `publish_plugin.py`'s
+    # read-back names its scratch one, and the commit is reported as unresolvable.
+    bare = tmp_path / "bare.git"
+    git(tmp_path, "clone", "-q", "--bare", str(plugin_repository(tmp_path)), str(bare))
+    config = Path(os.environ["HOME"]) / ".gitconfig"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "[safe]\n\tbareRepository = explicit\n",
+        encoding="utf-8",
+    )
+    assert listed(bare) == PLUGIN_FILES
+
+
 def test_members_at_an_older_commit_are_that_commits(tmp_path: Path) -> None:
     # Mutation (declared): the listing asked of `HEAD` instead of the resolved commit -> the second
     # commit's README is read at the first.

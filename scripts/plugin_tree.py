@@ -69,6 +69,13 @@ REGULAR_MODES = frozenset({"100644", "100755"})
 # The permission bits a rendered file gets for its git mode, whatever the umask says.
 PERMISSIONS = {"100644": 0o644, "100755": 0o755}
 _CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | os.O_CLOEXEC
+# Before the subcommand on every git this script runs. `--no-replace-objects`: a `refs/replace/`
+# ref makes git read one object as another, and the tree read here is the commit's own, not what
+# a replacement says it is. `safe.bareRepository=all`: `--root` is the repository the caller
+# names, and `publish_plugin.py` names its scratch bare repository, which an owner's
+# `safe.bareRepository=explicit` would otherwise refuse, since `git -C` finds it rather than is
+# given it.
+GIT_OPTIONS = ("--no-replace-objects", "-c", "safe.bareRepository=all")
 
 
 @dataclass(frozen=True)
@@ -87,9 +94,15 @@ def _control(path: str) -> bool:
     return any(ord(char) < 0x20 or ord(char) == 0x7F for char in path)
 
 
+def _git(
+    root: Path, *args: str, stdin: str | None = None, timeout: float = QUERY_TIMEOUT_SECONDS
+) -> tuple[int, str]:
+    return git_run(root, *GIT_OPTIONS, *args, stdin=stdin, timeout=timeout)
+
+
 def commit(root: Path, rev: str) -> str:
     """The commit `rev` names in `root`, as git's full object name, or a refusal naming `rev`."""
-    code, answer = git_run(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}")
+    code, answer = _git(root, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}")
     sha = answer.removesuffix("\n")
     if code != 0 or not sha:
         raise Refusal(f"{quoted(rev)} names no commit in {root} (git rev-parse exited {code})")
@@ -100,9 +113,7 @@ def _listing(root: Path, sha: str, *, exact: bool) -> list[tuple[str, str, str]]
     """`(mode, object, path)` for every path git lists at `sha`: under the plugin's paths, or, when
     `exact`, the whole tree."""
     pathspec = () if exact else ("--", *PLUGIN_PATHS)
-    code, answer = git_run(
-        root, "ls-tree", "-r", "-z", "--full-tree", sha, *pathspec, timeout=QUERY_TIMEOUT_SECONDS
-    )
+    code, answer = _git(root, "ls-tree", "-r", "-z", "--full-tree", sha, *pathspec)
     if code != 0:
         raise Refusal(f"git ls-tree of {sha} exited {code} in {root}")
     rows = []
@@ -120,13 +131,7 @@ def _blobs(root: Path, objects: list[str]) -> dict[str, bytes]:
     """Each object's bytes, from one `git cat-file --batch`."""
     if not objects:
         return {}
-    code, answer = git_run(
-        root,
-        "cat-file",
-        "--batch",
-        stdin="".join(obj + "\n" for obj in objects),
-        timeout=QUERY_TIMEOUT_SECONDS,
-    )
+    code, answer = _git(root, "cat-file", "--batch", stdin="".join(obj + "\n" for obj in objects))
     if code != 0:
         raise Refusal(f"git cat-file --batch exited {code} in {root}")
     out, at, blobs = answer_bytes(answer), 0, {}

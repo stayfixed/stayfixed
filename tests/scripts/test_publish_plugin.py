@@ -16,6 +16,7 @@ comes from the test `HOME`'s `.gitconfig`, which `_an_owner_identity` writes for
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -348,6 +349,56 @@ def test_the_owners_init_template_does_not_reach_the_scratch_repository(tmp_path
     assert git(remote, "log", "-1", "--format=%an <%ae>", done.commit).strip() == OWNER
 
 
+def test_the_owners_hooks_do_not_run_in_the_scratch_repository(tmp_path: Path) -> None:
+    # Mutation (declared): `NO_HOOKS` dropped from the scratch repository's `init` -> the owner's
+    # `reference-transaction` hook runs as `init` writes `HEAD`. A dry run on a remote with a
+    # `main`, so the listing and the fetch run under the hook too and the push does not.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    seed(tmp_path, remote, PLUGIN_FILES, tag="v1.2.2")
+    hooks, fired = _home() / "hooks", _home() / "fired"
+    hooks.mkdir()
+    (hooks / "reference-transaction").write_text(f'#!/bin/sh\necho "$PWD $1" >> "{fired}"\n')
+    (hooks / "reference-transaction").chmod(0o755)
+    _global_config(f"[core]\n\thooksPath = {hooks}\n")
+    done, _ = publish(source, remote, tmp_path / "scratch", yes=False)
+    assert not done.pushed
+    assert not fired.exists(), fired.read_text(encoding="utf-8")
+
+
+def test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository(
+    tmp_path: Path,
+) -> None:
+    # Mutations (declared): `--git-dir` dropped from the scratch repository's local git, and from
+    # its network git -> `safe.bareRepository=explicit` refuses the bare repository `git -C`
+    # finds, at the first `rev-parse` or at the fetch of the earlier release's `main`. The
+    # read-back's half is `plugin_tree.py`'s, held in its own tests.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    before = seed(tmp_path, remote, PLUGIN_FILES, tag="v1.2.2")
+    _global_config("[safe]\n\tbareRepository = explicit\n")
+    done, _ = publish(source, remote, tmp_path / "scratch")
+    assert refs(remote) == {
+        **before,
+        "refs/heads/main": done.commit,
+        f"refs/tags/{TAG}": done.commit,
+    }
+    assert git(remote, "rev-parse", f"{done.commit}^").strip() == before["refs/heads/main"]
+
+
+def test_a_replace_ref_does_not_stand_in_for_the_tags_version(tmp_path: Path) -> None:
+    # Mutation (declared): `--no-replace-objects` dropped from the version's read -> the replaced
+    # `plugin.json` says 1.2.4, the tag `v1.2.4` on a 1.2.3 commit passes, and the render runs.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    git(source, "tag", "v1.2.4")
+    plugin_json = git(source, "rev-parse", "HEAD:.claude-plugin/plugin.json").strip()
+    write(source, {"replacement.json": (b'{"version": "1.2.4"}\n', "100644")})
+    replacement = git(source, "hash-object", "-w", "replacement.json").strip()
+    git(source, "replace", plugin_json, replacement)
+    runner = Composite()
+    with pytest.raises(Refusal, match=r"plugin\.json says 1\.2\.3"):
+        publish(source, remote, tmp_path / "scratch", tag="v1.2.4", runner=runner)
+    assert runner.calls == []
+
+
 def test_a_missing_git_identity_is_refused_before_anything_is_pushed(tmp_path: Path) -> None:
     # Mutation: none of its own. Without an identity `git commit-tree` writes no commit and exits
     # non-zero, so there is nothing later to push; what this holds is the sentence, and that the
@@ -585,6 +636,37 @@ def test_a_rejected_push_moves_no_ref(tmp_path: Path) -> None:
         publish(source, remote, tmp_path / "scratch")
     assert "tags are refused here" in str(refused.value)
     assert refs(remote) == {}
+
+
+@dataclass
+class _Racing(Composite):
+    """The composite, with `advance` run just before the push is: the remote's `main` moving
+    after the fetch the commit was built on."""
+
+    advance: Callable[[], None] = lambda: None
+
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
+        if argv[:1] == ["git"] and "push" in argv:
+            self.advance()
+        return super().launch(argv, cwd)
+
+
+def test_a_main_that_moved_before_the_push_is_not_overwritten(tmp_path: Path) -> None:
+    # Mutation (declared): the push's `main` refspec forced (`+`) -> the commit built on the
+    # fetched `main` replaces the one pushed in between, and the tag lands with it.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    seed(tmp_path, remote, PLUGIN_FILES, tag=None)
+    moved: list[str] = []
+
+    def advance() -> None:
+        later = commit(tmp_path / "seed", "pushed by someone else in the meantime")
+        git(tmp_path / "seed", "push", "-q", str(remote), f"{later}:refs/heads/main")
+        moved.append(later)
+
+    runner = _Racing(advance=advance)
+    with pytest.raises(Refusal, match="git push"):
+        publish(source, remote, tmp_path / "scratch", runner=runner)
+    assert refs(remote) == {"refs/heads/main": moved[0]}
 
 
 # --- The command line -----------------------------------------------------------------------------

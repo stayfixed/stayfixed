@@ -17,10 +17,11 @@ compares: the tag is resolved once to a commit and every later step names that c
 branch of the tag's name, a local edit or a staged file is not what is rendered; and what is
 pushed is read back whole and compared with the attested manifest byte for byte before anything
 leaves the machine. The commit is built from the attested modes and the rendered bytes with git
-plumbing in a scratch bare repository — no working tree, no index, `hash-object --no-filters`,
-and a push with `core.hooksPath` pointed at nothing — so the owner's line-ending conversion,
-attributes, excludes and hooks never touch it. CI holds no credential to the plugin repository:
-the owner's own git pushes, with the owner's own key.
+plumbing in a scratch bare repository — made without a template, no working tree, no index,
+`hash-object --no-filters`, and every git there run with `core.hooksPath` pointed at nothing — so
+the owner's init template, line-ending conversion, attributes, excludes and hooks never touch it.
+CI holds no credential to the plugin repository: the owner's own git pushes, with the owner's own
+key.
 
 **Two ways to run git, on purpose.** What reaches the remote (`ls-remote`, `fetch`, `push`), `gh`
 and `plugin_tree.py` run through the `Runner`, which keeps the owner's environment — the SSH agent
@@ -51,7 +52,13 @@ from pathlib import Path
 
 from stayfixed.cli import JSON_EPILOG, run
 from stayfixed.errors import Refusal
-from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, answer_lines, git_run
+from stayfixed.gitenv import (
+    GIT_TIMEOUT_SECONDS,
+    QUERY_TIMEOUT_SECONDS,
+    answer_bytes,
+    answer_lines,
+    git_run,
+)
 from stayfixed.printed import clipped, quoted
 from stayfixed.release.api import tag_for
 from stayfixed.result import Result
@@ -78,6 +85,10 @@ MAIN = "refs/heads/main"
 OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"
 # How many of a program's stderr lines a refusal quotes.
 QUOTED_LINES = 6
+# On every git that runs in the scratch repository, `init` included: none of the owner's hooks
+# runs there. A global `core.hooksPath` holding a `reference-transaction` hook would otherwise run
+# it as early as the `init`, and a `pre-push` one on the push.
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
 
 @dataclass(frozen=True)
@@ -113,13 +124,23 @@ def _tag_commit(root: Path, tag: str) -> tuple[str, str]:
     the one the tag is spelled from."""
     if not re.fullmatch(TAG_PATTERN, tag):
         raise Refusal(f"{quoted(tag)} is not a plain version tag, vX.Y.Z")
+    # `--no-replace-objects`, as `plugin_tree.py` reads the tree: a `refs/replace/` ref must not
+    # make the version checked here another than the one the render reads. A test holds the
+    # `cat-file`'s; on the `rev-parse` it is kept for the same reason, and no test reddens on it
+    # alone, since a replacement changes what an object holds and not the name a ref resolves to.
     code, answer = git_run(
-        root, "rev-parse", "--verify", "--end-of-options", f"refs/tags/{tag}^{{commit}}"
+        root,
+        "--no-replace-objects",
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        f"refs/tags/{tag}^{{commit}}",
     )
     sha = answer.removesuffix("\n")
     if code != 0 or len(sha) != 40:
         raise Refusal(f"no tag {tag} names a commit in {root} (git rev-parse exited {code})")
-    code, answer = git_run(root, "cat-file", "blob", f"{sha}:.claude-plugin/plugin.json")
+    plugin_json = f"{sha}:.claude-plugin/plugin.json"
+    code, answer = git_run(root, "--no-replace-objects", "cat-file", "blob", plugin_json)
     try:
         manifest = json.loads(answer_bytes(answer).decode("utf-8")) if code == 0 else None
     except ValueError:
@@ -201,7 +222,20 @@ def _first_difference(want: bytes, found: bytes) -> str:
 
 
 def _network(runner: Runner, git_dir: Path, *args: str) -> Completed:
-    return runner.launch(["git", "-C", str(git_dir), *args], git_dir)
+    """`git <args>` in the scratch repository through the `Runner`, which keeps the environment
+    the remote needs. Named by `--git-dir`, not found from `-C`: an owner's
+    `safe.bareRepository=explicit` refuses a bare repository git finds rather than is given."""
+    argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]
+    return runner.launch(argv, git_dir)
+
+
+def _scratch_git(
+    git_dir: Path, *args: str, stdin: str | None = None, timeout: float = GIT_TIMEOUT_SECONDS
+) -> tuple[int, str]:
+    """`git <args>` in the scratch repository through `git_run`: named by `--git-dir` and without
+    hooks, for `_network`'s reasons. No test reddens on `NO_HOOKS` here alone: none of
+    `rev-parse`, `hash-object`, `mktree` or `commit-tree` updates a ref or runs a hook."""
+    return git_run(git_dir, f"--git-dir={git_dir}", *NO_HOOKS, *args, stdin=stdin, timeout=timeout)
 
 
 def _remote_refs(runner: Runner, git_dir: Path, remote: str, tag: str) -> dict[str, str]:
@@ -247,7 +281,7 @@ def _already(
     if remote_tree.read_bytes() != attested:
         found = _first_difference(attested, remote_tree.read_bytes())
         raise Refusal(f"{remote} already has {tag}, holding another tree: {found}")
-    code, answer = git_run(
+    code, answer = _scratch_git(
         git_dir, "rev-parse", "--verify", "--end-of-options", f"{tagged}^{{commit}}"
     )
     commit = answer.removesuffix("\n")
@@ -268,7 +302,7 @@ def _scratch_repository(scratch: Path) -> Path:
     # remote under the `ls-remote`, the fetch and the push, all of which run in this repository.
     # Its `info/attributes` and `hooks/` would come along too, which `hash-object --no-filters`
     # and `core.hooksPath` keep out on their own.
-    code, _ = git_run(scratch, "init", "--bare", "--quiet", "--template=", str(git_dir))
+    code, _ = git_run(scratch, *NO_HOOKS, "init", "--bare", "--quiet", "--template=", str(git_dir))
     if code != 0:
         raise Refusal(f"git init --bare exited {code} in {scratch}")
     return git_dir
@@ -276,7 +310,9 @@ def _scratch_repository(scratch: Path) -> Path:
 
 def _parent(git_dir: Path, remote: str, parent: str) -> None:
     """Refuse a `main` the fetch did not bring: one moved on the remote after it was listed."""
-    code, _ = git_run(git_dir, "rev-parse", "--verify", "--end-of-options", f"{parent}^{{commit}}")
+    code, _ = _scratch_git(
+        git_dir, "rev-parse", "--verify", "--end-of-options", f"{parent}^{{commit}}"
+    )
     if code != 0:
         raise Refusal(
             f"{remote}'s main was {parent} when it was listed, and the fetch that followed did "
@@ -294,7 +330,7 @@ def _mktree(git_dir: Path, entries: list[tuple[str, str, str, str]]) -> str:
         f"{mode} {kind} {obj}\t{os.fsdecode(name.encode('utf-8'))}\0"
         for mode, kind, obj, name in entries
     )
-    code, answer = git_run(git_dir, "mktree", "-z", stdin=given, timeout=QUERY_TIMEOUT_SECONDS)
+    code, answer = _scratch_git(git_dir, "mktree", "-z", stdin=given, timeout=QUERY_TIMEOUT_SECONDS)
     tree = answer.removesuffix("\n")
     if code != 0 or not tree:
         raise Refusal(f"git mktree exited {code} in {git_dir}")
@@ -310,7 +346,7 @@ def _build(
 ) -> str:
     """The commit holding each rendered file at its manifest mode, and nothing else."""
     files = [str(rendered / path) for _, path in rows]
-    code, answer = git_run(
+    code, answer = _scratch_git(
         git_dir, "hash-object", "-w", "--no-filters", "--", *files, timeout=QUERY_TIMEOUT_SECONDS
     )
     blobs = answer_lines(answer)
@@ -332,7 +368,7 @@ def _build(
     root_tree = _mktree(git_dir, directories[""])
     lineage = ("-p", parent) if parent is not None else ()
     message = [arg for paragraph in paragraphs for arg in ("-m", paragraph)]
-    code, answer = git_run(git_dir, "commit-tree", root_tree, *lineage, *message)
+    code, answer = _scratch_git(git_dir, "commit-tree", root_tree, *lineage, *message)
     commit = answer.removesuffix("\n")
     if code != 0 or not commit:
         # `git_run` keeps git's stderr to itself, so git's own sentence is not here to quote.
@@ -396,8 +432,6 @@ def publish(
         pushed = _network(
             runner,
             git_dir,
-            "-c",
-            "core.hooksPath=/dev/null",
             "push",
             "--atomic",
             "--quiet",
