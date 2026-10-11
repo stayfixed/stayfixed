@@ -168,7 +168,9 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    instead: it fails until both name the version the tree carries, and the release workflow runs
    the suite on the tag.
 
-4. **Assemble the changelog.**
+4. **Assemble the changelog.** A fragment that names the release's own tag cannot know it and
+   spells it `vX.Y.Z`; towncrier copies a fragment's text as it is, so replace each one with the
+   tag before `notes` runs (`grep -rn 'vX\.Y\.Z' changelog.d/` finds them).
 
    ```bash
    uv run python scripts/release.py notes --version X.Y.Z --draft   # read it first; writes nothing
