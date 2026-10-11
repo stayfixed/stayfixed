@@ -1003,7 +1003,10 @@ def test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree(
     # Each script runs the hook entries it finds under `--plugin-root`, so a root of `.` runs this
     # checkout's hooks and the step passes over a runtime path the render omitted. Mutations
     # (oracle): `mutations/`'s "the smoke's hook entries run from the checkout" and "the smoke's
-    # exfiltration scenario runs from the checkout" each put `--plugin-root .` back in one step.
+    # exfiltration scenario runs from the checkout" each put `--plugin-root .` back in one step;
+    # `mutations/`'s "the smoke's hook entries take the checkout as the installed tree" and
+    # "the smoke's exfiltration scenario takes the checkout as the installed tree" each point that
+    # step's `INSTALLED` at `${{ github.workspace }}`.
     invoked = [
         (step, line)
         for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
