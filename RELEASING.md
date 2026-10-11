@@ -91,11 +91,17 @@ subfolder whose hook runs a non-shell file or a shell script that calls other fi
 is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository never holds it.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything
-   not merged is not in the release. `main` is current once `dev` is merged into it; section 5
-   says which commit a release is cut on, after a stopped release too.
+   not merged is not in the release. `main` is current once `dev` is merged into it, and a release
+   is always cut on `origin/main`, after a stopped release too (section 5, "Which commit a release
+   is cut on"): the `git log` lists what your `main` holds that `origin/main` does not, which is
+   nothing, or after a stopped release that release's commit alone, decorated with the spent tags
+   that keep it. Anything else it lists is work `git switch -C` would leave behind: stop, and put
+   it on a branch of its own first. `git switch -C` then makes your `main` `origin/main`.
 
    ```bash
-   git switch main && git pull
+   git fetch origin
+   git log --oneline --decorate origin/main..main   # nothing, or a spent release commit
+   git switch -C main origin/main
    uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
    uv run ruff check . && uv run ruff format --check . && uv run mypy
    uv run python scripts/mutation_oracle.py
@@ -156,13 +162,14 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    directs to the advisory form back to a public issue; and a PyPI project somebody else owns is
    one step 5's README would tell every reader to install.
 
-   **After a stopped release whose plugin was not pushed**, your `main` is the spent release
-   commit, whose `sha` names a plugin commit nobody pushed, so the `grep` above names another
-   commit than the plugin repository's `main`. Read the commit the spent one was cut on instead,
-   which must name that `main` (section 5, "Which commit a release is cut on"):
+   **After a stopped release whose plugin was pushed**, the plugin repository's `main` is that
+   release's plugin commit, which only the spent release commit pins, so the `grep` above names
+   the plugin commit before it. Read the spent version's tag instead, `vSPENT`, which must name
+   that `main`; step 5's `pin` refuses until section 5's restore commit puts it back into the
+   entry. After a stopped release whose plugin was not pushed, the three lines agree as they are.
 
    ```bash
-   git show 'HEAD^:.claude-plugin/marketplace.json' | grep '"sha"'
+   git show 'vSPENT:.claude-plugin/marketplace.json' | grep '"sha"'
    ```
 
 2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
@@ -276,22 +283,15 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    git add .claude-plugin/marketplace.json && git commit --amend --no-edit
    ```
 
-   **After a stopped release whose plugin was not pushed**, `main` here is the spent release
-   commit, and a new commit on it would make the unpushed plugin commit the next one's parent,
-   which `pin` refuses. Replace the first command with an amend, which keeps the spent commit's
-   first parent, then run `pin` and the second amend as written:
-
-   ```bash
-   git commit --amend -a -m "chore(release): X.Y.Z"
-   ```
-
    `pin` writes nothing unless the plugin commit's parent is `stayfixed/stayfixed-plugin`'s `main`
    — both absent for `0.3.0`, and after it whatever plugin commit was pushed last, a spent
    release's included — because that `main` moves only by fast-forward. Its refusal names both
    commits; section 5 says what each means. It lists `main` with `git ls-remote` through your own
    git, which a `url.*.insteadOf` or a `GIT_CONFIG_*` variable can point elsewhere, so its check is
    the early catch, before any tag is pushed; the publisher's in step 7, which asks GitHub's API,
-   is the one that decides.
+   is the one that decides. After a stopped release whose plugin was pushed, it refuses naming
+   that release's plugin commit as the plugin repository's `main`: make section 5's restore
+   commit, then run this step again from its first command.
 
 6. **Tag, twice, and check the tag.** `claude plugin tag` is the platform's own tool: it reads
    the version from `plugin.json` and creates `stayfixed--vX.Y.Z` here. `vX.Y.Z` is the tag
@@ -631,12 +631,13 @@ projects only.
   A red `attest` that failed for a transient Sigstore or attestation-service error is not one:
   re-run that job (`gh run rerun <id> --failed`), which computes the same plugin commit of the
   same tag and attests the same files.
-  `main` has not moved, so nothing else needs undoing. Cut X.Y.(Z+1) from step 3, the
-  `CHANGELOG.md` heading included, on the commit "Which commit a release is cut on", below,
-  names. If a Release was created for the spent version, delete it, as step 7 says for a taken
-  name.
-- **Which commit a release is cut on.** A release commit's first parent decides its plugin
-  commit's parent (section 1), and the plugin repository's `main` must be that parent, so:
+  `main` was not pushed, so nothing else needs undoing. Cut X.Y.(Z+1) from step 1, on the
+  commit "Which commit a release is cut on", below, names: step 1 leaves the spent release commit
+  behind, so steps 3 and 4 set the new version and assemble the changelog again. If a Release was
+  created for the spent version, delete it, as step 7 says for a taken name.
+- **Which commit a release is cut on.** Always `origin/main`, as step 1 leaves it. A release
+  commit's first parent decides its plugin commit's parent (section 1), and the plugin
+  repository's `main` must be that parent, so:
   - **`0.3.0`**, the first release the plugin repository holds, is cut on `main` once `dev` is
     merged into it. `main` before that merge still holds the marketplace entry `"source": "./"`,
     which `scripts/plugin_tree.py` refuses to read a pin from, since the entry's `source` is not
@@ -644,34 +645,34 @@ projects only.
     commit has no parent, as the plugin repository's absent `main` requires.
   - **Any later release** is cut on `main` once `dev` is merged into it, since `dev` carries the
     `sha` of the plugin commit pushed last ("How a release returns to `dev`", below).
-  - **After a stopped release whose plugin was not pushed**, on `main`, as the stopped one was:
-    the plugin repository's `main` has not moved, so fix the spent release commit in place, an
-    amend keeping its first parent: step 5's first command becomes
-    `git commit --amend -a -m "chore(release): X.Y.Z"`, and `pin` and the second amend follow as
-    written.
-  - **After a stopped release whose plugin was pushed**, on the spent release commit, as a new
-    commit on top of it: the plugin repository's `main` is now the spent release's plugin commit,
-    which only that commit's marketplace pins; a merge of `dev` into it, if `dev` moved, keeps it
-    the first parent. `main` here then moves over both in step 7.
+  - **After a stopped release**, on `origin/main` too, never on the spent release commit, which
+    its tags keep and step 1's `git switch -C` leaves behind. A fix merged into `origin/main`
+    since is then in the release, and step 7's `git push origin main` is a fast-forward. The
+    `changelog.d/` fragments the spent commit consumed are pending there again, so step 4's
+    `notes` assembles them under the new version, and `CHANGELOG.md` never carries the spent
+    one's heading. Step 5 runs as written. If `pin` refuses because the plugin repository's
+    `main` is the spent release's plugin commit, which no commit on `origin/main` pins, the
+    spent release's plugin was pushed: make the restore commit ("How a release returns to
+    `dev`", below), then run step 5 again from its first command.
 
   `pin` says which, before any tag is pushed: its refusal names the parent the plugin commit has
   and the commit the plugin repository's `main` holds, and `git ls-remote
-  https://github.com/stayfixed/stayfixed-plugin.git refs/tags/vX.Y.Z` lists the spent version's
+  https://github.com/stayfixed/stayfixed-plugin.git refs/tags/vSPENT` lists the spent version's
   tag there when its plugin was pushed. A patch release of an older line, `0.3.1` after `0.4.0`,
   is not supported: its plugin commit's parent is not the plugin repository's `main`, so `pin`
   refuses it, and so would the publisher.
 - **How a release returns to `dev`.** Once the release is out, branch `chore/after-release-X.Y.Z`
   from `main`, the release commit, and merge it into `dev` through a pull request. `dev`'s
   marketplace then pins the release's `sha`, and the next `dev` → `main` merge brings it back to
-  `main`, where the next release commit's first parent pins it. A merge into `main` (or into a
-  spent release commit) that resolved `.claude-plugin/marketplace.json` to a `dev` copy pinning
-  another `sha` loses it: a copy pinning none gives the next plugin commit no parent, and `pin`
-  refuses it with no parent while the plugin repository's `main` exists; a copy pinning an older
-  one, as `dev` does after a stopped release whose plugin was pushed, gives it that older parent,
-  and `pin` refuses it the same way, naming both. Nothing is spent yet, since `pin` runs before
-  the tags: put the commit the plugin repository's `main` holds — the plugin commit pushed last,
-  a spent release's if one stopped after its push — back into the entry, in a commit of its own
-  beneath the release commit, and make the release commit again:
+  `main`, where the next release commit's first parent pins it. A merge into `main` that resolved
+  `.claude-plugin/marketplace.json` to a `dev` copy pinning another `sha` loses it: a copy pinning
+  none gives the next plugin commit no parent, and `pin` refuses it with no parent while the plugin
+  repository's `main` exists; a copy pinning an older one, as `dev` does after a stopped release
+  whose plugin was pushed, gives it that older parent, and `pin` refuses it the same way, naming
+  both. Nothing is spent yet, since `pin` runs before the tags: put the commit the plugin
+  repository's `main` holds — the plugin commit pushed last, a spent release's if one stopped after
+  its push — back into the entry, in a commit of its own beneath the release commit, and make the
+  release commit again:
 
   ```bash
   git reset --soft HEAD^   # the local release commit, undone; its edits stay staged
@@ -691,8 +692,9 @@ projects only.
   push that went through for a release that then stopped — a rejected approval, a failed upload —
   stays, beside the spent tag of this repository that names it: `main` here still installs the
   previous release, but the spent `stayfixed/stayfixed@vX.Y.Z` still installs that plugin, because
-  its marketplace's `ref` and `sha` resolve. The next release is cut on the spent release commit,
-  so its plugin commit follows that one.
+  its marketplace's `ref` and `sha` resolve. The next release is cut on `origin/main` all the
+  same, and its restore commit pins that plugin commit, so the next one follows it ("Which commit
+  a release is cut on", above).
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`scripts/release.py check` fails in the workflow but passed locally.** Almost always
