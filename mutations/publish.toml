@@ -1,0 +1,1225 @@
+# The publish group: `scripts/publish_plugin.py`, the owner's one command that pushes the plugin
+# commit a release pinned to the plugin's own repository. Split from the tooling group by its
+# largest area once that group reached its cap.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# `scripts/publish_plugin.py` pushes to the plugin repository only the commit the release's tag
+# pins, built with the tag's own `scripts/plugin_tree.py` and `src/stayfixed`, attested, read back
+# whole, compared by id with what GitHub holds, and only as one atomic fast-forward of `main` with
+# the tag. It rejects (exit 1) a fact of the release no re-run changes and refuses (exit 2)
+# anything else. Each of these drops one of those conditions.
+#
+# What the publisher no longer does has no entry here. The commit's objects, its git dir's
+# template, hooks and object format, and a git that gave no answer are `scripts/plugin_tree.py`'s,
+# held by `mutations/`'s "the plugin commit's git dir is made from the owner's init template",
+# "the plugin commit runs the owner's hooks in its git dir" and "the plugin commit says a git that
+# gave no answer exited". No file is hashed, so no filter converts one. The tag's version and tree
+# are read by the tag's own code, held by `mutations/`'s "the plugin tree reads an object through
+# a replace ref". A published tag is a comparison of ids, so no manifest of the remote's commit is
+# read, and `main` is not compared once the tag names the commit.
+[[mutation]]
+name = "the publisher admits a tag with a suffix"
+file = "scripts/publish_plugin.py"
+before = "    if not re.fullmatch(TAG_PATTERN, tag):"
+after = "    if not re.match(TAG_PATTERN, tag):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_that_is_not_a_plain_version_is_refused[v1.2.3-rc1]",
+]
+
+[[mutation]]
+name = "the publisher admits a tag spelled with digits that are not ASCII"
+file = "scripts/publish_plugin.py"
+before = 'TAG_PATTERN = r"v[0-9]+\.[0-9]+\.[0-9]+"'
+after = 'TAG_PATTERN = r"v\d+\.\d+\.\d+"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tag_that_is_not_a_plain_version_is_refused[v\\u0661.2.3]",
+]
+
+[[mutation]]
+name = "the publisher lets a branch stand in for an absent tag"
+file = "scripts/publish_plugin.py"
+before = '        f"refs/tags/{tag}^{{commit}}",'
+after = '        f"{tag}^{{commit}}",'
+reddens = ["tests/scripts/test_publish_plugin.py::test_an_unknown_tag_is_refused_before_anything_runs"]
+
+[[mutation]]
+name = "the publisher peels the tag through a replace ref"
+file = "scripts/publish_plugin.py"
+before = '''        root,
+        "--no-replace-objects",
+        "rev-parse",
+'''
+after = '''        root,
+        "rev-parse",
+'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_replace_ref_on_the_tag_object_does_not_move_the_tags_commit",
+]
+
+# The tag's code runs only when GitHub's `stayfixed/stayfixed` holds the same commit under the tag,
+# and only the tag's code: its `plugin_tree.py`, its `src` first on `sys.path`, regular files only.
+[[mutation]]
+name = "the publisher runs a tag GitHub does not hold"
+file = "scripts/publish_plugin.py"
+before = "    if found != sha:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]",
+  "tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[no-such-tag]",
+]
+
+[[mutation]]
+name = "the publisher reads any failed API call as absent"
+file = "scripts/publish_plugin.py"
+before = "        if status is not None and status.group(1) in ABSENT:"
+after = "        if True:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[a-server-error]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]",
+]
+
+[[mutation]]
+name = "the publisher takes GitHub's answer that is no object name"
+file = "scripts/publish_plugin.py"
+before = "        if not isinstance(sha, str) or not re.fullmatch(SHA1, sha):"
+after = "        if not isinstance(sha, str):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[no-object-name]",
+]
+
+[[mutation]]
+name = "the publisher runs a tag that predates it"
+file = "scripts/publish_plugin.py"
+before = '    if TOOL not in paths or not any(path.startswith(f"{TOOL_PACKAGE}/") for path in paths):'
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_without_the_plugin_tree_script_is_refused"]
+
+[[mutation]]
+name = "the publisher runs a tag's tool without the tag's package"
+file = "scripts/publish_plugin.py"
+before = '    if TOOL not in paths or not any(path.startswith(f"{TOOL_PACKAGE}/") for path in paths):'
+after = "    if TOOL not in paths:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_without_the_package_its_tool_imports_is_refused"]
+
+[[mutation]]
+name = "the publisher runs the tag's code from a file that is not regular"
+file = "scripts/publish_plugin.py"
+before = "        if mode not in TOOL_MODES:"
+after = "        if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_file_that_is_not_regular_is_refused"]
+
+[[mutation]]
+name = "the publisher runs the checkout's plugin_tree.py"
+file = "scripts/publish_plugin.py"
+before = '    script = tool / "scripts" / "plugin_tree.py"'
+after = '    script = Path(__file__).resolve().with_name("plugin_tree.py")'
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_tag_s_own_plugin_tree_builds_the_commit"]
+
+[[mutation]]
+name = "the publisher puts the tag's src after the checkout's"
+file = "scripts/publish_plugin.py"
+before = '"sys.path.insert(0, src); runpy'
+after = '"sys.path.append(src); runpy'
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_tag_s_tool_imports_the_tag_s_stayfixed"]
+
+[[mutation]]
+name = "the publisher quotes the first lines of a tool that printed no JSON object"
+file = "scripts/publish_plugin.py"
+before = '            f"{_said(done, last=True)}"'
+after = '            f"{_said(done)}"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_that_prints_no_json_object_is_refused"]
+
+# What the tag's code answers is read as `commit` answers, field by field, before any of it is
+# compared, fetched or pushed.
+[[mutation]]
+name = "the publisher reads a tool answer in another format"
+file = "scripts/publish_plugin.py"
+before = '    if answer.get("format") != FORMAT:'
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_answering_in_another_format_is_refused"]
+
+[[mutation]]
+name = "the publisher takes a tool's commit that is no object name"
+file = "scripts/publish_plugin.py"
+before = '    for name in ("commit", "tree"):'
+after = '    for name in ("tree",):'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[commit]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's tree that is no object name"
+file = "scripts/publish_plugin.py"
+before = '    for name in ("commit", "tree"):'
+after = '    for name in ("commit",):'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[tree]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's parent that is no object name"
+file = "scripts/publish_plugin.py"
+before = "    if parent is not None and (not isinstance(parent, str) or not re.fullmatch(SHA1, parent)):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[parent]",
+]
+
+[[mutation]]
+name = "the publisher takes a tool's file count that is no integer"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(files, int) or isinstance(files, bool):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[files]",
+]
+
+# Exit 1 rejects the release's approval, for a fact of the release no re-run changes.
+[[mutation]]
+name = "the publisher refuses a pin it should reject"
+file = "scripts/publish_plugin.py"
+before = '''        raise Rejected(
+            f"{tag}'s marketplace does not pin'''
+after = '''        raise Refusal(
+            f"{tag}'s marketplace does not pin'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_pin_other_than_the_commit_is_rejected"]
+
+[[mutation]]
+name = "the publisher stops holding the tag to the version it releases"
+file = "scripts/publish_plugin.py"
+before = "    if tag_for(built.version)[0] != tag:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_rejected"]
+
+# Before any other gh call, gh must be at least the version every flag of the verify and its exact
+# identity match were measured on: an older gh lacking a flag fails the verify as a wrong
+# attestation does. No test reddens on `[0-9]` in `GH_VERSION` becoming `\d`: `int` reads any
+# Unicode digit the same, and gh prints ASCII ones.
+[[mutation]]
+name = "the publisher runs any gh"
+file = "scripts/publish_plugin.py"
+before = "    if tuple(int(part) for part in numbers) < GH_FLOOR:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.99.0]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-gh-older-than-measured]",
+]
+
+[[mutation]]
+name = "the publisher compares gh's version as text"
+file = "scripts/publish_plugin.py"
+before = "    if tuple(int(part) for part in numbers) < GH_FLOOR:"
+after = '    if ".".join(numbers) < floor:'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.99.0]", "tests/scripts/test_publish_plugin.py::test_a_gh_at_or_past_the_one_measured_goes_on[10.0.0]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from an answer it cannot parse"
+file = "scripts/publish_plugin.py"
+before = """    if found is None:
+        raise Refusal(
+            f"could not read gh's version"""
+after = """    if False:
+        raise Refusal(
+            f"could not read gh's version"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[two-parts]", "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[no-version-line]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from a gh that failed"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0])'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-failed-answer]"]
+
+[[mutation]]
+name = "the publisher reads a pre-release's version as the release's"
+file = "scripts/publish_plugin.py"
+before = "    if pre is not None:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-pre-release]"]
+
+[[mutation]]
+name = "the publisher refuses a pre-release gh without saying what to install"
+file = "scripts/publish_plugin.py"
+before = """            f"gh {'.'.join(numbers)}{pre} is a pre-release; install a released gh at {floor} or \""""
+after = """            f"gh {'.'.join(numbers)}{pre} is a pre-release; \""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-pre-release]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from a line's prefix"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = '    found = GH_VERSION.match(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[four-parts]"]
+[[mutation]]
+name = "the publisher reads gh's version from its whole answer"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = "    found = GH_VERSION.fullmatch(done.stdout) if done.code == 0 else None"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_at_or_past_the_one_measured_goes_on[2.101.0]"]
+
+[[mutation]]
+name = "the publisher refuses an old gh without saying what to do"
+file = "scripts/publish_plugin.py"
+before = '            "attestation flags were measured on; upgrade gh and run again; nothing was run"'
+after = '            "attestation flags were measured on; nothing was run"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]"]
+
+[[mutation]]
+name = "the publisher refuses an unreadable gh version without saying to run again"
+file = "scripts/publish_plugin.py"
+before = """            f"could not read gh's version: gh --version exited {done.code}: {_said(done)}; run "
+            "again; nothing was run\""""
+after = """            f"could not read gh's version: gh --version exited {done.code}: {_said(done)}; "
+            "nothing was run\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[no-version-line]"]
+
+[[mutation]]
+name = "the publisher asks gh whether it is logged in before asking its version"
+file = "scripts/publish_plugin.py"
+before = """    _gh_recent(runner, root)
+    _logged_in(runner, root)
+"""
+after = """    _logged_in(runner, root)
+    _gh_recent(runner, root)
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity", "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]"]
+
+# `gh` must be logged in to github.com before the first question is asked of GitHub, and is asked
+# exactly that, whole: the auth check, the source anchor and the attestation.
+[[mutation]]
+name = "the publisher goes on with a gh that is not logged in"
+file = "scripts/publish_plugin.py"
+before = """    if done.code != 0:
+        raise Refusal(
+            f"{' '.join(argv)} exited"""
+after = """    if False:
+        raise Refusal(
+            f"{' '.join(argv)} exited"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-gh-that-is-not-logged-in]",
+]
+
+[[mutation]]
+name = "the publisher asks whether gh is logged in to any host"
+file = "scripts/publish_plugin.py"
+before = '    argv = ["gh", "auth", "status", "--hostname", GITHUB, "--active"]'
+after = '    argv = ["gh", "auth", "status", "--active"]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+[[mutation]]
+name = "the publisher asks whether any of gh's accounts is logged in"
+file = "scripts/publish_plugin.py"
+before = '    argv = ["gh", "auth", "status", "--hostname", GITHUB, "--active"]'
+after = '    argv = ["gh", "auth", "status", "--hostname", GITHUB]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+[[mutation]]
+name = "the publisher asks GitHub about the tag before asking whether gh is logged in"
+file = "scripts/publish_plugin.py"
+before = """    _logged_in(runner, root)
+    _source_anchor(runner, root, tag, sha)
+"""
+after = """    _source_anchor(runner, root, tag, sha)
+    _logged_in(runner, root)
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify",
+]
+
+# A failed verify is refused whatever GitHub lists, and GitHub's listing only chooses the advice.
+# No test reddens on the classification test's "exactly one verify ran": no code path asks gh to
+# verify twice, so no one-line mutation adds a second verify; the assertion holds the weaker verify
+# a previous design ran gone.
+[[mutation]]
+name = "the publisher goes on past a refused attestation"
+file = "scripts/publish_plugin.py"
+before = "    if verified.code != 0:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-no-list]",
+]
+
+[[mutation]]
+name = "the publisher refuses a gh that is not logged in without gh's words"
+file = "scripts/publish_plugin.py"
+before = """            f"{' '.join(argv)} exited {done.code}: {_said(done)}. Every answer this trusts is \""""
+after = """            f"{' '.join(argv)} exited {done.code}. Every answer this trusts is \""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_that_is_not_logged_in_is_refused_before_verify"]
+
+[[mutation]]
+name = "the publisher matches the signer by its workflow's prefix"
+file = "scripts/publish_plugin.py"
+before = """        "--cert-identity",
+        CERT_IDENTITY.format(tag=tag),
+"""
+after = """        "--signer-workflow",
+        "stayfixed/stayfixed/.github/workflows/release.yml",
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher accepts an attestation signed by any workflow"
+file = "scripts/publish_plugin.py"
+before = """        "--cert-identity",
+        CERT_IDENTITY.format(tag=tag),
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher accepts the release workflow run for any ref"
+file = "scripts/publish_plugin.py"
+before = '    f"https://github.com/{SOURCE_REPOSITORY}/.github/workflows/release.yml@refs/tags/{{tag}}"'
+after = '    f"https://github.com/{SOURCE_REPOSITORY}/.github/workflows/release.yml"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher verifies the attestation on gh's default host"
+file = "scripts/publish_plugin.py"
+before = """        str(attested),
+        "--hostname",
+        GITHUB,
+"""
+after = """        str(attested),
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher stops binding the attestation to the tag's ref"
+file = "scripts/publish_plugin.py"
+before = '''        "--source-ref",
+        f"refs/tags/{tag}",
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher stops binding the attestation to the tag's commit"
+file = "scripts/publish_plugin.py"
+before = '''        "--source-digest",
+        sha,
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+[[mutation]]
+name = "the publisher accepts an attestation made on a self-hosted runner"
+file = "scripts/publish_plugin.py"
+before = '''        "--deny-self-hosted-runners",
+'''
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
+]
+
+# Every failed verify exits 2, whatever GitHub lists; GitHub's listing of attestations of the
+# manifest's digest only chooses the advice the refusal gives: none yet, run again once the
+# release's build and attest jobs are green; one that does not verify here, run again with a
+# working gh and network; and either answer repeated then, reject the approval. No answer at all
+# is a run to repeat.
+[[mutation]]
+name = "the publisher reads a missing attestation as a wrong one"
+file = "scripts/publish_plugin.py"
+before = "        if _attested(runner, root, digest, said):"
+after = "        if not _attested(runner, root, digest, said):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
+]
+
+[[mutation]]
+name = "the publisher asks for a rejection on a failed verify"
+file = "scripts/publish_plugin.py"
+before = """        if _attested(runner, root, digest, said):
+            raise Refusal("""
+after = """        if _attested(runner, root, digest, said):
+            raise Rejected("""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[the-attestation-does-not-verify]",
+]
+
+[[mutation]]
+name = "the publisher stops advising a rejection when an attestation keeps failing to verify"
+file = "scripts/publish_plugin.py"
+before = """                "same with a working gh and network once the release's build and attest jobs are "
+                "green, reject the release's approval\""""
+after = """                "same\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]"]
+[[mutation]]
+name = "the publisher asks about another digest than the manifest's"
+file = "scripts/publish_plugin.py"
+before = "            digest = hashlib.sha256(attested.read_bytes()).hexdigest()"
+after = "            digest = hashlib.sha256(str(attested).encode()).hexdigest()"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]",
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
+]
+
+[[mutation]]
+name = "the publisher classifies a failed verify without its words"
+file = "scripts/publish_plugin.py"
+before = '''        said = f"gh attestation verify exited {verified.code}: {_said(verified)}"'''
+after = '''        said = f"gh attestation verify exited {verified.code}"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]", "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]"]
+
+[[mutation]]
+name = "the publisher stops advising a rejection when no attestation appears once the jobs are green"
+file = "scripts/publish_plugin.py"
+before = """            "again; if it says the same then, reject the release's approval\""""
+after = """            "again\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]"]
+[[mutation]]
+name = "the publisher verifies the attestation in any repository"
+file = "scripts/publish_plugin.py"
+before = """        "--repo",
+        SOURCE_REPOSITORY,
+"""
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity"]
+[[mutation]]
+name = "the publisher asks gh to verify no file"
+file = "scripts/publish_plugin.py"
+before = """        "verify",
+        str(attested),
+"""
+after = """        "verify",
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity"]
+
+[[mutation]]
+name = "the publisher takes an answer with no attestations key for one"
+file = "scripts/publish_plugin.py"
+before = '    listed = answer.get("attestations")'
+after = '    listed = answer.get("attestations", [{}])'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-no-listing]"]
+
+[[mutation]]
+name = "the publisher hashes the manifest without catching a failed read"
+file = "scripts/publish_plugin.py"
+before = """        try:
+            digest = hashlib.sha256(attested.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise Refusal(f"{said}; and {attested} cannot be read: {fsops.said(exc)}") from None
+"""
+after = """        digest = hashlib.sha256(attested.read_bytes()).hexdigest()
+"""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_manifest_that_cannot_be_read_after_a_failed_verify_is_refused",
+]
+
+[[mutation]]
+name = "the publisher reads no attestation as an answer listing some"
+file = "scripts/publish_plugin.py"
+before = """    if answer is None:
+        return False
+"""
+after = ""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]",
+]
+
+[[mutation]]
+name = "the publisher takes an empty attestation list for one"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(listed, list) or not listed:"
+after = "    if not isinstance(listed, list):"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]",
+]
+
+[[mutation]]
+name = "the publisher takes an attestation answer that is no list for one"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(listed, list) or not listed:"
+after = "    if not listed:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-no-list]",
+]
+
+[[mutation]]
+name = "the publisher refuses an unanswered attestation query without the verify's words"
+file = "scripts/publish_plugin.py"
+before = """    try:
+        answer = _api(runner, root, path)
+    except Refusal as exc:
+        raise Refusal(
+            f"{said}; and whether GitHub holds an attestation of it: {exc}; run again"
+        ) from None
+"""
+after = """    answer = _api(runner, root, path)
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]"]
+
+[[mutation]]
+name = "the publisher refuses an unanswered attestation query without saying to run again"
+file = "scripts/publish_plugin.py"
+before = '            f"{said}; and whether GitHub holds an attestation of it: {exc}; run again"'
+after = '            f"{said}; and whether GitHub holds an attestation of it: {exc}"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[500]"]
+
+[[mutation]]
+name = "the publisher refuses an attestation listing it cannot read without saying to run again"
+file = "scripts/publish_plugin.py"
+before = """            f"{_shown(listed) if listed is not None else 'no attestations'}; run again\""""
+after = """            f"{_shown(listed) if listed is not None else 'no attestations'}\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200-listing-none]"]
+[[mutation]]
+name = "the publisher pushes without reading its commit back"
+file = "scripts/publish_plugin.py"
+before = "    if found != expected:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_manifest_changed_after_the_commit_is_rejected_by_the_read_back",
+]
+
+[[mutation]]
+name = "the publisher asks for the attestation after listing the remote"
+file = "scripts/publish_plugin.py"
+before = """    _verify(runner, root, scratch / "plugin-tree.txt", tag, sha)
+    _read_back(runner, tool, root, tag, built.commit, scratch)
+    git_dir = scratch / "plugin.git"
+    state = _remote_state(runner, root, git_dir, remote, tag)
+"""
+after = """    _read_back(runner, tool, root, tag, built.commit, scratch)
+    git_dir = scratch / "plugin.git"
+    state = _remote_state(runner, root, git_dir, remote, tag)
+    _verify(runner, root, scratch / "plugin-tree.txt", tag, sha)
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing"]
+
+[[mutation]]
+name = "the publisher treats a tag already on the remote as absent"
+file = "scripts/publish_plugin.py"
+before = "    if state.tag is not None:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[lightweight]",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[annotated]",
+  "tests/scripts/test_publish_plugin.py::test_a_second_publish_of_the_same_tag_pushes_nothing",
+]
+
+[[mutation]]
+name = "the publisher compares the tag object where the remote lists its peel"
+file = "scripts/publish_plugin.py"
+before = '    return peeled if peeled is not None else listed.get(ref)'
+after = '    return listed.get(ref)'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_annotated_tag_peeling_to_the_pin_is_already_published",
+]
+
+[[mutation]]
+name = "the publisher builds on a main that is not the parent"
+file = "scripts/publish_plugin.py"
+before = "    if main != built.parent:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-main]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-parent]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[another-main]",
+]
+
+# Exit 2 says fix something and run again: the remote's state as GitHub holds it, a `main` that
+# moved while this ran, a push the remote refused.
+[[mutation]]
+name = "the publisher classifies the default remote from ls-remote alone"
+file = "scripts/publish_plugin.py"
+before = "    if (github_main, github_tag) != (main, tagged):"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_api_decides_on_the_default_remote"]
+
+[[mutation]]
+name = "the publisher confirms another remote through GitHub's API"
+file = "scripts/publish_plugin.py"
+before = "    if remote not in (PLUGIN_REMOTE, PLUGIN_URL):"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_another_remote_is_not_confirmed"]
+
+[[mutation]]
+name = "the publisher builds on a main the fetch did not bring"
+file = "scripts/publish_plugin.py"
+before = '    if code != 0 or answer.removesuffix("\n") != main:'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_moves_between_list_and_fetch_is_refused",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[main-moves-between-list-and-fetch]",
+]
+
+[[mutation]]
+name = "the publisher lets the owner's hooks run on its push"
+file = "scripts/publish_plugin.py"
+before = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]'
+after = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *args]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_owners_hooks_do_not_run_in_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher finds its scratch repository from -C in its network git"
+file = "scripts/publish_plugin.py"
+before = 'argv = ["git", "-C", str(git_dir), f"--git-dir={git_dir}", *NO_HOOKS, *args]'
+after = 'argv = ["git", "-C", str(git_dir), *NO_HOOKS, *args]'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher finds its scratch repository from -C in its local git"
+file = "scripts/publish_plugin.py"
+before = '''        git_dir,
+        f"--git-dir={git_dir}",
+        *NO_HOOKS,
+        "rev-parse",
+'''
+after = '''        git_dir,
+        *NO_HOOKS,
+        "rev-parse",
+'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher forces main over a commit pushed after its fetch"
+file = "scripts/publish_plugin.py"
+before = '                f"{built.commit}:{MAIN}",'
+after = '                f"+{built.commit}:{MAIN}",'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_moved_before_the_push_is_not_overwritten",
+]
+
+[[mutation]]
+name = "the publisher pushes without --yes"
+file = "scripts/publish_plugin.py"
+before = "        if yes:"
+after = "        if True:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+  "tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push",
+]
+
+[[mutation]]
+name = "the publisher's push is not atomic"
+file = "scripts/publish_plugin.py"
+before = '''                "--atomic",
+'''
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]
+
+[[mutation]]
+name = "the publisher reports its commit's id as the tree it pushes"
+file = "scripts/publish_plugin.py"
+before = "    return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)"
+after = "    return Published(tag, built.files, built.commit, built.commit, outcome, state.confirmed)"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+  "tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one",
+]
+
+# The plugin repository, spelled three ways the scripts must agree on: the owner's git pushes over
+# SSH, the marketplace fetches over HTTPS, and GitHub's API names it.
+[[mutation]]
+name = "the publisher pushes to another repository than the marketplace fetches from"
+file = "scripts/publish_plugin.py"
+before = 'PLUGIN_REMOTE = "git@github.com:stayfixed/stayfixed-plugin.git"'
+after = 'PLUGIN_REMOTE = "git@github.com:stayfixed/plugin.git"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
+]
+
+[[mutation]]
+name = "the publisher confirms through another repository than the marketplace fetches from"
+file = "scripts/publish_plugin.py"
+before = 'PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"'
+after = 'PLUGIN_URL = "https://github.com/stayfixed/plugin.git"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
+]
+
+[[mutation]]
+name = "the publisher asks GitHub about another plugin repository"
+file = "scripts/publish_plugin.py"
+before = 'PLUGIN_REPOSITORY = "stayfixed/stayfixed-plugin"'
+after = 'PLUGIN_REPOSITORY = "stayfixed/plugin"'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_publisher_pushes_to_the_repository_the_marketplace_fetches_from",
+]
+
+# Every other refusal on the way, one entry each, and a sentence for the few no test reaches.
+#
+# No test reddens on these, and none is arranged: `rev-parse --verify` that fails prints nothing,
+# which the id check refuses as well, so `code != 0` in `_tag_commit` is never alone, nor is it in
+# `_follows`, where the empty answer of a failed read of the fetched `main` is not `main` either;
+# `ls-tree` of the commit `rev-parse` just resolved does not fail; and a file of the tag's code
+# that cannot be written into the directory this run just made needs a full disk. Exit 1 needs no
+# second condition: an exit 1 with an
+# object printed is the CLI frame's `Failure`, and a traceback that also exits 1 printed none, which
+# `_run_tool` refuses.
+[[mutation]]
+name = "the publisher takes a tag commit that is no SHA-1 id"
+file = "scripts/publish_plugin.py"
+before = "    if code != 0 or not re.fullmatch(SHA1, sha):"
+after = "    if code != 0:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_sha256_source_is_refused_before_anything_runs"]
+
+[[mutation]]
+name = "the publisher reads a failed API call's body as its answer"
+file = "scripts/publish_plugin.py"
+before = '        raise Refusal(f"gh api {path} exited {done.code}: {_said(done)}")'
+after = "        pass"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[a-server-error]",
+]
+
+[[mutation]]
+name = "the publisher takes an API answer that is no JSON object as no ref"
+file = "scripts/publish_plugin.py"
+before = '''    if not isinstance(answer, dict):
+        raise Refusal(f"gh api {path} answered no JSON object: {_said(done)}")
+    return answer'''
+after = '''    return answer if isinstance(answer, dict) else None'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused[not-json]",
+]
+
+[[mutation]]
+name = "the publisher peels GitHub's ref through an object that is no tag"
+file = "scripts/publish_plugin.py"
+before = '        if kind != "tag":'
+after = "        if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_github_ref_that_peels_to_no_commit_is_refused[a-blob]"]
+
+[[mutation]]
+name = "the publisher reads a tag object GitHub does not hold as no tag"
+file = "scripts/publish_plugin.py"
+before = '''        if answer is None:
+            raise Refusal(
+                f"GitHub's {repository} names the tag object'''
+after = '''        if False:
+            raise Refusal(
+                f"GitHub's {repository} names the tag object'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_github_ref_that_peels_to_no_commit_is_refused[a-missing-tag-object]",
+]
+
+[[mutation]]
+name = "the publisher peels GitHub's tags past its bound"
+file = "scripts/publish_plugin.py"
+before = "PEELS = 8"
+after = "PEELS = 1000"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_github_ref_that_peels_to_no_commit_is_refused[a-cycle]"]
+
+[[mutation]]
+name = "the publisher lists the tag's code through a replace ref"
+file = "scripts/publish_plugin.py"
+before = '''        "--no-replace-objects",
+        "ls-tree",'''
+after = '''        "ls-tree",'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_change_the_tag_s_code[tree]"]
+
+[[mutation]]
+name = "the publisher reads the tag's code through a replace ref"
+file = "scripts/publish_plugin.py"
+before = '''        "--no-replace-objects",
+        "cat-file",'''
+after = '''        "cat-file",'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_replace_ref_does_not_change_the_tag_s_code[blob]"]
+
+[[mutation]]
+name = "the publisher reads the tag's code from a cat-file that failed"
+file = "scripts/publish_plugin.py"
+before = '''    if code != 0:
+        raise Refusal(f"git cat-file --batch exited'''
+after = '''    if False:
+        raise Refusal(f"git cat-file --batch exited'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_cat_file_answer_that_is_not_the_tag_s_code_is_refused[an-exit]",
+]
+
+[[mutation]]
+name = "the publisher reads the tag's code from an answer that is no blob"
+file = "scripts/publish_plugin.py"
+before = '        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():'
+after = "        if len(header) != 3 or not header[2].isdigit():"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_cat_file_answer_that_is_not_the_tag_s_code_is_refused[not-a-blob]",
+]
+
+[[mutation]]
+name = "the publisher writes the tag's code from an answer cut short"
+file = "scripts/publish_plugin.py"
+before = "        if len(content) != int(header[2]):"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_cat_file_answer_that_is_not_the_tag_s_code_is_refused[cut-short]",
+]
+
+[[mutation]]
+name = "the publisher writes the tag's code into a directory it did not make"
+file = "scripts/publish_plugin.py"
+before = '''    try:
+        tool.mkdir()
+    except OSError as exc:
+        raise Refusal(f"{tool} cannot be made: {fsops.said(exc)}") from None
+'''
+after = '''    tool.mkdir(exist_ok=True)
+'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_directory_already_there_is_refused"]
+
+[[mutation]]
+name = "the publisher reads a tool that printed no JSON object"
+file = "scripts/publish_plugin.py"
+before = '''    if not isinstance(answer, dict):
+        raise Refusal(
+            f"the tag's {TOOL} {args[0]} exited'''
+after = '''    if False:
+        raise Refusal(
+            f"the tag's {TOOL} {args[0]} exited'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_that_prints_no_json_object_is_refused"]
+
+[[mutation]]
+name = "the publisher takes a tool's version that is no string"
+file = "scripts/publish_plugin.py"
+before = "    if not isinstance(version, str):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_tool_answer_that_is_not_an_object_name_is_refused[version]",
+]
+
+[[mutation]]
+name = "the publisher reads a tool that refused as an answer"
+file = "scripts/publish_plugin.py"
+before = '''    if code != 0:
+        raise Refusal(f"the tag's {TOOL} commit exited'''
+after = '''    if False:
+        raise Refusal(f"the tag's {TOOL} commit exited'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_that_refuses_is_refused"]
+
+[[mutation]]
+name = "the publisher compares a read-back that failed"
+file = "scripts/publish_plugin.py"
+before = '''    if code != 0:
+        said = quoted(str(answer.get("summary")))'''
+after = '''    if False:
+        said = quoted(str(answer.get("summary")))'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_read_back_that_cannot_be_made_is_refused[git-dir]"]
+
+[[mutation]]
+name = "the publisher reads the manifests without catching a failed read"
+file = "scripts/publish_plugin.py"
+before = '''    try:
+        expected, found = (scratch / "plugin-tree.txt").read_bytes(), readback.read_bytes()
+    except OSError as exc:
+        raise Refusal(f"the manifests in {scratch} cannot be read: {fsops.said(exc)}") from None
+'''
+after = '''    expected, found = (scratch / "plugin-tree.txt").read_bytes(), readback.read_bytes()
+'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_read_back_that_cannot_be_made_is_refused[manifest]"]
+
+[[mutation]]
+name = "the publisher reads a remote it could not list as empty"
+file = "scripts/publish_plugin.py"
+before = "    if listed.code != 0:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_an_unreachable_remote_is_refused"]
+
+[[mutation]]
+name = "the publisher checks every line ls-remote prints for an object name"
+file = "scripts/publish_plugin.py"
+before = """        if ref not in wanted:
+            continue
+"""
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one"]
+
+[[mutation]]
+name = "the publisher takes a listing that names no object"
+file = "scripts/publish_plugin.py"
+before = "        if not re.fullmatch(OBJECT_NAME, sha):"
+after = "        if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_listing_that_names_no_object_is_refused"]
+
+[[mutation]]
+name = "the publisher fetches a main the first release does not have"
+file = "scripts/publish_plugin.py"
+before = '''    if main is None:
+        return
+'''
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one"]
+
+[[mutation]]
+name = "the publisher goes on past a failed fetch"
+file = "scripts/publish_plugin.py"
+before = "    if fetched.code != 0:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_fetch_that_fails_is_refused"]
+
+[[mutation]]
+name = "the publisher calls another commit under the tag published"
+file = "scripts/publish_plugin.py"
+before = "        if state.tag != built.commit:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[lightweight]",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[annotated]",
+]
+
+[[mutation]]
+name = "the publisher reports a refused push as pushed"
+file = "scripts/publish_plugin.py"
+before = "            if pushed.code != 0:"
+after = "            if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_rejected_push_moves_no_ref"]
+
+# On the default remote, the pushed tag is read back through GitHub's API and must name the commit:
+# a push GitHub does not show is a run to repeat or a redirect to remove, never "pushed".
+[[mutation]]
+name = "the publisher does not read the pushed tag back"
+file = "scripts/publish_plugin.py"
+before = """            if state.confirmed:
+                _landed("""
+after = """            if False:
+                _landed("""
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]",
+  "tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-pushed-tag-github-does-not-list]",
+]
+
+[[mutation]]
+name = "the publisher reads a pushed tag back from GitHub on another remote"
+file = "scripts/publish_plugin.py"
+before = """            if state.confirmed:
+                _landed("""
+after = """            if True:
+                _landed("""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one"]
+
+[[mutation]]
+name = "the publisher takes a pushed tag GitHub does not list for one elsewhere"
+file = "scripts/publish_plugin.py"
+before = """    if found is None:
+        if _tagged("""
+after = """    if False:
+        if _tagged("""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming the redirect"
+file = "scripts/publish_plugin.py"
+before = """            f"else published {tag} at the same moment, or the push went elsewhere, through a "
+            "url.*.insteadOf, a url.*.pushInsteadOf or a remote.<url>.pushurl in your git "
+            "configuration or a GIT_CONFIG_* variable; find which, fix it and run again\""""
+after = """            f"else published {tag} at the same moment, or the push went elsewhere; find which, "
+            "fix it and run again\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming a publish at the same moment"
+file = "scripts/publish_plugin.py"
+before = """: someone "
+            f"else published {tag} at the same moment, or the push went elsewhere, through a \""""
+after = """: the push "
+            f"went elsewhere, through a \""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming a rewrite of the push"
+file = "scripts/publish_plugin.py"
+before = '''            "url.*.insteadOf, a url.*.pushInsteadOf or a remote.<url>.pushurl in your git "'''
+after = '''            "url.*.insteadOf in your git "'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+# A rewrite of the push alone (`url.*.pushInsteadOf`, `remote.<url>.pushurl`) leaves `ls-remote` and
+# the API agreeing before the push; after it, a tag GitHub does not list is listed once by
+# `ls-remote`, by its exact names: named there at the commit, GitHub has not listed it yet; not
+# named there either, the push went elsewhere, and running again would send it there again.
+[[mutation]]
+name = "the publisher reads a push that went elsewhere as one GitHub has not listed yet"
+file = "scripts/publish_plugin.py"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-the-first-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-a-later-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl-the-first-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl-a-later-release]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-push-sent-elsewhere]",
+]
+
+[[mutation]]
+name = "the publisher reads a pushed tag listed at another commit as one GitHub has not listed yet"
+file = "scripts/publish_plugin.py"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
+after = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) is None:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-pushed-tag-listed-at-another-commit]",
+]
+
+[[mutation]]
+name = "the publisher says every pushed tag GitHub does not list went elsewhere"
+file = "scripts/publish_plugin.py"
+before = "        if _tagged(_listed(runner, git_dir, remote, *_tag_refs(tag)), tag) != commit:"
+after = "        if True:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher lists the pushed tag by a pattern"
+file = "scripts/publish_plugin.py"
+before = '''    return f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"'''
+after = '''    return tag, f"{tag}^{{}}"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher names no push rewrite beside the redirect"
+file = "scripts/publish_plugin.py"
+before = '''            "the redirect, and any url.*.pushInsteadOf or remote.<url>.pushurl that sends the "
+            "push elsewhere the same way, or run again"'''
+after = '''            "the redirect, or run again"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_api_decides_on_the_default_remote"]
+
+# A rejection that rests on `ls-remote` alone, on a remote other than the default, says so, as the
+# summary of such a run does.
+[[mutation]]
+name = "the publisher rejects a main it read from ls-remote alone without saying so"
+file = "scripts/publish_plugin.py"
+before = '''            f"{_unconfirmed(state)}; the plugin repository's main moves only by fast-forward. "'''
+after = '''            "; the plugin repository's main moves only by fast-forward. "'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-main]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-parent]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[another-main]",
+]
+
+[[mutation]]
+name = "the publisher rejects a tag it read from ls-remote alone without saying so"
+file = "scripts/publish_plugin.py"
+before = '''                f"{remote} holds {tag} at {state.tag}{_unconfirmed(state)}, and the plugin "'''
+after = '''                f"{remote} holds {tag} at {state.tag}, and the plugin "'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[lightweight]",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[annotated]",
+]
+
+[[mutation]]
+name = "the publisher says a rejection GitHub's API confirmed is not confirmed"
+file = "scripts/publish_plugin.py"
+before = '''    return "" if state.confirmed else " (not confirmed through GitHub's API)"'''
+after = '''    return " (not confirmed through GitHub's API)"'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_rejection_on_the_default_remote_is_not_said_to_be_unconfirmed",
+]
+
+# The advice for a local tag that is not GitHub's: one GitHub holds at another commit may not be the
+# owner's, and fetching it over the local one runs its code next, so it is investigated first and
+# fetched over the local one only when that is the stale one, by `--force`, since a plain
+# `git fetch --tags` refuses to clobber an existing tag; one GitHub lacks was not pushed, and no
+# fetch brings it.
+[[mutation]]
+name = "the publisher advises fetching over the local tag without investigating GitHub's"
+file = "scripts/publish_plugin.py"
+before = '''            else f"If you did not push GitHub's {tag}, investigate it before you fetch or run "
+            "anything; if yours is the stale one, fetch GitHub's over it "'''
+after = '''            else "Fetch GitHub's tags over yours "'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]"]
+
+[[mutation]]
+name = "the publisher advises a fetch git refuses for a tag that differs"
+file = "scripts/publish_plugin.py"
+before = '''            "(git fetch --tags --force) and run again"'''
+after = '''            "(git fetch --tags) and run again"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]"]
+
+[[mutation]]
+name = "the publisher advises a fetch for a tag GitHub does not hold"
+file = "scripts/publish_plugin.py"
+before = '''            "Push the tags (RELEASING.md section 2, step 6) and run again"'''
+after = '''            "Fetch GitHub's tags over yours (git fetch --tags --force) and run again"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[no-such-tag]"]
+
+[[mutation]]
+name = "the publisher takes any pushed tag GitHub lists for its own"
+file = "scripts/publish_plugin.py"
+before = "    if found != commit:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+[[mutation]]
+name = "the publisher says a remote it read only through ls-remote is confirmed"
+file = "scripts/publish_plugin.py"
+before = "    if not done.confirmed:"
+after = "    if False:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_cli_says_what_a_dry_run_would_push"]
+
+# Run by an interpreter without this repository's `stayfixed`, the publisher fails on its first
+# import, before the CLI frame exists, and a traceback's exit `1` asks the owner to reject the
+# release; it refuses with `2` itself.
+[[mutation]]
+name = "the publisher exits 1 when its package cannot be imported"
+file = "scripts/publish_plugin.py"
+before = "    sys.exit(2)"
+after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+[[mutation]]
+name = "the publisher refuses a missing package without saying to run it through uv"
+file = "scripts/publish_plugin.py"
+before = 'f"scripts/publish_plugin.py: refused: {exc}; run it with `uv run python "'
+after = 'f"scripts/publish_plugin.py: refused: {exc}; run it with `python3 "'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+# The read-back calls `_first_difference` only once the two manifests differ; two equal ones are a
+# caller's bug, raised rather than worded as a difference inside a rejection.
+[[mutation]]
+name = "the publisher words two equal manifests as a difference"
+file = "scripts/publish_plugin.py"
+before = '''    raise AssertionError("_first_difference was handed two equal manifests; its caller compares")'''
+after = '''    return "the two manifests are the same"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_two_equal_manifests_have_no_first_difference"]
+
+# The publisher spells two of `plugin_tree.py`'s constants again, since no script imports another:
+# the manifest's first line, and a full object name of either hash.
+[[mutation]]
+name = "the publisher reads another manifest format than plugin_tree.py writes"
+file = "scripts/publish_plugin.py"
+before = 'FORMAT = "stayfixed-plugin-tree 1"'
+after = 'FORMAT = "stayfixed-plugin-tree 2"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
+
+[[mutation]]
+name = "the publisher takes no 64-character object name for one"
+file = "scripts/publish_plugin.py"
+before = 'OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"'
+after = 'OBJECT_NAME = r"[0-9a-f]{40}"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]

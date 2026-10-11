@@ -234,6 +234,10 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 needs_ci_workflow = pytest.mark.skipif(
     not CI_WORKFLOW.is_file(), reason="ci.yml is not in the sdist"
 )
+SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
+needs_smoke_workflow = pytest.mark.skipif(
+    not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist"
+)
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 _SHORT_VERSION = re.compile(
@@ -314,6 +318,27 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         line for line in ci.splitlines() if any(gate in line for gate in required) and "||" in line
     ]
     assert excused == [], excused
+
+
+def test_the_release_is_cut_on_origin_main_whatever_the_local_main_holds() -> None:
+    """After a stopped release the local `main` holds the spent release commit, which
+    `origin/main` lacks. Step 1 pulled, which exits 128 on the divergent branches once a fix has
+    reached `origin/main`, or merges and leaves the spent commit as the next release's first
+    parent; it now lists what `origin/main` lacks and resets `main` to `origin/main`.
+
+    Mutations (oracle): `mutations/`'s "the release pulls main again" -> the three commands are
+    gone; "the release pulls after it cuts on origin/main" -> a `git pull` follows them.
+    """
+    match = _RELEASE_BLOCK.search(RELEASING.read_text(encoding="utf-8"))
+    assert match is not None, "RELEASING.md's first step has no bash block"
+    lines = [line.split("#")[0].strip() for line in match.group(1).splitlines()]
+    cut = [line for line in lines if line.startswith("git ")][:3]
+    assert cut == [
+        "git fetch origin",
+        "git log --oneline --decorate origin/main..main",
+        "git switch -C main origin/main",
+    ], cut
+    assert not any("git pull" in line for line in lines), lines
 
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"

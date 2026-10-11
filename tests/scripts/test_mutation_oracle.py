@@ -1216,8 +1216,8 @@ GROUP_FILE_MAX_BYTES = FILE_MAX_BYTES * 3 // 4
 # history, so the last quarter, 64 KiB, is about a hundred entries of headroom. When a group crosses
 # it, split that group by its largest area: a deliberate edit to `GROUP_OF`. The cap was sized
 # while the repository root was the plugin; the plugin's tree (`scripts/plugin_tree.py`) no longer
-# holds `mutations/`. The cap is kept as it was sized; whether it still earns its place is an open
-# question.
+# holds `mutations/`. The cap is kept as it was sized; whether it still earns its place is the open
+# question CONTRIBUTING.md, "Tests", records.
 
 
 def test_the_oracle_reads_every_group_file() -> None:

@@ -225,12 +225,8 @@ jobs:
       - name: Install
         run: uv sync --locked
       - name: The plugin tree, rendered from this commit
-        # Read from the commit and not from the disk, as the release renders it; the manifest
-        # file is written beside the tree because the command asks for one, and nothing here
-        # reads it.
-        run: |
-          uv run python scripts/plugin_tree.py render --root . --rev HEAD \
-            --out "$RUNNER_TEMP/plugin" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
+        # Read from the commit and not from the disk, as the release reads it.
+        run: uv run python scripts/plugin_tree.py render --root . --rev HEAD --out "$RUNNER_TEMP/plugin"
       - name: Validate the rendered manifests and this repository's catalog
         # The catalog stays here and names the plugin repository by a `url` source; validation
         # reads it without fetching that source, so it is validated where it is.
@@ -238,6 +234,21 @@ jobs:
           claude plugin validate "$RUNNER_TEMP/plugin/.claude-plugin/plugin.json" --strict
           claude plugin validate "$RUNNER_TEMP/plugin/.codex-plugin/plugin.json"
           claude plugin validate .claude-plugin/marketplace.json --strict
+      - name: A catalog whose entry pins a commit by sha validates
+        # A release commit's entry pins the plugin repository's commit by `sha` beside its `ref`,
+        # and the catalog on `dev` may pin none, so the shape a release ships is validated on every
+        # change: a scratch copy of the catalog whose entry carries a `sha`.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pinned/.claude-plugin"
+          python3 - .claude-plugin/marketplace.json "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json" <<'PY'
+          import json, sys
+          catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+          [entry] = catalog["plugins"]
+          entry["source"]["sha"] = "0" * 40
+          with open(sys.argv[2], "w", encoding="utf-8") as out:
+              json.dump(catalog, out, indent=2)
+          PY
+          claude plugin validate "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json" --strict
       - name: The platform's own tag tool agrees with the manifests
         # `claude plugin tag --dry-run` compares `plugin.json`'s version with each marketplace
         # entry that carries a version of its own, and this repository's entry carries none: its
