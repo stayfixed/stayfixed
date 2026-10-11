@@ -153,8 +153,9 @@ class RemoteState:
     confirmed: bool
 
 
-def _said(done: Completed) -> str:
-    """The first lines a program wrote to stderr (else stdout), each quoted, or its exit code.
+def _said(done: Completed, *, last: bool = False) -> str:
+    """The first lines a program wrote to stderr (else stdout), or with `last` its last ones, as a
+    traceback ends with what went wrong; each quoted, or its exit code.
 
     Each line through `clipped`: `gh` and `git` print what the remote says, and a line break
     followed by `::error::`, or an escape sequence, is not text this script prints raw."""
@@ -162,7 +163,8 @@ def _said(done: Completed) -> str:
     lines = lines or [line for line in done.stdout.split("\n") if line.strip()]
     if not lines:
         return f"exit {done.code}, and nothing said"
-    return " / ".join(clipped(line.strip()) for line in lines[:QUOTED_LINES])
+    shown = lines[-QUOTED_LINES:] if last else lines[:QUOTED_LINES]
+    return " / ".join(clipped(line.strip()) for line in shown)
 
 
 def _shown(value: object) -> str:
@@ -351,7 +353,7 @@ def _run_tool(runner: Runner, tool: Path, root: Path, *args: str) -> tuple[int, 
     if not isinstance(answer, dict):
         raise Refusal(
             f"the tag's {TOOL} {args[0]} exited {done.code} and printed no JSON object: "
-            f"{_said(done)}"
+            f"{_said(done, last=True)}"
         )
     return done.code, answer
 
@@ -366,16 +368,14 @@ def _built(answer: dict[str, object]) -> Built:
         value = answer.get(name)
         if not isinstance(value, str) or not re.fullmatch(SHA1, value):
             raise Refusal(f"{said} {_shown(value)} for {name}, which is no commit id")
-    for name in ("parent", "pinned"):
-        value = answer.get(name)
-        if value is not None and (not isinstance(value, str) or not re.fullmatch(SHA1, value)):
-            raise Refusal(f"{said} {_shown(value)} for {name}, which is neither null nor an id")
-    files, version = answer.get("files"), answer.get("version")
+    # `pinned` is not read: `--require-pin` has compared it with `commit` in the tag's code.
+    parent, files, version = answer.get("parent"), answer.get("files"), answer.get("version")
+    if parent is not None and (not isinstance(parent, str) or not re.fullmatch(SHA1, parent)):
+        raise Refusal(f"{said} {_shown(parent)} for parent, which is neither null nor an id")
     if not isinstance(files, int) or isinstance(files, bool):
         raise Refusal(f"{said} a {type(files).__name__} for files, which is no count")
     if not isinstance(version, str):
         raise Refusal(f"{said} {_shown(version)} for version, which is no version")
-    parent = answer["parent"]
     return Built(
         version=version,
         files=files,
@@ -405,9 +405,10 @@ def _build(runner: Runner, tool: Path, root: Path, tag: str, sha: str, scratch: 
         "--require-pin",
     )
     summary = quoted(str(answer.get("summary")))
-    # Exit 1 with the frame's `failed` object is `--require-pin`'s, and only that: a traceback
-    # exits 1 too, and printed no object.
-    if code == 1 and answer.get("error") == "failed":
+    # Exit 1 with an object printed is the frame's `Failure`, which only `--require-pin` raises. A
+    # traceback before the frame runs exits 1 too, and `_run_tool` has refused it already: it
+    # printed no object.
+    if code == 1:
         raise Rejected(
             f"{tag}'s marketplace does not pin the plugin commit its own tree makes, so no "
             f"publish of {tag} matches its pin: {summary}. Reject the release's approval"
@@ -536,7 +537,8 @@ def _remote_state(runner: Runner, root: Path, git_dir: Path, remote: str, tag: s
             f"{tagged or 'absent'}, where GitHub's {PLUGIN_REPOSITORY} has main "
             f"{github_main or 'absent'} and {tag} {github_tag or 'absent'}: your git reaches "
             "another repository, through a redirect (a url.*.insteadOf in your git "
-            "configuration, or a GIT_CONFIG_* variable). Remove it and run again"
+            "configuration, or a GIT_CONFIG_* variable), or main moved while this ran. Remove "
+            "the redirect, or run again"
         )
     return RemoteState(main, tagged, confirmed=True)
 

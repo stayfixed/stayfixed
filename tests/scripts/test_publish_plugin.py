@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import Refusal
 from stayfixed.runner import Completed, subprocess_runner
 from tests.gitfixture import git, git_bytes, needs_git, run_git
 from tests.plugintree import (
@@ -290,9 +291,10 @@ def plugin_api(runner: Composite) -> list[list[str]]:
 
 
 def test_the_commit_pushed_is_the_pinned_one(source: Path, tmp_path: Path) -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit builds every file without its
+    # Mutations (declared): `mutations/`'s "the plugin commit builds every file without its
     # executable bit" -> the tag's own `plugin_tree.py`, this branch's, makes another commit than
-    # the pin and the run is rejected before anything is pushed.
+    # the pin and the run is rejected before anything is pushed; "the publisher fetches a main the
+    # first release does not have" -> the fetch of the empty remote's `main` fails.
     remote = bare_remote(tmp_path)
     done, _ = publish(source, remote, tmp_path / "scratch")
     expected = hashed(source, literal(plugin_tree_id(source, TAG), None))
@@ -587,9 +589,11 @@ def test_an_api_answer_that_is_neither_a_ref_nor_its_absence_is_refused(
     source: Path, tmp_path: Path, answer: Completed, said: str
 ) -> None:
     # Mutations (declared): `mutations/`'s "the publisher reads any failed API call as absent" ->
-    # the server error reads as GitHub holding no such tag; "the publisher takes GitHub's answer
-    # that is no object name" -> `+main` is compared with the tag's commit. Either way the
-    # refusal says the local tag is not GitHub's, which is not what happened.
+    # the server error reads as GitHub holding no such tag; "the publisher reads a failed API
+    # call's body as its answer" -> the error's body is read for an object it does not hold;
+    # "the publisher takes an API answer that is no JSON object as no ref" -> the proxy's page
+    # reads as no such tag; "the publisher takes GitHub's answer that is no object name" ->
+    # `+main` is compared with the tag's commit. Each refusal then names another cause.
     asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
     runner = runner_for(source, answers={asked: answer})
     with pytest.raises(Refusal) as refused:
@@ -678,10 +682,11 @@ def test_the_tag_s_tool_imports_the_tag_s_stayfixed(
 @pytest.mark.parametrize(
     ("name", "value", "shown"),
     [
-        pytest.param("commit", "+main", "'+main'", id="commit"),
-        pytest.param("tree", "+main", "'+main'", id="tree"),
-        pytest.param("parent", "+main", "'+main'", id="parent"),
-        pytest.param("files", "10", "a str", id="files"),
+        pytest.param("commit", '"+main"', "'+main'", id="commit"),
+        pytest.param("tree", '"+main"', "'+main'", id="tree"),
+        pytest.param("parent", '"+main"', "'+main'", id="parent"),
+        pytest.param("files", '"10"', "a str", id="files"),
+        pytest.param("version", "123", "a int", id="version"),
     ],
 )
 def test_a_tool_answer_that_is_not_an_object_name_is_refused(
@@ -691,14 +696,16 @@ def test_a_tool_answer_that_is_not_an_object_name_is_refused(
     # that is no object name" -> `+main` reaches the read-back, which refuses it in the tool's
     # words; "the publisher takes a tool's tree that is no object name" and "the publisher takes
     # a tool's file count that is no integer" -> the run goes through; "the publisher takes a
-    # tool's parent that is no object name" -> `+main` is compared with `main` and rejected.
+    # tool's parent that is no object name" -> `+main` is compared with `main` and rejected;
+    # "the publisher takes a tool's version that is no string" -> the integer reaches the
+    # version's wording and escapes as an internal error. `value` is the Python the tag's script
+    # writes into its answer.
     data = b'{"format": FORMAT, **asdict(found)}'
-    with_tool(source, patched(data, data[:-1] + f', "{name}": "{value}"}}'.encode()))
+    with_tool(source, patched(data, data[:-1] + f', "{name}": {value}}}'.encode()))
     remote = bare_remote(tmp_path)
     runner = runner_for(source)
     with pytest.raises(Refusal) as refused:
         publish(source, remote, tmp_path / "scratch", runner=runner)
-    assert not isinstance(refused.value, Failure)
     assert f"commit answered {shown} for {name}," in str(refused.value), str(refused.value)
     assert ran(runner, "push") == []
     assert refs(remote) == {}
@@ -752,9 +759,10 @@ def test_a_tag_whose_version_is_another_is_rejected(source: Path, tmp_path: Path
 def test_another_commit_under_the_tag_is_rejected(
     source: Path, tmp_path: Path, annotated: bool
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher treats a tag already on the remote as
+    # Mutations (declared): `mutations/`'s "the publisher treats a tag already on the remote as
     # absent" -> the run goes on to push, and the remote refuses the tag that exists, with git's
-    # sentence and exit 2.
+    # sentence and exit 2; "the publisher calls another commit under the tag published" -> the
+    # run says "already" of another commit.
     remote = bare_remote(tmp_path)
     some = remote_commit(remote, "another commit under the tag")
     if annotated:
@@ -905,10 +913,9 @@ class _Listing(Composite):
 
 
 def test_a_listing_that_names_no_object_is_refused(source: Path, tmp_path: Path) -> None:
-    # Mutation: the object-name check dropped -> the listing is taken for a `main`, compared with
-    # the parent and rejected rather than refused. No entry: what the check keeps out is a name the
-    # remote chose reaching `fetch`, and a remote that lies about `main` is refused by the fetch's
-    # check or by the atomic push as well.
+    # Mutation (declared): `mutations/`'s "the publisher takes a listing that names no object" ->
+    # the listing is taken for a `main`, compared with the parent and rejected rather than
+    # refused, where a remote that names no object is a remote to fix.
     gh = runner_for(source).gh
     runner = _Listing(gh=gh, listing="--upload-pack=x\trefs/heads/main\n")
     with pytest.raises(Refusal, match="answered '--upload-pack=x' for refs/heads/main"):
@@ -936,8 +943,9 @@ def test_a_main_that_moves_between_list_and_fetch_is_refused(source: Path, tmp_p
 
 
 def test_a_rejected_push_moves_no_ref(source: Path, tmp_path: Path) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher's push is not atomic" -> the remote takes
-    # `main` and refuses only the tag.
+    # Mutations (declared): `mutations/`'s "the publisher's push is not atomic" -> the remote takes
+    # `main` and refuses only the tag; "the publisher reports a refused push as pushed" -> no
+    # refusal at all.
     remote = bare_remote(tmp_path)
     hook = remote / "hooks" / "update"
     hook.write_text(
@@ -946,7 +954,6 @@ def test_a_rejected_push_moves_no_ref(source: Path, tmp_path: Path) -> None:
     hook.chmod(0o755)
     with pytest.raises(Refusal, match="git push") as refused:
         publish(source, remote, tmp_path / "scratch")
-    assert not isinstance(refused.value, Failure)
     assert "tags are refused here" in str(refused.value)
     assert refs(remote) == {}
 
@@ -1000,6 +1007,7 @@ def test_the_api_decides_on_the_default_remote(
     with pytest.raises(Refusal, match="redirect") as refused:
         publish(source, default, tmp_path / "hidden", runner=hidden)
     assert "insteadOf" in str(refused.value)
+    assert "or main moved while this ran" in str(refused.value)
     assert ran(hidden, "push") == []
 
 
@@ -1009,6 +1017,216 @@ def test_another_remote_is_not_confirmed(source: Path, tmp_path: Path) -> None:
     done, runner = publish(source, bare_remote(tmp_path), tmp_path / "scratch", yes=False)
     assert (done.outcome, done.confirmed) == ("would-push", False)
     assert plugin_api(runner) == []
+
+
+@pytest.mark.parametrize("replaced", ["blob", "tree"])
+def test_a_replace_ref_does_not_change_the_tag_s_code(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replaced: str
+) -> None:
+    # The commit `_source_anchor` held to GitHub's stays the same under a `refs/replace/` entry,
+    # so the code read out of it must be that commit's own. Mutations (declared): `mutations/`'s
+    # "the publisher lists the tag's code through a replace ref" -> the replaced `scripts` tree
+    # names the planted script; "the publisher reads the tag's code through a replace ref" -> the
+    # replaced blob is the planted script. Either way the planted script runs.
+    marker = b"from __future__ import annotations\n"
+    line = b'import os; open(os.environ["PUBLISH_TEST_PLANTED"], "w").write("ran")\n'
+    planted = tmp_path / "planted.txt"
+    monkeypatch.setenv("PUBLISH_TEST_PLANTED", str(planted))
+    pin = pinned_at(source, TAG)
+    write(source.parent, {"planted.py": (patched(marker, marker + line), "100755")})
+    blob = git(source, "hash-object", "-w", str(source.parent / "planted.py")).strip()
+    original = git(source, "rev-parse", f"{TAG}:scripts/plugin_tree.py").strip()
+    if replaced == "blob":
+        git(source, "replace", original, blob)
+    else:
+        scripts = git(source, "rev-parse", f"{TAG}:scripts").strip()
+        listing = git(source, "ls-tree", scripts).replace(original, blob)
+        tree = git_bytes(source, "mktree", stdin=listing.encode()).decode().strip()
+        git(source, "replace", scripts, tree)
+    # The premise: through the replacement, git reads the planted script at the tag.
+    assert b"PUBLISH_TEST_PLANTED" in git_bytes(source, "show", f"{TAG}:scripts/plugin_tree.py")
+    done, _ = publish(source, bare_remote(tmp_path), tmp_path / "scratch", yes=False)
+    assert (done.outcome, done.commit) == ("would-push", pin)
+    assert not planted.exists()
+
+
+def test_a_tool_that_prints_no_json_object_is_refused(source: Path, tmp_path: Path) -> None:
+    # A tag whose code fails before the CLI frame runs exits 1 with a traceback, which is not the
+    # frame's `Failure`: refused, not rejected. Mutation (declared): `mutations/`'s "the publisher
+    # reads a tool that printed no JSON object" -> the missing object escapes as an internal error.
+    with_tool(source, b"import stayfixed.no_such_module\n")
+    runner = runner_for(source)
+    with pytest.raises(Refusal) as refused:
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    said = str(refused.value)
+    assert "commit exited 1 and printed no JSON object" in said, said
+    assert "no_such_module" in said, said
+    assert gh_asked(runner, "gh", "attestation") == []
+
+
+def test_a_tool_that_refuses_is_refused(source: Path, tmp_path: Path) -> None:
+    # The tag's own `plugin_tree.py` refusing is exit 2 (Ruling 8: CI ran the same code green).
+    # Mutation (declared): `mutations/`'s "the publisher reads a tool that refused as an answer"
+    # -> the refusal's object is read as `commit`'s, and refused for its format instead.
+    git(source, "rm", "-r", "-q", "agents")
+    git(source, "commit", "-q", "--amend", "--no-edit")
+    git(source, "tag", "-f", "-a", TAG, "-m", TAG)
+    with pytest.raises(Refusal) as refused:
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch")
+    said = str(refused.value)
+    assert "commit exited 2" in said, said
+    assert "agents is missing" in said, said
+
+
+@pytest.mark.parametrize("gone", ["git-dir", "manifest"])
+def test_a_read_back_that_cannot_be_made_is_refused(
+    source: Path, tmp_path: Path, gone: str
+) -> None:
+    # Mutations (declared): `mutations/`'s "the publisher compares a read-back that failed" -> the
+    # read-back's refusal is passed over and the run stops at a manifest that was never written;
+    # "the publisher reads the manifests without catching a failed read" -> the missing manifest
+    # escapes as an internal error.
+    def remove(argv: list[str]) -> None:
+        if tool_command(argv) == "commit":
+            if gone == "git-dir":
+                shutil.rmtree(argv[argv.index("--git-dir") + 1])
+            else:
+                Path(argv[argv.index("--manifest-file") + 1]).unlink()
+
+    remote = bare_remote(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        publish(source, remote, tmp_path / "scratch", runner=runner_for(source, after=remove))
+    said = str(refused.value)
+    wording = "could not read" if gone == "git-dir" else "cannot be read"
+    assert wording in said, said
+    assert refs(remote) == {}
+
+
+def test_a_sha256_source_is_refused_before_anything_runs(tmp_path: Path) -> None:
+    # The plugin repository is SHA-1, and a SHA-256 source commit is no id `--source-digest` or
+    # GitHub names. Mutation (declared): `mutations/`'s "the publisher takes a tag commit that is
+    # no SHA-1 id" -> the 64-character id is asked of GitHub.
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init", "-q", "--object-format=sha256", "-b", "dev")
+    write(source, PLUGIN_FILES)
+    commit(source)
+    git(source, "tag", "-a", TAG, "-m", TAG)
+    runner = runner_for(source)
+    with pytest.raises(Refusal, match=f"no tag {TAG} names a commit"):
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    assert runner.calls == []
+
+
+def test_a_tool_directory_already_there_is_refused(source: Path, tmp_path: Path) -> None:
+    # The tag's code is written only into a directory this run made. Mutation (declared):
+    # `mutations/`'s "the publisher writes the tag's code into a directory it did not make" -> the
+    # existing directory escapes as an internal error.
+    scratch = tmp_path / "scratch"
+    (scratch / "tool").mkdir(parents=True)
+    runner = runner_for(source)
+    with pytest.raises(Refusal, match="cannot be made"):
+        publish(source, bare_remote(tmp_path), scratch, runner=runner)
+    assert tool_runs(runner) == []
+
+
+@pytest.mark.parametrize("answer", ["an-exit", "not-a-blob", "cut-short"])
+def test_a_cat_file_answer_that_is_not_the_tag_s_code_is_refused(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+) -> None:
+    # Mutations (declared): `mutations/`'s "the publisher reads the tag's code from a cat-file that
+    # failed" -> an empty answer is refused as no blob instead; "the publisher reads the tag's code
+    # from an answer that is no blob" -> the tree-typed answer is written and run; "the publisher
+    # writes the tag's code from an answer cut short" -> the last file is written short.
+    real = publish_plugin.git_run
+
+    def answered(where: Path, *args: str, **options: Any) -> tuple[int, str]:
+        code, said = real(where, *args, **options)
+        if "--batch" not in args:
+            return code, said
+        if answer == "an-exit":
+            return 128, ""
+        if answer == "not-a-blob":
+            return code, said.replace(" blob ", " tree ", 1)
+        return code, said[:-50]
+
+    monkeypatch.setattr(publish_plugin, "git_run", answered)
+    runner = runner_for(source)
+    wording = {
+        "an-exit": "git cat-file --batch exited 128",
+        "not-a-blob": "did not answer",
+        "cut-short": "ended inside",
+    }[answer]
+    with pytest.raises(Refusal, match=wording):
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    assert tool_runs(runner) == []
+
+
+ASKED_TAG = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
+
+
+def _object(sha: str, kind: str) -> Completed:
+    return Completed(0, json.dumps({"sha": sha, "object": {"sha": sha, "type": kind}}), "")
+
+
+@pytest.mark.parametrize(
+    ("answers", "said", "asked"),
+    [
+        pytest.param({ASKED_TAG: _object("b" * 40, "blob")}, "names a blob under", 1, id="a-blob"),
+        pytest.param(
+            {ASKED_TAG: _object("d" * 40, "tag")},
+            f"names the tag object {'d' * 40}",
+            2,
+            id="a-missing-tag-object",
+        ),
+        pytest.param(
+            {
+                ASKED_TAG: _object("a" * 40, "tag"),
+                f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/tags/{'a' * 40}": (
+                    _object("a" * 40, "tag")
+                ),
+            },
+            "through more than 8 tags",
+            9,
+            id="a-cycle",
+        ),
+    ],
+)
+def test_a_github_ref_that_peels_to_no_commit_is_refused(
+    source: Path, tmp_path: Path, answers: dict[str, Completed], said: str, asked: int
+) -> None:
+    # Mutations (declared): `mutations/`'s "the publisher peels GitHub's ref through an object that
+    # is no tag" -> the blob is asked for as a tag object, which GitHub does not hold;
+    # "the publisher reads a tag object GitHub does not hold as no tag" -> the tag reads as absent;
+    # "the publisher peels GitHub's tags past its bound" -> the cycle is asked about far more often.
+    runner = runner_for(source, answers=answers)
+    with pytest.raises(Refusal) as refused:
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    assert said in str(refused.value), str(refused.value)
+    assert len(gh_asked(runner, "gh", "api")) == asked
+    assert tool_runs(runner) == []
+
+
+def test_an_unreachable_remote_is_refused(source: Path, tmp_path: Path) -> None:
+    # Mutation (declared): `mutations/`'s "the publisher reads a remote it could not list as empty"
+    # -> the absent remote reads as a first release's, and the dry run says it would push.
+    absent = tmp_path / "absent.git"
+    with pytest.raises(Refusal, match=f"git ls-remote {re.escape(str(absent))} exited 128"):
+        publish(source, absent, tmp_path / "scratch", yes=False)
+
+
+def test_a_fetch_that_fails_is_refused(source: Path, tmp_path: Path) -> None:
+    # The listing names the parent as `main`, and the remote holds no `main` to fetch. Mutation
+    # (declared): `mutations/`'s "the publisher goes on past a failed fetch" -> the failure is
+    # reported as a `main` that moved.
+    parent = pinned_at(source, TAG)
+    released(source, "1.2.4")
+    gh = runner_for(source).gh
+    runner = _Listing(gh=gh, listing=f"{parent}\trefs/heads/main\n")
+    with pytest.raises(Refusal, match="git fetch") as refused:
+        publish(source, bare_remote(tmp_path), tmp_path / "scratch", tag="v1.2.4", runner=runner)
+    assert "moved" not in str(refused.value)
+    assert ran(runner, "push") == []
 
 
 # --- The command line -----------------------------------------------------------------------------
@@ -1050,8 +1268,9 @@ def test_the_cli_says_what_a_dry_run_would_push(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher pushes without --yes" -> the dry run
-    # pushes, and says "pushed" rather than "would push".
+    # Mutations (declared): `mutations/`'s "the publisher says a remote it read only through
+    # ls-remote is confirmed" -> the summary drops its last parenthesis; "the publisher pushes
+    # without --yes" -> the dry run pushes, and says "pushed" rather than "would push".
     remote = bare_remote(tmp_path)
     monkeypatch.setattr(publish_plugin, "ROOT", source)
     monkeypatch.setattr(publish_plugin, "subprocess_runner", lambda: runner_for(source))
@@ -1106,64 +1325,75 @@ def test_a_url_an_scp_like_remote_or_an_absent_path_is_given_as_it_is(
 
 # --- The exit classes: 1 rejects the release's approval, 2 says fix and run again ---------------
 
+# What each case arranges, given the source, the bare remote and the test's `monkeypatch`: the
+# runner the command is handed, the tag, and the remote it is given.
+Arranged = tuple[Composite, str, str]
 
-def _pins_another(source: Path, remote: Path) -> tuple[Composite, str]:
+
+def _pins_another(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     repinned(source, "c" * 40)
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
-def _names_another_version(source: Path, remote: Path) -> tuple[Composite, str]:
+def _names_another_version(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     git(source, "tag", "v1.2.4")
-    return runner_for(source), "v1.2.4"
+    return runner_for(source), "v1.2.4", str(remote)
 
 
-def _another_commit_under_the_tag(source: Path, remote: Path) -> tuple[Composite, str]:
+def _another_commit_under_the_tag(
+    source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch
+) -> Arranged:
     git(remote, "update-ref", f"refs/tags/{TAG}", remote_commit(remote, "another"))
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
-def _main_not_the_parent(source: Path, remote: Path) -> tuple[Composite, str]:
+def _main_not_the_parent(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     git(remote, "update-ref", "refs/heads/main", remote_commit(remote, "some"))
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
-def _attestation_refused(source: Path, remote: Path) -> tuple[Composite, str]:
+def _attestation_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     verify = Completed(1, "", "no attestations found for the subject\n")
-    return runner_for(source, answers={"gh attestation verify": verify}), TAG
+    return runner_for(source, answers={"gh attestation verify": verify}), TAG, str(remote)
 
 
-def _read_back_differs(source: Path, remote: Path) -> tuple[Composite, str]:
+def _read_back_differs(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     def edit(argv: list[str]) -> None:
         if tool_command(argv) == "commit":
             manifest = Path(argv[argv.index("--manifest-file") + 1])
             manifest.write_bytes(manifest.read_bytes().replace(b"\n100644 ", b"\n100755 ", 1))
 
-    return runner_for(source, after=edit), TAG
+    return runner_for(source, after=edit), TAG, str(remote)
 
 
-def _not_plain(source: Path, remote: Path) -> tuple[Composite, str]:
-    return runner_for(source), "v1.2"
+def _not_plain(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    return runner_for(source), "v1.2", str(remote)
 
 
-def _not_github_s(source: Path, remote: Path) -> tuple[Composite, str]:
-    asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
-    return runner_for(source, answers={asked: NOT_FOUND}), TAG
+def _not_github_s(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    return runner_for(source, answers={ASKED_TAG: NOT_FOUND}), TAG, str(remote)
 
 
-def _predates(source: Path, remote: Path) -> tuple[Composite, str]:
+def _predates(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     git(source, "rm", "-q", "scripts/plugin_tree.py")
     git(source, "commit", "-q", "--amend", "--no-edit")
     git(source, "tag", "-f", "-a", TAG, "-m", TAG)
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
-def _no_object_name(source: Path, remote: Path) -> tuple[Composite, str]:
+def _no_object_name(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     data = b'{"format": FORMAT, **asdict(found)}'
     with_tool(source, patched(data, data[:-1] + b', "commit": "+main"}'))
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
-def _main_moves(source: Path, remote: Path) -> tuple[Composite, str]:
+def _another_format(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    old = b'FORMAT = "stayfixed-plugin-tree 1"'
+    with_tool(source, patched(old, b'FORMAT = "stayfixed-plugin-tree 2"'))
+    return runner_for(source), TAG, str(remote)
+
+
+def _main_moves(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     publish(source, remote, source.parent / "first")
     released(source, "1.2.4")
     moved: list[str] = []
@@ -1172,31 +1402,73 @@ def _main_moves(source: Path, remote: Path) -> tuple[Composite, str]:
         if argv[:1] == ["git"] and "ls-remote" in argv and not moved:
             moved.append(advance(remote))
 
-    return runner_for(source, after=race), "v1.2.4"
+    return runner_for(source, after=race), "v1.2.4", str(remote)
 
 
-def _push_refused(source: Path, remote: Path) -> tuple[Composite, str]:
+def _redirected(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    _global_config(f'[url "{remote}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    default = publish_plugin.PLUGIN_REMOTE
+    publish(source, default, source.parent / "first", runner=runner_for(source, remote))
+    tag_api = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/tags/{TAG}"
+    return runner_for(source, remote, answers={tag_api: NOT_FOUND}), TAG, default
+
+
+def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     hook = remote / "hooks" / "update"
     hook.write_text("#!/bin/sh\necho refused >&2\nexit 1\n")
     hook.chmod(0o755)
-    return runner_for(source), TAG
+    return runner_for(source), TAG, str(remote)
 
 
 @pytest.mark.parametrize(
-    ("arrange", "code"),
+    ("arrange", "code", "said"),
     [
-        pytest.param(_pins_another, 1, id="the-pin-is-another-commit"),
-        pytest.param(_names_another_version, 1, id="the-tag-names-another-version"),
-        pytest.param(_another_commit_under_the_tag, 1, id="another-commit-under-the-tag"),
-        pytest.param(_main_not_the_parent, 1, id="main-is-not-the-parent"),
-        pytest.param(_attestation_refused, 1, id="the-attestation-does-not-verify"),
-        pytest.param(_read_back_differs, 1, id="the-commit-reads-back-as-another-tree"),
-        pytest.param(_not_plain, 2, id="a-tag-that-is-not-plain"),
-        pytest.param(_not_github_s, 2, id="a-local-tag-github-does-not-hold"),
-        pytest.param(_predates, 2, id="a-tag-that-predates-the-publisher"),
-        pytest.param(_no_object_name, 2, id="a-tool-answer-that-is-no-object-name"),
-        pytest.param(_main_moves, 2, id="main-moves-between-list-and-fetch"),
-        pytest.param(_push_refused, 2, id="a-refused-push"),
+        pytest.param(
+            _pins_another,
+            1,
+            "does not pin the plugin commit its own tree makes",
+            id="the-pin-is-another-commit",
+        ),
+        pytest.param(
+            _names_another_version, 1, "plugin.json says 1.2.3", id="the-tag-names-another-version"
+        ),
+        pytest.param(
+            _another_commit_under_the_tag,
+            1,
+            "a tag is not moved",
+            id="another-commit-under-the-tag",
+        ),
+        pytest.param(
+            _main_not_the_parent, 1, "moves only by fast-forward", id="main-is-not-the-parent"
+        ),
+        pytest.param(
+            _attestation_refused,
+            1,
+            "gh attestation verify exited 1",
+            id="the-attestation-does-not-verify",
+        ),
+        pytest.param(
+            _read_back_differs,
+            1,
+            "reads back as another tree",
+            id="the-commit-reads-back-as-another-tree",
+        ),
+        pytest.param(_not_plain, 2, "plain version", id="a-tag-that-is-not-plain"),
+        pytest.param(_not_github_s, 2, "is not GitHub's", id="a-local-tag-github-does-not-hold"),
+        pytest.param(_predates, 2, "predates", id="a-tag-that-predates-the-publisher"),
+        pytest.param(
+            _no_object_name,
+            2,
+            "answered '+main' for commit",
+            id="a-tool-answer-that-is-no-object-name",
+        ),
+        pytest.param(_another_format, 2, "in format", id="a-tool-answer-in-another-format"),
+        pytest.param(
+            _main_moves, 2, "main moved while this ran", id="main-moves-between-list-and-fetch"
+        ),
+        pytest.param(_redirected, 2, "through a redirect", id="a-redirected-default-remote"),
+        pytest.param(_push_refused, 2, "git push to", id="a-refused-push"),
     ],
 )
 def test_every_rejection_exits_1_and_every_refusal_exits_2(
@@ -1204,16 +1476,21 @@ def test_every_rejection_exits_1_and_every_refusal_exits_2(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    arrange: Callable[[Path, Path], tuple[Composite, str]],
+    arrange: Callable[[Path, Path, pytest.MonkeyPatch], Arranged],
     code: int,
+    said: str,
 ) -> None:
-    # The classification's one home (Mutation: none of its own: each case's entry reddens the
-    # case's own test above, and `Rejected` and `Refusal` are the frame's exit 1 and 2).
+    # The classification's one home. Each row's summary names its own cause, so a row whose check
+    # is dropped and that still exits as it should for another reason (the main-moves row, whose
+    # push the remote refuses anyway under `--yes`) reddens here. Mutation: none of its own: each
+    # row's entry reddens the row's own test above, and `Rejected` and `Refusal` are the frame's
+    # exit 1 and 2.
     remote = bare_remote(tmp_path)
-    runner, tag = arrange(source, remote)
+    runner, tag, given = arrange(source, remote, monkeypatch)
     monkeypatch.setattr(publish_plugin, "ROOT", source)
     monkeypatch.setattr(publish_plugin, "subprocess_runner", lambda: runner)
-    argv = ["--tag", tag, "--remote", str(remote), "--yes", "--json"]
+    argv = ["--tag", tag, "--remote", given, "--yes", "--json"]
     assert publish_plugin.main(argv) == code, capsys.readouterr()
     report = json.loads(capsys.readouterr().out)
     assert report["error"] == {1: "failed", 2: "refused"}[code], report
+    assert said in report["summary"], report
