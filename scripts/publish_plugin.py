@@ -21,7 +21,9 @@ release's. Before any of it runs, the local tag's commit is compared with the on
 attestation binds the same commit afterwards.
 
 **What it trusts, and why.** Every answer it trusts is GitHub's, asked of `github.com` by name, so
-`gh auth status --hostname github.com --active` must pass before the first is asked. The
+`gh auth status --hostname github.com --active` must pass before the first is asked, and before it
+`gh --version` must be at least 2.101.0, the gh every flag below and its exact identity match were
+measured on: an older gh lacking a flag fails the verify the way a wrong attestation does. The
 attestation says which manifest a release vouches for: `gh attestation verify` binds the manifest's
 bytes to the certificate identity of this repository's `release.yml` run for this tag
 (`--cert-identity`, matched exactly, where `--signer-workflow` matched a prefix), for this tag's
@@ -29,8 +31,9 @@ ref (`--source-ref`) at this commit (`--source-digest`), on a GitHub-hosted runn
 (`--deny-self-hosted-runners`). When it does not verify, GitHub is asked whether it holds any
 attestation of the manifest's digest at all: none yet is a release whose `attest` job has not run.
 When one exists, `gh` verifies the manifest again with none of the release's constraints, because
-gh exits 1 alike for an attestation that fails them and for a machine that cannot verify at all (an
-older gh, a network that blocks Sigstore): passing, the attestation fails only the release's
+gh exits 1 alike for an attestation that fails them and for a machine that cannot verify at all (a
+network that blocks Sigstore, a trust root it cannot fetch; a gh lacking a flag is refused before
+any of this): passing, the attestation fails only the release's
 constraints, a release to reject; failing, this machine is to fix. The commit is read back whole
 and its manifest compared with that one byte for byte before anything leaves the machine. The plugin
 repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
@@ -94,6 +97,10 @@ CERT_IDENTITY = (
 )
 # The host every `gh` call names, so a second host the owner is logged in to answers none.
 GITHUB = "github.com"
+# The gh every flag handed to `gh attestation verify`, and its exact `--cert-identity` match, were
+# measured on; an older one is refused, and `gh --version`'s first line is read for it.
+GH_FLOOR = (2, 101, 0)
+GH_VERSION = re.compile(r"gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?: .*)?")
 # The repository this script lives in: the one whose tag is published.
 ROOT = Path(__file__).resolve().parents[1]
 # A release's tag: `v` and three dot-separated runs of ASCII digits, and nothing after them.
@@ -254,6 +261,24 @@ def _github_ref(runner: Runner, root: Path, repository: str, ref: str) -> str | 
                 "then holds no such tag"
             )
     raise Refusal(f"GitHub's {repository} names {ref} through more than {PEELS} tags")
+
+
+def _gh_recent(runner: Runner, root: Path) -> None:
+    """Refuse a gh older than `GH_FLOOR`, or one whose version cannot be read: a gh lacking one of
+    the flags `_verify` hands it fails the verify as a wrong attestation does."""
+    done = runner.launch(["gh", "--version"], root)
+    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None
+    if found is None:
+        raise Refusal(
+            f"could not read gh's version: gh --version exited {done.code}: {_said(done)}; run "
+            "again; nothing was run"
+        )
+    floor = ".".join(str(part) for part in GH_FLOOR)
+    if tuple(int(part) for part in found.groups()) < GH_FLOOR:
+        raise Refusal(
+            f"gh {'.'.join(found.groups())} is older than {floor}, the version this publisher's "
+            "attestation flags were measured on; upgrade gh and run again; nothing was run"
+        )
 
 
 def _logged_in(runner: Runner, root: Path) -> None:
@@ -489,7 +514,9 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
     manifest, for this tag at this commit, on a GitHub-hosted runner. When it did not: refuse when
     GitHub holds no attestation of the manifest yet; when it holds one, reject the release if gh
     verifies the manifest with none of the release's constraints, and refuse if gh cannot verify
-    it on this machine even so."""
+    it on this machine even so. Of the machine's two ways to fail the verify, a gh lacking a flag
+    was refused by `_gh_recent` before this ran; the unconstrained verify closes the other, a
+    Sigstore or network failure."""
     unconstrained = [
         "gh",
         "attestation",
@@ -679,7 +706,7 @@ def publish(
     """Publish the plugin commit `tag` pins in `root` to `remote`'s `main` and `tag`, under `yes`.
 
     Each step refuses or rejects before the next runs, and everything before the push is local to
-    `scratch`: the tag resolved to one commit, `gh` held to be logged in, and the tag held to
+    `scratch`: the tag resolved to one commit, `gh` held to be recent and logged in, the tag held to
     GitHub's; the tag's own code read out of it; the commit built with that code and held to the
     pin and the version; the attestation verified; the commit read back; the remote's state read
     (already published, or rejected, when the tag is there); `main` held to the commit's parent
@@ -687,6 +714,7 @@ def publish(
     tag read back through GitHub's API.
     """
     sha = _tag_commit(root, tag)
+    _gh_recent(runner, root)
     _logged_in(runner, root)
     _source_anchor(runner, root, tag, sha)
     tool = _tool(root, tag, sha, scratch)

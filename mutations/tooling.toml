@@ -3044,6 +3044,87 @@ before = "    if tag_for(built.version)[0] != tag:"
 after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_whose_version_is_another_is_rejected"]
 
+# Before any other gh call, gh must be at least the version every flag of the verify and its exact
+# identity match were measured on: an older gh lacking a flag fails the verify as a wrong
+# attestation does. No test reddens on `[0-9]` in `GH_VERSION` becoming `\d`: `int` reads any
+# Unicode digit the same, and gh prints ASCII ones.
+[[mutation]]
+name = "the publisher runs any gh"
+file = "scripts/publish_plugin.py"
+before = "    if tuple(int(part) for part in found.groups()) < GH_FLOOR:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]",
+  "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.99.0]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-gh-older-than-measured]",
+]
+
+[[mutation]]
+name = "the publisher compares gh's version as text"
+file = "scripts/publish_plugin.py"
+before = "    if tuple(int(part) for part in found.groups()) < GH_FLOOR:"
+after = '    if ".".join(found.groups()) < floor:'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.99.0]", "tests/scripts/test_publish_plugin.py::test_a_gh_at_or_past_the_one_measured_goes_on[10.0.0]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from an answer it cannot parse"
+file = "scripts/publish_plugin.py"
+before = """    if found is None:
+        raise Refusal(
+            f"could not read gh's version"""
+after = """    if False:
+        raise Refusal(
+            f"could not read gh's version"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[two-parts]", "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[no-version-line]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from a gh that failed"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0])'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-failed-answer]"]
+
+[[mutation]]
+name = "the publisher reads a pre-release's version as the release's"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = '    found = GH_VERSION.match(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[a-pre-release]"]
+
+[[mutation]]
+name = "the publisher reads gh's version from its whole answer"
+file = "scripts/publish_plugin.py"
+before = '    found = GH_VERSION.fullmatch(done.stdout.split("\n", 1)[0]) if done.code == 0 else None'
+after = "    found = GH_VERSION.fullmatch(done.stdout) if done.code == 0 else None"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_at_or_past_the_one_measured_goes_on[2.101.0]"]
+
+[[mutation]]
+name = "the publisher refuses an old gh without saying what to do"
+file = "scripts/publish_plugin.py"
+before = '            "attestation flags were measured on; upgrade gh and run again; nothing was run"'
+after = '            "attestation flags were measured on; nothing was run"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]"]
+
+[[mutation]]
+name = "the publisher refuses an unreadable gh version without saying to run again"
+file = "scripts/publish_plugin.py"
+before = """            f"could not read gh's version: gh --version exited {done.code}: {_said(done)}; run "
+            "again; nothing was run\""""
+after = """            f"could not read gh's version: gh --version exited {done.code}: {_said(done)}; "
+            "nothing was run\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[no-version-line]"]
+
+[[mutation]]
+name = "the publisher asks gh whether it is logged in before asking its version"
+file = "scripts/publish_plugin.py"
+before = """    _gh_recent(runner, root)
+    _logged_in(runner, root)
+"""
+after = """    _logged_in(runner, root)
+    _gh_recent(runner, root)
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity", "tests/scripts/test_publish_plugin.py::test_a_gh_older_than_the_one_measured_is_refused_first[2.100.9]"]
+
 # `gh` must be logged in to github.com before the first question is asked of GitHub, and is asked
 # exactly that, whole: the auth check, the source anchor and the attestation.
 [[mutation]]

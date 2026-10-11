@@ -159,6 +159,13 @@ class Composite:
         return done
 
 
+# `gh --version` as gh 2.101.0 answers it, the version the publisher's flags were measured on: what
+# every case's `gh` answers unless it scripts another.
+GH_2_101 = Completed(
+    0, "gh version 2.101.0 (2026-09-30)\nhttps://github.com/cli/cli/releases/tag/v2.101.0\n", ""
+)
+
+
 def runner_for(
     source: Path,
     plugin: Path | None = None,
@@ -171,13 +178,14 @@ def runner_for(
 ) -> Composite:
     """A composite whose GitHub holds `source` as `stayfixed/stayfixed` and, when given, `plugin`
     as the plugin repository, and answers `attestation` for any attestation it is asked about and
-    `unconstrained`, when given, for the verify asked without the release's constraints."""
+    `unconstrained`, when given, for the verify asked without the release's constraints; its `gh`
+    is 2.101.0 unless `answers` scripts `gh --version`."""
     repositories = {SOURCE_REPOSITORY: source}
     if plugin is not None:
         repositories[PLUGIN_REPOSITORY] = plugin
     gh = GitHub(
         repositories=repositories,
-        answers=dict(answers or {}),
+        answers={"gh --version": GH_2_101, **(answers or {})},
         attestation=attestation,
         unconstrained=unconstrained,
     )
@@ -398,6 +406,7 @@ def test_a_branch_named_like_the_tag_does_not_stand_in_for_it(source: Path, tmp_
     assert listed(remote, TAG, exact=True)["README.md"] == PLUGIN_FILES["README.md"]
 
 
+GH_VERSION = ["gh", "--version"]
 GH_AUTH = ["gh", "auth", "status", "--hostname", "github.com", "--active"]
 
 
@@ -407,7 +416,8 @@ def test_the_attestation_is_asked_with_an_exact_identity(source: Path, tmp_path:
     # without its `@refs/tags/<tag>`; `--cert-identity` dropped; `--source-ref` dropped;
     # `--source-digest` dropped; `--deny-self-hosted-runners` dropped; the verify's `--hostname`
     # dropped; `gh auth status` without `--hostname`; `gh auth status` without `--active`; the
-    # verify's `--repo` dropped; the manifest dropped from the verify.
+    # verify's `--repo` dropped; the manifest dropped from the verify; `mutations/`'s "the
+    # publisher asks gh whether it is logged in before asking its version" (the order).
     scratch = tmp_path / "scratch"
     _, runner = publish(source, bare_remote(tmp_path), scratch, yes=False)
     sha = tag_commit(source)
@@ -415,6 +425,7 @@ def test_the_attestation_is_asked_with_an_exact_identity(source: Path, tmp_path:
     assert len(sha) == 40 and tag_object != sha
     manifest = scratch / "plugin-tree.txt"
     assert runner.gh.calls == [
+        GH_VERSION,
         GH_AUTH,
         ["gh", "api", "--hostname", "github.com", f"repos/stayfixed/stayfixed/git/ref/tags/{TAG}"],
         [
@@ -1070,10 +1081,87 @@ def test_a_gh_that_is_not_logged_in_is_refused_before_verify(source: Path, tmp_p
         publish(source, bare_remote(tmp_path), scratch, runner=runner)
     assert "gh auth status --hostname github.com --active exited 1" in str(refused.value)
     assert said in str(refused.value)
-    assert runner.gh.calls == [GH_AUTH]
+    assert runner.gh.calls == [GH_VERSION, GH_AUTH]
     assert gh_asked(runner, "gh", "api") == gh_asked(runner, "gh", "attestation") == []
     assert tool_runs(runner) == []
     assert not (scratch / "tool").exists()
+
+
+@pytest.mark.parametrize(
+    ("answer", "said"),
+    [
+        pytest.param(
+            Completed(0, "gh version 2.100.9 (2026-08-01)\n", ""),
+            "gh 2.100.9 is older than 2.101.0",
+            id="2.100.9",
+        ),
+        pytest.param(
+            Completed(0, "gh version 2.99.0 (2026-05-01)\n", ""),
+            "gh 2.99.0 is older than 2.101.0",
+            id="2.99.0",
+        ),
+        pytest.param(
+            Completed(0, "gh version 2.101 (2026-09-30)\n", ""),
+            "could not read gh's version",
+            id="two-parts",
+        ),
+        pytest.param(
+            Completed(0, "GitHub CLI, the next one\n", ""),
+            "could not read gh's version",
+            id="no-version-line",
+        ),
+        pytest.param(
+            Completed(0, "gh version 2.101.0-rc.1 (2026-09-20)\n", ""),
+            "could not read gh's version",
+            id="a-pre-release",
+        ),
+        pytest.param(
+            Completed(1, "gh version 2.101.0 (2026-09-30)\n", "gh: something failed\n"),
+            "could not read gh's version",
+            id="a-failed-answer",
+        ),
+    ],
+)
+def test_a_gh_older_than_the_one_measured_is_refused_first(
+    source: Path, tmp_path: Path, answer: Completed, said: str
+) -> None:
+    # Every flag `gh attestation verify` is handed, and the exact identity match, were measured on
+    # gh 2.101.0; an older gh lacking one fails the verify as a wrong attestation does, so it is
+    # refused before any other gh call. Mutations (declared): `mutations/`'s "the publisher runs
+    # any gh" -> the old gh goes on to `gh auth status`; `mutations/`'s "the publisher compares
+    # gh's version as text" -> 2.99.0 reads as newer than 2.101.0; `mutations/`'s "the publisher
+    # reads gh's version from an answer it cannot parse" -> the unparsed answer escapes as an
+    # internal error; `mutations/`'s "the publisher reads gh's version from a gh that failed" ->
+    # the failed gh's version is taken; `mutations/`'s "the publisher refuses an old gh without
+    # saying what to do" -> the advice goes; `mutations/`'s "the publisher reads a pre-release's
+    # version as the release's" -> 2.101.0-rc.1 goes on; `mutations/`'s "the publisher refuses an
+    # unreadable gh version without saying to run again" -> the advice goes.
+    runner, scratch = runner_for(source, answers={"gh --version": answer}), tmp_path / "scratch"
+    with pytest.raises(Refusal) as refused:
+        publish(source, bare_remote(tmp_path), scratch, runner=runner)
+    message = str(refused.value)
+    assert said in message, message
+    if "older" in said:
+        assert "upgrade gh and run again" in message, message
+    else:
+        assert "run again" in message, message
+    assert runner.gh.calls == [GH_VERSION]
+    assert tool_runs(runner) == []
+    assert not (scratch / "tool").exists()
+
+
+@pytest.mark.parametrize("version", ["2.101.0", "2.110.3", "3.0.0", "10.0.0"])
+def test_a_gh_at_or_past_the_one_measured_goes_on(
+    source: Path, tmp_path: Path, version: str
+) -> None:
+    # The floor admits the measured version and any later one, compared as numbers: `10.0.0` reads
+    # as older than `2.101.0` as text. Mutation: `mutations/`'s "the publisher compares gh's version
+    # as text" also refuses 10.0.0 here.
+    answer = Completed(0, f"gh version {version} (2026-10-01)\nhttps://github.com/cli/cli\n", "")
+    runner = runner_for(source, answers={"gh --version": answer})
+    done, _ = publish(source, bare_remote(tmp_path), tmp_path / "scratch", yes=False, runner=runner)
+    assert done.outcome == "would-push"
+    assert runner.gh.calls[:2] == [GH_VERSION, GH_AUTH]
 
 
 def test_a_manifest_that_cannot_be_read_after_a_failed_verify_is_refused(
@@ -1639,6 +1727,11 @@ def _no_attestation_yet(source: Path, remote: Path, monkeypatch: pytest.MonkeyPa
     return runner_for(source, answers=answers, attestation=NOT_FOUND), TAG, str(remote)
 
 
+def _gh_too_old(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    answers = {"gh --version": Completed(0, "gh version 2.100.9 (2026-08-01)\n", "")}
+    return runner_for(source, answers=answers), TAG, str(remote)
+
+
 def _not_logged_in(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     answers = {"gh auth status": Completed(1, "", "You are not logged into any GitHub hosts.\n")}
     return runner_for(source, answers=answers), TAG, str(remote)
@@ -1754,6 +1847,7 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
             id="the-commit-reads-back-as-another-tree",
         ),
         pytest.param(_not_plain, 2, "plain version", id="a-tag-that-is-not-plain"),
+        pytest.param(_gh_too_old, 2, "is older than 2.101.0", id="a-gh-older-than-measured"),
         pytest.param(_not_logged_in, 2, "gh auth status", id="a-gh-that-is-not-logged-in"),
         pytest.param(
             _no_attestation_yet,
