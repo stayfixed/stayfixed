@@ -1062,6 +1062,33 @@ day: `claude plugin validate --strict` 2.1.296 passes an entry with `sha`; the a
 release run recorded the peeled commit as `headSha`. Not taken: a refusal of the tag's own
 `plugin_tree.py` stays exit `2` (Ruling 8: CI ran the same code on the same commit green).
 
+### Execution (2026-10-11)
+
+Waves A–F ran with one task review each and the fix rounds below; Waves E and F ran in sibling
+worktrees beside C and D at the owner's request (parallel wherever it costs no quality) and were
+cherry-picked onto this branch. Rulings that change this plan's text:
+
+- **Ruling 8, the attestation (amended).** The verify-classification seam broke three times:
+  "200 → 1" let an old `gh` or a Sigstore failure on the owner's machine ask for a rejection; a
+  weaker unconstrained verify still let a `gh` missing one strict flag, or a transient failure of
+  the strict verify alone, reach `1`; and a release re-cut onto a commit with a byte-identical
+  manifest would be answered `200` by the old attestation. `gh`'s exit code cannot tell a wrong
+  attestation from a machine that could not verify, so a failed `gh attestation verify` is now
+  never `1`: it is `2`, and GitHub's attestation listing only chooses the advice (none yet: run
+  again once `build` and `attest` are green; one that does not verify here: run again with a
+  working `gh` and network; reject if either says the same then). The publisher also refuses a
+  `gh` older than 2.101.0, the version its flags were measured on, and a `gh` pre-release.
+  `test_a_verify_failure_is_classified_by_whether_an_attestation_exists` is now
+  `test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses`.
+- **`gh auth status`** runs before the publisher's first `gh` call (the source anchor), which is
+  also before `_verify`.
+- **A first parent whose `source` is not an object** (`origin/main` still holds the old `"./"`)
+  is refused, not read as no parent; `0.3.0` is cut on top of the dev→main merge, whose entry
+  pins no `sha`, so its plugin commit is parentless. `RELEASING.md` section 5 says so.
+- **`release.py pin`** reads the plugin repository's `main` through `ls-remote`, which the owner's
+  git configuration can redirect; it is the early check, and the publisher's read through
+  GitHub's API after the tags is the authoritative one.
+
 Follow-ups, to file when the pull request closes:
 
 - (none yet)
