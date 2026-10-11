@@ -380,11 +380,13 @@ one file per area would need no table, and would have spent about twenty of thos
 do. That trade is why `GROUP_OF` is a hand-kept table, the exception to "no shared registry" under
 "Areas". The plugin is now published from a repository of its own, whose root is the tree
 `scripts/plugin_tree.py` generates from the paths its `PLUGIN_PATHS` names, and `mutations/` is not
-among them. The table is kept as it was sized; whether its coarse grouping still earns a table is
-an open question.
+among them.
 `tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
 reaches its cap, three quarters of the directory's; a group that does is split by its largest area,
-which is an edit to `GROUP_OF`.
+which is an edit to `GROUP_OF`. The table and the cap are kept as they were sized, and whether
+either still earns its place, now that neither the 512 files nor the per-file limit reaches
+`mutations/`, is an open question, recorded here and nowhere else: the comments beside the two
+point to this paragraph.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
 true. That makes a name a reference, and two things hold it to one: the oracle refuses a name two

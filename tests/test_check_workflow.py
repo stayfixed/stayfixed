@@ -36,6 +36,7 @@ from tests.test_fixtures import (
     CHECK_WORKFLOW,
     CI_WORKFLOW,
     RELEASE_WORKFLOW,
+    RELEASING,
     SMOKE_WORKFLOW,
     needs_bash,
     needs_ci_workflow,
@@ -1572,9 +1573,13 @@ def test_one_plugin_repository_everywhere() -> None:
     # release check holds the marketplace entry's `url` to `release.py`'s `PLUGIN_URL`, the
     # publisher pushes to `PLUGIN_REMOTE` and asks GitHub's API about `PLUGIN_REPOSITORY`
     # (`repos/<it>/git/ref/…`), and the release workflow lists the tag the gated jobs wait for.
-    # Each is read from its own file, and every one of them names the same repository. Mutation
-    # (oracle): `mutations/`'s "the plugin gate asks another repository" points `publish`'s step at
-    # another name.
+    # `RELEASING.md` names it to the owner, who creates it, sets its rulesets and lists its `main`
+    # by hand. Each is read from its own file, and every one of them names the same repository.
+    # Mutations (oracle): `mutations/`'s "the plugin gate asks another repository" -> `publish`'s
+    # step lists another name; "RELEASING lists another plugin repository's main" -> step 1's
+    # `git ls-remote` does; "RELEASING sets the rulesets of another plugin repository" -> the
+    # `ruleset` helper asks another; "RELEASING creates another plugin repository" -> section 3's
+    # `gh repo create` names another.
     release = scriptload.release()
     publisher = scriptload.publish_plugin()
     named = {
@@ -1589,6 +1594,25 @@ def test_one_plugin_repository_everywhere() -> None:
         listed = re.findall(r"\bgit ls-remote (\S+)", script)
         assert len(listed) == 1, (job, listed)
         named[f"release.yml {job}"] = _github_repository(listed[0])
+    # The document's commands, each read where the owner copies it from: every `git ls-remote` of
+    # a GitHub repository, every `gh api repos/<it>/…` but this repository's own and the
+    # `OWNER/REPO` placeholder of a sentence (lower case only), and the one `gh repo create`.
+    releasing = RELEASING.read_text(encoding="utf-8")
+    listed = re.findall(
+        r"\bgit ls-remote\s+((?:https://github\.com/|git@github\.com:)\S+)", releasing
+    )
+    asked = {
+        name
+        for name in re.findall(r"\brepos/([a-z0-9._-]+/[a-z0-9._-]+)/", releasing)
+        if name != "stayfixed/stayfixed"
+    }
+    created = re.findall(r"\bgh repo create (\S+)", releasing)
+    assert listed and asked and len(created) == 1, (listed, asked, created)
+    for number, url in enumerate(listed):
+        named[f"RELEASING.md git ls-remote {number}"] = _github_repository(url)
+    for name in asked:
+        named[f"RELEASING.md repos/{name}"] = name
+    named["RELEASING.md gh repo create"] = created[0]
     assert set(named.values()) == {PLUGIN_REPOSITORY}, named
 
 

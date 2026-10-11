@@ -3231,3 +3231,27 @@ file = ".claude-plugin/marketplace.json"
 before = '"ref": "v'
 after = '"sha": "C", "ref": "v'
 reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]
+
+# `RELEASING.md` names the plugin repository in the three commands the owner copies to create it,
+# set its rulesets and read its `main` back, and the scripts and the workflow name it in their own
+# constants; one test holds every one of them to the same repository, each read from its file.
+[[mutation]]
+name = "RELEASING lists another plugin repository's main"
+file = "RELEASING.md"
+before = "   git ls-remote https://github.com/stayfixed/stayfixed-plugin.git refs/heads/main\n"
+after = "   git ls-remote https://github.com/stayfixed/stayfixed-plugins.git refs/heads/main\n"
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+[[mutation]]
+name = "RELEASING sets the rulesets of another plugin repository"
+file = "RELEASING.md"
+before = '  id=$(gh api repos/stayfixed/stayfixed-plugin/rulesets --jq ".[]'
+after = '  id=$(gh api repos/stayfixed/stayfixed-plugins/rulesets --jq ".[]'
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]
+
+[[mutation]]
+name = "RELEASING creates another plugin repository"
+file = "RELEASING.md"
+before = "gh repo create stayfixed/stayfixed-plugin --public"
+after = "gh repo create stayfixed/stayfixed-plugins --public"
+reddens = ["tests/test_check_workflow.py::test_one_plugin_repository_everywhere"]

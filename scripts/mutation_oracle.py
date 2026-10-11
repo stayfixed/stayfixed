@@ -73,8 +73,8 @@ DECLARATIONS = ROOT / "mutations"
 # repository root was the plugin folder, when every tracked file counted against the 512, so they
 # are as coarse as the size limit let them be. The plugin's tree (`scripts/plugin_tree.py`) no
 # longer holds `mutations/`, so neither limit reaches these files now. The table is kept as it was
-# sized; whether its coarse grouping still earns a table is an open question. A group that
-# outgrows its file is split by its largest area, which is an edit to this table.
+# sized; whether it still earns its place is the open question CONTRIBUTING.md, "Tests", records.
+# A group that outgrows its file is split by its largest area, which is an edit to this table.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),
