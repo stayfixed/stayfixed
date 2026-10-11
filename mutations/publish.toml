@@ -1181,6 +1181,15 @@ reddens = [
   "tests/scripts/test_publish_plugin.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
 ]
 
+[[mutation]]
+name = "the publisher refuses a missing package without saying to run it through uv"
+file = "scripts/publish_plugin.py"
+before = 'f"scripts/publish_plugin.py: refused: {exc}; run it with `uv run python "'
+after = 'f"scripts/publish_plugin.py: refused: {exc}; run it with `python3 "'
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
 # The read-back calls `_first_difference` only once the two manifests differ; two equal ones are a
 # caller's bug, raised rather than worded as a difference inside a rejection.
 [[mutation]]

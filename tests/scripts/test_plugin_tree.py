@@ -1248,8 +1248,9 @@ def test_require_pin_exits_1_when_the_pin_is_another_commit(
 def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
     # An interpreter without this repository's `stayfixed` fails on the script's first import,
     # before the CLI frame exists, and a traceback exits `1`, which `commit --require-pin` gives
-    # its finding. Mutation (declared): `mutations/`'s "plugin_tree.py exits 1 when its package
-    # cannot be imported".
+    # its finding. Mutations (declared): `mutations/`'s "plugin_tree.py exits 1 when its package
+    # cannot be imported" and "plugin_tree.py refuses a missing package without saying to run it
+    # through uv".
     done = without_stayfixed("plugin_tree.py", tmp_path, "manifest", "--root", ".", "--rev", "HEAD")
     assert done.returncode == 2, done.stdout + done.stderr
     assert done.stdout == "", done.stdout

@@ -1741,7 +1741,8 @@ def test_the_smoke_installs_by_ref_and_sha(tmp_path: Path) -> None:
     # Its tag is a decoy: one commit past the built one, whose one parent it is, holding one file
     # more, so only the entry's `sha` names the commit the install is compared with, and a harness
     # that installed by the `ref` would install a tree the comparison with the render refuses.
-    # Mutation (oracle): `mutations/`'s "the smoke tags the pinned commit and not a decoy".
+    # Mutations (oracle): `mutations/`'s "the smoke tags the pinned commit and not a decoy" and
+    # "the smoke's decoy holds the pinned commit's tree".
     decoy = git(repository, "rev-parse", "refs/tags/v1.2.3^{commit}").strip()
     assert git(repository, "rev-list", "--parents", "-n", "1", decoy).split() == [decoy, expected]
     assert git(repository, "diff-tree", "-r", "--name-status", expected, decoy) == "A\tdecoy\n"

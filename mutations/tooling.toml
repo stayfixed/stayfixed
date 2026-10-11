@@ -730,6 +730,15 @@ reddens = [
   "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
 ]
 
+[[mutation]]
+name = "the smoke's decoy holds the pinned commit's tree"
+file = ".github/workflows/smoke.yml"
+before = """printf '100644 blob %s\\tdecoy\\n' "$blob"; """
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
 # `plugin_tree.py commit --json` writes a refusal's sentence into the file the step reads, so the
 # step prints the file when the script fails; without it the job stops with an exit code alone.
 [[mutation]]
@@ -3198,6 +3207,15 @@ reddens = [
   "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
 ]
 
+[[mutation]]
+name = "release.py refuses a missing package without saying to run it through uv"
+file = "scripts/release.py"
+before = 'f"scripts/release.py: refused: {exc}; run it with `uv run python scripts/release.py`, "'
+after = 'f"scripts/release.py: refused: {exc}; run it with `python3 scripts/release.py`, "'
+reddens = [
+  "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
 # Run by an interpreter without this repository's `stayfixed`, the script fails on its first
 # import, before the CLI frame exists; a traceback would exit `1`, `commit --require-pin`'s finding.
 [[mutation]]
@@ -3205,6 +3223,15 @@ name = "plugin_tree.py exits 1 when its package cannot be imported"
 file = "scripts/plugin_tree.py"
 before = "    sys.exit(2)"
 after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
+[[mutation]]
+name = "plugin_tree.py refuses a missing package without saying to run it through uv"
+file = "scripts/plugin_tree.py"
+before = 'f"scripts/plugin_tree.py: refused: {exc}; run it with `uv run python "'
+after = 'f"scripts/plugin_tree.py: refused: {exc}; run it with `python3 "'
 reddens = [
   "tests/scripts/test_plugin_tree.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
 ]

@@ -2003,8 +2003,9 @@ def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_p
     # An owner who runs the publisher with a bare `python3` has no `stayfixed` to import, and the
     # traceback that ends such a run exits `1`, which `RELEASING.md` reads as "reject the
     # release's approval". The script says so itself, before the CLI frame exists, and exits `2`.
-    # Mutation (declared): `mutations/`'s "the publisher exits 1 when its package cannot be
-    # imported".
+    # Mutations (declared): `mutations/`'s "the publisher exits 1 when its package cannot be
+    # imported" and "the publisher refuses a missing package without saying to run it through
+    # uv".
     done = without_stayfixed("publish_plugin.py", tmp_path, "--tag", TAG)
     assert done.returncode == 2, done.stdout + done.stderr
     assert done.stdout == "", done.stdout

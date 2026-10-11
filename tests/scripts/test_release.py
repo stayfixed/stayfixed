@@ -1516,7 +1516,8 @@ def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path)
 def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
     # An interpreter without this repository's `stayfixed` fails on the script's first import,
     # before the CLI frame exists, and a traceback exits `1`, which `check` gives its findings.
-    # Mutation (declared): `mutations/`'s "release.py exits 1 when its package cannot be imported".
+    # Mutations (declared): `mutations/`'s "release.py exits 1 when its package cannot be imported"
+    # and "release.py refuses a missing package without saying to run it through uv".
     done = without_stayfixed("release.py", tmp_path, "check")
     assert done.returncode == 2, done.stdout + done.stderr
     assert done.stdout == "", done.stdout
