@@ -52,6 +52,7 @@ from stayfixed.command import CHECK_HELP, ROOT_HELP
 from stayfixed.config.loader import UNPARSEABLE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
+from stayfixed.printed import clipped
 from stayfixed.release.api import (
     FORMAT,
     HASHED_FILES,
@@ -296,6 +297,13 @@ def _released_ref(entries: list[dict[str, Any]]) -> str | None:
     return match.group(1) if match else None
 
 
+def _shown(value: object) -> str:
+    """A value the marketplace holds, as a finding prints it: through `clipped`, a string as
+    itself and anything else as its `repr`. The repository chose it, so a line break followed by
+    `::error::`, an escape sequence or a length past any name is not printed as it is."""
+    return clipped(value if isinstance(value, str) else repr(value))
+
+
 def marketplace_problems(root: Path) -> list[str]:
     """Every way the marketplace's plugin entry is not the one a release publishes: exactly one
     entry named for the package, fetching the plugin repository as a `url` source pinned to a
@@ -329,10 +337,10 @@ def marketplace_problems(root: Path) -> list[str]:
         return problems
     ref = source.get("ref")
     if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:
-        problems.append(f"{said} pins ref {ref!r}, which is no release tag vX.Y.Z")
+        problems.append(f"{said} pins ref {_shown(ref)}, which is no release tag vX.Y.Z")
     sha = source.get("sha")
     if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):
-        problems.append(f"{said} pins sha {sha!r}, which is no commit id")
+        problems.append(f"{said} pins sha {_shown(sha)}, which is no commit id")
     return problems
 
 
@@ -522,28 +530,30 @@ def plugin_commit_problems(root: Path) -> dict[str, list[str]]:
 def _said(done: Completed) -> str:
     """What `plugin_tree.py` said as it failed: under `--json` the frame prints a refusal's
     sentence as the object's `summary` on stdout, and anything that dies before the frame speaks
-    leaves its last word on stderr."""
+    leaves its last word on stderr. Through `clipped` either way: the sentence quotes the
+    repository's names and paths, and a traceback's last line quotes anything."""
     try:
         report = json.loads(done.stdout)
     except ValueError:
         report = None
     if isinstance(report, dict) and isinstance(report.get("summary"), str):
-        return str(report["summary"])
+        return clipped(str(report["summary"]))
     lines = [line for line in done.stderr.splitlines() if line.strip()]
-    return lines[-1] if lines else f"it exited {done.code} and said nothing"
+    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"
 
 
 def _main_at(remote: str, runner: Runner, cwd: Path) -> str | None:
     """The commit `remote`'s `refs/heads/main` names, or `None` when it has no `main`.
 
     `ls-remote` matches its pattern by the ref's tail, so `refs/heads/x/refs/heads/main` answers
-    `refs/heads/main` too: the line read is the one whose ref is exactly that name."""
+    `refs/heads/main` too: the line read is the one whose ref is exactly that name. A failure
+    quotes git's first line through `clipped`, since it prints what the remote said."""
     done = runner.launch(["git", "ls-remote", "--end-of-options", remote, "refs/heads/main"], cwd)
     if done.code != 0:
         lines = [line for line in done.stderr.splitlines() if line.strip()]
         raise Refusal(
             f"git ls-remote of {remote} exited {done.code}: "
-            + (lines[0] if lines else "it said nothing")
+            + (clipped(lines[0]) if lines else "it said nothing")
         )
     for line in done.stdout.splitlines():
         sha, _, ref = line.partition("\t")

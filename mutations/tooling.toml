@@ -2007,6 +2007,53 @@ before = "    if done.code != 0:\n        lines = [line for line in done.stderr.
 after = "    if False:\n        lines = [line for line in done.stderr.splitlines() if line.strip()]"
 reddens = ["tests/scripts/test_release.py::test_pin_refuses_an_unreachable_remote"]
 
+# What the repository, `plugin_tree.py` or a remote said reaches a finding or a refusal through
+# `clipped`: a line break before `::error::`, an escape sequence or an unbounded length is not
+# printed as it is.
+[[mutation]]
+name = "release check prints the marketplace's ref as it is"
+file = "scripts/release.py"
+before = '        problems.append(f"{said} pins ref {_shown(ref)}, which is no release tag vX.Y.Z")'
+after = '        problems.append(f"{said} pins ref {ref!r}, which is no release tag vX.Y.Z")'
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_value_is_printed_escaped_and_clipped"]
+
+[[mutation]]
+name = "release check prints the marketplace's sha as it is"
+file = "scripts/release.py"
+before = '        problems.append(f"{said} pins sha {_shown(sha)}, which is no commit id")'
+after = '        problems.append(f"{said} pins sha {sha!r}, which is no commit id")'
+reddens = ["tests/scripts/test_release.py::test_a_marketplace_value_is_printed_escaped_and_clipped"]
+
+[[mutation]]
+name = "release reads no summary from the plugin tree script"
+file = "scripts/release.py"
+before = '    if isinstance(report, dict) and isinstance(report.get("summary"), str):'
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+]
+
+[[mutation]]
+name = "release quotes the plugin tree script's summary as it is"
+file = "scripts/release.py"
+before = '        return clipped(str(report["summary"]))'
+after = '        return str(report["summary"])'
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[its-summary]"]
+
+[[mutation]]
+name = "release quotes the plugin tree script's last stderr line as it is"
+file = "scripts/release.py"
+before = '    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"'
+after = '    return lines[-1] if lines else f"it exited {done.code} and said nothing"'
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]"]
+
+[[mutation]]
+name = "pin quotes the remote's refusal as it is"
+file = "scripts/release.py"
+before = '            + (clipped(lines[0]) if lines else "it said nothing")'
+after = '            + (lines[0] if lines else "it said nothing")'
+reddens = ["tests/scripts/test_release.py::test_a_remote_s_refusal_is_quoted_clipped"]
+
 [[mutation]]
 name = "pin reads a commit it could not make"
 file = "scripts/release.py"

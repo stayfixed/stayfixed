@@ -28,7 +28,7 @@ import pytest
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import DEPTH_CAP, NESTED
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
-from stayfixed.runner import NOT_FOUND, subprocess_runner
+from stayfixed.runner import NOT_FOUND, Completed, subprocess_runner
 from tests.cli import subparsers
 from tests.gitfixture import git, git_bytes, needs_git
 from tests.plugintree import NINE, PLUGIN_FILES, commit, hashed, literal, plugin_tree_id, write
@@ -332,13 +332,13 @@ def _url(**extra: object) -> dict[str, object]:
         ),
         pytest.param(
             {"name": "stayfixed", "source": _url(ref="main")},
-            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'main', which is no "
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref main, which is no "
             "release tag vX.Y.Z",
             id="a-branch-ref",
         ),
         pytest.param(
             {"name": "stayfixed", "source": _url(ref="v0.1.0-rc1")},
-            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'v0.1.0-rc1', which is "
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref v0.1.0-rc1, which is "
             "no release tag vX.Y.Z",
             id="a-suffixed-ref",
         ),
@@ -382,8 +382,8 @@ def test_a_sha_beside_the_ref_is_accepted(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("sha", "shown"),
     [
-        pytest.param("C" * 40, repr("C" * 40), id="upper-case"),
-        pytest.param("c" * 39, repr("c" * 39), id="39-characters"),
+        pytest.param("C" * 40, "C" * 40, id="upper-case"),
+        pytest.param("c" * 39, "c" * 39, id="39-characters"),
         pytest.param("", "''", id="empty"),
         pytest.param(1, "1", id="a-number"),
     ],
@@ -396,6 +396,29 @@ def test_a_sha_that_is_not_a_commit_id_is_refused(tmp_path: Path, sha: object, s
     root = _with_entry(tmp_path, {"name": "stayfixed", "source": _url(sha=sha)})
     assert release.check(root) == [
         f".claude-plugin/marketplace.json entry 'stayfixed' pins sha {shown}, which is no commit id"
+    ]
+
+
+# What a repository may hand a finding: a line break that a CI runner reads a workflow command
+# after, and a length no reader needs. Printed through `clipped`: its `repr`'s first 120
+# characters, and the length.
+HOSTILE = "v1\n::error::" + "x" * 200
+CLIPPED = repr(HOSTILE[:120]) + f"\N{HORIZONTAL ELLIPSIS}({len(HOSTILE)} chars)"
+# One line of what a program wrote to stderr, which is read line by line: an escape sequence that
+# drives a terminal, and the length.
+ESCAPED = "\x1b[2J" + "y" * 200
+ESCAPED_CLIPPED = repr(ESCAPED[:120]) + f"\N{HORIZONTAL ELLIPSIS}({len(ESCAPED)} chars)"
+
+
+def test_a_marketplace_value_is_printed_escaped_and_clipped(tmp_path: Path) -> None:
+    # Mutations (declared): `mutations/`'s "release check prints the marketplace's ref as it is"
+    # and "release check prints the marketplace's sha as it is" -> the line break and all 211
+    # characters reach the finding.
+    root = _with_entry(tmp_path, {"name": "stayfixed", "source": _url(ref=HOSTILE, sha=HOSTILE)})
+    said = ".claude-plugin/marketplace.json entry 'stayfixed' pins"
+    assert release.check(root) == [
+        f"{said} ref {CLIPPED}, which is no release tag vX.Y.Z",
+        f"{said} sha {CLIPPED}, which is no commit id",
     ]
 
 
@@ -818,7 +841,8 @@ def test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding(tmp_path: Pat
     # `scripts/plugin_tree.py` refuses a symlink among the plugin's files, and that refusal is one
     # count problem quoting it: returned, never raised, so `--json` keeps its object. Mutation
     # (declared): a tree that could not be counted read as nought files -> no problem and this
-    # reddens. Mutation (declared): the count asked without `--tag` too -> the last assertion
+    # reddens. Mutation (declared): `mutations/`'s "release reads no summary from the plugin tree
+    # script" -> the refusal's sentence is lost, and the problem says only how it exited. Mutation (declared): the count asked without `--tag` too -> the last assertion
     # reddens.
     root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
     os.symlink("../README.md", root / "skills" / "link")
@@ -1060,8 +1084,8 @@ def test_pin_refuses_an_unreachable_remote(tmp_path: Path) -> None:
     with pytest.raises(Refusal) as refused:
         release.pin(root, remote=str(absent), runner=subprocess_runner())
     said = str(refused.value)
-    assert said.startswith(f"git ls-remote of {absent} exited 128: fatal: "), said
-    assert "does not appear to be a git repository" in said, said
+    # git's line quotes the path, so it is printed as its `repr`, clipped.
+    assert said.startswith(f'git ls-remote of {absent} exited 128: "fatal: '), said
     assert _marketplace(root).read_bytes() == before
 
 
@@ -1109,6 +1133,40 @@ def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
         release.pin(root, remote=str(remote), runner=subprocess_runner())
     assert str(refused.value) == f".claude-plugin/marketplace.json {wording}"
     assert _marketplace(root).read_text(encoding="utf-8") == edited
+
+
+@pytest.mark.parametrize(
+    "failed",
+    [
+        pytest.param(Completed(2, json.dumps({"summary": HOSTILE}), ""), id="its-summary"),
+        pytest.param(Completed(1, "", f"Traceback\n{ESCAPED}\n"), id="a-traceback"),
+    ],
+)
+def test_what_the_plugin_tree_script_said_is_quoted_clipped(
+    tmp_path: Path, failed: Completed
+) -> None:
+    # `plugin_tree.py`'s refusal quotes the repository's names and paths, and a traceback's last
+    # line quotes anything. Mutations (declared): `mutations/`'s "release quotes the plugin tree
+    # script's summary as it is" -> `its-summary` carries the line break; "release quotes the
+    # plugin tree script's last stderr line as it is" -> `a-traceback` carries the escape.
+    runner = Recorder(code=failed.code, stdout=failed.stdout, stderr=failed.stderr)
+    with pytest.raises(Refusal) as refused:
+        release.pin(_at(tmp_path, "1.2.3"), remote=str(tmp_path / "unread.git"), runner=runner)
+    shown = CLIPPED if failed.stdout else ESCAPED_CLIPPED
+    assert str(refused.value) == f"the plugin commit could not be made: {shown}"
+
+
+@needs_git
+def test_a_remote_s_refusal_is_quoted_clipped(tmp_path: Path) -> None:
+    # git prints what the remote said. Mutation (declared): `mutations/`'s "pin quotes the remote's
+    # refusal as it is" -> the escape sequence and all 204 characters reach the refusal.
+    root = _released(tmp_path, None)
+    report = {"files": 10, "commit": "c" * 40, "pinned": None, "parent": None}
+    refused_listing = Completed(128, "", f"{ESCAPED}\nfatal: the second line\n")
+    runner = Recorder(stdout=json.dumps(report), answers={"git ls-remote": refused_listing})
+    with pytest.raises(Refusal) as refused:
+        release.pin(root, remote="some-remote", runner=runner)
+    assert str(refused.value) == f"git ls-remote of some-remote exited 128: {ESCAPED_CLIPPED}"
 
 
 @needs_git
