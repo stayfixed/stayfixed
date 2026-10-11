@@ -8,6 +8,7 @@ script's `PLUGIN_PATHS`, and the manifest's first line is spelled here and never
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -357,6 +358,28 @@ def test_render_writes_into_an_empty_directory(tmp_path: Path) -> None:
     out.mkdir()
     plugin_tree.render([Member("LICENSE", "100644", b"MIT\n")], out)
     assert tree_on_disk(out) == {"LICENSE": (b"MIT\n", 0o644)}
+
+
+def test_a_render_that_fails_part_way_leaves_no_manifest_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Mutation (declared): the manifest file written before the tree -> it is on disk beside a
+    # tree whose last member was never written, and says that tree is whole.
+    root = plugin_repository(tmp_path)
+    out, written = tmp_path / "tree", tmp_path / "plugin-tree.txt"
+    real, calls = os.fchmod, []
+
+    def full_disk(descriptor: int, mode: int) -> None:
+        calls.append(descriptor)
+        if len(calls) == len(PLUGIN_FILES):
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+        real(descriptor, mode)
+
+    monkeypatch.setattr(plugin_tree.os, "fchmod", full_disk)
+    argv = ["render", "--root", str(root), "--rev", "HEAD", "--out", str(out)]
+    assert plugin_tree.main([*argv, "--manifest-file", str(written)]) == 2
+    assert len(calls) == len(PLUGIN_FILES)
+    assert not written.exists()
 
 
 def test_render_twice_writes_the_same_tree_and_manifest(tmp_path: Path) -> None:

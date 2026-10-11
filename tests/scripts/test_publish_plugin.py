@@ -214,10 +214,22 @@ def test_without_yes_the_remote_is_unchanged(tmp_path: Path) -> None:
     assert refs(remote) == {}
     assert ran(runner, "push") == []
     assert (done.pushed, done.already, done.files) == (False, False, 10)
-    # The commit the dry run reports is the one it built, and would push.
+    # The commit the dry run reports is the one it built, and the tree is that commit's.
     built = scratch / "plugin.git"
     assert git(built, "rev-parse", "--verify", f"{done.commit}^{{commit}}").strip() == done.commit
+    assert git(built, "rev-parse", f"{done.commit}^{{tree}}").strip() == done.tree
     assert listed(built, done.commit, exact=True) == PLUGIN_FILES
+
+
+def test_the_tree_a_dry_run_names_is_the_one_a_later_run_pushes(tmp_path: Path) -> None:
+    # Mutation (declared): the commit's id reported as its tree -> the dry run's tree is a commit
+    # id, which the pushed `main`'s tree is not. The commit ids are not compared: `commit-tree`
+    # stamps each run's own time, so two runs a second apart make two commits of one tree.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    dry, _ = publish(source, remote, tmp_path / "dry", yes=False)
+    pushed, _ = publish(source, remote, tmp_path / "pushed")
+    assert pushed.tree == dry.tree
+    assert git(remote, "rev-parse", "refs/heads/main^{tree}").strip() == dry.tree
 
 
 def test_the_tree_is_rendered_from_the_tag_and_not_the_disk(tmp_path: Path) -> None:
@@ -283,6 +295,7 @@ def test_a_second_publish_of_the_same_tag_pushes_nothing(tmp_path: Path) -> None
     before = refs(remote)
     second, runner = publish(source, remote, tmp_path / "second")
     assert (second.already, second.pushed, second.commit) == (True, False, first.commit)
+    assert second.tree == first.tree
     assert refs(remote) == before
     assert ran(runner, "push") == []
     # The attestation is asked again before the remote is: a re-run trusts nothing it found.
@@ -410,7 +423,25 @@ def test_a_missing_git_identity_is_refused_before_anything_is_pushed(tmp_path: P
     with pytest.raises(Refusal, match="git commit-tree exited") as refused:
         publish(source, remote, tmp_path / "scratch")
     assert "user.name" in str(refused.value)
-    assert "global git configuration" in str(refused.value)
+    assert "global or system git configuration" in str(refused.value)
+    assert refs(remote) == {}
+
+
+def test_a_commit_tree_that_gave_no_answer_is_not_blamed_on_the_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Mutation (declared): the no-answer branch dropped -> `git_run`'s `-1` (timed out, or git
+    # could not be started) is reported as a missing identity.
+    source, remote = source_repository(tmp_path), bare_remote(tmp_path)
+    real = publish_plugin.git_run
+
+    def silent(root: Path, *args: str, **options: Any) -> tuple[int, str]:
+        return (-1, "") if "commit-tree" in args else real(root, *args, **options)
+
+    monkeypatch.setattr(publish_plugin, "git_run", silent)
+    with pytest.raises(Refusal, match="git commit-tree gave no answer") as refused:
+        publish(source, remote, tmp_path / "scratch")
+    assert "identity" not in str(refused.value)
     assert refs(remote) == {}
 
 
@@ -696,9 +727,10 @@ def test_the_cli_says_what_a_dry_run_would_push(
     monkeypatch.setattr(publish_plugin, "subprocess_runner", Composite)
     assert publish_plugin.main(["--tag", TAG, "--remote", str(remote)]) == 0
     said = capsys.readouterr().out
-    assert said.startswith("would push 10 files as ")
+    assert said.startswith("would push 10 files as tree ")
     assert f"to {remote}: main and {TAG}" in said
     assert "--yes" in said
+    assert "the commit is this run's" in said
     assert refs(remote) == {}
 
 

@@ -1970,6 +1970,13 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the plugin render writes its manifest file before the tree"
+file = "scripts/plugin_tree.py"
+before = "    render(found, out)\n    # Last, after every member: a manifest on disk says its tree was written whole.\n    _write_manifest(written, manifest(found))"
+after = "    _write_manifest(written, manifest(found))\n    render(found, out)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_render_that_fails_part_way_leaves_no_manifest_file"]
+
+[[mutation]]
 name = "the plugin render writes its manifest file inside the tree"
 file = "scripts/plugin_tree.py"
 before = "    if written.resolve().is_relative_to(out.resolve()):"
@@ -2257,6 +2264,25 @@ before = '"--quiet", "--template=", str(git_dir)'
 after = '"--quiet", str(git_dir)'
 reddens = [
   "tests/scripts/test_publish_plugin.py::test_the_owners_init_template_does_not_reach_the_scratch_repository",
+]
+
+[[mutation]]
+name = "the publisher reports its commit's id as the tree it pushes"
+file = "scripts/publish_plugin.py"
+before = "    return root_tree, commit\n"
+after = "    return commit, commit\n"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_the_tree_a_dry_run_names_is_the_one_a_later_run_pushes",
+  "tests/scripts/test_publish_plugin.py::test_without_yes_the_remote_is_unchanged",
+]
+
+[[mutation]]
+name = "the publisher blames the identity for a commit-tree that gave no answer"
+file = "scripts/publish_plugin.py"
+before = "    if code == -1:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_commit_tree_that_gave_no_answer_is_not_blamed_on_the_identity",
 ]
 
 [[mutation]]

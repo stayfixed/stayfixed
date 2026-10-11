@@ -6,8 +6,10 @@
 The plugin is published from `stayfixed/stayfixed-plugin`, a repository whose root is the tree
 `scripts/plugin_tree.py` renders from a commit of this one. CI renders that tree at the release's
 tag and attests its manifest; this is the owner's one command that takes the same tree to the
-plugin repository. Without `--yes` it does everything but the push, and says which commit it would
-push; with `--yes` it pushes that commit as `main` and as the tag, atomically.
+plugin repository. Without `--yes` it does everything but the push, and says which tree it would
+push and the commit this run built for it; with `--yes` it pushes its own commit as `main` and as
+the tag, atomically. The tree is the same from run to run; the commit is not, since `commit-tree`
+stamps the time it ran, so a dry run's commit id is that run's and no later one's.
 
 **What it trusts, and why.** The attestation, and only the attestation, says which tree may be
 published: `gh attestation verify` binds the manifest's bytes to this repository's `release.yml`
@@ -95,7 +97,8 @@ NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 class Published:
     tag: str
     files: int
-    commit: str  # the plugin repository's new commit, or the one already tagged
+    tree: str  # the commit's root tree: the same for every run over one attested manifest
+    commit: str  # this run's new commit, or the one already tagged
     pushed: bool
     already: bool  # the remote's tag and main already name a commit holding exactly this manifest
 
@@ -268,9 +271,9 @@ def _fetch(runner: Runner, git_dir: Path, remote: str, ref: str) -> None:
 
 def _already(
     runner: Runner, root: Path, scratch: Path, remote: str, tag: str, held: dict[str, str]
-) -> str:
-    """The commit the remote's tag names, if it holds exactly the attested tree and `main` names
-    it too; any other state of the remote under this tag is a refusal."""
+) -> tuple[str, str]:
+    """The commit the remote's tag names, and its root tree, if it holds exactly the attested
+    tree and `main` names it too; any other state of the remote under this tag is a refusal."""
     git_dir, tagged = scratch / "plugin.git", held[f"refs/tags/{tag}"]
     _fetch(runner, git_dir, remote, f"refs/tags/{tag}")
     remote_tree = scratch / "remote-tree.txt"
@@ -290,7 +293,17 @@ def _already(
     if held.get(MAIN) != commit:
         at = held.get(MAIN, "absent")
         raise Refusal(f"{remote}'s {tag} holds this tree at {commit}, but main is at {at}")
-    return commit
+    return _root_tree(git_dir, commit), commit
+
+
+def _root_tree(git_dir: Path, commit: str) -> str:
+    code, answer = _scratch_git(
+        git_dir, "rev-parse", "--verify", "--end-of-options", f"{commit}^{{tree}}"
+    )
+    tree = answer.removesuffix("\n")
+    if code != 0 or not tree:
+        raise Refusal(f"{commit} names no tree in {git_dir} (git rev-parse exited {code})")
+    return tree
 
 
 def _scratch_repository(scratch: Path) -> Path:
@@ -343,8 +356,9 @@ def _build(
     rows: list[tuple[str, str]],
     parent: str | None,
     paragraphs: tuple[str, ...],
-) -> str:
-    """The commit holding each rendered file at its manifest mode, and nothing else."""
+) -> tuple[str, str]:
+    """The root tree holding each rendered file at its manifest mode, and nothing else, and the
+    commit of it this run made."""
     files = [str(rendered / path) for _, path in rows]
     code, answer = _scratch_git(
         git_dir, "hash-object", "-w", "--no-filters", "--", *files, timeout=QUERY_TIMEOUT_SECONDS
@@ -370,18 +384,25 @@ def _build(
     message = [arg for paragraph in paragraphs for arg in ("-m", paragraph)]
     code, answer = _scratch_git(git_dir, "commit-tree", root_tree, *lineage, *message)
     commit = answer.removesuffix("\n")
+    if code == -1:
+        raise Refusal(
+            f"git commit-tree gave no answer in {git_dir}: it ran past its time limit or could "
+            "not be started, and no commit was written"
+        )
     if code != 0 or not commit:
         # `git_run` keeps git's stderr to itself, so git's own sentence is not here to quote.
-        # The parent is known to be present (`_parent`), so the cause left is the identity, and
-        # `git_run` hands git neither the environment's `GIT_AUTHOR_*` nor a scratch repository
-        # any `includeIf "gitdir:…"` matches: only the global configuration's identity reaches it.
+        # The parent is known to be present (`_parent`), so the likeliest cause left is the
+        # identity, and `git_run` hands git neither the environment's `GIT_AUTHOR_*` nor a
+        # scratch repository any `includeIf "gitdir:…"` matches: only an identity in the global
+        # or the system configuration reaches it.
         raise Refusal(
-            f"git commit-tree exited {code} in {git_dir} and wrote no commit; the commit is "
-            "authored by the identity in your global git configuration, so set user.name and "
-            "user.email there (git config --global): an identity from GIT_AUTHOR_* variables "
-            'or from an includeIf "gitdir:…" section does not reach this script\'s git'
+            f"git commit-tree exited {code} in {git_dir} and wrote no commit, most likely for "
+            "want of an identity: set user.name and user.email in your global or system git "
+            "configuration (~/.gitconfig, ~/.config/git/config or /etc/gitconfig; "
+            "git config --global writes the first). An identity from GIT_AUTHOR_* variables or "
+            'from an includeIf "gitdir:…" section does not reach this script\'s git'
         )
-    return commit
+    return root_tree, commit
 
 
 def publish(
@@ -407,8 +428,8 @@ def publish(
     held = _remote_refs(runner, git_dir, remote, tag)
     tagged = held.get(f"refs/tags/{tag}")
     if tagged is not None:
-        commit = _already(runner, root, scratch, remote, tag, held)
-        return Published(tag, len(rows), commit, pushed=False, already=True)
+        tree, commit = _already(runner, root, scratch, remote, tag, held)
+        return Published(tag, len(rows), tree, commit, pushed=False, already=True)
     parent = held.get(MAIN)
     if parent is not None:
         _fetch(runner, git_dir, remote, MAIN)
@@ -418,7 +439,7 @@ def publish(
         f"stayfixed {version}",
         f"Generated from {SOURCE_REPOSITORY} at {sha} ({tag}) by scripts/publish_plugin.py.",
     )
-    commit = _build(git_dir, rendered, rows, parent, paragraphs)
+    tree, commit = _build(git_dir, rendered, rows, parent, paragraphs)
     readback = scratch / "readback.txt"
     built = ("manifest", "--exact", "--root", str(git_dir), "--rev", commit)
     _plugin_tree(runner, root, *built, "--manifest-file", str(readback))
@@ -445,7 +466,7 @@ def publish(
                 f"git push to {remote} exited {pushed.code}, and the push is atomic, so neither "
                 f"main nor {tag} moved: {_said(pushed)}"
             )
-    return Published(tag, len(rows), commit, pushed=yes, already=False)
+    return Published(tag, len(rows), tree, commit, pushed=yes, already=False)
 
 
 # --- The command --------------------------------------------------------------------------------
@@ -474,12 +495,18 @@ def run_publish(args: argparse.Namespace) -> Result:
             scratch=Path(scratch),
         )
     data = {**asdict(done), "remote": remote}
-    where = f"{done.files} files as {done.commit} to {remote}: main and {done.tag}"
+    held = f"tree {done.tree}, commit {done.commit}"
+    where = f"{done.files} files as {held}, to {remote}: main and {done.tag}"
     if done.already:
         return Result(f"already published: {where}; nothing was pushed", data)
     if done.pushed:
         return Result(f"pushed {where}", data)
-    return Result(f"would push {where}; run again with --yes to push", data)
+    return Result(
+        f"would push {where}; run again with --yes to push. The tree is the one that run pushes; "
+        "the commit is this run's, and that run makes its own, since a commit records when it "
+        "was made",
+        data,
+    )
 
 
 def parser() -> argparse.ArgumentParser:
