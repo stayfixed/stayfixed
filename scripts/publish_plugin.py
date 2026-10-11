@@ -37,9 +37,11 @@ and its manifest compared with that one byte for byte before anything leaves the
 repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
 as well as `ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*`
 variable) refused rather than classified, and after a push the tag is read back through the API,
-which must name the commit pushed; another `--remote` (a test, a rehearsal) is read from
-`ls-remote` alone, and the summary says so. CI holds no credential to the plugin repository: the
-owner's own git pushes, with the owner's own key.
+which must name the commit pushed: a tag it does not list beside a `main` still at the commit's
+parent is a push that went elsewhere, through a `url.*.pushInsteadOf` or a `remote.<url>.pushurl`,
+which moves a push and not a listing. Another `--remote` (a test, a rehearsal) is read from
+`ls-remote` alone, and the summary, and a rejection resting on it, says so. CI holds no
+credential to the plugin repository: the owner's own git pushes, with the owner's own key.
 
 **Commit ids are compared, never manifests.** A remote whose tag already names the pinned commit is
 "already published": exit `0`, nothing fetched or pushed, wherever its `main` has moved since. A
@@ -299,11 +301,17 @@ def _source_anchor(runner: Runner, root: Path, tag: str, sha: str) -> None:
     """Refuse a local tag that is not GitHub's: its code is about to run."""
     found = _github_ref(runner, root, SOURCE_REPOSITORY, f"refs/tags/{tag}")
     if found != sha:
+        # A tag GitHub lacks was not pushed; one it holds at another commit is fetched over the
+        # local one, which a plain `git fetch --tags` refuses as clobbering an existing tag.
+        advice = (
+            "Push the tags (RELEASING.md section 2, step 6)"
+            if found is None
+            else "Fetch GitHub's tags over yours (git fetch --tags --force)"
+        )
         held = f"names {found}" if found is not None else "holds no such tag"
         raise Refusal(
             f"your local {tag} names {sha}, and GitHub's {SOURCE_REPOSITORY} {held}: your local "
-            f"{tag} is not GitHub's. Fetch the tags (git fetch --tags) and run again; nothing "
-            "was run"
+            f"{tag} is not GitHub's. {advice} and run again; nothing was run"
         )
 
 
@@ -632,20 +640,28 @@ def _remote_state(runner: Runner, root: Path, git_dir: Path, remote: str, tag: s
             f"{github_main or 'absent'} and {tag} {github_tag or 'absent'}: your git reaches "
             "another repository, through a redirect (a url.*.insteadOf in your git "
             "configuration, or a GIT_CONFIG_* variable), or main moved while this ran. Remove "
-            "the redirect, or run again"
+            "the redirect, and any url.*.pushInsteadOf or remote.<url>.pushurl that sends the "
+            "push elsewhere the same way, or run again"
         )
     return RemoteState(main, tagged, confirmed=True)
 
 
-def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, main: str | None) -> None:
+def _unconfirmed(state: RemoteState) -> str:
+    """What a finding about the remote adds when only `ls-remote` read it, as the summary does."""
+    return "" if state.confirmed else " (not confirmed through GitHub's API)"
+
+
+def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, state: RemoteState) -> None:
     """Reject a commit `main` does not fast-forward to; then fetch `main`, the commit's parent,
     and refuse a `main` that moved since it was listed."""
+    main = state.main
     if main != built.parent:
         follows = f"parent {built.parent}" if built.parent is not None else "no parent"
         holds = f"main at {main}" if main is not None else "no main"
         raise Rejected(
-            f"the plugin commit {built.commit} has {follows}, and {remote} has {holds}; the "
-            "plugin repository's main moves only by fast-forward. Reject the release's approval"
+            f"the plugin commit {built.commit} has {follows}, and {remote} has {holds}"
+            f"{_unconfirmed(state)}; the plugin repository's main moves only by fast-forward. "
+            "Reject the release's approval"
         )
     if main is None:
         return
@@ -671,12 +687,24 @@ def _follows(runner: Runner, git_dir: Path, remote: str, built: Built, main: str
         )
 
 
-def _landed(runner: Runner, root: Path, remote: str, tag: str, commit: str) -> None:
+def _landed(runner: Runner, root: Path, remote: str, tag: str, built: Built) -> None:
     """Refuse a push GitHub's API does not show: its plugin repository's tag, read back, must name
-    the commit pushed."""
+    the commit pushed. A tag GitHub does not list beside a `main` it still holds at the commit's
+    parent is a push that went elsewhere: `url.*.pushInsteadOf` and `remote.<url>.pushurl` move a
+    push and not a listing, so `ls-remote` and the API agreed before it."""
+    commit = built.commit
     found = _github_ref(runner, root, PLUGIN_REPOSITORY, f"refs/tags/{tag}")
     pushed = f"git pushed {commit} to {remote} as main and {tag}"
     if found is None:
+        main = _github_ref(runner, root, PLUGIN_REPOSITORY, MAIN)
+        if main == built.parent:
+            holds = f"main at {main}" if main is not None else "no main"
+            raise Refusal(
+                f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} does not list {tag} and still has "
+                f"{holds}: the push went elsewhere, through a url.*.pushInsteadOf or a "
+                "remote.<url>.pushurl in your git configuration, or a GIT_CONFIG_* variable, "
+                "which moves a push and not a listing. Remove it and run again"
+            )
         raise Refusal(
             f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} does not list {tag} yet; run again, "
             "which says already published once GitHub lists it"
@@ -685,8 +713,8 @@ def _landed(runner: Runner, root: Path, remote: str, tag: str, commit: str) -> N
         raise Refusal(
             f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} names {found} under {tag}: someone "
             f"else published {tag} at the same moment, or the push went elsewhere, through a "
-            "url.*.insteadOf in your git configuration or a GIT_CONFIG_* variable; find which, "
-            "fix it and run again"
+            "url.*.insteadOf, a url.*.pushInsteadOf or a remote.<url>.pushurl in your git "
+            "configuration or a GIT_CONFIG_* variable; find which, fix it and run again"
         )
 
 
@@ -717,12 +745,13 @@ def publish(
     if state.tag is not None:
         if state.tag != built.commit:
             raise Rejected(
-                f"{remote} holds {tag} at {state.tag}, and the plugin commit {tag} pins is "
-                f"{built.commit}: a tag is not moved. Reject the release's approval"
+                f"{remote} holds {tag} at {state.tag}{_unconfirmed(state)}, and the plugin "
+                f"commit {tag} pins is {built.commit}: a tag is not moved. Reject the release's "
+                "approval"
             )
         outcome = "already"
     else:
-        _follows(runner, git_dir, remote, built, state.main)
+        _follows(runner, git_dir, remote, built, state)
         outcome = "would-push"
         if yes:
             pushed = _network(
@@ -742,7 +771,7 @@ def publish(
                     f"neither main nor {tag} moved: {_said(pushed)}"
                 )
             if state.confirmed:
-                _landed(runner, root, remote, tag, built.commit)
+                _landed(runner, root, remote, tag, built)
             outcome = "pushed"
     return Published(tag, built.files, built.tree, built.commit, outcome, state.confirmed)
 

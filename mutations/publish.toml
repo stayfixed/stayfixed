@@ -438,8 +438,11 @@ reddens = [
   "tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity",
 ]
 
-# An attestation that does not verify is a release to reject only when GitHub holds one of the
-# manifest's digest: none yet, or no answer, is a run to repeat.
+# Every failed verify exits 2, whatever GitHub lists; GitHub's listing of attestations of the
+# manifest's digest only chooses the advice the refusal gives: none yet, run again once the
+# release's build and attest jobs are green; one that does not verify here, run again with a
+# working gh and network; and either answer repeated then, reject the approval. No answer at all
+# is a run to repeat.
 [[mutation]]
 name = "the publisher reads a missing attestation as a wrong one"
 file = "scripts/publish_plugin.py"
@@ -463,7 +466,7 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the publisher stops saying when a release whose attestation does not verify is rejected"
+name = "the publisher stops advising a rejection when an attestation keeps failing to verify"
 file = "scripts/publish_plugin.py"
 before = """                "same with a working gh and network once the release's build and attest jobs are "
                 "green, reject the release's approval\""""
@@ -487,7 +490,7 @@ after = '''        said = f"gh attestation verify exited {verified.code}"'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[200]", "tests/scripts/test_publish_plugin.py::test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses[404]"]
 
 [[mutation]]
-name = "the publisher stops saying when a release with no attestation is rejected"
+name = "the publisher stops advising a rejection when no attestation appears once the jobs are green"
 file = "scripts/publish_plugin.py"
 before = """            "again; if it says the same then, reject the release's approval\""""
 after = """            "again\""""
@@ -1023,19 +1026,17 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_
 name = "the publisher takes a pushed tag GitHub does not list for one elsewhere"
 file = "scripts/publish_plugin.py"
 before = """    if found is None:
-        raise Refusal(
-            f"{pushed}, and GitHub's"""
+        main = _github_ref("""
 after = """    if False:
-        raise Refusal(
-            f"{pushed}, and GitHub's"""
+        main = _github_ref("""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
 
 [[mutation]]
 name = "the publisher says a pushed tag went elsewhere without naming the redirect"
 file = "scripts/publish_plugin.py"
 before = """            f"else published {tag} at the same moment, or the push went elsewhere, through a "
-            "url.*.insteadOf in your git configuration or a GIT_CONFIG_* variable; find which, "
-            "fix it and run again\""""
+            "url.*.insteadOf, a url.*.pushInsteadOf or a remote.<url>.pushurl in your git "
+            "configuration or a GIT_CONFIG_* variable; find which, fix it and run again\""""
 after = """            f"else published {tag} at the same moment, or the push went elsewhere; find which, "
             "fix it and run again\""""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
@@ -1048,6 +1049,91 @@ before = """: someone "
 after = """: the push "
             f"went elsewhere, through a \""""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming a rewrite of the push"
+file = "scripts/publish_plugin.py"
+before = '''            "url.*.insteadOf, a url.*.pushInsteadOf or a remote.<url>.pushurl in your git "'''
+after = '''            "url.*.insteadOf in your git "'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+# A rewrite of the push alone (`url.*.pushInsteadOf`, `remote.<url>.pushurl`) leaves `ls-remote` and
+# the API agreeing before the push; after it, a tag GitHub does not list beside a `main` still at
+# the parent is a push that went elsewhere, and running again would send it there again.
+[[mutation]]
+name = "the publisher reads a push that went elsewhere as one GitHub has not listed yet"
+file = "scripts/publish_plugin.py"
+before = "        if main == built.parent:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-push-sent-elsewhere]",
+]
+
+[[mutation]]
+name = "the publisher says every pushed tag GitHub does not list went elsewhere"
+file = "scripts/publish_plugin.py"
+before = "        if main == built.parent:"
+after = "        if True:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[404]"]
+
+[[mutation]]
+name = "the publisher names no push rewrite beside the redirect"
+file = "scripts/publish_plugin.py"
+before = '''            "the redirect, and any url.*.pushInsteadOf or remote.<url>.pushurl that sends the "
+            "push elsewhere the same way, or run again"'''
+after = '''            "the redirect, or run again"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_api_decides_on_the_default_remote"]
+
+# A rejection that rests on `ls-remote` alone, on a remote other than the default, says so, as the
+# summary of such a run does.
+[[mutation]]
+name = "the publisher rejects a main it read from ls-remote alone without saying so"
+file = "scripts/publish_plugin.py"
+before = '''            f"{_unconfirmed(state)}; the plugin repository's main moves only by fast-forward. "'''
+after = '''            "; the plugin repository's main moves only by fast-forward. "'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-main]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[no-parent]",
+  "tests/scripts/test_publish_plugin.py::test_a_main_that_is_not_the_parent_is_rejected[another-main]",
+]
+
+[[mutation]]
+name = "the publisher rejects a tag it read from ls-remote alone without saying so"
+file = "scripts/publish_plugin.py"
+before = '''                f"{remote} holds {tag} at {state.tag}{_unconfirmed(state)}, and the plugin "'''
+after = '''                f"{remote} holds {tag} at {state.tag}, and the plugin "'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[lightweight]",
+  "tests/scripts/test_publish_plugin.py::test_another_commit_under_the_tag_is_rejected[annotated]",
+]
+
+[[mutation]]
+name = "the publisher says a rejection GitHub's API confirmed is not confirmed"
+file = "scripts/publish_plugin.py"
+before = '''    return "" if state.confirmed else " (not confirmed through GitHub's API)"'''
+after = '''    return " (not confirmed through GitHub's API)"'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_rejection_on_the_default_remote_is_not_said_to_be_unconfirmed",
+]
+
+# The advice for a local tag that is not GitHub's: one GitHub holds at another commit is fetched
+# over the local one, which a plain `git fetch --tags` refuses as clobbering an existing tag; one
+# GitHub lacks was not pushed, and no fetch brings it.
+[[mutation]]
+name = "the publisher advises a fetch git refuses for a tag that differs"
+file = "scripts/publish_plugin.py"
+before = '''            else "Fetch GitHub's tags over yours (git fetch --tags --force)"'''
+after = '''            else "Fetch the tags (git fetch --tags)"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[another-id]"]
+
+[[mutation]]
+name = "the publisher advises a fetch for a tag GitHub does not hold"
+file = "scripts/publish_plugin.py"
+before = '''            "Push the tags (RELEASING.md section 2, step 6)"'''
+after = '''            "Fetch GitHub's tags over yours (git fetch --tags --force)"'''
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_local_tag_github_does_not_hold_is_refused[no-such-tag]"]
 
 [[mutation]]
 name = "the publisher takes any pushed tag GitHub lists for its own"

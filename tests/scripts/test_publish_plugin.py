@@ -607,23 +607,38 @@ ANOTHER_ID = Completed(
 
 
 @pytest.mark.parametrize(
-    ("answer", "named"),
+    ("answer", "named", "advice"),
     [
-        pytest.param(ANOTHER_ID, f"names {OTHER}", id="another-id"),
-        pytest.param(NOT_FOUND, "holds no such tag", id="no-such-tag"),
+        pytest.param(
+            ANOTHER_ID,
+            f"names {OTHER}",
+            "Fetch GitHub's tags over yours (git fetch --tags --force) and run again",
+            id="another-id",
+        ),
+        pytest.param(
+            NOT_FOUND,
+            "holds no such tag",
+            "Push the tags (RELEASING.md section 2, step 6) and run again",
+            id="no-such-tag",
+        ),
     ],
 )
 def test_a_local_tag_github_does_not_hold_is_refused(
-    source: Path, tmp_path: Path, answer: Completed, named: str
+    source: Path, tmp_path: Path, answer: Completed, named: str, advice: str
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the publisher runs a tag GitHub does not hold" -> the
-    # tag's code is extracted and run, and the publish goes on.
+    # A tag GitHub holds at another commit is fetched over the local one, which git 2.54 refuses
+    # without `--force` ("would clobber existing tag"); one GitHub lacks was not pushed. Mutations
+    # (declared): `mutations/`'s "the publisher runs a tag GitHub does not hold" -> the tag's code
+    # is extracted and run, and the publish goes on; "the publisher advises a fetch git refuses
+    # for a tag that differs" -> `another-id` is told `git fetch --tags`; "the publisher advises a
+    # fetch for a tag GitHub does not hold" -> `no-such-tag` is told to fetch what is not there.
     asked = f"gh api --hostname github.com repos/{SOURCE_REPOSITORY}/git/ref/tags/{TAG}"
     runner, scratch = runner_for(source, answers={asked: answer}), tmp_path / "scratch"
     with pytest.raises(Refusal, match="is not GitHub's") as refused:
         publish(source, bare_remote(tmp_path), scratch, runner=runner)
     assert tag_commit(source) in str(refused.value)
     assert named in str(refused.value)
+    assert advice in str(refused.value), str(refused.value)
     assert not (scratch / "tool").exists()
     assert tool_runs(runner) == gh_asked(runner, "gh", "attestation") == []
 
@@ -835,7 +850,9 @@ def test_another_commit_under_the_tag_is_rejected(
     # Mutations (declared): `mutations/`'s "the publisher treats a tag already on the remote as
     # absent" -> the run goes on to push, and the remote refuses the tag that exists, with git's
     # sentence and exit 2; "the publisher calls another commit under the tag published" -> the
-    # run says "already" of another commit.
+    # run says "already" of another commit. Mutation (declared): `mutations/`'s "the publisher
+    # rejects a tag it read from ls-remote alone without saying so" -> the rejection rests on a
+    # listing nothing confirmed, and does not say it.
     remote = bare_remote(tmp_path)
     some = remote_commit(remote, "another commit under the tag")
     if annotated:
@@ -848,6 +865,7 @@ def test_another_commit_under_the_tag_is_rejected(
         publish(source, remote, tmp_path / "scratch", runner=runner)
     assert some in str(rejected.value)
     assert str(pinned_at(source, TAG)) in str(rejected.value)
+    assert "(not confirmed through GitHub's API)" in str(rejected.value), str(rejected.value)
     assert ran(runner, "fetch") == ran(runner, "push") == []
     assert refs(remote) == before
 
@@ -897,7 +915,9 @@ def test_a_main_that_is_not_the_parent_is_rejected(
     # The plugin repository's `main` moves only by fast-forward, so the commit this release pins
     # must follow it: rejected, naming both, before anything is fetched or pushed. Mutation
     # (declared): `mutations/`'s "the publisher builds on a main that is not the parent" -> each
-    # case goes on, to a fetch of a `main` the remote lacks or a push the remote refuses, exit 2.
+    # case goes on, to a fetch of a `main` the remote lacks or a push the remote refuses, exit 2;
+    # "the publisher rejects a main it read from ls-remote alone without saying so" -> the
+    # rejection rests on a listing nothing confirmed, and does not say it.
     remote = bare_remote(tmp_path)
     if main:
         git(remote, "update-ref", "refs/heads/main", remote_commit(remote, "some"))
@@ -910,8 +930,28 @@ def test_a_main_that_is_not_the_parent_is_rejected(
     assert pin in said
     assert (f"parent {previous}" if previous else "no parent") in said, said
     assert (f"main at {before['refs/heads/main']}" if main else "no main") in said, said
+    # Read from `ls-remote` alone, on a remote that is not the default, and said so.
+    assert "(not confirmed through GitHub's API)" in said, said
     assert ran(runner, "fetch") == ran(runner, "push") == []
     assert refs(remote) == before
+
+
+def test_a_rejection_on_the_default_remote_is_not_said_to_be_unconfirmed(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On the default remote GitHub's API read `main` as well, so the rejection rests on it and
+    # says nothing of a listing alone. Mutation (declared): `mutations/`'s "the publisher says a
+    # rejection GitHub's API confirmed is not confirmed" -> the clause is added here too.
+    github = bare_remote(tmp_path)
+    git(github, "update-ref", "refs/heads/main", remote_commit(github, "some"))
+    default = publish_plugin.PLUGIN_REMOTE
+    _global_config(f'[url "{github}"]\n\tinsteadOf = {default}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    with pytest.raises(Rejected) as rejected:
+        publish(source, default, tmp_path / "scratch", runner=runner_for(source, github))
+    said = str(rejected.value)
+    assert "moves only by fast-forward" in said, said
+    assert "not confirmed" not in said, said
 
 
 def test_publishing_an_older_line_never_rewinds_main(source: Path, tmp_path: Path) -> None:
@@ -1001,12 +1041,12 @@ def test_a_failed_verify_is_refused_with_the_advice_github_s_listing_chooses(
     # publisher takes an answer with no attestations key for one" -> the listing reads as an
     # attestation; `mutations/`'s "the publisher reads any failed API call as absent" -> the 500
     # reads as no attestation yet; `mutations/`'s "the publisher classifies a failed verify without
-    # its words" -> the summary loses gh's words; `mutations/`'s "the publisher stops saying when a
-    # release with no attestation is rejected", `mutations/`'s "the publisher stops saying when a
-    # release whose attestation does not verify is rejected", `mutations/`'s "the publisher refuses
-    # an unanswered attestation query without saying to run again" and `mutations/`'s "the
-    # publisher refuses an attestation listing it cannot read without saying to run again" -> the
-    # advice goes.
+    # its words" -> the summary loses gh's words; `mutations/`'s "the publisher stops advising a
+    # rejection when no attestation appears once the jobs are green", `mutations/`'s "the publisher
+    # stops advising a rejection when an attestation keeps failing to verify", `mutations/`'s "the
+    # publisher refuses an unanswered attestation query without saying to run again" and
+    # `mutations/`'s "the publisher refuses an attestation listing it cannot read without saying
+    # to run again" -> the advice goes.
     remote, scratch = bare_remote(tmp_path), tmp_path / "scratch"
     answers = {"gh auth status": Completed(0, "", ""), "gh attestation verify": UNVERIFIED}
     runner = runner_for(source, answers=answers, attestation=attestation)
@@ -1245,7 +1285,9 @@ def test_the_api_decides_on_the_default_remote(
 ) -> None:
     # Mutation (declared): `mutations/`'s "the publisher classifies the default remote from
     # ls-remote alone" -> the redirected listing's tag is taken for GitHub's, and the run says
-    # "already published" of a release GitHub does not hold.
+    # "already published" of a release GitHub does not hold. Mutation (declared): `mutations/`'s
+    # "the publisher names no push rewrite beside the redirect" -> the refusal leaves a rewrite of
+    # the push in place.
     bare = bare_remote(tmp_path)
     _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
@@ -1267,11 +1309,13 @@ def test_the_api_decides_on_the_default_remote(
     with pytest.raises(Refusal, match="redirect") as refused:
         publish(source, default, tmp_path / "hidden", runner=hidden)
     assert "insteadOf" in str(refused.value)
+    assert "url.*.pushInsteadOf or remote.<url>.pushurl" in str(refused.value), str(refused.value)
     assert "or main moved while this ran" in str(refused.value)
     assert ran(hidden, "push") == []
 
 
 TAG_API = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/tags/{TAG}"
+MAIN_API = f"gh api --hostname github.com repos/{PLUGIN_REPOSITORY}/git/ref/heads/main"
 
 
 def redirected_runner(source: Path, bare: Path, after_push: Completed | None) -> Composite:
@@ -1316,7 +1360,8 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
     # reports "pushed"; `mutations/`'s "the publisher says a pushed tag went elsewhere without
     # naming a publish at the same moment" -> the likelier cause goes unsaid; `mutations/`'s "the
     # publisher says a pushed tag went elsewhere without naming the redirect" -> the refusal names
-    # no cause to remove.
+    # no cause to remove. After the 404, GitHub's `main` is read too: it is the pushed commit, so
+    # the push landed and GitHub has not listed the tag yet.
     bare = bare_remote(tmp_path)
     _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
@@ -1334,10 +1379,68 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
         assert "run again" in message, message
         if after_push is ANOTHER_ID:
             assert "url.*.insteadOf" in message and "GIT_CONFIG_*" in message, message
+            assert "url.*.pushInsteadOf or a remote.<url>.pushurl" in message, message
     # The push landed where the owner's git sent it, either way.
     assert refs(bare) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
     push = next(i for i, argv in enumerate(runner.calls) if argv[:1] == ["git"] and "push" in argv)
-    assert [argv for argv in runner.calls[push + 1 :] if argv[:1] == ["gh"]] == [TAG_API.split(" ")]
+    read_back = [TAG_API, MAIN_API] if after_push is NOT_FOUND else [TAG_API]
+    after = [argv for argv in runner.calls[push + 1 :] if argv[:1] == ["gh"]]
+    assert after == [asked.split(" ") for asked in read_back]
+
+
+# A rewrite of the push alone: `url.*.pushInsteadOf`, or `remote.<url>.pushurl` for the URL the
+# publisher is given, which git applies to that URL as to a configured remote's name (measured on
+# git 2.54). `ls-remote` and the API read the repository GitHub stands for; the push goes to
+# `elsewhere`.
+PUSH_REWRITES = {
+    "push-instead-of": '[url "{elsewhere}"]\n\tpushInsteadOf = {remote}\n',
+    "pushurl": '[remote "{remote}"]\n\tpushurl = {elsewhere}\n',
+}
+
+
+@pytest.mark.parametrize("rewrite", PUSH_REWRITES.values(), ids=PUSH_REWRITES)
+def test_a_push_sent_elsewhere_is_refused_naming_the_rewrite(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rewrite: str
+) -> None:
+    # Before the push, `ls-remote` and GitHub's API agree; after it, GitHub lists no tag and its
+    # `main` is still the commit's parent (none, for this first release): the push went elsewhere,
+    # and a run again would send it there again. Mutations (declared): `mutations/`'s "the
+    # publisher reads a push that went elsewhere as one GitHub has not listed yet" -> the refusal
+    # says to run again; "the publisher says every pushed tag GitHub does not list went
+    # elsewhere" -> `test_the_pushed_tag_is_read_back_on_the_default_remote[404]` reddens.
+    github, elsewhere = bare_remote(tmp_path), tmp_path / "elsewhere.git"
+    git(tmp_path, "init", "-q", "--bare", str(elsewhere))
+    default = publish_plugin.PLUGIN_REMOTE
+    _global_config(f'[url "{github}"]\n\tinsteadOf = {default}\n')
+    _global_config(rewrite.format(elsewhere=elsewhere, remote=default))
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    with pytest.raises(Refusal) as refused:
+        publish(source, default, tmp_path / "scratch", runner=runner_for(source, github))
+    message = str(refused.value)
+    assert f"does not list {TAG} and still has no main: the push went elsewhere" in message, message
+    assert "url.*.pushInsteadOf or a remote.<url>.pushurl" in message, message
+    assert "Remove it and run again" in message, message
+    pin = pinned_at(source, TAG)
+    assert refs(elsewhere) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
+    assert refs(github) == {}
+
+
+def test_a_push_rewritten_to_the_same_repository_is_published(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The common rewrite, `url."git@github.com:".pushInsteadOf = "https://github.com/"`, sends the
+    # push for the https URL to the same repository by another URL; here `file://` for the path
+    # the listing reads. Not refused: GitHub lists the tag the push wrote. No mutation of its own:
+    # every refusal after a push needs GitHub not to list the commit pushed.
+    github = bare_remote(tmp_path)
+    url = publish_plugin.PLUGIN_URL
+    _global_config(f'[url "{github}"]\n\tinsteadOf = {url}\n')
+    _global_config(f'[url "file://{github}"]\n\tpushInsteadOf = {url}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    done, _ = publish(source, url, tmp_path / "scratch", runner=runner_for(source, github))
+    pin = pinned_at(source, TAG)
+    assert (done.outcome, done.commit, done.confirmed) == ("pushed", pin, True)
+    assert refs(github) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
 
 
 def test_another_remote_is_not_confirmed(source: Path, tmp_path: Path) -> None:
@@ -1709,6 +1812,16 @@ def _pushed_tag_not_listed(source: Path, remote: Path, monkeypatch: pytest.Monke
     return redirected_runner(source, remote, NOT_FOUND), TAG, publish_plugin.PLUGIN_REMOTE
 
 
+def _pushed_elsewhere(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    elsewhere = remote.parent / "elsewhere.git"
+    git(remote.parent, "init", "-q", "--bare", str(elsewhere))
+    default = publish_plugin.PLUGIN_REMOTE
+    _global_config(f'[url "{remote}"]\n\tinsteadOf = {default}\n')
+    _global_config(f'[url "{elsewhere}"]\n\tpushInsteadOf = {default}\n')
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    return runner_for(source, remote), TAG, default
+
+
 def _read_back_differs(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
     def edit(argv: list[str]) -> None:
         if tool_command(argv) == "commit":
@@ -1832,6 +1945,7 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
         pytest.param(
             _pushed_tag_not_listed, 2, "does not list", id="a-pushed-tag-github-does-not-list"
         ),
+        pytest.param(_pushed_elsewhere, 2, "the push went elsewhere", id="a-push-sent-elsewhere"),
     ],
 )
 def test_every_rejection_exits_1_and_every_refusal_exits_2(
