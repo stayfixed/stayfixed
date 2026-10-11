@@ -1119,7 +1119,7 @@ anywhere; `gh attestation verify` read GitHub's API once.
   install that follows the default branch over GitHub was not measured: `main` cannot be moved for a
   rehearsal.
 - **The publisher's flag set verifies a real release.** Owner-authorised, 2026-10-11: the `v0.2.0`
-  Release's `stayfixed-0.2.0-py3-none-any.whl` (654,738 bytes, sha256 `ad85c75b…`), checked with `gh
+  Release's `stayfixed-0.2.0-py3-none-any.whl` (654,738 bytes, sha256 `ad85c75…`), checked with `gh
   attestation verify --repo stayfixed/stayfixed --signer-workflow
   stayfixed/stayfixed/.github/workflows/release.yml --source-ref refs/tags/v0.2.0 --source-digest
   efd4b6d6143bdcc56d58389152fa024f12991125 --deny-self-hosted-runners`, exited `0`. Two controls
