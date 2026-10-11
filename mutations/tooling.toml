@@ -2057,6 +2057,32 @@ after = '    return lines[-1] if lines else f"it exited {done.code} and said not
 reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]"]
 
 [[mutation]]
+name = "release quotes a plugin tree script that said nothing as its last line"
+file = "scripts/release.py"
+before = '    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"'
+after = "    return clipped(lines[-1])"
+reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[nothing]"]
+
+[[mutation]]
+name = "pin quotes a remote that said nothing as its first line"
+file = "scripts/release.py"
+before = '            + (clipped(lines[0]) if lines else "it said nothing")'
+after = "            + clipped(lines[0])"
+reddens = ["tests/scripts/test_release.py::test_a_remote_s_refusal_is_quoted_clipped[nothing]"]
+
+# A string the marketplace holds prints as itself inside the path grammar; anything else prints as
+# its `repr`, which for every value JSON can hold but a string is its `str` as well, so no test
+# tells the two apart and none is declared for that half.
+[[mutation]]
+name = "release check prints a marketplace string as its repr"
+file = "scripts/release.py"
+before = "    return clipped(value if isinstance(value, str) else repr(value))"
+after = "    return clipped(repr(value))"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-branch-ref]",
+]
+
+[[mutation]]
 name = "pin quotes the remote's refusal as it is"
 file = "scripts/release.py"
 before = '            + (clipped(lines[0]) if lines else "it said nothing")'
@@ -2086,6 +2112,35 @@ before = "    if not isinstance(source, dict):\n        raise Refusal("
 after = "    if False:\n        raise Refusal("
 reddens = [
   "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[a-string-source]",
+]
+
+[[mutation]]
+name = "pin reads the source of an entry that is not there"
+file = "scripts/release.py"
+before = '''        raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
+    source = entry.get("source") if entry is not None else None'''
+after = '''        raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
+    source = entry.get("source")'''
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[no-entry]",
+]
+
+[[mutation]]
+name = "pin says a first release's commit has a parent"
+file = "scripts/release.py"
+before = '''        follows = f"parent {parent}" if parent is not None else "no parent"'''
+after = '''        follows = f"parent {parent}"'''
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+]
+
+[[mutation]]
+name = "pin says a plugin repository with no main has one"
+file = "scripts/release.py"
+before = '''        holds = f"main at {main}" if main is not None else "no main"'''
+after = '''        holds = f"main at {main}"'''
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
 ]
 
 [[mutation]]
@@ -2907,6 +2962,48 @@ file = "scripts/plugin_tree.py"
 before = "    if args.require_pin and found.pinned != found.commit:"
 after = "    if args.require_pin and found.pinned != found.parent:"
 reddens = ["tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit"]
+
+[[mutation]]
+name = "the plugin commit names a parent it does not have"
+file = "scripts/plugin_tree.py"
+before = '    lineage = f"parent {parent}\n" if parent is not None else ""'
+after = '    lineage = f"parent {parent}\n"'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_commit_text_is_exactly_the_documented_bytes",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+]
+
+[[mutation]]
+name = "the plugin commit reads a pin at the first parent of a parentless commit"
+file = "scripts/plugin_tree.py"
+before = "    parent = None if first is None else pinned_sha(root, first)"
+after = "    parent = pinned_sha(root, first)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit makes its git dir again over one that exists"
+file = "scripts/plugin_tree.py"
+before = "    if _empty_or_absent(git_dir):"
+after = "    if True:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-file-inside]",
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-sha256-repository]",
+]
+
+# The trees are written deepest first, each directory's into the one above it, and the root's last.
+[[mutation]]
+name = "the plugin commit writes the root's tree into itself"
+file = "scripts/plugin_tree.py"
+before = "        if directory:"
+after = "        if True:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit makes no tree for a directory that holds only directories"
+file = "scripts/plugin_tree.py"
+before = "        while directory:"
+after = "        while False:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
 
 [[mutation]]
 name = "the plugin commit command writes a manifest file it was not given"

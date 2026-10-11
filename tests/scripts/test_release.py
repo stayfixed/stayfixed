@@ -363,7 +363,9 @@ def test_an_entry_naming_another_repository_or_no_ref_is_refused(
     # `another-url` reddens; the ref's shape unasked -> `no-ref` and `a-branch-ref` redden; the
     # shape matched at the start only -> `a-suffixed-ref` reddens; `\d` for the shape's digits ->
     # `a-non-ascii-digit` passes the shape and is reported as version drift instead, and reddens; a
-    # `version` on the entry let through -> `a-version-on-the-entry` reddens.
+    # `version` on the entry let through -> `a-version-on-the-entry` reddens. Mutation (declared):
+    # `mutations/`'s "release check prints a marketplace string as its repr" -> `a-branch-ref`
+    # says `'main'`.
     assert release.check(_with_entry(tmp_path, entry)) == [problem]
 
 
@@ -1040,7 +1042,9 @@ def test_pin_refuses_when_the_plugin_main_is_not_the_parent(
     # must follow it: refused before any tag is pushed, naming both and the likely cause, and the
     # file left as it was, byte for byte. Mutations (declared): `mutations/`'s "pin skips the main
     # comparison" -> every case writes and reddens; "pin writes before it compares" -> the file
-    # changes and every case reddens.
+    # changes and every case reddens; "pin says a first release's commit has a parent" ->
+    # `no-parent` says `parent None`; "pin says a plugin repository with no main has one" ->
+    # `no-main` says `main at None`.
     remote = _remote(tmp_path, main)
     root = _released(tmp_path, previous)
     before = _marketplace(root).read_bytes()
@@ -1116,6 +1120,11 @@ def test_pin_refuses_a_tree_it_cannot_make_the_commit_of(tmp_path: Path) -> None
             "cannot be pinned: it has no one entry 'stayfixed' whose source is an object",
             id="a-string-source",
         ),
+        pytest.param(
+            '{"plugins": []}',
+            "cannot be pinned: it has no one entry 'stayfixed' whose source is an object",
+            id="no-entry",
+        ),
     ],
 )
 def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
@@ -1125,7 +1134,8 @@ def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
     # is the one on disk, edited since. Refused, as `pin` refuses, and left as it was. Mutations
     # (declared): `mutations/`'s "pin lets a marketplace it cannot read out as a finding" ->
     # `plugins-a-string` exits as a `Failure`; "pin writes a sha into a source that is no object"
-    # -> `a-string-source` is an internal error.
+    # -> `a-string-source` is an internal error; "pin reads the source of an entry that is not
+    # there" -> `no-entry` is an internal error.
     remote = _remote(tmp_path)
     root = _released(tmp_path, None)
     _marketplace(root).write_text(edited, encoding="utf-8")
@@ -1140,6 +1150,7 @@ def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
     [
         pytest.param(Completed(2, json.dumps({"summary": HOSTILE}), ""), id="its-summary"),
         pytest.param(Completed(1, "", f"Traceback\n{ESCAPED}\n"), id="a-traceback"),
+        pytest.param(Completed(1, "", ""), id="nothing"),
     ],
 )
 def test_what_the_plugin_tree_script_said_is_quoted_clipped(
@@ -1148,25 +1159,40 @@ def test_what_the_plugin_tree_script_said_is_quoted_clipped(
     # `plugin_tree.py`'s refusal quotes the repository's names and paths, and a traceback's last
     # line quotes anything. Mutations (declared): `mutations/`'s "release quotes the plugin tree
     # script's summary as it is" -> `its-summary` carries the line break; "release quotes the
-    # plugin tree script's last stderr line as it is" -> `a-traceback` carries the escape.
+    # plugin tree script's last stderr line as it is" -> `a-traceback` carries the escape; "release
+    # quotes a plugin tree script that said nothing as its last line" -> `nothing` is an internal
+    # error.
     runner = Recorder(code=failed.code, stdout=failed.stdout, stderr=failed.stderr)
     with pytest.raises(Refusal) as refused:
         release.pin(_at(tmp_path, "1.2.3"), remote=str(tmp_path / "unread.git"), runner=runner)
-    shown = CLIPPED if failed.stdout else ESCAPED_CLIPPED
+    shown = "it exited 1 and said nothing"
+    if failed.stdout:
+        shown = CLIPPED
+    elif failed.stderr:
+        shown = ESCAPED_CLIPPED
     assert str(refused.value) == f"the plugin commit could not be made: {shown}"
 
 
 @needs_git
-def test_a_remote_s_refusal_is_quoted_clipped(tmp_path: Path) -> None:
-    # git prints what the remote said. Mutation (declared): `mutations/`'s "pin quotes the remote's
-    # refusal as it is" -> the escape sequence and all 204 characters reach the refusal.
+@pytest.mark.parametrize(
+    ("stderr", "said"),
+    [
+        pytest.param(f"{ESCAPED}\nfatal: the second line\n", ESCAPED_CLIPPED, id="escaped"),
+        pytest.param("", "it said nothing", id="nothing"),
+    ],
+)
+def test_a_remote_s_refusal_is_quoted_clipped(tmp_path: Path, stderr: str, said: str) -> None:
+    # git prints what the remote said, its first line quoted. Mutations (declared):
+    # `mutations/`'s "pin quotes the remote's refusal as it is" -> the escape sequence and all 204
+    # characters reach the refusal; "pin quotes a remote that said nothing as its first line" ->
+    # `nothing` is an internal error.
     root = _released(tmp_path, None)
     report = {"files": 10, "commit": "c" * 40, "pinned": None, "parent": None}
-    refused_listing = Completed(128, "", f"{ESCAPED}\nfatal: the second line\n")
+    refused_listing = Completed(128, "", stderr)
     runner = Recorder(stdout=json.dumps(report), answers={"git ls-remote": refused_listing})
     with pytest.raises(Refusal) as refused:
         release.pin(root, remote="some-remote", runner=runner)
-    assert str(refused.value) == f"git ls-remote of some-remote exited 128: {ESCAPED_CLIPPED}"
+    assert str(refused.value) == f"git ls-remote of some-remote exited 128: {said}"
 
 
 @needs_git

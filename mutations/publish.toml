@@ -1066,9 +1066,24 @@ file = "scripts/publish_plugin.py"
 before = "        if main == built.parent:"
 after = "        if False:"
 reddens = [
-  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of]",
-  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-the-first-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-a-later-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl-the-first-release]",
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[pushurl-a-later-release]",
   "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-push-sent-elsewhere]",
+]
+
+[[mutation]]
+name = "the publisher says a push went elsewhere past a main GitHub holds as past none"
+file = "scripts/publish_plugin.py"
+before = '''            holds = f"main at {main}" if main is not None else "no main"
+            raise Refusal(
+                f"{pushed}, and GitHub's'''
+after = '''            holds = "no main"
+            raise Refusal(
+                f"{pushed}, and GitHub's'''
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_push_sent_elsewhere_is_refused_naming_the_rewrite[push-instead-of-a-later-release]",
 ]
 
 [[mutation]]

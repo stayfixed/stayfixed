@@ -629,8 +629,9 @@ def owner_config(text: str) -> None:
 
 
 def test_commit_text_is_exactly_the_documented_bytes() -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit is dated a second after the epoch"
-    # -> both texts differ in their author and committer lines.
+    # Mutations (declared): `mutations/`'s "the plugin commit is dated a second after the epoch"
+    # -> both texts differ in their author and committer lines; "the plugin commit names a parent
+    # it does not have" -> the second text carries `parent None`.
     assert plugin_tree.commit_text("a" * 40, "b" * 40, "0.3.0") == (
         "tree aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         "parent bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
@@ -656,7 +657,13 @@ def test_the_plugin_commit_is_what_git_computes(tmp_path: Path) -> None:
     # Mutations (declared): `mutations/`'s "the plugin commit is dated a second after the epoch"
     # -> the object git holds is not the literal text, and its id is not the one git computes;
     # "the plugin commit builds every file without its executable bit" -> the wrapper and the
-    # launcher are written `100644`.
+    # launcher are written `100644`; "the plugin commit names a parent it does not have" -> the
+    # commit names `parent None`, which git refuses. A source with no marketplace and no first
+    # parent, built into nested directories: `mutations/`'s "the plugin commit reads a commit
+    # holding no marketplace as one holding an empty one", "the plugin commit reads a parentless
+    # source commit as having a first parent", "the plugin commit reads a pin at the first parent
+    # of a parentless commit", "the plugin commit writes the root's tree into itself" and "the
+    # plugin commit makes no tree for a directory that holds only directories" each make it fail.
     root = plugin_source(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
     git_dir = tmp_path / "plugin.git"
@@ -698,8 +705,8 @@ def test_the_parent_is_the_sha_the_first_parent_pins(tmp_path: Path) -> None:
 
 def test_a_first_release_has_no_parent(tmp_path: Path) -> None:
     # The first release's first parent pins no sha: its marketplace names the tag by `ref` alone.
-    # No mutation of its own: a pin read where there is none is a refusal or a parent, and the
-    # parent's mutations redden `test_the_parent_is_the_sha_the_first_parent_pins`.
+    # Mutation (declared): `mutations/`'s "the plugin commit reads an entry pinning no sha as one
+    # pinning a sha" -> the entry's missing `sha` is an internal error.
     root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace()})
     pinning(root, "d" * 40)
     git_dir = tmp_path / "plugin.git"
@@ -711,7 +718,8 @@ def test_a_first_release_has_no_parent(tmp_path: Path) -> None:
 def test_no_parent_ignores_the_history(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # Mutations (declared): `mutations/`'s "the plugin commit reads a parent under root_commit"
     # -> the call's parent is `c`*40; "the plugin commit command drops --no-parent" -> the
-    # command's is.
+    # command's is; "the plugin commit command writes a manifest file it was not given" -> the
+    # command, given none, is an internal error.
     root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace("c" * 40)})
     pinning(root, "d" * 40)
     made = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "one.git", root_commit=True)
@@ -1069,9 +1077,11 @@ def test_a_marketplace_that_is_a_symlink_is_refused(tmp_path: Path) -> None:
 def test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made(
     tmp_path: Path, state: str
 ) -> None:
-    # Mutation (declared): `mutations/`'s "the plugin commit writes into a git dir of another
-    # object format" -> the SHA-256 repository is written into. A directory holding a file that
-    # is no repository fails git's own `rev-parse`, so no line of the script holds it alone.
+    # Mutations (declared): `mutations/`'s "the plugin commit writes into a git dir of another
+    # object format" -> the SHA-256 repository is written into; "the plugin commit makes its git
+    # dir again over one that exists" -> each is made again, and neither is refused for what it
+    # is. A directory holding a file that is no repository fails git's own `rev-parse`, so the
+    # answer half of that check alone holds it.
     root = plugin_source(tmp_path)
     empty = tmp_path / "empty.git"
     empty.mkdir()

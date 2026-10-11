@@ -1398,31 +1398,41 @@ PUSH_REWRITES = {
 }
 
 
+@pytest.mark.parametrize("later", [False, True], ids=["the-first-release", "a-later-release"])
 @pytest.mark.parametrize("rewrite", PUSH_REWRITES.values(), ids=PUSH_REWRITES)
 def test_a_push_sent_elsewhere_is_refused_naming_the_rewrite(
-    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rewrite: str
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rewrite: str, later: bool
 ) -> None:
     # Before the push, `ls-remote` and GitHub's API agree; after it, GitHub lists no tag and its
-    # `main` is still the commit's parent (none, for this first release): the push went elsewhere,
-    # and a run again would send it there again. Mutations (declared): `mutations/`'s "the
-    # publisher reads a push that went elsewhere as one GitHub has not listed yet" -> the refusal
-    # says to run again; "the publisher says every pushed tag GitHub does not list went
-    # elsewhere" -> `test_the_pushed_tag_is_read_back_on_the_default_remote[404]` reddens.
+    # `main` is still the commit's parent, none for the first release and the release before's
+    # commit after it: the push went elsewhere, and a run again would send it there again.
+    # Mutations (declared): `mutations/`'s "the publisher reads a push that went elsewhere as one
+    # GitHub has not listed yet" -> the refusal says to run again; "the publisher says every
+    # pushed tag GitHub does not list went elsewhere" ->
+    # `test_the_pushed_tag_is_read_back_on_the_default_remote[404]` reddens; "the publisher says
+    # a push went elsewhere past a main GitHub holds as past none" -> `a-later-release` says "no
+    # main".
     github, elsewhere = bare_remote(tmp_path), tmp_path / "elsewhere.git"
     git(tmp_path, "init", "-q", "--bare", str(elsewhere))
     default = publish_plugin.PLUGIN_REMOTE
     _global_config(f'[url "{github}"]\n\tinsteadOf = {default}\n')
-    _global_config(rewrite.format(elsewhere=elsewhere, remote=default))
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
+    tag, held = TAG, "no main"
+    if later:
+        first, _ = publish(source, default, tmp_path / "first", runner=runner_for(source, github))
+        tag, held = "v1.2.4", f"main at {first.commit}"
+        released(source, "1.2.4")
+    _global_config(rewrite.format(elsewhere=elsewhere, remote=default))
+    before = refs(github)
     with pytest.raises(Refusal) as refused:
-        publish(source, default, tmp_path / "scratch", runner=runner_for(source, github))
+        publish(source, default, tmp_path / "scratch", tag=tag, runner=runner_for(source, github))
     message = str(refused.value)
-    assert f"does not list {TAG} and still has no main: the push went elsewhere" in message, message
+    assert f"does not list {tag} and still has {held}: the push went elsewhere" in message, message
     assert "url.*.pushInsteadOf or a remote.<url>.pushurl" in message, message
     assert "Remove it and run again" in message, message
-    pin = pinned_at(source, TAG)
-    assert refs(elsewhere) == {"refs/heads/main": pin, f"refs/tags/{TAG}": pin}
-    assert refs(github) == {}
+    pin = pinned_at(source, tag)
+    assert refs(elsewhere) == {"refs/heads/main": pin, f"refs/tags/{tag}": pin}
+    assert refs(github) == before
 
 
 def test_a_push_rewritten_to_the_same_repository_is_published(
