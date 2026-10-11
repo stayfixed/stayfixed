@@ -1043,9 +1043,6 @@ Follow-ups, to file when the pull request closes:
 - Codex's install path for a `url` source is unmeasured.
 - How an install made from the marketplace on GitHub's default branch moves to the plugin
   repository: only the tag-pinned path was measured over GitHub (below).
-- `RELEASING.md` step 7: narrow the local bucket to the render, and have `_already` in
-  `scripts/publish_plugin.py` say a `manifest` refusal of the remote's tagged commit as "already has
-  the tag, holding another tree", so the owner rejects instead of re-running.
 - Three assertions in `tests/scripts/test_publish_plugin.py` carry neither a mutation nor a reason (the
   re-run's tree equals the first run's; the dry run's "the commit is this run's"; the plugin
   repository's name derived once); the module docstring's "every git there" overstates (the
@@ -1143,4 +1140,52 @@ fix wave's scoped re-review found 19 of its 20 items addressed. One residual sta
 local bucket also takes "a manifest `scripts/plugin_tree.py` refused", but the publisher's read of the
 remote's tagged commit with `--exact` refuses through that very message when the tag holds a path
 beside the plugin — another tree under the tag, which should be a rejection. No wrong tree can be
-pushed that way (every re-run refuses again); the owner's time is what it costs.
+pushed that way (every re-run refuses again); the owner's time is what it costs. It was fixed
+before the merge, with the external review below.
+
+### External review and the owner's decisions (2026-10-11)
+
+A review of the pull request at `462c518` found the engineering sound — no finding lets
+`publish_plugin.py` push a wrong tree — and asked for changes. Its central finding was reproduced on
+claude 2.1.296 and the pinned 2.1.261: with a tag in the plugin repository moved to another commit, a
+marketplace entry carrying only `ref` installs the moved tag's tree, and the same entry with `sha`
+installs the pinned commit. So what a user installs is bound to a tag a second repository's admins can
+move; the attestation is checked only on the owner's machine. Also reproduced: a `refs/replace/` entry
+on an annotated tag object changes what `^{commit}` peels to (the comment calling `--no-replace-objects`
+cosmetic there was false), and a hand-written commit object (`hash-object -t commit`) is byte-identical
+across runs under `git_run`'s scrubbed environment, so a plugin commit can be a pure function of its
+inputs.
+
+The owner decided:
+
+- **Pin the commit.** The marketplace entry carries `sha` beside `ref`; the plugin commit is
+  deterministic (fixed author and date, a message without the source sha, the previous release's `sha`
+  as its parent), so the release commit can name it and `release.py check --tag` can verify it offline.
+  "Already published" becomes a comparison of commit ids.
+- **Keep the subprocess boundary, run the tag's own renderer.** `publish_plugin.py` renders with
+  `scripts/plugin_tree.py` and `src/stayfixed` extracted from the tag (`git archive`, `PYTHONPATH`
+  there), since an in-process import would still bind the checkout's `stayfixed` modules; its outcomes
+  are typed by exit code — `1` for "not the attested tree" (reject the `pypi` approval), `2` for a local
+  cause (fix and run again) — held by tests rather than by `RELEASING.md`'s prose.
+- **Merge this pull request now** with the small fixes (the false comment, the smoke's hooks and
+  exfiltration pinned to the installed tree, a suffixed marketplace `ref`, step 7's misrouted remote
+  refusals, `docs/plans/README.md`'s stale size mandate, the upgrading fragment's literal tag) and a
+  release blocker in `RELEASING.md`; the redesign is the next pull request, before `0.3.0`.
+
+The next pull request's scope, from the same review: the three decisions above; publishing an older
+version line rewinds the plugin repository's `main`; "already published" compares a lossy view (empty
+subtrees) — subsumed by the commit-id comparison; SHA-256 object names are refused with a
+self-contradicting message, and five hand-written `rev-parse … ^{kind}` sites want one helper;
+`_parent`'s docstring claims to catch a fast-forward it does not; `git_run`'s no-answer cause is
+reworded instead of reusing `gitenv.NO_ANSWER`; the test scaffolding for "a repository with the nine
+paths" is triplicated; `tests/test_check_workflow.py` duplicates helpers it has; `tests/test_payload.py`
+keeps symlink and gitlink branches its walk can no longer reach. Hardening: `--signer-workflow` is a
+prefix match in gh (`--cert-identity` at the tag is exact); the publisher's network git inherits
+`GIT_CONFIG_*` (read the pushed tag back through the API); the plugin repository's `main` wants
+`deletion` and `non_fast_forward` rules; the manifest is attested in the job that runs the suite with
+`id-token: write` (a separate render-and-attest job); `_control` accepts C1 characters and U+2028/2029;
+`release.yml` could refuse the `pypi` gate until the plugin tag exists (`git ls-remote`). Simplifications
+the review lists (an optional `--manifest-file` for `render`, one `commit()` resolution, one sort, a
+three-valued `Published` outcome, `_already`'s hidden coupling, mutation bookkeeping comments out of
+product code, `RELEASING.md` section 6 restating the docstrings, the open question recorded in three
+places) go with it.
