@@ -1918,6 +1918,12 @@ reddens = [
   "tests/scripts/test_release.py::test_plain_check_does_not_compute_the_commit",
 ]
 
+# No test reddens on `_reported`'s checks one at a time — its exit code, its JSON, an object,
+# `files` a count, and `commit`, `pinned` and `parent` ids or null — and none is arranged:
+# `scripts/plugin_tree.py` prints no other shape. It exits 0 only with the commit's report, whose
+# fields its own `PluginCommit` types, and exits 1 or 2 with the frame's object, which carries no
+# `files`, or with a traceback and nothing on stdout; so each check is another's backstop, and
+# together they keep a report of another shape from being read as the plugin commit.
 # A gate that cannot count does not pass: read as nought files and a matching pin, a tree
 # `plugin_tree.py` refused, or no checkout at all, passes the count.
 [[mutation]]
@@ -2845,6 +2851,190 @@ file = "scripts/plugin_tree.py"
 before = "    if args.require_pin and found.pinned != found.commit:"
 after = "    if args.require_pin and found.pinned != found.parent:"
 reddens = ["tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit"]
+
+[[mutation]]
+name = "the plugin commit command writes a manifest file it was not given"
+file = "scripts/plugin_tree.py"
+before = "    if args.manifest_file is not None:\n        # Last, after every object"
+after = "    if True:\n        # Last, after every object"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+# What the marketplace at a commit can be, each read as `scripts/release.py` reads it or refused in
+# its own words: absent, or pinning no `sha`, is no pin; a symlink, no entry, a pin that is no
+# string, a `plugins` that is no list, text that is not JSON or not UTF-8 is a refusal. A tree or a
+# submodule at the marketplace's path has a mode no regular file has, so the mode refuses it before
+# the kind is asked, and no test reddens on the `kind != "blob"` half alone.
+[[mutation]]
+name = "the plugin commit reads a commit holding no marketplace as one holding an empty one"
+file = "scripts/plugin_tree.py"
+before = "    if not record:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit reads a pin from a marketplace that is no regular file"
+file = "scripts/plugin_tree.py"
+before = '    if kind != "blob" or mode not in REGULAR_MODES:'
+after = '    if kind != "blob":'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_marketplace_that_is_a_symlink_is_refused"]
+
+[[mutation]]
+name = "the plugin commit reads the pin from an entry that is not there"
+file = "scripts/plugin_tree.py"
+before = "    if len(named) != 1:"
+after = "    if len(named) > 1:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[no-entry]"]
+
+[[mutation]]
+name = "the plugin commit reads an entry pinning no sha as one pinning a sha"
+file = "scripts/plugin_tree.py"
+before = "    if \"sha\" not in source:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_first_release_has_no_parent"]
+
+[[mutation]]
+name = "the plugin commit reads a pin that is no string as a string"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(pin, str) or SHA1.fullmatch(pin) is None:"
+after = "    if SHA1.fullmatch(pin) is None:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-number]"]
+
+[[mutation]]
+name = "the plugin commit prints a pin that is no string as its value"
+file = "scripts/plugin_tree.py"
+before = '        shown = clipped(pin) if isinstance(pin, str) else f"a {type(pin).__name__}"'
+after = "        shown = clipped(str(pin))"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[a-number]"]
+
+[[mutation]]
+name = "the plugin commit reads a plugins that is no list"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(plugins, list) or not all(isinstance(entry, dict) for entry in plugins):"
+after = "    if isinstance(plugins, list) and not all(isinstance(entry, dict) for entry in plugins):"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[plugins-a-string]"]
+
+[[mutation]]
+name = "the plugin commit fails a marketplace that is not JSON rather than refusing it"
+file = "scripts/plugin_tree.py"
+before = "    return json_object(text, said, error=Refusal)"
+after = "    return json_object(text, said, error=Failure)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[not-json]"]
+
+[[mutation]]
+name = "the plugin commit reads a marketplace that is not UTF-8 as replaced text"
+file = "scripts/plugin_tree.py"
+before = '        text = content.decode("utf-8")'
+after = '        text = content.decode("utf-8", "replace")'
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[not-utf-8]"]
+
+[[mutation]]
+name = "the plugin commit reads a parentless source commit as having a first parent"
+file = "scripts/plugin_tree.py"
+before = "    if not parents:\n        return None"
+after = "    if False:\n        return None"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes"]
+
+[[mutation]]
+name = "the plugin commit reads a version from a plugin.json that is not there"
+file = "scripts/plugin_tree.py"
+before = "    if not found:\n        raise Refusal(f\"{PLUGIN_MANIFEST}"
+after = "    if False:\n        raise Refusal(f\"{PLUGIN_MANIFEST}"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[no-file]"]
+
+[[mutation]]
+name = "the plugin commit names a version that is no string"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(version, str):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[no-version]",
+  "tests/scripts/test_plugin_tree.py::test_a_plugin_json_naming_no_version_is_refused[a-number]",
+]
+
+[[mutation]]
+name = "the plugin commit lets a git dir it cannot make out as an internal error"
+file = "scripts/plugin_tree.py"
+before = "        except OSError as exc:\n            raise Refusal(f\"{git_dir} cannot be made"
+after = "        except ValueError as exc:\n            raise Refusal(f\"{git_dir} cannot be made"
+reddens = ["tests/scripts/test_plugin_tree.py::test_a_git_dir_that_cannot_be_made_is_refused"]
+
+# Every git the commit runs that fails, or answers nothing usable, is refused in its own words, and
+# never handed on: an empty answer read as no pin, no parent or an id makes another commit, which
+# `--require-pin` exits 1 on, and the publisher reads that as a release to reject. The exit half of
+# `mktree`'s and `hash-object`'s checks is never alone, since a git that fails prints no id, which
+# the id half refuses as well; nor is `rev-parse`'s in `_prepared`, which prints nothing when it
+# fails (`test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made`).
+[[mutation]]
+name = "the plugin commit reads a marketplace git could not list as none"
+file = "scripts/plugin_tree.py"
+before = "    _answered(code, f\"git ls-tree of {sha} in {root}\")\n    if code != 0:"
+after = "    _answered(code, f\"git ls-tree of {sha} in {root}\")\n    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[ls-tree-of-the-marketplace]",
+]
+
+[[mutation]]
+name = "the plugin commit reads a source commit git could not print as parentless"
+file = "scripts/plugin_tree.py"
+before = "    _answered(code, f\"git cat-file of {sha} in {root}\")\n    if code != 0:"
+after = "    _answered(code, f\"git cat-file of {sha} in {root}\")\n    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[cat-file-of-the-commit]",
+]
+
+[[mutation]]
+name = "the plugin commit writes into a git dir git could not make"
+file = "scripts/plugin_tree.py"
+before = "        if code != 0:\n            raise Refusal(f\"git init --bare exited"
+after = "        if False:\n            raise Refusal(f\"git init --bare exited"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[init]",
+]
+
+[[mutation]]
+name = "the plugin commit goes on past a fast-import that failed"
+file = "scripts/plugin_tree.py"
+before = "        if code != 0:\n            raise Refusal(f\"git fast-import exited"
+after = "        if False:\n            raise Refusal(f\"git fast-import exited"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-exits]",
+]
+
+[[mutation]]
+name = "the plugin commit lets marks it cannot read out as an internal error"
+file = "scripts/plugin_tree.py"
+before = "        except (OSError, UnicodeDecodeError) as exc:"
+after = "        except UnicodeDecodeError as exc:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-writes-no-marks]",
+]
+
+[[mutation]]
+name = "the plugin commit writes a tree of members fast-import named no blob for"
+file = "scripts/plugin_tree.py"
+before = "    if not all(SHA1.fullmatch(blob) for blob in blobs):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[fast-import-names-no-blob]",
+]
+
+[[mutation]]
+name = "the plugin commit names a tree mktree did not make"
+file = "scripts/plugin_tree.py"
+before = "    if code != 0 or not SHA1.fullmatch(tree):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[mktree]",
+]
+
+[[mutation]]
+name = "the plugin commit names a commit hash-object did not write"
+file = "scripts/plugin_tree.py"
+before = "    if code != 0 or not SHA1.fullmatch(made):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words[hash-object]",
+]
 
 [[mutation]]
 name = "release check passes a marketplace with no one plugin entry"

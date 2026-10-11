@@ -769,6 +769,12 @@ NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
             id="two-entries",
         ),
         pytest.param(
+            document([]),
+            " has 0 entries named 'stayfixed'; the pin is read from exactly one",
+            True,
+            id="no-entry",
+        ),
+        pytest.param(
             document([{"name": "stayfixed", "source": "./"}]),
             " gives the entry 'stayfixed' a source that is no object; the pin is read from a url "
             "source",
@@ -788,6 +794,7 @@ NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
             id="plugins-a-string",
         ),
         pytest.param((b'{"plugins": [\n', "100644"), " is not valid JSON: ", False, id="not-json"),
+        pytest.param((b"\xff\n", "100644"), " is not UTF-8 text", True, id="not-utf-8"),
     ],
 )
 def test_a_malformed_pinned_sha_is_refused(
@@ -801,7 +808,14 @@ def test_a_malformed_pinned_sha_is_refused(
     # id" -> the three strings are read as pins; "the plugin commit reads the pin from the first of
     # several entries" -> `two-entries` reads `c`*40; "the plugin commit reads a pin from a source
     # that is no object" -> `a-string-source` reads no pin; "the plugin commit skips plugins
-    # entries that are no object" -> `an-entry-that-is-no-object` reads `c`*40.
+    # entries that are no object" -> `an-entry-that-is-no-object` reads `c`*40; "the plugin commit
+    # reads the pin from an entry that is not there" -> `no-entry` is an internal error; "the plugin
+    # commit reads a pin that is no string as a string" -> `a-number` is an internal error; "the
+    # plugin commit prints a pin that is no string as its value" -> `a-number` says `1`; "the
+    # plugin commit reads a plugins that is no list" -> `plugins-a-string` is an internal error;
+    # "the plugin commit fails a marketplace that is not JSON rather than refusing it" ->
+    # `not-json` exits 1; "the plugin commit reads a marketplace that is not UTF-8 as replaced
+    # text" -> `not-utf-8` is said to be no JSON.
     root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: file})
     head = git(root, "rev-parse", "HEAD").strip()
     with pytest.raises(Refusal) as refused:
@@ -906,6 +920,149 @@ def test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words(
     with pytest.raises(Refusal) as refused:
         plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plugin.git")
     assert gitenv.NO_ANSWER in str(refused.value)
+
+
+def _the_marketplace_listed(args: tuple[str, ...]) -> bool:
+    return "ls-tree" in args and MARKETPLACE in args
+
+
+def _the_commit_printed(args: tuple[str, ...]) -> bool:
+    return "cat-file" in args and args[args.index("cat-file") + 1] == "commit"
+
+
+def _running(word: str) -> Callable[[tuple[str, ...]], bool]:
+    return lambda args: word in args
+
+
+# Each git of the commit section that fails or answers nothing usable, and the refusal it must
+# get. `marks` is what the failing `fast-import` leaves in its marks file: `None` writes none.
+FAILED_GITS = {
+    "ls-tree-of-the-marketplace": (_the_marketplace_listed, (128, ""), None, "ls-tree"),
+    "cat-file-of-the-commit": (_the_commit_printed, (128, ""), None, "cat-file"),
+    "init": (_running("init"), (1, ""), None, "init"),
+    "fast-import-exits": (_running("fast-import"), (1, ""), None, "fast-import"),
+    "fast-import-writes-no-marks": (_running("fast-import"), (0, ""), None, "marks"),
+    "fast-import-names-no-blob": (_running("fast-import"), (0, ""), "", "no-blob"),
+    "mktree": (_running("mktree"), (1, ""), None, "mktree"),
+    "hash-object": (_running("hash-object"), (1, ""), None, "hash-object"),
+}
+
+
+@pytest.mark.parametrize(
+    ("asked", "answer", "marks", "said"), FAILED_GITS.values(), ids=FAILED_GITS
+)
+def test_a_git_that_fails_in_the_commit_is_refused_in_its_own_words(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Callable[[tuple[str, ...]], bool],
+    answer: tuple[int, str],
+    marks: str | None,
+    said: str,
+) -> None:
+    # A git that fails must not hand on an empty answer: read as no pin, no parent or an empty id,
+    # the commit is another, and `--require-pin` exits 1, which the publisher reads as a release to
+    # reject. Each case is refused in the words of the git that failed, so a later git failing on
+    # what this one left is not taken for the refusal. Mutations (declared): `mutations/`'s "the
+    # plugin commit reads a marketplace git could not list as none" -> `ls-tree-of-the-marketplace`
+    # builds a commit; "the plugin commit reads a source commit git could not print as parentless"
+    # -> `cat-file-of-the-commit` builds one; "the plugin commit writes into a git dir git could
+    # not make" -> `init` is refused by `fast-import`; "the plugin commit goes on past a
+    # fast-import that failed" -> `fast-import-exits` is refused for its marks; "the plugin commit
+    # lets marks it cannot read out as an internal error" -> `fast-import-writes-no-marks` is an
+    # internal error; "the plugin commit writes a tree of members fast-import named no blob for"
+    # -> `fast-import-names-no-blob` is refused by `mktree`; "the plugin commit names a tree
+    # mktree did not make" -> `mktree` is refused by `hash-object`; "the plugin commit names a
+    # commit hash-object did not write" -> `hash-object` builds a commit with no id.
+    root = plugin_source(tmp_path)
+    head = git(root, "rev-parse", "HEAD").strip()
+    git_dir = tmp_path / "plugin.git"
+    real = plugin_tree.git_run
+
+    def failing(where: Path, *args: str, **options: Any) -> tuple[int, str]:
+        if not asked(args):
+            code, out = real(where, *args, **options)
+            return code, out
+        exported = [arg for arg in args if arg.startswith("--export-marks=")]
+        if marks is not None:
+            Path(exported[0].removeprefix("--export-marks=")).write_text(marks, encoding="ascii")
+        return answer
+
+    monkeypatch.setattr(plugin_tree, "git_run", failing)
+    with pytest.raises(Refusal) as refused:
+        plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    words = {
+        "ls-tree": f"git ls-tree of {head} exited 128 in {root}",
+        "cat-file": f"git cat-file of {head} exited 128 in {root}",
+        "init": f"git init --bare exited 1 in {git_dir}",
+        "fast-import": f"git fast-import exited 1 in {git_dir}",
+        "marks": f"git fast-import's marks in {git_dir} cannot be read: ",
+        "no-blob": f"git fast-import in {git_dir} did not name a blob for every member",
+        "mktree": f"git mktree exited 1 in {git_dir}",
+        "hash-object": f"git hash-object of the plugin commit exited 1 in {git_dir}",
+    }
+    assert str(refused.value).startswith(words[said]), str(refused.value)
+
+
+def test_a_git_dir_that_cannot_be_made_is_refused(tmp_path: Path) -> None:
+    # Mutation (declared): `mutations/`'s "the plugin commit lets a git dir it cannot make out as
+    # an internal error" -> the `mkdir` under a file escapes as `NotADirectoryError`.
+    root = plugin_source(tmp_path)
+    (tmp_path / "a-file").write_bytes(b"not a directory\n")
+    git_dir = tmp_path / "a-file" / "plugin.git"
+    with pytest.raises(Refusal) as refused:
+        plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    assert str(refused.value).startswith(f"{git_dir} cannot be made: "), str(refused.value)
+
+
+def _a_directory(files: dict[str, tuple[bytes, str]]) -> dict[str, tuple[bytes, str]]:
+    """`files` with `.claude-plugin/plugin.json` a directory holding one file: still under the
+    plugin's path, so the tree is read, and no manifest of that name among its members."""
+    manifest = ".claude-plugin/plugin.json"
+    return {**{p: f for p, f in files.items() if p != manifest}, f"{manifest}/x": files[manifest]}
+
+
+@pytest.mark.parametrize(
+    ("files", "wording"),
+    [
+        pytest.param(_a_directory(PLUGIN_FILES), " is no file", id="no-file"),
+        pytest.param(
+            {**PLUGIN_FILES, ".claude-plugin/plugin.json": (b'{"name": "stayfixed"}\n', "100644")},
+            " names no version string",
+            id="no-version",
+        ),
+        pytest.param(
+            {**PLUGIN_FILES, ".claude-plugin/plugin.json": (b'{"version": 3}\n', "100644")},
+            " names no version string",
+            id="a-number",
+        ),
+    ],
+)
+def test_a_plugin_json_naming_no_version_is_refused(
+    tmp_path: Path, files: dict[str, tuple[bytes, str]], wording: str
+) -> None:
+    # The commit message names `plugin.json`'s version, so a tree without one makes no commit.
+    # Mutations (declared): `mutations/`'s "the plugin commit reads a version from a plugin.json
+    # that is not there" -> `no-file` is an internal error; "the plugin commit names a version
+    # that is no string" -> `no-version` and `a-number` build commits naming `None` and `3`.
+    root = plugin_source(tmp_path, files)
+    head = git(root, "rev-parse", "HEAD").strip()
+    with pytest.raises(Refusal) as refused:
+        plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plugin.git")
+    assert str(refused.value) == f".claude-plugin/plugin.json at {head} in {root}{wording}"
+
+
+def test_a_marketplace_that_is_a_symlink_is_refused(tmp_path: Path) -> None:
+    # The pin is read from the marketplace's own bytes, and a symlink's are its target's name.
+    # Mutation (declared): `mutations/`'s "the plugin commit reads a pin from a marketplace that is
+    # no regular file" -> the target's name is read as JSON, and refused as no JSON instead.
+    root = plugin_source(tmp_path)
+    os.symlink("plugin.json", root / MARKETPLACE)
+    head = commit(root, "a symlinked marketplace")
+    with pytest.raises(Refusal) as refused:
+        plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plugin.git")
+    assert str(refused.value) == (
+        f"{MARKETPLACE} at {head} in {root} has mode 120000, not a regular file's"
+    )
 
 
 @pytest.mark.parametrize("state", ["a-file-inside", "a-sha256-repository"])
