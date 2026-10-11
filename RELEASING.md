@@ -384,15 +384,18 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      answer that could not be had or read; an attestation that does not verify, below;
      `git ls-remote` disagreeing with GitHub's API, which names a redirect — a `url.*.insteadOf` or
      a `GIT_CONFIG_*` variable — or a `main` that moved while it ran; a push the remote refused,
-     which moved nothing, being atomic; a pushed tag GitHub does not list yet, which a run once
-     GitHub lists it reports as already published, while a run before that meets `git ls-remote`
-     disagreeing with GitHub's API and exits `2` again; a pushed tag GitHub does not list beside a
-     `main` GitHub still holds at the plugin commit's parent, a push that went elsewhere through a
-     `url.*.pushInsteadOf` or a `remote.<url>.pushurl`, which moves a push and not a listing, so
-     remove it before you run again; a pushed tag GitHub lists under another commit, a redirect
-     again, of the listing or of the push alone; and a refusal or a crash of the tag's own
-     `scripts/plugin_tree.py`, because CI ran the same code on the same commit green, so a cause on
-     this machine is the likely one.
+     which moved nothing, being atomic; a pushed tag GitHub's API does not list, after which the
+     publisher lists the tag once with `git ls-remote`: named there at the pushed commit, GitHub
+     has not listed it yet (`does not list vX.Y.Z yet; run again`), and a run once it does reports
+     it as already published, while a run before that meets `git ls-remote` disagreeing with
+     GitHub's API and exits `2` again; not named there at the pushed commit, the push went
+     elsewhere, through a `url.*.pushInsteadOf`, a `remote.<url>.pushurl` or a `GIT_CONFIG_*`
+     variable, which moves a push and not a listing, so remove it before you run again; a pushed
+     tag GitHub lists under another commit, somebody else publishing the same tag at the same
+     moment or a redirect again, of the listing or of the push alone, so find which and fix it
+     before you run again; and a refusal or a crash of the tag's own `scripts/plugin_tree.py`,
+     because CI ran the same code on the same commit green, so a cause on this machine is the
+     likely one.
 
      **A failed `gh attestation verify` is always `2`**, never `1`, and what to do next depends
      on what GitHub's attestation listing answers for the manifest's digest:
