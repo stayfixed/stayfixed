@@ -2580,6 +2580,13 @@ after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_without_the_plugin_tree_script_is_refused"]
 
 [[mutation]]
+name = "the publisher runs a tag's tool without the tag's package"
+file = "scripts/publish_plugin.py"
+before = '    if TOOL not in paths or not any(path.startswith(f"{TOOL_PACKAGE}/") for path in paths):'
+after = "    if TOOL not in paths:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tag_without_the_package_its_tool_imports_is_refused"]
+
+[[mutation]]
 name = "the publisher runs the tag's code from a file that is not regular"
 file = "scripts/publish_plugin.py"
 before = "        if mode not in TOOL_MODES:"
@@ -2599,6 +2606,13 @@ file = "scripts/publish_plugin.py"
 before = '"sys.path.insert(0, src); runpy'
 after = '"sys.path.append(src); runpy'
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_tag_s_tool_imports_the_tag_s_stayfixed"]
+
+[[mutation]]
+name = "the publisher quotes the first lines of a tool that printed no JSON object"
+file = "scripts/publish_plugin.py"
+before = '            f"{_said(done, last=True)}"'
+after = '            f"{_said(done)}"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_tool_that_prints_no_json_object_is_refused"]
 
 # What the tag's code answers is read as `commit` answers, field by field, before any of it is
 # compared, fetched or pushed.
@@ -3078,11 +3092,11 @@ reddens = [
 # Every other refusal on the way, one entry each, and a sentence for the few no test reaches.
 #
 # No test reddens on these, and none is arranged: `rev-parse --verify` that fails prints nothing,
-# which the id check refuses as well, so `code != 0` in `_tag_commit` is never alone; `ls-tree` of
-# the commit `rev-parse` just resolved does not fail; a file of the tag's code that cannot be
-# written into the directory this run just made needs a full disk; and `if ref not in wanted` in
-# `_listed` only keeps a line `ls-remote` matched by its tail out of the object-name check, since
-# the refs are read back by their exact names. Exit 1 needs no second condition: an exit 1 with an
+# which the id check refuses as well, so `code != 0` in `_tag_commit` is never alone, nor is it in
+# `_follows`, where the empty answer of a failed read of the fetched `main` is not `main` either;
+# `ls-tree` of the commit `rev-parse` just resolved does not fail; and a file of the tag's code
+# that cannot be written into the directory this run just made needs a full disk. Exit 1 needs no
+# second condition: an exit 1 with an
 # object printed is the CLI frame's `Failure`, and a traceback that also exits 1 printed none, which
 # `_run_tool` refuses.
 [[mutation]]
@@ -3252,6 +3266,15 @@ file = "scripts/publish_plugin.py"
 before = "    if listed.code != 0:"
 after = "    if False:"
 reddens = ["tests/scripts/test_publish_plugin.py::test_an_unreachable_remote_is_refused"]
+
+[[mutation]]
+name = "the publisher checks every line ls-remote prints for an object name"
+file = "scripts/publish_plugin.py"
+before = """        if ref not in wanted:
+            continue
+"""
+after = ""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_commit_pushed_is_the_pinned_one"]
 
 [[mutation]]
 name = "the publisher takes a listing that names no object"

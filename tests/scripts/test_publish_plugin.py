@@ -664,6 +664,26 @@ def test_a_tag_without_the_plugin_tree_script_is_refused(tmp_path: Path) -> None
     assert not (scratch / "tool").exists()
 
 
+def test_a_tag_without_the_package_its_tool_imports_is_refused(
+    source: Path, tmp_path: Path
+) -> None:
+    # A tag holding `scripts/plugin_tree.py` and no `src/stayfixed`: run, the script would import
+    # this checkout's `stayfixed` through the venv's path (`-I` keeps site-packages). Mutation
+    # (declared): `mutations/`'s "the publisher runs a tag's tool without the tag's package" -> the
+    # tag's script runs, on the checkout's package, and refuses the tree for its missing
+    # `src/stayfixed` (a plugin path) in its own words rather than the publisher's.
+    git(source, "rm", "-r", "-q", "src/stayfixed")
+    git(source, "commit", "-q", "--amend", "--no-edit")
+    git(source, "tag", "-f", "-a", TAG, "-m", TAG)
+    assert git(source, "ls-tree", "-r", "--name-only", TAG, "--", "src") == ""
+    runner, scratch = runner_for(source), tmp_path / "scratch"
+    with pytest.raises(Refusal, match="predates") as refused:
+        publish(source, bare_remote(tmp_path), scratch, runner=runner)
+    assert "no src/stayfixed" in str(refused.value)
+    assert tool_runs(runner) == []
+    assert not (scratch / "tool").exists()
+
+
 def test_a_tool_file_that_is_not_regular_is_refused(source: Path, tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the publisher runs the tag's code from a file that is
     # not regular" -> the symlink is written as a file holding its target's name, and the tag's
@@ -1298,7 +1318,7 @@ def test_a_sha256_source_is_refused_before_anything_runs(tmp_path: Path) -> None
 def test_a_tool_directory_already_there_is_refused(source: Path, tmp_path: Path) -> None:
     # The tag's code is written only into a directory this run made. Mutation (declared):
     # `mutations/`'s "the publisher writes the tag's code into a directory it did not make" -> the
-    # existing directory escapes as an internal error.
+    # existing directory is written into and the run goes through, refusing nothing.
     scratch = tmp_path / "scratch"
     (scratch / "tool").mkdir(parents=True)
     runner = runner_for(source)
