@@ -3148,6 +3148,17 @@ reddens = [
   "tests/scripts/test_plugin_tree.py::test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused[a-tag]",
 ]
 
+# Run by an interpreter without this repository's `stayfixed`, `scripts/release.py` fails on its
+# first import, before the CLI frame exists; a traceback would exit `1`, `check`'s findings.
+[[mutation]]
+name = "release.py exits 1 when its package cannot be imported"
+file = "scripts/release.py"
+before = "    sys.exit(2)"
+after = "    sys.exit(1)"
+reddens = [
+  "tests/scripts/test_release.py::test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv",
+]
+
 # Run by an interpreter without this repository's `stayfixed`, the script fails on its first
 # import, before the CLI frame exists; a traceback would exit `1`, `commit --require-pin`'s finding.
 [[mutation]]

@@ -31,10 +31,20 @@ from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND, Completed, subprocess_runner
 from tests.cli import subparsers
 from tests.gitfixture import git, git_bytes, needs_git
-from tests.plugintree import NINE, PLUGIN_FILES, commit, hashed, literal, plugin_tree_id, write
+from tests.plugintree import (
+    NINE,
+    PLUGIN_FILES,
+    PLUGIN_URL,
+    commit,
+    hashed,
+    literal,
+    plugin_tree_id,
+    write,
+)
 from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
+from tests.scriptload import without_stayfixed
 
 release = _script()
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,9 +66,6 @@ directory = "change"
 """
 INIT = '__version__ = "{v}"\n'
 LOCK = '[[package]]\nname = "stayfixed"\nversion = "{v}"\nsource = {{ editable = "." }}\n'
-# The repository the marketplace fetches the plugin from, written out rather than read from the
-# script, as every expectation here is.
-PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 # The plugin directory's count, written out rather than read from the script: the number is the
 # page's ("Keep the plugin to 512 files or fewer"), and `tests/test_payload.py` reads the script's.
 FILES_LIMIT = 512
@@ -1504,3 +1511,15 @@ def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path)
     with pytest.raises(Failure, match=re.escape("hooks/hooks.json")):
         release.write_record(root)
     assert not (root / RECORD).exists(), "a refusal wrote a partial record anyway"
+
+
+def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
+    # An interpreter without this repository's `stayfixed` fails on the script's first import,
+    # before the CLI frame exists, and a traceback exits `1`, which `check` gives its findings.
+    # Mutation (declared): `mutations/`'s "release.py exits 1 when its package cannot be imported".
+    done = without_stayfixed("release.py", tmp_path, "check")
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert done.stdout == "", done.stdout
+    assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
+    assert "uv run python scripts/release.py" in done.stderr, done.stderr
+    assert "Traceback" not in done.stderr, done.stderr

@@ -36,10 +36,11 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
 def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
     # The entry fetches the plugin from its own repository, pinned to this release's tag by `ref`
     # and, on a release commit after `scripts/release.py pin`, to the plugin commit by `sha`: `dev`
-    # pins none, and a release commit runs this suite with one. Whether the `sha` is the plugin
-    # commit is the release check's, at the tag. Mutations (declared): the `ref` made
-    # `v0.0.1-<version>`, which is no tag of this release -> this reddens; `mutations/`'s "the
-    # marketplace pins a sha that is no commit id" -> this reddens.
+    # pins none before the first release that carries one, and a release commit runs this suite
+    # with one. Whether the `sha` is the plugin commit is the release check's, at the tag.
+    # Mutations (declared): the `ref` made `v0.0.1-<version>`, which is no tag of this release ->
+    # this reddens; `mutations/`'s "the marketplace pins a sha that is no commit id" -> this
+    # reddens.
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert marketplace["name"] == "stayfixed-marketplace"
     assert marketplace["description"]

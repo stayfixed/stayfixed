@@ -46,25 +46,34 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from stayfixed import fsops
-from stayfixed.cli import JSON_EPILOG, run
-from stayfixed.command import CHECK_HELP, ROOT_HELP
-from stayfixed.config.loader import UNPARSEABLE
-from stayfixed.errors import Failure, Refusal
-from stayfixed.jsonobject import json_object
-from stayfixed.printed import clipped
-from stayfixed.release.api import (
-    FORMAT,
-    HASHED_FILES,
-    PACKAGE,
-    RECORD,
-    UnreadableRecord,
-    digests,
-    read_record,
-    tag_for,
-)
-from stayfixed.result import Result
-from stayfixed.runner import NOT_FOUND, Completed, Runner, subprocess_runner
+# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`
+# would otherwise end in a traceback and exit `1`, which `check` gives its findings.
+try:
+    from stayfixed import fsops
+    from stayfixed.cli import JSON_EPILOG, run
+    from stayfixed.command import CHECK_HELP, ROOT_HELP
+    from stayfixed.config.loader import UNPARSEABLE
+    from stayfixed.errors import Failure, Refusal
+    from stayfixed.jsonobject import json_object
+    from stayfixed.printed import clipped
+    from stayfixed.release.api import (
+        FORMAT,
+        HASHED_FILES,
+        PACKAGE,
+        RECORD,
+        UnreadableRecord,
+        digests,
+        read_record,
+        tag_for,
+    )
+    from stayfixed.result import Result
+    from stayfixed.runner import NOT_FOUND, Completed, Runner, subprocess_runner
+except ImportError as exc:
+    sys.stderr.write(
+        f"scripts/release.py: refused: {exc}; run it with `uv run python scripts/release.py`, "
+        "which puts this repository's stayfixed on the path\n"
+    )
+    sys.exit(2)
 
 # How a message tells the reader to run one of these commands again.
 COMMAND = "uv run python scripts/release.py"
@@ -446,7 +455,8 @@ def checked_by_kind(
         kinds[RECORD_DRIFT] = drift(root)
     # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
     # pull request, and this holds it again where the release is cut; the pin is the release
-    # commit's alone, and `dev` pins none.
+    # commit's, and `dev` pins none before the first release that carries one, and the last
+    # release's after it, which is no pin of the commit `dev` is at.
     if tag is not None:
         kinds.update(plugin_commit_problems(root))
     return kinds, found
