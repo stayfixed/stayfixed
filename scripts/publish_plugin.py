@@ -128,10 +128,11 @@ def _tag_commit(root: Path, tag: str) -> tuple[str, str]:
     if not re.fullmatch(TAG_PATTERN, tag):
         raise Refusal(f"{quoted(tag)} is not a plain version tag, vX.Y.Z")
     # `--no-replace-objects` on both reads, as `plugin_tree.py` reads the tree: a `refs/replace/`
-    # ref must not make the commit or the version checked here another than the tag's own. The
-    # tag is annotated, and its peel reads the tag object, so a replacement of that object makes
-    # the `rev-parse` answer the replacement's commit: that commit would be attested, rendered
-    # and pushed. A test holds each read's flag.
+    # ref must not make the commit or the version checked here another than the tag's own. When
+    # the tag is annotated, its peel reads the tag object, so a replacement of that object makes
+    # the `rev-parse` answer the replacement's commit, and that commit would be attested,
+    # rendered and pushed; a lightweight tag names its commit directly, which a replacement does
+    # not move. A test holds each read's flag.
     code, answer = git_run(
         root,
         "--no-replace-objects",
