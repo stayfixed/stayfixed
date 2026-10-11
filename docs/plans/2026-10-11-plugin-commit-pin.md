@@ -326,7 +326,7 @@ uv run stayfixed plan check docs/plans/2026-10-11-plugin-commit-pin.md
 **6. Pre-flight measurements** (controller, before Wave A; recorded in Findings from persisted logs).
 A measurement that contradicts the plan stops dispatch until the plan is amended.
 
-- [ ] **The certificate identity.** With the owner's yes, against the `v0.2.0` Release's wheel
+- [x] **The certificate identity.** With the owner's yes, against the `v0.2.0` Release's wheel
   (downloaded again only with the owner's yes): `gh attestation verify <wheel> --hostname
   github.com --repo stayfixed/stayfixed --cert-identity
   https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/v0.2.0
@@ -334,10 +334,10 @@ A measurement that contradicts the plan stops dispatch until the plan is amended
   --deny-self-hosted-runners` exits `0`; with the identity changed to the same URL without `@…`,
   to `…@refs/tags/v0.2`, and to `…@refs/tags/v0.1.1`, each exits `1`. Task 5 writes the identity
   in the form that passed.
-- [ ] **The attestation API's answers** (same yes): `gh api --hostname github.com
+- [x] **The attestation API's answers** (same yes): `gh api --hostname github.com
   repos/stayfixed/stayfixed/attestations/sha256:<the wheel's sha256>` answers `200`, and for a
   digest no release attested, `404`. Task 5 classifies on these.
-- [ ] **`sha` on the pinned CLI:** `npx @anthropic-ai/claude-code@2.1.261 plugin validate --strict`
+- [x] **`sha` on the pinned CLI:** `npx @anthropic-ai/claude-code@2.1.261 plugin validate --strict`
   on a copy of `.claude-plugin/marketplace.json` whose entry carries `"sha": "0"*40` exits `0`.
   Task 6 validates that form in CI.
 
@@ -1022,6 +1022,24 @@ Recorded in this file's Findings, quoting only persisted logs under the scratchp
 ## Findings
 
 Written by the pre-flight, Task 8 and the pull request's review.
+
+### Pre-flight measurements (2026-10-11)
+
+Run by the controller with the owner's yes, against `v0.2.0`'s wheel downloaded from its Release
+(sha256 `ad85c75…`); logs persisted in the session's scratchpad.
+
+- **The certificate identity.** `gh attestation verify` with `--cert-identity
+  https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/v0.2.0`,
+  `--source-ref refs/tags/v0.2.0`, `--source-digest efd4b6d…` and `--deny-self-hosted-runners`
+  exits `0`, and the certificate's SubjectAlternativeName read from `--format json` is exactly that
+  URL; the same URL without `@…`, with `@refs/tags/v0.2` and with `@refs/tags/v0.1.1` each exit `1`
+  ("verifying with issuer \"sigstore.dev\""). Task 5's `CERT_IDENTITY` form stands.
+- **The attestation API.** `repos/stayfixed/stayfixed/attestations/sha256:<the wheel's digest>`
+  answers `200`; a digest no release attested answers `404`, `gh api` exits `1`, prints a JSON body
+  with `"status":"404"` and writes `gh: Not Found (HTTP 404)` to stderr.
+- **`sha` on the pinned CLI.** 2.1.261's `plugin validate --strict` passes the marketplace with
+  `"sha": "0"*40` (exit `0`); the control `"sha": "not-a-sha"` fails (exit `1`, "Must be a full
+  40-character lowercase git commit SHA"), so the validator reads the field.
 
 ### Plan review (2026-10-11)
 
