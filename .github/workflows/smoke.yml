@@ -68,17 +68,23 @@ jobs:
         id: plugin-repo
         # The directory and every user read the plugin repository's commit, the one the
         # marketplace entry pins by `sha`, and `scripts/plugin_tree.py commit` builds it from this
-        # commit as the release computes it, into a scratch repository whose `main` and
-        # `v<version>` name it, the version read from the commit's own `plugin.json`.
+        # commit as the release computes it, into a scratch repository whose `main` names it and
+        # whose `v<version>` names a decoy past it, the version read from the commit's own
+        # `plugin.json`.
         # `--no-parent`: the scratch repository holds no earlier plugin commit, and a commit naming
         # a parent it lacks would break the clone once the first parent pins a `sha`. The render
-        # beside it is what the installed tree is held to, file for file, below.
+        # beside it is what the installed tree is held to, file for file, below. The tag is moved
+        # to a decoy one commit past the built one, holding one file more, so the entry's `ref`
+        # names the decoy and only its `sha` the built commit: a harness that installed by the
+        # `ref` and not the `sha` installs a tree that comparison refuses.
         run: |
           uv sync --locked
           uv run python scripts/plugin_tree.py render --root . --rev HEAD \
             --out "$RUNNER_TEMP/plugin-repo" --manifest-file "$RUNNER_TEMP/plugin-tree.txt"
+          # `--json` writes a refusal's sentence into the file too, so a failure prints the file.
           uv run python scripts/plugin_tree.py commit --root . --rev HEAD \
-            --git-dir "$RUNNER_TEMP/plugin-repo.git" --no-parent --json > "$RUNNER_TEMP/plugin-commit.json"
+            --git-dir "$RUNNER_TEMP/plugin-repo.git" --no-parent --json > "$RUNNER_TEMP/plugin-commit.json" \
+            || { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }
           version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$RUNNER_TEMP/plugin-commit.json")"
           commit="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' "$RUNNER_TEMP/plugin-commit.json")"
           test -n "$version"
@@ -89,7 +95,10 @@ jobs:
             exit 1
           fi
           git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref refs/heads/main "$commit"
-          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref "refs/tags/v$version" "$commit"
+          blob="$(printf 'not the pinned commit\n' | git --git-dir="$RUNNER_TEMP/plugin-repo.git" hash-object -w --stdin)"
+          tree="$({ git --git-dir="$RUNNER_TEMP/plugin-repo.git" ls-tree "$commit"; printf '100644 blob %s\tdecoy\n' "$blob"; } | git --git-dir="$RUNNER_TEMP/plugin-repo.git" mktree)"
+          decoy="$(git --git-dir="$RUNNER_TEMP/plugin-repo.git" -c user.name=smoke -c user.email=smoke@example.invalid commit-tree "$tree" -p "$commit" -m "a decoy past the pinned commit")"
+          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref "refs/tags/v$version" "$decoy"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
       - name: Install the plugin from that repository into a temporary configuration directory

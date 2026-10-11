@@ -105,9 +105,12 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
+          # `--json` writes the refusal's sentence into the file too, so a failure prints the file:
+          # without it the job that signs stops with an exit code and no reason.
           python3 scripts/plugin_tree.py commit --root . --rev "$GITHUB_SHA" \
             --git-dir "$RUNNER_TEMP/plugin.git" --manifest-file "$RUNNER_TEMP/plugin-tree.txt" \
-            --require-pin --json > "$RUNNER_TEMP/plugin-commit.json"
+            --require-pin --json > "$RUNNER_TEMP/plugin-commit.json" \
+            || { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }
           commit="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' "$RUNNER_TEMP/plugin-commit.json")"
           # The script prints no other shape, so no test reaches this; `tests/test_check_workflow.py`
           # holds its pattern to the scripts'.
@@ -141,12 +144,14 @@ jobs:
   # and publish a GitHub Release, with nobody asked and nothing failing. A sentence in RELEASING.md
   # is the wrong medium for that, so here it is as a check.
   #
-  # One job rather than a first step copied into each of the two that name the environment. Two
-  # byte-identical scripts in one file drift, and the property that has to hold is not "this job
-  # checked" but "every job that names the environment waited for the check" — which is a claim
-  # about the file, is asserted over the file in `tests/test_fixtures.py`, and covers the third
-  # such job nobody has written yet. The check runs before any approval is asked for, which is
-  # the only time it can run at all: the case it exists for is the one where GitHub asks nobody.
+  # One job rather than a first step in each of the two that name the environment, because the
+  # property that has to hold is not "this job checked" but "every job that names the environment
+  # waited for the check" — a claim about the file, asserted over the file in
+  # `tests/test_fixtures.py`, which covers the third such job nobody has written yet. And it must
+  # run before any approval is asked for, which is the only time it can run at all: the case it
+  # exists for is the one where GitHub asks nobody. The plugin gate below is the other way round:
+  # a step in each gated job, two copies a test holds equal, because as a job of its own it would
+  # ask for a second approval.
   environment-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5

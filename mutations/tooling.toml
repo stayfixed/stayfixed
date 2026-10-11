@@ -648,8 +648,8 @@ reddens = [
 [[mutation]]
 name = "the attest job runs the plugin script without the checkout's package"
 file = ".github/workflows/release.yml"
-before = "        env:\n          PYTHONPATH: src\n        run: |\n          python3 scripts/plugin_tree.py commit"
-after = "        run: |\n          python3 scripts/plugin_tree.py commit"
+before = "        env:\n          PYTHONPATH: src\n        run: |\n"
+after = "        run: |\n"
 reddens = [
   "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
 ]
@@ -719,6 +719,35 @@ after = '''          if [ "$found" != "$PINNED" ]; then
       - uses: actions/download-artifact'''
 reddens = [
   "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[nothing-pinned-publish]",
+]
+
+[[mutation]]
+name = "the smoke tags the pinned commit and not a decoy"
+file = ".github/workflows/smoke.yml"
+before = 'update-ref "refs/tags/v$version" "$decoy"'
+after = 'update-ref "refs/tags/v$version" "$commit"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+# `plugin_tree.py commit --json` writes a refusal's sentence into the file the step reads, so the
+# step prints the file when the script fails; without it the job stops with an exit code alone.
+[[mutation]]
+name = "the smoke hides why it built no plugin commit"
+file = ".github/workflows/smoke.yml"
+before = '|| { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }'
+after = '|| { exit 1; }'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_says_why_it_built_no_plugin_commit",
+]
+
+[[mutation]]
+name = "the attest job hides why it computed no commit"
+file = ".github/workflows/release.yml"
+before = '|| { cat "$RUNNER_TEMP/plugin-commit.json" >&2; exit 1; }'
+after = '|| { exit 1; }'
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
 ]
 
 [[mutation]]
@@ -2576,7 +2605,17 @@ name = "the plugin tree takes no 64-character object name for one"
 file = "scripts/plugin_tree.py"
 before = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")'
 after = 'OBJECT_NAME = re.compile(r"[0-9a-f]{40}")'
-reddens = ["tests/scripts/test_plugin_tree.py::test_peel_names_a_sha256_repository_s_commit"]
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_peel_names_a_sha256_repository_s_commit",
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
+[[mutation]]
+name = "plugin_tree.py writes another manifest format than the publisher reads"
+file = "scripts/plugin_tree.py"
+before = 'FORMAT = "stayfixed-plugin-tree 1"'
+after = 'FORMAT = "stayfixed-plugin-tree 2"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
 
 [[mutation]]
 name = "the plugin tree takes any answer of rev-parse for an object name"

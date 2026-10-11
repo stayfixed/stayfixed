@@ -1391,6 +1391,11 @@ def test_the_attest_job_hands_on_the_commit_its_source_pins(tmp_path: Path) -> N
     done, handed = _attest(tmp_path / "unpinned", source)
     assert done.returncode != 0, done.stdout + done.stderr
     assert handed is None
+    # And the job says why: `--json` writes the refusal's sentence into the file the step reads,
+    # so the step prints the file when the script fails, or the job that signs stops with an exit
+    # code alone. Mutation (oracle): `mutations/`'s "the attest job hides why it computed no
+    # commit".
+    assert f"pins {'f' * 40}, and the plugin commit its tree makes is " in done.stderr, done.stderr
 
 
 @needs_release_workflow
@@ -1570,6 +1575,20 @@ def test_one_commit_id_shape_everywhere() -> None:
     }, checks
     for found in checks.values():
         assert set(found) == {f"^{SHA1_PATTERN}$"}, checks
+    # The two other constants `plugin_tree.py` and the publisher each spell: the manifest's first
+    # line, which the one writes and the other compares, and a full object name of either hash,
+    # which each holds a git answer to. Mutations (oracle): `mutations/`'s "the publisher reads
+    # another manifest format than plugin_tree.py writes", "plugin_tree.py writes another manifest
+    # format than the publisher reads", "the publisher takes no 64-character object name for one"
+    # and "the plugin tree takes no 64-character object name for one".
+    tree, publisher = scriptload.plugin_tree(), scriptload.publish_plugin()
+    formats = {"plugin_tree.py FORMAT": tree.FORMAT, "publish_plugin.py FORMAT": publisher.FORMAT}
+    assert set(formats.values()) == {"stayfixed-plugin-tree 1"}, formats
+    names = {
+        "plugin_tree.py OBJECT_NAME": _pattern(tree.OBJECT_NAME),
+        "publish_plugin.py OBJECT_NAME": _pattern(publisher.OBJECT_NAME),
+    }
+    assert set(names.values()) == {"[0-9a-f]{40}|[0-9a-f]{64}"}, names
 
 
 @needs_release_workflow
@@ -1640,6 +1659,31 @@ def _resolved(env: Node, outputs: dict[str, dict[str, str]]) -> dict[str, str]:
     return resolved
 
 
+def _smoke_programs(tmp_path: Path, source: Path) -> tuple[Path, Path]:
+    """`source` given this branch's `scripts/plugin_tree.py`, beside the tree it reads and outside
+    it, so the commit read is `HEAD`'s; and the smoke's programs: this interpreter, a `uv` that
+    runs its command and a `claude` that installs nothing. The directory they are on, and the
+    runner's temporary directory."""
+    tool = source / "scripts" / "plugin_tree.py"
+    tool.parent.mkdir(exist_ok=True)
+    tool.write_bytes((scriptload.SCRIPTS / "plugin_tree.py").read_bytes())
+    stub = _interpreters(tmp_path)
+    (stub / "uv").write_text(
+        '#!/bin/sh\ncase "$1" in\n  sync) exit 0 ;;\n  run) shift; exec "$@" ;;\nesac\nexit 9\n'
+    )
+    (stub / "claude").write_text(
+        "#!/bin/sh\n"
+        'if [ "$1 $2" = "plugin install" ]; then\n'
+        '  mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/stayfixed-marketplace/stayfixed/1.2.3"\n'
+        "fi\n"
+    )
+    for name in ("uv", "claude"):
+        (stub / name).chmod(0o755)
+    temp = tmp_path / "runner"
+    temp.mkdir()
+    return stub, temp
+
+
 @needs_git
 @needs_bash
 @needs_smoke_workflow
@@ -1661,23 +1705,7 @@ def test_the_smoke_installs_by_ref_and_sha(tmp_path: Path) -> None:
     plugintree.commit(source, "a commit whose marketplace pins a plugin commit")
     plugintree.write(source, {plugintree.MARKETPLACE: plugintree.pinned_marketplace("b" * 40)})
     plugintree.commit(source, "the commit the smoke runs on")
-    # The script, beside the tree it reads and outside it: the commit read is `HEAD`'s.
-    tool = source / "scripts" / "plugin_tree.py"
-    tool.write_bytes((scriptload.SCRIPTS / "plugin_tree.py").read_bytes())
-    stub = _interpreters(tmp_path)
-    (stub / "uv").write_text(
-        '#!/bin/sh\ncase "$1" in\n  sync) exit 0 ;;\n  run) shift; exec "$@" ;;\nesac\nexit 9\n'
-    )
-    (stub / "claude").write_text(
-        "#!/bin/sh\n"
-        'if [ "$1 $2" = "plugin install" ]; then\n'
-        '  mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/stayfixed-marketplace/stayfixed/1.2.3"\n'
-        "fi\n"
-    )
-    for name in ("uv", "claude"):
-        (stub / name).chmod(0o755)
-    temp = tmp_path / "runner"
-    temp.mkdir()
+    stub, temp = _smoke_programs(tmp_path, source)
     steps = _steps_of(SMOKE_WORKFLOW, SMOKE_JOB)
     index, line = _tree_command(SMOKE_WORKFLOW, SMOKE_JOB, "commit")
     assert "--no-parent" in shlex.split(line), line
@@ -1707,10 +1735,16 @@ def test_the_smoke_installs_by_ref_and_sha(tmp_path: Path) -> None:
         "ref": "v1.2.3",
         "sha": expected,
     }, catalog
-    # And the scratch repository holds that commit under both refs a clone at the tag reads.
-    # Mutation (oracle): `mutations/`'s "the smoke's scratch repository has no main".
-    for ref in ("refs/heads/main", "refs/tags/v1.2.3"):
-        assert git(repository, "rev-parse", ref).strip() == expected, ref
+    # And the scratch repository's `main` is that commit. Mutation (oracle): `mutations/`'s "the
+    # smoke's scratch repository has no main".
+    assert git(repository, "rev-parse", "refs/heads/main").strip() == expected
+    # Its tag is a decoy: one commit past the built one, whose one parent it is, holding one file
+    # more, so only the entry's `sha` names the commit the install is compared with, and a harness
+    # that installed by the `ref` would install a tree the comparison with the render refuses.
+    # Mutation (oracle): `mutations/`'s "the smoke tags the pinned commit and not a decoy".
+    decoy = git(repository, "rev-parse", "refs/tags/v1.2.3^{commit}").strip()
+    assert git(repository, "rev-list", "--parents", "-n", "1", decoy).split() == [decoy, expected]
+    assert git(repository, "diff-tree", "-r", "--name-status", expected, decoy) == "A\tdecoy\n"
 
 
 PINNED_CATALOG = "A catalog whose entry pins a commit by sha validates"
@@ -1742,3 +1776,27 @@ def test_the_validator_reads_a_catalog_whose_entry_pins_a_sha(tmp_path: Path) ->
     expected = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
     expected["plugins"][0]["source"]["sha"] = "0" * 40
     assert json.loads(Path(words[2]).read_text()) == expected, words[2]
+
+
+@needs_git
+@needs_bash
+@needs_smoke_workflow
+def test_the_smoke_says_why_it_built_no_plugin_commit(tmp_path: Path) -> None:
+    # `--json` writes a refusal's sentence into the file the step reads, so the step prints the
+    # file when the script fails; without it the job stops with an exit code and no reason. A
+    # `plugin.json` naming no `X.Y.Z` version renders, and is refused by `commit` alone. Mutation
+    # (oracle): `mutations/`'s "the smoke hides why it built no plugin commit".
+    manifest = (b'{"name": "stayfixed", "version": "1.2"}\n', "100644")
+    source = plugintree.plugin_source(
+        tmp_path, {**plugintree.PLUGIN_FILES, ".claude-plugin/plugin.json": manifest}
+    )
+    stub, temp = _smoke_programs(tmp_path, source)
+    index, _ = _tree_command(SMOKE_WORKFLOW, SMOKE_JOB, "commit")
+    step = _steps_of(SMOKE_WORKFLOW, SMOKE_JOB)[index]
+    written = temp / "output"
+    done = _run_step(
+        _run(step), source, stub, {"RUNNER_TEMP": str(temp), "GITHUB_OUTPUT": str(written)}
+    )
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert "which is not X.Y.Z in ASCII digits" in done.stderr, done.stderr
+    assert _outputs(written) == {}

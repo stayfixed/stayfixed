@@ -1189,3 +1189,19 @@ file = "scripts/publish_plugin.py"
 before = '''    raise AssertionError("_first_difference was handed two equal manifests; its caller compares")'''
 after = '''    return "the two manifests are the same"'''
 reddens = ["tests/scripts/test_publish_plugin.py::test_two_equal_manifests_have_no_first_difference"]
+
+# The publisher spells two of `plugin_tree.py`'s constants again, since no script imports another:
+# the manifest's first line, and a full object name of either hash.
+[[mutation]]
+name = "the publisher reads another manifest format than plugin_tree.py writes"
+file = "scripts/publish_plugin.py"
+before = 'FORMAT = "stayfixed-plugin-tree 1"'
+after = 'FORMAT = "stayfixed-plugin-tree 2"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
+
+[[mutation]]
+name = "the publisher takes no 64-character object name for one"
+file = "scripts/publish_plugin.py"
+before = 'OBJECT_NAME = r"[0-9a-f]{40}|[0-9a-f]{64}"'
+after = 'OBJECT_NAME = r"[0-9a-f]{40}"'
+reddens = ["tests/test_check_workflow.py::test_one_commit_id_shape_everywhere"]
