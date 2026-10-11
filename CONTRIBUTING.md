@@ -505,8 +505,8 @@ release note someone outside the project can read — not as a note to yourself 
 `uv run python scripts/release.py check` cross-checks the version across `pyproject.toml`,
 `uv.lock`, the package, both plugin manifests, `CHANGELOG.md` and the marketplace entry's `ref`.
 It runs in CI; run it before you push. It is this repository's own tooling and not a command
-stayfixed ships, as are its `notes` and `hashes` beside it ([RELEASING.md](RELEASING.md) says
-when each runs).
+stayfixed ships, as are its `notes`, `hashes` and `pin` beside it ([RELEASING.md](RELEASING.md)
+says when each runs).
 
 ## Plans
 
