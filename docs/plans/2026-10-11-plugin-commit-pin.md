@@ -1130,10 +1130,12 @@ none changes a release decision):
 - **From the external review (2026-10-12).** The plugin repository's tags have no creation rule
   (a tag created there by someone else makes the publisher answer "another commit under the
   tag", exit 1); the release-tag-creation ruleset's bypass names `RepositoryRole` 5 as the admin
-  role, from community reports rather than GitHub's reference, so its first read-back confirms
-  it; `pin`'s refusal does not name the pushed-plugin case that the restore commit answers;
+  role, from community reports rather than GitHub's reference; the read-back only echoes the id
+  set, so confirm in the repository's settings that the bypass reads "Repository admin"; `pin`'s refusal does not name the pushed-plugin case that the restore commit answers;
   `src/stayfixed/release/api.py`'s docstring names only `release.py` as `PACKAGE`'s importer;
-  `cat_file_batch` could move into `stayfixed.gitenv` once the runtime may change; once the
+  `cat_file_batch` could move into `stayfixed.gitenv` once the runtime may change;
+  `test_doctor_launches_the_number_of_subprocesses_it_says_it_does` failed once on the clean tree
+  inside a full oracle run (load-sensitive; it passes alone and its entry is caught); once the
   follow-ups above are filed, replace this list with their links.
 
 ### External review (2026-10-12)
