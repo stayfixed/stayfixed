@@ -3241,6 +3241,67 @@ before = """            "again once they finish; once the release's build and at
 after = """            "again once they finish\""""
 reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[404]"]
 
+# gh exits 1 alike for an attestation that fails the release's constraints and for a machine that
+# cannot verify at all; a second verify with none of them tells the two apart.
+[[mutation]]
+name = "the publisher rejects without asking whether this machine can verify"
+file = "scripts/publish_plugin.py"
+before = "            if here.code != 0:"
+after = "            if False:"
+reddens = [
+  "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]",
+  "tests/scripts/test_publish_plugin.py::test_every_rejection_exits_1_and_every_refusal_exits_2[a-machine-that-cannot-verify]",
+]
+
+[[mutation]]
+name = "the publisher reads this machine's verify the wrong way round"
+file = "scripts/publish_plugin.py"
+before = "            if here.code != 0:"
+after = "            if here.code == 0:"
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
+
+[[mutation]]
+name = "the publisher refuses an unverifiable machine without gh's words"
+file = "scripts/publish_plugin.py"
+before = '                    f"constraints: gh attestation verify exited {here.code}: {_said(here)}. "'
+after = '                    f"constraints: gh attestation verify exited {here.code}. "'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
+
+[[mutation]]
+name = "the publisher refuses an unverifiable machine without saying what to fix"
+file = "scripts/publish_plugin.py"
+before = '                    "Nothing was fetched or pushed; fix gh or the network and run again"'
+after = '                    "Nothing was fetched or pushed"'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-unverifiable-here]"]
+
+[[mutation]]
+name = "the publisher verifies the attestation in any repository"
+file = "scripts/publish_plugin.py"
+before = """        "--repo",
+        SOURCE_REPOSITORY,
+    ]
+"""
+after = """    ]
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity", "tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200]"]
+
+[[mutation]]
+name = "the publisher asks gh to verify no file"
+file = "scripts/publish_plugin.py"
+before = """        "verify",
+        str(attested),
+"""
+after = """        "verify",
+"""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_attestation_is_asked_with_an_exact_identity"]
+
+[[mutation]]
+name = "the publisher takes an answer with no attestations key for one"
+file = "scripts/publish_plugin.py"
+before = '    listed = answer.get("attestations")'
+after = '    listed = answer.get("attestations", [{}])'
+reddens = ["tests/scripts/test_publish_plugin.py::test_a_verify_failure_is_classified_by_whether_an_attestation_exists[200-no-listing]"]
+
 [[mutation]]
 name = "the publisher hashes the manifest without catching a failed read"
 file = "scripts/publish_plugin.py"
@@ -3744,9 +3805,20 @@ reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_ba
 [[mutation]]
 name = "the publisher says a pushed tag went elsewhere without naming the redirect"
 file = "scripts/publish_plugin.py"
-before = """            "elsewhere, through a url.*.insteadOf in your git configuration or a GIT_CONFIG_* "
-            "variable; fix it and run again\""""
-after = """            "elsewhere; fix it and run again\""""
+before = """            f"else published {tag} at the same moment, or the push went elsewhere, through a "
+            "url.*.insteadOf in your git configuration or a GIT_CONFIG_* variable; find which, "
+            "fix it and run again\""""
+after = """            f"else published {tag} at the same moment, or the push went elsewhere; find which, "
+            "fix it and run again\""""
+reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
+
+[[mutation]]
+name = "the publisher says a pushed tag went elsewhere without naming a publish at the same moment"
+file = "scripts/publish_plugin.py"
+before = """: someone "
+            f"else published {tag} at the same moment, or the push went elsewhere, through a \""""
+after = """: the push "
+            f"went elsewhere, through a \""""
 reddens = ["tests/scripts/test_publish_plugin.py::test_the_pushed_tag_is_read_back_on_the_default_remote[another-id]"]
 
 [[mutation]]

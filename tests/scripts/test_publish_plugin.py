@@ -86,16 +86,22 @@ class GitHub(Recorder):
     """`gh`: `gh api … git/ref/<ref>` and `… git/tags/<id>` answered from the repository that
     `repositories` names for the API's, as GitHub answers them; `… attestations/sha256:<digest>`
     of `stayfixed/stayfixed` answered `attestation`, whatever the digest, which a case asserts
-    from the argv; and any other call, or one `answers` scripts, as the `Recorder` answers it.
+    from the argv; a `gh attestation verify` without `--cert-identity` (the one asked with none
+    of the release's constraints) answered `unconstrained` when it is given; and any other call,
+    or one `answers` scripts, as the `Recorder` answers it.
     Read with `--no-replace-objects`: GitHub holds no replace refs. A private double rather than a
     `Recorder` alone because what it answers is a repository's state, which a case changes as it
     runs."""
 
     repositories: dict[str, Path] = field(default_factory=dict)
     attestation: Completed = NOT_FOUND
+    unconstrained: Completed | None = None
 
     def launch(self, argv: list[str], cwd: Path) -> Completed:
         answer = super().launch(argv, cwd)
+        weak = argv[:3] == ["gh", "attestation", "verify"] and "--cert-identity" not in argv
+        if weak and self.unconstrained is not None:
+            return self.unconstrained
         scripted = any(argv[: len(key.split(" "))] == key.split(" ") for key in self.answers)
         if scripted or argv[:2] != ["gh", "api"]:
             return answer
@@ -159,15 +165,22 @@ def runner_for(
     *,
     answers: dict[str, Completed] | None = None,
     attestation: Completed = NOT_FOUND,
+    unconstrained: Completed | None = None,
     before: Callable[[list[str]], None] = lambda argv: None,
     after: Callable[[list[str]], None] = lambda argv: None,
 ) -> Composite:
     """A composite whose GitHub holds `source` as `stayfixed/stayfixed` and, when given, `plugin`
-    as the plugin repository, and answers `attestation` for any attestation it is asked about."""
+    as the plugin repository, and answers `attestation` for any attestation it is asked about and
+    `unconstrained`, when given, for the verify asked without the release's constraints."""
     repositories = {SOURCE_REPOSITORY: source}
     if plugin is not None:
         repositories[PLUGIN_REPOSITORY] = plugin
-    gh = GitHub(repositories=repositories, answers=dict(answers or {}), attestation=attestation)
+    gh = GitHub(
+        repositories=repositories,
+        answers=dict(answers or {}),
+        attestation=attestation,
+        unconstrained=unconstrained,
+    )
     return Composite(gh=gh, before=before, after=after)
 
 
@@ -385,11 +398,6 @@ def test_a_branch_named_like_the_tag_does_not_stand_in_for_it(source: Path, tmp_
     assert listed(remote, TAG, exact=True)["README.md"] == PLUGIN_FILES["README.md"]
 
 
-# The certificate identity a release's attestation carries, spelled as the pre-flight measured it
-# for `v0.2.0`: the workflow's URL at the tag's ref, which `--cert-identity` matches exactly.
-CERT_IDENTITY = (
-    f"https://github.com/stayfixed/stayfixed/.github/workflows/release.yml@refs/tags/{TAG}"
-)
 GH_AUTH = ["gh", "auth", "status", "--hostname", "github.com", "--active"]
 
 
@@ -398,7 +406,8 @@ def test_the_attestation_is_asked_with_an_exact_identity(source: Path, tmp_path:
     # one entry each: `--cert-identity` -> `--signer-workflow` with the old value; the identity
     # without its `@refs/tags/<tag>`; `--cert-identity` dropped; `--source-ref` dropped;
     # `--source-digest` dropped; `--deny-self-hosted-runners` dropped; the verify's `--hostname`
-    # dropped; `gh auth status` without `--hostname`; `gh auth status` without `--active`.
+    # dropped; `gh auth status` without `--hostname`; `gh auth status` without `--active`; the
+    # verify's `--repo` dropped; the manifest dropped from the verify.
     scratch = tmp_path / "scratch"
     _, runner = publish(source, bare_remote(tmp_path), scratch, yes=False)
     sha = tag_commit(source)
@@ -942,26 +951,46 @@ def test_a_manifest_changed_after_the_commit_is_rejected_by_the_read_back(
 # `gh attestation verify` failing as the pre-flight measured it for an identity that did not match.
 UNVERIFIED = Completed(1, "", 'Error: verifying with issuer "sigstore.dev"\n')
 # What GitHub answers about the manifest's digest: an attestation exists (200, a list holding one),
-# a 200 that lists none, and a 200 whose list is no list.
+# a 200 that lists none, a 200 whose list is no list, and a 200 with no list at all.
 ATTESTED = Completed(
     0, json.dumps({"attestations": [{"bundle": {}, "repository_id": 1, "bundle_url": None}]}), ""
 )
 NONE_LISTED = Completed(0, json.dumps({"attestations": []}), "")
 NO_LIST = Completed(0, json.dumps({"attestations": "one"}), "")
+NO_KEY = Completed(0, json.dumps({"message": "OK"}), "")
+# What the verify without the release's constraints answers: Sigstore verified an attestation of
+# the manifest on this machine, or this machine's gh could not verify at all (an older gh).
+VERIFIED = Completed(0, "Loaded digest sha256:… for file://plugin-tree.txt\n", "")
+CANNOT_VERIFY = Completed(1, "", "unknown flag: --hostname\n")
 
 
 @pytest.mark.parametrize(
-    ("attestation", "rejected", "said"),
+    ("attestation", "unconstrained", "rejected", "said"),
     [
-        pytest.param(ATTESTED, True, "holds an attestation of this manifest", id="200"),
-        pytest.param(NOT_FOUND, False, "no attestation of this manifest yet", id="404"),
-        pytest.param(SERVER_ERROR, False, "Server Error (HTTP 500)", id="500"),
-        pytest.param(NONE_LISTED, False, "lists no attestation", id="200-listing-none"),
-        pytest.param(NO_LIST, False, "lists no attestation", id="200-listing-no-list"),
+        pytest.param(
+            ATTESTED, VERIFIED, True, "verifies on this machine without the release's", id="200"
+        ),
+        pytest.param(
+            ATTESTED,
+            CANNOT_VERIFY,
+            False,
+            "could not verify it on this machine",
+            id="200-unverifiable-here",
+        ),
+        pytest.param(NOT_FOUND, None, False, "no attestation of this manifest yet", id="404"),
+        pytest.param(SERVER_ERROR, None, False, "Server Error (HTTP 500)", id="500"),
+        pytest.param(NONE_LISTED, None, False, "lists no attestation", id="200-listing-none"),
+        pytest.param(NO_LIST, None, False, "lists no attestation", id="200-listing-no-list"),
+        pytest.param(NO_KEY, None, False, "lists no attestation", id="200-no-listing"),
     ],
 )
 def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
-    source: Path, tmp_path: Path, attestation: Completed, rejected: bool, said: str
+    source: Path,
+    tmp_path: Path,
+    attestation: Completed,
+    unconstrained: Completed | None,
+    rejected: bool,
+    said: str,
 ) -> None:
     # `gh auth status` answers 0 and only `gh attestation verify` answers 1: whether GitHub holds
     # an attestation of this manifest decides between a release to reject (1) and one whose
@@ -974,11 +1003,22 @@ def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
     # as absent" -> the 500 reads as no attestation yet; `mutations/`'s "the publisher classifies a
     # failed verify without its words" and `mutations/`'s "the publisher stops saying when a
     # release with no attestation is rejected" -> the summary loses gh's words, or the advice.
-    remote = bare_remote(tmp_path)
+    # When one exists, gh verifies it again with none of the release's constraints, which tells an
+    # attestation that fails them (1) from a machine that cannot verify at all (2): `mutations/`'s
+    # "the publisher rejects without asking whether this machine can verify" -> the unverifiable
+    # machine is rejected; `mutations/`'s "the publisher reads this machine's verify the wrong way
+    # round" -> both 200 cases change class; `mutations/`'s "the publisher takes an answer with no
+    # attestations key for one" -> the answer listing nothing is rejected; `mutations/`'s "the
+    # publisher refuses an unverifiable machine without gh's words" and `mutations/`'s "the
+    # publisher refuses an unverifiable machine without saying what to fix" -> its summary loses
+    # gh's words, or the advice.
+    remote, scratch = bare_remote(tmp_path), tmp_path / "scratch"
     answers = {"gh auth status": Completed(0, "", ""), "gh attestation verify": UNVERIFIED}
-    runner = runner_for(source, answers=answers, attestation=attestation)
+    runner = runner_for(
+        source, answers=answers, attestation=attestation, unconstrained=unconstrained
+    )
     with pytest.raises((Rejected, Refusal)) as stopped:
-        publish(source, remote, tmp_path / "scratch", runner=runner)
+        publish(source, remote, scratch, runner=runner)
     assert type(stopped.value) is (Rejected if rejected else Refusal), stopped.value
     message = str(stopped.value)
     assert said in message, message
@@ -994,6 +1034,25 @@ def test_a_verify_failure_is_classified_by_whether_an_attestation_exists(
     ]
     if not rejected and attestation is NOT_FOUND:
         assert "once the release's build and attest jobs are green" in message, message
+    verifies = gh_asked(runner, "gh", "attestation", "verify")
+    if unconstrained is None:
+        assert len(verifies) == 1, verifies
+    else:
+        assert verifies[1:] == [
+            [
+                "gh",
+                "attestation",
+                "verify",
+                str(scratch / "plugin-tree.txt"),
+                "--hostname",
+                "github.com",
+                "--repo",
+                "stayfixed/stayfixed",
+            ]
+        ]
+    if unconstrained is CANNOT_VERIFY:
+        assert "unknown flag: --hostname" in message, message
+        assert "fix gh or the network and run again" in message, message
     for word in ("ls-remote", "fetch", "push"):
         assert ran(runner, word) == [], word
     assert refs(remote) == {}
@@ -1029,8 +1088,10 @@ def test_a_manifest_that_cannot_be_read_after_a_failed_verify_is_refused(
     runner = runner_for(
         source, answers={"gh attestation verify": UNVERIFIED}, attestation=ATTESTED, after=remove
     )
-    with pytest.raises(Refusal, match="cannot be read"):
+    with pytest.raises(Refusal, match="cannot be read") as refused:
         publish(source, bare_remote(tmp_path), tmp_path / "scratch", runner=runner)
+    # `_verify`'s words, not `_read_back`'s, which also says "cannot be read".
+    assert "gh attestation verify exited 1" in str(refused.value), str(refused.value)
     assert [argv for argv in gh_asked(runner, "gh", "api") if "attestations" in argv[-1]] == []
 
 
@@ -1171,7 +1232,10 @@ def redirected_runner(source: Path, bare: Path, after_push: Completed | None) ->
         pytest.param(None, None, id="the-commit"),
         pytest.param(NOT_FOUND, f"does not list {TAG} yet", id="404"),
         pytest.param(
-            ANOTHER_ID, f"names {OTHER} under {TAG}: the push went elsewhere", id="another-id"
+            ANOTHER_ID,
+            f"names {OTHER} under {TAG}: someone else published {TAG} at the same moment, or the "
+            "push went elsewhere",
+            id="another-id",
         ),
     ],
 )
@@ -1189,7 +1253,9 @@ def test_the_pushed_tag_is_read_back_on_the_default_remote(
     # tag GitHub does not list for one elsewhere" -> the 404 is worded as a redirect;
     # `mutations/`'s "the publisher takes any pushed tag GitHub lists for its own" -> another id
     # reports "pushed"; `mutations/`'s "the publisher says a pushed tag went elsewhere without
-    # naming the redirect" -> the refusal names no cause to remove.
+    # naming a publish at the same moment" -> the likelier cause goes unsaid; `mutations/`'s "the
+    # publisher says a pushed tag went elsewhere without naming the redirect" -> the refusal names
+    # no cause to remove.
     bare = bare_remote(tmp_path)
     _global_config(f'[url "{bare}"]\n\tinsteadOf = {publish_plugin.PLUGIN_REMOTE}\n')
     monkeypatch.setenv("GIT_SSH_COMMAND", "false")
@@ -1558,7 +1624,14 @@ def _attestation_does_not_verify(
     source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Arranged:
     answers = {"gh attestation verify": UNVERIFIED}
-    return runner_for(source, answers=answers, attestation=ATTESTED), TAG, str(remote)
+    runner = runner_for(source, answers=answers, attestation=ATTESTED, unconstrained=VERIFIED)
+    return runner, TAG, str(remote)
+
+
+def _cannot_verify_here(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
+    answers = {"gh attestation verify": UNVERIFIED}
+    runner = runner_for(source, answers=answers, attestation=ATTESTED, unconstrained=CANNOT_VERIFY)
+    return runner, TAG, str(remote)
 
 
 def _no_attestation_yet(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -> Arranged:
@@ -1667,6 +1740,12 @@ def _push_refused(source: Path, remote: Path, monkeypatch: pytest.MonkeyPatch) -
             1,
             "holds an attestation of this manifest",
             id="the-attestation-does-not-verify",
+        ),
+        pytest.param(
+            _cannot_verify_here,
+            2,
+            "could not verify it on this machine",
+            id="a-machine-that-cannot-verify",
         ),
         pytest.param(
             _read_back_differs,

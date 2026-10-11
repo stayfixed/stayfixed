@@ -27,9 +27,12 @@ bytes to the certificate identity of this repository's `release.yml` run for thi
 (`--cert-identity`, matched exactly, where `--signer-workflow` matched a prefix), for this tag's
 ref (`--source-ref`) at this commit (`--source-digest`), on a GitHub-hosted runner
 (`--deny-self-hosted-runners`). When it does not verify, GitHub is asked whether it holds any
-attestation of the manifest's digest at all: one that exists and does not verify is a release to
-reject, none yet is a release whose `attest` job has not run. The commit is read back whole and its
-manifest compared with that one byte for byte before anything leaves the machine. The plugin
+attestation of the manifest's digest at all: none yet is a release whose `attest` job has not run.
+When one exists, `gh` verifies the manifest again with none of the release's constraints, because
+gh exits 1 alike for an attestation that fails them and for a machine that cannot verify at all (an
+older gh, a network that blocks Sigstore): passing, the attestation fails only the release's
+constraints, a release to reject; failing, this machine is to fix. The commit is read back whole
+and its manifest compared with that one byte for byte before anything leaves the machine. The plugin
 repository's state is GitHub's: on the default remote, `main` and the tag are read through `gh api`
 as well as `ls-remote`, and a disagreement is a redirect (a `url.*.insteadOf`, a `GIT_CONFIG_*`
 variable) refused rather than classified, and after a push the tag is read back through the API,
@@ -483,9 +486,11 @@ def _read_back(
 
 def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> None:
     """Ask `gh` whether this repository's release workflow, run for this tag, attested exactly this
-    manifest, for this tag at this commit, on a GitHub-hosted runner; when it did not, reject the
-    release if GitHub holds an attestation of the manifest, and refuse when it holds none yet."""
-    argv = [
+    manifest, for this tag at this commit, on a GitHub-hosted runner. When it did not: refuse when
+    GitHub holds no attestation of the manifest yet; when it holds one, reject the release if gh
+    verifies the manifest with none of the release's constraints, and refuse if gh cannot verify
+    it on this machine even so."""
+    unconstrained = [
         "gh",
         "attestation",
         "verify",
@@ -494,6 +499,9 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
         GITHUB,
         "--repo",
         SOURCE_REPOSITORY,
+    ]
+    argv = [
+        *unconstrained,
         "--cert-identity",
         CERT_IDENTITY.format(tag=tag),
         "--source-ref",
@@ -505,17 +513,27 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
     verified = runner.launch(argv, root)
     if verified.code != 0:
         # gh exits non-zero both for "no attestation vouches for this" and for "I could not
-        # ask"; which one it was is GitHub's answer about the manifest's digest.
+        # ask"; which one it was is GitHub's answer about the manifest's digest, and then whether
+        # gh verifies the manifest here at all.
         said = f"gh attestation verify exited {verified.code}: {_said(verified)}"
         try:
             digest = hashlib.sha256(attested.read_bytes()).hexdigest()
         except OSError as exc:
             raise Refusal(f"{said}; and {attested} cannot be read: {fsops.said(exc)}") from None
         if _attested(runner, root, digest, said):
+            here = runner.launch(unconstrained, root)
+            if here.code != 0:
+                raise Refusal(
+                    f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), and "
+                    "gh could not verify it on this machine even without the release's "
+                    f"constraints: gh attestation verify exited {here.code}: {_said(here)}. "
+                    "Nothing was fetched or pushed; fix gh or the network and run again"
+                )
             raise Rejected(
-                f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), and it "
-                f"does not verify against {SOURCE_REPOSITORY}'s release.yml at {tag} ({sha}). "
-                "Nothing was fetched or pushed. Reject the release's approval"
+                f"{said}; GitHub holds an attestation of this manifest (sha256:{digest}), which "
+                "gh verifies on this machine without the release's constraints, and which does "
+                f"not verify against {SOURCE_REPOSITORY}'s release.yml at {tag} ({sha}). Nothing "
+                "was fetched or pushed. Reject the release's approval"
             )
         raise Refusal(
             f"{said}; GitHub holds no attestation of this manifest yet (sha256:{digest}). Nothing "
@@ -527,9 +545,9 @@ def _verify(runner: Runner, root: Path, attested: Path, tag: str, sha: str) -> N
 
 def _attested(runner: Runner, root: Path, digest: str, said: str) -> bool:
     """Whether GitHub holds an attestation of the manifest whose sha256 is `digest`: `200` listing
-    one is yes, and an answer of no such object (`_api`'s `404`, or `409`, which a repository that
-    holds releases does not answer) is no; any other answer is a refusal, since nothing tells a
-    wrong attestation from a GitHub that could not be asked."""
+    one is yes, and an answer of no such object (`_api`'s `404` and `409`; a `409` from this API is
+    not measured, and is read as `_api` reads it for a ref, as absent) is no; any other answer is
+    a refusal, since nothing tells a wrong attestation from a GitHub that could not be asked."""
     path = f"repos/{SOURCE_REPOSITORY}/attestations/sha256:{digest}"
     try:
         answer = _api(runner, root, path)
@@ -648,9 +666,10 @@ def _landed(runner: Runner, root: Path, remote: str, tag: str, commit: str) -> N
         )
     if found != commit:
         raise Refusal(
-            f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} names {found} under {tag}: the push went "
-            "elsewhere, through a url.*.insteadOf in your git configuration or a GIT_CONFIG_* "
-            "variable; fix it and run again"
+            f"{pushed}, and GitHub's {PLUGIN_REPOSITORY} names {found} under {tag}: someone "
+            f"else published {tag} at the same moment, or the push went elsewhere, through a "
+            "url.*.insteadOf in your git configuration or a GIT_CONFIG_* variable; find which, "
+            "fix it and run again"
         )
 
 
