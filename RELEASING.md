@@ -281,11 +281,24 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
      git identity in your global git configuration (the refusal from `git commit-tree` names
      that as the likely cause); the plugin repository's `main` moved while the command ran; or
      the remote rejected the push, which, being atomic, moved nothing.
-   - **Reject the `pypi` approval.** `gh` found no attestation vouching for this tree at this
-     tag and commit; the plugin repository already holds another tree under the tag, or its
-     `main` names another commit than the tag; or the commit built for it read back as another
-     tree. Each says the tree is not the one this run attested, and the tags are spent while
-     nothing else is (section 5).
+   - **Wait for `build`, then run again.** `gh` found no attestation, on a run made before
+     `build` was green: the attestation is written by `build`, so that refusal says only that it
+     did not exist yet. It counts as a rejection below once `build` is green.
+   - **Approve: the plugin is published.** The plugin repository's tag already holds this tree,
+     but its `main` names another commit. The marketplace's `ref` names the tag, and the tag
+     names the attested tree, so the release has what it needs; `main` elsewhere means a later
+     release was published after this one, or a half-finished state worth a look, not a wrong
+     tree.
+   - **Reject the `pypi` approval.** With `build` green, `gh` found no attestation vouching for
+     this tree at this tag and commit; the plugin repository already holds another tree under
+     the tag; or the commit built for it read back as another tree. Each says the tree is not
+     the one this run attested, and the tags are spent while nothing else is (section 5).
+   - **Any other refusal is local: fix it and run again.** A tag that is not `vX.Y.Z`, no such
+     tag in this checkout, a tag whose `plugin.json` names another version, a render or a
+     manifest `scripts/plugin_tree.py` refused, a manifest in a format this script does not
+     read, a `git ls-remote` answer that is not an object name, or a step of the scratch
+     repository's own git (`git hash-object exited 128`, say). Running it again is safe for the
+     reason above: nothing is pushed before the one atomic push.
 
    Then approve `pypi`. **Once section 3's `pypi` environment exists with a required reviewer**,
    `publish` and `github-release` both wait for it. An approval is given per environment, not
