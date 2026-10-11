@@ -1904,6 +1904,18 @@ reddens = [
   "tests/test_fixtures.py::test_an_expression_is_found_in_every_spelling_of_a_script",
 ]
 
+# Every workflow case reads a script's commands through one reader, so a reader that took a
+# comment's trailing backslash for a continuation would join the next command onto the comment and
+# hide it from all of them.
+[[mutation]]
+name = "the workflow line reader continues a line whose comment ends in a backslash"
+file = "tests/test_check_workflow.py"
+before = '        if _code(raw).endswith("\\"):'
+after = '        if raw.endswith("\\"):'
+reddens = [
+  "tests/test_check_workflow.py::test_the_line_reader_reads_commands_as_bash_does[trailing-comment]",
+]
+
 # A step spelled as a flow mapping puts its script inside braces on one line; the reader refuses
 # the brace rather than read the step as the string it spells. The cases are spelled as JSON,
 # `{"run":"…"}`, which nothing but the brace refuses: `{run: "…"}` is refused a second time as a

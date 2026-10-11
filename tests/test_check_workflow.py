@@ -283,13 +283,32 @@ def _scripts() -> list[str]:
     return [step["run"] for step in _steps() if isinstance(step.get("run"), str)]  # type: ignore[misc]
 
 
+def _code(line: str) -> str:
+    """`line` up to its comment, if it has one: a `#` that begins a word outside quotes."""
+    quote = ""
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+        elif char == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1].isspace()):
+            return line[:index]
+    return line
+
+
 def _lines(script: str) -> list[str]:
     """The script's commands as bash reads them, one to a line: a line continued with `\\` joined
     to the next, and indentation, blank lines and comment lines dropped. The one reader of a
     script's lines, so a case holding a script and a case finding a command in it read the same
-    commands. A comment ends at its line whatever it ends with, so a comment line ending in `\\`
-    continues nothing and the command after it is still read; a comment line after a continued one
-    is the end of that command, as bash reads it, and is kept with it."""
+    commands. A comment ends at its line whatever it ends with, so neither a comment line nor a
+    command with a comment after it continues onto the next line when the comment ends in `\\`;
+    a comment line after a continued one is the end of that command, as bash reads it, and is
+    kept with it. Quotes are read within a line only, which is all these workflows write."""
     lines: list[str] = []
     pending = ""
     for raw in script.splitlines():
@@ -298,7 +317,7 @@ def _lines(script: str) -> list[str]:
         pending = ""
         if not line or line.startswith("#"):
             continue
-        if raw.endswith("\\"):
+        if _code(raw).endswith("\\"):
             pending = line[:-1].rstrip()
         else:
             lines.append(line)
@@ -775,6 +794,43 @@ def test_the_job_s_token_can_read_the_repository_and_nothing_more() -> None:
     assert permissions == {"contents": "read"}, permissions
 
 
+@pytest.mark.parametrize(
+    ("script", "commands"),
+    [
+        # A continued line is one command with the line after it.
+        ("a \\\n  --b c\n", ["a --b c"]),
+        # A backslash followed by a space escapes the space and continues nothing.
+        ("a \\ \nb\n", ["a \\", "b"]),
+        # A comment ends at its line, whatever it ends with: neither a comment line nor a command
+        # carrying a comment after it continues onto the next line.
+        ("# note \\\nb\n", ["b"]),
+        ("a # note \\\nb\n", ["a # note \\", "b"]),
+        # A `#` inside quotes, or inside a word, begins no comment.
+        ("echo '# not' \\\n  b\n", ["echo '# not' b"]),
+        ('echo "x #y" \\\n  b\n', ['echo "x #y" b']),
+        ("echo a#b \\\n  c\n", ["echo a#b c"]),
+        # A comment line after a continued one ends that command, as bash reads it.
+        ("a \\\n  # note\nb\n", ["a # note", "b"]),
+    ],
+    ids=[
+        "continued",
+        "escaped-space",
+        "comment-line",
+        "trailing-comment",
+        "single-quoted",
+        "double-quoted",
+        "inside-a-word",
+        "comment-after-continued",
+    ],
+)
+def test_the_line_reader_reads_commands_as_bash_does(script: str, commands: list[str]) -> None:
+    # Every case that holds a workflow script or finds a command in one reads it through
+    # `_lines`, so a reader that joined a command onto a comment would hide the command from
+    # all of them. Mutation (oracle): `mutations/`'s "the workflow line reader continues a line
+    # whose comment ends in a backslash".
+    assert _lines(script) == commands
+
+
 @needs_workflow
 def test_every_script_the_job_runs_is_held_line_for_line() -> None:
     """The class the environment case above leaves open: a script line that changes the
@@ -1098,6 +1154,8 @@ def test_the_release_attests_the_plugin_tree_it_rendered_from_the_commit() -> No
     # digest and the commit the publisher checks are then one value by construction.
     index, line = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
     # The runner's own interpreter, and no `uv`: the job runs no suite and installs nothing.
+    # Mutation (declared): `uv run python scripts/plugin_tree.py commit …` reddens here and in
+    # `test_only_the_attest_job_can_attest`.
     assert line.startswith("python3 scripts/plugin_tree.py commit "), line
     options = _options(line)
     assert options["--rev"] == "$GITHUB_SHA", options
@@ -1175,11 +1233,12 @@ def test_build_fetches_the_first_parent(job: str) -> None:
     # `release.py check --tag` and the plugin commit both read the `sha` the release commit's
     # first parent pins, as the commit's parent; `actions/checkout` fetches one commit unless told
     # otherwise, and the reader then refuses, naming `fetch-depth: 2`, rather than read the parent
-    # as none. Mutation (oracle): `mutations/`'s "the release build fetches the tag's commit
-    # alone" drops `fetch-depth: 2` from `build`.
+    # as none. Mutations (oracle): `mutations/`'s "the release build fetches the tag's commit
+    # alone" and "the attest job fetches the tag's commit alone" drop `fetch-depth: 2` from each.
     checkouts = [
         step for step in _steps_of(RELEASE_WORKFLOW, job) if _uses(step) == "actions/checkout"
     ]
+    # The walk's count, so the line below reads a checkout: no mutation, it guards the case.
     assert len(checkouts) == 1, checkouts
     assert _with(checkouts[0], "fetch-depth") == "2", checkouts[0]
 
@@ -1191,8 +1250,10 @@ def test_only_the_attest_job_can_attest() -> None:
     # sign. The suite stays in `build`, which holds `contents: read` and nothing else, and the
     # job that signs runs this repository's own script on the runner's interpreter and installs
     # nothing. `publish` holds `id-token: write` too, for Trusted Publishing, and attests nothing.
-    # Mutation (oracle): `mutations/`'s "the release build can sign again" puts `id-token: write`
-    # back on `build`.
+    # Mutations (oracle): `mutations/`'s "the release build can sign again" -> `id-token: write`
+    # on `build`; "the attest job can write the repository" -> `contents: write` on `attest`; "the
+    # Release job can sign" -> `id-token: write` on `github-release`; and "the environment gate
+    # can record attestations" -> `attestations: write` on `environment-gate`.
     jobs = _jobs(RELEASE_WORKFLOW)
     attesting = sorted(
         name
@@ -1220,7 +1281,8 @@ def test_only_the_attest_job_can_attest() -> None:
     assert recording == ["attest"], granted
     steps = _steps_of(RELEASE_WORKFLOW, "attest")
     # No `uv` and no suite: neither an action that installs one nor a command that runs one.
-    # Mutation (declared): `uv run pytest -q` added to `attest`; reddens here.
+    # Mutations (oracle): `mutations/`'s "the attest job installs uv" and "the attest job runs
+    # the suite".
     assert [step for step in steps if _uses(step) == "astral-sh/setup-uv"] == [], steps
     running = [
         line
@@ -1230,7 +1292,7 @@ def test_only_the_attest_job_can_attest() -> None:
     ]
     assert running == [], running
     # And the checkout leaves no token in `.git/config` for the step that runs the script.
-    # Mutation (declared): `persist-credentials: false` dropped; reddens here.
+    # Mutation (oracle): `mutations/`'s "the attest job keeps a token in its checkout".
     [checkout] = [step for step in steps if _uses(step) == "actions/checkout"]
     assert _with(checkout, "persist-credentials") == "false", checkout
 
@@ -1274,6 +1336,10 @@ def _attest(tmp_path: Path, source: Path) -> tuple[subprocess.CompletedProcess[s
     index, _ = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
     step = _steps_of(RELEASE_WORKFLOW, "attest")[index]
     env = step.get("env")
+    # The runner's interpreter has no `stayfixed` but the checkout's `src`; this one has its own
+    # through its environment, so the run below cannot tell, and only this pin holds it.
+    # Mutation (oracle): `mutations/`'s "the attest job runs the plugin script without the
+    # checkout's package".
     assert env == {"PYTHONPATH": "src"}, env
     temp = tmp_path / "runner"
     temp.mkdir(parents=True)
@@ -1283,7 +1349,7 @@ def _attest(tmp_path: Path, source: Path) -> tuple[subprocess.CompletedProcess[s
         source,
         _interpreters(tmp_path),
         {
-            "PYTHONPATH": "src",
+            "PYTHONPATH": str(env["PYTHONPATH"]),
             "RUNNER_TEMP": str(temp),
             "GITHUB_OUTPUT": str(output),
             "GITHUB_SHA": git(source, "rev-parse", "HEAD").strip(),
@@ -1299,13 +1365,16 @@ def test_the_attest_job_hands_on_the_commit_its_source_pins(tmp_path: Path) -> N
     # The gated jobs compare the plugin repository's tag with what `attest` hands on, so `attest`
     # hands on the commit the release commit's tree makes, and only when the release commit pins
     # that commit: a release commit pinning another fails here, before any approval is asked for.
-    # The id is computed by git from the source's tree, never by the script. Mutation (oracle):
-    # `mutations/`'s "the attest job hands on a commit the release commit does not pin" drops
-    # `--require-pin`.
+    # The id is computed by git from the source's tree, never by the script. Mutations (oracle):
+    # `mutations/`'s "the attest job hands on a commit the release commit does not pin" -> no
+    # `--require-pin`; and "the attest job writes the commit under another name" -> nothing handed
+    # on.
     source = plugintree.tool_source(tmp_path)
     expected = plugintree.hashed(
         source, plugintree.literal(plugintree.plugin_tree_id(source), None)
     )
+    # The fixture's own premise, that its release commit pins that commit: no mutation, the
+    # workflow is not read here.
     assert plugintree.pinned_at(source) == expected
     done, handed = _attest(tmp_path / "pinned", source)
     assert done.returncode == 0, done.stdout + done.stderr
@@ -1325,16 +1394,23 @@ def test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin() -> None:
     # job whose plugin is not published yet does nothing irreversible, and it is in each gated job
     # rather than a job of its own, which would ask for a second approval. Its two values arrive
     # through `env:`, and the step holds no credential. Mutation (declared): the step moved after
-    # `github-release`'s checkout; reddens here.
+    # `github-release`'s checkout; reddens here, at its name.
     jobs = _jobs(RELEASE_WORKFLOW)
     gated = sorted(name for name, job in jobs.items() if "environment" in job)
+    # The walk's set, so the loop below reads both jobs: a third gated job reddens here and is
+    # then held by the loop.
     assert gated == sorted(GATED), gated
-    # `attest` hands on the id its commit step wrote, by that step's own id.
+    # `attest` hands on the id its commit step wrote, by that step's own id. Mutation (oracle):
+    # `mutations/`'s "the attest job hands on another step's output".
     index, _ = _tree_command(RELEASE_WORKFLOW, "attest", "commit")
     ident = _steps_of(RELEASE_WORKFLOW, "attest")[index].get("id")
     assert isinstance(ident, str), ident
     assert jobs["attest"].get("outputs") == {"commit": "${{ steps." + ident + ".outputs.commit }}"}
     first = [_steps_of(RELEASE_WORKFLOW, name)[0] for name in GATED]
+    # A job that does not wait for `attest` reads its output as empty, and a step reading
+    # another job's output fails only at a release; these are held here, before one. Mutations
+    # (oracle): `mutations/`'s "publish starts before attest finished", "the plugin gate reads the
+    # commit build hands on" and "the plugin gate may fail and the job go on".
     for name, step in zip(GATED, first, strict=True):
         assert jobs[name].get("needs") == ["build", "environment-gate", "attest"], jobs[name]
         assert list(step) == ["name", "env", "run"], (name, step)
@@ -1344,7 +1420,7 @@ def test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin() -> None:
             "PINNED": "${{ needs.attest.outputs.commit }}",
         }, (name, step)
     # One step, twice: a copy that drifted would gate one job on another question. Mutation
-    # (declared): `github-release`'s copy compares the tag line only; reddens here.
+    # (oracle): `mutations/`'s "github-release's plugin gate drifts from publish's".
     assert first[0] == first[1], first
 
 
@@ -1401,6 +1477,7 @@ DECOY_REF, DECOY_PEELED_REF = f"refs/tags/x/{TAG_REF}", f"refs/tags/x/{PEELED_RE
         # No such tag yet: the plugin is not published.
         ([], COMMIT, 1),
         # `attest` handed on nothing, and nothing is listed: two empty strings are not a match.
+        # Mutation (oracle): `mutations/`'s "the plugin gate takes an empty pin for a match".
         ([], "", 1),
         # The plugin repository could not be listed.
         (None, COMMIT, 1),
@@ -1433,6 +1510,8 @@ def test_the_gated_step_compares_the_peeled_id(
         TAG_REF,
         PEELED_REF,
     ], given
+    # A refusal says what to do. Mutation (declared): the message stops naming the step of
+    # `RELEASING.md` that publishes the plugin; reddens here on every refusing case.
     if code:
         assert "::error::" in printed and "RELEASING.md section 2, step 7" in printed, printed
 
@@ -1442,6 +1521,49 @@ def _github_repository(url: str) -> str:
     found = re.fullmatch(r"(?:https://github\.com/|git@github\.com:)([^/]+/[^/]+)\.git", url)
     assert found is not None, url
     return found.group(1)
+
+
+# The shape of a plugin commit id, as every reader of one spells it.
+SHA1_PATTERN = "[0-9a-f]{40}"
+
+
+def _pattern(value: object) -> str:
+    """A pattern constant's text, whether the script compiled it or not."""
+    pattern = value.pattern if isinstance(value, re.Pattern) else value
+    assert isinstance(pattern, str), value
+    return pattern
+
+
+@needs_release_workflow
+@needs_smoke_workflow
+def test_one_commit_id_shape_everywhere() -> None:
+    # A `sha` is 40 lowercase hex characters, and each reader spells that itself: the scripts may
+    # not import one another, and a workflow cannot import at all. `plugin_tree.py` checks the
+    # pin it reads, `release.py` the entry it checks and writes, `publish_plugin.py` the ids it
+    # is given, and the workflows the id `plugin_tree.py commit` printed and the id `attest`
+    # handed on. Each copy is read from its own file and held to one spelling; a workflow's as
+    # the whole of a bash `=~` pattern. The two workflow checks of the id `plugin_tree.py
+    # commit` printed (`attest`'s and the smoke's) are reached by no test, because the script
+    # prints no other shape; the gated steps' copy is run by
+    # `test_the_gated_step_compares_the_peeled_id`'s `nothing-pinned` case. Mutation (oracle):
+    # `mutations/`'s "the smoke checks the plugin commit's shape by another pattern".
+    scripts = {
+        "plugin_tree.py SHA1": _pattern(scriptload.plugin_tree().SHA1),
+        "release.py SHA1": _pattern(scriptload.release().SHA1),
+        "publish_plugin.py SHA1": _pattern(scriptload.publish_plugin().SHA1),
+    }
+    assert set(scripts.values()) == {SHA1_PATTERN}, scripts
+    checks = {
+        workflow.name: re.findall(r"\[\[ \S+ =~ (\S+) \]\]", workflow.read_text(encoding="utf-8"))
+        for workflow in (RELEASE_WORKFLOW, SMOKE_WORKFLOW)
+    }
+    # `attest`'s, one in each gated job, and the smoke's: four, so the walk read something.
+    assert {name: len(found) for name, found in checks.items()} == {
+        "release.yml": 3,
+        "smoke.yml": 1,
+    }, checks
+    for found in checks.values():
+        assert set(found) == {f"^{SHA1_PATTERN}$"}, checks
 
 
 @needs_release_workflow
@@ -1553,6 +1675,7 @@ def test_the_smoke_installs_by_ref_and_sha(tmp_path: Path) -> None:
         "sha": expected,
     }, catalog
     # And the scratch repository holds that commit under both refs a clone at the tag reads.
+    # Mutation (oracle): `mutations/`'s "the smoke's scratch repository has no main".
     for ref in ("refs/heads/main", "refs/tags/v1.2.3"):
         assert git(repository, "rev-parse", ref).strip() == expected, ref
 
@@ -1580,6 +1703,8 @@ def test_the_validator_reads_a_catalog_whose_entry_pins_a_sha(tmp_path: Path) ->
     )
     assert done.returncode == 0, done.stdout + done.stderr
     words = asked.read_text(encoding="utf-8").splitlines()
+    # Mutation (oracle): `mutations/`'s "the validator checks the pinned catalog without
+    # --strict".
     assert words[:2] == ["plugin", "validate"] and words[3:] == ["--strict"], words
     expected = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
     expected["plugins"][0]["source"]["sha"] = "0" * 40

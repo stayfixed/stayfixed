@@ -549,6 +549,198 @@ reddens = [
   "tests/test_check_workflow.py::test_the_validator_reads_a_catalog_whose_entry_pins_a_sha",
 ]
 
+# The same jobs' remaining holds: what `attest` fetches, may write, installs and runs, the name it
+# hands its commit on under and the package its script imports; whether the gated jobs wait for
+# `attest`, read its output, may fail and stay one step; whether the gate takes an empty pin; the
+# smoke's `main`; the pinned catalog's `--strict`; and the commit id's one shape.
+[[mutation]]
+name = "the attest job fetches the tag's commit alone"
+file = ".github/workflows/release.yml"
+before = "          fetch-depth: 2\n          persist-credentials: false\n"
+after = "          persist-credentials: false\n"
+reddens = [
+  "tests/test_check_workflow.py::test_build_fetches_the_first_parent[attest]",
+]
+
+[[mutation]]
+name = "the attest job keeps a token in its checkout"
+file = ".github/workflows/release.yml"
+before = "          persist-credentials: false\n      - uses: actions/download-artifact"
+after = "      - uses: actions/download-artifact"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job can write the repository"
+file = ".github/workflows/release.yml"
+before = "      attestations: write\n      contents: read\n    outputs:"
+after = "      attestations: write\n      contents: write\n    outputs:"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the Release job can sign"
+file = ".github/workflows/release.yml"
+before = "      contents: write   # the one job that writes"
+after = "      id-token: write\n      contents: write   # the one job that writes"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the environment gate can record attestations"
+file = ".github/workflows/release.yml"
+before = "    timeout-minutes: 5\n    permissions:\n      contents: read\n"
+after = "    timeout-minutes: 5\n    permissions:\n      attestations: write\n      contents: read\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job installs uv"
+file = ".github/workflows/release.yml"
+before = "      - name: The plugin commit of the commit this run builds\n"
+after = "      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0\n      - name: The plugin commit of the commit this run builds\n"
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job runs the suite"
+file = ".github/workflows/release.yml"
+before = '          echo "commit=$commit" >> "$GITHUB_OUTPUT"'
+after = '          python3 -m pytest -q\n          echo "commit=$commit" >> "$GITHUB_OUTPUT"'
+reddens = [
+  "tests/test_check_workflow.py::test_only_the_attest_job_can_attest",
+]
+
+[[mutation]]
+name = "the attest job writes the commit under another name"
+file = ".github/workflows/release.yml"
+before = '          echo "commit=$commit" >> "$GITHUB_OUTPUT"'
+after = '          echo "sha=$commit" >> "$GITHUB_OUTPUT"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+[[mutation]]
+name = "the attest job hands on another step's output"
+file = ".github/workflows/release.yml"
+before = "      commit: ${{ steps.plugin-commit.outputs.commit }}"
+after = "      commit: ${{ steps.plugin-commit.outputs.sha }}"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+# The runner's interpreter has no `stayfixed` of its own, so without the checkout's `src` the
+# script fails to import; the suite's interpreter has one, so only the step's `env:` pin holds it.
+[[mutation]]
+name = "the attest job runs the plugin script without the checkout's package"
+file = ".github/workflows/release.yml"
+before = "        env:\n          PYTHONPATH: src\n        run: |\n          python3 scripts/plugin_tree.py commit"
+after = "        run: |\n          python3 scripts/plugin_tree.py commit"
+reddens = [
+  "tests/test_check_workflow.py::test_the_attest_job_hands_on_the_commit_its_source_pins",
+]
+
+[[mutation]]
+name = "publish starts before attest finished"
+file = ".github/workflows/release.yml"
+before = "    needs: [build, environment-gate, attest]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15"
+after = "    needs: [build, environment-gate]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate reads the commit build hands on"
+file = ".github/workflows/release.yml"
+before = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.attest.outputs.commit }}'''
+after = '''      contents: read
+    steps:
+      - name: The plugin repository holds this release's commit
+        env:
+          TAG: ${{ github.ref_name }}
+          PINNED: ${{ needs.build.outputs.commit }}'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate may fail and the job go on"
+file = ".github/workflows/release.yml"
+before = "      contents: read\n    steps:\n      - name: The plugin repository holds this release's commit\n"
+after = "      contents: read\n    steps:\n      - name: The plugin repository holds this release's commit\n        continue-on-error: true\n"
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "github-release's plugin gate drifts from publish's"
+file = ".github/workflows/release.yml"
+before = '''this release pins, $PINNED"
+      - uses: actions/checkout'''
+after = '''this release pins: $PINNED"
+      - uses: actions/checkout'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_jobs_refuse_until_the_plugin_tag_names_the_pin",
+]
+
+[[mutation]]
+name = "the plugin gate takes an empty pin for a match"
+file = ".github/workflows/release.yml"
+before = '''          if ! [[ "$PINNED" =~ ^[0-9a-f]{40}$ ]] || [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
+      - uses: actions/download-artifact'''
+after = '''          if [ "$found" != "$PINNED" ]; then
+            echo "::error::stayfixed/stayfixed-plugin's $TAG names ${found:-no commit}, not the plugin commit '$PINNED' this release pins: publish it as RELEASING.md section 2, step 7 says, then re-run this job"
+            exit 1
+          fi
+          echo "stayfixed/stayfixed-plugin's $TAG is the plugin commit this release pins, $PINNED"
+      - uses: actions/download-artifact'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_gated_step_compares_the_peeled_id[nothing-pinned-publish]",
+]
+
+[[mutation]]
+name = "the smoke's scratch repository has no main"
+file = ".github/workflows/smoke.yml"
+before = '          git --git-dir="$RUNNER_TEMP/plugin-repo.git" update-ref refs/heads/main "$commit"'
+after = ""
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_installs_by_ref_and_sha",
+]
+
+[[mutation]]
+name = "the validator checks the pinned catalog without --strict"
+file = ".github/workflows/ci.yml"
+before = '          claude plugin validate "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json" --strict'
+after = '          claude plugin validate "$RUNNER_TEMP/pinned/.claude-plugin/marketplace.json"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_validator_reads_a_catalog_whose_entry_pins_a_sha",
+]
+
+# The scripts and the workflows each spell a commit id's shape, and a workflow's copy is reached
+# by no run: the script before it prints no other shape. The equality is the hold.
+[[mutation]]
+name = "the smoke checks the plugin commit's shape by another pattern"
+file = ".github/workflows/smoke.yml"
+before = '          if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then'
+after = '          if ! [[ "$commit" =~ ^[0-9a-f]+$ ]]; then'
+reddens = [
+  "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
+]
+
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
 # `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
 # is `base_sha`, the commit whose configuration governs the gates. Disable the character check

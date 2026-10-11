@@ -106,6 +106,8 @@ jobs:
             --git-dir "$RUNNER_TEMP/plugin.git" --manifest-file "$RUNNER_TEMP/plugin-tree.txt" \
             --require-pin --json > "$RUNNER_TEMP/plugin-commit.json"
           commit="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' "$RUNNER_TEMP/plugin-commit.json")"
+          # The script prints no other shape, so no test reaches this; `tests/test_check_workflow.py`
+          # holds its pattern to the scripts'.
           if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::plugin_tree.py commit named no plugin commit: '$commit'"
             exit 1
