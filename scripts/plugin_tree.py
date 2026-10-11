@@ -5,6 +5,8 @@
                                          [--manifest-file FILE]
     uv run python scripts/plugin_tree.py render --root DIR --rev REV --out DIR
                                        [--manifest-file FILE]
+    uv run python scripts/plugin_tree.py commit --root DIR --rev REV --git-dir DIR
+                                       [--manifest-file FILE] [--no-parent] [--require-pin]
 
 This repository is more than the plugin: its tests, documents, plans and tooling ship nowhere. The
 plugin is published from a repository of its own whose root is the tree this script generates, and
@@ -23,8 +25,16 @@ and nothing else, which is why a path holding a control character, or one that i
 refused rather than written: a `\\n` in a name would forge a line, and a C1 control or a Unicode
 line separator breaks the line a terminal or an editor shows.
 
+**The plugin repository's commit is computed here,** as a function of the source commit alone: the
+tree's objects, and a commit of them with a fixed author, committer and date, a message naming the
+version, and as its parent the commit the marketplace pinned at the source commit's first parent.
+So the release commit can name, in its marketplace entry, the commit the plugin repository will
+hold, and anyone holding the source commit and its first parent can compute that commit again and
+compare.
+
 The commands go through the CLI frame's `run`, as `scripts/release.py`'s do: `--json` anywhere on
-the line, exit `0`, and `2` for a refusal.
+the line, exit `0`, `1` when `commit --require-pin` finds the source commit pinning another
+commit, and `2` for a refusal.
 """
 
 from __future__ import annotations
@@ -35,15 +45,23 @@ import operator
 import os
 import re
 import sys
-from collections.abc import Iterable
-from dataclasses import dataclass
+import tempfile
+from collections.abc import Iterable, Sequence
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from stayfixed import fsops
 from stayfixed.cli import JSON_EPILOG, run
-from stayfixed.errors import Refusal
-from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, answer_bytes, git_run
-from stayfixed.printed import quoted
+from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import (
+    NO_ANSWER,
+    QUERY_TIMEOUT_SECONDS,
+    answer_bytes,
+    git_run,
+    pipe_encoding,
+)
+from stayfixed.jsonobject import json_object
+from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
 
 # What the plugin's runtime reads, and nothing else: the two manifests, the hooks and their
@@ -253,6 +271,286 @@ def render(entries: Iterable[Member], out: Path) -> None:
             ) from None
 
 
+# --- The plugin repository's commit -------------------------------------------------------------
+
+# The repository the plugin's tree is read from, as the commit message names it.
+SOURCE_REPOSITORY = "stayfixed/stayfixed"
+# Where, at a source commit, the marketplace names the plugin commit it pins, and the entry's name.
+MARKETPLACE = ".claude-plugin/marketplace.json"
+PACKAGE = "stayfixed"
+# The manifest whose `version` the commit message names.
+PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+# The author and the committer of every plugin commit, with its date: fixed, so the commit is the
+# same whoever computes it and whenever. Its message names the version and not the source commit,
+# so the release commit can carry the result.
+IDENTITY = "stayfixed <release@stayfixed.invalid> 0 +0000"
+# A commit id of the plugin repository, which is SHA-1 whatever the owner's configuration says.
+SHA1 = re.compile(r"[0-9a-f]{40}")
+# On every git that runs in the git dir, `init` included: none of the owner's hooks runs there.
+# `core.hooksPath` is read before any repository exists, so a `reference-transaction` hook would
+# otherwise run as `init` writes `HEAD`.
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
+
+
+@dataclass(frozen=True)
+class PluginCommit:
+    rev: str  # the source commit
+    version: str  # .claude-plugin/plugin.json's version at rev
+    files: int
+    tree: str
+    parent: str | None  # the sha the marketplace pins at rev^1, or None
+    commit: str
+    pinned: str | None  # the sha the marketplace pins at rev
+
+
+def commit_text(tree: str, parent: str | None, version: str) -> str:
+    """The plugin commit's object text: the tree, the parent when there is one, the fixed
+    identity, and a message naming the version."""
+    lineage = f"parent {parent}\n" if parent is not None else ""
+    return (
+        f"tree {tree}\n{lineage}author {IDENTITY}\ncommitter {IDENTITY}\n\n"
+        f"stayfixed {version}\n\nThe plugin tree of {SOURCE_REPOSITORY} at v{version}.\n"
+    )
+
+
+def _answered(code: int, what: str) -> None:
+    """Refuse a git that gave no answer in `NO_ANSWER`'s words, rather than as an exit code."""
+    if code == -1:
+        raise Refusal(f"{what} gave no answer: {NO_ANSWER}")
+
+
+def _json_file(root: Path, sha: str, path: str, content: bytes) -> dict[str, object]:
+    said = f"{path} at {sha} in {root}"
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise Refusal(f"{said} is not UTF-8 text") from None
+    return json_object(text, said, error=Refusal)
+
+
+def pinned_sha(root: Path, rev: str) -> str | None:
+    """The `sha` the marketplace's plugin entry pins at the commit `rev` names, or `None` when
+    the commit holds no marketplace or its entry pins no `sha`.
+
+    Read as `scripts/release.py` reads the entry: exactly one entry named `stayfixed`, whose
+    `source` is an object. Refused: a marketplace that is not JSON, that has not that one entry,
+    or whose `sha` is not 40 lowercase hex characters, naming the commit and the marketplace.
+    """
+    sha = peel(root, rev, "commit")
+    said = f"{MARKETPLACE} at {sha} in {root}"
+    code, answer = _git(root, "ls-tree", "-z", "--full-tree", sha, "--", MARKETPLACE)
+    _answered(code, f"git ls-tree of {sha} in {root}")
+    if code != 0:
+        raise Refusal(f"git ls-tree of {sha} exited {code} in {root}")
+    record = answer.split("\0", 1)[0]
+    if not record:
+        return None
+    mode, kind, obj = record.split("\t", 1)[0].split()
+    if kind != "blob" or mode not in REGULAR_MODES:
+        raise Refusal(f"{said} has mode {mode}, not a regular file's")
+    data = _json_file(root, sha, MARKETPLACE, _blobs(root, [obj])[obj])
+    plugins = data.get("plugins")
+    named = (
+        [entry for entry in plugins if isinstance(entry, dict) and entry.get("name") == PACKAGE]
+        if isinstance(plugins, list)
+        else []
+    )
+    if len(named) != 1 or not isinstance(named[0].get("source"), dict):
+        raise Refusal(
+            f"{said} has {len(named)} entries named {PACKAGE!r}; the pin is read from exactly "
+            "one, whose source is an object"
+        )
+    source = named[0]["source"]
+    if "sha" not in source:
+        return None
+    pin = source["sha"]
+    if not isinstance(pin, str) or SHA1.fullmatch(pin) is None:
+        shown = clipped(pin) if isinstance(pin, str) else f"a {type(pin).__name__}"
+        raise Refusal(f"{said} pins sha {shown}, which is no commit id of 40 lowercase hex digits")
+    return pin
+
+
+def _first_parent(root: Path, sha: str) -> str | None:
+    """The first parent the commit `sha`'s object names, or `None` when it names none; refused
+    when the repository does not hold it, as a shallow clone does not."""
+    code, answer = _git(root, "cat-file", "commit", sha)
+    _answered(code, f"git cat-file of {sha} in {root}")
+    if code != 0:
+        raise Refusal(f"git cat-file of {sha} exited {code} in {root}")
+    header = answer.split("\n\n", 1)[0].split("\n")
+    parents = [line.removeprefix("parent ") for line in header if line.startswith("parent ")]
+    if not parents:
+        return None
+    first = parents[0]
+    code, _ = _git(root, "cat-file", "-e", f"{first}^{{commit}}")
+    _answered(code, f"git cat-file of {first} in {root}")
+    if code != 0:
+        raise Refusal(
+            f"the commit before {sha} is not in this clone; fetch it (fetch-depth: 2): the plugin "
+            f"commit's parent is the sha {MARKETPLACE} pins there"
+        )
+    return first
+
+
+def _version(root: Path, tree: Tree) -> str:
+    """`plugin.json`'s `version` among the members, which the commit message names."""
+    found = [member for member in tree.members if member.path == PLUGIN_MANIFEST]
+    if not found:
+        raise Refusal(f"{PLUGIN_MANIFEST} at {tree.commit} in {root} is no file")
+    version = _json_file(root, tree.commit, PLUGIN_MANIFEST, found[0].content).get("version")
+    if not isinstance(version, str):
+        raise Refusal(f"{PLUGIN_MANIFEST} at {tree.commit} in {root} names no version string")
+    return version
+
+
+def _store(git_dir: Path, *args: str, stdin: str | None = None) -> tuple[int, str]:
+    """`git --git-dir=<git_dir>` with no hooks, `args` after it: named, never found, so the
+    owner's `safe.bareRepository = explicit` has nothing to refuse. A git that gave no answer is
+    refused in `NO_ANSWER`'s words."""
+    code, answer = git_run(
+        git_dir,
+        f"--git-dir={git_dir}",
+        *NO_HOOKS,
+        *args,
+        stdin=stdin,
+        timeout=QUERY_TIMEOUT_SECONDS,
+    )
+    _answered(code, f"git {args[0]} in {git_dir}")
+    return code, answer
+
+
+def _prepared(git_dir: Path) -> None:
+    """`git_dir` as a bare SHA-1 repository: made when absent or an empty directory, and
+    otherwise refused unless it already is one."""
+    if _empty_or_absent(git_dir):
+        try:
+            git_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise Refusal(f"{git_dir} cannot be made: {exc.strerror or exc}") from None
+        # No template: `init` copies the owner's `init.templateDir` into the repository, its
+        # `config` among it, which every later git here would read as this repository's own. The
+        # object format is forced: the owner's `init.defaultObjectFormat` would choose it.
+        code, _ = _store(
+            git_dir, "init", "--bare", "--quiet", "--template=", "--object-format=sha1"
+        )
+        if code != 0:
+            raise Refusal(f"git init --bare exited {code} in {git_dir}")
+        return
+    code, answer = _store(git_dir, "rev-parse", "--is-bare-repository", "--show-object-format")
+    if code != 0 or answer.split() != ["true", "sha1"]:
+        raise Refusal(
+            f"{git_dir} is neither absent, an empty directory, nor a bare SHA-1 repository; the "
+            "plugin commit is written into one"
+        )
+
+
+def _write_blobs(git_dir: Path, entries: Sequence[Member]) -> list[str]:
+    """Each member's blob, written by one `git fast-import` from its bytes in memory: no file is
+    hashed, so no filter, attribute or line-ending conversion touches one, and no filesystem
+    folds two names into one."""
+    stream = b"".join(
+        b"blob\nmark :%d\ndata %d\n%s\n" % (number, len(member.content), member.content)
+        for number, member in enumerate(entries, 1)
+    )
+    with tempfile.TemporaryDirectory() as scratch:
+        marks = Path(scratch) / "marks"
+        code, _ = _store(
+            git_dir,
+            "fast-import",
+            "--quiet",
+            f"--export-marks={marks}",
+            stdin=stream.decode(pipe_encoding(), "surrogateescape"),
+        )
+        if code != 0:
+            raise Refusal(f"git fast-import exited {code} in {git_dir}")
+        try:
+            listed = marks.read_text(encoding="ascii").split()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise Refusal(f"git fast-import's marks in {git_dir} cannot be read: {exc}") from None
+    named = dict(zip(listed[::2], listed[1::2], strict=False))
+    blobs = [named.get(f":{number}", "") for number in range(1, len(entries) + 1)]
+    if not all(SHA1.fullmatch(blob) for blob in blobs):
+        raise Refusal(f"git fast-import in {git_dir} did not name a blob for every member")
+    return blobs
+
+
+def _mktree(git_dir: Path, entries: list[tuple[str, str, str, str]]) -> str:
+    """One tree object from `(mode, kind, object, name)` entries; `mktree` sorts them itself."""
+    # Each name goes to git as its UTF-8 bytes, whatever the pipe's codec: `git_run` encodes
+    # `stdin` with that codec and `surrogateescape`, which this decoding undoes exactly.
+    given = "".join(
+        f"{mode} {kind} {obj}\t{name.encode('utf-8').decode(pipe_encoding(), 'surrogateescape')}\0"
+        for mode, kind, obj, name in entries
+    )
+    code, answer = _store(git_dir, "mktree", "-z", stdin=given)
+    tree = answer.removesuffix("\n")
+    if code != 0 or not SHA1.fullmatch(tree):
+        raise Refusal(f"git mktree exited {code} in {git_dir}")
+    return tree
+
+
+def _write_trees(git_dir: Path, entries: Sequence[Member], blobs: list[str]) -> str:
+    """The root tree holding each member at its mode, and nothing else: one `mktree` per
+    directory, the deepest first, so each directory's tree exists before its parent names it."""
+    directories: dict[str, list[tuple[str, str, str, str]]] = {"": []}
+    for member, blob in zip(entries, blobs, strict=True):
+        directory, _, name = member.path.rpartition("/")
+        directories.setdefault(directory, []).append((member.mode, "blob", blob, name))
+        while directory:
+            directory = directory.rpartition("/")[0]
+            directories.setdefault(directory, [])
+    for directory in sorted(directories, key=lambda d: d.count("/") + bool(d), reverse=True):
+        if directory:
+            above, _, name = directory.rpartition("/")
+            tree = _mktree(git_dir, directories[directory])
+            directories[above].append(("040000", "tree", tree, name))
+    return _mktree(git_dir, directories[""])
+
+
+def _plugin_commit(
+    root: Path, rev: str, git_dir: Path, *, root_commit: bool
+) -> tuple[PluginCommit, Tree]:
+    tree = read(root, rev)
+    version = _version(root, tree)
+    first = None if root_commit else _first_parent(root, tree.commit)
+    parent = None if first is None else pinned_sha(root, first)
+    pinned = pinned_sha(root, tree.commit)
+    # Absolute: every git here runs `-C <git_dir>`, and a relative `--git-dir` after it would be
+    # read from there.
+    git_dir = git_dir.absolute()
+    _prepared(git_dir)
+    root_tree = _write_trees(git_dir, tree.members, _write_blobs(git_dir, tree.members))
+    text = commit_text(root_tree, parent, version)
+    code, answer = _store(git_dir, "hash-object", "-t", "commit", "-w", "--stdin", stdin=text)
+    made = answer.removesuffix("\n")
+    if code != 0 or not SHA1.fullmatch(made):
+        raise Refusal(f"git hash-object of the plugin commit exited {code} in {git_dir}")
+    found = PluginCommit(
+        rev=tree.commit,
+        version=version,
+        files=len(tree.members),
+        tree=root_tree,
+        parent=parent,
+        commit=made,
+        pinned=pinned,
+    )
+    return found, tree
+
+
+def plugin_commit(
+    root: Path, rev: str, git_dir: Path, *, root_commit: bool = False
+) -> PluginCommit:
+    """The plugin repository's commit of the source commit `rev` names, written into `git_dir`.
+
+    Its tree is `read(root, rev)`'s members; its parent the `sha` the marketplace pins at `rev`'s
+    first parent, or none when that pins none or `root_commit` says so; its text `commit_text`'s.
+    `git_dir` is made a bare SHA-1 repository when it is absent or empty, and must be one
+    otherwise. Refused: a first parent the clone does not hold, a malformed pin at either commit,
+    a `plugin.json` naming no version, and every git that fails or gives no answer.
+    """
+    return _plugin_commit(root, rev, git_dir, root_commit=root_commit)[0]
+
+
 # --- The commands -------------------------------------------------------------------------------
 
 
@@ -288,6 +586,26 @@ def run_render(args: argparse.Namespace) -> Result:
     )
 
 
+def run_commit(args: argparse.Namespace) -> Result:
+    found, tree = _plugin_commit(
+        Path(args.root), args.rev, Path(args.git_dir), root_commit=args.no_parent
+    )
+    if args.manifest_file is not None:
+        # Last, after every object: a manifest on disk says its commit was written whole.
+        _write_manifest(Path(args.manifest_file), manifest(tree.members))
+    pinned = found.pinned or "no sha"
+    if args.require_pin and found.pinned != found.commit:
+        raise Failure(
+            f"{MARKETPLACE} at {found.rev} pins {pinned}, and the plugin commit its tree makes "
+            f"is {found.commit}"
+        )
+    return Result(
+        f"the plugin commit of {found.rev} is {found.commit} ({found.files} files); "
+        f"{MARKETPLACE} there pins {pinned}",
+        {"format": FORMAT, **asdict(found)},
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(
         prog="scripts/plugin_tree.py",
@@ -314,6 +632,22 @@ def parser() -> argparse.ArgumentParser:
         "--manifest-file", default=None, help="where to write the manifest, outside --out"
     )
     rendering.set_defaults(func=run_render)
+    committing = command("commit", "write the plugin repository's commit of a source commit")
+    committing.add_argument(
+        "--git-dir", required=True, help="an absent or empty directory, or a bare SHA-1 repository"
+    )
+    committing.add_argument("--manifest-file", default=None, help="where to write the manifest")
+    committing.add_argument(
+        "--no-parent",
+        action="store_true",
+        help="give the commit no parent, whatever the first parent's marketplace pins",
+    )
+    committing.add_argument(
+        "--require-pin",
+        action="store_true",
+        help="exit 1 unless the source commit's marketplace pins this commit",
+    )
+    committing.set_defaults(func=run_commit)
     return top
 
 

@@ -2193,6 +2193,129 @@ before = "    return fsops.is_dir(out) and not fsops.is_symlink(out) and not any
 after = "    return False"
 reddens = ["tests/scripts/test_plugin_tree.py::test_render_writes_into_an_empty_directory"]
 
+# The plugin repository's commit is a function of the source commit alone, so the release commit
+# can pin it and anyone can compute it again: its text is fixed byte for byte, its parent is read
+# from the first parent's pin, and nothing of the owner's configuration reaches its git dir.
+#
+# No entry holds `test_the_owner_s_line_endings_do_not_change_the_blobs` or
+# `test_members_differing_only_in_case_are_both_written`: `fast-import` applies no filter and
+# writes no file, so no line of the script converts a line ending or folds a name. Both guard a
+# return to hashing a render.
+[[mutation]]
+name = "the plugin commit is dated a second after the epoch"
+file = "scripts/plugin_tree.py"
+before = 'IDENTITY = "stayfixed <release@stayfixed.invalid> 0 +0000"'
+after = 'IDENTITY = "stayfixed <release@stayfixed.invalid> 1 +0000"'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_commit_text_is_exactly_the_documented_bytes",
+  "tests/scripts/test_plugin_tree.py::test_the_plugin_commit_is_what_git_computes",
+]
+
+[[mutation]]
+name = "the plugin commit takes its parent from the source commit's own pin"
+file = "scripts/plugin_tree.py"
+before = "    parent = None if first is None else pinned_sha(root, first)"
+after = "    parent = None if first is None else pinned_sha(root, tree.commit)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_parent_is_the_sha_the_first_parent_pins"]
+
+[[mutation]]
+name = "the plugin commit reads a parent under root_commit"
+file = "scripts/plugin_tree.py"
+before = "    first = None if root_commit else _first_parent(root, tree.commit)"
+after = "    first = _first_parent(root, tree.commit)"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+[[mutation]]
+name = "the plugin commit command drops --no-parent"
+file = "scripts/plugin_tree.py"
+before = "        Path(args.root), args.rev, Path(args.git_dir), root_commit=args.no_parent"
+after = "        Path(args.root), args.rev, Path(args.git_dir), root_commit=False"
+reddens = ["tests/scripts/test_plugin_tree.py::test_no_parent_ignores_the_history"]
+
+# A shallow clone, which CI checks out by default, does not hold the first parent: read as none,
+# the commit is built without the parent the release pinned, and is another commit.
+[[mutation]]
+name = "the plugin commit reads a first parent the clone lacks as none"
+file = "scripts/plugin_tree.py"
+before = """    if code != 0:
+        raise Refusal(
+            f"the commit before {sha} is not in this clone"""
+after = """    if code != 0:
+        return None
+    if False:
+        raise Refusal(
+            f"the commit before {sha} is not in this clone"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_source_whose_first_parent_is_not_in_the_clone_is_refused",
+]
+
+[[mutation]]
+name = "the plugin commit reads a pin that is no SHA-1 commit id"
+file = "scripts/plugin_tree.py"
+before = "    if not isinstance(pin, str) or SHA1.fullmatch(pin) is None:"
+after = "    if not isinstance(pin, str):"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[upper-case]",
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[39-characters]",
+  "tests/scripts/test_plugin_tree.py::test_a_malformed_pinned_sha_is_refused[64-characters]",
+]
+
+[[mutation]]
+name = "the plugin commit's git dir takes the owner's object format"
+file = "scripts/plugin_tree.py"
+before = '"--template=", "--object-format=sha1"'
+after = '"--template="'
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_owner_s_object_format_does_not_reach_the_git_dir"]
+
+[[mutation]]
+name = "the plugin commit's git dir is made from the owner's init template"
+file = "scripts/plugin_tree.py"
+before = '"--template=", "--object-format=sha1"'
+after = '"--object-format=sha1"'
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_owners_init_template_does_not_reach_the_git_dir"]
+
+[[mutation]]
+name = "the plugin commit runs the owner's hooks in its git dir"
+file = "scripts/plugin_tree.py"
+before = 'NO_HOOKS = ("-c", "core.hooksPath=/dev/null")'
+after = "NO_HOOKS = ()"
+reddens = ["tests/scripts/test_plugin_tree.py::test_the_owners_hooks_do_not_run_in_the_git_dir"]
+
+[[mutation]]
+name = "the plugin commit finds its git dir rather than naming it"
+file = "scripts/plugin_tree.py"
+before = """        f"--git-dir={git_dir}",
+        *NO_HOOKS,"""
+after = """        *NO_HOOKS,"""
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_an_explicit_safe_bare_repository_does_not_refuse_the_git_dir",
+]
+
+[[mutation]]
+name = "the plugin commit says a git that gave no answer exited"
+file = "scripts/plugin_tree.py"
+before = "    if code == -1:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words",
+]
+
+[[mutation]]
+name = "the plugin commit writes into a git dir of another object format"
+file = "scripts/plugin_tree.py"
+before = '    if code != 0 or answer.split() != ["true", "sha1"]:'
+after = '    if code != 0 or answer.split()[:1] != ["true"]:'
+reddens = [
+  "tests/scripts/test_plugin_tree.py::test_a_half_made_git_dir_is_refused_and_an_empty_one_is_made[a-sha256-repository]",
+]
+
+[[mutation]]
+name = "the plugin commit command holds the pin to the parent"
+file = "scripts/plugin_tree.py"
+before = "    if args.require_pin and found.pinned != found.commit:"
+after = "    if args.require_pin and found.pinned != found.parent:"
+reddens = ["tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the_pin_is_another_commit"]
+
 [[mutation]]
 name = "release check passes a marketplace with no one plugin entry"
 file = "scripts/release.py"
