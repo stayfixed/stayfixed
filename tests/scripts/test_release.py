@@ -842,8 +842,8 @@ def test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding(tmp_path: Pat
     # count problem quoting it: returned, never raised, so `--json` keeps its object. Mutation
     # (declared): a tree that could not be counted read as nought files -> no problem and this
     # reddens. Mutation (declared): `mutations/`'s "release reads no summary from the plugin tree
-    # script" -> the refusal's sentence is lost, and the problem says only how it exited. Mutation (declared): the count asked without `--tag` too -> the last assertion
-    # reddens.
+    # script" -> the refusal's sentence is lost, and the problem says only how it exited.
+    # Mutation (declared): the count asked without `--tag` too -> the last assertion reddens.
     root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
     os.symlink("../README.md", root / "skills" / "link")
     git(root, "add", "-A")
