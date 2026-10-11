@@ -79,8 +79,9 @@ SOURCES = (
 PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 # The same repository as `owner/name`, as a refusal names it.
 PLUGIN_REPOSITORY = PLUGIN_URL.removeprefix("https://github.com/").removesuffix(".git")
-# A release's tag, as the marketplace entry's `ref` names it.
-_RELEASE_REF = re.compile(r"v(\d+\.\d+\.\d+)")
+# A release's tag, as the marketplace entry's `ref` names it: ASCII digits, as the publisher's
+# tag pattern spells them, since `\d` also takes every other script's digits.
+_RELEASE_REF = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")
 # The script that names the plugin's paths, run as a program and never imported.
 PLUGIN_TREE = Path(__file__).resolve().with_name("plugin_tree.py")
 # The most files a plugin holds without the Claude plugin directory holding the listing for a

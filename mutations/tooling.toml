@@ -1567,6 +1567,24 @@ reddens = [
 ]
 
 [[mutation]]
+name = "release check accepts a marketplace ref with a suffix after the version"
+file = "scripts/release.py"
+before = "    if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:"
+after = "    if not isinstance(ref, str) or _RELEASE_REF.match(ref) is None:"
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-suffixed-ref]",
+]
+
+[[mutation]]
+name = "release check takes any script's digits in a marketplace ref"
+file = "scripts/release.py"
+before = '_RELEASE_REF = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")'
+after = '_RELEASE_REF = re.compile(r"v(\d+\.\d+\.\d+)")'
+reddens = [
+  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-non-ascii-digit]",
+]
+
+[[mutation]]
 name = "release check accepts a marketplace entry pinning a sha"
 file = "scripts/release.py"
 before = '    if "sha" in source:'

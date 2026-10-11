@@ -336,6 +336,18 @@ def _url(**extra: object) -> dict[str, object]:
             id="a-branch-ref",
         ),
         pytest.param(
+            {"name": "stayfixed", "source": _url(ref="v0.1.0-rc1")},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'v0.1.0-rc1', which is "
+            "no release tag vX.Y.Z",
+            id="a-suffixed-ref",
+        ),
+        pytest.param(
+            {"name": "stayfixed", "source": _url(ref="v0.1.\u0660")},
+            ".claude-plugin/marketplace.json entry 'stayfixed' pins ref 'v0.1.\u0660', which is "
+            "no release tag vX.Y.Z",
+            id="a-non-ascii-digit",
+        ),
+        pytest.param(
             {"name": "stayfixed", "source": _url(sha="0" * 40)},
             ".claude-plugin/marketplace.json entry 'stayfixed' pins a sha, which the release "
             "commit cannot know; pin the tag by ref alone",
@@ -353,7 +365,9 @@ def test_an_entry_naming_another_repository_or_no_ref_is_refused(
     tmp_path: Path, entry: dict[str, object], problem: str
 ) -> None:
     # Each case is one problem and that one. Mutations (declared): any `url` accepted ->
-    # `another-url` reddens; the ref's shape unasked -> `no-ref` and `a-branch-ref` redden; a
+    # `another-url` reddens; the ref's shape unasked -> `no-ref` and `a-branch-ref` redden; the
+    # shape matched at the start only -> `a-suffixed-ref` reddens; `\d` for the shape's digits ->
+    # `a-non-ascii-digit` passes the shape and is reported as version drift instead, and reddens; a
     # `sha` let through -> `a-sha` reddens; a `version` on the entry let through ->
     # `a-version-on-the-entry` reddens.
     assert release.check(_with_entry(tmp_path, entry)) == [problem]
