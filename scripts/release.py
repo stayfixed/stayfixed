@@ -4,14 +4,22 @@
     uv run python scripts/release.py check [--tag TAG]            # one version everywhere
     uv run python scripts/release.py notes --version X.Y.Z [--draft]  # assemble CHANGELOG.md
     uv run python scripts/release.py hashes [--check]              # the shipped files' record
+    uv run python scripts/release.py pin [--remote URL]            # the plugin commit, pinned
 
-These three commands only ever checked the stayfixed repository itself, so they live beside it
+These commands only ever checked or wrote the stayfixed repository itself, so they live beside it
 rather than in the installed CLI. What shipped code does read stays in `stayfixed.release`: the
 record's reader (`doctor files` compares an installed plugin against it) and the tag a version
 is released under (`init` pins it). `RELEASING.md` is the process these commands serve.
 
 The commands go through the CLI frame's `run`, so they keep its contract: `--json` anywhere on
 the line, exit `0`, `1` for findings and `2` for a refusal or an internal error.
+
+**`check --tag` holds the release commit to what it releases:** the seven version sources and the
+tag agree, no fragment is left to assemble, the plugin tree holds no more files than the plugin
+directory lists unheld, and the marketplace entry's `sha` is the plugin commit that tree makes,
+which `scripts/plugin_tree.py commit` computes from the commit alone. `pin` writes that `sha`, once
+it has read that the plugin repository's `main` is the commit's parent: `main` moves only by
+fast-forward, so a release commit cut on the wrong base is refused before any tag is pushed.
 
 **Findings are returned, not raised.** These commands once reported a finding by raising
 `Failure`, and the cost was in `--json`: the frame turns a `Failure` into
@@ -33,6 +41,7 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -73,15 +82,20 @@ SOURCES = (
 )
 # Where the marketplace fetches the plugin from: a repository of its own, whose root is the tree
 # `scripts/plugin_tree.py` generates from this one. The marketplace entry is a `url` source pinned
-# to the release's tag by `ref`, and that `ref` is a version source (`_released_ref`): the release
-# commit names the tag it releases, which is the only marketplace a user reads, since `README.md`
-# installs `stayfixed/stayfixed@vX.Y.Z` and `main` moves only at a release.
+# to the release's tag by `ref` and to the plugin commit by `sha`. The `ref` is a version source
+# (`_released_ref`): the release commit names the tag it releases, which is the only marketplace a
+# user reads, since `README.md` installs `stayfixed/stayfixed@vX.Y.Z` and `main` moves only at a
+# release. The `sha` is the commit `scripts/plugin_tree.py commit` computes from the release commit
+# alone, so the release commit can name it before the plugin repository holds it (`pin`).
 PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 # The same repository as `owner/name`, as a refusal names it.
 PLUGIN_REPOSITORY = PLUGIN_URL.removeprefix("https://github.com/").removesuffix(".git")
 # A release's tag, as the marketplace entry's `ref` names it: ASCII digits, as the publisher's
 # tag pattern spells them, since `\d` also takes every other script's digits.
 _RELEASE_REF = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")
+# A commit id of the plugin repository, as the marketplace entry's `sha` pins it: SHA-1, which
+# `scripts/plugin_tree.py` forces whatever the owner's configuration says, in git's lower case.
+SHA1 = re.compile(r"[0-9a-f]{40}")
 # The script that names the plugin's paths, run as a program and never imported.
 PLUGIN_TREE = Path(__file__).resolve().with_name("plugin_tree.py")
 # The most files a plugin holds without the Claude plugin directory holding the listing for a
@@ -95,7 +109,12 @@ _HEADING = re.compile(r"^## (\S+)", re.MULTILINE)
 
 TAG_HELP = (
     "the tag this run was created from; the seven sources and the changelog must agree with it, "
-    "and the plugin tree must hold no more files than the plugin directory lists unheld"
+    "the plugin tree must hold no more files than the plugin directory lists unheld, and the "
+    "marketplace entry must pin by sha the plugin commit that tree makes"
+)
+REMOTE_HELP = (
+    "the plugin repository whose main the plugin commit must follow; only listed, never written "
+    f"(default: {PLUGIN_URL})"
 )
 
 
@@ -245,7 +264,12 @@ def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
 
 def _plugin_entries(text: str) -> list[dict[str, Any]]:
     """The `plugins` entries of the marketplace's text, each an object."""
-    entries = _object(MARKETPLACE, text).get("plugins", [])
+    return _entries_of(_object(MARKETPLACE, text))
+
+
+def _entries_of(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """The `plugins` entries of the marketplace's parsed document, each an object."""
+    entries = document.get("plugins", [])
     # A string entry was read with `in`, a substring test, and a string `plugins` as a list of
     # its characters, so the rule passed over both in silence.
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
@@ -255,16 +279,17 @@ def _plugin_entries(text: str) -> list[dict[str, Any]]:
     return entries
 
 
-def _the_plugin_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The one entry named for the package, or `None` when there is not exactly one."""
+def _the_plugin_entry(entries: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, int]:
+    """The one entry named for the package, or `None` when there is not exactly one, and how many
+    entries are named for it."""
     named = [entry for entry in entries if entry.get("name") == PACKAGE]
-    return named[0] if len(named) == 1 else None
+    return (named[0] if len(named) == 1 else None), len(named)
 
 
 def _released_ref(entries: list[dict[str, Any]]) -> str | None:
     """The version the plugin entry's `ref` pins, `X.Y.Z` of a `vX.Y.Z` tag, or `None` when the
     entry pins none of that shape: `marketplace_problems` says why, in its own words."""
-    entry = _the_plugin_entry(entries)
+    entry, _ = _the_plugin_entry(entries)
     source = entry.get("source") if entry is not None else None
     ref = source.get("ref") if isinstance(source, dict) else None
     match = _RELEASE_REF.fullmatch(ref) if isinstance(ref, str) else None
@@ -274,15 +299,14 @@ def _released_ref(entries: list[dict[str, Any]]) -> str | None:
 def marketplace_problems(root: Path) -> list[str]:
     """Every way the marketplace's plugin entry is not the one a release publishes: exactly one
     entry named for the package, fetching the plugin repository as a `url` source pinned to a
-    `vX.Y.Z` tag by `ref` alone, and carrying no `version` of its own.
+    `vX.Y.Z` tag by `ref`, carrying no `version` of its own, and pinning a commit by `sha` only as
+    a commit id of 40 lowercase hex characters.
 
-    No `sha`: the release commit names the tag before the plugin repository holds the commit it
-    will name, so no commit id can be known when it is written.
+    The `sha` is optional here: `dev` pins none before the first release that carries one, and
+    whether it is the plugin commit is asked at the tag (`plugin_commit_problems`).
     """
-    entries = _marketplace_entries(root)
-    entry = _the_plugin_entry(entries)
+    entry, named = _the_plugin_entry(_marketplace_entries(root))
     if entry is None:
-        named = sum(1 for each in entries if each.get("name") == PACKAGE)
         return [
             f"{MARKETPLACE} has {named} entries named {PACKAGE!r}; it must have exactly one, "
             f"fetching the plugin from {PLUGIN_URL}"
@@ -299,25 +323,27 @@ def marketplace_problems(root: Path) -> list[str]:
     ):
         problems.append(
             f"{said} does not fetch the plugin from {PLUGIN_URL}; the plugin is published from "
-            f"{PLUGIN_REPOSITORY}, as a url source pinned to the release's tag"
+            f"{PLUGIN_REPOSITORY}, as a url source pinned to the release's tag by ref and to the "
+            "plugin commit by sha"
         )
         return problems
     ref = source.get("ref")
     if not isinstance(ref, str) or _RELEASE_REF.fullmatch(ref) is None:
         problems.append(f"{said} pins ref {ref!r}, which is no release tag vX.Y.Z")
-    if "sha" in source:
-        problems.append(
-            f"{said} pins a sha, which the release commit cannot know; pin the tag by ref alone"
-        )
+    sha = source.get("sha")
+    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):
+        problems.append(f"{said} pins sha {sha!r}, which is no commit id")
     return problems
 
 
 # The words `check` reports each kind of problem under. A record problem is no version
 # disagreeing, and is spelled as `hashes --check` spells it, so one state reads one way whichever
-# command found it; the plugin tree's count is a third kind, found only at a tag.
+# command found it; the plugin tree's count and the marketplace's pin of the plugin commit are a
+# third and a fourth kind, found only at a tag.
 VERSION_DRIFT = "version drift"
 RECORD_DRIFT = "release record drift"
 TREE_COUNT = "plugin tree count"
+PLUGIN_PIN = "plugin pin"
 # A `--root` that is no repository root is none of them, and is said with no word in front of it.
 NOT_A_ROOT = ""
 
@@ -357,7 +383,7 @@ def checked_by_kind(
     root: Path, *, tag: str | None = None
 ) -> tuple[dict[str, list[str]], dict[str, str | None]]:
     """`checked`'s problems under the word each kind is reported under, in the order `checked`
-    lists them: the versions', the record's, then the tree count's."""
+    lists them: the versions', the record's, the tree count's, then the pin's."""
     found = collect(root)
     unusable = _unusable_root(root)
     if unusable is not None:
@@ -407,52 +433,90 @@ def checked_by_kind(
     # spelling of this actually tested. Either the record is here, or every file it would name
     # is: the first keeps a tree whose wrapper was deleted honest, the second is how a checkout
     # with no record yet is told to write one.
-    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], TREE_COUNT: []}
+    kinds = {VERSION_DRIFT: problems, RECORD_DRIFT: [], TREE_COUNT: [], PLUGIN_PIN: []}
     if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         kinds[RECORD_DRIFT] = drift(root)
     # At a tag, on the commit the tag names: `tests/test_payload.py` holds the same count on every
-    # pull request, and this holds it again where the release is cut.
+    # pull request, and this holds it again where the release is cut; the pin is the release
+    # commit's alone, and `dev` pins none.
     if tag is not None:
-        kinds[TREE_COUNT] = plugin_tree_count(root)
+        kinds.update(plugin_commit_problems(root))
     return kinds, found
 
 
-def plugin_tree_count(root: Path) -> list[str]:
-    """The plugin tree at `HEAD`, if it holds more files than the plugin directory lists without
-    holding the listing for a reviewer.
-
-    Counted by running `scripts/plugin_tree.py`, which names the plugin's paths and reads them
-    from the commit, as the directory and the plugin repository see it: a file on disk or only
-    staged is not in it. A tree that script cannot read — no checkout, a missing plugin path, a
-    symlink, a name holding a control character — is a problem quoting what it said, and never
-    nought files or an exception out of `check`: the gate that cannot count does not pass.
-    """
-    argv = [sys.executable, str(PLUGIN_TREE), "manifest", "--root", str(root.resolve())]
-    done = subprocess_runner().launch([*argv, "--rev", "HEAD", "--json"], root)
-    count = _files_counted(done)
-    if count is None:
-        return [
-            f"the plugin tree could not be counted: {_said(done)}; "
-            "run the check in the git checkout the tag names"
-        ]
-    if count > PLUGIN_FILES_MAX:
-        return [
-            f"the plugin tree (scripts/plugin_tree.py) holds {count} files, over the "
-            f"{PLUGIN_FILES_MAX} the plugin directory lists unheld"
-        ]
-    return []
+def _plugin_commit(root: Path, runner: Runner) -> tuple[dict[str, Any] | None, Completed]:
+    """`scripts/plugin_tree.py commit --json` of `HEAD`, into a git dir made for this run and gone
+    after it, and its report when it succeeded with one: the plugin commit, the files its tree
+    holds, and the `sha` the marketplace pins there."""
+    with tempfile.TemporaryDirectory() as scratch:
+        argv = [sys.executable, str(PLUGIN_TREE), "commit", "--root", str(root.resolve())]
+        git_dir = str(Path(scratch) / "plugin.git")
+        done = runner.launch([*argv, "--rev", "HEAD", "--git-dir", git_dir, "--json"], root)
+    return _reported(done), done
 
 
-def _files_counted(done: Completed) -> int | None:
-    """The `files` a successful `plugin_tree.py manifest --json` reported, or `None`."""
+def _is_sha(value: object) -> bool:
+    return isinstance(value, str) and SHA1.fullmatch(value) is not None
+
+
+def _reported(done: Completed) -> dict[str, Any] | None:
+    """The report a successful `plugin_tree.py commit --json` printed, or `None` when it failed or
+    printed no report of that shape."""
     if done.code != 0:
         return None
     try:
         report = json.loads(done.stdout)
     except ValueError:
         return None
-    files = report.get("files") if isinstance(report, dict) else None
-    return files if isinstance(files, int) and not isinstance(files, bool) else None
+    if not isinstance(report, dict):
+        return None
+    files = report.get("files")
+    if not isinstance(files, int) or isinstance(files, bool):
+        return None
+    made, pinned, parent = (report.get(key) for key in ("commit", "pinned", "parent"))
+    if not _is_sha(made) or not all(sha is None or _is_sha(sha) for sha in (pinned, parent)):
+        return None
+    return report
+
+
+def plugin_commit_problems(root: Path) -> dict[str, list[str]]:
+    """At a tag, the plugin tree at `HEAD` and the commit it makes, under the kind each problem is
+    reported under: a tree holding more files than the plugin directory lists without holding the
+    listing for a reviewer, or one that cannot be read, under `TREE_COUNT`; a marketplace entry
+    that pins no `sha`, or another commit than the one the tree makes, under `PLUGIN_PIN`.
+
+    Computed by running `scripts/plugin_tree.py commit`, which names the plugin's paths and reads
+    them from the commit, as the directory and the plugin repository see it: a file on disk or only
+    staged is not in it. A tree that script cannot read -- no checkout, a missing plugin path, a
+    symlink, a name holding a control character, a first parent the clone lacks -- is a problem
+    quoting what it said, and never nought files, no pin, or an exception out of `check`: the gate
+    that cannot compute does not pass.
+    """
+    report, done = _plugin_commit(root, subprocess_runner())
+    if report is None:
+        return {
+            TREE_COUNT: [
+                f"the plugin tree could not be read: {_said(done)}; "
+                "run the check in the git checkout the tag names"
+            ],
+            PLUGIN_PIN: [],
+        }
+    count, made, pinned = report["files"], report["commit"], report["pinned"]
+    counted = []
+    if count > PLUGIN_FILES_MAX:
+        counted.append(
+            f"the plugin tree (scripts/plugin_tree.py) holds {count} files, over the "
+            f"{PLUGIN_FILES_MAX} the plugin directory lists unheld"
+        )
+    said = f"{MARKETPLACE} entry {PACKAGE!r}"
+    pins = []
+    if pinned is None:
+        pins.append(
+            f"{said} pins no sha; the plugin commit of this tree is {made}: run `{COMMAND} pin`"
+        )
+    elif pinned != made:
+        pins.append(f"{said} pins sha {pinned}; the plugin commit of this tree is {made}")
+    return {TREE_COUNT: counted, PLUGIN_PIN: pins}
 
 
 def _said(done: Completed) -> str:
@@ -467,6 +531,76 @@ def _said(done: Completed) -> str:
         return str(report["summary"])
     lines = [line for line in done.stderr.splitlines() if line.strip()]
     return lines[-1] if lines else f"it exited {done.code} and said nothing"
+
+
+def _main_at(remote: str, runner: Runner, cwd: Path) -> str | None:
+    """The commit `remote`'s `refs/heads/main` names, or `None` when it has no `main`.
+
+    `ls-remote` matches its pattern by the ref's tail, so `refs/heads/x/refs/heads/main` answers
+    `refs/heads/main` too: the line read is the one whose ref is exactly that name."""
+    done = runner.launch(["git", "ls-remote", "--end-of-options", remote, "refs/heads/main"], cwd)
+    if done.code != 0:
+        lines = [line for line in done.stderr.splitlines() if line.strip()]
+        raise Refusal(
+            f"git ls-remote of {remote} exited {done.code}: "
+            + (lines[0] if lines else "it said nothing")
+        )
+    for line in done.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref == "refs/heads/main":
+            return sha
+    return None
+
+
+def _pinned(root: Path, made: str) -> str:
+    """The marketplace on disk with `made` as its plugin entry's `sha`, as the text `pin` writes:
+    one format, so a later `pin` changes the `sha` line and nothing else.
+
+    `plugin_tree.py commit` read the entry at `HEAD` and refused every shape this refuses; a file
+    edited since is refused here, in a refusal's words, rather than written into."""
+    try:
+        text = (root / MARKETPLACE).read_text(encoding="utf-8")
+        document = _object(MARKETPLACE, text)
+        entry, _ = _the_plugin_entry(_entries_of(document))
+    except (OSError, UnicodeDecodeError, MalformedSource) as exc:
+        raise Refusal(f"{MARKETPLACE} cannot be pinned: {exc}") from None
+    source = entry.get("source") if entry is not None else None
+    if not isinstance(source, dict):
+        raise Refusal(
+            f"{MARKETPLACE} cannot be pinned: it has no one entry {PACKAGE!r} whose source is an "
+            "object"
+        )
+    source["sha"] = made
+    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+
+
+def pin(root: Path, *, remote: str, runner: Runner) -> str:
+    """Write the plugin commit of `HEAD` into the marketplace entry's `sha`, and return it.
+
+    Refused before anything is written: a tree `scripts/plugin_tree.py commit` cannot make the
+    commit of, a marketplace on disk that cannot take the `sha`, a `remote` that cannot be listed,
+    and a `remote` whose `main` is not the commit's parent -- absent when there is a parent,
+    present when there is none, or another commit. The plugin repository's `main` moves only by
+    fast-forward, so a release commit pinning a commit that does not follow it is refused here
+    rather than by the publisher, after the tags.
+    """
+    report, done = _plugin_commit(root, runner)
+    if report is None:
+        raise Refusal(f"the plugin commit could not be made: {_said(done)}")
+    made, parent = str(report["commit"]), report["parent"]
+    body = _pinned(root, made)
+    main = _main_at(remote, runner, root)
+    if main != parent:
+        follows = f"parent {parent}" if parent is not None else "no parent"
+        holds = f"main at {main}" if main is not None else "no main"
+        raise Refusal(
+            f"the plugin commit {made} has {follows}, and {remote} has {holds}; the plugin "
+            "repository's main moves only by fast-forward. The likely cause: this release commit "
+            f"was cut on the wrong base, or a merge into main dropped the sha {MARKETPLACE} "
+            "pinned at the release before (RELEASING.md, section 5)"
+        )
+    fsops.write_within(root, MARKETPLACE, body)
+    return made
 
 
 # --- The changelog ------------------------------------------------------------------------------
@@ -587,6 +721,15 @@ def run_hashes(args: argparse.Namespace) -> Result:
     return Result(f"recorded {len(HASHED_FILES)} shipped file(s)", {"files": sorted(HASHED_FILES)})
 
 
+def run_pin(args: argparse.Namespace) -> Result:
+    root = Path(args.root)
+    made = pin(root, remote=args.remote, runner=subprocess_runner())
+    return Result(
+        f"{MARKETPLACE} pins {made}, the plugin commit of HEAD; commit it into the release commit",
+        {"sha": made},
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     """The script's parser. Each command's one sentence is both its line in the listing and the
     description its own `--help` opens with: argparse keeps `help=` for the parent's listing
@@ -615,6 +758,10 @@ def parser() -> argparse.ArgumentParser:
     hashes.add_argument("--check", action="store_true", help=CHECK_HELP)
     hashes.add_argument("--root", default=".", help=ROOT_HELP)
     hashes.set_defaults(func=run_hashes)
+    pinning = command("pin", "pin the plugin commit of HEAD in the marketplace entry")
+    pinning.add_argument("--remote", default=PLUGIN_URL, help=REMOTE_HELP)
+    pinning.add_argument("--root", default=".", help=ROOT_HELP)
+    pinning.set_defaults(func=run_pin)
     return top
 
 

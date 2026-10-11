@@ -28,10 +28,10 @@ import pytest
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import DEPTH_CAP, NESTED
 from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
-from stayfixed.runner import NOT_FOUND
+from stayfixed.runner import NOT_FOUND, subprocess_runner
 from tests.cli import subparsers
-from tests.gitfixture import git, needs_git
-from tests.plugintree import NINE, PLUGIN_FILES, commit, write
+from tests.gitfixture import git, git_bytes, needs_git
+from tests.plugintree import NINE, PLUGIN_FILES, commit, hashed, literal, plugin_tree_id, write
 from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
@@ -265,7 +265,7 @@ def _repo(
     )
 
 
-# --- The marketplace entry: the plugin repository, pinned to the release's tag ------------------
+# --- The marketplace entry: the plugin repository, pinned to the release's tag and commit -------
 
 
 def test_the_marketplace_ref_is_a_version_source(tmp_path: Path) -> None:
@@ -289,7 +289,7 @@ def _with_entry(tmp_path: Path, *entries: dict[str, object]) -> Path:
 NOT_FETCHED = (
     ".claude-plugin/marketplace.json entry 'stayfixed' does not fetch the plugin from "
     f"{PLUGIN_URL}; the plugin is published from stayfixed/stayfixed-plugin, as a url source "
-    "pinned to the release's tag"
+    "pinned to the release's tag by ref and to the plugin commit by sha"
 )
 
 
@@ -349,12 +349,6 @@ def _url(**extra: object) -> dict[str, object]:
             id="a-non-ascii-digit",
         ),
         pytest.param(
-            {"name": "stayfixed", "source": _url(sha="0" * 40)},
-            ".claude-plugin/marketplace.json entry 'stayfixed' pins a sha, which the release "
-            "commit cannot know; pin the tag by ref alone",
-            id="a-sha",
-        ),
-        pytest.param(
             {"name": "stayfixed", "source": _url(), "version": "0.1.0"},
             ".claude-plugin/marketplace.json entry 'stayfixed' carries a version; plugin.json "
             "is the only source",
@@ -369,9 +363,40 @@ def test_an_entry_naming_another_repository_or_no_ref_is_refused(
     # `another-url` reddens; the ref's shape unasked -> `no-ref` and `a-branch-ref` redden; the
     # shape matched at the start only -> `a-suffixed-ref` reddens; `\d` for the shape's digits ->
     # `a-non-ascii-digit` passes the shape and is reported as version drift instead, and reddens; a
-    # `sha` let through -> `a-sha` reddens; a `version` on the entry let through ->
-    # `a-version-on-the-entry` reddens.
+    # `version` on the entry let through -> `a-version-on-the-entry` reddens.
     assert release.check(_with_entry(tmp_path, entry)) == [problem]
+
+
+def test_a_sha_beside_the_ref_is_accepted(tmp_path: Path) -> None:
+    # The release commit pins the plugin commit by `sha` beside the tag's `ref`, and `dev` pins
+    # none until the first release with one. Mutation (declared): `mutations/`'s "release check
+    # refuses every sha beside the ref" -> this reddens.
+    assert release.check(_with_entry(tmp_path, {"name": "stayfixed", "source": _url()})) == []
+    pinned: dict[str, object] = {
+        "name": "stayfixed",
+        "source": _url(sha="0123456789abcdef" * 2 + "01234567"),
+    }
+    assert release.check(_with_entry(tmp_path / "pinned", pinned)) == []
+
+
+@pytest.mark.parametrize(
+    ("sha", "shown"),
+    [
+        pytest.param("C" * 40, repr("C" * 40), id="upper-case"),
+        pytest.param("c" * 39, repr("c" * 39), id="39-characters"),
+        pytest.param("", "''", id="empty"),
+        pytest.param(1, "1", id="a-number"),
+    ],
+)
+def test_a_sha_that_is_not_a_commit_id_is_refused(tmp_path: Path, sha: object, shown: str) -> None:
+    # A plugin commit's id is 40 lowercase hex characters: the plugin repository is SHA-1, and git
+    # prints its ids in lower case. Mutations (declared): `mutations/`'s "release check accepts a
+    # sha in upper case" -> `upper-case` reddens; "release check accepts any sha" -> every case
+    # reddens.
+    root = _with_entry(tmp_path, {"name": "stayfixed", "source": _url(sha=sha)})
+    assert release.check(root) == [
+        f".claude-plugin/marketplace.json entry 'stayfixed' pins sha {shown}, which is no commit id"
+    ]
 
 
 @pytest.mark.parametrize("named", [0, 2], ids=["none", "two"])
@@ -637,12 +662,14 @@ BESIDE_THE_SOURCES = {
 OUTSIDE_SKILLS = 3 + len(BESIDE_THE_SOURCES)
 
 
-def _with_plugin_paths(root: Path, *, skills: int = 1) -> Path:
+def _with_plugin_paths(root: Path, *, skills: int = 1, pin: bool = True) -> Path:
     """`root` as a git checkout whose `HEAD` holds a file under each of the plugin's nine paths,
-    `skills` of them under `skills/`, and everything else `root` holds.
+    `skills` of them under `skills/`, and everything else `root` holds; under `pin`, a commit on
+    top whose marketplace pins the plugin commit its tree makes.
 
-    `check --tag` counts the plugin tree at `HEAD`, which `scripts/plugin_tree.py` refuses to
-    read without each of its paths, so a tag test that expects nothing wrong builds on this.
+    `check --tag` computes the plugin commit at `HEAD`, which `scripts/plugin_tree.py` refuses to
+    make without each of its paths, and compares the marketplace's pin with it, so a tag test that
+    expects nothing wrong builds on this.
     """
     write(root, BESIDE_THE_SOURCES)
     write(root, {f"skills/s{index}/SKILL.md": (b"x\n", "100644") for index in range(skills)})
@@ -650,7 +677,29 @@ def _with_plugin_paths(root: Path, *, skills: int = 1) -> Path:
     if not (root / ".git").exists():
         git(root, "init", "-q", "-b", "main")
     commit(root, "tree")
+    if pin:
+        _pinning(root, _plugin_commit_of(root))
     return root
+
+
+def _plugin_commit_of(root: Path, parent: str | None = None) -> str:
+    """The plugin commit of `root`'s `HEAD` whose parent is `parent`: computed by git, over the
+    tree of the nine paths and the commit's text spelled out, never by the script."""
+    version = json.loads((root / ".claude-plugin" / "plugin.json").read_text())["version"]
+    return hashed(root, literal(plugin_tree_id(root), parent, version))
+
+
+def _pinning(root: Path, sha: str | None, message: str = "pin") -> str:
+    """A commit on `root`'s `HEAD` whose marketplace entry pins `sha` beside its `ref`, or no
+    `sha` when it is `None`."""
+    path = root / ".claude-plugin" / "marketplace.json"
+    document = json.loads(path.read_text())
+    source = document["plugins"][0]["source"]
+    source.pop("sha", None)
+    if sha is not None:
+        source["sha"] = sha
+    path.write_text(json.dumps(document))
+    return commit(root, message)
 
 
 def _beside_the_plugin(root: Path, files: int) -> Path:
@@ -777,7 +826,7 @@ def test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding(tmp_path: Pat
     git(root, "commit", "-q", "-m", "a symlink")
     kinds, _ = release.checked_by_kind(root, tag="v1.2.3")
     (problem,) = kinds["plugin tree count"]
-    assert problem.startswith("the plugin tree could not be counted: "), problem
+    assert problem.startswith("the plugin tree could not be read: "), problem
     assert "skills/link" in problem and "120000" in problem, problem
     assert [p for kind, found in kinds.items() if kind != "plugin tree count" for p in found] == []
     assert release.check(root) == []
@@ -791,10 +840,288 @@ def test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count(tmp_path: P
     root = _at(tmp_path, "1.2.3")
     problems = release.check(root, tag="v1.2.3")
     assert len(problems) == 1, problems
-    assert problems[0].startswith("the plugin tree could not be counted: "), problems
+    assert problems[0].startswith("the plugin tree could not be read: "), problems
     assert "HEAD names no commit" in problems[0], problems
     assert problems[0].endswith("; run the check in the git checkout the tag names"), problems
     assert release.check(root) == []
+
+
+# --- `check --tag`: the marketplace pins the plugin commit its tree makes ------------------------
+
+
+def _said_pin(pinned: str, made: str) -> str:
+    """The pin's finding when the marketplace pins another commit, written out."""
+    return (
+        f".claude-plugin/marketplace.json entry 'stayfixed' pins sha {pinned}; the plugin commit "
+        f"of this tree is {made}"
+    )
+
+
+@needs_git
+def test_a_tag_whose_pin_is_the_plugin_commit_passes(tmp_path: Path) -> None:
+    # The pin is the plugin commit `scripts/plugin_tree.py commit` computes at `HEAD`, which this
+    # computes again with git over the literal text. Twice: nothing in the check reads a clock or
+    # leaves a git dir behind for the next run. Mutation (declared): `mutations/`'s "release check
+    # holds the pin to the plugin commit's parent" -> the pin is not the parent and this reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
+    for _ in range(2):
+        kinds, _ = release.checked_by_kind(root, tag="v1.2.3")
+        assert kinds == {
+            "version drift": [],
+            "release record drift": [],
+            "plugin tree count": [],
+            "plugin pin": [],
+        }
+
+
+@needs_git
+def test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding(tmp_path: Path) -> None:
+    # The release after one, cut with the pin left as it was: the pin is the previous release's
+    # plugin commit, which is now the parent, and the commit this tree makes follows it. Mutations
+    # (declared): `mutations/`'s "release check holds the pin to the plugin commit's parent" ->
+    # the stale pin is the parent and passes; "release check passes any pin" -> this reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
+    previous = _plugin_commit_of(root)
+    git(root, "commit", "-q", "--allow-empty", "-m", "a release that did not pin")
+    made = _plugin_commit_of(root, previous)
+    assert made != previous
+    kinds, _ = release.checked_by_kind(root, tag="v1.2.3")
+    assert kinds["plugin pin"] == [_said_pin(previous, made)]
+    assert release.check(root, tag="v1.2.3") == [_said_pin(previous, made)]
+
+
+@needs_git
+def test_a_tag_without_a_pin_is_a_finding_naming_the_commit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Mutation (declared): `mutations/`'s "release check passes a marketplace pinning no sha" ->
+    # this reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"), pin=False)
+    made = _plugin_commit_of(root)
+    problem = (
+        ".claude-plugin/marketplace.json entry 'stayfixed' pins no sha; the plugin commit of this "
+        f"tree is {made}: run `uv run python scripts/release.py pin`"
+    )
+    assert release.check(root, tag="v1.2.3") == [problem]
+    assert release.main(["check", "--root", str(root), "--tag", "v1.2.3"]) == 1
+    assert capsys.readouterr().out == f"plugin pin: {problem}\n"
+
+
+@needs_git
+def test_plain_check_does_not_compute_the_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Plain `check` runs on every pull request, where `dev` pins no sha and a stale one is no
+    # finding: the pin is the release commit's, held at the tag. Nothing is run to compute it.
+    # Mutation (declared): `mutations/`'s "release check counts the plugin tree without a tag" ->
+    # the runner is asked for and this reddens.
+    root = _with_plugin_paths(_at(tmp_path, "1.2.3"))
+    git(root, "commit", "-q", "--allow-empty", "-m", "a pin gone stale")
+
+    def unused() -> object:
+        raise AssertionError("plain check ran a subprocess")
+
+    monkeypatch.setattr(release, "subprocess_runner", unused)
+    assert release.check(root) == []
+
+
+# --- `pin`: the plugin commit written into the marketplace entry --------------------------------
+
+
+def _remote(tmp_path: Path, main: str | None = None, **refs: str) -> Path:
+    """A bare plugin repository at `tmp_path / "plugin.git"`: its `main` a commit whose message is
+    `main`, or no `main` when it is `None`, and each of `refs`, a full ref name, a commit whose
+    message is its value."""
+    remote = tmp_path / "plugin.git"
+    git(tmp_path, "init", "-q", "--bare", str(remote))
+    wanted = {"refs/heads/main": main} if main is not None else {}
+    for ref, message in {**wanted, **refs}.items():
+        tree = git_bytes(remote, "mktree", stdin=b"").decode().strip()
+        stamp = "t <t@example.com> 1 +0000"
+        text = f"tree {tree}\nauthor {stamp}\ncommitter {stamp}\n\n{message}\n"
+        made = git_bytes(
+            remote, "hash-object", "-t", "commit", "-w", "--stdin", stdin=text.encode()
+        )
+        git(remote, "update-ref", ref, made.decode().strip())
+    return remote
+
+
+def _tip(remote: Path, ref: str = "refs/heads/main") -> str:
+    return git(remote, "rev-parse", ref).strip()
+
+
+def _released(tmp_path: Path, previous: str | None) -> Path:
+    """A release commit at 1.2.3 whose marketplace pins no sha, on a first parent pinning
+    `previous`, or none when it is `None`."""
+    root = _with_plugin_paths(_at(tmp_path / "source", "1.2.3"), pin=False)
+    if previous is not None:
+        _pinning(root, previous, "the release before")
+        _pinning(root, None, "the release commit")
+    return root
+
+
+def _marketplace(root: Path) -> Path:
+    return root / ".claude-plugin" / "marketplace.json"
+
+
+@needs_git
+@pytest.mark.parametrize("after", [False, True], ids=["the-first-release", "after-a-release"])
+def test_pin_writes_the_commit_into_the_entry(
+    tmp_path: Path, after: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The first release follows no commit and the plugin repository has no `main`; a later one
+    # follows the previous release's plugin commit, which is `main`. The file is rewritten in one
+    # format, the `sha` after the `ref`. Mutation (declared): `mutations/`'s "pin refuses a main
+    # it should follow" -> `after-a-release` reddens.
+    remote = _remote(tmp_path, "some" if after else None)
+    parent = _tip(remote) if after else None
+    root = _released(tmp_path, parent)
+    made = _plugin_commit_of(root, parent)
+    argv = ["pin", "--root", str(root), "--remote", str(remote), "--json"]
+    assert release.main(argv) == 0, capsys.readouterr()
+    assert json.loads(capsys.readouterr().out)["sha"] == made
+    expected = marketplace_at("1.2.3")
+    plugins = expected["plugins"]
+    assert isinstance(plugins, list)
+    plugins[0]["source"]["sha"] = made
+    assert _marketplace(root).read_text(encoding="utf-8") == json.dumps(expected, indent=2) + "\n"
+    assert list(plugins[0]["source"]) == ["source", "url", "ref", "sha"]
+    # And the tag's check passes once the pin is committed into the release commit, whose first
+    # parent is still the release before.
+    git(root, "commit", "-q", "-a", "--amend", "--no-edit")
+    assert release.check(root, tag="v1.2.3") == []
+
+
+def test_pin_reads_the_plugin_repository_by_default() -> None:
+    # Read only: `pin` lists the remote's `main` and pushes nothing. Mutation (declared):
+    # `mutations/`'s "pin's default remote is another repository" -> this reddens.
+    groups = subparsers(release.parser())
+    assert groups is not None
+    assert groups.choices["pin"].parse_args([]).remote == PLUGIN_URL
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("main", "previous"),
+    [
+        pytest.param(None, "c" * 40, id="no-main"),
+        pytest.param("some", None, id="no-parent"),
+        pytest.param("some", "c" * 40, id="another-main"),
+    ],
+)
+def test_pin_refuses_when_the_plugin_main_is_not_the_parent(
+    tmp_path: Path, main: str | None, previous: str | None
+) -> None:
+    # The plugin repository's `main` moves only by fast-forward, so the commit this release pins
+    # must follow it: refused before any tag is pushed, naming both and the likely cause, and the
+    # file left as it was, byte for byte. Mutations (declared): `mutations/`'s "pin skips the main
+    # comparison" -> every case writes and reddens; "pin writes before it compares" -> the file
+    # changes and every case reddens.
+    remote = _remote(tmp_path, main)
+    root = _released(tmp_path, previous)
+    before = _marketplace(root).read_bytes()
+    made = _plugin_commit_of(root, previous)
+    with pytest.raises(Refusal) as refused:
+        release.pin(root, remote=str(remote), runner=subprocess_runner())
+    follows = f"parent {previous}" if previous is not None else "no parent"
+    holds = f"main at {_tip(remote)}" if main is not None else "no main"
+    assert str(refused.value) == (
+        f"the plugin commit {made} has {follows}, and {remote} has {holds}; the plugin "
+        "repository's main moves only by fast-forward. The likely cause: this release commit was "
+        "cut on the wrong base, or a merge into main dropped the sha "
+        ".claude-plugin/marketplace.json pinned at the release before (RELEASING.md, section 5)"
+    )
+    assert _marketplace(root).read_bytes() == before
+
+
+@needs_git
+def test_pin_reads_main_by_its_exact_name(tmp_path: Path) -> None:
+    # `ls-remote` matches a pattern by its tail, so `refs/heads/main` also lists
+    # `refs/heads/x/refs/heads/main`, a branch anyone with push access can make. Mutation
+    # (declared): `mutations/`'s "pin takes ls-remote's first line for main" -> that branch is
+    # read as `main`, which the first release must not have, and this reddens.
+    remote = _remote(tmp_path, None, **{"refs/heads/x/refs/heads/main": "other"})
+    listed = git(tmp_path, "ls-remote", str(remote), "refs/heads/main")
+    assert listed.strip().endswith("\trefs/heads/x/refs/heads/main"), listed
+    root = _released(tmp_path, None)
+    assert release.pin(root, remote=str(remote), runner=subprocess_runner()) == _plugin_commit_of(
+        root
+    )
+
+
+@needs_git
+def test_pin_refuses_an_unreachable_remote(tmp_path: Path) -> None:
+    # The first release, so a `main` read as absent would pass: only the failure check refuses.
+    # Mutation (declared): `mutations/`'s "pin reads a remote it could not list as empty" -> the
+    # file is written and this reddens.
+    root = _released(tmp_path, None)
+    before = _marketplace(root).read_bytes()
+    absent = tmp_path / "absent.git"
+    with pytest.raises(Refusal) as refused:
+        release.pin(root, remote=str(absent), runner=subprocess_runner())
+    said = str(refused.value)
+    assert said.startswith(f"git ls-remote of {absent} exited 128: fatal: "), said
+    assert "does not appear to be a git repository" in said, said
+    assert _marketplace(root).read_bytes() == before
+
+
+def test_pin_refuses_a_tree_it_cannot_make_the_commit_of(tmp_path: Path) -> None:
+    # Outside a git checkout `scripts/plugin_tree.py commit` refuses, and `pin` quotes it before
+    # it lists any remote. Mutation (declared): `mutations/`'s "pin reads a commit it could not
+    # make" -> an internal error, not this refusal, and this reddens.
+    root = _at(tmp_path, "1.2.3")
+    with pytest.raises(Refusal) as refused:
+        release.pin(root, remote=str(tmp_path / "unread.git"), runner=subprocess_runner())
+    said = str(refused.value)
+    assert said.startswith("the plugin commit could not be made: "), said
+    assert "HEAD names no commit" in said, said
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("edited", "wording"),
+    [
+        pytest.param(
+            '{"plugins": "x"}',
+            "cannot be pinned: .claude-plugin/marketplace.json is valid JSON but its plugins is "
+            "not a list of objects",
+            id="plugins-a-string",
+        ),
+        pytest.param(
+            '{"plugins": [{"name": "stayfixed", "source": "./"}]}',
+            "cannot be pinned: it has no one entry 'stayfixed' whose source is an object",
+            id="a-string-source",
+        ),
+    ],
+)
+def test_pin_refuses_a_marketplace_edited_out_of_shape_since_head(
+    tmp_path: Path, edited: str, wording: str
+) -> None:
+    # The commit is made of `HEAD`, whose marketplace `plugin_tree.py` read; the file `pin` writes
+    # is the one on disk, edited since. Refused, as `pin` refuses, and left as it was. Mutations
+    # (declared): `mutations/`'s "pin lets a marketplace it cannot read out as a finding" ->
+    # `plugins-a-string` exits as a `Failure`; "pin writes a sha into a source that is no object"
+    # -> `a-string-source` is an internal error.
+    remote = _remote(tmp_path)
+    root = _released(tmp_path, None)
+    _marketplace(root).write_text(edited, encoding="utf-8")
+    with pytest.raises(Refusal) as refused:
+        release.pin(root, remote=str(remote), runner=subprocess_runner())
+    assert str(refused.value) == f".claude-plugin/marketplace.json {wording}"
+    assert _marketplace(root).read_text(encoding="utf-8") == edited
+
+
+@needs_git
+def test_pin_twice_writes_the_same_file(tmp_path: Path) -> None:
+    # No mutation of its own: the commit is a function of the source commit, which
+    # `test_a_tag_whose_pin_is_the_plugin_commit_passes` holds, and the file is written in one
+    # format. This pins a re-run after an interrupted release against a write that is not.
+    remote = _remote(tmp_path)
+    root = _released(tmp_path, None)
+    first = release.pin(root, remote=str(remote), runner=subprocess_runner())
+    written = _marketplace(root).read_bytes()
+    assert release.pin(root, remote=str(remote), runner=subprocess_runner()) == first
+    assert _marketplace(root).read_bytes() == written
 
 
 def test_every_command_opens_its_own_help_with_what_it_does() -> None:
@@ -805,7 +1132,7 @@ def test_every_command_opens_its_own_help_with_what_it_does() -> None:
     groups = subparsers(release.parser())
     assert groups is not None
     listed = {action.dest: action.help for action in groups._choices_actions}
-    assert sorted(groups.choices) == ["check", "hashes", "notes"]
+    assert sorted(groups.choices) == ["check", "hashes", "notes", "pin"]
     for name, sub in groups.choices.items():
         # Not vacuous: a command registered with neither sentence has `None` for both, and the
         # equality below holds. Mutation (declared): `mutations/`'s "the release script

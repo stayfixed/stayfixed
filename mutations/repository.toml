@@ -3210,3 +3210,12 @@ file = ".claude-plugin/marketplace.json"
 before = '"ref": "v'
 after = '"ref": "v0.0.1-'
 reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]
+
+# A release commit pins the plugin commit by `sha` beside the `ref`, and the suite it runs holds the
+# `sha` to a commit id's shape; `dev` pins none, so the mutation adds one.
+[[mutation]]
+name = "the marketplace pins a sha that is no commit id"
+file = ".claude-plugin/marketplace.json"
+before = '"ref": "v'
+after = '"sha": "C", "ref": "v'
+reddens = ["tests/test_manifests.py::test_marketplace_has_a_description_and_an_unversioned_entry"]

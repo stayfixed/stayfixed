@@ -1532,8 +1532,8 @@ reddens = [
 [[mutation]]
 name = "release check counts the whole repository instead of the plugin tree"
 file = "scripts/release.py"
-before = "    count = _files_counted(done)"
-after = '    count = len(subprocess_runner().launch(["git", "ls-tree", "-r", "--name-only", "HEAD"], root).stdout.splitlines())'
+before = '    count, made, pinned = report["files"], report["commit"], report["pinned"]'
+after = '    count, made, pinned = len(subprocess_runner().launch(["git", "ls-tree", "-r", "--name-only", "HEAD"], root).stdout.splitlines()), report["commit"], report["pinned"]'
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_passes_a_plugin_tree_at_the_count",
 ]
@@ -1541,29 +1541,134 @@ reddens = [
 [[mutation]]
 name = "release check counts the plugin tree without a tag"
 file = "scripts/release.py"
-before = "    if tag is not None:\n        kinds[TREE_COUNT] = plugin_tree_count(root)"
-after = "    if True:\n        kinds[TREE_COUNT] = plugin_tree_count(root)"
+before = "    if tag is not None:\n        kinds.update(plugin_commit_problems(root))"
+after = "    if True:\n        kinds.update(plugin_commit_problems(root))"
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_refuses_a_plugin_tree_over_the_directory_count",
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
   "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
+  "tests/scripts/test_release.py::test_plain_check_does_not_compute_the_commit",
 ]
 
-# A gate that cannot count does not pass: read as nought files, a tree `plugin_tree.py` refused, or
-# no checkout at all, passes the count.
+# A gate that cannot count does not pass: read as nought files and a matching pin, a tree
+# `plugin_tree.py` refused, or no checkout at all, passes the count.
 [[mutation]]
 name = "release check reads a plugin tree it could not count as empty"
 file = "scripts/release.py"
-before = "    count = _files_counted(done)\n    if count is None:"
-after = "    count = _files_counted(done) or 0\n    if False:"
+before = "    if report is None:\n        return {"
+after = """    report = report or {"files": 0, "commit": "0" * 40, "pinned": "0" * 40}\n    if False:\n        return {"""
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_outside_a_git_checkout_is_refused_for_want_of_a_count",
   "tests/scripts/test_release.py::test_a_tag_whose_plugin_tree_cannot_be_read_is_a_count_finding",
 ]
 
-# The marketplace's plugin entry is the plugin repository, pinned to the release's tag: its `ref`
-# is a version source, and the entry's shape is held so that a release commit cannot name another
-# repository, a branch, a commit id it cannot know, or a version of its own.
+# At a tag the marketplace pins the plugin commit the tree makes: not the commit's parent, which is
+# the previous release's pin left as it was, and not no commit at all.
+[[mutation]]
+name = "release check holds the pin to the plugin commit's parent"
+file = "scripts/release.py"
+before = "    elif pinned != made:"
+after = '    elif pinned != report["parent"]:'
+reddens = [
+  "tests/scripts/test_release.py::test_a_tag_whose_pin_is_the_plugin_commit_passes",
+  "tests/scripts/test_release.py::test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding",
+]
+
+[[mutation]]
+name = "release check passes any pin"
+file = "scripts/release.py"
+before = "    elif pinned != made:"
+after = "    elif False:"
+reddens = ["tests/scripts/test_release.py::test_a_tag_whose_pin_is_not_the_plugin_commit_is_a_finding"]
+
+[[mutation]]
+name = "release check passes a marketplace pinning no sha"
+file = "scripts/release.py"
+before = "    if pinned is None:\n        pins.append("
+after = "    if False:\n        pins.append("
+reddens = ["tests/scripts/test_release.py::test_a_tag_without_a_pin_is_a_finding_naming_the_commit"]
+
+# `pin` writes the plugin commit into the entry only once the plugin repository's `main` is its
+# parent, read by its exact name, from a remote that answered, and the file is written last.
+[[mutation]]
+name = "pin skips the main comparison"
+file = "scripts/release.py"
+before = "    if main != parent:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[another-main]",
+]
+
+[[mutation]]
+name = "pin refuses a main it should follow"
+file = "scripts/release.py"
+before = "    if main != parent:"
+after = "    if main is not None:"
+reddens = ["tests/scripts/test_release.py::test_pin_writes_the_commit_into_the_entry[after-a-release]"]
+
+[[mutation]]
+name = "pin writes before it compares"
+file = "scripts/release.py"
+before = "    main = _main_at(remote, runner, root)\n"
+after = "    fsops.write_within(root, MARKETPLACE, body)\n    main = _main_at(remote, runner, root)\n"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-main]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[no-parent]",
+  "tests/scripts/test_release.py::test_pin_refuses_when_the_plugin_main_is_not_the_parent[another-main]",
+]
+
+[[mutation]]
+name = "pin takes ls-remote's first line for main"
+file = "scripts/release.py"
+before = '        if ref == "refs/heads/main":'
+after = "        if ref:"
+reddens = ["tests/scripts/test_release.py::test_pin_reads_main_by_its_exact_name"]
+
+[[mutation]]
+name = "pin reads a remote it could not list as empty"
+file = "scripts/release.py"
+before = "    if done.code != 0:\n        lines = [line for line in done.stderr.splitlines() if line.strip()]"
+after = "    if False:\n        lines = [line for line in done.stderr.splitlines() if line.strip()]"
+reddens = ["tests/scripts/test_release.py::test_pin_refuses_an_unreachable_remote"]
+
+[[mutation]]
+name = "pin reads a commit it could not make"
+file = "scripts/release.py"
+before = "    if report is None:\n        raise Refusal(f\"the plugin commit could not be made"
+after = "    if False:\n        raise Refusal(f\"the plugin commit could not be made"
+reddens = ["tests/scripts/test_release.py::test_pin_refuses_a_tree_it_cannot_make_the_commit_of"]
+
+[[mutation]]
+name = "pin lets a marketplace it cannot read out as a finding"
+file = "scripts/release.py"
+before = "    except (OSError, UnicodeDecodeError, MalformedSource) as exc:"
+after = "    except (OSError, UnicodeDecodeError) as exc:"
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[plugins-a-string]",
+]
+
+[[mutation]]
+name = "pin writes a sha into a source that is no object"
+file = "scripts/release.py"
+before = "    if not isinstance(source, dict):\n        raise Refusal("
+after = "    if False:\n        raise Refusal("
+reddens = [
+  "tests/scripts/test_release.py::test_pin_refuses_a_marketplace_edited_out_of_shape_since_head[a-string-source]",
+]
+
+[[mutation]]
+name = "pin's default remote is another repository"
+file = "scripts/release.py"
+before = '    pinning.add_argument("--remote", default=PLUGIN_URL, help=REMOTE_HELP)'
+after = '    pinning.add_argument("--remote", default=".", help=REMOTE_HELP)'
+reddens = ["tests/scripts/test_release.py::test_pin_reads_the_plugin_repository_by_default"]
+
+# The marketplace's plugin entry is the plugin repository, pinned to the release's tag by `ref` and
+# to the plugin commit by `sha`: its `ref` is a version source, and the entry's shape is held so
+# that a release commit cannot name another repository, a branch, a `sha` that is no commit id, or
+# a version of its own. Whether the `sha` is the plugin commit is asked at the tag, below.
 [[mutation]]
 name = "release check leaves the marketplace out of the version sources"
 file = "scripts/release.py"
@@ -1615,13 +1720,30 @@ reddens = [
 ]
 
 [[mutation]]
-name = "release check accepts a marketplace entry pinning a sha"
+name = "release check refuses every sha beside the ref"
 file = "scripts/release.py"
-before = '    if "sha" in source:'
+before = '    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):'
+after = '    if "sha" in source:'
+reddens = ["tests/scripts/test_release.py::test_a_sha_beside_the_ref_is_accepted"]
+
+[[mutation]]
+name = "release check accepts any sha"
+file = "scripts/release.py"
+before = '    if "sha" in source and (not isinstance(sha, str) or SHA1.fullmatch(sha) is None):'
 after = "    if False:"
 reddens = [
-  "tests/scripts/test_release.py::test_an_entry_naming_another_repository_or_no_ref_is_refused[a-sha]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[upper-case]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[39-characters]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[empty]",
+  "tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[a-number]",
 ]
+
+[[mutation]]
+name = "release check accepts a sha in upper case"
+file = "scripts/release.py"
+before = 'SHA1 = re.compile(r"[0-9a-f]{40}")'
+after = 'SHA1 = re.compile(r"[0-9a-fA-F]{40}")'
+reddens = ["tests/scripts/test_release.py::test_a_sha_that_is_not_a_commit_id_is_refused[upper-case]"]
 
 [[mutation]]
 name = "release check accepts a marketplace entry carrying a version"
@@ -1635,8 +1757,8 @@ reddens = [
 [[mutation]]
 name = "release check takes the first of several plugin entries for the one"
 file = "scripts/release.py"
-before = "    return named[0] if len(named) == 1 else None"
-after = "    return named[0] if named else None"
+before = "    return (named[0] if len(named) == 1 else None), len(named)"
+after = "    return (named[0] if named else None), len(named)"
 reddens = ["tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]"]
 
 [[mutation]]
@@ -2345,8 +2467,8 @@ reddens = ["tests/scripts/test_plugin_tree.py::test_require_pin_exits_1_when_the
 [[mutation]]
 name = "release check passes a marketplace with no one plugin entry"
 file = "scripts/release.py"
-before = "    if entry is None:\n        named = sum("
-after = "    if entry is None:\n        return []\n    if False:\n        named = sum("
+before = "    if entry is None:\n        return ["
+after = "    if entry is None:\n        return []\n    if False:\n        return ["
 reddens = [
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[none]",
   "tests/scripts/test_release.py::test_a_marketplace_without_the_plugin_entry_is_named[two]",
