@@ -50,19 +50,29 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from stayfixed import fsops
-from stayfixed.cli import JSON_EPILOG, run
-from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import (
-    NO_ANSWER,
-    QUERY_TIMEOUT_SECONDS,
-    answer_bytes,
-    git_run,
-    pipe_encoding,
-)
-from stayfixed.jsonobject import json_object
-from stayfixed.printed import clipped, quoted
-from stayfixed.result import Result
+# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`
+# would otherwise end in a traceback and exit `1`, which is `commit --require-pin`'s finding.
+try:
+    from stayfixed import fsops
+    from stayfixed.cli import JSON_EPILOG, run
+    from stayfixed.errors import Failure, Refusal
+    from stayfixed.gitenv import (
+        NO_ANSWER,
+        QUERY_TIMEOUT_SECONDS,
+        answer_bytes,
+        git_run,
+        pipe_encoding,
+    )
+    from stayfixed.jsonobject import json_object
+    from stayfixed.printed import clipped, quoted
+    from stayfixed.release.api import PACKAGE
+    from stayfixed.result import Result
+except ImportError as exc:
+    sys.stderr.write(
+        f"scripts/plugin_tree.py: refused: {exc}; run it with `uv run python "
+        "scripts/plugin_tree.py`, which puts this repository's stayfixed on the path\n"
+    )
+    sys.exit(2)
 
 # What the plugin's runtime reads, and nothing else: the two manifests, the hooks and their
 # wrapper, the launcher and the package it puts on `sys.path`, the skills and agents the harness
@@ -222,11 +232,6 @@ def read(root: Path, rev: str, *, exact: bool = False) -> Tree:
     return Tree(sha, tuple(sorted(found, key=operator.attrgetter("path"))))
 
 
-def members(root: Path, rev: str, *, exact: bool = False) -> list[Member]:
-    """`read`'s members: every file under the plugin's paths at the commit `rev` names."""
-    return list(read(root, rev, exact=exact).members)
-
-
 def manifest(entries: Iterable[Member]) -> str:
     """`FORMAT` on the first line, then `<mode> <sha256> <path>` for each member, in the order
     given: `read` gives them sorted by path."""
@@ -275,11 +280,13 @@ def render(entries: Iterable[Member], out: Path) -> None:
 
 # The repository the plugin's tree is read from, as the commit message names it.
 SOURCE_REPOSITORY = "stayfixed/stayfixed"
-# Where, at a source commit, the marketplace names the plugin commit it pins, and the entry's name.
+# Where, at a source commit, the marketplace names the plugin commit it pins; the entry is the one
+# named `PACKAGE`, as `scripts/release.py` reads it.
 MARKETPLACE = ".claude-plugin/marketplace.json"
-PACKAGE = "stayfixed"
-# The manifest whose `version` the commit message names.
+# The manifest whose `version` the commit message names, and the only shape that version may take:
+# ASCII digits, as the release's tag spells them, since `\d` also takes every other script's.
 PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 # The author and the committer of every plugin commit, with its date: fixed, so the commit is the
 # same whoever computes it and whenever. Its message names the version and not the source commit,
 # so the release commit can carry the result.
@@ -399,13 +406,23 @@ def _first_parent(root: Path, sha: str) -> str | None:
 
 
 def _version(root: Path, tree: Tree) -> str:
-    """`plugin.json`'s `version` among the members, which the commit message names."""
+    """`plugin.json`'s `version` among the members, which the commit message names: `X.Y.Z`, three
+    runs of ASCII digits and nothing else.
+
+    The one input to the commit text that is not an object name, so the one that could vary it:
+    the text reaches `hash-object` in the pipe's codec, where a character outside ASCII becomes
+    other bytes under another locale, and a line break would add lines to the message."""
     found = [member for member in tree.members if member.path == PLUGIN_MANIFEST]
     if not found:
         raise Refusal(f"{PLUGIN_MANIFEST} at {tree.commit} in {root} is no file")
     version = _json_file(root, tree.commit, PLUGIN_MANIFEST, found[0].content).get("version")
     if not isinstance(version, str):
         raise Refusal(f"{PLUGIN_MANIFEST} at {tree.commit} in {root} names no version string")
+    if not VERSION.fullmatch(version):
+        raise Refusal(
+            f"{PLUGIN_MANIFEST} at {tree.commit} in {root} names version {clipped(version)}, "
+            "which is not X.Y.Z in ASCII digits"
+        )
     return version
 
 
@@ -513,9 +530,18 @@ def _write_trees(git_dir: Path, entries: Sequence[Member], blobs: list[str]) -> 
     return _mktree(git_dir, directories[""])
 
 
-def _plugin_commit(
-    root: Path, rev: str, git_dir: Path, *, root_commit: bool
+def plugin_commit(
+    root: Path, rev: str, git_dir: Path, *, root_commit: bool = False
 ) -> tuple[PluginCommit, Tree]:
+    """The plugin repository's commit of the source commit `rev` names, written into `git_dir`,
+    and the tree it was made of.
+
+    Its tree is `read(root, rev)`'s members; its parent the `sha` the marketplace pins at `rev`'s
+    first parent, or none when that pins none or `root_commit` says so; its text `commit_text`'s.
+    `git_dir` is made a bare SHA-1 repository when it is absent or empty, and must be one
+    otherwise. Refused: a first parent the clone does not hold, a malformed pin at either commit,
+    a `plugin.json` naming no `X.Y.Z` version, and every git that fails or gives no answer.
+    """
     tree = read(root, rev)
     version = _version(root, tree)
     first = None if root_commit else _first_parent(root, tree.commit)
@@ -541,20 +567,6 @@ def _plugin_commit(
         pinned=pinned,
     )
     return found, tree
-
-
-def plugin_commit(
-    root: Path, rev: str, git_dir: Path, *, root_commit: bool = False
-) -> PluginCommit:
-    """The plugin repository's commit of the source commit `rev` names, written into `git_dir`.
-
-    Its tree is `read(root, rev)`'s members; its parent the `sha` the marketplace pins at `rev`'s
-    first parent, or none when that pins none or `root_commit` says so; its text `commit_text`'s.
-    `git_dir` is made a bare SHA-1 repository when it is absent or empty, and must be one
-    otherwise. Refused: a first parent the clone does not hold, a malformed pin at either commit,
-    a `plugin.json` naming no version, and every git that fails or gives no answer.
-    """
-    return _plugin_commit(root, rev, git_dir, root_commit=root_commit)[0]
 
 
 # --- The commands -------------------------------------------------------------------------------
@@ -593,7 +605,7 @@ def run_render(args: argparse.Namespace) -> Result:
 
 
 def run_commit(args: argparse.Namespace) -> Result:
-    found, tree = _plugin_commit(
+    found, tree = plugin_commit(
         Path(args.root), args.rev, Path(args.git_dir), root_commit=args.no_parent
     )
     if args.manifest_file is not None:

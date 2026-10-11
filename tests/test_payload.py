@@ -196,10 +196,10 @@ def _nameable(component: str) -> bool:
 def tracked_payload(root: Path = ROOT) -> tuple[list[Entry], dict[str, bytes]]:
     """Every file of the plugin tree at `root`'s `HEAD` and its bytes: what the directory reads.
 
-    Read through `scripts/plugin_tree.py`'s `members`, the one reader of the plugin's paths, which
+    Read through `scripts/plugin_tree.py`'s `read`, the one reader of the plugin's paths, which
     refuses a symlink or a submodule among them outright.
     """
-    members = plugin_tree().members(root, "HEAD")
+    members = plugin_tree().read(root, "HEAD").members
     entries = [(member.path, len(member.content), member.mode) for member in members]
     return entries, {member.path: member.content for member in members}
 

@@ -24,8 +24,20 @@ import pytest
 from stayfixed import gitenv
 from stayfixed.errors import Refusal
 from tests.gitfixture import git, git_bytes, needs_git, plant_path
-from tests.plugintree import NINE, PLUGIN_FILES, commit, hashed, literal, plugin_source, write
+from tests.plugintree import (
+    MARKETPLACE,
+    NINE,
+    PLUGIN_FILES,
+    PLUGIN_URL,
+    commit,
+    hashed,
+    literal,
+    pinned_marketplace,
+    plugin_source,
+    write,
+)
 from tests.scriptload import plugin_tree as _script
+from tests.scriptload import without_stayfixed
 
 plugin_tree = _script()
 Member = plugin_tree.Member
@@ -46,7 +58,7 @@ NEIGHBOURS = (
 
 
 def listed(root: Path, rev: str = "HEAD", **kwargs: bool) -> dict[str, tuple[bytes, str]]:
-    return {m.path: (m.content, m.mode) for m in plugin_tree.members(root, rev, **kwargs)}
+    return {m.path: (m.content, m.mode) for m in plugin_tree.read(root, rev, **kwargs).members}
 
 
 def test_members_lists_every_plugin_path_with_its_mode_and_nothing_else(tmp_path: Path) -> None:
@@ -56,7 +68,7 @@ def test_members_lists_every_plugin_path_with_its_mode_and_nothing_else(tmp_path
     root = plugin_source(
         tmp_path, {**PLUGIN_FILES, **{path: (b"x\n", "100644") for path in NEIGHBOURS}}
     )
-    members = plugin_tree.members(root, "HEAD")
+    members = plugin_tree.read(root, "HEAD").members
     assert [(m.path, m.mode) for m in members] == [
         (".claude-plugin/plugin.json", "100644"),
         (".codex-plugin/plugin.json", "100644"),
@@ -147,7 +159,7 @@ def test_a_symlink_or_submodule_among_the_members_is_refused(
     plant(root)
     git(root, "commit", "-q", "-m", "plant")
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
     assert path in str(refused.value)
     assert mode in str(refused.value)
 
@@ -159,7 +171,7 @@ def test_a_path_with_a_control_character_is_refused(tmp_path: Path) -> None:
     plant_path(root, b"skills/a\nb")
     git(root, "commit", "-q", "-m", "a name holding a newline")
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
     assert "'skills/a\\nb'" in str(refused.value)
 
 
@@ -183,10 +195,10 @@ def test_a_c1_or_line_separator_in_a_path_is_refused(tmp_path: Path, character: 
     plant_path(root, f"skills/a{character}b".encode())
     git(root, "commit", "-q", "-m", "a name holding a control character")
     with pytest.raises(Refusal, match="holds a control character"):
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
 
 
-def test_is_plugin_path() -> None:
+def test_only_a_plugin_path_or_a_path_under_one_is_the_plugin_s() -> None:
     # Mutation (declared): `mutations/`'s "the plugin tree takes a look-alike neighbour for a
     # plugin path" -> `hooksx/y` is taken for a path under `hooks`.
     assert plugin_tree.is_plugin_path("hooks/x")
@@ -201,7 +213,7 @@ def test_a_path_that_is_not_utf_8_is_refused(tmp_path: Path) -> None:
     plant_path(root, b"skills/caf\xe9")
     git(root, "commit", "-q", "-m", "a latin-1 name")
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
     assert "skills/caf" in str(refused.value)
     assert "UTF-8" in str(refused.value)
 
@@ -222,7 +234,7 @@ def test_exact_refuses_a_path_outside_the_plugin(tmp_path: Path, outside: str) -
     root = plugin_source(tmp_path, {**PLUGIN_FILES, outside: (b"{}\n", "100644")})
     assert listed(root, exact=False) == PLUGIN_FILES
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, "HEAD", exact=True)
+        plugin_tree.read(root, "HEAD", exact=True)
     assert outside in str(refused.value)
 
 
@@ -236,7 +248,7 @@ def test_a_missing_plugin_path_is_refused_by_name(tmp_path: Path) -> None:
     # Mutation (declared): the absence check dropped -> a tree without its LICENSE is listed.
     root = plugin_source(tmp_path, {p: f for p, f in PLUGIN_FILES.items() if p != "LICENSE"})
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
     assert "LICENSE" in str(refused.value)
 
 
@@ -247,7 +259,7 @@ def test_an_unresolvable_rev_is_refused_by_name(tmp_path: Path, rev: str) -> Non
     # `--end-of-options` that stands behind it; no rev shows that flag alone.
     root = plugin_source(tmp_path)
     with pytest.raises(Refusal) as refused:
-        plugin_tree.members(root, rev)
+        plugin_tree.read(root, rev)
     assert rev in str(refused.value)
 
 
@@ -313,7 +325,7 @@ def test_a_cat_file_answer_cut_short_is_refused(
 
     monkeypatch.setattr(plugin_tree, "git_run", cut_short)
     with pytest.raises(Refusal, match="cat-file"):
-        plugin_tree.members(root, "HEAD")
+        plugin_tree.read(root, "HEAD")
 
 
 def _sha256(content: bytes) -> str:
@@ -439,7 +451,7 @@ def test_a_member_the_disk_will_not_take_is_refused_by_its_path(
 ) -> None:
     # Mutation (declared): the `OSError` catch dropped -> a full disk escapes `render` as an
     # internal error naming no member, rather than a refusal naming the one it stopped at.
-    members = plugin_tree.members(plugin_source(tmp_path), "HEAD")
+    members = plugin_tree.read(plugin_source(tmp_path), "HEAD").members
 
     def full_disk(descriptor: int, mode: int) -> None:
         raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
@@ -454,7 +466,7 @@ def test_a_member_the_disk_will_not_take_is_refused_by_its_path(
 def test_a_destination_that_cannot_be_made_is_refused(tmp_path: Path) -> None:
     # Mutation (declared): the `OSError` catch around making the destination dropped -> a
     # destination under a regular file escapes as an internal error.
-    members = plugin_tree.members(plugin_source(tmp_path), "HEAD")
+    members = plugin_tree.read(plugin_source(tmp_path), "HEAD").members
     (tmp_path / "a-file").write_bytes(b"")
     with pytest.raises(Refusal, match="cannot be made"):
         plugin_tree.render(members, tmp_path / "a-file" / "tree")
@@ -464,12 +476,12 @@ def test_render_twice_writes_the_same_tree_and_manifest(tmp_path: Path) -> None:
     # No mutation exists: `members`, `manifest` and `render` keep no state between calls. This
     # pins determinism against a cache added later.
     root = plugin_source(tmp_path)
-    plugin_tree.render(plugin_tree.members(root, "HEAD"), tmp_path / "one")
-    plugin_tree.render(plugin_tree.members(root, "HEAD"), tmp_path / "two")
+    plugin_tree.render(plugin_tree.read(root, "HEAD").members, tmp_path / "one")
+    plugin_tree.render(plugin_tree.read(root, "HEAD").members, tmp_path / "two")
     assert tree_on_disk(tmp_path / "one") == tree_on_disk(tmp_path / "two")
     assert len(tree_on_disk(tmp_path / "one")) == len(PLUGIN_FILES)
-    first = plugin_tree.manifest(plugin_tree.members(root, "HEAD"))
-    assert plugin_tree.manifest(plugin_tree.members(root, "HEAD")) == first
+    first = plugin_tree.manifest(plugin_tree.read(root, "HEAD").members)
+    assert plugin_tree.manifest(plugin_tree.read(root, "HEAD").members) == first
 
 
 def test_the_cli_writes_the_manifest_file_and_renders(
@@ -481,7 +493,7 @@ def test_the_cli_writes_the_manifest_file_and_renders(
     out, written = tmp_path / "out", tmp_path / "manifest.txt"
     argv = ["render", "--root", str(root), "--rev", "HEAD", "--out", str(out)]
     assert plugin_tree.main([*argv, "--manifest-file", str(written)]) == 0
-    expected = plugin_tree.manifest(plugin_tree.members(root, "HEAD")).encode("utf-8")
+    expected = plugin_tree.manifest(plugin_tree.read(root, "HEAD").members).encode("utf-8")
     assert written.read_bytes() == expected
     assert written.read_bytes().startswith(b"stayfixed-plugin-tree 1\n")
     assert set(tree_on_disk(out)) == set(PLUGIN_FILES)
@@ -540,7 +552,10 @@ def test_the_cli_manifest_writes_its_file_and_honours_exact(
     written = tmp_path / "manifest.txt"
     argv = ["manifest", "--root", str(root), "--rev", "HEAD", "--manifest-file", str(written)]
     assert plugin_tree.main(argv) == 0
-    assert written.read_bytes() == plugin_tree.manifest(plugin_tree.members(root, "HEAD")).encode()
+    assert (
+        written.read_bytes()
+        == plugin_tree.manifest(plugin_tree.read(root, "HEAD").members).encode()
+    )
     written.unlink()
     capsys.readouterr()
     assert plugin_tree.main([*argv, "--exact"]) == 2
@@ -582,31 +597,17 @@ def test_the_cli_reads_the_rev_it_is_given(
     assert {path: content for path, (content, _) in on_disk.items()} == {
         path: content for path, (content, _) in PLUGIN_FILES.items()
     }
-    expected = plugin_tree.manifest(plugin_tree.members(root, first)).encode("utf-8")
+    expected = plugin_tree.manifest(plugin_tree.read(root, first).members).encode("utf-8")
     assert rendered.read_bytes() == expected
     assert counted.read_bytes() == expected
 
 
 # --- The plugin commit ----------------------------------------------------------------------------
 
-MARKETPLACE = ".claude-plugin/marketplace.json"
-PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
-
-
-def marketplace(sha: object = None, *, entries: int = 1) -> tuple[bytes, str]:
-    """The marketplace's file: `entries` plugin entries named `stayfixed`, each a `url` source
-    pinning `sha` beside its `ref`, or no `sha` when it is `None`."""
-    source: dict[str, object] = {"source": "url", "url": PLUGIN_URL, "ref": "v1.2.3"}
-    if sha is not None:
-        source["sha"] = sha
-    plugins = [{"name": "stayfixed", "source": source} for _ in range(entries)]
-    text = json.dumps({"name": "stayfixed-marketplace", "plugins": plugins}, indent=2) + "\n"
-    return text.encode("utf-8"), "100644"
-
 
 def pinning(root: Path, sha: object, message: str = "pin") -> str:
     """A commit on `root`'s `HEAD` whose marketplace pins `sha`."""
-    write(root, {MARKETPLACE: marketplace(sha)})
+    write(root, {MARKETPLACE: pinned_marketplace(sha)})
     return commit(root, message)
 
 
@@ -667,7 +668,7 @@ def test_the_plugin_commit_is_what_git_computes(tmp_path: Path) -> None:
     root = plugin_source(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
     git_dir = tmp_path / "plugin.git"
-    made = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     tree = git(git_dir, "rev-parse", f"{made.commit}^{{tree}}").strip()
     assert git(git_dir, "cat-file", "commit", made.commit) == literal(tree, None)
     assert made.commit == hashed(git_dir, literal(tree, None))
@@ -685,7 +686,8 @@ def test_the_plugin_commit_is_the_same_on_every_run(tmp_path: Path) -> None:
     for clone in clones:
         git(tmp_path, "clone", "-q", str(root), str(clone))
     first, second = (
-        plugin_tree.plugin_commit(clone, "HEAD", tmp_path / f"{clone.name}.git") for clone in clones
+        plugin_tree.plugin_commit(clone, "HEAD", tmp_path / f"{clone.name}.git")[0]
+        for clone in clones
     )
     assert (first.commit, first.tree) == (second.commit, second.tree)
     assert first.commit != first.tree
@@ -694,10 +696,10 @@ def test_the_plugin_commit_is_the_same_on_every_run(tmp_path: Path) -> None:
 def test_the_parent_is_the_sha_the_first_parent_pins(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the plugin commit takes its parent from the source
     # commit's own pin" -> the parent is `d`*40.
-    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace("c" * 40)})
+    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: pinned_marketplace("c" * 40)})
     pinning(root, "d" * 40)
     git_dir = tmp_path / "plugin.git"
-    made = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     assert (made.parent, made.pinned) == ("c" * 40, "d" * 40)
     tree = git(git_dir, "rev-parse", f"{made.commit}^{{tree}}").strip()
     assert git(git_dir, "cat-file", "commit", made.commit) == literal(tree, "c" * 40)
@@ -707,10 +709,10 @@ def test_a_first_release_has_no_parent(tmp_path: Path) -> None:
     # The first release's first parent pins no sha: its marketplace names the tag by `ref` alone.
     # Mutation (declared): `mutations/`'s "the plugin commit reads an entry pinning no sha as one
     # pinning a sha" -> the entry's missing `sha` is an internal error.
-    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace()})
+    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: pinned_marketplace(None)})
     pinning(root, "d" * 40)
     git_dir = tmp_path / "plugin.git"
-    made = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     assert made.parent is None
     assert "\nparent " not in git(git_dir, "cat-file", "commit", made.commit)
 
@@ -720,9 +722,9 @@ def test_no_parent_ignores_the_history(tmp_path: Path, capsys: pytest.CaptureFix
     # -> the call's parent is `c`*40; "the plugin commit command drops --no-parent" -> the
     # command's is; "the plugin commit command writes a manifest file it was not given" -> the
     # command, given none, is an internal error.
-    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace("c" * 40)})
+    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: pinned_marketplace("c" * 40)})
     pinning(root, "d" * 40)
-    made = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "one.git", root_commit=True)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "one.git", root_commit=True)
     assert made.parent is None
     argv = ["commit", "--root", str(root), "--rev", "HEAD", "--git-dir", str(tmp_path / "two.git")]
     assert plugin_tree.main([*argv, "--no-parent", "--json"]) == 0
@@ -733,7 +735,7 @@ def test_no_parent_ignores_the_history(tmp_path: Path, capsys: pytest.CaptureFix
 def test_a_source_whose_first_parent_is_not_in_the_clone_is_refused(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the plugin commit reads a first parent the clone lacks
     # as none" -> the commit is built with no parent, which is another commit than the release's.
-    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: marketplace("c" * 40)})
+    root = plugin_source(tmp_path, {**PLUGIN_FILES, MARKETPLACE: pinned_marketplace("c" * 40)})
     pinning(root, "d" * 40)
     shallow = tmp_path / "shallow"
     git(tmp_path, "clone", "-q", "--depth", "1", f"file://{root}", str(shallow))
@@ -761,17 +763,26 @@ NO_COMMIT_ID = ", which is no commit id of 40 lowercase hex digits"
     ("file", "wording", "whole"),
     [
         pytest.param(
-            marketplace("C" * 40), f" pins sha {'C' * 40}{NO_COMMIT_ID}", True, id="upper-case"
+            pinned_marketplace("C" * 40),
+            f" pins sha {'C' * 40}{NO_COMMIT_ID}",
+            True,
+            id="upper-case",
         ),
         pytest.param(
-            marketplace("c" * 39), f" pins sha {'c' * 39}{NO_COMMIT_ID}", True, id="39-characters"
+            pinned_marketplace("c" * 39),
+            f" pins sha {'c' * 39}{NO_COMMIT_ID}",
+            True,
+            id="39-characters",
         ),
         pytest.param(
-            marketplace("c" * 64), f" pins sha {'c' * 64}{NO_COMMIT_ID}", True, id="64-characters"
+            pinned_marketplace("c" * 64),
+            f" pins sha {'c' * 64}{NO_COMMIT_ID}",
+            True,
+            id="64-characters",
         ),
-        pytest.param(marketplace(1), f" pins sha a int{NO_COMMIT_ID}", True, id="a-number"),
+        pytest.param(pinned_marketplace(1), f" pins sha a int{NO_COMMIT_ID}", True, id="a-number"),
         pytest.param(
-            marketplace("c" * 40, entries=2),
+            pinned_marketplace("c" * 40, entries=2),
             " has 2 entries named 'stayfixed'; the pin is read from exactly one",
             True,
             id="two-entries",
@@ -834,13 +845,56 @@ def test_a_malformed_pinned_sha_is_refused(
     )
 
 
+def test_the_plugin_commit_is_the_same_under_an_inherited_git_environment_and_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What a machine may hand the computation that a plain one does not: the variables git reads
+    # before any configuration (another repository, index and object store, a configuration given
+    # by variables, another hash, a date), and a global configuration converting line endings,
+    # filtering every path through `core.attributesFile`, and choosing SHA-256 for a new
+    # repository. The commit is computed once on a plain machine and once on this one, and must be
+    # the same commit. Mutations (declared): `mutations/`'s "the git runner, and with it the hook
+    # path and the store, inherits the session's GIT_DIR" -> every git here reads the decoy
+    # repository's objects; "the plugin commit's git dir takes the owner's object format" -> the
+    # git dir is SHA-256. The global attributes have no mutation of their own: every blob is
+    # written by `fast-import` from memory and every tree by `mktree`, and neither names a path an
+    # attribute could match.
+    root = plugin_source(tmp_path)
+    plain, _ = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plain.git")
+    (tmp_path / "decoy").mkdir()
+    decoy = plugin_source(tmp_path / "decoy", {**PLUGIN_FILES, "README.md": (b"decoy\n", "100644")})
+    objects = tmp_path / "objects"
+    objects.mkdir()
+    for name, value in {
+        "GIT_DIR": str(decoy / ".git"),
+        "GIT_INDEX_FILE": str(tmp_path / "index"),
+        "GIT_OBJECT_DIRECTORY": str(objects),
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.autocrlf",
+        "GIT_CONFIG_VALUE_0": "true",
+        "GIT_DEFAULT_HASH": "sha256",
+        "GIT_AUTHOR_DATE": "1700000000 +0900",
+        "GIT_COMMITTER_DATE": "1700000000 +0900",
+    }.items():
+        monkeypatch.setenv(name, value)
+    attributes = tmp_path / "attributes"
+    attributes.write_text("* filter=hostile eol=crlf text\n", encoding="utf-8")
+    owner_config(
+        f"[core]\n\tattributesFile = {attributes}\n\tautocrlf = true\n\teol = crlf\n"
+        '[filter "hostile"]\n\tclean = sed s/a/b/\n\tsmudge = sed s/b/a/\n'
+        "[init]\n\tdefaultObjectFormat = sha256\n"
+    )
+    hostile, _ = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "hostile.git")
+    assert (hostile.commit, hostile.tree) == (plain.commit, plain.tree)
+
+
 def test_the_owner_s_object_format_does_not_reach_the_git_dir(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the plugin commit's git dir takes the owner's object
     # format" -> the git dir is SHA-256 and the commit's id is 64 characters.
     root = plugin_source(tmp_path)
-    before = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "before.git")
+    before, _ = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "before.git")
     owner_config("[init]\n\tdefaultObjectFormat = sha256\n")
-    after = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "after.git")
+    after, _ = plugin_tree.plugin_commit(root, "HEAD", tmp_path / "after.git")
     assert len(after.commit) == 40
     assert after.commit == before.commit
 
@@ -853,7 +907,7 @@ def test_the_owner_s_line_endings_do_not_change_the_blobs(tmp_path: Path) -> Non
     root = plugin_source(tmp_path, {**PLUGIN_FILES, **crlf})
     owner_config("[core]\n\tautocrlf = input\n")
     git_dir = tmp_path / "plugin.git"
-    made = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     assert written(git_dir, made.commit) == {**PLUGIN_FILES, **crlf}
 
 
@@ -865,7 +919,7 @@ def test_members_differing_only_in_case_are_both_written(tmp_path: Path) -> None
     plant_path(root, b"skills/a.md", "lower\n")
     git(root, "commit", "-q", "-m", "two names one case apart")
     git_dir = tmp_path / "plugin.git"
-    made = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    made, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     found = written(git_dir, made.commit)
     assert (found["skills/A.md"], found["skills/a.md"]) == (
         (b"upper\n", "100644"),
@@ -906,8 +960,8 @@ def test_an_explicit_safe_bare_repository_does_not_refuse_the_git_dir(tmp_path: 
     root = plugin_source(tmp_path)
     owner_config("[safe]\n\tbareRepository = explicit\n")
     git_dir = tmp_path / "plugin.git"
-    first = plugin_tree.plugin_commit(root, "HEAD", git_dir)
-    assert plugin_tree.plugin_commit(root, "HEAD", git_dir) == first
+    first, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    assert plugin_tree.plugin_commit(root, "HEAD", git_dir)[0] == first
 
 
 def test_a_commit_that_gave_no_answer_is_refused_in_no_answer_s_words(
@@ -1059,6 +1113,34 @@ def test_a_plugin_json_naming_no_version_is_refused(
     assert str(refused.value) == f".claude-plugin/plugin.json at {head} in {root}{wording}"
 
 
+@pytest.mark.parametrize(
+    "version",
+    ["1.\N{ARABIC-INDIC DIGIT TWO}.3", "1.2.3\n", "1.2", "v1.2.3"],
+    ids=["digits-that-are-not-ascii", "a-line-break", "two-parts", "a-tag"],
+)
+def test_a_plugin_json_version_that_is_not_x_y_z_in_ascii_digits_is_refused(
+    tmp_path: Path, version: str
+) -> None:
+    # The version is the one input to the commit text that is not an object name: it reaches
+    # `hash-object` through the pipe's codec, so a character outside ASCII is other bytes under
+    # another locale, and a line break adds lines to the message. Mutations (declared):
+    # `mutations/`'s "the plugin commit names a version spelled with digits that are not ASCII"
+    # -> `digits-that-are-not-ascii` builds a commit; "the plugin commit names a version followed
+    # by a line break" -> `a-line-break` does; "the plugin commit names any version string" ->
+    # all four do.
+    manifest = json.dumps({"name": "stayfixed", "version": version}).encode() + b"\n"
+    root = plugin_source(
+        tmp_path, {**PLUGIN_FILES, ".claude-plugin/plugin.json": (manifest, "100644")}
+    )
+    head = git(root, "rev-parse", "HEAD").strip()
+    with pytest.raises(Refusal) as refused:
+        plugin_tree.plugin_commit(root, "HEAD", tmp_path / "plugin.git")
+    said = str(refused.value)
+    assert said.startswith(f".claude-plugin/plugin.json at {head} in {root} names version "), said
+    assert said.endswith(", which is not X.Y.Z in ASCII digits"), said
+    assert not (tmp_path / "plugin.git").exists()
+
+
 def test_a_marketplace_that_is_a_symlink_is_refused(tmp_path: Path) -> None:
     # The pin is read from the marketplace's own bytes, and a symlink's are its target's name.
     # Mutation (declared): `mutations/`'s "the plugin commit reads a pin from a marketplace that is
@@ -1107,10 +1189,10 @@ def test_a_second_commit_into_the_same_git_dir_succeeds(tmp_path: Path) -> None:
     # holds the checks it passes.
     root = plugin_source(tmp_path)
     git_dir = tmp_path / "plugin.git"
-    first = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    first, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     write(root, {"README.md": (b"# second\n", "100644")})
     commit(root, "the second")
-    second = plugin_tree.plugin_commit(root, "HEAD", git_dir)
+    second, _ = plugin_tree.plugin_commit(root, "HEAD", git_dir)
     assert first.commit != second.commit
     for made in (first, second):
         assert git(git_dir, "cat-file", "-t", made.commit).strip() == "commit"
@@ -1161,3 +1243,16 @@ def test_require_pin_exits_1_when_the_pin_is_another_commit(
     # Refused after the objects and the manifest file were written.
     assert git(git_dir, "cat-file", "-t", expected).strip() == "commit"
     assert listing.read_bytes().startswith(b"stayfixed-plugin-tree 1\n")
+
+
+def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:
+    # An interpreter without this repository's `stayfixed` fails on the script's first import,
+    # before the CLI frame exists, and a traceback exits `1`, which `commit --require-pin` gives
+    # its finding. Mutation (declared): `mutations/`'s "plugin_tree.py exits 1 when its package
+    # cannot be imported".
+    done = without_stayfixed("plugin_tree.py", tmp_path, "manifest", "--root", ".", "--rev", "HEAD")
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert done.stdout == "", done.stdout
+    assert "refused: No module named 'stayfixed'" in done.stderr, done.stderr
+    assert "uv run python scripts/plugin_tree.py" in done.stderr, done.stderr
+    assert "Traceback" not in done.stderr, done.stderr

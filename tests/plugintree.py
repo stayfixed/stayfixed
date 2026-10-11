@@ -121,18 +121,23 @@ def hashed(where: Path, text: str) -> str:
 # This repository, whose `scripts/plugin_tree.py` and `src/stayfixed` a tool source carries.
 REPOSITORY = Path(__file__).resolve().parents[1]
 MARKETPLACE = ".claude-plugin/marketplace.json"
+# The plugin repository's URL, spelled once for every test module that builds or expects a
+# marketplace entry, and never read from a script: the scripts' copies are held to it.
 PLUGIN_URL = "https://github.com/stayfixed/stayfixed-plugin.git"
 # What a release's tag carries beside the plugin and the publisher runs: the tag's own code.
 TOOL_PATHS = ("scripts/plugin_tree.py", "src/stayfixed")
 
 
-def pinned_marketplace(sha: str | None, version: str = "1.2.3") -> tuple[bytes, str]:
-    """The marketplace's file: one entry `stayfixed`, a url source at `v<version>` pinning `sha`
-    beside its `ref`, or no `sha` when it is `None`."""
+def pinned_marketplace(
+    sha: object, version: str = "1.2.3", *, entries: int = 1
+) -> tuple[bytes, str]:
+    """The marketplace's file: `entries` entries `stayfixed` (one unless a case means more), each a
+    url source at `v<version>` pinning `sha` beside its `ref`, whatever `sha` is, or no `sha` when
+    it is `None`."""
     source: dict[str, object] = {"source": "url", "url": PLUGIN_URL, "ref": f"v{version}"}
     if sha is not None:
         source["sha"] = sha
-    plugins = [{"name": "stayfixed", "source": source}]
+    plugins = [{"name": "stayfixed", "source": source} for _ in range(entries)]
     text = json.dumps({"name": "stayfixed-marketplace", "plugins": plugins}, indent=2) + "\n"
     return text.encode("utf-8"), "100644"
 

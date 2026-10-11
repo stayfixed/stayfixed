@@ -3209,7 +3209,7 @@ reddens = [
 [[mutation]]
 name = "the payload guard walks the whole repository instead of the plugin tree"
 file = "tests/test_payload.py"
-before = '    members = plugin_tree().members(root, "HEAD")'
+before = '    members = plugin_tree().read(root, "HEAD").members'
 after = '    members = [plugin_tree().Member(p, "100644", b"") for p in git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD").split("\0") if p]'
 reddens = ["tests/test_payload.py::test_the_payload_is_the_generated_plugin_tree"]
 

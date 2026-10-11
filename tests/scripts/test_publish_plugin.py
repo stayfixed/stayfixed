@@ -292,7 +292,7 @@ def publish(
 
 
 def listed(root: Path, rev: str, **kwargs: bool) -> dict[str, tuple[bytes, str]]:
-    return {m.path: (m.content, m.mode) for m in plugin_tree.members(root, rev, **kwargs)}
+    return {m.path: (m.content, m.mode) for m in plugin_tree.read(root, rev, **kwargs).members}
 
 
 def ran(runner: Composite, word: str) -> list[list[str]]:
