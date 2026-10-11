@@ -2057,6 +2057,16 @@ after = '    return lines[-1] if lines else f"it exited {done.code} and said not
 reddens = ["tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]"]
 
 [[mutation]]
+name = "release lets a plugin tree script that printed no JSON out as an internal error"
+file = "scripts/release.py"
+before = "    except ValueError:\n        report = None\n"
+after = "    except TypeError:\n        report = None\n"
+reddens = [
+  "tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[a-traceback]",
+  "tests/scripts/test_release.py::test_what_the_plugin_tree_script_said_is_quoted_clipped[nothing]",
+]
+
+[[mutation]]
 name = "release quotes a plugin tree script that said nothing as its last line"
 file = "scripts/release.py"
 before = '    return clipped(lines[-1]) if lines else f"it exited {done.code} and said nothing"'

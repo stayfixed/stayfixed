@@ -1161,7 +1161,8 @@ def test_what_the_plugin_tree_script_said_is_quoted_clipped(
     # script's summary as it is" -> `its-summary` carries the line break; "release quotes the
     # plugin tree script's last stderr line as it is" -> `a-traceback` carries the escape; "release
     # quotes a plugin tree script that said nothing as its last line" -> `nothing` is an internal
-    # error.
+    # error; "release lets a plugin tree script that printed no JSON out as an internal error" ->
+    # `a-traceback` and `nothing` are.
     runner = Recorder(code=failed.code, stdout=failed.stdout, stderr=failed.stderr)
     with pytest.raises(Refusal) as refused:
         release.pin(_at(tmp_path, "1.2.3"), remote=str(tmp_path / "unread.git"), runner=runner)
