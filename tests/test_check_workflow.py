@@ -996,6 +996,30 @@ def test_the_smoke_runs_doctor_from_the_installed_tree() -> None:
 
 
 @needs_smoke_workflow
+@pytest.mark.parametrize("script", ["smoke_hooks.py", "smoke_exfiltration.py"])
+def test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree(
+    script: str,
+) -> None:
+    # Each script runs the hook entries it finds under `--plugin-root`, so a root of `.` runs this
+    # checkout's hooks and the step passes over a runtime path the render omitted. Mutations
+    # (oracle): `mutations/`'s "the smoke's hook entries run from the checkout" and "the smoke's
+    # exfiltration scenario runs from the checkout" each put `--plugin-root .` back in one step.
+    invoked = [
+        (step, line)
+        for step in _steps_of(SMOKE_WORKFLOW, "installed-plugin")
+        for line in _lines(_run(step))
+        if line.startswith(f"python3 scripts/{script} ")
+    ]
+    assert len(invoked) == 1, invoked
+    step, line = invoked[0]
+    roots = re.findall(r"--plugin-root (\S+)", line)
+    assert roots == ['"$INSTALLED"'], line
+    env = step.get("env")
+    assert isinstance(env, dict), step
+    assert env.get("INSTALLED") == "${{ steps." + _install_id() + ".outputs.root }}", env
+
+
+@needs_smoke_workflow
 def test_the_smoke_holds_the_install_to_the_render() -> None:
     # The harness copies what the marketplace's source names into its cache, and only a
     # comparison can say it copied all of it and added nothing: the hooks, `doctor` and the

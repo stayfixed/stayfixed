@@ -249,6 +249,24 @@ reddens = [
 ]
 
 [[mutation]]
+name = "the smoke's hook entries run from the checkout"
+file = ".github/workflows/smoke.yml"
+before = '          python3 scripts/smoke_hooks.py --plugin-root "$INSTALLED" \'
+after = '          python3 scripts/smoke_hooks.py --plugin-root . \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_hooks.py]",
+]
+
+[[mutation]]
+name = "the smoke's exfiltration scenario runs from the checkout"
+file = ".github/workflows/smoke.yml"
+before = '          python3 scripts/smoke_exfiltration.py --plugin-root "$INSTALLED" \'
+after = '          python3 scripts/smoke_exfiltration.py --plugin-root . \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_smoke_runs_its_hook_and_exfiltration_scripts_on_the_installed_tree[smoke_exfiltration.py]",
+]
+
+[[mutation]]
 name = "the smoke stops holding the install to the render"
 file = ".github/workflows/smoke.yml"
 before = '        run: diff -r -x .git -x .in_use "$RUNNER_TEMP/plugin-repo" "$INSTALLED"'
